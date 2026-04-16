@@ -1,0 +1,55 @@
+# Reference GitHub Actions workflow: run `lore lint` on every PR to a
+# wiki repo. Drop into `.github/workflows/lore-lint.yml` inside any wiki
+# repository.
+#
+# No API cost — the linter is deterministic (no LLM calls).
+
+name: Lore lint
+
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - '.lore-hints.yml'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # linter uses git log for date backfill hints
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Lore
+        run: |
+          pip install --upgrade pip
+          # Pin to a release tag once published.
+          pip install git+https://github.com/buchbend/lore.git@main
+
+      - name: Run lore lint (check-only)
+        env:
+          # Treat the PR repo itself as a single-wiki vault
+          LORE_ROOT: ${{ github.workspace }}/.lore-root
+        run: |
+          mkdir -p "$LORE_ROOT/wiki"
+          ln -s "$GITHUB_WORKSPACE" "$LORE_ROOT/wiki/this"
+          lore lint --check-only --json > lint-report.json || true
+          python -c "
+          import json, sys
+          r = json.load(open('lint-report.json'))
+          s = r.get('by_severity', {})
+          print(f\"notes: {r.get('total_notes', 0)}\")
+          print(f\"errors: {s.get('errors', 0)}\")
+          print(f\"warnings: {s.get('warnings', 0)}\")
+          sys.exit(1 if s.get('errors', 0) else 0)
+          "
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lore-lint-report
+          path: lint-report.json

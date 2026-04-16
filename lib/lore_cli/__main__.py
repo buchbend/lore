@@ -12,10 +12,12 @@ import sys
 SUBCOMMANDS = {
     "lint": ("lore_core.lint", "main"),
     "migrate": ("lore_core.migrate", "main"),
-    # filled in as modules land:
-    # "search": ("lore_search.cli", "main"),
-    # "mcp":     ("lore_mcp.server", "main"),
-    # "init":    ("lore_cli.init_cmd", "main"),
+    "hook": ("lore_cli.hooks", "main"),
+    "search": ("lore_search.cli", "main"),
+    "mcp": ("lore_mcp.server", "main"),
+    "curator": ("lore_curator.core", "main"),
+    "init": ("lore_cli.init_cmd", "main"),
+    "new-wiki": ("lore_cli.new_wiki_cmd", "main"),
 }
 
 

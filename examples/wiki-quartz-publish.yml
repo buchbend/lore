@@ -1,0 +1,67 @@
+# Reference GitHub Actions workflow: build a Quartz static site from a
+# wiki's notes and deploy to GitHub Pages. Publishes only notes with
+# `publish: true` in frontmatter.
+#
+# Pick this up when your team wants a browseable public wiki. Not
+# required for Lore itself to work.
+
+name: Publish Quartz site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Clone Quartz
+        run: git clone https://github.com/jackyzha0/quartz.git _quartz
+
+      - name: Copy wiki notes (publish: true only) into content/
+        run: |
+          cd _quartz
+          npm ci
+          mkdir -p content
+          # Quartz's ExplicitPublish filter handles the publish: true gate
+          rsync -av --exclude '.git' --exclude '_catalog.json' \
+                --exclude '_index.md' --exclude 'llms.txt' \
+                ../ content/
+
+      - name: Build
+        run: |
+          cd _quartz
+          npx quartz build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _quartz/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

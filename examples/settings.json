@@ -1,0 +1,42 @@
+{
+  "// comment": "Example Claude Code settings.json wiring the Lore hooks.",
+  "// install": "Merge these entries into your ~/.claude/settings.json",
+  "// cwd": "Claude Code passes CLAUDE_PROJECT_DIR; hooks use it to scope by repo",
+
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook session-start --cwd \"$CLAUDE_PROJECT_DIR\""
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook pre-compact --cwd \"$CLAUDE_PROJECT_DIR\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook stop"
+          }
+        ]
+      }
+    ]
+  },
+
+  "env": {
+    "LORE_ROOT": "$HOME/lore"
+  }
+}

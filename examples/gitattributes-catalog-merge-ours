@@ -1,0 +1,10 @@
+# Append the following lines to a wiki repo's .gitattributes.
+#
+# Generated files (the linter regenerates them on every run) — conflicts
+# on these are always safe to resolve by taking the current branch's
+# version, because `lore lint` will regenerate them immediately after.
+
+_catalog.json  merge=ours
+_index.md      merge=ours
+llms.txt       merge=ours
+_review.md     merge=ours

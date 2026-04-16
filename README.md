@@ -54,7 +54,7 @@ pip install pyyaml rich typer
 cd lore && pip install -e .
 ```
 
-## Three onboarding recipes
+## Two onboarding recipes
 
 ### 1. Polymath — many wikis, one brain
 
@@ -81,17 +81,6 @@ ln -s ~/git/myorg/team-knowledge ~/lore/wiki/team
 ```
 
 All `/lore:*` commands work with a single mount; no routing prompts.
-
-### 3. Used with gitnexus — two knowledge graphs in one session
-
-[Gitnexus](https://github.com/abhigyanpatwari/GitNexus) indexes code
-structure (ASTs, call chains). Lore indexes *decisions and process*.
-They're orthogonal — install both. An agent with both will:
-
-- Call gitnexus when asking "what does function X call?"
-- Call `lore_search` when asking "why did we pick X over Y?"
-
-No MCP namespace collision (`lore_*` vs `gitnexus_*`).
 
 ## Scheduling the curator — cost-free defaults
 
@@ -135,11 +124,12 @@ No files move. If your vault does not yet match the canonical shape,
   points: session extraction, contradiction checks, import enrichment,
   curator review, briefing prose.
 - **Compose, don't replace.** Skills orchestrate; MCP and CLI tools
-  provide retrieval primitives; peer tools (gitnexus, Basic Memory)
-  layer alongside.
-- **No PreToolUse auto-enrichment.** Code context (what gitnexus does)
-  is factual; vault context is opinion-heavy. Wrong auto-injection
-  actively misleads. Lore is token-preserving by default.
+  provide retrieval primitives; peer knowledge tools layer alongside.
+- **No PreToolUse auto-enrichment.** Auto-injecting vault content on
+  every tool call burns tokens and risks misleading the agent when the
+  vault is stale. Lore is token-preserving by default: deterministic
+  context is injected once at session start; the agent pulls more via
+  MCP when it decides retrieval would help.
 
 ## License
 

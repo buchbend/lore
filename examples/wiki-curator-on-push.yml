@@ -1,0 +1,56 @@
+# Reference GitHub Actions workflow: run `lore curator` incrementally
+# on every push to a wiki repo's main branch. Flags stale notes, detects
+# supersession, backfills dates from git log.
+#
+# COST: This workflow invokes `lore curator` (frontmatter-only; no LLM
+# calls in the current implementation) so the per-run cost is $0. If you
+# later wire in an LLM-backed review pass, add a cost note here.
+
+name: Lore curator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+
+permissions:
+  contents: write  # required to push the curator's frontmatter patches
+
+jobs:
+  curate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.LORE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Lore
+        run: |
+          pip install --upgrade pip
+          pip install git+https://github.com/buchbend/lore.git@main
+
+      - name: Run curator
+        env:
+          LORE_ROOT: ${{ github.workspace }}/.lore-root
+        run: |
+          mkdir -p "$LORE_ROOT/wiki"
+          ln -s "$GITHUB_WORKSPACE" "$LORE_ROOT/wiki/this"
+          lore curator --wiki this --apply
+
+      - name: Commit curator patches
+        run: |
+          git config user.name "lore-curator[bot]"
+          git config user.email "lore-curator@users.noreply.github.com"
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add -A
+            git commit -m "lore: curator pass ${GITHUB_SHA::8}"
+            git push
+          else
+            echo "No changes."
+          fi

@@ -1,8 +1,12 @@
-"""lore_curator — per-wiki maintenance (staleness, supersession, catalogs).
+"""lore_curator — per-wiki maintenance that keeps auto-inject trustworthy.
 
-Phase A scope. Runs on-schedule or on-push. Frontmatter-only edits by
-default; body edits require user approval. Guards against concurrent
-Obsidian edits via mtime checks.
-
-Not implemented in v0.1.
+Flags stale notes (> 90d since last_reviewed), detects superseded
+decisions from `supersedes [[X]]` refs, backfills missing `created` /
+`last_reviewed` from git log. Frontmatter-only edits; mtime guard
+against Obsidian edit races.
 """
+
+from lore_curator.core import main, run_curator
+
+__all__ = ["main", "run_curator"]
+
