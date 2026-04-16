@@ -22,10 +22,12 @@ SETTINGS_FILE="${HOME}/.claude/settings.json"
 
 WITH_HOOKS=0
 SKIP_PIPX=0
+LORE_ROOT_ARG=""
 for arg in "$@"; do
     case "$arg" in
         --with-hooks) WITH_HOOKS=1 ;;
         --skip-pipx)  SKIP_PIPX=1 ;;
+        --lore-root=*) LORE_ROOT_ARG="${arg#--lore-root=}" ;;
         -h|--help)
             sed -n '2,20p' "$0"
             exit 0
@@ -92,7 +94,46 @@ ok "Linked $linked skill(s)"
 echo "   (existing vault:* skills left untouched — lore:* coexists)"
 
 # ----------------------------------------------------------------------
-# 3. Offer to merge hooks
+# 3. Resolve and persist LORE_ROOT in settings.json env block
+# ----------------------------------------------------------------------
+
+say "Setting LORE_ROOT"
+
+resolved_root=""
+if [[ -n "$LORE_ROOT_ARG" ]]; then
+    resolved_root="$LORE_ROOT_ARG"
+elif [[ -n "${LORE_ROOT:-}" ]]; then
+    resolved_root="$LORE_ROOT"
+elif [[ -d "$HOME/lore/wiki" ]]; then
+    resolved_root="$HOME/lore"
+elif [[ -d "$HOME/git/vault/wiki" ]]; then
+    resolved_root="$HOME/git/vault"
+fi
+
+if [[ -z "$resolved_root" ]]; then
+    warn "No existing vault detected. Either:"
+    warn "  • run \`lore init\` to create one at ~/lore, then re-run this installer"
+    warn "  • re-run with --lore-root=/path/to/your/vault"
+else
+    python3 - "$SETTINGS_FILE" "$resolved_root" <<'PYEOF'
+import json, sys
+from pathlib import Path
+path, root = Path(sys.argv[1]), sys.argv[2]
+path.parent.mkdir(parents=True, exist_ok=True)
+cfg = json.loads(path.read_text()) if path.exists() else {}
+env = cfg.setdefault("env", {})
+if env.get("LORE_ROOT") != root:
+    env["LORE_ROOT"] = root
+    path.write_text(json.dumps(cfg, indent=2) + "\n")
+    print(f"  LORE_ROOT={root} written to {path}")
+else:
+    print(f"  LORE_ROOT={root} already set")
+PYEOF
+    ok "LORE_ROOT persisted"
+fi
+
+# ----------------------------------------------------------------------
+# 4. Offer to merge hooks
 # ----------------------------------------------------------------------
 
 HOOKS_BLOCK='{
@@ -154,7 +195,7 @@ PYEOF
 fi
 
 # ----------------------------------------------------------------------
-# 4. Next steps
+# 5. Next steps
 # ----------------------------------------------------------------------
 
 cat <<EOF
@@ -162,20 +203,21 @@ cat <<EOF
 $(say "Done.")
 
 Next steps:
-  1. Set LORE_ROOT if your vault lives outside ~/lore:
-       export LORE_ROOT=/path/to/your/vault
-     (add to ~/.bashrc / ~/.zshrc / settings.json env)
+  1. Open a new Claude Code session — you should see a one-liner from
+     the SessionStart hook:
+       lore: loaded <wiki> (N notes, M open items) · /lore:why
 
-  2. If starting fresh:
+  2. If instead you see 'no vault at LORE_ROOT=...', re-run:
+       ./install.sh --lore-root=/path/to/your/vault --with-hooks
+
+  3. Starting from scratch? Run:
        lore init
-       lore new-wiki <name>    # or: ln -s /path/to/wiki \$LORE_ROOT/wiki/<name>
+       lore new-wiki <name>
 
-  3. Seed the catalogs and search index:
+  4. Seed catalogs + search index:
        lore lint
        lore search --reindex
 
-  4. (Optional) Enable hooks: ./install.sh --with-hooks
-
-  5. (Optional, for teams) Register the MCP server with any MCP client:
+  5. (Teams) Register the MCP server with any MCP client:
        server = "lore mcp" (STDIO)
 EOF

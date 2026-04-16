@@ -198,9 +198,16 @@ def _stale_count(wiki: Path) -> int:
 
 def _session_start(cwd: str | None) -> str:
     """Build the SessionStart context block."""
+    import os
+
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
-        return ""
+        # Visible diagnostic — silent failure is worse than an "I'm here" line
+        hint = os.environ.get("LORE_ROOT") or "(unset, defaulting to ~/lore)"
+        return (
+            f"lore: no vault at LORE_ROOT={hint}. "
+            "Set LORE_ROOT to your vault path or run `lore init` to scaffold one."
+        )
 
     # Repo-scoped wiki resolution
     repo = current_repo(cwd)
@@ -213,7 +220,13 @@ def _session_start(cwd: str | None) -> str:
             wiki = wikis[0]
 
     if wiki is None:
-        return ""
+        if repo:
+            return (
+                f"lore: no wiki covers `{repo}` in {wiki_root}. "
+                "Tag a wiki's `.lore-hints.yml` with this repo or "
+                "run `/lore:session` — session auto-tags populate over time."
+            )
+        return f"lore: no wiki resolved in {wiki_root}. Pick one with `/lore:resume <wiki>`."
 
     index_text = _read_wiki_index(wiki, MAX_CONTEXT_CHARS - 400)
     open_items = _recent_open_items(wiki)
