@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# Lore — one-shot installer.
+#
+# What this does:
+#   1. Installs the `lore` CLI via pipx (preferred) or pip (fallback)
+#   2. Symlinks every skill into ~/.claude/skills/lore:*
+#   3. Offers to merge the SessionStart / PreCompact / Stop hooks into
+#      ~/.claude/settings.json (opt-in, with a clear preview of the diff)
+#   4. Prints next steps (set LORE_ROOT, run `lore init`, etc.)
+#
+# Safe to re-run (idempotent). Existing vault:* skills stay untouched —
+# lore:* coexists with them.
+#
+# Usage:
+#   cd ~/git/lore && ./install.sh [--with-hooks] [--skip-pipx]
+
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILLS_DIR="${HOME}/.claude/skills"
+SETTINGS_FILE="${HOME}/.claude/settings.json"
+
+WITH_HOOKS=0
+SKIP_PIPX=0
+for arg in "$@"; do
+    case "$arg" in
+        --with-hooks) WITH_HOOKS=1 ;;
+        --skip-pipx)  SKIP_PIPX=1 ;;
+        -h|--help)
+            sed -n '2,20p' "$0"
+            exit 0
+            ;;
+    esac
+done
+
+say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
+ok()  { printf '\033[1;32m ok\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m !!\033[0m %s\n' "$*"; }
+
+# ----------------------------------------------------------------------
+# 1. Install the Python CLI
+# ----------------------------------------------------------------------
+
+say "Installing the lore CLI"
+
+if [[ "$SKIP_PIPX" -eq 0 ]] && command -v pipx >/dev/null 2>&1; then
+    pipx install --force --editable "$REPO_DIR"
+    ok "Installed via pipx (editable)"
+elif command -v uv >/dev/null 2>&1; then
+    # uv tool install works like pipx for Python CLIs
+    uv tool install --force --editable "$REPO_DIR"
+    ok "Installed via uv tool (editable)"
+elif command -v pip >/dev/null 2>&1; then
+    pip install --user --editable "$REPO_DIR"
+    ok "Installed via pip --user (editable)"
+else
+    warn "No pipx / uv / pip found. Install one, then re-run."
+    exit 1
+fi
+
+if ! command -v lore >/dev/null 2>&1; then
+    warn "Installed, but 'lore' is not on PATH yet."
+    warn "Try: pipx ensurepath; and reopen your shell. Then re-run."
+    # Continue — skills and hooks still useful
+fi
+
+# ----------------------------------------------------------------------
+# 2. Symlink skills
+# ----------------------------------------------------------------------
+
+say "Linking skills into $SKILLS_DIR"
+
+mkdir -p "$SKILLS_DIR"
+linked=0
+for skill_dir in "$REPO_DIR"/skills/lore:*/; do
+    name="$(basename "$skill_dir")"
+    target="$SKILLS_DIR/$name"
+    if [[ -L "$target" ]]; then
+        current="$(readlink "$target")"
+        if [[ "$current" == "$skill_dir" || "$current" == "${skill_dir%/}" ]]; then
+            continue
+        fi
+        rm "$target"
+    elif [[ -e "$target" ]]; then
+        warn "$target exists and is not a symlink; skipping"
+        continue
+    fi
+    ln -s "$skill_dir" "$target"
+    linked=$((linked + 1))
+done
+ok "Linked $linked skill(s)"
+echo "   (existing vault:* skills left untouched — lore:* coexists)"
+
+# ----------------------------------------------------------------------
+# 3. Offer to merge hooks
+# ----------------------------------------------------------------------
+
+HOOKS_BLOCK='{
+  "SessionStart": [{"hooks": [{"type": "command", "command": "lore hook session-start --cwd \"$CLAUDE_PROJECT_DIR\""}]}],
+  "PreCompact":   [{"hooks": [{"type": "command", "command": "lore hook pre-compact --cwd \"$CLAUDE_PROJECT_DIR\""}]}],
+  "Stop":         [{"hooks": [{"type": "command", "command": "lore hook stop"}]}]
+}'
+
+say "Hooks configuration"
+
+if [[ "$WITH_HOOKS" -eq 0 ]]; then
+    cat <<EOF
+Magic context injection (SessionStart / PreCompact / Stop) is opt-in.
+To enable, re-run with --with-hooks, or manually merge the following
+into ~/.claude/settings.json under "hooks":
+
+$HOOKS_BLOCK
+
+Doc: examples/settings.json
+EOF
+else
+    if ! command -v python3 >/dev/null 2>&1; then
+        warn "python3 not found — skip hook merge. Edit settings.json manually."
+    else
+        python3 - "$SETTINGS_FILE" <<'PYEOF'
+import json, os, sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+path.parent.mkdir(parents=True, exist_ok=True)
+cfg = json.loads(path.read_text()) if path.exists() else {}
+
+hooks = cfg.setdefault("hooks", {})
+added = []
+desired = {
+    "SessionStart": {"type": "command", "command": 'lore hook session-start --cwd "$CLAUDE_PROJECT_DIR"'},
+    "PreCompact":   {"type": "command", "command": 'lore hook pre-compact --cwd "$CLAUDE_PROJECT_DIR"'},
+    "Stop":         {"type": "command", "command": "lore hook stop"},
+}
+for event, cmd in desired.items():
+    group_list = hooks.setdefault(event, [])
+    already = any(
+        any(h.get("command") == cmd["command"] for h in grp.get("hooks", []))
+        for grp in group_list
+    )
+    if already:
+        continue
+    group_list.append({"hooks": [cmd]})
+    added.append(event)
+
+if added:
+    path.write_text(json.dumps(cfg, indent=2) + "\n")
+    print(f"  added hooks: {', '.join(added)}")
+else:
+    print("  all hooks already configured")
+PYEOF
+        ok "Hooks merged into $SETTINGS_FILE"
+    fi
+fi
+
+# ----------------------------------------------------------------------
+# 4. Next steps
+# ----------------------------------------------------------------------
+
+cat <<EOF
+
+$(say "Done.")
+
+Next steps:
+  1. Set LORE_ROOT if your vault lives outside ~/lore:
+       export LORE_ROOT=/path/to/your/vault
+     (add to ~/.bashrc / ~/.zshrc / settings.json env)
+
+  2. If starting fresh:
+       lore init
+       lore new-wiki <name>    # or: ln -s /path/to/wiki \$LORE_ROOT/wiki/<name>
+
+  3. Seed the catalogs and search index:
+       lore lint
+       lore search --reindex
+
+  4. (Optional) Enable hooks: ./install.sh --with-hooks
+
+  5. (Optional, for teams) Register the MCP server with any MCP client:
+       server = "lore mcp" (STDIO)
+EOF

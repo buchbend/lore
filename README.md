@@ -40,19 +40,39 @@ $LORE_ROOT/                 # default ~/lore (or set LORE_ROOT=...)
 Each wiki is an independent git repo. Access control, shipping, history
 stay at the repo boundary; Obsidian sees one unified graph via symlinks.
 
-## Installation (once the plugin repo is public)
+## Install
+
+One command, coexists with anything you already have:
+
+```bash
+git clone https://github.com/buchbend/lore.git
+cd lore && ./install.sh --with-hooks
+```
+
+What the installer does:
+
+1. Installs the `lore` CLI (via `pipx`, `uv tool`, or `pip --user`, in
+   that order of preference)
+2. Symlinks every skill into `~/.claude/skills/lore:*` — Claude Code
+   picks them up automatically. Existing skills are left alone.
+3. If you passed `--with-hooks`: merges SessionStart / PreCompact / Stop
+   entries into `~/.claude/settings.json` (idempotent — re-running is
+   a no-op).
+
+Uninstall / disable hooks is just the inverse: delete the symlinks in
+`~/.claude/skills/lore:*` and the `hooks` entries in `settings.json`.
+
+### As a Claude Code plugin (via marketplace)
+
+The repo is a self-describing marketplace. Once published, you can do:
 
 ```
-/plugin install <handle>/lore
+/plugin marketplace add buchbend/lore
+/plugin install lore@lore
 ```
 
-Python deps for the core (linter, migration):
-
-```
-pip install pyyaml rich typer
-# or with the repo cloned:
-cd lore && pip install -e .
-```
+This gives you the skills but not the Python CLI or hooks — the
+`install.sh` path above remains the most complete install.
 
 ## Two onboarding recipes
 

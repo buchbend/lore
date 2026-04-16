@@ -1,0 +1,17 @@
+{
+  "name": "lore",
+  "description": "LLM-optimized knowledge graph for AI-coding teams — session notes, auto-extracted knowledge, pluggable briefings, magic context injection at session start.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Christof Buchbender"
+  },
+  "homepage": "https://github.com/buchbend/lore",
+  "license": "MIT",
+  "keywords": [
+    "knowledge-graph",
+    "obsidian",
+    "mcp",
+    "session-notes",
+    "rag"
+  ]
+}
