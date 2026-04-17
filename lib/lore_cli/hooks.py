@@ -76,7 +76,7 @@ def _wiki_hints(wiki: Path) -> dict:
         import yaml
 
         return yaml.safe_load(hints_path.read_text()) or {}
-    except (OSError, Exception):
+    except Exception:
         return {}
 
 
@@ -288,8 +288,6 @@ def _session_start(cwd: str | None) -> str:
         this repo. Other open items become a one-line "elsewhere" note.
       - When no repo is resolved, degrade to a wiki-level summary.
     """
-    import os
-
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
         hint = os.environ.get("LORE_ROOT") or "(unset, defaulting to ~/lore)"
@@ -387,10 +385,12 @@ def _session_start(cwd: str | None) -> str:
 
 
 def _pre_compact(cwd: str | None) -> str:
-    """Build a minimal open-items summary to survive compaction.
+    """One-line hint that survives compaction.
 
-    Kept deliberately thinner than session-start: only the items, no index
-    (the agent has already seen the index this session).
+    PreCompact emits into `systemMessage`, which is a visible banner
+    to the user on every compaction — so we keep it to one short line.
+    The full open-items context is already in SessionStart's
+    additionalContext and stays with the agent until manually cleared.
     """
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
@@ -408,10 +408,11 @@ def _pre_compact(cwd: str | None) -> str:
     if not items:
         return ""
 
-    parts = ["## Open items (carry across compaction)", ""]
-    for item in items[:MAX_OPEN_ITEMS_INLINE]:
-        parts.append(f"- {item}")
-    return "\n".join(parts) + "\n"
+    scope = wiki.name if repo is None else f"{wiki.name}:{repo.rsplit('/', 1)[-1]}"
+    return (
+        f"lore: {len(items)} open items for {scope} carry past compaction — "
+        "run /lore:resume if the agent needs them refreshed."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -447,17 +448,26 @@ def _first_line(text: str) -> str:
 def _emit(hook_event: str, text: str, *, plain: bool) -> None:
     """Emit hook output in the format Claude Code expects.
 
-    Default: JSON envelope with `hookSpecificOutput` (the documented way
-    for SessionStart / PreCompact to inject `additionalContext` — the
-    agent sees it but the user does not).
+    The authoritative schema (docs.claude.com, 2026-04) differs per event:
 
-    We also echo the one-liner status to stderr so the user sees
-    "lore: loaded …" in their terminal at session start. Stderr from
-    hooks is surfaced to the user by Claude Code; stdout is parsed as
-    JSON.
+      SessionStart — both `systemMessage` (top-level, visible banner to
+        the user and injected as context to Claude) and
+        `hookSpecificOutput.additionalContext` (quietly injected full
+        body for the agent to consume) are allowed. We use both so the
+        user sees a one-liner in the transcript and the agent gets the
+        full focus/open-items context.
 
-    `--plain` dumps raw text to stdout — useful for manual inspection
-    and for the /lore:why skill.
+      PreCompact — `hookSpecificOutput` is NOT allowed for this event.
+        Only top-level fields (`systemMessage`, `continue`, etc.) are
+        valid. We pack the open-items summary into `systemMessage` —
+        which Claude Code injects as context on the next turn per the
+        docs, so it survives the compaction boundary.
+
+      Stop — `hookSpecificOutput` is NOT allowed. Only top-level fields.
+        We emit the hint via `systemMessage`.
+
+    `--plain` dumps raw text to stdout — used by the /lore:why skill and
+    for manual inspection.
     """
     if plain:
         if text:
@@ -467,18 +477,25 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
         return
     if not text:
         return
-    # Visible to the user: a single status line on stderr
+
     one_liner = _first_line(text)
-    if one_liner:
-        sys.stderr.write(one_liner + "\n")
-        sys.stderr.flush()
-    # Visible to the agent: full context as additionalContext
-    envelope = {
-        "hookSpecificOutput": {
-            "hookEventName": hook_event,
-            "additionalContext": text,
+    envelope: dict
+
+    if hook_event == "SessionStart":
+        envelope = {
+            "systemMessage": one_liner,
+            "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": text,
+            },
         }
-    }
+    elif hook_event == "PreCompact":
+        envelope = {"systemMessage": text}
+    elif hook_event == "Stop":
+        envelope = {"systemMessage": text.strip()}
+    else:
+        envelope = {"systemMessage": text}
+
     sys.stdout.write(json.dumps(envelope))
     sys.stdout.write("\n")
 
