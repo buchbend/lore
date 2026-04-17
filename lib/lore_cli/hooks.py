@@ -18,16 +18,20 @@ import argparse
 import json
 import os
 import re
-import shlex
-import subprocess
 import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+from lore_core import gh as _gh_mod
 from lore_core.config import get_wiki_root
 from lore_core.git import current_repo
 from lore_core.io import atomic_write_text
 from lore_core.schema import parse_frontmatter
+from lore_core.scopes import (
+    load_scopes_yml,
+    subtree_siblings,
+    walk_scope_leaves,
+)
 
 from lore_cli.attach_cmd import read_attach
 
@@ -435,107 +439,25 @@ def _find_lore_config(cwd: Path) -> tuple[Path, dict] | None:
     return None
 
 
-def _load_scopes_yml(wiki_path: Path) -> dict:
-    """Load `_scopes.yml` from a wiki root, or {} if absent / malformed."""
-    path = wiki_path / "_scopes.yml"
-    if not path.exists():
-        return {}
-    try:
-        import yaml
-
-        return yaml.safe_load(path.read_text()) or {}
-    except Exception:
-        return {}
+# Scope helpers now live in `lore_core.scopes` so the `lore resume` CLI
+# can share them. Local underscore-prefixed delegates kept so tests that
+# monkeypatch these names against the `hooks` module continue to work.
+_load_scopes_yml = load_scopes_yml
+_walk_scope_leaves = walk_scope_leaves
+_subtree_siblings = subtree_siblings
 
 
-def _walk_scope_leaves(tree: dict, prefix: list[str] | None = None):
-    """Yield (scope_path, repo_slug) for every leaf with a `repo:` field.
-
-    Traverses the nested `children:` structure of `_scopes.yml`.
-    """
-    if prefix is None:
-        prefix = []
-    if not isinstance(tree, dict):
-        return
-    for key, value in tree.items():
-        if not isinstance(value, dict):
-            continue
-        path = prefix + [key]
-        repo = value.get("repo")
-        if repo:
-            yield ":".join(path), repo
-        children = value.get("children")
-        if children:
-            yield from _walk_scope_leaves(children, path)
+# gh wrappers moved to `lore_core.gh`. The underscore-prefixed names are
+# kept as thin delegates so tests that monkeypatch `hooks._run_gh` still
+# intercept every call made from this module.
 
 
-def _subtree_siblings(
-    scopes_yml: dict,
-    current_scope: str,
-) -> list[tuple[str, str]]:
-    """Return (scope_path, repo_slug) for repos in the parent subtree.
-
-    Excludes the current scope itself. Returns [] if `current_scope` has
-    no parent (top-level scope) or if the `_scopes.yml` is empty/missing.
-    """
-    scopes = scopes_yml.get("scopes") or scopes_yml
-    parts = current_scope.split(":")
-    if len(parts) < 2:
-        return []
-    parent_prefix = ":".join(parts[:-1])
-    out: list[tuple[str, str]] = []
-    for path, repo in _walk_scope_leaves(scopes):
-        if path == current_scope:
-            continue
-        if path.startswith(parent_prefix + ":") or path == parent_prefix:
-            out.append((path, repo))
-    return out
+def _split_filter(raw: str | None) -> list[str]:
+    return _gh_mod.split_filter(raw)
 
 
-def _split_filter(raw: str) -> list[str]:
-    """Split a filter string (from CLAUDE.md `issues:` / `prs:`) into argv.
-
-    Uses shlex so quoted strings survive. Empty input returns [].
-    """
-    raw = (raw or "").strip()
-    if not raw:
-        return []
-    try:
-        return shlex.split(raw)
-    except ValueError:
-        # Malformed quoting — fall back to whitespace split rather than erroring.
-        return raw.split()
-
-
-def _run_gh(
-    kind: str,
-    repo: str,
-    filter_args: list[str],
-) -> list[dict]:
-    """Call `gh <kind> list` for `repo` and return parsed JSON.
-
-    `kind` is `"issue"` or `"pr"`. Returns [] on any failure — gh
-    missing, network issues, auth problems, unknown repo. SessionStart
-    must never block on gh.
-    """
-    fields = "number,title,state" if kind == "issue" else "number,title,state,isDraft"
-    cmd = ["gh", kind, "list", "--repo", repo, "--json", fields, *filter_args]
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=GH_TIMEOUT_SECONDS,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    if result.returncode != 0:
-        return []
-    try:
-        return json.loads(result.stdout) or []
-    except json.JSONDecodeError:
-        return []
+def _run_gh(kind: str, repo: str, filter_args: list[str]) -> list[dict]:
+    return _gh_mod.run_gh(kind, repo, filter_args)
 
 
 def _gh_issues(repo: str, filter_str: str) -> list[dict]:
@@ -547,16 +469,11 @@ def _gh_prs(repo: str, filter_str: str) -> list[dict]:
 
 
 def _format_issue_line(issue: dict) -> str:
-    number = issue.get("number")
-    title = issue.get("title") or ""
-    return f"- #{number} {title}".rstrip()
+    return _gh_mod.format_issue_line(issue)
 
 
 def _format_pr_line(pr: dict) -> str:
-    number = pr.get("number")
-    title = pr.get("title") or ""
-    draft = " [draft]" if pr.get("isDraft") else ""
-    return f"- #{number}{draft} {title}".rstrip()
+    return _gh_mod.format_pr_line(pr)
 
 
 # ---------------------------------------------------------------------------

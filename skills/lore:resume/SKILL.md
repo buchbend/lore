@@ -25,10 +25,32 @@ automatically. This skill is the manual / deeper form.
 ## Invocation patterns
 
 - `/lore:resume` — last 3 days across all wikis (lightweight)
+- `/lore:resume <scope-prefix>` — expand a scope subtree (e.g.
+  `ccat:data-center`) — aggregates live issues, PRs, and recent
+  session notes for every repo in the subtree. Routes to `lore
+  resume --scope` (fast CLI path). **Tell from pattern**: argument
+  contains a `:` or matches a known scope.
 - `/lore:resume <wiki>` — scope to one wiki's sessions + knowledge
 - `/lore:resume <keyword>` — keyword search, loads matching notes
 - `/lore:resume last week` — broader time window
 - `/lore:resume <wiki> <keyword>` — scope + keyword
+
+### Scope-prefix path (CLI-backed)
+
+When the argument looks like a scope (contains a colon), run:
+
+```
+lore resume --scope <prefix>
+```
+
+The CLI reads `_scopes.yml`, queries `gh issue list` + `gh pr list`
+for every repo in the subtree with the default filters
+(`--assignee @me --state open` for issues, `--author @me` for PRs),
+and lists recent session notes touching the scope. It prints
+pre-formatted markdown — your job is just to display it.
+
+Pass `--issues "..."` / `--prs "..."` to override the default filters
+if the user asks for a broader view (e.g. `--all-assignees`).
 
 ## Workflow
 

@@ -19,13 +19,13 @@ from pathlib import Path
 
 from lore_core.config import get_wiki_root
 from lore_core.lint import (
-    KNOWLEDGE_DIRS,
     SKIP_DIRS,
     SKIP_FILES,
     discover_notes,
     discover_wikis,
 )
 from lore_core.schema import parse_frontmatter
+
 from lore_search.backend import SearchHit
 
 DEFAULT_CACHE = Path.home() / ".cache" / "lore"

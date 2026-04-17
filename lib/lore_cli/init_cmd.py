@@ -7,9 +7,8 @@ import shutil
 import sys
 from pathlib import Path
 
-from rich.console import Console
-
 from lore_core.config import get_lore_root
+from rich.console import Console
 
 console = Console()
 

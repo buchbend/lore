@@ -29,7 +29,6 @@ from lore_core.config import get_wiki_root
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
-
 # ---------------------------------------------------------------------------
 # Handlers (pure Python, usable by the MCP wrapper or a test harness)
 # ---------------------------------------------------------------------------
