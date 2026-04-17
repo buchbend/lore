@@ -1,7 +1,7 @@
 ---
 name: lore:why
-description: Show exactly what Lore auto-injected into this session (the
-  output the SessionStart hook emitted). Run with "/lore:why".
+description: Show the exact context block Lore injected at session start.
+  Reads from cache — no bash, no permission prompt. Run with "/lore:why".
 user_invocable: true
 ---
 
@@ -13,30 +13,32 @@ that the agent is working from.
 
 ## Implementation
 
-Run exactly one command — no catalog inspection, no diagnostic scripts,
-no shell variable expansion:
+SessionStart writes its injected context to a cache file. Read it
+directly — **do not** run any bash subcommand:
 
-```bash
-lore hook session-start --plain
-```
+- Primary cache: `$HOME/.cache/lore/last-session-start.md`
+- If `LORE_CACHE` is set in the environment, use
+  `$LORE_CACHE/last-session-start.md` instead
 
-The hook auto-detects CWD from the process working directory (which
-Claude Code sets to the project dir when spawning skills/bash). Do not
-add `--cwd "$CLAUDE_PROJECT_DIR"` — shell variable expansion triggers
-Claude Code's `simple_expansion` permission prompt every time.
+If the file does not exist, it means SessionStart has not fired yet in
+this session (or the hooks are disabled). Tell the user so and suggest:
 
-Display the output verbatim. If empty, the hook couldn't resolve a
-wiki — tell the user the likely cause (no `LORE_ROOT` set, no matching
-wiki in `$LORE_ROOT/wiki/`, or no `.lore-hints.yml` listing the current
-repo).
+- Check `~/.claude/settings.json` has the `SessionStart` hook pointing
+  at `lore hook session-start`
+- Or re-run the installer: `cd <lore-repo> && ./install.sh --with-hooks`
 
 ## Do not
 
-- Do **not** run `grep` / `find` / `python3 -c` / catalog introspection.
-  One command is enough.
-- Do **not** pass flags other than `--cwd` and `--plain`.
-- Do **not** read `_catalog.json` / `_index.md` directly — the hook's
-  output is the canonical answer.
+- Do **not** invoke `lore hook session-start` via Bash — that re-runs
+  the hook and triggers the sandbox path. Read the cached file.
+- Do **not** grep the catalog or read wiki notes here. This skill's
+  only job is to print the cached injection verbatim.
+
+## Output
+
+Print the file contents exactly as written (it's already markdown),
+then add a one-line summary noting the wiki + repo scope for
+convenience.
 
 ## Related
 

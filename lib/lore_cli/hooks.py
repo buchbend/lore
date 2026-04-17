@@ -24,7 +24,17 @@ from pathlib import Path
 
 from lore_core.config import get_wiki_root
 from lore_core.git import current_repo
+from lore_core.io import atomic_write_text
 from lore_core.schema import parse_frontmatter
+
+# Cache file SessionStart writes; /lore:why reads this instead of
+# re-running the hook (no Bash subprocess, no sandbox, no permission
+# prompt).
+def _cache_path() -> Path:
+    cache_dir = Path(
+        os.environ.get("LORE_CACHE", str(Path.home() / ".cache" / "lore"))
+    )
+    return cache_dir / "last-session-start.md"
 
 # Keep auto-injected context bounded. ~500 tokens ≈ ~2000 characters for
 # prose; we cap at 2000 to stay tight.
@@ -482,6 +492,14 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
     envelope: dict
 
     if hook_event == "SessionStart":
+        # Cache the full injected body so `/lore:why` can Read it
+        # directly without invoking Bash (which triggers sandbox /
+        # permission prompts on some setups). Ignore cache write
+        # errors — they must never break the hook.
+        try:
+            atomic_write_text(_cache_path(), text)
+        except OSError:
+            pass
         envelope = {
             "systemMessage": one_liner,
             "hookSpecificOutput": {

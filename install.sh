@@ -164,9 +164,12 @@ fi
 
 HOOKS_BLOCK='{
   "SessionStart": [{"hooks": [{"type": "command", "command": "lore hook session-start"}]}],
-  "PreCompact":   [{"hooks": [{"type": "command", "command": "lore hook pre-compact"}]}],
-  "Stop":         [{"hooks": [{"type": "command", "command": "lore hook stop"}]}]
+  "PreCompact":   [{"hooks": [{"type": "command", "command": "lore hook pre-compact"}]}]
 }'
+# Note: Stop hook is intentionally omitted. Claude Code `Stop` fires
+# on every agent turn (not at session end), so a "consider /lore:session"
+# hint becomes noisy. Run /lore:session manually at the end of a
+# working session instead.
 
 say "Hooks configuration"
 
@@ -202,32 +205,41 @@ hooks = cfg.setdefault("hooks", {})
 desired = {
     "SessionStart": {"type": "command", "command": "lore hook session-start"},
     "PreCompact":   {"type": "command", "command": "lore hook pre-compact"},
-    "Stop":         {"type": "command", "command": "lore hook stop"},
 }
 
-# Old commands that this version supersedes — remove them so re-install
-# migrates a user from the old expansion-containing form.
+# Old commands this version supersedes. Including the Stop hook —
+# it fired every agent turn (not at session end) and was noise.
+# Re-install migrates users automatically.
 stale_commands = {
     'lore hook session-start --cwd "$CLAUDE_PROJECT_DIR"',
     'lore hook pre-compact --cwd "$CLAUDE_PROJECT_DIR"',
+    "lore hook stop",
 }
 
 added, removed = [], []
-for event, cmd in desired.items():
-    group_list = hooks.setdefault(event, [])
-    # Drop stale groups for this event
+
+# Strip stale commands across ALL events (including events like Stop
+# that we no longer install). If an event ends up with no groups, drop
+# the event entirely.
+for event in list(hooks.keys()):
+    group_list = hooks[event]
     new_groups = []
     for grp in group_list:
-        kept_hooks = [
+        kept = [
             h for h in grp.get("hooks", []) if h.get("command") not in stale_commands
         ]
-        if kept_hooks:
-            if len(kept_hooks) != len(grp.get("hooks", [])):
-                removed.append(event)
-            new_groups.append({**grp, "hooks": kept_hooks})
-        else:
+        if len(kept) != len(grp.get("hooks", [])):
             removed.append(event)
-    group_list[:] = new_groups
+        if kept:
+            new_groups.append({**grp, "hooks": kept})
+    if new_groups:
+        hooks[event] = new_groups
+    else:
+        del hooks[event]
+
+# Install desired commands if absent
+for event, cmd in desired.items():
+    group_list = hooks.setdefault(event, [])
     already = any(
         any(h.get("command") == cmd["command"] for h in grp.get("hooks", []))
         for grp in group_list
