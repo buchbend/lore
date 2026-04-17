@@ -24,11 +24,23 @@ from pathlib import Path
 
 from lore_core.config import get_wiki_root
 from lore_core.git import current_repo
+from lore_core.schema import parse_frontmatter
 
 # Keep auto-injected context bounded. ~500 tokens ≈ ~2000 characters for
-# prose; we cap at 3000 to allow some structure.
-MAX_CONTEXT_CHARS = 3000
-RECENT_SESSION_DAYS = 7
+# prose; we cap at 2000 to stay tight.
+MAX_CONTEXT_CHARS = 2000
+RECENT_SESSION_DAYS = 14
+MAX_OPEN_ITEMS_INLINE = 5
+
+# Lines we never promote to the SessionStart open-items list — they're
+# either explicitly marked ephemeral, checked off, or too trivial to
+# surface every session.
+EPHEMERAL_MARKERS = (
+    "(ephemeral)",
+    "(trivial)",
+    "(todo)",
+    "(skip)",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -144,14 +156,50 @@ def _read_wiki_index(wiki: Path, max_chars: int) -> str:
 _OPEN_ITEMS_RE = re.compile(r"##\s+Open items\s*\n(.+?)(?=\n##|\Z)", re.DOTALL)
 
 
-def _recent_open_items(wiki: Path, days: int = RECENT_SESSION_DAYS) -> list[str]:
-    """Parse `## Open items` sections from recent session notes. Deduped."""
+def _session_touches_repo(text: str, fm: dict, repo: str) -> bool:
+    """Return True if a session note concerns the given repo.
+
+    Order of evidence:
+      1. Session frontmatter `repos:` includes the repo
+      2. Session body literally mentions `<repo>` or its tail (`name`)
+    """
+    repos = fm.get("repos") or []
+    if repo in repos:
+        return True
+    tail = repo.rsplit("/", 1)[-1]
+    # Cheap substring check — false positives are tolerable here
+    if repo in text or (tail and tail in text):
+        return True
+    return False
+
+
+def _is_ephemeral(item: str) -> bool:
+    lower = item.lower()
+    return any(marker in lower for marker in EPHEMERAL_MARKERS)
+
+
+def _recent_open_items(
+    wiki: Path,
+    repo: str | None = None,
+    days: int = RECENT_SESSION_DAYS,
+) -> tuple[list[str], int]:
+    """Parse `## Open items` from recent session notes.
+
+    When `repo` is given, only sessions that touch that repo contribute
+    items to the primary list; items from other sessions are counted
+    as "elsewhere in the wiki" so the caller can show a collapsed
+    pointer rather than a dump.
+
+    Returns (items_for_repo, count_elsewhere).
+    """
     sessions_dir = wiki / "sessions"
     if not sessions_dir.is_dir():
-        return []
+        return [], 0
     cutoff = date.today() - timedelta(days=days)
     items: list[str] = []
     seen: set[str] = set()
+    elsewhere = 0
+
     for md in sorted(sessions_dir.glob("*.md"), reverse=True):
         try:
             iso = md.stem[:10]
@@ -161,21 +209,55 @@ def _recent_open_items(wiki: Path, days: int = RECENT_SESSION_DAYS) -> list[str]
         if d < cutoff:
             continue
         text = md.read_text(errors="replace")
+        fm = parse_frontmatter(text)
         m = _OPEN_ITEMS_RE.search(text)
         if not m:
             continue
+        matches_repo = True if repo is None else _session_touches_repo(text, fm, repo)
         for line in m.group(1).splitlines():
             line = line.strip()
-            if not line or line.startswith("-") is False:
+            if not line.startswith("-"):
                 continue
             body = line.lstrip("-").strip()
             if not body or body.lower() == "none":
                 continue
+            if _is_ephemeral(body):
+                continue
             if body in seen:
                 continue
             seen.add(body)
-            items.append(body)
-    return items
+            if matches_repo:
+                items.append(body)
+            else:
+                elsewhere += 1
+    return items, elsewhere
+
+
+def _project_note_for_repo(wiki: Path, repo: str) -> dict | None:
+    """Find a project note whose filename or frontmatter matches the repo.
+
+    Returns a dict with {name, description, path} or None.
+    """
+    catalog_path = wiki / "_catalog.json"
+    if not catalog_path.exists():
+        return None
+    try:
+        catalog = json.loads(catalog_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    tail = repo.rsplit("/", 1)[-1].lower()
+    projects = catalog.get("sections", {}).get("projects", [])
+    # Prefer exact repo match in frontmatter
+    for entry in projects:
+        repos = entry.get("repos") or []
+        if repo in repos:
+            return entry
+    # Fall back to filename match
+    for entry in projects:
+        name = (entry.get("name") or "").lower()
+        if name == tail or name.replace("-", "") == tail.replace("-", ""):
+            return entry
+    return None
 
 
 def _stale_count(wiki: Path) -> int:
@@ -197,23 +279,28 @@ def _stale_count(wiki: Path) -> int:
 
 
 def _session_start(cwd: str | None) -> str:
-    """Build the SessionStart context block."""
+    """Build the SessionStart context block.
+
+    Scoping strategy:
+      - Resolve the current git repo (if any) and the wiki that covers it
+      - When a repo is resolved, center context on the matching project
+        note (if found) and on open items from sessions that touched
+        this repo. Other open items become a one-line "elsewhere" note.
+      - When no repo is resolved, degrade to a wiki-level summary.
+    """
     import os
 
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
-        # Visible diagnostic — silent failure is worse than an "I'm here" line
         hint = os.environ.get("LORE_ROOT") or "(unset, defaulting to ~/lore)"
         return (
             f"lore: no vault at LORE_ROOT={hint}. "
-            "Set LORE_ROOT to your vault path or run `lore init` to scaffold one."
+            "Set LORE_ROOT to your vault path or run `lore init`."
         )
 
-    # Repo-scoped wiki resolution
     repo = current_repo(cwd)
     wiki = _wiki_for_repo(repo) if repo else None
 
-    # Fall back to the only wiki if there's exactly one
     if wiki is None:
         wikis = [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
         if len(wikis) == 1:
@@ -222,46 +309,71 @@ def _session_start(cwd: str | None) -> str:
     if wiki is None:
         if repo:
             return (
-                f"lore: no wiki covers `{repo}` in {wiki_root}. "
-                "Tag a wiki's `.lore-hints.yml` with this repo or "
-                "run `/lore:session` — session auto-tags populate over time."
+                f"lore: no wiki covers `{repo}`. Add it to a wiki's "
+                "`.lore-hints.yml` or run `/lore:session` to auto-tag."
             )
-        return f"lore: no wiki resolved in {wiki_root}. Pick one with `/lore:resume <wiki>`."
+        return f"lore: no wiki resolved in {wiki_root}."
 
-    index_text = _read_wiki_index(wiki, MAX_CONTEXT_CHARS - 400)
-    open_items = _recent_open_items(wiki)
-    stale = _stale_count(wiki)
-
+    # Core stats
     catalog = _wiki_catalog(wiki) or {}
     stats = catalog.get("stats", {})
     note_count = stats.get("total_notes", "?")
+    stale = _stale_count(wiki)
 
-    parts: list[str] = []
-    # One-liner status — users see this as the first line
-    stale_tag = f", {stale} stale flagged" if stale else ""
+    # Repo-scoped open items (repo or None for wiki-wide)
+    items, elsewhere = _recent_open_items(wiki, repo=repo)
+
+    # Project note focused on this repo, if any
+    project_entry = _project_note_for_repo(wiki, repo) if repo else None
+
+    # One-liner status — repo-scoped when we can
+    scope_label = wiki.name if project_entry is None else f"{wiki.name}:{project_entry['name']}"
+    stale_tag = f", {stale} stale" if stale else ""
     status_line = (
-        f"lore: loaded {wiki.name} ({note_count} notes, "
-        f"{len(open_items)} open items{stale_tag}) · /lore:why"
+        f"lore: loaded {scope_label} ({note_count} notes, "
+        f"{len(items)} open{stale_tag}) · /lore:why"
     )
-    parts.append(status_line)
 
-    if repo:
-        parts.append(f"\n_Scoped to repo `{repo}`._\n")
+    parts: list[str] = [status_line, ""]
 
-    if open_items:
-        parts.append("## Open items (recent sessions)")
+    if project_entry is not None:
+        parts.append(f"## Focus: [[{project_entry['name']}]]")
+        desc = project_entry.get("description")
+        if desc:
+            parts.append(desc)
+        children = project_entry.get("children") or []
+        if children:
+            link_list = ", ".join(f"[[{c}]]" for c in children[:6])
+            more = f" +{len(children) - 6}" if len(children) > 6 else ""
+            parts.append(f"Linked notes: {link_list}{more}")
         parts.append("")
-        # Cap to 8 items
-        for item in open_items[:8]:
+    elif repo:
+        parts.append(f"_Repo `{repo}` has no dedicated project note in {wiki.name}._")
+        parts.append("")
+
+    if items:
+        parts.append(f"## Open items{' (this repo)' if repo else ''}")
+        for item in items[:MAX_OPEN_ITEMS_INLINE]:
             parts.append(f"- {item}")
-        if len(open_items) > 8:
-            parts.append(f"- … ({len(open_items) - 8} more; /lore:resume to expand)")
+        extras: list[str] = []
+        if len(items) > MAX_OPEN_ITEMS_INLINE:
+            extras.append(f"+{len(items) - MAX_OPEN_ITEMS_INLINE} more for this repo")
+        if elsewhere:
+            extras.append(f"+{elsewhere} elsewhere in {wiki.name}")
+        if extras:
+            parts.append(f"- … ({'; '.join(extras)}; `/lore:resume` to expand)")
+        parts.append("")
+    elif elsewhere:
+        parts.append(
+            f"No open items for this repo. "
+            f"{elsewhere} open items elsewhere in {wiki.name} — `/lore:resume` to see."
+        )
         parts.append("")
 
-    if index_text:
-        parts.append("## Knowledge index")
-        parts.append("")
-        parts.append(index_text)
+    parts.append(
+        f"Vault: {wiki.name} — use `lore_search` MCP tool or `/lore:resume <topic>` "
+        "to pull deeper context on demand."
+    )
 
     out = "\n".join(parts)
     if len(out) > MAX_CONTEXT_CHARS:
@@ -292,15 +404,12 @@ def _pre_compact(cwd: str | None) -> str:
     if wiki is None:
         return ""
 
-    open_items = _recent_open_items(wiki)
-    if not open_items:
+    items, _elsewhere = _recent_open_items(wiki, repo=repo)
+    if not items:
         return ""
 
-    parts = [
-        "## Open items (carry across compaction)",
-        "",
-    ]
-    for item in open_items[:10]:
+    parts = ["## Open items (carry across compaction)", ""]
+    for item in items[:MAX_OPEN_ITEMS_INLINE]:
         parts.append(f"- {item}")
     return "\n".join(parts) + "\n"
 
@@ -326,21 +435,58 @@ def _stop() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _emit(hook_event: str, text: str, *, plain: bool) -> None:
+    """Emit hook output in the format Claude Code expects.
+
+    Default: JSON envelope with `hookSpecificOutput` (the documented way
+    for SessionStart / PreCompact to inject additionalContext).
+
+    `--plain` dumps raw text — useful for manual inspection.
+    """
+    if plain:
+        if text:
+            sys.stdout.write(text)
+            if not text.endswith("\n"):
+                sys.stdout.write("\n")
+        return
+    if not text:
+        return
+    envelope = {
+        "hookSpecificOutput": {
+            "hookEventName": hook_event,
+            "additionalContext": text,
+        }
+    }
+    sys.stdout.write(json.dumps(envelope))
+    sys.stdout.write("\n")
+
+
+_HOOK_EVENT = {
+    "session-start": "SessionStart",
+    "pre-compact": "PreCompact",
+    "stop": "Stop",
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="lore-hook")
     sub = parser.add_subparsers(dest="hook", required=True)
 
-    ss = sub.add_parser("session-start", help="Inject vault context at session start")
-    ss.add_argument("--cwd", help="Project working directory (Claude Code provides this)")
-
-    pc = sub.add_parser("pre-compact", help="Inject open items before compaction")
-    pc.add_argument("--cwd", help="Project working directory")
-
-    sub.add_parser("stop", help="Prompt to write a session note")
+    for name, help_text in [
+        ("session-start", "Inject vault context at session start"),
+        ("pre-compact", "Inject open items before compaction"),
+        ("stop", "Hint to capture a session note"),
+    ]:
+        sp = sub.add_parser(name, help=help_text)
+        if name != "stop":
+            sp.add_argument("--cwd", help="Project working directory")
+        sp.add_argument(
+            "--plain",
+            action="store_true",
+            help="Print raw text instead of Claude Code JSON envelope",
+        )
 
     args = parser.parse_args(argv)
-
-    # Claude Code passes CLAUDE_PROJECT_DIR in env; honor it as fallback
     cwd = getattr(args, "cwd", None) or os.environ.get("CLAUDE_PROJECT_DIR")
 
     if args.hook == "session-start":
@@ -352,10 +498,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         return 2
 
-    if out:
-        sys.stdout.write(out)
-        if not out.endswith("\n"):
-            sys.stdout.write("\n")
+    _emit(_HOOK_EVENT[args.hook], out, plain=args.plain)
     return 0
 
 

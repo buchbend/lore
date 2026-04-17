@@ -188,3 +188,27 @@ git -C $LORE_ROOT/wiki/<target> commit -m "lore: session — <short description>
 - **Skip trivial sessions** — if the conversation was a quick question,
   tell the user there's nothing worth recording
 - **`repos:` is auto-populated** — user should not need to tag manually
+
+## Open-item discipline (important for SessionStart hygiene)
+
+The SessionStart hook surfaces open items across recent sessions, so
+writing them carefully matters — they'll reappear until resolved or
+marked otherwise.
+
+Three guidelines:
+
+1. **Only list real continuing work.** Do not promote every stray
+   thought to an open item. A good open item is something a future-you
+   would want surfaced two weeks from now.
+2. **Mark throwaway lines explicitly.** If you must record a trivial
+   reminder alongside real work, add an ephemeral marker so the hook
+   filters it out:
+   ```
+   - Rename the test file (ephemeral)
+   - Look at the flag name (todo)
+   - (trivial) fix the warning
+   ```
+   Markers recognized: `(ephemeral)`, `(trivial)`, `(todo)`, `(skip)`.
+3. **Resolve out loud.** When a previous open item is done, mention it
+   in this session's `## What we worked on` so the curator can track
+   resolution and future SessionStart hooks don't keep surfacing it.
