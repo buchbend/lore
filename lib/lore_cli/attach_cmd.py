@@ -244,7 +244,12 @@ def main(argv: list[str] | None = None) -> int:
     target = _resolve_claude_md(args.path)
 
     if args.action == "read":
-        print(json.dumps(read_attach(target), indent=2))
+        block = read_attach(target)
+        envelope = {
+            "schema": "lore.attach.read/1",
+            "data": {"path": str(target), "block": block},
+        }
+        print(json.dumps(envelope, indent=2))
         return 0
 
     if args.action == "write":
@@ -257,8 +262,12 @@ def main(argv: list[str] | None = None) -> int:
             updates["prs"] = args.prs
         write_attach(target, updates)
         result = read_attach(target)
-        console.print(f"[green]Attached {target}[/green]")
-        print(json.dumps(result, indent=2))
+        console.print(f"[green]Attached {target}[/green]", file=sys.stderr)
+        envelope = {
+            "schema": "lore.attach.write/1",
+            "data": {"path": str(target), "block": result},
+        }
+        print(json.dumps(envelope, indent=2))
         return 0
 
     return 2

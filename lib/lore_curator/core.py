@@ -767,19 +767,30 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(
             json.dumps(
-                [
-                    {
-                        "wiki": r.wiki,
-                        "actions": [
-                            {"kind": a.kind, "path": str(a.path), "reason": a.reason}
-                            for a in r.actions
+                {
+                    "schema": "lore.curator/1",
+                    "data": {
+                        "dry_run": not args.apply,
+                        "wikis": [
+                            {
+                                "wiki": r.wiki,
+                                "actions": [
+                                    {
+                                        "kind": a.kind,
+                                        "path": str(a.path),
+                                        "reason": a.reason,
+                                    }
+                                    for a in r.actions
+                                ],
+                                "skipped": [
+                                    {"path": str(p), "reason": reason}
+                                    for p, reason in r.skipped
+                                ],
+                            }
+                            for r in reports
                         ],
-                        "skipped": [
-                            {"path": str(p), "reason": reason} for p, reason in r.skipped
-                        ],
-                    }
-                    for r in reports
-                ],
+                    },
+                },
                 indent=2,
             )
         )

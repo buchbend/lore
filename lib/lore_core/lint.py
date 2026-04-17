@@ -603,7 +603,13 @@ def run_lint(
     }
 
     if json_output:
-        print(json.dumps(report, indent=2, default=str))
+        print(
+            json.dumps(
+                {"schema": "lore.lint/1", "data": report},
+                indent=2,
+                default=str,
+            )
+        )
     else:
         _print_report(report, wikis, notes_by_wiki, check_only)
 

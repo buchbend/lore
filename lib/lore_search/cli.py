@@ -35,7 +35,12 @@ def main(argv: list[str] | None = None) -> int:
     backend = FtsBackend()
 
     if args.stats:
-        print(json.dumps(backend.stats(), indent=2))
+        print(
+            json.dumps(
+                {"schema": "lore.search.stats/1", "data": backend.stats()},
+                indent=2,
+            )
+        )
         return 0
 
     # Always refresh incrementally before searching (fast due to SHA256 cache)
@@ -57,17 +62,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(
             json.dumps(
-                [
-                    {
-                        "path": h.path,
-                        "wiki": h.wiki,
-                        "filename": h.filename,
-                        "score": h.score,
-                        "description": h.description,
-                        "tags": h.tags,
-                    }
-                    for h in hits
-                ],
+                {
+                    "schema": "lore.search/1",
+                    "data": {
+                        "query": args.query,
+                        "wiki": args.wiki,
+                        "for_repo": args.for_repo,
+                        "hits": [
+                            {
+                                "path": h.path,
+                                "wiki": h.wiki,
+                                "filename": h.filename,
+                                "score": h.score,
+                                "description": h.description,
+                                "tags": h.tags,
+                            }
+                            for h in hits
+                        ],
+                    },
+                },
                 indent=2,
             )
         )
