@@ -94,7 +94,33 @@ ok "Linked $linked skill(s)"
 echo "   (existing vault:* skills left untouched — lore:* coexists)"
 
 # ----------------------------------------------------------------------
-# 3. Resolve and persist LORE_ROOT in settings.json env block
+# 3a. Auto-allow `Bash(lore:*)` so Lore commands don't trigger permission prompts
+# ----------------------------------------------------------------------
+
+say "Permissions"
+
+python3 - "$SETTINGS_FILE" <<'PYEOF'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+path.parent.mkdir(parents=True, exist_ok=True)
+cfg = json.loads(path.read_text()) if path.exists() else {}
+permissions = cfg.setdefault("permissions", {})
+allow = permissions.setdefault("allow", [])
+added = []
+for rule in ("Bash(lore:*)", "Bash(lore *)"):
+    if rule not in allow:
+        allow.append(rule)
+        added.append(rule)
+if added:
+    path.write_text(json.dumps(cfg, indent=2) + "\n")
+    print(f"  allowed: {', '.join(added)}")
+else:
+    print("  lore commands already in allowlist")
+PYEOF
+
+# ----------------------------------------------------------------------
+# 3b. Resolve and persist LORE_ROOT in settings.json env block
 # ----------------------------------------------------------------------
 
 say "Setting LORE_ROOT"

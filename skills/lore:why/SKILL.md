@@ -1,46 +1,38 @@
 ---
 name: lore:why
-description: Audit what SessionStart auto-injected into this session —
-  shows the exact context blob the hook produced, the wiki it resolved
-  to, and which repo scoping matched. Run with "/lore:why".
+description: Show exactly what Lore auto-injected into this session (the
+  output the SessionStart hook emitted). Run with "/lore:why".
 user_invocable: true
 ---
 
-# Why — audit SessionStart injection
+# Why — audit what SessionStart loaded
 
-Shows exactly what Lore added to the session at startup so the user can
-verify the magic is doing the right thing (and if not, see why).
-
-## Output
-
-```
-Scoped repo:  org/name (from `origin` remote at <cwd>)
-Wiki:         <name>  (resolved via `.lore-hints.yml` | catalog `repos:` | name substring)
-Injected:     ~<N> tokens
-Open items:   <count> (from last 7 days)
-Stale flags:  <count> (from curator review)
-
---- injected context ---
-<one-liner status>
-
-<full injected block>
----
-```
+Shows the full context block Lore injected at session start so you can
+verify the repo-scoping, focus note, open items, and staleness flags
+that the agent is working from.
 
 ## Implementation
 
-Re-runs the SessionStart hook with verbose provenance:
+Run exactly one command — no catalog inspection, no diagnostic scripts:
 
 ```bash
-lore hook session-start --cwd $CLAUDE_PROJECT_DIR --explain
+lore hook session-start --cwd "$CLAUDE_PROJECT_DIR" --plain
 ```
 
-(implementation note: `--explain` flag to be added to `lore_cli.hooks`;
-for now the skill falls back to running the hook normally and reading
-`_review.md` + the catalog directly.)
+Display the output verbatim. If empty, the hook couldn't resolve a
+wiki — tell the user the likely cause (no `LORE_ROOT` set, no matching
+wiki in `$LORE_ROOT/wiki/`, or no `.lore-hints.yml` listing the current
+repo).
+
+## Do not
+
+- Do **not** run `grep` / `find` / `python3 -c` / catalog introspection.
+  One command is enough.
+- Do **not** pass flags other than `--cwd` and `--plain`.
+- Do **not** read `_catalog.json` / `_index.md` directly — the hook's
+  output is the canonical answer.
 
 ## Related
 
 - `/lore:off` — mute hooks for the session
-- `/lore:quiet` — suppress inline "consulted [[X]]" affordances but
-  keep SessionStart loading
+- `/lore:quiet` — suppress inline citation affordances

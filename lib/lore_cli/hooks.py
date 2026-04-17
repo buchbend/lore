@@ -435,13 +435,29 @@ def _stop() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _first_line(text: str) -> str:
+    """Return the first non-empty line, stripped."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
 def _emit(hook_event: str, text: str, *, plain: bool) -> None:
     """Emit hook output in the format Claude Code expects.
 
     Default: JSON envelope with `hookSpecificOutput` (the documented way
-    for SessionStart / PreCompact to inject additionalContext).
+    for SessionStart / PreCompact to inject `additionalContext` — the
+    agent sees it but the user does not).
 
-    `--plain` dumps raw text — useful for manual inspection.
+    We also echo the one-liner status to stderr so the user sees
+    "lore: loaded …" in their terminal at session start. Stderr from
+    hooks is surfaced to the user by Claude Code; stdout is parsed as
+    JSON.
+
+    `--plain` dumps raw text to stdout — useful for manual inspection
+    and for the /lore:why skill.
     """
     if plain:
         if text:
@@ -451,6 +467,12 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
         return
     if not text:
         return
+    # Visible to the user: a single status line on stderr
+    one_liner = _first_line(text)
+    if one_liner:
+        sys.stderr.write(one_liner + "\n")
+        sys.stderr.flush()
+    # Visible to the agent: full context as additionalContext
     envelope = {
         "hookSpecificOutput": {
             "hookEventName": hook_event,
