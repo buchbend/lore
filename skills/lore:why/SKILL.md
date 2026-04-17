@@ -13,11 +13,17 @@ that the agent is working from.
 
 ## Implementation
 
-Run exactly one command — no catalog inspection, no diagnostic scripts:
+Run exactly one command — no catalog inspection, no diagnostic scripts,
+no shell variable expansion:
 
 ```bash
-lore hook session-start --cwd "$CLAUDE_PROJECT_DIR" --plain
+lore hook session-start --plain
 ```
+
+The hook auto-detects CWD from the process working directory (which
+Claude Code sets to the project dir when spawning skills/bash). Do not
+add `--cwd "$CLAUDE_PROJECT_DIR"` — shell variable expansion triggers
+Claude Code's `simple_expansion` permission prompt every time.
 
 Display the output verbatim. If empty, the hook couldn't resolve a
 wiki — tell the user the likely cause (no `LORE_ROOT` set, no matching

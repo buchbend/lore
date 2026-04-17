@@ -509,7 +509,17 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     args = parser.parse_args(argv)
-    cwd = getattr(args, "cwd", None) or os.environ.get("CLAUDE_PROJECT_DIR")
+    # Resolve CWD in order: explicit --cwd → CLAUDE_PROJECT_DIR env →
+    # actual process working directory (Claude Code sets this to the
+    # project dir when spawning hooks). Having a sensible default means
+    # hook commands in settings.json don't need $CLAUDE_PROJECT_DIR
+    # expansion — which avoids Claude Code's "simple_expansion"
+    # permission gate.
+    cwd = (
+        getattr(args, "cwd", None)
+        or os.environ.get("CLAUDE_PROJECT_DIR")
+        or os.getcwd()
+    )
 
     if args.hook == "session-start":
         out = _session_start(cwd)

@@ -163,8 +163,8 @@ fi
 # ----------------------------------------------------------------------
 
 HOOKS_BLOCK='{
-  "SessionStart": [{"hooks": [{"type": "command", "command": "lore hook session-start --cwd \"$CLAUDE_PROJECT_DIR\""}]}],
-  "PreCompact":   [{"hooks": [{"type": "command", "command": "lore hook pre-compact --cwd \"$CLAUDE_PROJECT_DIR\""}]}],
+  "SessionStart": [{"hooks": [{"type": "command", "command": "lore hook session-start"}]}],
+  "PreCompact":   [{"hooks": [{"type": "command", "command": "lore hook pre-compact"}]}],
   "Stop":         [{"hooks": [{"type": "command", "command": "lore hook stop"}]}]
 }'
 
@@ -193,14 +193,41 @@ path.parent.mkdir(parents=True, exist_ok=True)
 cfg = json.loads(path.read_text()) if path.exists() else {}
 
 hooks = cfg.setdefault("hooks", {})
-added = []
+
+# Desired commands — intentionally no $CLAUDE_PROJECT_DIR expansion
+# (Claude Code flags shell variable expansion as 'simple_expansion'
+# and prompts for permission regardless of allowlist). The hook
+# resolves CWD internally via os.getcwd(), which Claude Code sets to
+# the project dir when spawning hooks.
 desired = {
-    "SessionStart": {"type": "command", "command": 'lore hook session-start --cwd "$CLAUDE_PROJECT_DIR"'},
-    "PreCompact":   {"type": "command", "command": 'lore hook pre-compact --cwd "$CLAUDE_PROJECT_DIR"'},
+    "SessionStart": {"type": "command", "command": "lore hook session-start"},
+    "PreCompact":   {"type": "command", "command": "lore hook pre-compact"},
     "Stop":         {"type": "command", "command": "lore hook stop"},
 }
+
+# Old commands that this version supersedes — remove them so re-install
+# migrates a user from the old expansion-containing form.
+stale_commands = {
+    'lore hook session-start --cwd "$CLAUDE_PROJECT_DIR"',
+    'lore hook pre-compact --cwd "$CLAUDE_PROJECT_DIR"',
+}
+
+added, removed = [], []
 for event, cmd in desired.items():
     group_list = hooks.setdefault(event, [])
+    # Drop stale groups for this event
+    new_groups = []
+    for grp in group_list:
+        kept_hooks = [
+            h for h in grp.get("hooks", []) if h.get("command") not in stale_commands
+        ]
+        if kept_hooks:
+            if len(kept_hooks) != len(grp.get("hooks", [])):
+                removed.append(event)
+            new_groups.append({**grp, "hooks": kept_hooks})
+        else:
+            removed.append(event)
+    group_list[:] = new_groups
     already = any(
         any(h.get("command") == cmd["command"] for h in grp.get("hooks", []))
         for grp in group_list
@@ -210,11 +237,11 @@ for event, cmd in desired.items():
     group_list.append({"hooks": [cmd]})
     added.append(event)
 
-if added:
-    path.write_text(json.dumps(cfg, indent=2) + "\n")
-    print(f"  added hooks: {', '.join(added)}")
-else:
-    print("  all hooks already configured")
+path.write_text(json.dumps(cfg, indent=2) + "\n")
+msg = []
+if added:   msg.append(f"added: {', '.join(added)}")
+if removed: msg.append(f"migrated stale: {', '.join(set(removed))}")
+print("  " + ("; ".join(msg) if msg else "all hooks already configured"))
 PYEOF
         ok "Hooks merged into $SETTINGS_FILE"
     fi
