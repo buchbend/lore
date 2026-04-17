@@ -36,7 +36,7 @@ from lore_core.scopes import (
 from lore_cli.attach_cmd import read_attach
 
 
-# SessionStart writes its injected context to a cache file so /lore:why
+# SessionStart writes its injected context to a cache file so /lore:loaded
 # can show it back to the user. Two concurrent Claude sessions would
 # stomp on a single shared file, so the cache is keyed by the Claude
 # Code process PID — stable for the life of a session, unique across
@@ -166,6 +166,23 @@ MAX_CONTEXT_CHARS = 2000
 RECENT_SESSION_DAYS = 14
 MAX_OPEN_ITEMS_INLINE = 5
 
+# Active gather-incentive directive. Inserted near the top of every
+# SessionStart additionalContext block and re-asserted in PreCompact so
+# the rule survives compaction. Bullet form, negatively framed — both
+# stick harder in long sessions than passive permission.
+LORE_DIRECTIVE_LINES = [
+    "## Directives",
+    "- **Vault first.** Unfamiliar project term, concept, decision, or "
+    "wikilink? Call `lore_search` (MCP) before asking the user. "
+    "Asking about a wikilinked term without searching first is a bug.",
+    "",
+]
+
+PRECOMPACT_DIRECTIVE = (
+    "lore: vault-first — call `lore_search` MCP before asking the user "
+    "about wikilinked terms."
+)
+
 # Lines we never promote to the SessionStart open-items list — they're
 # either explicitly marked ephemeral, checked off, or too trivial to
 # surface every session.
@@ -283,7 +300,7 @@ def _read_wiki_index(wiki: Path, max_chars: int) -> str:
     text = index_path.read_text(errors="replace")
     if len(text) <= max_chars:
         return text
-    return text[: max_chars - 40] + "\n... (truncated — run /lore:why for full)"
+    return text[: max_chars - 40] + "\n... (truncated — run /lore:loaded for full)"
 
 
 # Matches "## Open items" section up to next `##` or EOF.
@@ -537,9 +554,10 @@ def _session_start_from_lore(
         status_bits.append(f"{len(prs)} PR{'s' if len(prs) != 1 else ''}")
     if stale:
         status_bits.append(f"{stale} stale")
-    status_line = f"lore: loaded {scope_label} ({', '.join(status_bits)}) · /lore:why"
+    status_line = f"lore: loaded {scope_label} ({', '.join(status_bits)}) · /lore:loaded"
 
     out_parts: list[str] = [status_line, ""]
+    out_parts.extend(LORE_DIRECTIVE_LINES)
 
     project_entry = _project_note_for_repo(wiki, repo) if repo else None
     if project_entry is not None:
@@ -583,15 +601,7 @@ def _session_start_from_lore(
             out_parts.append(f"- … +{len(prs) - MAX_PRS_INLINE} more")
         out_parts.append("")
 
-    out_parts.append(
-        f"Vault: {wiki_name} — use `lore_search` MCP tool or `/lore:resume <topic>` "
-        "to pull deeper context on demand."
-    )
-
-    result = "\n".join(out_parts)
-    if len(result) > MAX_CONTEXT_CHARS:
-        result = result[: MAX_CONTEXT_CHARS - 40] + "\n... (truncated — /lore:why for full)"
-    return result
+    return "\n".join(out_parts)
 
 
 def _session_start(cwd: str | None) -> str:
@@ -652,10 +662,11 @@ def _session_start(cwd: str | None) -> str:
     stale_tag = f", {stale} stale" if stale else ""
     status_line = (
         f"lore: loaded {scope_label} ({note_count} notes, "
-        f"{len(items)} open{stale_tag}) · /lore:why"
+        f"{len(items)} open{stale_tag}) · /lore:loaded"
     )
 
     parts: list[str] = [status_line, ""]
+    parts.extend(LORE_DIRECTIVE_LINES)
 
     if project_entry is not None:
         parts.append(f"## Focus: [[{project_entry['name']}]]")
@@ -691,15 +702,7 @@ def _session_start(cwd: str | None) -> str:
         )
         parts.append("")
 
-    parts.append(
-        f"Vault: {wiki.name} — use `lore_search` MCP tool or `/lore:resume <topic>` "
-        "to pull deeper context on demand."
-    )
-
-    out = "\n".join(parts)
-    if len(out) > MAX_CONTEXT_CHARS:
-        out = out[: MAX_CONTEXT_CHARS - 40] + "\n... (truncated — /lore:why for full)"
-    return out
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -728,18 +731,22 @@ def _pre_compact(cwd: str | None) -> str:
         return ""
 
     items, _elsewhere = _recent_open_items(wiki, repo=repo)
-    if not items:
-        return ""
-
     scope = wiki.name if repo is None else f"{wiki.name}:{repo.rsplit('/', 1)[-1]}"
-    return (
-        f"lore: {len(items)} open items for {scope} carry past compaction — "
-        "run /lore:resume if the agent needs them refreshed."
-    )
+
+    # Always re-assert the vault-first directive across compaction —
+    # compliance decay is real, and the rule must survive even when no
+    # open items are pending. Open-items hint is optional.
+    if items:
+        return (
+            f"lore: {len(items)} open items for {scope} carry past compaction — "
+            "run /lore:resume if the agent needs them refreshed. "
+            + PRECOMPACT_DIRECTIVE
+        )
+    return PRECOMPACT_DIRECTIVE
 
 
 # ---------------------------------------------------------------------------
-# `lore hook why` — read-only cache lookup for the /lore:why skill
+# `lore hook why` — read-only cache lookup for the /lore:loaded skill
 # ---------------------------------------------------------------------------
 
 
@@ -834,7 +841,7 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
       Stop — `hookSpecificOutput` is NOT allowed. Only top-level fields.
         We emit the hint via `systemMessage`.
 
-    `--plain` dumps raw text to stdout — used by the /lore:why skill and
+    `--plain` dumps raw text to stdout — used by the /lore:loaded skill and
     for manual inspection.
     """
     if plain:
@@ -850,7 +857,7 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
     envelope: dict
 
     if hook_event == "SessionStart":
-        # Cache the injected body so `/lore:why` can surface it back to
+        # Cache the injected body so `/lore:loaded` can surface it back to
         # the user. Key by the Claude Code PID so two concurrent
         # sessions don't stomp each other. We walk process ancestry
         # rather than trusting os.getppid() directly: today Claude Code
@@ -873,11 +880,19 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
             _gc_sessions_cache()
         except OSError:
             pass
+        # Cache stores the full text so /lore:loaded can show everything;
+        # additionalContext gets truncated only for the agent-facing inject.
+        context_text = text
+        if len(context_text) > MAX_CONTEXT_CHARS:
+            context_text = (
+                context_text[: MAX_CONTEXT_CHARS - 40]
+                + "\n... (truncated — /lore:loaded for full)"
+            )
         envelope = {
             "systemMessage": one_liner,
             "hookSpecificOutput": {
                 "hookEventName": "SessionStart",
-                "additionalContext": text,
+                "additionalContext": context_text,
             },
         }
     elif hook_event == "PreCompact":

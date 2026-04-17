@@ -3,6 +3,25 @@
 Template for a wiki's root `CLAUDE.md`. Customize the taxonomy and
 scope tags to fit your team.
 
+## Lore directives
+
+These are the active gather rules that the SessionStart hook injects
+into every session attached to this wiki. The hook itself ships a
+default; this section documents the contract and is the place to
+override or extend it per wiki.
+
+- **Vault first.** When the agent encounters an unfamiliar project
+  term, concept name, decision name, or wikilink, it MUST call
+  `lore_search` (MCP) before asking the user. Asking the user about a
+  wikilinked term without searching first is a bug.
+- **Scaffold via CLI, gather via MCP.** Skills call MCP tools for
+  read/gather (silent, fast). They shell out to `lore <verb>` for
+  writes and side-effects (visible to the user, auditable).
+
+To opt out of a directive for this wiki, document the override here —
+the architectural intent is per-wiki tunability without forking the
+hook.
+
 ## Structure
 
 - `projects/` — project knowledge, organized by repo or subsystem

@@ -1,23 +1,25 @@
 ---
-name: lore:why
+name: lore:loaded
 description: Show the exact context block Lore injected at session start.
   Resolves the current session's cache via process ancestry so concurrent
-  Claude sessions don't cross-talk. Run with "/lore:why".
+  Claude sessions don't cross-talk. Run with "/lore:loaded".
 user_invocable: true
 ---
 
-# Why — audit what SessionStart loaded
+# Loaded — show what SessionStart injected
 
-Shows the full context block Lore injected at session start so you can
-verify the repo-scoping, focus note, open items, and staleness flags
-that the agent is working from.
+Prints the full context block Lore injected at session start so you can
+verify the directives, repo-scoping, focus note, open items, and
+staleness flags the agent is working from. Read-only — no re-gather, no
+LLM, no tool approvals.
 
 ## Implementation
 
 SessionStart caches its injected context keyed by the Claude Code
 process PID (at `$LORE_CACHE/sessions/<pid>.md`), so two concurrent
-Claude sessions never stomp each other. Resolving the right PID
-requires walking process ancestry, so this skill uses a small helper.
+Claude sessions never stomp each other. The cache stores the **full
+text**, even when the agent-facing inject was truncated to fit the
+context budget — so this skill always shows the complete picture.
 
 Run via the Bash tool:
 
@@ -26,9 +28,12 @@ lore hook why
 ```
 
 This walks the process tree up to the Claude Code parent, reads the
-per-session cache file, and prints it verbatim. It is **read-only** —
-it does not re-run the hook and does not regenerate the context. The
-`Bash(lore *)` allow-rule already covers it, so no permission prompt.
+per-session cache file, and prints it verbatim. The `Bash(lore *)`
+allow-rule already covers it, so no permission prompt.
+
+(The CLI subcommand is still named `lore hook why` for backwards
+compatibility with older skill installs; the user-facing skill has
+been renamed.)
 
 ## Fallback
 
@@ -58,5 +63,7 @@ convenience.
 
 ## Related
 
+- `/lore:resume` — fresh gather of context (re-runs the work; not the
+  same as showing the cache)
 - `/lore:off` — mute hooks for the session
 - `/lore:quiet` — suppress inline citation affordances

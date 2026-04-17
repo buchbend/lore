@@ -32,4 +32,4 @@ flag before emitting citation affordances and skips them when set.
 ## Related
 
 - `/lore:off` — mute everything, not just citations
-- `/lore:why` — see what was loaded at session start
+- `/lore:loaded` — see what was loaded at session start

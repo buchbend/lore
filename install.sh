@@ -322,7 +322,7 @@ $(say "Done.")
 Next steps:
   1. Open a new Claude Code session — you should see a one-liner from
      the SessionStart hook:
-       lore: loaded <wiki> (N notes, M open items) · /lore:why
+       lore: loaded <wiki> (N notes, M open items) · /lore:loaded
 
   2. If instead you see 'no vault at LORE_ROOT=...', re-run:
        ./install.sh --lore-root=/path/to/your/vault --with-hooks
