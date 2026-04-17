@@ -99,24 +99,31 @@ echo "   (existing vault:* skills left untouched — lore:* coexists)"
 
 say "Permissions"
 
-python3 - "$SETTINGS_FILE" <<'PYEOF'
+# The cache-read permission is a well-known path; vault-read is filled
+# in after LORE_ROOT is resolved (step 3b below) since it depends on
+# where the user's vault lives.
+python3 - "$SETTINGS_FILE" "$HOME" <<'PYEOF'
 import json, sys
 from pathlib import Path
 path = Path(sys.argv[1])
+home = sys.argv[2]
 path.parent.mkdir(parents=True, exist_ok=True)
 cfg = json.loads(path.read_text()) if path.exists() else {}
 permissions = cfg.setdefault("permissions", {})
 allow = permissions.setdefault("allow", [])
-added = []
-for rule in ("Bash(lore:*)", "Bash(lore *)"):
-    if rule not in allow:
-        allow.append(rule)
-        added.append(rule)
+
+rules = [
+    "Bash(lore:*)",
+    "Bash(lore *)",
+    f"Read({home}/.cache/lore/**)",
+]
+added = [r for r in rules if r not in allow]
+allow.extend(added)
 if added:
     path.write_text(json.dumps(cfg, indent=2) + "\n")
     print(f"  allowed: {', '.join(added)}")
 else:
-    print("  lore commands already in allowlist")
+    print("  lore permissions already in allowlist")
 PYEOF
 
 # ----------------------------------------------------------------------
@@ -147,15 +154,32 @@ from pathlib import Path
 path, root = Path(sys.argv[1]), sys.argv[2]
 path.parent.mkdir(parents=True, exist_ok=True)
 cfg = json.loads(path.read_text()) if path.exists() else {}
+
+env_changed = False
 env = cfg.setdefault("env", {})
 if env.get("LORE_ROOT") != root:
     env["LORE_ROOT"] = root
+    env_changed = True
+
+# Also allow Read on everything under the resolved vault root so
+# skills that browse wiki notes don't prompt
+perm_changed = False
+allow = cfg.setdefault("permissions", {}).setdefault("allow", [])
+vault_rule = f"Read({root}/**)"
+if vault_rule not in allow:
+    allow.append(vault_rule)
+    perm_changed = True
+
+if env_changed or perm_changed:
     path.write_text(json.dumps(cfg, indent=2) + "\n")
-    print(f"  LORE_ROOT={root} written to {path}")
+    msgs = []
+    if env_changed: msgs.append(f"LORE_ROOT={root}")
+    if perm_changed: msgs.append(f"allowed {vault_rule}")
+    print(f"  {'; '.join(msgs)}")
 else:
-    print(f"  LORE_ROOT={root} already set")
+    print(f"  LORE_ROOT={root} and vault read permission already set")
 PYEOF
-    ok "LORE_ROOT persisted"
+    ok "LORE_ROOT + vault read permission persisted"
 fi
 
 # ----------------------------------------------------------------------
