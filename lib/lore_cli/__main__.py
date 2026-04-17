@@ -24,6 +24,7 @@ SUBCOMMANDS = {
     "session": ("lore_cli.session_cmd", "main"),
     "briefing": ("lore_cli.briefing_cmd", "main"),
     "inbox": ("lore_cli.inbox_cmd", "main"),
+    "doctor": ("lore_cli.doctor_cmd", "main"),
 }
 
 
