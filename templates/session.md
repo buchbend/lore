@@ -1,12 +1,16 @@
 ---
-schema_version: 1
+schema_version: 2
 type: session
 created: YYYY-MM-DD
 last_reviewed: YYYY-MM-DD
 status: stable
 description: "One-sentence summary of the session."
 tags: []
+scope: ""
 repos: []
+user: ""
+implements: []
+loose_ends: []
 project: ""
 ---
 
@@ -24,7 +28,11 @@ project: ""
 
 - None
 
-## Open items
+## Issues touched
+
+- None
+
+## Loose ends
 
 - None
 

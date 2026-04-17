@@ -16,9 +16,11 @@ or run the linter — that's a separate skill.
 The caller gives you (mandatory):
 
 - **GIST**: a ≤300-word summary — what was worked on, decisions made,
-  open items, any concepts worth promoting
+  loose ends, any concepts worth promoting, any `implements:`
+  cross-references for proposals now realized
 - **LORE_ROOT**: path to the vault root (e.g. `/home/user/git/vault`)
-- **CWD**: the project dir the session ran in (for repo resolution)
+- **CWD**: the project dir the session ran in (for scope + repo
+  resolution)
 
 The caller may also pass:
 
@@ -30,28 +32,54 @@ The caller may also pass:
 
 ### 1. Resolve the target wiki
 
-If `TARGET_WIKI` is given, use it. Otherwise route by gist:
-- Read `$LORE_ROOT/wiki/*/CLAUDE.md` (glob — one pass) for routing
-  hints, or infer from repos named in the gist
-- If routing is ambiguous, ask the caller in your final report —
-  **do not** guess across wikis
+If `TARGET_WIKI` is given, use it. Otherwise route by:
 
-### 2. Auto-populate machine-known fields
+1. Run `lore attach read --path <CWD>` — if the result has a `wiki`
+   field, that's authoritative. No further routing needed.
+2. Otherwise glob `$LORE_ROOT/wiki/*/CLAUDE.md` for routing hints and
+   infer from repos named in the gist.
+3. If routing is still ambiguous, ask the caller in your final report —
+   **do not** guess across wikis.
 
-Run these commands — no LLM reasoning needed:
+### 2. Resolve scope (no prompting)
+
+Scope derivation order:
+
+1. **`lore attach read --path <CWD>`** — if `scope` is present, use it
+   exactly.
+2. **Walk up** from `<CWD>` to any ancestor `CLAUDE.md` with a `## Lore`
+   section (`lore attach read --path <ancestor>`) — first match wins.
+3. **Wiki default** — if nothing matches, use the wiki name itself as
+   the scope (e.g. `scope: ccat`). This is the zero-config fallback;
+   do **not** prompt the user. They can re-scope later with
+   `/lore:attach --rescope`.
+
+### 3. Auto-populate machine-known fields
+
+Run these — no LLM reasoning needed:
 
 ```
 git -C <repo-root-of-cwd> remote get-url origin   # → canonical org/name
 git -C <repo-root-of-cwd> log --since="24 hours ago" --format="%h %s"
+git -C <repo-root-of-cwd> config user.email       # → user handle
 git -C $LORE_ROOT/wiki/<target> pull --ff-only    # refresh
 ```
 
 From these, you know:
+
 - `repos:` — the current repo + any others named in the gist
-- Commits list for the session note's "Commits / PRs" section
+- `user:` — canonical handle (see rule below)
+- Commits list for `## Commits / PRs`
 - Today's date (use `date +%F`)
 
-### 3. Find related notes via ranked search (one call)
+**User handle derivation:**
+
+- If `$LORE_ROOT/wiki/<target>/_users.yml` exists, look up the email in
+  the `aliases.emails` lists. First match wins; use the matched `handle`.
+- Otherwise, use the email's local-part (before `@`) as the handle. No
+  prompt.
+
+### 4. Find related notes via ranked search (one call)
 
 Instead of reading many notes:
 
@@ -62,7 +90,24 @@ lore search "<key topic from gist>" --wiki <target> --k 8 --json
 Use the top hits as candidates for `[[wikilinks]]` in the session note.
 Do **not** Read the candidates unless you need to modify them.
 
-### 4. Write the session note (terse template)
+### 5. Resolve `implements:` references
+
+Scan the gist for proposals that landed this session. For each:
+
+- Default (clean): `implements: [<slug>]` → curator will flip
+  target to `status: implemented`.
+- Partial (gaps): `- <slug>:partial` → `status: partial`.
+- Abandoned (deliberately dropped): `- <slug>:abandoned` → `status:
+  abandoned`.
+- Superseded: `- <slug>:superseded-by:<other-slug>` → `status:
+  superseded` + `superseded_by: [[other-slug]]`.
+
+Only include slugs that exist in the wiki — verify via the `lore search`
+results or a direct `Glob`. Unverified slugs go as loose ends, not
+`implements:`, so the curator doesn't fail trying to update a missing
+target.
+
+### 6. Write the session note (v2 template)
 
 Path: `$LORE_ROOT/wiki/<target>/sessions/<YYYY-MM-DD>-<slug>.md`.
 
@@ -72,14 +117,20 @@ Template — keep it terse, no prose padding:
 
 ```markdown
 ---
-schema_version: 1
+schema_version: 2
 type: session
 created: <YYYY-MM-DD>
 last_reviewed: <YYYY-MM-DD>
 status: stable
 description: "<one-sentence summary from gist>"
 tags: [<wiki-appropriate tags, 3-5 max>]
+scope: <resolved scope — step 2>
 repos: [<org/name>, ...]
+user: <handle — step 3>
+implements: [<proposal slugs, or omit if none>]
+loose_ends:
+  - "<short-form observation 1>"
+  - "<short-form observation 2>"
 project: <primary project or omit>
 ---
 
@@ -99,18 +150,31 @@ project: <primary project or omit>
 - `<sha>` <message> (repo)
 - Or: _None_
 
-## Open items
+## Issues touched
 
-- <keep verbose — future-you needs these legible>
-- Mark ephemeral lines with `(ephemeral)` / `(trivial)` / `(todo)` /
-  `(skip)` so SessionStart filters them out
+- <format: "#NNN <short title>" — auto-derived from gist + commit trailers>
+- Or: _None_
+
+## Loose ends
+
+- <long-form observations the frontmatter list can't fit>
+- <informal; never use tags, priorities, assignees — that's an issue's job>
+- Or: _None_
+
+## Vault updates
+
+- Created: [[<new-note>]]
+- Updated: [[<modified-note>]]
 - Or: _None_
 ```
+
+**Drop `## Open items`** — replaced by live `gh issue list` at
+SessionStart and the new `## Issues touched` + `## Loose ends` sections.
 
 **Duplicate check first**: if a session note for today's date with the
 same slug already exists, update it in place instead of creating new.
 
-### 5. Extract only when the gist warrants it
+### 7. Extract only when the gist warrants it
 
 Default `EXTRACT=auto`:
 
@@ -126,12 +190,13 @@ If nothing qualifies, skip extraction entirely. Do **not** promote
 every bullet into a concept.
 
 For each extraction:
+
 - Follow the wiki's CLAUDE.md conventions
-- Include `schema_version: 1`
-- Inherit `repos:` from the session
+- Include `schema_version: 2`
+- Inherit `repos:` and `scope:` from the session
 - Add bidirectional `[[wikilinks]]` (session → new, new → session, new → related)
 
-### 6. Git commit in the wiki repo
+### 8. Git commit in the wiki repo
 
 ```
 git -C $LORE_ROOT/wiki/<target> add -A
@@ -146,18 +211,26 @@ Return to the caller in under 120 words:
 
 - Wiki: `<name>`
 - Session note: `<path>` (created / updated)
+- Scope: `<resolved scope>` (source: attach / walk-up / wiki-default)
 - Extractions: `<list or "none">`
+- `implements:`: `<slugs or "none">` — note that curator run needed to
+  propagate status flips
 - Commit: `<sha>` (or "staged only, nothing to commit")
-- Any notes needing follow-up (ambiguous routing, stale links, curator candidates)
+- Any notes needing follow-up (ambiguous routing, stale links,
+  unverified `implements:` slugs, curator candidates)
 
 ## Hard rules
 
 - **Never commit in a repo other than the target wiki.** The user's
   main repo is separate.
-- **Never run `lore lint`** from here. If catalogs look stale, mention
-  in the report; the user runs lint explicitly.
+- **Never run `lore lint` or `lore curator`** from here. Mention
+  curator candidates in the report; the user runs the curator
+  explicitly (it writes the `implements:` propagation).
+- **Never prompt for scope.** Auto-detect or wiki-default. Prompting
+  is what `/lore:attach` is for.
 - **Never extract aggressively.** A session is one data point; patterns
   need repetition before promotion.
-- **Never use LLM reasoning for fields that git knows.** repos, dates,
-  commit list all come from `git`.
+- **Never use LLM reasoning for fields that git or attach knows.**
+  repos, dates, commit list, scope, user handle all come from
+  tools — not guessed.
 - **No multi-paragraph prose.** This is a knowledge graph, not a blog.
