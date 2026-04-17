@@ -1,124 +1,106 @@
 ---
 name: lore:resume
-description: Load working context from the vault at session start. Scans
-  sessions across all wikis, extracts open items, loads relevant knowledge
-  notes. Run with "/lore:resume" optionally followed by keywords, wiki name,
-  or date range.
+description: Load working context from the vault on demand. Single MCP
+  call dispatches across no-arg (recent across all wikis), wiki-scoped,
+  keyword search, or scope-prefix aggregation. Run with "/lore:resume"
+  optionally followed by keywords, a wiki name, or a scope prefix.
 user_invocable: true
 ---
 
-# Context Resume
+# Resume — load context via the `lore_resume` MCP tool
 
-Reconstructs working context at the start of a Claude Code session by
-scanning the vault. Adaptive depth — lightweight by default, loads deeper
-knowledge when keywords match or when scoped to a specific repo.
+Reconstructs working context by calling the `lore_resume` MCP tool
+exactly once. The tool covers four modes; the skill picks the right
+mode from the user's input and renders the result.
 
-When hooks are enabled (SessionStart), a lightweight resume runs
-automatically. This skill is the manual / deeper form.
+**Do not** Glob, Read, or Grep the vault from this skill — the gather
+work is the CLI's job (and via MCP, free of permission prompts and
+iterative tool churn).
 
-## Paths
+## Modes (the MCP tool dispatches in this priority order)
 
-- **Vault root**: `$LORE_ROOT` (default `~/lore`)
-- **Session folders**: `$LORE_ROOT/wiki/<name>/sessions/`
-- **Legacy**: `$LORE_ROOT/sessions/`
-
-## Invocation patterns
-
-- `/lore:resume` — last 3 days across all wikis (lightweight)
-- `/lore:resume <scope-prefix>` — expand a scope subtree (e.g.
-  `ccat:data-center`) — aggregates live issues, PRs, and recent
-  session notes for every repo in the subtree. Routes to `lore
-  resume --scope` (fast CLI path). **Tell from pattern**: argument
-  contains a `:` or matches a known scope.
-- `/lore:resume <wiki>` — scope to one wiki's sessions + knowledge
-- `/lore:resume <keyword>` — keyword search, loads matching notes
-- `/lore:resume last week` — broader time window
-- `/lore:resume <wiki> <keyword>` — scope + keyword
-
-### Scope-prefix path (CLI-backed)
-
-When the argument looks like a scope (contains a colon), run:
-
-```
-lore resume --scope <prefix>
-```
-
-The CLI reads `_scopes.yml`, queries `gh issue list` + `gh pr list`
-for every repo in the subtree with the default filters
-(`--assignee @me --state open` for issues, `--author @me` for PRs),
-and lists recent session notes touching the scope. It prints
-pre-formatted markdown — your job is just to display it.
-
-Pass `--issues "..."` / `--prs "..."` to override the default filters
-if the user asks for a broader view (e.g. `--all-assignees`).
+1. **scope** — argument contains a `:` (e.g. `ccat:data-center`).
+   Aggregates `gh issue list` + `gh pr list` per repo in the subtree
+   plus matching session notes.
+2. **keyword** — single word or phrase that does not look like a wiki
+   name or a scope. Ranked FTS5 search across the vault.
+3. **wiki** — argument matches a wiki directory name (`ccat`,
+   `private`, `science`, etc.). Recent sessions in that wiki.
+4. **recent (default)** — no arguments. Recent sessions across all
+   wikis (last 3 days by default).
 
 ## Workflow
 
-### 1. Parse arguments
+### 1. Parse the argument
 
-Extract: wiki scope, keywords, date hints. No args = last 3 days, all
-wikis.
-
-### 2. Scan sessions
+The user may type any of:
 
 ```
-Glob: $LORE_ROOT/wiki/*/sessions/*.md
-Glob: $LORE_ROOT/sessions/*.md          (legacy)
+/lore:resume                         → mode=recent
+/lore:resume ccat                    → mode=wiki, wiki="ccat"
+/lore:resume ccat:data-center        → mode=scope, scope="ccat:data-center"
+/lore:resume "ffts numa debugging"   → mode=keyword, keyword=...
+/lore:resume ccat numa               → mode=keyword, keyword="numa", wiki="ccat"
+/lore:resume last week               → mode=recent, days=7
 ```
 
-Filter by date (filenames are `YYYY-MM-DD-slug.md`). If wiki scope
-given, only scan that wiki. If keywords given, use `lore search` (if
-available) for ranked matches; fall back to Grep otherwise.
+Heuristics:
+- Argument contains `:` → `scope`
+- Argument is a known wiki name (single token, no space) → `wiki`
+- Argument is "last N days" or "last week"/"last month" → `recent`
+  with days set
+- Otherwise → `keyword`
+- If two tokens and first is a wiki name → `keyword` scoped to that
+  wiki
 
-Read matching sessions (most recent first, cap at ~5).
+### 2. Call the MCP tool — exactly one call
 
-### 3. Extract open items
+Use the `mcp__lore__lore_resume` tool with the parsed arguments. Only
+pass non-default values. Examples:
 
-Parse `## Open items` from matched sessions. Cross-reference: if an open
-item from day N appears resolved in a later session, mark it done.
+| User input | MCP arguments |
+|---|---|
+| `/lore:resume` | `{}` |
+| `/lore:resume ccat` | `{"wiki": "ccat"}` |
+| `/lore:resume ccat:data-center` | `{"scope": "ccat:data-center"}` |
+| `/lore:resume numa` | `{"keyword": "numa"}` |
+| `/lore:resume ccat numa` | `{"keyword": "numa", "wiki": "ccat"}` |
+| `/lore:resume last week` | `{"days": 7}` |
 
-### 4. Adaptive knowledge loading
+### 3. Render the result
 
-Only when keywords match or user specifies a wiki/project:
+The MCP tool returns a structured dict with a `mode` discriminator and
+mode-specific fields. Render it as markdown — the shape is already
+clean. For consistency with the CLI's `format_markdown`, use these
+section headers:
 
-- Read the target wiki's `_index.md` first (generated by `lore lint`)
-- If `lore search` is available:
-  `lore search "<keyword>" --wiki <name> --k 5`
-- Otherwise Grep for keyword matches across knowledge notes
-- Read the top 2-3 matching notes in full
-- For hierarchical notes, read the index first, then follow links only
-  to relevant sub-notes
+- `mode == "recent"` → `## Resume: <wiki|all wikis> (last Nd)` then
+  `### Recent sessions` and `### Open items`.
+- `mode == "keyword"` → `## Resume: <keyword>` then `### Top matches`.
+- `mode == "scope"` → `## /lore:resume <scope>` then `### Open issues`,
+  `### Open PRs`, `### Recent session notes`.
 
-### 5. Output context summary
+If the result has an `error` field, surface it verbatim.
 
-Keep under ~40 lines. Aggregate if many sessions.
+## Why this is short
 
-```
-## Context Resume: <wiki> (last 3 days)
-
-### Recent work
-- **YYYY-MM-DD**: <summary> (<wiki>)
-
-### Open items
-- ⚡ <unresolved item>
-- ✅ <resolved item> (resolved YYYY-MM-DD)
-
-### Loaded context
-- [[note-name]] — read index (keyword match)
-- [[sub-note]] — read sub-note (relevant to open item)
-
-### Related decisions
-- [[decision-name]]
-```
+In the CLI-first design, every gather operation lives in
+`lore_core/resume.py` and is exposed through both the CLI
+(`lore resume`) and the MCP tool (`lore_resume`). The skill is just
+the keyboard shortcut and the renderer. Token-economy by construction.
 
 ## Important rules
 
-- **Read-only** — never writes files
-- **Scan all wikis by default** — scope narrows with arguments
-- **Navigate hierarchy efficiently** — read `_index.md` first, follow
-  links to sub-notes only when relevant
-- **Programmatic first** — `lore search` / Glob / Grep for filtering;
-  Read only what passes
-- **Cap output** — under 40 lines of summary
-- **Complements hooks** — SessionStart hook does the default light
-  load; this skill is the manual/deeper form
+- **One MCP call.** No Glob, no Read, no Grep, no fallback to
+  iterative file walks. If the MCP call fails, surface the error —
+  do not retry by hand.
+- **Read-only.** This skill never writes files.
+- **No re-format if the user asked for JSON.** If the user explicitly
+  wants raw JSON, suggest `lore resume --json` from a shell instead.
+
+## Related
+
+- `/lore:loaded` — show what SessionStart already cached (no fresh
+  gather)
+- `/lore:search` — direct FTS query without the open-items / recency
+  framing

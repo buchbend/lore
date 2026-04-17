@@ -21,12 +21,11 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_wiki_root
-from lore_core.schema import extract_wikilinks, parse_frontmatter
+from lore_core.schema import extract_wikilinks
 from lore_search.fts import FtsBackend
 
 # ---------------------------------------------------------------------------
@@ -108,58 +107,26 @@ def handle_catalog(wiki: str | None = None) -> dict[str, Any]:
     return json.loads(cat.read_text())
 
 
-def handle_resume(wiki: str | None = None, days: int = 7) -> dict[str, Any]:
-    wiki_path = _resolve_wiki(wiki)
-    if wiki_path is None:
-        return {"error": f"wiki not found: {wiki}"}
-    sessions_dir = wiki_path / "sessions"
-    if not sessions_dir.exists():
-        return {"wiki": wiki_path.name, "sessions": [], "open_items": []}
+def handle_resume(
+    wiki: str | None = None,
+    days: int = 3,
+    keyword: str | None = None,
+    scope: str | None = None,
+    k: int = 5,
+) -> dict[str, Any]:
+    """Unified resume gather. Delegates to lore_core.resume.gather().
 
-    cutoff = date.today() - timedelta(days=days)
-    sessions: list[dict] = []
-    open_items: list[str] = []
-    seen: set[str] = set()
+    Modes (priority): scope > keyword > recent (wiki-scoped or all wikis).
+    """
+    from lore_core.resume import gather
 
-    for md in sorted(sessions_dir.glob("*.md"), reverse=True):
-        try:
-            iso = md.stem[:10]
-            d = date.fromisoformat(iso)
-        except (ValueError, IndexError):
-            continue
-        if d < cutoff:
-            continue
-        text = md.read_text(errors="replace")
-        fm = parse_frontmatter(text)
-        sessions.append(
-            {
-                "path": str(md.relative_to(wiki_path)),
-                "date": iso,
-                "title": md.stem,
-                "description": fm.get("description"),
-            }
-        )
-        # Parse ## Open items
-        import re
-
-        m = re.search(r"##\s+Open items\s*\n(.+?)(?=\n##|\Z)", text, re.DOTALL)
-        if not m:
-            continue
-        for line in m.group(1).splitlines():
-            line = line.strip()
-            if not line.startswith("-"):
-                continue
-            body = line.lstrip("-").strip()
-            if not body or body.lower() == "none" or body in seen:
-                continue
-            seen.add(body)
-            open_items.append(body)
-
-    return {
-        "wiki": wiki_path.name,
-        "sessions": sessions[:10],
-        "open_items": open_items[:20],
-    }
+    return gather(
+        scope=scope,
+        wiki=wiki,
+        keyword=keyword,
+        days=days,
+        k=k,
+    )
 
 
 def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
@@ -251,14 +218,37 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_resume",
             "description": (
-                "Return recent sessions and unresolved open items for a wiki. "
-                "Use at session start to load working context."
+                "Load working context from the vault. Modes (priority "
+                "order): scope > keyword > recent. Returns a structured "
+                "dict with `mode` discriminator. Use at session start or "
+                "any time the agent needs broader context without "
+                "iterating through Glob/Read."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "wiki": {"type": "string"},
-                    "days": {"type": "integer", "default": 7},
+                    "scope": {
+                        "type": "string",
+                        "description": "Scope prefix to aggregate gh issues + PRs + sessions for (e.g. ccat:data-center)",
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "description": "FTS5 ranked search across the vault",
+                    },
+                    "wiki": {
+                        "type": "string",
+                        "description": "Restrict to one wiki (default: all wikis for recent mode)",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "default": 3,
+                        "description": "Recency window for sessions (recent mode only)",
+                    },
+                    "k": {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "Top-k results for keyword search",
+                    },
                 },
             },
         },

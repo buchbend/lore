@@ -1,6 +1,9 @@
-"""Tests for `lore resume --scope` CLI.
+"""Tests for `lore resume` CLI.
 
-gh subprocess is mocked via monkeypatch on `lore_core.gh.run_gh`.
+gh subprocess is mocked via monkeypatch on `lore_core.resume.gh_issues`
+and `gh_prs` — those are now the canonical import sites since the
+scope-aggregation logic was extracted from `lore_cli.resume_cmd` into
+`lore_core.resume.gather()`.
 """
 
 from __future__ import annotations
@@ -81,8 +84,12 @@ def _stub_gh(monkeypatch, issues=None, prs=None):
     def fake_gh_prs(repo, _flags):
         return prs.get(repo, [])
 
-    monkeypatch.setattr(resume_cmd, "gh_issues", fake_gh_issues)
-    monkeypatch.setattr(resume_cmd, "gh_prs", fake_gh_prs)
+    # Patch the canonical import site (lore_core.resume) — the CLI
+    # now delegates there.
+    from lore_core import resume as core_resume
+
+    monkeypatch.setattr(core_resume, "gh_issues", fake_gh_issues)
+    monkeypatch.setattr(core_resume, "gh_prs", fake_gh_prs)
 
 
 def test_resume_subtree_aggregates_issues(vault, monkeypatch, capsys):
@@ -96,7 +103,7 @@ def test_resume_subtree_aggregates_issues(vault, monkeypatch, capsys):
             "ccatobs/data-transfer": [{"number": 31, "title": "wip", "isDraft": True}],
         },
     )
-    rc = resume_cmd.run_resume("ccat:data-center")
+    rc = resume_cmd.main(["--scope", "ccat:data-center"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "Subtree in `ccat`: 2 repo(s)" in out
@@ -109,10 +116,14 @@ def test_resume_subtree_aggregates_issues(vault, monkeypatch, capsys):
     assert "2026-04-09" not in out
 
 
-def test_resume_no_wiki_matches_returns_2(vault, monkeypatch, capsys):
+def test_resume_no_wiki_matches_emits_error(vault, monkeypatch, capsys):
     _stub_gh(monkeypatch)
-    rc = resume_cmd.run_resume("does-not-exist:path")
-    assert rc == 2
+    rc = resume_cmd.main(["--scope", "does-not-exist:path"])
+    # gather() returns mode=scope with an `error` field; CLI still exits 0
+    # because the operation completed successfully (empty result).
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "No wiki claims scope" in out
 
 
 def test_resume_exact_leaf(vault, monkeypatch, capsys):
@@ -120,7 +131,7 @@ def test_resume_exact_leaf(vault, monkeypatch, capsys):
         monkeypatch,
         issues={"ccatobs/data-transfer": [{"number": 99, "title": "x"}]},
     )
-    rc = resume_cmd.run_resume("ccat:data-center:data-transfer")
+    rc = resume_cmd.main(["--scope", "ccat:data-center:data-transfer"])
     assert rc == 0
     out = capsys.readouterr().out
     # Only the exact repo's issues appear
@@ -133,12 +144,14 @@ def test_resume_json_output(vault, monkeypatch, capsys):
         monkeypatch,
         issues={"ccatobs/data-transfer": [{"number": 47, "title": "retry cap"}]},
     )
-    rc = resume_cmd.run_resume("ccat:data-center", json_output=True)
+    rc = resume_cmd.main(["--scope", "ccat:data-center", "--json"])
     assert rc == 0
     out = capsys.readouterr().out
     import json as _j
 
-    data = _j.loads(out)
+    envelope = _j.loads(out)
+    assert envelope["schema"] == "lore.resume/1"
+    data = envelope["data"]
     assert data["scope"] == "ccat:data-center"
     assert data["wiki"] == "ccat"
     assert len(data["members"]) == 2
@@ -150,9 +163,31 @@ def test_resume_json_output(vault, monkeypatch, capsys):
 def test_resume_gh_silent_on_failure(vault, monkeypatch, capsys):
     """gh returning [] for every repo should still produce useful output."""
     _stub_gh(monkeypatch)  # both empty
-    rc = resume_cmd.run_resume("ccat:data-center")
+    rc = resume_cmd.main(["--scope", "ccat:data-center"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "### Open issues" in out
     assert "_None matched._" in out
     assert "### Open PRs" in out
+
+
+def test_resume_recent_no_args(vault, monkeypatch, capsys):
+    """No-arg mode: recent sessions across all wikis."""
+    _stub_gh(monkeypatch)
+    rc = resume_cmd.main(["--days", "365"])  # widen to catch fixture sessions
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Resume: all wikis" in out
+    assert "Recent sessions" in out
+    # Both fixture sessions should appear
+    assert "2026-04-10" in out
+    assert "2026-04-09" in out
+
+
+def test_resume_wiki_scoped_no_keyword(vault, monkeypatch, capsys):
+    """--wiki without --keyword: recent in that wiki only."""
+    _stub_gh(monkeypatch)
+    rc = resume_cmd.main(["--wiki", "ccat", "--days", "365"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Resume: ccat" in out
