@@ -27,14 +27,129 @@ from lore_core.git import current_repo
 from lore_core.io import atomic_write_text
 from lore_core.schema import parse_frontmatter
 
-# Cache file SessionStart writes; /lore:why reads this instead of
-# re-running the hook (no Bash subprocess, no sandbox, no permission
-# prompt).
-def _cache_path() -> Path:
-    cache_dir = Path(
-        os.environ.get("LORE_CACHE", str(Path.home() / ".cache" / "lore"))
-    )
-    return cache_dir / "last-session-start.md"
+# SessionStart writes its injected context to a cache file so /lore:why
+# can show it back to the user. Two concurrent Claude sessions would
+# stomp on a single shared file, so the cache is keyed by the Claude
+# Code process PID — stable for the life of a session, unique across
+# concurrent sessions on the same machine. The `why` subcommand
+# resolves the right file by walking its own process ancestry.
+def _cache_dir() -> Path:
+    return Path(os.environ.get("LORE_CACHE", str(Path.home() / ".cache" / "lore")))
+
+
+def _sessions_cache_dir() -> Path:
+    return _cache_dir() / "sessions"
+
+
+def _cache_path_for_pid(pid: int) -> Path:
+    return _sessions_cache_dir() / f"{pid}.md"
+
+
+def _legacy_cache_path() -> Path:
+    """Pre-PID-keying cache path; kept as a last-resort fallback."""
+    return _cache_dir() / "last-session-start.md"
+
+
+def _pid_alive(pid: int) -> bool:
+    """True if /proc/<pid> exists. Linux-only; returns True elsewhere to be conservative."""
+    if not Path("/proc").is_dir():
+        return True
+    return Path(f"/proc/{pid}").exists()
+
+
+def _proc_cmdline(pid: int) -> str:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            return fh.read().replace(b"\x00", b" ").decode(errors="replace")
+    except OSError:
+        return ""
+
+
+def _claude_code_pid() -> int | None:
+    """Walk process ancestry to find the Claude Code process PID.
+
+    Works from any descendant (the hook process, or `lore hook why`
+    invoked via the Bash tool). Returns None if /proc is unavailable or
+    no Claude Code ancestor is found.
+
+    Identification is layered because Claude Code presents itself
+    differently depending on how it was launched:
+      - `/proc/<pid>/exe` resolves to `CLAUDE_CODE_EXECPATH`
+        (e.g. `/home/u/.local/share/claude/versions/2.1.112`) for the
+        real process — this is the most reliable signal.
+      - cmdline may be just `claude` (when launched via the shim
+        script) or include the version path (when launched directly),
+        so we check for both.
+    """
+    if not Path("/proc").is_dir():
+        return None
+    execpath = os.environ.get("CLAUDE_CODE_EXECPATH", "")
+    pid = os.getpid()
+    for _ in range(20):  # bounded walk — pathological cycles shouldn't loop us
+        try:
+            with open(f"/proc/{pid}/status") as fh:
+                ppid = None
+                for line in fh:
+                    if line.startswith("PPid:"):
+                        ppid = int(line.split()[1])
+                        break
+            if not ppid or ppid <= 1:
+                return None
+        except OSError:
+            return None
+        # Most reliable: exe symlink matches the Claude Code install dir
+        if execpath:
+            try:
+                if os.readlink(f"/proc/{ppid}/exe") == execpath:
+                    return ppid
+            except OSError:
+                pass
+        cmdline = _proc_cmdline(ppid).strip()
+        # Cmdline may be the bare shim ("claude") or include the
+        # version path. The bare "claude" match is deliberately exact
+        # (== "claude") to avoid matching unrelated processes that
+        # happen to contain the substring.
+        if cmdline == "claude" or cmdline.rstrip() == "claude":
+            return ppid
+        if execpath and execpath in cmdline:
+            return ppid
+        if "claude-code" in cmdline or "/claude/versions/" in cmdline:
+            return ppid
+        pid = ppid
+    return None
+
+
+def _gc_sessions_cache(max_age_days: int = 14) -> None:
+    """Remove stale per-PID cache files.
+
+    A file is stale if its PID is no longer running, or (as a safety
+    net on non-Linux systems where we can't check PIDs) if it's older
+    than `max_age_days`. Best-effort — failures are swallowed so GC
+    never breaks the hook.
+    """
+    sessions_dir = _sessions_cache_dir()
+    if not sessions_dir.is_dir():
+        return
+    from time import time as _now
+
+    cutoff = _now() - max_age_days * 86400
+    for entry in sessions_dir.iterdir():
+        if not entry.is_file() or entry.suffix != ".md":
+            continue
+        try:
+            pid = int(entry.stem)
+        except ValueError:
+            continue
+        try:
+            stale_by_age = entry.stat().st_mtime < cutoff
+        except OSError:
+            continue
+        if _pid_alive(pid) and not stale_by_age:
+            continue
+        try:
+            entry.unlink()
+        except OSError:
+            pass
 
 # Keep auto-injected context bounded. ~500 tokens ≈ ~2000 characters for
 # prose; we cap at 2000 to stay tight.
@@ -426,6 +541,51 @@ def _pre_compact(cwd: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# `lore hook why` — read-only cache lookup for the /lore:why skill
+# ---------------------------------------------------------------------------
+
+
+def _why() -> str:
+    """Return the SessionStart cache for the current Claude Code session.
+
+    Resolution order:
+      1. `$LORE_CACHE/sessions/<claude_code_pid>.md` (per-session, crosstalk-free)
+      2. `$LORE_CACHE/last-session-start.md` (legacy fallback, may belong
+         to a different concurrent session — flagged as such)
+      3. An explanatory error string if nothing is cached yet.
+    """
+    cc_pid = _claude_code_pid()
+    if cc_pid is not None:
+        primary = _cache_path_for_pid(cc_pid)
+        if primary.exists():
+            try:
+                return primary.read_text(errors="replace")
+            except OSError:
+                pass
+
+    legacy = _legacy_cache_path()
+    if legacy.exists():
+        try:
+            body = legacy.read_text(errors="replace")
+        except OSError:
+            body = ""
+        if body:
+            note = (
+                "_(read from legacy singleton cache — may be from a "
+                "different concurrent Claude session)_\n\n"
+            )
+            return note + body
+
+    return (
+        "lore: no SessionStart cache found. Either the hook has not "
+        "fired yet in this session, or hooks are disabled. Check "
+        "`~/.claude/settings.json` for a SessionStart entry invoking "
+        "`lore hook session-start`, or re-run the installer with "
+        "`--with-hooks`.\n"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Stop hook (timeout-style prompt)
 # ---------------------------------------------------------------------------
 
@@ -492,12 +652,27 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
     envelope: dict
 
     if hook_event == "SessionStart":
-        # Cache the full injected body so `/lore:why` can Read it
-        # directly without invoking Bash (which triggers sandbox /
-        # permission prompts on some setups). Ignore cache write
-        # errors — they must never break the hook.
+        # Cache the injected body so `/lore:why` can surface it back to
+        # the user. Key by the Claude Code PID so two concurrent
+        # sessions don't stomp each other. We walk process ancestry
+        # rather than trusting os.getppid() directly: today Claude Code
+        # spawns hooks without a shell wrapper (PPID == Claude Code),
+        # but the walker keeps us correct if that ever changes. Fall
+        # back to PPID if the walker can't resolve (e.g. non-Linux).
+        # Keep writing the legacy singleton path too so older skill
+        # installs still see *something*. Ignore cache errors — they
+        # must never break the hook.
+        cc_pid = _claude_code_pid() or os.getppid()
         try:
-            atomic_write_text(_cache_path(), text)
+            atomic_write_text(_cache_path_for_pid(cc_pid), text)
+        except OSError:
+            pass
+        try:
+            atomic_write_text(_legacy_cache_path(), text)
+        except OSError:
+            pass
+        try:
+            _gc_sessions_cache()
         except OSError:
             pass
         envelope = {
@@ -543,7 +718,16 @@ def main(argv: list[str] | None = None) -> int:
             help="Print raw text instead of Claude Code JSON envelope",
         )
 
+    sub.add_parser(
+        "why",
+        help="Print the SessionStart cache for the current Claude session",
+    )
+
     args = parser.parse_args(argv)
+    if args.hook == "why":
+        sys.stdout.write(_why())
+        return 0
+
     # Resolve CWD in order: explicit --cwd → CLAUDE_PROJECT_DIR env →
     # actual process working directory (Claude Code sets this to the
     # project dir when spawning hooks). Having a sensible default means
