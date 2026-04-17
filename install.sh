@@ -18,6 +18,7 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="${HOME}/.claude/skills"
+AGENTS_DIR="${HOME}/.claude/agents"
 SETTINGS_FILE="${HOME}/.claude/settings.json"
 
 WITH_HOOKS=0
@@ -92,6 +93,33 @@ for skill_dir in "$REPO_DIR"/skills/lore:*/; do
 done
 ok "Linked $linked skill(s)"
 echo "   (existing vault:* skills left untouched — lore:* coexists)"
+
+# ----------------------------------------------------------------------
+# 2b. Symlink subagents
+# ----------------------------------------------------------------------
+
+if compgen -G "$REPO_DIR/agents/*.md" > /dev/null; then
+    say "Linking subagents into $AGENTS_DIR"
+    mkdir -p "$AGENTS_DIR"
+    a_linked=0
+    for agent_file in "$REPO_DIR"/agents/*.md; do
+        name="$(basename "$agent_file")"
+        target="$AGENTS_DIR/$name"
+        if [[ -L "$target" ]]; then
+            current="$(readlink "$target")"
+            if [[ "$current" == "$agent_file" ]]; then
+                continue
+            fi
+            rm "$target"
+        elif [[ -e "$target" ]]; then
+            warn "$target exists and is not a symlink; skipping"
+            continue
+        fi
+        ln -s "$agent_file" "$target"
+        a_linked=$((a_linked + 1))
+    done
+    ok "Linked $a_linked subagent(s)"
+fi
 
 # ----------------------------------------------------------------------
 # 3a. Auto-allow `Bash(lore:*)` so Lore commands don't trigger permission prompts
