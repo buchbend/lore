@@ -151,6 +151,10 @@ No files move. If your vault does not yet match the canonical shape,
   context is injected once at session start; the agent pulls more via
   MCP when it decides retrieval would help.
 
+## Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=buchbend/lore&type=Date)](https://star-history.com/#buchbend/lore&Date)
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).
