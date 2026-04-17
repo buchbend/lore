@@ -18,6 +18,7 @@ import argparse
 import json
 import sys
 
+from lore_cli.launcher import launch, list_hosts
 from lore_core.resume import (
     DEFAULT_DAYS,
     DEFAULT_ISSUES_FILTER,
@@ -76,6 +77,25 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Emit JSON envelope on stdout instead of markdown",
     )
+    parser.add_argument(
+        "--launch",
+        default=None,
+        metavar="HOST",
+        help=(
+            f"Gather context, then exec the named agent host "
+            f"pre-warmed (known: {', '.join(list_hosts()) or 'none'})"
+        ),
+    )
+    parser.add_argument(
+        "--launch-dry-run",
+        action="store_true",
+        help="With --launch: print the would-be invocation, do not exec",
+    )
+    parser.add_argument(
+        "--launch-message",
+        default=None,
+        help="Initial user message to pass to the launched host (optional)",
+    )
     args = parser.parse_args(argv)
 
     result = gather(
@@ -87,6 +107,18 @@ def main(argv: list[str] | None = None) -> int:
         issues_filter=args.issues,
         prs_filter=args.prs,
     )
+
+    if args.launch:
+        if "error" in result and not result.get("mode"):
+            print(f"lore: {result['error']}", file=sys.stderr)
+            return 1
+        context_text = format_markdown(result)
+        return launch(
+            args.launch,
+            context_text=context_text,
+            user_message=args.launch_message,
+            dry_run=args.launch_dry_run,
+        )
 
     if args.json:
         print(json.dumps({"schema": "lore.resume/1", "data": result}, indent=2))

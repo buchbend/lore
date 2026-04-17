@@ -52,6 +52,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["lib"]
 
+[tool.setuptools.package-data]
+"lore_cli" = ["hosts.d/*.toml"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

@@ -1,0 +1,9 @@
+# Lore host config — OpenCode (placeholder)
+#
+# Until OpenCode ships an --append-system-prompt equivalent, prepend
+# the context block into the initial user message instead.
+
+binary = "opencode"
+context_format = "prepend"
+context_flag = ""
+extra_args = []

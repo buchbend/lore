@@ -1,0 +1,19 @@
+# Lore host config — Claude Code
+#
+# Used by `lore resume <topic> --launch claude` to start a fresh
+# Claude Code session pre-warmed with the gathered context.
+#
+# Schema (lore.host/1):
+#   binary          executable to exec
+#   context_format  how the gathered context reaches the host:
+#                     "flag"   — pass as `<context_flag> <value>` argv
+#                     "stdin"  — pipe to the binary's stdin
+#                     "append" — append to the user-provided initial prompt
+#                     "prepend" — prepend to the user-provided initial prompt
+#   context_flag    argv flag name when format == "flag"
+#   extra_args      list of extra argv strings always passed to binary
+
+binary = "claude"
+context_format = "flag"
+context_flag = "--append-system-prompt"
+extra_args = []
