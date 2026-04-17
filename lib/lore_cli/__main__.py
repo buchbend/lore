@@ -22,6 +22,8 @@ SUBCOMMANDS = {
     "detach": ("lore_cli.detach_cmd", "main"),
     "resume": ("lore_cli.resume_cmd", "main"),
     "session": ("lore_cli.session_cmd", "main"),
+    "briefing": ("lore_cli.briefing_cmd", "main"),
+    "inbox": ("lore_cli.inbox_cmd", "main"),
 }
 
 

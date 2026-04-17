@@ -1,108 +1,52 @@
 ---
 name: lore:briefing
-description: Generate a developer briefing from a wiki's session notes and
-  publish it to a configured sink (Matrix, Slack, Discord, markdown,
-  GitHub Discussion). Tracks which sessions have been incorporated to avoid
-  duplicates. Run with "/lore:briefing <wiki>".
+description: Generate a developer briefing from a wiki's session notes
+  and publish it via a configured sink (Matrix, Slack, Discord, markdown,
+  GitHub Discussion). Calls MCP `lore_briefing_gather` for the
+  deterministic part; LLM only composes prose. Run with
+  "/lore:briefing <wiki>".
 user_invocable: true
 ---
 
 # Developer Briefing
 
-Generates a concise briefing from **one wiki's session notes** and
-publishes it to a configurable sink.
+Generates a concise briefing from one wiki's new session notes and
+publishes it via the wiki's configured sink. The deterministic work
+(reading the ledger, scanning sessions, parsing frontmatter, loading
+sink config) is one MCP call. The LLM only composes the prose. Side
+effects (publish + ledger update) go through visible Bash calls.
 
-## Scope
+## Workflow — three tool calls minimum
 
-Each invocation is scoped to one wiki. Briefings are not cross-wiki —
-different wikis usually have different audiences.
+### 1. MCP gather (silent, fast)
 
-## Configuration
-
-Each wiki optionally declares a sink in
-`$LORE_ROOT/wiki/<name>/.lore-briefing.yml`:
-
-```yaml
-# Matrix
-sink: matrix
-homeserver: https://matrix.example.org
-room_id: "!abc:matrix.example.org"
-# Credentials in ~/.local/share/lore/matrix-credentials.json
-
-# Or Slack
-sink: slack
-webhook_url_env: SLACK_WEBHOOK_URL    # read from env, never committed
-
-# Or Discord
-sink: discord
-webhook_url_env: DISCORD_WEBHOOK_URL
-
-# Or plain markdown file (good for Obsidian, GitHub issues, etc.)
-sink: markdown
-path: "briefings/YYYY-MM-DD.md"       # relative to wiki root
-
-# Or GitHub Discussion
-sink: gh_discussion
-repo: "org/name"
-category: "Announcements"
-
-# No file → conversation-only briefing
-```
-
-**Credentials never go in the wiki repo.** They live in `~/.config/lore/`
-or per-sink state dirs, and adapter env vars reference them.
-
-## Session ledger
-
-`$LORE_ROOT/wiki/<name>/.briefing-ledger.json` tracks which sessions have
-already been incorporated:
-
-```json
-{
-  "last_briefing": "YYYY-MM-DD",
-  "incorporated": ["YYYY-MM-DD-slug.md", ...]
-}
-```
-
-Prevents the same session from appearing in multiple briefings.
-
-## Workflow
-
-### 0. Git pull the wiki
-
-```bash
-git -C $LORE_ROOT/wiki/<wiki> pull --ff-only
-```
-
-### 1. Check for new sessions
-
-Read the ledger (create if missing). Glob `wiki/<wiki>/sessions/*.md`.
-Filter out already-incorporated files. If nothing new → report "No new
-sessions since last briefing" and stop.
-
-### 2. Read new session notes
-
-Parse frontmatter and body of each new session.
-
-### 3. Generate briefing
-
-**What happened** — aggregate "What we worked on" across new sessions.
-Group by project/domain, not chronologically. Deduplicate overlapping
-work.
-
-**Decisions made** — list all decisions. Highest-value items.
-
-**Open items** — merge open items; flag items that appeared in previous
-sessions too (unresolved = higher priority). Cross-reference with the
-wiki to check for resolutions.
-
-**Vault health** — quick scan: any `status: stale`? Any `last_reviewed`
-approaching 90 days?
-
-### 4. Output format
+Call `mcp__lore__lore_briefing_gather` with:
 
 ```
-## Briefing: YYYY-MM-DD (<wiki>)
+{"wiki": "<name>"}
+```
+
+The tool returns:
+- `wiki`, `today`
+- `ledger`: `{last_briefing, incorporated_count}`
+- `sink_config`: parsed `.lore-briefing.yml` (or null)
+- `new_sessions`: list of `{path, date, slug, frontmatter, sections}`
+  where `sections` maps H2 heading → body text per session note
+
+If `new_sessions` is empty, report "No new sessions since last
+briefing" and stop. **Do not** Glob the sessions dir yourself.
+
+### 2. Compose the prose (LLM judgment)
+
+Aggregate "What we worked on" across new sessions. Group by
+project/domain, not chronologically. Deduplicate overlapping work.
+List key decisions with their *why*. Merge open items / loose ends;
+flag items repeated across sessions.
+
+Target shape (≤30 lines regardless of how many sessions):
+
+```
+## Briefing: <today> (<wiki>)
 
 ### What happened
 - **<project>**: <summary>
@@ -111,46 +55,66 @@ approaching 90 days?
 - <decision and why>
 
 ### Open items
-- ⚡ <item> (from YYYY-MM-DD)
+- <item>
 
 ### Vault health
-- <N> notes, <M> reviewed within 90 days
+- <N notes covered, M decisions, K open items>
 ```
 
-Under ~30 lines regardless of how many sessions.
+### 3. Publish via Bash (visible side effect)
 
-### 5. Publish via the configured sink
-
-The sink adapter (Python module in `lore_sinks/`) handles transport:
+Pipe the composed prose through `lore briefing publish`:
 
 ```bash
-python -m lore_sinks.<adapter> send --wiki <wiki> --file /tmp/lore/briefing.md
+lore briefing publish --sink <name> [--out <path>] <<'EOF'
+<your composed briefing>
+EOF
 ```
 
-Available adapters: `matrix`, `slack`, `discord`, `markdown`,
-`gh_discussion`. Sink-less wikis skip publish and show the briefing in
-the conversation only.
+Sink name comes from `sink_config.sink` (or pass `markdown` with
+`--out` if no sink is configured — good for review-before-send). The
+markdown sink also accepts `--out` containing the literal
+`YYYY-MM-DD` (replaced at publish time).
 
-If publishing fails, **still show the briefing in the conversation** and
-report the error.
+If `sink_config` is null, **don't publish** — just show the prose to
+the user and stop. Don't fabricate a sink.
 
-### 6. Update the ledger
+### 4. Mark incorporated via Bash
 
-Add new session filenames to `incorporated`. Set `last_briefing` to
-today. Commit the ledger update:
+Once published, update the ledger so these sessions don't appear in
+the next briefing:
 
 ```bash
-git -C $LORE_ROOT/wiki/<wiki> add .briefing-ledger.json
-git -C $LORE_ROOT/wiki/<wiki> commit -m "lore: briefing ledger YYYY-MM-DD"
+lore briefing mark --wiki <name> \
+    --session 2026-04-15-fix-a.md \
+    --session 2026-04-16-fix-b.md \
+    [...]
 ```
 
-## Important rules
+### 5. (Optional) Commit the ledger
 
-- **One wiki per briefing** — don't mix audiences
-- **No duplicates** — the ledger is the source of truth for what's been
-  briefed
-- **Always show in conversation** — even if the sink fails
-- **Keep it short** — under 30 lines
-- **Prioritize decisions and open items** — that's what developers need
-- **Credentials stay out of the wiki repo** — config references env vars
-  or user-local files
+```bash
+git -C $LORE_ROOT/wiki/<name> add .briefing-ledger.json
+git -C $LORE_ROOT/wiki/<name> commit -m "lore: briefing ledger <today>"
+```
+
+(Or run `lore session commit <ledger-path>` — the commit subcommand
+works for any path inside a wiki, not just session notes.)
+
+## Hard rules
+
+- **One MCP call for gather.** No Glob, no Read. The tool returns
+  parsed sections.
+- **Always show the prose in the conversation**, even if publish
+  fails — and report the error.
+- **One wiki per briefing.** Different wikis have different audiences.
+- **Sinkless wikis don't publish.** Show the briefing, stop. Don't
+  invent a destination.
+- **Credentials never enter the wiki repo.** `.lore-briefing.yml`
+  only references env-var names; the sink adapters resolve actual
+  values from `~/.config/lore/` or environment.
+
+## Related
+
+- `/lore:loaded` — what SessionStart cached
+- `/lore:resume` — fresh gather (different shape: per-topic / per-scope)

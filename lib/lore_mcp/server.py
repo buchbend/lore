@@ -13,6 +13,12 @@ Exposed tools:
     lore_session_scaffold   — read-only scaffold (path + frontmatter) for a new
                               session note; the subagent uses this before any
                               write so the deterministic work happens once
+    lore_briefing_gather    — read-only briefing gather (new sessions since last
+                              briefing + sink config + ledger); skill writes
+                              prose, then shells out to publish + mark
+    lore_inbox_classify     — read-only inbox walk (file list with type +
+                              routing hint); skill composes notes, then shells
+                              out to `lore inbox archive`
 
 Start:
     lore mcp
@@ -130,6 +136,26 @@ def handle_resume(
         days=days,
         k=k,
     )
+
+
+def handle_briefing_gather(
+    wiki: str,
+    since: str | None = None,
+    include_body_sections: bool = True,
+) -> dict[str, Any]:
+    """Read-only briefing gather. Delegates to lore_core.briefing.gather()."""
+    from lore_core.briefing import gather
+
+    return gather(
+        wiki=wiki, since=since, include_body_sections=include_body_sections
+    )
+
+
+def handle_inbox_classify() -> dict[str, Any]:
+    """Read-only inbox classifier. Delegates to lore_core.inbox.classify()."""
+    from lore_core.inbox import classify
+
+    return classify()
 
 
 def handle_session_scaffold(
@@ -302,6 +328,43 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
+            "name": "lore_briefing_gather",
+            "description": (
+                "Read-only briefing gather: returns the new session "
+                "notes (since the last briefing) plus the wiki's sink "
+                "config and ledger state. Caller composes the briefing "
+                "prose, then shells out to `lore briefing publish` and "
+                "`lore briefing mark`. No LLM call inside the tool."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "wiki": {"type": "string"},
+                    "since": {
+                        "type": "string",
+                        "description": "ISO date floor (YYYY-MM-DD)",
+                    },
+                    "include_body_sections": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Extract H2 sections per session",
+                    },
+                },
+                "required": ["wiki"],
+            },
+        },
+        {
+            "name": "lore_inbox_classify",
+            "description": (
+                "Read-only inbox walk: returns every file in the root "
+                "inbox and per-wiki inboxes with detected type and "
+                "routing hint. Caller reads each file, composes vault "
+                "notes (LLM judgment), then runs `lore inbox archive` "
+                "to move the source to `.processed/`."
+            ),
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
             "name": "lore_session_scaffold",
             "description": (
                 "Compute path, frontmatter, identity, and recent-commits "
@@ -375,6 +438,10 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_wikilinks(**args)
         case "lore_session_scaffold":
             return handle_session_scaffold(**args)
+        case "lore_briefing_gather":
+            return handle_briefing_gather(**args)
+        case "lore_inbox_classify":
+            return handle_inbox_classify(**args)
         case _:
             return {"error": f"unknown tool: {tool_name}"}
 
