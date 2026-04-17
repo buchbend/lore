@@ -5,9 +5,13 @@ auto-extracted into durable knowledge, repo-scoped context injected at
 session start, pluggable team briefings. No vector DB needed for small
 vaults; a full hybrid search + MCP server for larger ones.
 
-> Status: **0.1 alpha.** Core linter + schema + migration in place.
-> Skills, search, MCP, curator being implemented. Track progress at
-> [PLAN.md](./PLAN.md) *(soon)*.
+> ⚠️ **Work in progress — 0.1 alpha.** APIs, hook contracts, skill
+> surfaces, frontmatter schema, and CLI flags are all still changing.
+> Expect breakage. Not recommended for wikis you can't re-linter into
+> shape. Core linter + schema + migration are in place; session
+> pipeline, search, MCP, curator, and the scope/team/identity MVP
+> (tracked in [#3](https://github.com/buchbend/lore/issues/3)) are
+> under active implementation. No stability guarantee until 0.2.
 
 ## The pitch
 
