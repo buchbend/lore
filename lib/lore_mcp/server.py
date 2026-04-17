@@ -4,12 +4,15 @@ Runs as a local STDIO server. Any MCP client (Claude Desktop, Cursor,
 Windsurf, Zed, etc.) can register this and query the vault.
 
 Exposed tools:
-    lore_search      — hybrid ranked search, top-k paths
-    lore_read        — read one note by wiki/path
-    lore_index       — return a wiki's _index.md
-    lore_catalog     — return a wiki's _catalog.json
-    lore_resume      — sessions + open items bundle
-    lore_wikilinks   — in/out wikilinks for a note
+    lore_search             — hybrid ranked search, top-k paths
+    lore_read               — read one note by wiki/path
+    lore_index              — return a wiki's _index.md
+    lore_catalog            — return a wiki's _catalog.json
+    lore_resume             — unified context gather (recent/wiki/keyword/scope)
+    lore_wikilinks          — in/out wikilinks for a note
+    lore_session_scaffold   — read-only scaffold (path + frontmatter) for a new
+                              session note; the subagent uses this before any
+                              write so the deterministic work happens once
 
 Start:
     lore mcp
@@ -126,6 +129,40 @@ def handle_resume(
         keyword=keyword,
         days=days,
         k=k,
+    )
+
+
+def handle_session_scaffold(
+    cwd: str,
+    slug: str,
+    description: str,
+    title: str | None = None,
+    target_wiki: str | None = None,
+    extra_repos: list[str] | None = None,
+    tags: list[str] | None = None,
+    implements: list[str] | None = None,
+    loose_ends: list[str] | None = None,
+    project: str | None = None,
+) -> dict[str, Any]:
+    """Read-only scaffold for a new session note.
+
+    Returns the computed path, frontmatter, body template, and identity
+    state — pure data, no file write. The caller (subagent) then composes
+    the prose body and writes via the CLI subprocess `lore session new`.
+    """
+    from lore_core.session import scaffold
+
+    return scaffold(
+        cwd=cwd,
+        slug=slug,
+        description=description,
+        title=title,
+        target_wiki=target_wiki,
+        extra_repos=extra_repos,
+        tags=tags,
+        implements=implements,
+        loose_ends=loose_ends,
+        project=project,
     )
 
 
@@ -264,6 +301,61 @@ def _tool_schema() -> list[dict]:
                 "required": ["note"],
             },
         },
+        {
+            "name": "lore_session_scaffold",
+            "description": (
+                "Compute path, frontmatter, identity, and recent-commits "
+                "for a new session note — read-only, no file write. Call "
+                "this BEFORE composing the session body so the determinist "
+                "work (routing, scope, handle, sharded path, frontmatter) "
+                "happens once. Then write the file via the CLI subprocess "
+                "`lore session new --body -` < <body>."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "cwd": {
+                        "type": "string",
+                        "description": "Working directory the session ran in",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Short kebab-case topic identifier",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "One-sentence summary",
+                    },
+                    "title": {"type": "string", "description": "Note H1 (default: slug)"},
+                    "target_wiki": {
+                        "type": "string",
+                        "description": "Wiki name (default: from `## Lore` block or only-wiki)",
+                    },
+                    "extra_repos": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Additional repos to tag beyond the cwd's repo",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Frontmatter tags (3–5 max)",
+                    },
+                    "implements": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Proposal slugs that landed in this session",
+                    },
+                    "loose_ends": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Frontmatter loose-end strings",
+                    },
+                    "project": {"type": "string", "description": "Primary project name"},
+                },
+                "required": ["cwd", "slug", "description"],
+            },
+        },
     ]
 
 
@@ -281,6 +373,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_resume(**args)
         case "lore_wikilinks":
             return handle_wikilinks(**args)
+        case "lore_session_scaffold":
+            return handle_session_scaffold(**args)
         case _:
             return {"error": f"unknown tool: {tool_name}"}
 
