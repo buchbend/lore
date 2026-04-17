@@ -18,6 +18,8 @@ SUBCOMMANDS = {
     "curator": ("lore_curator.core", "main"),
     "init": ("lore_cli.init_cmd", "main"),
     "new-wiki": ("lore_cli.new_wiki_cmd", "main"),
+    "attach": ("lore_cli.attach_cmd", "main"),
+    "detach": ("lore_cli.detach_cmd", "main"),
 }
 
 
