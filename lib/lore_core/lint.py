@@ -111,8 +111,13 @@ def discover_notes(wiki_path: Path) -> list[Path]:
             notes.append(md)
     sessions_dir = wiki_path / "sessions"
     if sessions_dir.exists():
-        for md in sorted(sessions_dir.glob("*.md")):
+        # In solo mode sessions live flat: sessions/*.md
+        # In team mode they're sharded: sessions/<handle>/*.md
+        # rglob covers both without extra branching.
+        for md in sorted(sessions_dir.rglob("*.md")):
             if md.name in SKIP_FILES:
+                continue
+            if any(part in SKIP_DIRS for part in md.parts):
                 continue
             notes.append(md)
     return notes

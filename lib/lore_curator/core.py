@@ -27,6 +27,7 @@ from datetime import date
 from pathlib import Path
 
 from lore_core.git import is_obsidian_holding
+from lore_core.identity import distinct_git_authors, team_mode_recommended
 from lore_core.io import atomic_write_text
 from lore_core.lint import STALENESS_DAYS, discover_notes, discover_wikis
 from lore_core.schema import parse_frontmatter
@@ -201,6 +202,7 @@ class CuratorReport:
     wiki: str
     actions: list[CuratorAction] = field(default_factory=list)
     skipped: list[tuple[Path, str]] = field(default_factory=list)
+    hints: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +436,25 @@ def _pass_implements(wiki_path: Path) -> list[CuratorAction]:
     return actions
 
 
+def _pass_team_mode_hint(wiki_path: Path) -> list[str]:
+    """Check whether the wiki has outgrown solo mode.
+
+    Returns a list of human-readable hints for `_review.md`. Does not
+    create `_users.yml` — that's opt-in by the user. Solo wikis and
+    already-team wikis produce no hint.
+    """
+    if not team_mode_recommended(wiki_path):
+        return []
+    authors = sorted(distinct_git_authors(wiki_path))
+    return [
+        "Team-mode activation recommended: "
+        f"{len(authors)} distinct authors in git log "
+        f"({', '.join(authors[:5])}{'…' if len(authors) > 5 else ''}), "
+        "but no `_users.yml` yet. "
+        "Create `_users.yml` to enable identity aliasing and session sharding.",
+    ]
+
+
 def _pass_git_backfill(wiki_path: Path) -> list[CuratorAction]:
     actions: list[CuratorAction] = []
     for fpath in discover_notes(wiki_path):
@@ -504,6 +525,7 @@ def run_curator(
         report.actions.extend(_pass_supersession(wiki_path))
         report.actions.extend(_pass_implements(wiki_path))
         report.actions.extend(_pass_git_backfill(wiki_path))
+        report.hints.extend(_pass_team_mode_hint(wiki_path))
         reports.append(report)
 
     for report in reports:
@@ -546,7 +568,7 @@ def _print_report(report: CuratorReport, dry_run: bool) -> None:
 
 def _write_review(wiki_path: Path, report: CuratorReport) -> None:
     """Write `_review.md` summarizing curator findings for SessionStart."""
-    if not report.actions:
+    if not report.actions and not report.hints:
         # Clear any old review file
         review = wiki_path / "_review.md"
         if review.exists():
@@ -567,6 +589,12 @@ def _write_review(wiki_path: Path, report: CuratorReport) -> None:
         lines.append("")
         for a in actions:
             lines.append(f"- `{a.path.name}` — {a.reason}")
+        lines.append("")
+    if report.hints:
+        lines.append("## hints")
+        lines.append("")
+        for hint in report.hints:
+            lines.append(f"- {hint}")
         lines.append("")
     atomic_write_text(wiki_path / "_review.md", "\n".join(lines))
 

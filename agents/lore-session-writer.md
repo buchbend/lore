@@ -79,6 +79,17 @@ From these, you know:
 - Otherwise, use the email's local-part (before `@`) as the handle. No
   prompt.
 
+**Session path:**
+
+- **Solo mode** (no `_users.yml`): write to `sessions/<YYYY-MM-DD>-<slug>.md`.
+- **Team mode** (`_users.yml` present): write to `sessions/<handle>/<YYYY-MM-DD>-<slug>.md`
+  so per-user session history stays cleanly sharded. `mkdir -p` the
+  handle directory before writing.
+
+The linter recognizes both layouts; shared knowledge (`concepts/`,
+`decisions/`, `_scopes.yml`, `_users.yml`) always stays flat at the
+wiki root.
+
 ### 4. Find related notes via ranked search (one call)
 
 Instead of reading many notes:
@@ -109,7 +120,9 @@ target.
 
 ### 6. Write the session note (v2 template)
 
-Path: `$LORE_ROOT/wiki/<target>/sessions/<YYYY-MM-DD>-<slug>.md`.
+Path (per "Session path" rule above):
+  - Solo: `$LORE_ROOT/wiki/<target>/sessions/<YYYY-MM-DD>-<slug>.md`
+  - Team: `$LORE_ROOT/wiki/<target>/sessions/<handle>/<YYYY-MM-DD>-<slug>.md`
 
 Slug is a short kebab-case phrase from the gist's main topic.
 
