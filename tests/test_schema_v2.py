@@ -108,7 +108,9 @@ def test_v2_optional_fields_registered():
 
 def test_required_fields_unchanged_for_session():
     # v2 doesn't add new *required* fields — only optionals.
+    # status-vocabulary-minimalism dropped `status:` from required.
     assert "schema_version" in REQUIRED_FIELDS["session"]
+    assert "status" not in REQUIRED_FIELDS["session"]
     assert "scope" not in REQUIRED_FIELDS["session"]
     assert "user" not in REQUIRED_FIELDS["session"]
 

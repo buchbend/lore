@@ -1,12 +1,15 @@
 """Tests for the curator's `implements:` cross-reference pass.
 
-Contract (from concepts/lore/implements-cross-reference):
-  - Session note's `implements: [slug, slug:partial, ...]` flips target
-    concept/decision status.
-  - Target gets `implemented_at` (session's created date) + wikilink
-    back in `implemented_by`.
-  - Idempotent: same session, same target, same status → no action.
-  - Unresolvable slugs are silently skipped.
+Contract (post status-vocabulary-minimalism):
+  - `implements: slug` on a draft target → drop `draft: true`, stamp
+    `implemented_at` + `implemented_by` back-link.
+  - `implements: slug` on a canonical target → no frontmatter effect
+    (pure back-link in the session note).
+  - `implements: slug:superseded-by:other` → write `superseded_by:
+    [[other]]` on target.
+  - `:partial` / `:abandoned` markers are session-note documentation
+    only; no target frontmatter change.
+  - Idempotent on repeat runs; unresolvable slugs are silently skipped.
 """
 
 from __future__ import annotations
@@ -20,16 +23,16 @@ from lore_curator.core import _parse_implements_entry, _pass_implements
 
 
 @pytest.mark.parametrize("entry,expected", [
-    ("my-concept", ("my-concept", "implemented", None)),
+    ("my-concept", ("my-concept", "implements", None)),
     ("my-concept:partial", ("my-concept", "partial", None)),
     ("my-concept:abandoned", ("my-concept", "abandoned", None)),
     ("my-concept:superseded-by:other-slug",
      ("my-concept", "superseded", "other-slug")),
-    ("slug-with-dashes", ("slug-with-dashes", "implemented", None)),
-    # Unknown trailing state → fall through to default
-    ("slug:weird-state", ("slug:weird-state", "implemented", None)),
+    ("slug-with-dashes", ("slug-with-dashes", "implements", None)),
+    # Unknown trailing marker → fall through to default
+    ("slug:weird-state", ("slug:weird-state", "implements", None)),
     # Whitespace tolerance
-    ("  my-concept  ", ("my-concept", "implemented", None)),
+    ("  my-concept  ", ("my-concept", "implements", None)),
 ])
 def test_parse_implements_entry(entry, expected):
     assert _parse_implements_entry(entry) == expected
@@ -45,24 +48,23 @@ def wiki(tmp_path: Path, monkeypatch) -> Path:
     (w / "sessions").mkdir(parents=True)
     (w / "concepts").mkdir()
     (w / "decisions").mkdir()
-    # Point LORE_ROOT at the tmp vault so discover_notes' wiki_root resolution
-    # doesn't matter; _pass_implements takes the wiki path directly.
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     return w
 
 
-def _write_concept(wiki: Path, slug: str, status: str = "proposed") -> Path:
+def _write_concept(wiki: Path, slug: str, draft: bool = False,
+                   extra_fm: str = "") -> Path:
     fpath = wiki / "concepts" / f"{slug}.md"
+    draft_line = "draft: true\n" if draft else ""
     fpath.write_text(
         f"""---
 schema_version: 2
 type: concept
 created: 2026-01-01
 last_reviewed: 2026-01-01
-status: {status}
 description: "A test concept."
 tags: [topic/test]
----
+{draft_line}{extra_fm}---
 # {slug}
 body
 """
@@ -80,7 +82,6 @@ schema_version: 2
 type: session
 created: {created}
 last_reviewed: {created}
-status: stable
 description: "A test session."
 implements:
 {implements_yaml}
@@ -92,118 +93,121 @@ body
     return fpath
 
 
-def test_single_implements_flips_to_implemented(wiki):
-    target = _write_concept(wiki, "some-proposed-concept")
-    _write_session(wiki, "s1", ["some-proposed-concept"])
+def test_draft_target_gets_promoted_and_stamped(wiki):
+    target = _write_concept(wiki, "my-proposal", draft=True)
+    _write_session(wiki, "s1", ["my-proposal"])
     actions = _pass_implements(wiki)
     assert len(actions) == 1
     a = actions[0]
     assert a.path == target
-    assert a.patch["status"] == "implemented"
+    assert a.kind == "implements"
+    # draft flag gets removed (sentinel None)
+    assert a.patch["draft"] is None
     assert a.patch["implemented_by"] == "[[2026-04-17-s1]]"
     assert a.patch["implemented_at"] == "2026-04-17"
 
 
-def test_partial_state(wiki):
-    _write_concept(wiki, "gappy-concept")
-    _write_session(wiki, "s2", ["gappy-concept:partial"])
+def test_canonical_target_no_frontmatter_effect(wiki):
+    """When target has no `draft:` flag, implements is a pure back-link."""
+    _write_concept(wiki, "already-canonical")
+    _write_session(wiki, "s2", ["already-canonical"])
     actions = _pass_implements(wiki)
-    assert len(actions) == 1
-    assert actions[0].patch["status"] == "partial"
+    # First run: curator adds back-link stamp (implemented_by/at).
+    # Subsequent runs: idempotent.
+    if actions:
+        assert len(actions) == 1
+        assert "draft" not in actions[0].patch  # nothing to promote
+    # Idempotency check — apply any action, re-run, expect no further actions.
+    from lore_curator.core import _apply_patch
+    if actions:
+        new_text = _apply_patch(
+            actions[0].path.read_text(), actions[0].patch
+        )
+        actions[0].path.write_text(new_text)
+    assert _pass_implements(wiki) == []
 
 
-def test_abandoned_state(wiki):
-    _write_concept(wiki, "dropped-concept")
-    _write_session(wiki, "s3", ["dropped-concept:abandoned"])
-    actions = _pass_implements(wiki)
-    assert len(actions) == 1
-    assert actions[0].patch["status"] == "abandoned"
-
-
-def test_superseded_state_includes_superseded_by(wiki):
+def test_superseded_by_marker_writes_relation(wiki):
     _write_concept(wiki, "old-idea")
     _write_concept(wiki, "new-idea")
-    _write_session(wiki, "s4", ["old-idea:superseded-by:new-idea"])
+    _write_session(wiki, "s3", ["old-idea:superseded-by:new-idea"])
     actions = _pass_implements(wiki)
     assert len(actions) == 1
-    patch = actions[0].patch
-    assert patch["status"] == "superseded"
-    assert patch["superseded_by"] == "[[new-idea]]"
+    a = actions[0]
+    assert a.kind == "mark_superseded"
+    assert a.patch == {"superseded_by": "[[new-idea]]"}
+
+
+def test_partial_marker_no_frontmatter_effect(wiki):
+    _write_concept(wiki, "gappy-concept", draft=True)
+    _write_session(wiki, "s4", ["gappy-concept:partial"])
+    assert _pass_implements(wiki) == []
+
+
+def test_abandoned_marker_no_frontmatter_effect(wiki):
+    _write_concept(wiki, "dropped-concept", draft=True)
+    _write_session(wiki, "s5", ["dropped-concept:abandoned"])
+    assert _pass_implements(wiki) == []
 
 
 def test_unresolvable_slug_is_silent(wiki):
-    _write_session(wiki, "s5", ["does-not-exist"])
+    _write_session(wiki, "s6", ["does-not-exist"])
+    assert _pass_implements(wiki) == []
+
+
+def test_mixed_list_only_promotes_drafts(wiki):
+    _write_concept(wiki, "alpha", draft=True)
+    _write_concept(wiki, "beta")  # already canonical
+    _write_concept(wiki, "old")
+    _write_concept(wiki, "new")
+    _write_session(wiki, "s7", [
+        "alpha",
+        "beta:partial",                 # no effect
+        "ghost",                        # unresolvable
+        "old:superseded-by:new",
+    ])
     actions = _pass_implements(wiki)
-    assert actions == []
+    kinds = {a.path.stem: a.kind for a in actions}
+    # alpha promoted (draft → canonical); old gets superseded_by.
+    # beta is canonical with :partial marker → no action.
+    assert "alpha" in kinds
+    assert kinds["alpha"] == "implements"
+    assert kinds["old"] == "mark_superseded"
+    assert "beta" not in kinds
+    assert "ghost" not in kinds
 
 
-def test_mixed_list(wiki):
-    _write_concept(wiki, "alpha")
-    _write_concept(wiki, "beta")
-    _write_concept(wiki, "gamma")
-    _write_session(wiki, "s6", ["alpha", "beta:partial", "gamma:abandoned", "ghost"])
-    actions = _pass_implements(wiki)
-    kinds = {a.path.stem: a.patch["status"] for a in actions}
-    assert kinds == {"alpha": "implemented", "beta": "partial", "gamma": "abandoned"}
-
-
-def test_idempotent_when_already_flipped(wiki):
-    target = _write_concept(wiki, "already-done")
-    # Simulate a prior curator run: target already has the patched metadata
-    target.write_text(
-        """---
-schema_version: 2
-type: concept
-created: 2026-01-01
-last_reviewed: 2026-01-01
-status: implemented
-implemented_by: "[[2026-04-17-s7]]"
-implemented_at: 2026-04-17
-description: "A test concept."
-tags: [topic/test]
----
-body
-"""
-    )
-    _write_session(wiki, "s7", ["already-done"])
-    actions = _pass_implements(wiki)
-    assert actions == []
-
-
-def test_different_session_same_target_rewrites(wiki):
-    """If a newer session implements the same target, the pass proposes
-    an update (overwriting implemented_by with the newer session)."""
-    target = _write_concept(wiki, "twice-done")
-    target.write_text(
-        """---
-schema_version: 2
-type: concept
-created: 2026-01-01
-last_reviewed: 2026-01-01
-status: implemented
-implemented_by: "[[2026-01-05-old-session]]"
-description: "A test concept."
-tags: [topic/test]
----
-body
-"""
-    )
-    _write_session(wiki, "new-session", ["twice-done"], created="2026-04-17")
+def test_idempotent_on_second_run(wiki):
+    _write_concept(wiki, "promote-me", draft=True)
+    _write_session(wiki, "s8", ["promote-me"])
+    from lore_curator.core import _apply_patch
     actions = _pass_implements(wiki)
     assert len(actions) == 1
-    assert actions[0].patch["implemented_by"] == "[[2026-04-17-new-session]]"
+    # Apply the patch and re-run.
+    target = actions[0].path
+    target.write_text(_apply_patch(target.read_text(), actions[0].patch))
+    assert _pass_implements(wiki) == []
+
+
+def test_superseded_by_is_idempotent(wiki):
+    target = _write_concept(
+        wiki, "old-idea",
+        extra_fm='superseded_by: "[[new-idea]]"\n',
+    )
+    _write_concept(wiki, "new-idea")
+    _write_session(wiki, "s9", ["old-idea:superseded-by:new-idea"])
+    assert _pass_implements(wiki) == []
+    # Target intact
+    assert "superseded_by" in target.read_text()
 
 
 def test_no_implements_no_actions(wiki):
     _write_concept(wiki, "untouched")
     _write_session(wiki, "quiet", [])
-    actions = _pass_implements(wiki)
-    assert actions == []
+    assert _pass_implements(wiki) == []
 
 
 def test_non_session_notes_are_ignored(wiki):
-    """A concept note that happens to contain an `implements:` field
-    should not be processed — only session notes drive this pass."""
     _write_concept(wiki, "target")
     odd = wiki / "sessions" / "not-a-session.md"
     odd.write_text(
@@ -214,5 +218,4 @@ implements: [target]
 body
 """
     )
-    actions = _pass_implements(wiki)
-    assert actions == []
+    assert _pass_implements(wiki) == []

@@ -30,7 +30,7 @@ from lore_core.git import is_obsidian_holding
 from lore_core.identity import distinct_git_authors, team_mode_recommended
 from lore_core.io import atomic_write_text
 from lore_core.lint import STALENESS_DAYS, discover_notes, discover_wikis
-from lore_core.schema import parse_frontmatter
+from lore_core.schema import compute_lifecycle, parse_frontmatter
 from rich.console import Console
 
 # ---------------------------------------------------------------------------
@@ -191,10 +191,14 @@ console = Console()
 
 @dataclass
 class CuratorAction:
-    kind: str  # "mark_stale" | "mark_superseded" | "backfill_created" | "backfill_last_reviewed"
+    kind: str
+    # One of: "review_stale" | "mark_superseded" | "implements" | "backfill_git"
+    # An empty `patch` marks the action as review-only (surfaced in
+    # `_review.md` for interactive resolution). A `None` value in the
+    # patch removes the corresponding frontmatter key.
     path: Path
     reason: str
-    patch: dict  # frontmatter fields to set
+    patch: dict
 
 
 @dataclass
@@ -219,26 +223,26 @@ _SUPERSEDES_RE = re.compile(
 def _parse_implements_entry(entry: str) -> tuple[str, str, str | None]:
     """Parse an `implements:` frontmatter entry.
 
-    Forms (per concepts/lore/implements-cross-reference):
-      - `my-concept`                          → (slug, "implemented", None)
+    Under status-vocabulary-minimalism the only frontmatter-writing
+    marker is `:superseded-by:`. `:partial` and `:abandoned` remain
+    parseable for session-note documentation but produce no curator
+    frontmatter effect.
+
+    Returns `(slug, kind, successor)`:
+      - `my-concept`                          → (slug, "implements", None)
       - `my-concept:partial`                  → (slug, "partial", None)
       - `my-concept:abandoned`                → (slug, "abandoned", None)
       - `my-concept:superseded-by:other-slug` → (slug, "superseded", other-slug)
-
-    Unknown state markers are ignored (treated as the default
-    `implemented`) — an unknown marker is a hint that the author
-    intended something but we don't recognize it yet; safer to let the
-    curator review flag it as odd than to silently invent a state.
     """
     if ":superseded-by:" in entry:
         slug, _, rest = entry.partition(":superseded-by:")
         return (slug.strip(), "superseded", rest.strip() or None)
     if ":" in entry:
-        slug, _, state = entry.partition(":")
-        state = state.strip()
-        if state in ("partial", "abandoned"):
-            return (slug.strip(), state, None)
-    return (entry.strip(), "implemented", None)
+        slug, _, marker = entry.partition(":")
+        marker = marker.strip()
+        if marker in ("partial", "abandoned"):
+            return (slug.strip(), marker, None)
+    return (entry.strip(), "implements", None)
 
 
 def _git_first_commit_date(repo: Path, rel_path: str) -> str | None:
@@ -286,19 +290,27 @@ def _split_frontmatter(text: str) -> tuple[str, str] | None:
 def _apply_patch(text: str, patch: dict) -> str:
     """Apply a frontmatter patch, preserving existing YAML ordering where possible.
 
+    Patch semantics:
+      - `key: value` — upsert.
+      - `key: None` — remove the key (sentinel, distinct from YAML null).
+
     Simple approach: parse, merge, re-serialize with yaml.safe_dump.
     """
     import yaml
 
     split = _split_frontmatter(text)
     if split is None:
-        # No frontmatter — create one
-        fm = patch
+        # No frontmatter — create one (filter out removal sentinels)
+        fm = {k: v for k, v in patch.items() if v is not None}
         body = text
     else:
         fm_block, body = split
         fm = yaml.safe_load(fm_block) or {}
-        fm.update(patch)
+        for key, value in patch.items():
+            if value is None:
+                fm.pop(key, None)
+            else:
+                fm[key] = value
     new_fm = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).rstrip() + "\n"
     return f"---\n{new_fm}---\n{body}"
 
@@ -309,11 +321,20 @@ def _apply_patch(text: str, patch: dict) -> str:
 
 
 def _pass_staleness(wiki_path: Path, today: date, threshold: int) -> list[CuratorAction]:
+    """Flag canonical notes whose `last_reviewed` exceeds `threshold` days.
+
+    Review-only: the action carries an empty patch. The user resolves
+    each flagged note interactively (bump `last_reviewed`, add
+    `superseded_by:`, or delete). `_apply_safely` treats empty patches
+    as a no-op.
+    """
     actions: list[CuratorAction] = []
     for fpath in discover_notes(wiki_path):
         text = fpath.read_text(errors="replace")
         fm = parse_frontmatter(text)
-        if fm.get("status") != "active":
+        if fm.get("type") == "session":
+            continue
+        if compute_lifecycle(fm) != "canonical":
             continue
         lr = fm.get("last_reviewed")
         if not lr:
@@ -322,20 +343,25 @@ def _pass_staleness(wiki_path: Path, today: date, threshold: int) -> list[Curato
             lr_date = date.fromisoformat(str(lr))
         except (ValueError, TypeError):
             continue
-        if (today - lr_date).days > threshold:
+        days = (today - lr_date).days
+        if days > threshold:
             actions.append(
                 CuratorAction(
-                    kind="mark_stale",
+                    kind="review_stale",
                     path=fpath,
-                    reason=f"last_reviewed {lr} (> {threshold} days)",
-                    patch={"status": "stale"},
+                    reason=f"last_reviewed {lr} ({days} days ago, > {threshold})",
+                    patch={},
                 )
             )
     return actions
 
 
 def _pass_supersession(wiki_path: Path) -> list[CuratorAction]:
-    """When note A says `supersedes [[B]]`, mark B as superseded_by A."""
+    """When note A says `supersedes [[B]]`, write `superseded_by: [[A]]` on B.
+
+    Per status-vocabulary-minimalism: only the `superseded_by:`
+    relation is written; `status:` is not touched.
+    """
     actions: list[CuratorAction] = []
     # Build filename → path map for quick lookup
     by_name: dict[str, Path] = {}
@@ -350,17 +376,15 @@ def _pass_supersession(wiki_path: Path) -> list[CuratorAction]:
             if target_path is None:
                 continue
             target_fm = parse_frontmatter(target_path.read_text(errors="replace"))
-            if target_fm.get("status") == "superseded":
+            expected = f"[[{fpath.stem}]]"
+            if target_fm.get("superseded_by") == expected:
                 continue
             actions.append(
                 CuratorAction(
                     kind="mark_superseded",
                     path=target_path,
                     reason=f"superseded by [[{fpath.stem}]]",
-                    patch={
-                        "status": "superseded",
-                        "superseded_by": f"[[{fpath.stem}]]",
-                    },
+                    patch={"superseded_by": expected},
                 )
             )
     return actions
@@ -369,15 +393,20 @@ def _pass_supersession(wiki_path: Path) -> list[CuratorAction]:
 def _pass_implements(wiki_path: Path) -> list[CuratorAction]:
     """Process `implements:` session-note frontmatter.
 
-    For each slug in a session note's `implements:` list, flip the
-    referenced concept/decision note's `status:` per
-    `_parse_implements_entry`, and stamp `implemented_at:` + a wikilink
-    back to the session note in `implemented_by:`.
+    Per status-vocabulary-minimalism:
+      - `implements: slug` → if target has `draft: true`, drop it; stamp
+        `implemented_at:` + `implemented_by:` back-links.
+      - `implements: slug:superseded-by:other` → set `superseded_by:
+        [[other]]` on target.
+      - `implements: slug:partial` / `slug:abandoned` → no frontmatter
+        effect (marker is documentation in the session note only).
 
-    Idempotent: skips targets already flipped to the same status by the
-    same session note. Targets that can't be resolved by slug are
-    silently skipped (the session-note writer is responsible for
-    verifying slugs; unverifiable ones should have gone as loose ends).
+    If the target is already canonical (no `draft:` flag), a plain
+    `implements:` entry has no frontmatter effect — it remains a pure
+    back-link in the session note.
+
+    Idempotent: skips targets where the required state is already in
+    place. Targets that can't be resolved by slug are silently skipped.
     """
     actions: list[CuratorAction] = []
 
@@ -401,35 +430,60 @@ def _pass_implements(wiki_path: Path) -> list[CuratorAction]:
         session_date = str(fm.get("created") or "")
 
         for raw in implements:
-            slug, new_status, superseded_by = _parse_implements_entry(str(raw))
+            slug, kind, successor = _parse_implements_entry(str(raw))
             target = by_name.get(slug)
             if target is None:
                 continue
             target_fm = parse_frontmatter(target.read_text(errors="replace"))
-
             expected_by = f"[[{session_slug}]]"
-            if (
-                target_fm.get("status") == new_status
-                and target_fm.get("implemented_by") == expected_by
-                and (superseded_by is None
-                     or target_fm.get("superseded_by") == f"[[{superseded_by}]]")
-            ):
+
+            if kind == "superseded":
+                expected_sb = f"[[{successor}]]" if successor else None
+                if not expected_sb:
+                    continue
+                if target_fm.get("superseded_by") == expected_sb:
+                    continue
+                patch: dict = {"superseded_by": expected_sb}
+                actions.append(
+                    CuratorAction(
+                        kind="mark_superseded",
+                        path=target,
+                        reason=f"superseded by [[{successor}]] via [[{session_slug}]]",
+                        patch=patch,
+                    )
+                )
                 continue
 
-            patch: dict = {
-                "status": new_status,
-                "implemented_by": expected_by,
-            }
+            if kind in ("partial", "abandoned"):
+                # Marker is session-note documentation only; no target frontmatter change.
+                continue
+
+            # Default case: `implements: slug`.
+            was_draft = target_fm.get("draft") is True
+            already_stamped = (
+                target_fm.get("implemented_by") == expected_by
+                and (not session_date or target_fm.get("implemented_at") == session_date)
+            )
+            if not was_draft and already_stamped:
+                continue
+            if not was_draft and target_fm.get("implemented_by") == expected_by:
+                # Canonical target already linked to this session → no-op.
+                continue
+
+            patch = {"implemented_by": expected_by}
             if session_date:
                 patch["implemented_at"] = session_date
-            if superseded_by:
-                patch["superseded_by"] = f"[[{superseded_by}]]"
-
+            if was_draft:
+                patch["draft"] = None  # sentinel: _apply_patch removes the key
             actions.append(
                 CuratorAction(
                     kind="implements",
                     path=target,
-                    reason=f"{new_status} by [[{session_slug}]]",
+                    reason=(
+                        f"promoted from draft by [[{session_slug}]]"
+                        if was_draft
+                        else f"back-link from [[{session_slug}]]"
+                    ),
                     patch=patch,
                 )
             )
@@ -489,6 +543,9 @@ def _pass_git_backfill(wiki_path: Path) -> list[CuratorAction]:
 
 def _apply_safely(action: CuratorAction) -> tuple[bool, str]:
     """Apply one action with a pre/post mtime check. Returns (applied, reason)."""
+    if not action.patch:
+        # Review-only action (e.g. stale flag) — surfaced in _review.md, no write.
+        return (True, "review-only")
     before = action.path.stat().st_mtime
     text_before = action.path.read_text(errors="replace")
     new_text = _apply_patch(text_before, action.patch)

@@ -35,13 +35,17 @@ VALID_STATUSES: frozenset[str] = frozenset(
 # Required frontmatter fields per note type. `schema_version` is required
 # on all new notes but the linter auto-fixes by writing the current
 # SCHEMA_VERSION when missing on an otherwise-valid note (see --fix).
+#
+# `status` was removed from REQUIRED_FIELDS by the status-vocabulary-
+# minimalism decision: notes are implicitly canonical unless they carry
+# `draft: true` or `superseded_by: [[...]]`. Legacy `status:` values are
+# still accepted by the parser during the deprecation window.
 REQUIRED_FIELDS: dict[str, list[str]] = {
     "project": [
         "schema_version",
         "type",
         "created",
         "last_reviewed",
-        "status",
         "description",
         "tags",
     ],
@@ -50,7 +54,6 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
         "type",
         "created",
         "last_reviewed",
-        "status",
         "description",
         "tags",
     ],
@@ -59,7 +62,6 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
         "type",
         "created",
         "last_reviewed",
-        "status",
         "description",
         "tags",
     ],
@@ -68,14 +70,12 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
         "type",
         "created",
         "last_reviewed",
-        "status",
         "description",
     ],
     "paper": [
         "schema_version",
         "type",
         "citekey",
-        "status",
         "description",
         "tags",
     ],
@@ -84,6 +84,7 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
 # Optional fields the linter understands across types. Listing them here
 # makes the schema self-documenting; absence is not an error.
 OPTIONAL_FIELDS: set[str] = {
+    "status",  # legacy — accepted during deprecation, no operational effect
     "repos",  # list[str] — ["org/name", ...] — enables repo-based scoping
     "scope",  # str — hierarchical, e.g. "ccat:data-center:data-transfer"
     "scopes_touched",  # list[str] — additional scopes a session spanned
@@ -100,8 +101,24 @@ OPTIONAL_FIELDS: set[str] = {
     # v2 `implements:` target-note metadata (written by curator)
     "implemented_at",  # str — YYYY-MM-DD when a proposal was realized
     "implemented_by",  # str — wikilink to the session note that did it
-    "superseded_by",  # str — wikilink when status is superseded
+    # status-vocabulary-minimalism — lifecycle via opt-in signals
+    "draft",  # bool — note is not yet committed to (rare, opt-in)
+    "superseded_by",  # str | list[str] — wikilink(s) to successor note(s)
 }
+
+
+def compute_lifecycle(fm: dict) -> str:
+    """Return `canonical | draft | superseded` derived from frontmatter.
+
+    Per status-vocabulary-minimalism, lifecycle is a derived property,
+    not a user-maintained field. Precedence: superseded wins (the note
+    has been replaced, so the draft/canonical distinction is moot).
+    """
+    if fm.get("superseded_by"):
+        return "superseded"
+    if fm.get("draft") is True:
+        return "draft"
+    return "canonical"
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 

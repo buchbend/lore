@@ -41,19 +41,24 @@ projects/
 
 ```yaml
 ---
-schema_version: 1
+schema_version: 2
 type: project | concept | decision | session | paper
 created: YYYY-MM-DD
 last_reviewed: YYYY-MM-DD
-status: active | stable | stale | archived | proposed | accepted | superseded
 description: "One-sentence summary for scanning."
 tags: [topic/xxx, domain/xxx, scope/xxx]
 repos: [org/name, ...]      # optional; auto-populated by /lore:session
+# Opt-in lifecycle signals (see status-vocabulary-minimalism):
+#   draft: true                    # not yet ready; rare
+#   superseded_by: [[successor]]   # retired in favour of another note
 ---
 ```
 
 - `last_reviewed` = date someone confirmed this note is still accurate.
-- Sessions default to `status: stable` (immutable snapshots).
+- Notes are canonical by default — do not set an explicit `status:` field.
+- Use `draft: true` while thinking through a note; drop it when ready.
+- Use `superseded_by: [[successor]]` when retiring a note; the graph
+  directs readers to the successor.
 - `description` must be filled — enables fast vault scanning.
 
 ## Tag taxonomy (customize)
@@ -79,8 +84,10 @@ Notes can carry multiple scope tags when they span teams.
 
 ## Staleness
 
-- `last_reviewed > 90 days` + `status: active` = staleness candidate.
-- The `/lore:curator` skill flags these and writes `_review.md`.
+- Canonical notes (no `draft:`, no `superseded_by:`) whose
+  `last_reviewed` age exceeds 180 days are flagged for review.
+- `/lore:curator` surfaces the list in `_review.md`; resolve each by
+  bumping `last_reviewed`, adding `superseded_by: [[...]]`, or deleting.
 - When updating a note, always update `last_reviewed`.
 - Accept some drift — the vault captures intent; code is source of
   truth for implementation detail.
