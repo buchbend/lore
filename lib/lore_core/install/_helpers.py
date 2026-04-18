@@ -263,17 +263,24 @@ def managed_block_content(path: Path) -> str | None:
 
 INSTALLERS = ("pipx", "uv", "pip")  # cascade order
 
+# `lore` on PyPI is squatted by an unrelated package (lore 0.8.6 — broken
+# on Python 3.13 due to pkg_resources). Until we publish under a different
+# name (tracked in an issue), the canonical non-editable install path is
+# the GitHub repo.
+LORE_GIT_URL = "git+https://github.com/buchbend/lore.git"
+
 
 def install_self_via(target: Path | None = None) -> tuple[str, list[str]]:
     """Pick the first available installer and return its argv.
 
     `target` is the editable source path for dev installs (or None to
-    install the published `lore` from PyPI). Mirrors install.sh:49–62.
+    install from the GitHub repo via git+ URL — PyPI publish is blocked
+    on the `lore` name being squatted). Mirrors install.sh:49–62.
 
     Returns `(installer_name, argv)`. Caller invokes via subprocess.
     Raises RuntimeError if none are available.
     """
-    src = str(target) if target else "lore"
+    src = str(target) if target else LORE_GIT_URL
     for installer in INSTALLERS:
         if shutil.which(installer):
             if installer == "pipx":

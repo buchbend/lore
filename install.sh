@@ -13,9 +13,12 @@
 #
 # Then install with the new flow:
 #
-#   pipx install lore                # the Python CLI
+#   pipx install git+https://github.com/buchbend/lore.git
 #   lore install                     # detect & wire installed hosts
 #   lore init                        # scaffold a vault + set $LORE_ROOT
+#
+# (Bare `pipx install lore` does NOT work — the name is squatted on
+#  PyPI by an unrelated package. Use the git+ URL.)
 #
 # Dev / offline install: see CONTRIBUTING.md for the editable-from-
 # checkout recipe (pipx install --editable + local plugin marketplace).
@@ -32,9 +35,12 @@ cat <<'EOF'
 
   Please use the new flow:
 
-    pipx install lore
+    pipx install git+https://github.com/buchbend/lore.git
     lore install
     lore init
+
+  (Bare `pipx install lore` does NOT work — the name is squatted on
+   PyPI. Use the git+ URL above.)
 
   If you previously ran this script, clean up the legacy ~/.claude
   state first:

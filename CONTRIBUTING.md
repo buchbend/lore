@@ -7,8 +7,8 @@ installer flow itself.
 ## Dev install (editable + local plugin marketplace)
 
 Three commands. Same recipe doubles as the **offline / air-gapped
-install path** for machines without network egress to PyPI or the
-marketplace — point a checkout at the local filesystem and you're set.
+install path** for machines without network egress to GitHub — point
+a checkout at the local filesystem and you're set.
 
 ```bash
 # 1. Editable Python — source edits are picked up live, no reinstall
@@ -23,6 +23,12 @@ claude plugin marketplace add file://$(realpath ~/git/lore)/.claude-plugin/marke
 #    fresh install, just pointed at the local plugin source).
 lore install --lore-repo ~/git/lore
 ```
+
+**Why not `pipx install lore`?** The name `lore` is squatted on PyPI
+by an unrelated package. Until we publish under a different PyPI name,
+the canonical non-editable install is the git+ URL form
+(`pipx install git+https://github.com/buchbend/lore.git`), which is
+what `lore install`'s self-install bootstrap uses internally too.
 
 Edit `~/git/lore/skills/lore:foo/SKILL.md` → Claude Code picks up the
 change next session. Edit `~/git/lore/lib/lore_core/...` → next CLI

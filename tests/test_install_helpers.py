@@ -156,7 +156,9 @@ def test_install_self_via_picks_pipx_when_available(monkeypatch):
     name, argv = install_self_via()
     assert name == "pipx"
     assert argv[:2] == ["pipx", "install"]
-    assert argv[-1] == "lore"
+    # PyPI name `lore` is squatted; canonical non-editable install
+    # uses the git+ URL until we pick a clean PyPI name.
+    assert argv[-1].startswith("git+https://github.com/buchbend/lore")
 
 
 def test_install_self_via_falls_back_to_uv_when_no_pipx(monkeypatch):

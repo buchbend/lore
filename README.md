@@ -50,10 +50,15 @@ Three commands. Works on Linux + macOS in v1 (Windows tracked as a
 known gap).
 
 ```bash
-pipx install lore                               # the Python CLI
-lore install                                    # detect installed hosts, wire each
-lore init                                       # scaffold a vault + set $LORE_ROOT
+pipx install git+https://github.com/buchbend/lore.git   # the Python CLI
+lore install                                            # detect installed hosts, wire each
+lore init                                               # scaffold a vault + set $LORE_ROOT
 ```
+
+> **Note:** the bare `pipx install lore` form will *not* work — the
+> name `lore` is squatted on PyPI by an unrelated package. Use the
+> `git+https://...` form above. We'll switch to a clean PyPI name
+> once one is picked (tracked in an issue).
 
 `lore install` walks every detected host (Claude Code, Cursor in v1)
 and shows what it'll change before doing anything. One prompt per
@@ -82,9 +87,12 @@ If you ran the old bash installer, `lore install` will refuse with a
 clear warning until you reset:
 
 ```bash
-python3 tools/undo_install_sh.py --dry-run    # preview what would change
-python3 tools/undo_install_sh.py              # apply
-lore install                                  # then proceed cleanly
+git clone https://github.com/buchbend/lore.git    # if you don't have a checkout
+cd lore
+python3 tools/undo_install_sh.py --dry-run        # preview what would change
+python3 tools/undo_install_sh.py                  # apply
+pipx install git+https://github.com/buchbend/lore.git   # install the new CLI
+lore install                                      # then proceed cleanly
 ```
 
 The undo helper is stdlib-only Python; runs even if `lore` isn't on
@@ -100,9 +108,10 @@ The repo is a self-describing marketplace:
 ```
 
 That alone gives you the plugin (hooks, skills, subagents, MCP) — it
-does not install the `lore` CLI itself. Run `pipx install lore`
-separately, or use `lore install --host claude` once `lore` is on
-your PATH (it'll subprocess `claude plugin install lore@lore` for you).
+does not install the `lore` CLI itself. Run
+`pipx install git+https://github.com/buchbend/lore.git` separately,
+or use `lore install --host claude` once `lore` is on your PATH
+(it'll subprocess `claude plugin install lore@lore` for you).
 
 ### Dev install (editable, also the offline / air-gapped path)
 
