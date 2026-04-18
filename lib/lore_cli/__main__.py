@@ -25,6 +25,8 @@ SUBCOMMANDS = {
     "briefing": ("lore_cli.briefing_cmd", "main"),
     "inbox": ("lore_cli.inbox_cmd", "main"),
     "doctor": ("lore_cli.doctor_cmd", "main"),
+    "install": ("lore_cli.install_cmd", "main"),
+    "uninstall": ("lore_cli.install_cmd", "uninstall_main"),
 }
 
 
