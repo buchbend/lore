@@ -322,10 +322,14 @@ def _cmd_install(args: argparse.Namespace, mode: str = "install") -> int:
     # gates writing modes; `check` shows everything and exits 0).
     # Uninstall operates regardless — you may be uninstalling legacy
     # state.
+    legacy_artifacts: list[LegacyArtifact] = []
     if mode != "uninstall":
-        artifacts = detect_install_sh_artifacts(lore_repo=ctx.lore_repo)
-        if artifacts:
-            _print_legacy_warning(artifacts)
+        legacy_artifacts = detect_install_sh_artifacts(lore_repo=ctx.lore_repo)
+        if legacy_artifacts:
+            # In --json mode, omit the human warning (it'd contaminate
+            # stdout). The artifacts ride in the JSON envelope below.
+            if not args.json:
+                _print_legacy_warning(legacy_artifacts)
             # Check mode: print plan too, then exit 0
             if args.cmd != "check" and not args.force:
                 if args.json:
@@ -333,7 +337,7 @@ def _cmd_install(args: argparse.Namespace, mode: str = "install") -> int:
                         {
                             "ok": False,
                             "reason": "legacy_artifacts",
-                            "artifacts": [a.__dict__ for a in artifacts],
+                            "artifacts": [a.__dict__ for a in legacy_artifacts],
                         }
                     )
                 return 1
@@ -352,6 +356,7 @@ def _cmd_install(args: argparse.Namespace, mode: str = "install") -> int:
     if args.json or args.cmd == "check":
         envelope = {
             "mode": mode,
+            "legacy_artifacts": [a.__dict__ for a in legacy_artifacts],
             "hosts": [
                 {
                     "host": name,
