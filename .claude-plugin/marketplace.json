@@ -9,10 +9,7 @@
   "plugins": [
     {
       "name": "lore",
-      "source": {
-        "source": "github",
-        "repo": "buchbend/lore"
-      },
+      "source": "./",
       "description": "LLM-optimized knowledge graph: session notes, auto-extracted knowledge, pluggable briefings, magic context injection."
     }
   ]

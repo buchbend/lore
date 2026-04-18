@@ -10,6 +10,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-04-18
+
+### Fixed
+
+- **`claude plugin update lore@lore` failed** with "destination is
+  empty after copy" because the v0.2.0 marketplace.json used a
+  `github` source object pointing back at `buchbend/lore` — the
+  same repo as the marketplace itself. Claude Code's update path
+  for github-source plugins (clone source repo → copy into
+  versioned cache) appears to mishandle this self-reference and
+  produces an empty cache.
+- **Switched to `source: "./"`** (validated cleanly with
+  `claude plugin validate`). The marketplace root IS the plugin
+  root in our setup; Claude Code uses the marketplace clone
+  directly, no separate github source clone, no copy-step bug.
+
 ## [0.2.1] — 2026-04-18
 
 ### Fixed
