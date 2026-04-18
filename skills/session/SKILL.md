@@ -1,5 +1,5 @@
 ---
-name: lore:session
+name: session
 description: Write a session note to the correct Lore wiki. Delegates to
   the `lore-session-writer` subagent so main-conversation context stays
   focused on your actual work. Run with "/lore:session" at the end of a

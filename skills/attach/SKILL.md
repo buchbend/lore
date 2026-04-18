@@ -1,5 +1,5 @@
 ---
-name: lore:attach
+name: attach
 description: Attach the current repo or folder to a wiki scope by writing
   a managed `## Lore` section to CLAUDE.md. Interactive (three-question
   max), idempotent, non-destructive. Run with "/lore:attach".

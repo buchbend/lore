@@ -1,5 +1,5 @@
 ---
-name: lore:search
+name: search
 description: Hybrid ranked search over the knowledge vault (SQLite FTS5 +
   optional Model2Vec embeddings). Returns top-k paths + descriptions.
   Run with "/lore:search <query>".

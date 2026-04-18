@@ -1,5 +1,5 @@
 ---
-name: lore:briefing
+name: briefing
 description: Generate a developer briefing from a wiki's session notes
   and publish it via a configured sink (Matrix, Slack, Discord, markdown,
   GitHub Discussion). Calls MCP `lore_briefing_gather` for the

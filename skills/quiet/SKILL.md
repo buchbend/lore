@@ -1,5 +1,5 @@
 ---
-name: lore:quiet
+name: quiet
 description: Suppress inline "› consulted [[note]]" citation affordances
   for this session while keeping SessionStart auto-injection and MCP
   retrieval. Run with "/lore:quiet" to silence, "/lore:loud" to

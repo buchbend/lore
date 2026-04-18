@@ -1,5 +1,5 @@
 ---
-name: lore:curator
+name: curator
 description: Per-wiki maintenance — flag stale notes, detect superseded
   decisions, backfill created / last_reviewed from git log, write a
   review summary the next SessionStart can surface. Frontmatter-only

@@ -1,5 +1,5 @@
 ---
-name: lore:off
+name: off
 description: Mute all Lore hooks for the current session (SessionStart,
   PreCompact, Stop, inline "consulted" affordances). Resets on next
   session. Run with "/lore:off" to disable, "/lore:on" to re-enable.

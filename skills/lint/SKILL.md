@@ -1,5 +1,5 @@
 ---
-name: lore:lint
+name: lint
 description: Health-check the knowledge vault and regenerate
   _catalog.json / _index.md / llms.txt. Runs the lore_core linter,
   interprets results, offers safe auto-fixes. Run with "/lore:lint".

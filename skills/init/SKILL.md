@@ -1,5 +1,5 @@
 ---
-name: lore:init
+name: init
 description: Initialize a new Lore vault at $LORE_ROOT — creates the
   canonical shape (wiki/, sessions/, inbox/, drafts/, templates/) and
   writes a starter root CLAUDE.md. Run with "/lore:init".

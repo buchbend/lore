@@ -30,8 +30,10 @@ the canonical non-editable install is the git+ URL form
 (`pipx install git+https://github.com/buchbend/lore.git`), which is
 what `lore install`'s self-install bootstrap uses internally too.
 
-Edit `~/git/lore/skills/lore:foo/SKILL.md` → Claude Code picks up the
-change next session. Edit `~/git/lore/lib/lore_core/...` → next CLI
+Edit `~/git/lore/skills/<name>/SKILL.md` → Claude Code picks up the
+change next session. (Skill directories are bare names like
+`attach`, `loaded`, `resume`; the `/lore:` slash-command prefix
+comes from the plugin namespace, not the directory name.) Edit `~/git/lore/lib/lore_core/...` → next CLI
 invocation runs the new code. No reinstall step.
 
 ## Testing the installer on a clean state

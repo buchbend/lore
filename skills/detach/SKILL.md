@@ -1,5 +1,5 @@
 ---
-name: lore:detach
+name: detach
 description: Remove the managed `## Lore` section from CLAUDE.md in the
   current directory. Content outside the section is never touched.
   Reversible via `/lore:attach`. Run with "/lore:detach".
