@@ -1,15 +1,19 @@
 {
   "name": "lore",
-  "description": "Lore — knowledge graph for AI-coding teams.",
   "owner": {
     "name": "Christof Buchbender"
+  },
+  "metadata": {
+    "description": "Lore — knowledge graph for AI-coding teams."
   },
   "plugins": [
     {
       "name": "lore",
-      "source": ".",
-      "description": "LLM-optimized knowledge graph: session notes, auto-extracted knowledge, pluggable briefings, magic context injection.",
-      "version": "0.1.0"
+      "source": {
+        "source": "github",
+        "repo": "buchbend/lore"
+      },
+      "description": "LLM-optimized knowledge graph: session notes, auto-extracted knowledge, pluggable briefings, magic context injection."
     }
   ]
 }
