@@ -128,6 +128,38 @@ in the host module. The dispatcher detects:
 This nuance lives in `cursor.py:_read_existing_lore_entry` and the
 plan() dispatch — copy that pattern.
 
+## Releasing a new version
+
+`claude plugin update lore@lore` only re-fetches when the version in
+`.claude-plugin/plugin.json` changes. Bump in lockstep:
+
+1. **Decide the bump.** While we're 0.x: minor for any user-visible
+   contract change (new subcommand, schema, install behaviour); patch
+   for bug fixes and doc-only changes. 1.0 lands when the install
+   contract stops moving.
+2. **Bump both** `pyproject.toml:version` and
+   `.claude-plugin/plugin.json:version` to the same string.
+3. **Add a `## [X.Y.Z] — YYYY-MM-DD` section** in `CHANGELOG.md`
+   under `[Unreleased]`. Follow Keep a Changelog headings
+   (Added / Changed / Fixed / Deprecated / Removed / Security).
+4. **Commit + tag**: `git commit -m "release: vX.Y.Z" && git tag vX.Y.Z`.
+5. **Push with tags**: `git push && git push --tags`.
+
+After push, users running `claude plugin update lore@lore` see the
+new version and re-cache; users on `pipx install
+git+https://github.com/buchbend/lore.git` re-install via
+`pipx upgrade lore` (or re-run the install command).
+
+Do not set `version` in `.claude-plugin/marketplace.json` — for
+github-source plugins, the plugin manifest's version always wins
+silently and a duplicate in the marketplace is ignored (per the
+Claude Code plugin docs' explicit warning).
+
+The `_lore_schema_version` field inside `mcpServers.lore`
+(installed into `~/.cursor/mcp.json` etc.) is a separate concern —
+bump that only when the *managed-block shape* changes, not on every
+release.
+
 ## Tests
 
 ```bash
