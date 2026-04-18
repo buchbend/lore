@@ -14,12 +14,21 @@ visible/auditable to the user.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
 
+import typer
+
+from lore_cli._compat import argv_main
 from lore_core.session import commit_note, scaffold, write_note
+
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
 
 
 def _split_csv(value: str | None) -> list[str] | None:
@@ -37,44 +46,77 @@ def _emit_json(envelope: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _cmd_new(args: argparse.Namespace) -> int:
+@app.command("new")
+def cmd_new(
+    cwd: str = typer.Option(..., "--cwd", help="Working directory the session ran in."),
+    slug: str = typer.Option(..., "--slug", help="Short kebab-case topic."),
+    description: str = typer.Option(..., "--description", help="One-sentence summary."),
+    title: str = typer.Option(None, "--title", help="Note H1 title (default: slug)."),
+    target_wiki: str = typer.Option(
+        None,
+        "--target-wiki",
+        help="Wiki name (default: from `## Lore` block or only-wiki).",
+    ),
+    repos: str = typer.Option(None, "--repos", help="Comma-separated extra repos."),
+    tags: str = typer.Option(None, "--tags", help="Comma-separated tags."),
+    implements: str = typer.Option(
+        None, "--implements", help="Comma-separated proposal slugs that landed."
+    ),
+    loose_end: list[str] = typer.Option(
+        None,
+        "--loose-end",
+        help="Repeatable — long-form loose-end strings.",
+    ),
+    project: str = typer.Option(None, "--project"),
+    body: str = typer.Option(
+        None,
+        "--body",
+        help="Path to body markdown, or `-` for stdin (default: scaffold's stub template).",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Compute the path + frontmatter; do not write."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON envelope."),
+) -> None:
     """Scaffold + write a new session note. Body comes from --body file or stdin."""
     body_text: str
-    if args.body == "-":
+    if body == "-":
         body_text = sys.stdin.read()
-    elif args.body:
-        body_text = Path(args.body).read_text()
+    elif body:
+        body_text = Path(body).read_text()
     else:
         body_text = ""  # subagent may have only the scaffold's body_template
 
     result = scaffold(
-        cwd=args.cwd,
-        slug=args.slug,
-        description=args.description,
-        title=args.title,
-        target_wiki=args.target_wiki,
-        extra_repos=_split_csv(args.repos),
-        tags=_split_csv(args.tags),
-        implements=_split_csv(args.implements),
-        loose_ends=args.loose_end or None,
-        project=args.project,
+        cwd=cwd,
+        slug=slug,
+        description=description,
+        title=title,
+        target_wiki=target_wiki,
+        extra_repos=_split_csv(repos),
+        tags=_split_csv(tags),
+        implements=_split_csv(implements),
+        loose_ends=loose_end or None,
+        project=project,
     )
 
     if "error" in result:
-        if args.json:
+        if json_out:
             _emit_json({"schema": "lore.session.new/1", "data": result})
         else:
             print(f"lore: {result['error']}", file=sys.stderr)
-        return 1
+        raise typer.Exit(code=1)
 
     note_path = Path(result["note_path"])
     body_to_write = body_text or result["body_template"]
-    if args.dry_run:
-        if args.json:
-            _emit_json({"schema": "lore.session.new/1", "data": {**result, "dry_run": True}})
+    if dry_run:
+        if json_out:
+            _emit_json(
+                {"schema": "lore.session.new/1", "data": {**result, "dry_run": True}}
+            )
         else:
             print(f"would write: {note_path}", file=sys.stderr)
-        return 0
+        return
 
     written = write_note(
         note_path=note_path,
@@ -82,7 +124,7 @@ def _cmd_new(args: argparse.Namespace) -> int:
         body=body_to_write,
     )
 
-    if args.json:
+    if json_out:
         _emit_json(
             {
                 "schema": "lore.session.new/1",
@@ -94,7 +136,6 @@ def _cmd_new(args: argparse.Namespace) -> int:
         )
     else:
         print(str(written))
-    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -102,12 +143,19 @@ def _cmd_new(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _cmd_commit(args: argparse.Namespace) -> int:
+@app.command("commit")
+def cmd_commit(
+    path: str = typer.Argument(..., help="Path to the session note inside a wiki."),
+    message: str = typer.Option(
+        None, "--message", "-m", help="Override commit message (default: `lore: session <slug>`)."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON envelope."),
+) -> None:
     """git add + commit one session note in its wiki repo."""
-    note_path = Path(args.path).resolve()
+    note_path = Path(path).resolve()
     if not note_path.exists():
         print(f"lore: not found: {note_path}", file=sys.stderr)
-        return 1
+        raise typer.Exit(code=1)
 
     # Wiki root is the nearest ancestor matching $LORE_ROOT/wiki/<name>/
     from lore_core.config import get_wiki_root
@@ -123,14 +171,14 @@ def _cmd_commit(args: argparse.Namespace) -> int:
             f"lore: {note_path} is not inside any wiki under {wiki_root}",
             file=sys.stderr,
         )
-        return 1
+        raise typer.Exit(code=1)
 
     ok, sha_or_err = commit_note(
         wiki_path=wiki_path,
         note_path=note_path,
-        message=args.message,
+        message=message,
     )
-    if args.json:
+    if json_out:
         _emit_json(
             {
                 "schema": "lore.session.commit/1",
@@ -148,68 +196,11 @@ def _cmd_commit(args: argparse.Namespace) -> int:
             print(sha_or_err or "(nothing to commit — already committed)")
         else:
             print(f"lore: commit failed: {sha_or_err}", file=sys.stderr)
-    return 0 if ok else 1
+    if not ok:
+        raise typer.Exit(code=1)
 
 
-# ---------------------------------------------------------------------------
-# Dispatch
-# ---------------------------------------------------------------------------
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-session", description=__doc__)
-    subs = parser.add_subparsers(dest="cmd", required=True)
-
-    p_new = subs.add_parser("new", help="Scaffold + write a new session note")
-    p_new.add_argument("--cwd", required=True, help="Working directory the session ran in")
-    p_new.add_argument("--slug", required=True, help="Short kebab-case topic")
-    p_new.add_argument("--description", required=True, help="One-sentence summary")
-    p_new.add_argument("--title", default=None, help="Note H1 title (default: slug)")
-    p_new.add_argument(
-        "--target-wiki",
-        default=None,
-        help="Wiki name (default: from `## Lore` block or only-wiki)",
-    )
-    p_new.add_argument("--repos", default=None, help="Comma-separated extra repos")
-    p_new.add_argument("--tags", default=None, help="Comma-separated tags")
-    p_new.add_argument(
-        "--implements",
-        default=None,
-        help="Comma-separated proposal slugs that landed",
-    )
-    p_new.add_argument(
-        "--loose-end",
-        action="append",
-        help="Repeatable — long-form loose-end strings",
-    )
-    p_new.add_argument("--project", default=None)
-    p_new.add_argument(
-        "--body",
-        default=None,
-        help="Path to body markdown, or `-` for stdin (default: scaffold's "
-        "stub template)",
-    )
-    p_new.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Compute the path + frontmatter; do not write",
-    )
-    p_new.add_argument("--json", action="store_true", help="Emit JSON envelope")
-    p_new.set_defaults(func=_cmd_new)
-
-    p_commit = subs.add_parser("commit", help="git add + commit a session note")
-    p_commit.add_argument("path", help="Path to the session note inside a wiki")
-    p_commit.add_argument(
-        "--message",
-        "-m",
-        default=None,
-        help="Override commit message (default: `lore: session <slug>`)",
-    )
-    p_commit.add_argument("--json", action="store_true", help="Emit JSON envelope")
-    p_commit.set_defaults(func=_cmd_commit)
-
-    args = parser.parse_args(argv)
-    return int(args.func(args) or 0)
+main = argv_main(app)
 
 
 if __name__ == "__main__":

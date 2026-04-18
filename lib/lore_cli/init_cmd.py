@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
-import argparse
 import shutil
 import sys
 from pathlib import Path
 
+import typer
 from lore_core.config import get_lore_root
 from rich.console import Console
 
+from lore_cli._compat import argv_main
+
 console = Console()
+
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
 
 
 def _plugin_templates_dir() -> Path:
@@ -66,21 +75,21 @@ def init_vault(root: Path, force: bool = False) -> None:
     console.print("  2. Run [cyan]lore lint[/cyan] to seed catalogs.")
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-init", description=__doc__)
-    parser.add_argument(
-        "--root",
-        help="Vault root path (defaults to $LORE_ROOT or ~/lore)",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Overwrite existing CLAUDE.md and templates/",
-    )
-    args = parser.parse_args(argv)
-    root = Path(args.root).expanduser().resolve() if args.root else get_lore_root()
-    init_vault(root, force=args.force)
-    return 0
+@app.callback(invoke_without_command=True)
+def init(
+    root: str = typer.Option(
+        None, "--root", help="Vault root path (defaults to $LORE_ROOT or ~/lore)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite existing CLAUDE.md and templates/."
+    ),
+) -> None:
+    """Scaffold the canonical vault shape at $LORE_ROOT."""
+    target = Path(root).expanduser().resolve() if root else get_lore_root()
+    init_vault(target, force=force)
+
+
+main = argv_main(app)
 
 
 if __name__ == "__main__":

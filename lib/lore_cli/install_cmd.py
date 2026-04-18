@@ -27,16 +27,18 @@ UX contract (per the four-pass plan review):
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
+import typer
 from rich.console import Console
 from rich.markup import escape as rich_escape
 
+from lore_cli._compat import argv_main
 from lore_core.install import REGISTRY, known_hosts
 from lore_core.install._helpers import (
     detect_install_sh_artifacts,
@@ -293,7 +295,7 @@ def _print_host_summary(host_name: str, fail_count: int, mode: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _build_ctx(args: argparse.Namespace) -> InstallContext:
+def _build_ctx(args: SimpleNamespace) -> InstallContext:
     return InstallContext(
         lore_repo=Path(args.lore_repo).expanduser() if args.lore_repo else None,
         force=args.force,
@@ -305,7 +307,7 @@ def _emit_json(envelope: dict) -> None:
     print(json.dumps(envelope, indent=2, default=str))
 
 
-def _cmd_install(args: argparse.Namespace, mode: str = "install") -> int:
+def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
     """Shared install / upgrade / uninstall driver. `mode` selects:
         install   → host.plan(ctx)
         upgrade   → host.plan(ctx) (same; the dispatcher reports no-op
@@ -407,96 +409,159 @@ def _cmd_install(args: argparse.Namespace, mode: str = "install") -> int:
     return 0 if overall_failures == 0 else 1
 
 
-def _cmd_check(args: argparse.Namespace) -> int:
-    return _cmd_install(args, mode="install")  # check path branches inside
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
 
 
-def _cmd_upgrade(args: argparse.Namespace) -> int:
-    return _cmd_install(args, mode="upgrade")
-
-
-def _cmd_uninstall(args: argparse.Namespace) -> int:
-    return _cmd_install(args, mode="uninstall")
-
-
-# ---------------------------------------------------------------------------
-# argparse plumbing
-# ---------------------------------------------------------------------------
-
-
-def _add_common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--host",
-        default=None,
-        help="Host to install for (claude|cursor|all). Default: all detected.",
-    )
-    parser.add_argument(
-        "--yes",
-        "-y",
-        action="store_true",
-        help="Non-interactive; assume Y to all non-replace prompts.",
-    )
-    parser.add_argument(
-        "--quiet",
-        "-q",
-        action="store_true",
-        help="Suppress per-action output; just the final summary.",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Emit a structured plan/result envelope on stdout.",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Proceed despite legacy install.sh artifacts. "
-        "Rejected if combined with --yes.",
-    )
-    parser.add_argument(
-        "--lore-repo",
-        default=None,
-        help="Path to a lore source checkout (for editable / dev installs).",
+def _make_args(
+    cmd: str,
+    *,
+    host: str | None,
+    yes: bool,
+    quiet: bool,
+    json_out: bool,
+    force: bool,
+    lore_repo: str | None,
+) -> SimpleNamespace:
+    """Adapt typer kwargs into the argparse-Namespace shape `_cmd_install` reads."""
+    return SimpleNamespace(
+        cmd=cmd,
+        host=host,
+        yes=yes,
+        quiet=quiet,
+        json=json_out,
+        force=force,
+        lore_repo=lore_repo,
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-install", description=__doc__)
-    subs = parser.add_subparsers(dest="cmd")
+def _exit_with(rc: int) -> None:
+    if rc:
+        raise typer.Exit(code=rc)
 
-    p_install = subs.add_parser(
-        "install", help="Install Lore for one or more hosts (default mode)"
+
+# Common flag set repeated across subcommands. Typer doesn't share
+# options between root + subcommands cleanly (Click constraint), so
+# we declare them on each function. ~6 lines × 4 commands.
+
+_HOST = typer.Option(
+    None, "--host", help="Host to install for (claude|cursor|all). Default: all detected."
+)
+_YES = typer.Option(
+    False, "--yes", "-y", help="Non-interactive; assume Y to all non-replace prompts."
+)
+_QUIET = typer.Option(
+    False, "--quiet", "-q", help="Suppress per-action output; just the final summary."
+)
+_JSON = typer.Option(
+    False, "--json", help="Emit a structured plan/result envelope on stdout."
+)
+_FORCE = typer.Option(
+    False,
+    "--force",
+    help="Proceed despite legacy install.sh artifacts. Rejected if combined with --yes.",
+)
+_LORE_REPO = typer.Option(
+    None, "--lore-repo", help="Path to a lore source checkout (for editable / dev installs)."
+)
+
+
+@app.callback(invoke_without_command=True)
+def root(
+    ctx: typer.Context,
+    host: str = _HOST,
+    yes: bool = _YES,
+    quiet: bool = _QUIET,
+    json_out: bool = _JSON,
+    force: bool = _FORCE,
+    lore_repo: str = _LORE_REPO,
+) -> None:
+    """Default action — install Lore for one or more hosts."""
+    if ctx.invoked_subcommand is not None:
+        return  # the subcommand handles its own work
+    args = _make_args(
+        "install",
+        host=host,
+        yes=yes,
+        quiet=quiet,
+        json_out=json_out,
+        force=force,
+        lore_repo=lore_repo,
     )
-    _add_common(p_install)
-    p_install.set_defaults(func=lambda a: _cmd_install(a))
+    _exit_with(_cmd_install(args, mode="install"))
 
-    p_check = subs.add_parser("check", help="Plan-only; never writes")
-    _add_common(p_check)
-    p_check.set_defaults(func=_cmd_check)
 
-    p_upgrade = subs.add_parser(
-        "upgrade", help="Re-install: no-op if matching schema"
+@app.command("check")
+def cmd_check(
+    host: str = _HOST,
+    yes: bool = _YES,
+    quiet: bool = _QUIET,
+    json_out: bool = _JSON,
+    force: bool = _FORCE,
+    lore_repo: str = _LORE_REPO,
+) -> None:
+    """Plan-only — never writes."""
+    args = _make_args(
+        "check",
+        host=host,
+        yes=yes,
+        quiet=quiet,
+        json_out=json_out,
+        force=force,
+        lore_repo=lore_repo,
     )
-    _add_common(p_upgrade)
-    p_upgrade.set_defaults(func=_cmd_upgrade)
+    _exit_with(_cmd_install(args, mode="install"))
 
-    p_uninstall = subs.add_parser(
-        "uninstall", help="Symmetric semantic remove"
+
+@app.command("upgrade")
+def cmd_upgrade(
+    host: str = _HOST,
+    yes: bool = _YES,
+    quiet: bool = _QUIET,
+    json_out: bool = _JSON,
+    force: bool = _FORCE,
+    lore_repo: str = _LORE_REPO,
+) -> None:
+    """Re-install — no-op if managed schema is current."""
+    args = _make_args(
+        "upgrade",
+        host=host,
+        yes=yes,
+        quiet=quiet,
+        json_out=json_out,
+        force=force,
+        lore_repo=lore_repo,
     )
-    _add_common(p_uninstall)
-    p_uninstall.set_defaults(func=_cmd_uninstall)
+    _exit_with(_cmd_install(args, mode="upgrade"))
 
-    # No subcommand → default to `install`
-    if not argv:
-        argv = sys.argv[1:]
-    if not argv or argv[0].startswith("-"):
-        argv = ["install", *argv]
 
-    args = parser.parse_args(argv)
-    if not hasattr(args, "func"):
-        parser.print_help(sys.stderr)
-        return 2
-    return int(args.func(args) or 0)
+@app.command("uninstall")
+def cmd_uninstall(
+    host: str = _HOST,
+    yes: bool = _YES,
+    quiet: bool = _QUIET,
+    json_out: bool = _JSON,
+    force: bool = _FORCE,
+    lore_repo: str = _LORE_REPO,
+) -> None:
+    """Symmetric semantic remove."""
+    args = _make_args(
+        "uninstall",
+        host=host,
+        yes=yes,
+        quiet=quiet,
+        json_out=json_out,
+        force=force,
+        lore_repo=lore_repo,
+    )
+    _exit_with(_cmd_install(args, mode="uninstall"))
+
+
+main = argv_main(app)
 
 
 # ---------------------------------------------------------------------------

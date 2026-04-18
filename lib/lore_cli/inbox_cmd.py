@@ -14,49 +14,54 @@ move the source out of the inbox.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
 
+import typer
+
+from lore_cli._compat import argv_main
 from lore_core.inbox import archive, classify
+
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
 
 
 def _emit_json(envelope: dict) -> None:
     print(json.dumps(envelope, indent=2, default=str))
 
 
-def _cmd_classify(args: argparse.Namespace) -> int:
+@app.command("classify")
+def cmd_classify() -> None:
+    """Walk the inboxes and classify what's in there."""
     result = classify()
     _emit_json({"schema": "lore.inbox.classify/1", "data": result})
-    return 1 if "error" in result else 0
+    if "error" in result:
+        raise typer.Exit(code=1)
 
 
-def _cmd_archive(args: argparse.Namespace) -> int:
-    result = archive(source=Path(args.path))
-    if args.json:
+@app.command("archive")
+def cmd_archive(
+    path: str = typer.Argument(..., help="Path to the inbox file to archive."),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON envelope."),
+) -> None:
+    """Move a processed file to `.processed/<YYYY-MM-DD>_<name>`."""
+    result = archive(source=Path(path))
+    if json_out:
         _emit_json({"schema": "lore.inbox.archive/1", "data": result})
     elif "error" in result:
         print(f"lore: {result['error']}", file=sys.stderr)
     else:
         print(f"archived: {result['archived_to']}")
-    return 1 if "error" in result else 0
+    if "error" in result:
+        raise typer.Exit(code=1)
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-inbox", description=__doc__)
-    subs = parser.add_subparsers(dest="cmd", required=True)
-
-    p_class = subs.add_parser("classify", help="Walk inboxes, classify what's there")
-    p_class.set_defaults(func=_cmd_classify)
-
-    p_arch = subs.add_parser("archive", help="Move a processed file to .processed/")
-    p_arch.add_argument("path", help="Path to the inbox file to archive")
-    p_arch.add_argument("--json", action="store_true", help="Emit JSON envelope")
-    p_arch.set_defaults(func=_cmd_archive)
-
-    args = parser.parse_args(argv)
-    return int(args.func(args) or 0)
+main = argv_main(app)
 
 
 if __name__ == "__main__":

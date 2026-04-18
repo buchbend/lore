@@ -14,7 +14,6 @@ Exposed via `lore_cli.__main__` dispatch (see subcommand wiring there).
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import re
@@ -938,57 +937,71 @@ _HOOK_EVENT = {
 }
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-hook")
-    sub = parser.add_subparsers(dest="hook", required=True)
+import typer  # noqa: E402
 
-    for name, help_text in [
-        ("session-start", "Inject vault context at session start"),
-        ("pre-compact", "Inject open items before compaction"),
-        ("stop", "Hint to capture a session note"),
-    ]:
-        sp = sub.add_parser(name, help=help_text)
-        if name != "stop":
-            sp.add_argument("--cwd", help="Project working directory")
-        sp.add_argument(
-            "--plain",
-            action="store_true",
-            help="Print raw text instead of Claude Code JSON envelope",
-        )
+from lore_cli._compat import argv_main  # noqa: E402
 
-    sub.add_parser(
-        "why",
-        help="Print the SessionStart cache for the current Claude session",
-    )
+hook_app = typer.Typer(
+    add_completion=False,
+    help="Internal hook dispatcher — invoked by Claude Code at SessionStart, PreCompact, etc.",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
 
-    args = parser.parse_args(argv)
-    if args.hook == "why":
-        sys.stdout.write(_why())
-        return 0
 
-    # Resolve CWD in order: explicit --cwd → CLAUDE_PROJECT_DIR env →
-    # actual process working directory (Claude Code sets this to the
-    # project dir when spawning hooks). Having a sensible default means
-    # hook commands in settings.json don't need $CLAUDE_PROJECT_DIR
-    # expansion — which avoids Claude Code's "simple_expansion"
-    # permission gate.
-    cwd = (
-        getattr(args, "cwd", None)
-        or os.environ.get("CLAUDE_PROJECT_DIR")
-        or os.getcwd()
-    )
+def _resolve_cwd(explicit: str | None) -> str:
+    """Resolve CWD: explicit --cwd → $CLAUDE_PROJECT_DIR → os.getcwd()."""
+    return explicit or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
-    if args.hook == "session-start":
-        out = _session_start(cwd)
-    elif args.hook == "pre-compact":
-        out = _pre_compact(cwd)
-    elif args.hook == "stop":
-        out = _stop()
-    else:
-        return 2
 
-    _emit(_HOOK_EVENT[args.hook], out, plain=args.plain)
-    return 0
+@hook_app.command("session-start")
+def cmd_session_start(
+    cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
+    plain: bool = typer.Option(
+        False,
+        "--plain",
+        help="Print raw text instead of Claude Code JSON envelope.",
+    ),
+) -> None:
+    """Inject vault context at session start."""
+    out = _session_start(_resolve_cwd(cwd))
+    _emit("SessionStart", out, plain=plain)
+
+
+@hook_app.command("pre-compact")
+def cmd_pre_compact(
+    cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
+    plain: bool = typer.Option(
+        False,
+        "--plain",
+        help="Print raw text instead of Claude Code JSON envelope.",
+    ),
+) -> None:
+    """Inject open items before compaction."""
+    out = _pre_compact(_resolve_cwd(cwd))
+    _emit("PreCompact", out, plain=plain)
+
+
+@hook_app.command("stop")
+def cmd_stop(
+    plain: bool = typer.Option(
+        False,
+        "--plain",
+        help="Print raw text instead of Claude Code JSON envelope.",
+    ),
+) -> None:
+    """Hint to capture a session note."""
+    out = _stop()
+    _emit("Stop", out, plain=plain)
+
+
+@hook_app.command("why")
+def cmd_why() -> None:
+    """Print the SessionStart cache for the current Claude session."""
+    sys.stdout.write(_why())
+
+
+main = argv_main(hook_app)
 
 
 if __name__ == "__main__":

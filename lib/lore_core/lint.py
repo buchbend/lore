@@ -12,7 +12,6 @@ Invoke programmatically via `run_lint()` or from the CLI:
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from collections import defaultdict
@@ -660,21 +659,37 @@ def _print_report(
         console.print("[dim]Catalogs written: _catalog.json + _index.md + llms.txt per wiki[/dim]")
 
 
-def main(argv: list[str] | None = None) -> int:
-    """CLI entry point — `python -m lore_core.lint`."""
-    parser = argparse.ArgumentParser(prog="lore-lint", description=__doc__.splitlines()[0])
-    parser.add_argument("--wiki", "-w", help="Scope to a single wiki")
-    parser.add_argument(
-        "--check-only", action="store_true", help="Lint only, skip catalog writes"
-    )
-    parser.add_argument("--json", action="store_true", help="Output report as JSON")
-    args = parser.parse_args(argv)
+import typer  # noqa: E402
+
+from lore_cli._compat import argv_main  # noqa: E402
+
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__.splitlines()[0] if __doc__ else None,
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
+
+
+@app.callback(invoke_without_command=True)
+def lint(
+    wiki: str = typer.Option(None, "--wiki", "-w", help="Scope to a single wiki."),
+    check_only: bool = typer.Option(
+        False, "--check-only", help="Lint only, skip catalog writes."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Output report as JSON."),
+) -> None:
+    """Lint the vault and (re)generate catalogs."""
     report = run_lint(
-        wiki_filter=args.wiki,
-        check_only=args.check_only,
-        json_output=args.json,
+        wiki_filter=wiki,
+        check_only=check_only,
+        json_output=json_out,
     )
-    return 1 if report.get("by_severity", {}).get("errors", 0) > 0 else 0
+    if report.get("by_severity", {}).get("errors", 0) > 0:
+        raise typer.Exit(code=1)
+
+
+main = argv_main(app)
 
 
 if __name__ == "__main__":

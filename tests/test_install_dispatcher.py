@@ -24,7 +24,7 @@ def clean_home(tmp_path, monkeypatch):
 
 def test_force_yes_combo_refused(clean_home, capsys):
     """--force --yes is the obvious footgun; refuse with a clear error."""
-    rc = install_cmd.main(["install", "--force", "--yes", "--host", "claude"])
+    rc = install_cmd.main(["--force", "--yes", "--host", "claude"])
     assert rc == 2
     err = capsys.readouterr().out + capsys.readouterr().err
     assert "not allowed" in err.lower() or "force" in err.lower()
@@ -41,9 +41,11 @@ def test_check_does_not_write(clean_home, capsys, tmp_path, monkeypatch):
     assert before == after
 
 
-def test_unknown_host_exits_with_error(clean_home):
-    with pytest.raises(SystemExit):
-        install_cmd.main(["install", "--host", "nonexistent"])
+def test_unknown_host_exits_with_error(clean_home, capsys):
+    rc = install_cmd.main(["--host", "nonexistent"])
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert "unknown host" in err
 
 
 def test_json_envelope_for_check_mode(clean_home, capsys):
@@ -64,7 +66,7 @@ def test_legacy_artifacts_block_install_without_force(
     target.mkdir(parents=True)
     (skills / "lore:fake").symlink_to(target)
 
-    rc = install_cmd.main(["install", "--host", "cursor", "--yes"])
+    rc = install_cmd.main(["--host", "cursor", "--yes"])
     err = capsys.readouterr().out
     assert rc == 1
     assert "legacy install.sh artifacts" in err.lower()

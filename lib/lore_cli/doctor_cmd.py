@@ -17,16 +17,25 @@ Checks:
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+import typer
 from rich.console import Console
 
+from lore_cli._compat import argv_main
+
 console = Console()
+
+app = typer.Typer(
+    add_completion=False,
+    help="Smoke-test the Lore install.",
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
 
 
 # A check returns (ok: bool, message: str). Side-effect-free except
@@ -134,15 +143,21 @@ _CHECKS = [
 ]
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-doctor", description=__doc__)
-    parser.add_argument(
+@app.callback(invoke_without_command=True)
+def doctor(
+    cwd: str = typer.Option(
+        None,
         "--cwd",
-        default=os.getcwd(),
         help="Working directory for hook + attach checks (default: $PWD)",
-    )
-    parser.add_argument("--json", action="store_true", help="Emit JSON envelope")
-    args = parser.parse_args(argv)
+    ),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit JSON envelope on stdout (lore.doctor/1).",
+    ),
+) -> None:
+    """Walk the most common breakage points and print one line per check."""
+    cwd = cwd or os.getcwd()
 
     results: list[dict] = []
     all_ok = True
@@ -153,16 +168,16 @@ def main(argv: list[str] | None = None) -> int:
             all_ok = False
 
     # Hook + attach checks need cwd
-    ok, msg = _check_hook_runnable(args.cwd)
+    ok, msg = _check_hook_runnable(cwd)
     results.append({"check": "SessionStart hook", "ok": ok, "message": msg})
     if not ok:
         all_ok = False
 
-    ok, msg = _check_attach(args.cwd)
+    ok, msg = _check_attach(cwd)
     results.append({"check": "## Lore attach", "ok": ok, "message": msg})
-    # Attach failures don't fail the run — they're informational.
+    # Attach failures don't fail the run — informational.
 
-    if args.json:
+    if json_out:
         print(
             json.dumps(
                 {
@@ -181,7 +196,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             console.print("\n[red]Some checks failed — see above.[/red]")
 
-    return 0 if all_ok else 1
+    if not all_ok:
+        raise typer.Exit(code=1)
+
+
+# Backwards-compat shim for tests + the legacy SUBCOMMANDS dispatcher.
+main = argv_main(app)
 
 
 if __name__ == "__main__":

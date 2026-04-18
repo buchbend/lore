@@ -2,16 +2,31 @@
 
 from __future__ import annotations
 
-import argparse
 import shutil
 import subprocess
 import sys
+from enum import Enum
 from pathlib import Path
 
+import typer
 from lore_core.config import get_wiki_root
 from rich.console import Console
 
+from lore_cli._compat import argv_main
+
 console = Console()
+
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+
+
+class WikiMode(str, Enum):
+    personal = "personal"
+    team = "team"
 
 SUBDIRS = ("projects", "concepts", "decisions", "sessions", "inbox")
 
@@ -82,30 +97,30 @@ def scaffold_wiki(
     return target
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-new-wiki")
-    parser.add_argument("name", help="Wiki name (kebab-case)")
-    parser.add_argument(
+@app.callback(invoke_without_command=True)
+def new_wiki(
+    name: str = typer.Argument(..., help="Wiki name (kebab-case)."),
+    mode: WikiMode = typer.Option(
+        WikiMode.personal,
         "--mode",
-        choices=["personal", "team"],
-        default="personal",
-        help="`team` mode adds git init + optional remote",
-    )
-    parser.add_argument(
-        "--remote", help="Git remote URL (team mode)"
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Overwrite an existing wiki directory",
-    )
-    args = parser.parse_args(argv)
+        help="`team` mode adds git init + optional remote.",
+    ),
+    remote: str = typer.Option(
+        None, "--remote", help="Git remote URL (team mode)."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite an existing wiki directory."
+    ),
+) -> None:
+    """Scaffold a new wiki under $LORE_ROOT/wiki/."""
     try:
-        scaffold_wiki(args.name, mode=args.mode, remote=args.remote, force=args.force)
+        scaffold_wiki(name, mode=mode.value, remote=remote, force=force)
     except FileExistsError as exc:
         console.print(f"[red]{exc}[/red]")
-        return 1
-    return 0
+        raise typer.Exit(code=1) from exc
+
+
+main = argv_main(app)
 
 
 if __name__ == "__main__":

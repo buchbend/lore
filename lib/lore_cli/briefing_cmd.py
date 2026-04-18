@@ -16,140 +16,129 @@ shells out to publish + mark (visible side effects).
 
 from __future__ import annotations
 
-import argparse
 import importlib
 import json
 import sys
+import tempfile
 from pathlib import Path
 
+import typer
+
+from lore_cli._compat import argv_main
 from lore_core.briefing import gather, mark_incorporated
+
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+
+_KNOWN_SINKS = {"matrix", "markdown"}
 
 
 def _emit_json(envelope: dict) -> None:
     print(json.dumps(envelope, indent=2, default=str))
 
 
-# ---------------------------------------------------------------------------
-# `lore briefing gather`
-# ---------------------------------------------------------------------------
-
-
-def _cmd_gather(args: argparse.Namespace) -> int:
-    result = gather(
-        wiki=args.wiki,
-        since=args.since,
-        include_body_sections=not args.no_sections,
-    )
+@app.command("gather")
+def cmd_gather(
+    wiki: str = typer.Option(..., "--wiki"),
+    since: str = typer.Option(None, "--since", help="ISO date floor (YYYY-MM-DD)."),
+    no_sections: bool = typer.Option(
+        False,
+        "--no-sections",
+        help="Skip extracting body H2 sections (smaller payload).",
+    ),
+) -> None:
+    """Read new sessions since the last briefing."""
+    result = gather(wiki=wiki, since=since, include_body_sections=not no_sections)
     _emit_json({"schema": "lore.briefing.gather/1", "data": result})
-    return 1 if "error" in result else 0
+    if "error" in result:
+        raise typer.Exit(code=1)
 
 
-# ---------------------------------------------------------------------------
-# `lore briefing publish`
-# ---------------------------------------------------------------------------
-
-
-_KNOWN_SINKS = {"matrix", "markdown"}
-
-
-def _cmd_publish(args: argparse.Namespace) -> int:
-    if args.sink not in _KNOWN_SINKS:
+@app.command("publish")
+def cmd_publish(
+    sink: str = typer.Option(
+        ..., "--sink", help=f"Sink name ({', '.join(sorted(_KNOWN_SINKS))})."
+    ),
+    file: str = typer.Option(
+        None, "--file", help="Briefing markdown (default: stdin)."
+    ),
+    out: str = typer.Option(
+        None,
+        "--out",
+        help="Sink-specific output target (markdown sink: file path).",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON envelope."),
+) -> None:
+    """Publish a briefing via the named sink adapter."""
+    if sink not in _KNOWN_SINKS:
         print(
-            f"lore: unknown sink '{args.sink}'. "
-            f"Known: {', '.join(sorted(_KNOWN_SINKS))}",
+            f"lore: unknown sink '{sink}'. Known: {', '.join(sorted(_KNOWN_SINKS))}",
             file=sys.stderr,
         )
-        return 2
+        raise typer.Exit(code=2)
     text: str
-    if args.file:
-        text = Path(args.file).read_text()
+    if file:
+        text = Path(file).read_text()
     else:
         text = sys.stdin.read()
     if not text.strip():
         print("lore: nothing to publish (empty input)", file=sys.stderr)
-        return 1
-    # Dispatch into the sink module's main()
-    sink_argv: list[str] = ["send"]
-    if args.file:
-        sink_argv += ["--file", args.file]
-    if args.sink == "markdown":
-        if not args.out:
-            print("lore: markdown sink requires --out <path>", file=sys.stderr)
-            return 2
-        sink_argv += ["--out", args.out]
-    module = importlib.import_module(f"lore_sinks.{args.sink}")
-    # Sinks read stdin themselves when --file is omitted; for consistency
-    # if we already consumed stdin above, write a temp file.
-    if not args.file:
-        import tempfile
+        raise typer.Exit(code=1)
 
+    sink_argv: list[str] = ["send"]
+    if file:
+        sink_argv += ["--file", file]
+    if sink == "markdown":
+        if not out:
+            print("lore: markdown sink requires --out <path>", file=sys.stderr)
+            raise typer.Exit(code=2)
+        sink_argv += ["--out", out]
+    module = importlib.import_module(f"lore_sinks.{sink}")
+    # Sinks read stdin themselves when --file is omitted; if we already
+    # consumed stdin above, write a temp file so the sink can re-read it.
+    if not file:
         with tempfile.NamedTemporaryFile(
             "w", suffix=".md", delete=False, prefix="lore-briefing-"
         ) as tmp:
             tmp.write(text)
             tmp_path = tmp.name
         sink_argv = ["send", "--file", tmp_path]
-        if args.sink == "markdown" and args.out:
-            sink_argv += ["--out", args.out]
+        if sink == "markdown" and out:
+            sink_argv += ["--out", out]
+
     rc = int(module.main(sink_argv) or 0)
-    if args.json:
+    if json_out:
         _emit_json(
             {
                 "schema": "lore.briefing.publish/1",
-                "data": {"sink": args.sink, "rc": rc},
+                "data": {"sink": sink, "rc": rc},
             }
         )
-    return rc
+    if rc != 0:
+        raise typer.Exit(code=rc)
 
 
-# ---------------------------------------------------------------------------
-# `lore briefing mark`
-# ---------------------------------------------------------------------------
-
-
-def _cmd_mark(args: argparse.Namespace) -> int:
-    result = mark_incorporated(wiki=args.wiki, session_paths=args.session or [])
-    _emit_json({"schema": "lore.briefing.mark/1", "data": result})
-    return 1 if "error" in result else 0
-
-
-# ---------------------------------------------------------------------------
-# Dispatch
-# ---------------------------------------------------------------------------
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-briefing", description=__doc__)
-    subs = parser.add_subparsers(dest="cmd", required=True)
-
-    p_gather = subs.add_parser("gather", help="Read new sessions since last briefing")
-    p_gather.add_argument("--wiki", required=True)
-    p_gather.add_argument("--since", default=None, help="ISO date floor (YYYY-MM-DD)")
-    p_gather.add_argument(
-        "--no-sections",
-        action="store_true",
-        help="Skip extracting body H2 sections (smaller payload)",
-    )
-    p_gather.set_defaults(func=_cmd_gather)
-
-    p_pub = subs.add_parser("publish", help="Publish briefing via a sink adapter")
-    p_pub.add_argument("--sink", required=True, help=f"Sink name ({', '.join(sorted(_KNOWN_SINKS))})")
-    p_pub.add_argument("--file", default=None, help="Briefing markdown (default: stdin)")
-    p_pub.add_argument("--out", default=None, help="Sink-specific output target (markdown sink: file path)")
-    p_pub.add_argument("--json", action="store_true", help="Emit JSON envelope")
-    p_pub.set_defaults(func=_cmd_publish)
-
-    p_mark = subs.add_parser("mark", help="Append session(s) to the briefing ledger")
-    p_mark.add_argument("--wiki", required=True)
-    p_mark.add_argument(
+@app.command("mark")
+def cmd_mark(
+    wiki: str = typer.Option(..., "--wiki"),
+    session: list[str] = typer.Option(
+        None,
         "--session",
-        action="append",
-        help="Session path or filename (repeatable)",
-    )
-    p_mark.set_defaults(func=_cmd_mark)
+        help="Session path or filename (repeatable).",
+    ),
+) -> None:
+    """Append session(s) to the briefing ledger."""
+    result = mark_incorporated(wiki=wiki, session_paths=session or [])
+    _emit_json({"schema": "lore.briefing.mark/1", "data": result})
+    if "error" in result:
+        raise typer.Exit(code=1)
 
-    args = parser.parse_args(argv)
-    return int(args.func(args) or 0)
+
+main = argv_main(app)
 
 
 if __name__ == "__main__":

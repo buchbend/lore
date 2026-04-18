@@ -17,7 +17,6 @@ Safety:
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 import subprocess
@@ -732,45 +731,56 @@ def run_open_items_migration(
     return migrated
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-curator")
-    parser.add_argument("--wiki", help="Scope to one wiki")
-    parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="Actually write changes. Without this, runs dry.",
-    )
-    parser.add_argument(
-        "--stale-threshold",
-        type=int,
-        default=STALENESS_DAYS,
-        help=f"Days after which `status: active` notes become stale (default {STALENESS_DAYS})",
-    )
-    parser.add_argument("--json", action="store_true", help="Emit machine-readable summary")
-    parser.add_argument(
-        "--migrate-open-items",
-        action="store_true",
-        help="Interactive v1 → v2 migration for `## Open items` session sections",
-    )
-    args = parser.parse_args(argv)
+import typer  # noqa: E402
 
-    if args.migrate_open_items:
-        run_open_items_migration(wiki_filter=args.wiki, dry_run=not args.apply)
-        return 0
+from lore_cli._compat import argv_main  # noqa: E402
+
+app = typer.Typer(
+    add_completion=False,
+    help="Curator — flag stale notes, propagate `implements:` status flips, etc.",
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
+
+
+@app.callback(invoke_without_command=True)
+def curator(
+    wiki: str = typer.Option(None, "--wiki", help="Scope to one wiki."),
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually write changes. Without this, runs dry."
+    ),
+    stale_threshold: int = typer.Option(
+        STALENESS_DAYS,
+        "--stale-threshold",
+        help=f"Days after which active notes become stale (default {STALENESS_DAYS}).",
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit machine-readable summary."
+    ),
+    migrate_open_items: bool = typer.Option(
+        False,
+        "--migrate-open-items",
+        help="Interactive v1 → v2 migration for `## Open items` session sections.",
+    ),
+) -> None:
+    """Run curator passes — flag stale, propagate implements, etc."""
+    if migrate_open_items:
+        run_open_items_migration(wiki_filter=wiki, dry_run=not apply)
+        return
 
     reports = run_curator(
-        wiki_filter=args.wiki,
-        dry_run=not args.apply,
-        stale_threshold=args.stale_threshold,
+        wiki_filter=wiki,
+        dry_run=not apply,
+        stale_threshold=stale_threshold,
     )
 
-    if args.json:
+    if json_out:
         print(
             json.dumps(
                 {
                     "schema": "lore.curator/1",
                     "data": {
-                        "dry_run": not args.apply,
+                        "dry_run": not apply,
                         "wikis": [
                             {
                                 "wiki": r.wiki,
@@ -795,7 +805,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
 
-    return 0
+
+main = argv_main(app)
 
 
 if __name__ == "__main__":

@@ -10,64 +10,74 @@ SHA256 + mtime.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 
+import typer
 from rich.console import Console
 
+from lore_cli._compat import argv_main
 from lore_search.fts import FtsBackend
 
 console = Console()
 
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-search")
-    parser.add_argument("query", nargs="?", help="Search query (required unless --reindex or --stats)")
-    parser.add_argument("--wiki", help="Scope to one wiki")
-    parser.add_argument("--for-repo", dest="for_repo", help="Boost notes tagged with this repo")
-    parser.add_argument("--k", type=int, default=5, help="Number of hits to return")
-    parser.add_argument("--reindex", action="store_true", help="Full reindex, then exit")
-    parser.add_argument("--stats", action="store_true", help="Show index stats and exit")
-    parser.add_argument("--json", action="store_true", help="Output hits as JSON")
-    args = parser.parse_args(argv)
 
+@app.callback(invoke_without_command=True)
+def search(
+    query: str = typer.Argument(
+        None, help="Search query (required unless --reindex or --stats)."
+    ),
+    wiki: str = typer.Option(None, "--wiki", help="Scope to one wiki."),
+    for_repo: str = typer.Option(
+        None, "--for-repo", help="Boost notes tagged with this repo."
+    ),
+    k: int = typer.Option(5, "--k", help="Number of hits to return."),
+    reindex: bool = typer.Option(False, "--reindex", help="Full reindex, then exit."),
+    stats: bool = typer.Option(False, "--stats", help="Show index stats and exit."),
+    json_out: bool = typer.Option(False, "--json", help="Output hits as JSON."),
+) -> None:
+    """Run a query against the FTS5 index."""
     backend = FtsBackend()
 
-    if args.stats:
+    if stats:
         print(
             json.dumps(
                 {"schema": "lore.search.stats/1", "data": backend.stats()},
                 indent=2,
             )
         )
-        return 0
+        return
 
     # Always refresh incrementally before searching (fast due to SHA256 cache)
-    indexed = backend.reindex(wiki=args.wiki)
-    if args.reindex:
+    indexed = backend.reindex(wiki=wiki)
+    if reindex:
         console.print(f"Reindexed {indexed} notes")
-        return 0
+        return
 
-    if not args.query:
-        parser.error("query is required (or use --reindex / --stats)")
+    if not query:
+        console.print(
+            "[red]error:[/red] query is required (or use --reindex / --stats)"
+        )
+        raise typer.Exit(code=2)
 
-    hits = backend.search(
-        args.query,
-        wiki=args.wiki,
-        for_repo=args.for_repo,
-        k=args.k,
-    )
+    hits = backend.search(query, wiki=wiki, for_repo=for_repo, k=k)
 
-    if args.json:
+    if json_out:
         print(
             json.dumps(
                 {
                     "schema": "lore.search/1",
                     "data": {
-                        "query": args.query,
-                        "wiki": args.wiki,
-                        "for_repo": args.for_repo,
+                        "query": query,
+                        "wiki": wiki,
+                        "for_repo": for_repo,
                         "hits": [
                             {
                                 "path": h.path,
@@ -84,11 +94,11 @@ def main(argv: list[str] | None = None) -> int:
                 indent=2,
             )
         )
-        return 0
+        return
 
     if not hits:
         console.print("[yellow]No matches.[/yellow]")
-        return 1
+        raise typer.Exit(code=1)
 
     for h in hits:
         console.print(
@@ -97,7 +107,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         if h.description:
             console.print(f"  {h.description}")
-    return 0
+
+
+main = argv_main(app)
 
 
 if __name__ == "__main__":

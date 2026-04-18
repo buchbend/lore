@@ -7,7 +7,6 @@ outside the `## Lore` heading. See the concept note
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 import sys
@@ -225,52 +224,64 @@ def _resolve_claude_md(path_arg: str) -> Path:
     return p
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore-attach", description=__doc__)
-    sub = parser.add_subparsers(dest="action", required=True)
+import typer  # noqa: E402
 
-    p_read = sub.add_parser("read", help="Print parsed Lore block as JSON")
-    p_read.add_argument("--path", default=".", help="Folder or CLAUDE.md path")
+from lore_cli._compat import argv_main  # noqa: E402
 
-    p_write = sub.add_parser("write", help="Upsert the Lore block")
-    p_write.add_argument("--path", default=".", help="Folder or CLAUDE.md path")
-    p_write.add_argument("--wiki", required=True)
-    p_write.add_argument("--scope", required=True)
-    p_write.add_argument("--backend", default=None, help="github|none (default: inferred)")
-    p_write.add_argument("--issues", default=None)
-    p_write.add_argument("--prs", default=None)
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
 
-    args = parser.parse_args(argv)
-    target = _resolve_claude_md(args.path)
 
-    if args.action == "read":
-        block = read_attach(target)
-        envelope = {
-            "schema": "lore.attach.read/1",
-            "data": {"path": str(target), "block": block},
-        }
-        print(json.dumps(envelope, indent=2))
-        return 0
+@app.command("read")
+def cmd_read(
+    path: str = typer.Option(".", "--path", help="Folder or CLAUDE.md path."),
+) -> None:
+    """Print the parsed `## Lore` block as JSON."""
+    target = _resolve_claude_md(path)
+    block = read_attach(target)
+    envelope = {
+        "schema": "lore.attach.read/1",
+        "data": {"path": str(target), "block": block},
+    }
+    print(json.dumps(envelope, indent=2))
 
-    if args.action == "write":
-        updates: dict[str, str] = {"wiki": args.wiki, "scope": args.scope}
-        if args.backend is not None:
-            updates["backend"] = args.backend
-        if args.issues is not None:
-            updates["issues"] = args.issues
-        if args.prs is not None:
-            updates["prs"] = args.prs
-        write_attach(target, updates)
-        result = read_attach(target)
-        console.print(f"[green]Attached {target}[/green]", file=sys.stderr)
-        envelope = {
-            "schema": "lore.attach.write/1",
-            "data": {"path": str(target), "block": result},
-        }
-        print(json.dumps(envelope, indent=2))
-        return 0
 
-    return 2
+@app.command("write")
+def cmd_write(
+    wiki: str = typer.Option(..., "--wiki", help="Wiki name."),
+    scope: str = typer.Option(..., "--scope", help="Scope path within the wiki."),
+    path: str = typer.Option(".", "--path", help="Folder or CLAUDE.md path."),
+    backend: str = typer.Option(
+        None, "--backend", help="github|none (default: inferred)."
+    ),
+    issues: str = typer.Option(None, "--issues", help="gh issue list filter flags."),
+    prs: str = typer.Option(None, "--prs", help="gh pr list filter flags."),
+) -> None:
+    """Upsert the managed `## Lore` section in CLAUDE.md."""
+    target = _resolve_claude_md(path)
+    updates: dict[str, str] = {"wiki": wiki, "scope": scope}
+    if backend is not None:
+        updates["backend"] = backend
+    if issues is not None:
+        updates["issues"] = issues
+    if prs is not None:
+        updates["prs"] = prs
+    write_attach(target, updates)
+    result = read_attach(target)
+    # Affordance for humans goes to stderr so stdout stays parseable JSON.
+    console.print(f"[green]Attached {target}[/green]", file=sys.stderr)
+    envelope = {
+        "schema": "lore.attach.write/1",
+        "data": {"path": str(target), "block": result},
+    }
+    print(json.dumps(envelope, indent=2))
+
+
+main = argv_main(app)
 
 
 if __name__ == "__main__":
