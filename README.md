@@ -46,37 +46,69 @@ stay at the repo boundary; Obsidian sees one unified graph via symlinks.
 
 ## Install
 
-One command, coexists with anything you already have:
+Three commands. Works on Linux + macOS in v1 (Windows tracked as a
+known gap).
 
 ```bash
-git clone https://github.com/buchbend/lore.git
-cd lore && ./install.sh --with-hooks
+pipx install lore                               # the Python CLI
+lore install                                    # detect installed hosts, wire each
+lore init                                       # scaffold a vault + set $LORE_ROOT
 ```
 
-What the installer does:
+`lore install` walks every detected host (Claude Code, Cursor in v1)
+and shows what it'll change before doing anything. One prompt per
+host; `--yes` for non-interactive use. The hooks, MCP server, skills,
+and subagents come from `.claude-plugin/plugin.json` — Claude Code's
+plugin system does the wiring; Lore stays out of `~/.claude/settings.json`.
 
-1. Installs the `lore` CLI (via `pipx`, `uv tool`, or `pip --user`, in
-   that order of preference)
-2. Symlinks every skill into `~/.claude/skills/lore:*` — Claude Code
-   picks them up automatically. Existing skills are left alone.
-3. If you passed `--with-hooks`: merges SessionStart / PreCompact / Stop
-   entries into `~/.claude/settings.json` (idempotent — re-running is
-   a no-op).
+For Cursor, `lore install` writes `mcpServers.lore` into the per-platform
+mcp.json (`~/Library/Application Support/Cursor/User/` on macOS,
+`${XDG_CONFIG_HOME:-~/.config}/Cursor/User/` or `~/.cursor/` on Linux)
+and a `lore-managed` block to your Cursor rules dir.
 
-Uninstall / disable hooks is just the inverse: delete the symlinks in
-`~/.claude/skills/lore:*` and the `hooks` entries in `settings.json`.
+### Uninstall
+
+```bash
+lore uninstall                  # symmetric remove
+```
+
+Removes the entries Lore added — including from shared JSON files like
+`~/.cursor/mcp.json`. Other servers / your own edits outside Lore-managed
+markers stay put.
+
+### Migrating from `install.sh` (legacy)
+
+If you ran the old bash installer, `lore install` will refuse with a
+clear warning until you reset:
+
+```bash
+python3 tools/undo_install_sh.py --dry-run    # preview what would change
+python3 tools/undo_install_sh.py              # apply
+lore install                                  # then proceed cleanly
+```
+
+The undo helper is stdlib-only Python; runs even if `lore` isn't on
+your PATH yet.
 
 ### As a Claude Code plugin (via marketplace)
 
-The repo is a self-describing marketplace. Once published, you can do:
+The repo is a self-describing marketplace:
 
 ```
 /plugin marketplace add buchbend/lore
 /plugin install lore@lore
 ```
 
-This gives you the skills but not the Python CLI or hooks — the
-`install.sh` path above remains the most complete install.
+That alone gives you the plugin (hooks, skills, subagents, MCP) — it
+does not install the `lore` CLI itself. Run `pipx install lore`
+separately, or use `lore install --host claude` once `lore` is on
+your PATH (it'll subprocess `claude plugin install lore@lore` for you).
+
+### Dev install (editable, also the offline / air-gapped path)
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the editable-from-checkout
+recipe. Same recipe is the path for installs on machines without
+network egress to PyPI / the marketplace.
 
 ## Two onboarding recipes
 
