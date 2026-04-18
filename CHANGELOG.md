@@ -10,6 +10,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-04-18
+
+### Fixed
+
+- **Top-level `lore --help` was still argparse-style** (bare list of
+  subcommand names). The 0.2.0 typer migration covered the leaves
+  but `__main__.py` still used the legacy SUBCOMMANDS lookup. Now a
+  proper `typer.Typer()` root mounts every subcommand via
+  `add_typer`, so `lore --help` shows the Rich-boxed command tree
+  with descriptions.
+- **`lore mcp --help` hung waiting for stdin** because the MCP
+  server's `main()` was bare argparse-free and ignored `--help`.
+  Wrapped in a typer app with a no-arg callback so help works
+  without starting the STDIO loop.
+- **`lore migrate`** was still on argparse; migrated to typer.
+- **`lore uninstall`** alias preserved as a top-level typer command
+  forwarding to `install_cmd._cmd_install` with `mode="uninstall"`
+  (same flags as `lore install uninstall`).
+
 ## [0.2.0] — 2026-04-18
 
 ### Added

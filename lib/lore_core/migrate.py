@@ -7,10 +7,12 @@ CLI flag on `python -m lore_core.migrate`. Most users only need
 
 from __future__ import annotations
 
-import argparse
 import sys
 
+import typer
 from rich.console import Console
+
+from lore_cli._compat import argv_main
 
 from lore_core.io import atomic_write_text
 from lore_core.lint import SKIP_DIRS, SKIP_FILES, discover_notes, discover_wikis
@@ -188,37 +190,48 @@ def migrate_minimal_status(
     return touched
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="lore-migrate", description="Frontmatter migrations for Lore schema evolution."
-    )
-    parser.add_argument("--wiki", "-w", help="Scope to a single wiki")
-    parser.add_argument(
-        "--add-schema-version",
-        action="store_true",
-        help=f"Add `schema_version: {SCHEMA_VERSION}` to notes missing it",
-    )
-    parser.add_argument(
-        "--minimal-status",
-        action="store_true",
-        help="Drop `status:` field per status-vocabulary-minimalism "
-        "(proposed → draft: true, others dropped)",
-    )
-    parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="Actually write changes. Without this, runs dry.",
-    )
-    args = parser.parse_args(argv)
+app = typer.Typer(
+    add_completion=False,
+    help="Frontmatter migrations for Lore schema evolution.",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
 
-    if args.add_schema_version:
-        add_schema_version(wiki_filter=args.wiki, dry_run=not args.apply)
-        return 0
-    if args.minimal_status:
-        migrate_minimal_status(wiki_filter=args.wiki, dry_run=not args.apply)
-        return 0
-    parser.print_help()
-    return 2
+
+@app.callback(invoke_without_command=True)
+def migrate(
+    ctx: typer.Context,
+    wiki: str = typer.Option(None, "--wiki", "-w", help="Scope to a single wiki."),
+    add_schema_version_: bool = typer.Option(
+        False,
+        "--add-schema-version",
+        help=f"Add `schema_version: {SCHEMA_VERSION}` to notes missing it.",
+    ),
+    minimal_status: bool = typer.Option(
+        False,
+        "--minimal-status",
+        help="Drop `status:` field per status-vocabulary-minimalism "
+        "(proposed → draft: true, others dropped).",
+    ),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Actually write changes. Without this, runs dry.",
+    ),
+) -> None:
+    """Run a frontmatter migration. Pick exactly one with a flag."""
+    if add_schema_version_:
+        add_schema_version(wiki_filter=wiki, dry_run=not apply)
+        return
+    if minimal_status:
+        migrate_minimal_status(wiki_filter=wiki, dry_run=not apply)
+        return
+    # No migration flag → show help
+    print(ctx.get_help())
+    raise typer.Exit(code=2)
+
+
+main = argv_main(app)
 
 
 if __name__ == "__main__":

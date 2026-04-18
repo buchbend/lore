@@ -1,62 +1,112 @@
-"""`lore` command — dispatches to subcommand modules.
+"""`lore` command — top-level typer dispatcher.
 
-Phase A ships: `lore lint`, `lore migrate`.
-Phase B adds: `lore search`, `lore mcp`.
-Phase D adds: `lore init`, `lore new-wiki`.
+Each subcommand is implemented as its own typer app in a sibling
+module; this file mounts them under a single root so `lore --help`
+renders the full subcommand tree with Rich-styled boxes and each
+`lore <verb> --help` works uniformly.
 """
 
 from __future__ import annotations
 
 import sys
 
-SUBCOMMANDS = {
-    "lint": ("lore_core.lint", "main"),
-    "migrate": ("lore_core.migrate", "main"),
-    "hook": ("lore_cli.hooks", "main"),
-    "search": ("lore_search.cli", "main"),
-    "mcp": ("lore_mcp.server", "main"),
-    "curator": ("lore_curator.core", "main"),
-    "init": ("lore_cli.init_cmd", "main"),
-    "new-wiki": ("lore_cli.new_wiki_cmd", "main"),
-    "attach": ("lore_cli.attach_cmd", "main"),
-    "detach": ("lore_cli.detach_cmd", "main"),
-    "resume": ("lore_cli.resume_cmd", "main"),
-    "session": ("lore_cli.session_cmd", "main"),
-    "briefing": ("lore_cli.briefing_cmd", "main"),
-    "inbox": ("lore_cli.inbox_cmd", "main"),
-    "doctor": ("lore_cli.doctor_cmd", "main"),
-    "install": ("lore_cli.install_cmd", "main"),
-    "uninstall": ("lore_cli.install_cmd", "uninstall_main"),
-}
+import typer
+
+# Subcommand apps — every one of these is a typer.Typer instance with
+# its own commands / callback. Registering them via add_typer gives a
+# unified `lore --help` listing.
+from lore_cli import (
+    attach_cmd,
+    briefing_cmd,
+    detach_cmd,
+    doctor_cmd,
+    hooks,
+    inbox_cmd,
+    init_cmd,
+    install_cmd,
+    new_wiki_cmd,
+    resume_cmd,
+    session_cmd,
+)
+from lore_core import lint as lint_cmd
+from lore_core import migrate as migrate_cmd
+from lore_curator import core as curator_cmd
+from lore_mcp import server as mcp_cmd
+from lore_search import cli as search_cmd
+
+app = typer.Typer(
+    add_completion=False,
+    help="lore — knowledge-graph tooling for AI-coding teams.",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+
+# Mount every subcommand. Names match the legacy SUBCOMMANDS dict so
+# `lore <verb>` invocations stay backwards-compatible.
+app.add_typer(attach_cmd.app, name="attach")
+app.add_typer(briefing_cmd.app, name="briefing")
+app.add_typer(curator_cmd.app, name="curator")
+app.add_typer(detach_cmd.app, name="detach")
+app.add_typer(doctor_cmd.app, name="doctor")
+app.add_typer(hooks.hook_app, name="hook")
+app.add_typer(inbox_cmd.app, name="inbox")
+app.add_typer(init_cmd.app, name="init")
+app.add_typer(install_cmd.app, name="install")
+app.add_typer(lint_cmd.app, name="lint")
+app.add_typer(mcp_cmd.app, name="mcp")
+app.add_typer(migrate_cmd.app, name="migrate")
+app.add_typer(new_wiki_cmd.app, name="new-wiki")
+app.add_typer(resume_cmd.app, name="resume")
+app.add_typer(search_cmd.app, name="search")
+app.add_typer(session_cmd.app, name="session")
 
 
-def _usage() -> None:
-    print("lore — knowledge-graph tooling for AI-coding teams", file=sys.stderr)
-    print(file=sys.stderr)
-    print("Usage: lore <subcommand> [args...]", file=sys.stderr)
-    print(file=sys.stderr)
-    print("Available subcommands:", file=sys.stderr)
-    for name in sorted(SUBCOMMANDS):
-        print(f"  {name}", file=sys.stderr)
+@app.command(
+    "uninstall",
+    help="Symmetric semantic remove (alias for `install uninstall`).",
+)
+def cmd_uninstall_alias(
+    host: str = install_cmd._HOST,
+    yes: bool = install_cmd._YES,
+    quiet: bool = install_cmd._QUIET,
+    json_out: bool = install_cmd._JSON,
+    force: bool = install_cmd._FORCE,
+    lore_repo: str = install_cmd._LORE_REPO,
+) -> None:
+    """Top-level `lore uninstall` — same flags as `lore install uninstall`."""
+    args = install_cmd._make_args(
+        "uninstall",
+        host=host,
+        yes=yes,
+        quiet=quiet,
+        json_out=json_out,
+        force=force,
+        lore_repo=lore_repo,
+    )
+    install_cmd._exit_with(install_cmd._cmd_install(args, mode="uninstall"))
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = sys.argv[1:] if argv is None else argv
-    if not argv or argv[0] in ("-h", "--help"):
-        _usage()
-        return 0 if argv else 2
-    cmd = argv[0]
-    rest = argv[1:]
-    if cmd not in SUBCOMMANDS:
-        print(f"lore: unknown subcommand '{cmd}'", file=sys.stderr)
-        _usage()
-        return 2
-    module_name, func_name = SUBCOMMANDS[cmd]
-    import importlib
-
-    module = importlib.import_module(module_name)
-    func = getattr(module, func_name)
-    return int(func(rest) or 0)
+    """Entry point — `lore` and `python -m lore_cli`."""
+    if argv is None:
+        argv = sys.argv[1:]
+    try:
+        result = app(args=argv, standalone_mode=False)
+        if isinstance(result, int):
+            return result
+        return 0
+    except typer.Exit as e:
+        return int(e.exit_code or 0)
+    except SystemExit as e:
+        code = e.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        if isinstance(code, str):
+            print(code, file=sys.stderr)
+            return 1
+        return 1
 
 
 if __name__ == "__main__":

@@ -446,7 +446,7 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return {"error": f"unknown tool: {tool_name}"}
 
 
-def main(argv: list[str] | None = None) -> int:
+def _start_server() -> int:
     """Start the MCP STDIO server.
 
     Uses the official `mcp` Python SDK if installed; otherwise falls back
@@ -568,6 +568,34 @@ def _run_minimal_server() -> int:
                 }
             )
     return 0
+
+
+import typer  # noqa: E402
+
+from lore_cli._compat import argv_main  # noqa: E402
+
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
+
+
+@app.callback(invoke_without_command=True)
+def mcp() -> None:
+    """Start the Lore MCP STDIO server.
+
+    Communicates over stdin/stdout. Intended for invocation by an MCP
+    client (Claude Code, Cursor, etc.) — running interactively will
+    just wait for JSON-RPC messages.
+    """
+    rc = _start_server()
+    if rc:
+        raise typer.Exit(code=rc)
+
+
+main = argv_main(app)
 
 
 if __name__ == "__main__":
