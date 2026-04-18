@@ -84,13 +84,41 @@ def plan(ctx: InstallContext) -> list[Action]:
                 )
             )
 
-    # 2. Wire the plugin via Claude Code's own installer (manifest
-    #    at .claude-plugin/plugin.json declares hooks + mcpServers;
-    #    skills/agents auto-discover).
+    # 2a. Register the Lore marketplace with Claude Code. Idempotent
+    #     in practice (re-adding produces a benign error or no-op),
+    #     so on_failure=continue lets the install proceed to the
+    #     plugin step even if the marketplace was already added.
     actions.append(
         Action(
             kind=KIND_RUN,
-            description="Register the Lore plugin with Claude Code",
+            description="Register the Lore plugin marketplace with Claude Code",
+            target="claude plugin marketplace",
+            summary="claude plugin marketplace add buchbend/lore",
+            payload={
+                "argv": [
+                    "claude",
+                    "plugin",
+                    "marketplace",
+                    "add",
+                    "buchbend/lore",
+                ],
+                "timeout": 60,
+                "fallback_message": (
+                    "If `claude` isn't on your PATH, run: "
+                    "claude plugin marketplace add buchbend/lore"
+                ),
+            },
+            on_failure="continue",
+        )
+    )
+
+    # 2b. Install the plugin from the now-registered marketplace.
+    #     The manifest at .claude-plugin/plugin.json declares
+    #     hooks + mcpServers; skills/agents auto-discover.
+    actions.append(
+        Action(
+            kind=KIND_RUN,
+            description="Install the Lore plugin via Claude Code",
             target="claude plugin",
             summary="claude plugin install lore@lore",
             payload={

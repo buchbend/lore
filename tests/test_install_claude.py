@@ -18,6 +18,49 @@ def test_plan_emits_claude_plugin_install_command():
     assert ["claude", "plugin", "install", "lore@lore"] in cmds
 
 
+def test_plan_registers_marketplace_before_plugin_install():
+    """`claude plugin install lore@lore` requires the `lore` marketplace
+    to be registered first (real-machine test, 2026-04-18 caught this).
+    The marketplace-add action must precede the plugin-install action.
+    """
+    actions = claude.plan(InstallContext())
+    run_argvs = [a.payload.get("argv") for a in actions if a.kind == "run"]
+    add_idx = next(
+        i
+        for i, argv in enumerate(run_argvs)
+        if argv == ["claude", "plugin", "marketplace", "add", "buchbend/lore"]
+    )
+    install_idx = next(
+        i
+        for i, argv in enumerate(run_argvs)
+        if argv == ["claude", "plugin", "install", "lore@lore"]
+    )
+    assert add_idx < install_idx, (
+        "marketplace add must run before plugin install"
+    )
+
+
+def test_marketplace_add_action_is_continue_on_failure():
+    """Re-adding an already-registered marketplace produces a benign
+    error; on_failure=continue lets the install proceed to the plugin
+    step regardless."""
+    actions = claude.plan(InstallContext())
+    add_actions = [
+        a
+        for a in actions
+        if a.kind == "run"
+        and a.payload.get("argv") == [
+            "claude",
+            "plugin",
+            "marketplace",
+            "add",
+            "buchbend/lore",
+        ]
+    ]
+    assert len(add_actions) == 1
+    assert add_actions[0].on_failure == "continue"
+
+
 def test_plan_emits_lore_on_path_check_at_end():
     actions = claude.plan(InstallContext())
     check_actions = [a for a in actions if a.kind == "check"]

@@ -35,6 +35,7 @@ import sys
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape as rich_escape
 
 from lore_core.install import REGISTRY, known_hosts
 from lore_core.install._helpers import (
@@ -242,12 +243,18 @@ def _execute_actions(
         results.append(result)
         if not quiet:
             mark = "[green]\u2713[/green]" if result.ok else "[red]\u2717[/red]"
+            # Escape user-derived strings (paths) but keep wrapper markup.
             console.print(
-                f"  {mark} {a.kind:7} {a.target}",
+                f"  {mark} {a.kind:7} {rich_escape(a.target)}",
                 markup=True,
             )
             if not result.ok and result.error:
-                console.print(f"    [red]{result.error}[/red]", markup=False)
+                # Wrapper colour stays markup; the error body itself is
+                # escaped to prevent ANSI injection from subprocess output.
+                console.print(
+                    f"    [red]{rich_escape(result.error)}[/red]",
+                    markup=True,
+                )
         if not result.ok:
             fail_count += 1
             if a.on_failure == "abort_host":
