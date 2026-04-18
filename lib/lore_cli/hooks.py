@@ -170,13 +170,38 @@ MAX_OPEN_ITEMS_INLINE = 5
 # SessionStart additionalContext block and re-asserted in PreCompact so
 # the rule survives compaction. Bullet form, negatively framed — both
 # stick harder in long sessions than passive permission.
-LORE_DIRECTIVE_LINES = [
-    "## Directives",
-    "- **Vault first.** Unfamiliar project term, concept, decision, or "
-    "wikilink? Call `lore_search` (MCP) before asking the user. "
-    "Asking about a wikilinked term without searching first is a bug.",
-    "",
-]
+#
+# The canonical content lives in `templates/host-rules/default.md` so
+# the same source feeds both this hook (Claude Code) and the Cursor
+# installer's `~/.cursor/rules/lore.md`. Module-level `__getattr__`
+# below preserves the historical `LORE_DIRECTIVE_LINES` name without
+# reading the template at import time (so pytest can monkeypatch the
+# template path without import-order pain).
+_DIRECTIVE_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "templates"
+    / "host-rules"
+    / "default.md"
+)
+
+
+def _load_directive_lines() -> list[str]:
+    """Read the canonical vault-first directive and return as a list.
+
+    Output shape preserves the historical 3-element layout exactly:
+    `["## Directives", "- **Vault first.** …", ""]`. The trailing
+    empty string produces the blank line spacer in the joined output.
+    """
+    text = _DIRECTIVE_PATH.read_text()
+    return [*text.rstrip("\n").split("\n"), ""]
+
+
+def __getattr__(name: str):
+    """Backwards-compat shim — keep `from hooks import LORE_DIRECTIVE_LINES`."""
+    if name == "LORE_DIRECTIVE_LINES":
+        return _load_directive_lines()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 PRECOMPACT_DIRECTIVE = (
     "lore: vault-first — call `lore_search` MCP before asking the user "
@@ -557,7 +582,7 @@ def _session_start_from_lore(
     status_line = f"lore: loaded {scope_label} ({', '.join(status_bits)}) · /lore:loaded"
 
     out_parts: list[str] = [status_line, ""]
-    out_parts.extend(LORE_DIRECTIVE_LINES)
+    out_parts.extend(_load_directive_lines())
 
     project_entry = _project_note_for_repo(wiki, repo) if repo else None
     if project_entry is not None:
@@ -666,7 +691,7 @@ def _session_start(cwd: str | None) -> str:
     )
 
     parts: list[str] = [status_line, ""]
-    parts.extend(LORE_DIRECTIVE_LINES)
+    parts.extend(_load_directive_lines())
 
     if project_entry is not None:
         parts.append(f"## Focus: [[{project_entry['name']}]]")
