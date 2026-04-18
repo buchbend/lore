@@ -13,5 +13,33 @@
     "mcp",
     "session-notes",
     "rag"
-  ]
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook session-start"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook pre-compact"
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "lore": {
+      "command": "lore",
+      "args": ["mcp"]
+    }
+  }
 }
