@@ -1,5 +1,5 @@
 ---
-name: inbox
+name: lore:inbox
 description: Process files from wiki inboxes and the root inbox.
   Calls MCP `lore_inbox_classify` for the deterministic walk; LLM
   reads each file and composes notes; `lore inbox archive` moves

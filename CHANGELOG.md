@@ -10,6 +10,27 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-04-18
+
+### Fixed
+
+- **Slash commands lost their `lore:` namespace prefix in v0.2.0**.
+  When skill directories were renamed from `skills/lore:<name>/`
+  to `skills/<name>/` and the SKILL.md frontmatter `name:` was
+  set to the bare value, Claude Code's picker started showing
+  bare slash commands (`/init`, `/resume`, `/inbox`, …) — colliding
+  with built-ins like Claude Code's own `/init`.
+- **Restored explicit scoping in SKILL.md frontmatter**:
+  `name: lore:<bare>` (literal colon). Other plugins like
+  `frontend-design:frontend-design` use the same pattern; Claude
+  Code uses the frontmatter `name` field verbatim as the slash
+  command name. Directory names stay bare; only the in-frontmatter
+  name carries the prefix.
+
+  After `claude plugin update lore@lore`, slash commands appear in
+  the picker as `/lore:resume`, `/lore:loaded`, `/lore:init`, etc.
+  No collision with built-ins; explicit namespace always visible.
+
 ## [0.2.2] — 2026-04-18
 
 ### Fixed

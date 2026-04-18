@@ -1,5 +1,5 @@
 ---
-name: loaded
+name: lore:loaded
 description: Show the exact context block Lore injected at session start.
   Resolves the current session's cache via process ancestry so concurrent
   Claude sessions don't cross-talk. Run with "/lore:loaded".

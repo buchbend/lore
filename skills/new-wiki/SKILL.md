@@ -1,5 +1,5 @@
 ---
-name: new-wiki
+name: lore:new-wiki
 description: Scaffold a new wiki skeleton inside $LORE_ROOT/wiki/ —
   directory structure, CLAUDE.md from template, initial _index.md,
   optional git init + GitHub remote. Run with "/lore:new-wiki <name>".

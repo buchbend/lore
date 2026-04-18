@@ -1,5 +1,5 @@
 ---
-name: import
+name: lore:import
 description: Bring an existing markdown vault into Lore's shape. Mount-as-is
   by default; optional LLM enrichment backfills frontmatter (type,
   description, tags) and git-log dates. Run with "/lore:import <path>

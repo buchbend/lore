@@ -1,5 +1,5 @@
 ---
-name: resume
+name: lore:resume
 description: Load working context from the vault on demand. Single MCP
   call dispatches across no-arg (recent across all wikis), wiki-scoped,
   keyword search, or scope-prefix aggregation. Run with "/lore:resume"
