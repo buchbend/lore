@@ -41,6 +41,9 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
 ]
+capture = [
+    "claude-agent-sdk>=0.1",
+]
 
 [project.scripts]
 lore = "lore_cli.__main__:main"
