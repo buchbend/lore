@@ -1,0 +1,201 @@
+"""Sidecar ledger with content-hash watermarks.
+
+Transcript-level and wiki-level sidecar JSON files.  Content-hash watermarks
+prevent host-side edits from silently desyncing the digested offset.  All
+writes go through ``lore_core.io.atomic_write_text`` so readers never see a
+partial file.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+from lore_core.io import atomic_write_text
+
+
+@dataclass
+class TranscriptLedgerEntry:
+    host: str
+    transcript_id: str
+    path: Path
+    directory: Path
+    digested_hash: str | None
+    digested_index_hint: int | None
+    synthesised_hash: str | None
+    last_mtime: datetime
+    curator_a_run: datetime | None
+    noteworthy: bool | None
+    session_note: str | None  # wikilink, e.g. "[[2026-04-19-slug]]"
+
+
+@dataclass
+class WikiLedgerEntry:
+    wiki: str
+    last_curator_a: datetime | None = None
+    last_curator_b: datetime | None = None
+    last_briefing: datetime | None = None
+    pending_transcripts: int = 0
+    pending_tokens_est: int = 0
+
+
+class TranscriptLedger:
+    """Sidecar ledger at <lore_root>/.lore/transcript-ledger.json.
+
+    Tracks per-transcript processing state with content-hash watermarks
+    rather than integer offsets — host-side edits to prior turns don't
+    silently desync the Kafka-style offset.
+    """
+
+    def __init__(self, lore_root: Path) -> None:
+        self._lore_root = lore_root
+        self._path = lore_root / ".lore" / "transcript-ledger.json"
+
+    def _load(self) -> dict[str, dict]:
+        """Return the raw JSON dict (key → raw entry dict). Empty if absent."""
+        if not self._path.exists():
+            return {}
+        try:
+            return json.loads(self._path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    @staticmethod
+    def _key(host: str, transcript_id: str) -> str:
+        return f"{host}::{transcript_id}"
+
+    @staticmethod
+    def _entry_to_raw(e: TranscriptLedgerEntry) -> dict:
+        """Convert to JSON-safe dict (datetime → ISO8601, Path → str)."""
+        return {
+            "host": e.host,
+            "transcript_id": e.transcript_id,
+            "path": str(e.path),
+            "directory": str(e.directory),
+            "digested_hash": e.digested_hash,
+            "digested_index_hint": e.digested_index_hint,
+            "synthesised_hash": e.synthesised_hash,
+            "last_mtime": e.last_mtime.isoformat(),
+            "curator_a_run": e.curator_a_run.isoformat() if e.curator_a_run is not None else None,
+            "noteworthy": e.noteworthy,
+            "session_note": e.session_note,
+        }
+
+    @staticmethod
+    def _entry_from_raw(raw: dict) -> TranscriptLedgerEntry:
+        """Inverse of _entry_to_raw."""
+        curator_a_run_raw = raw.get("curator_a_run")
+        return TranscriptLedgerEntry(
+            host=raw["host"],
+            transcript_id=raw["transcript_id"],
+            path=Path(raw["path"]),
+            directory=Path(raw["directory"]),
+            digested_hash=raw.get("digested_hash"),
+            digested_index_hint=raw.get("digested_index_hint"),
+            synthesised_hash=raw.get("synthesised_hash"),
+            last_mtime=datetime.fromisoformat(raw["last_mtime"]),
+            curator_a_run=datetime.fromisoformat(curator_a_run_raw) if curator_a_run_raw else None,
+            noteworthy=raw.get("noteworthy"),
+            session_note=raw.get("session_note"),
+        )
+
+    def get(self, host: str, transcript_id: str) -> TranscriptLedgerEntry | None:
+        raw = self._load()
+        key = self._key(host, transcript_id)
+        if key not in raw:
+            return None
+        return self._entry_from_raw(raw[key])
+
+    def upsert(self, entry: TranscriptLedgerEntry) -> None:
+        """Write the entry; atomic replace of the ledger file."""
+        raw = self._load()
+        key = self._key(entry.host, entry.transcript_id)
+        raw[key] = self._entry_to_raw(entry)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(self._path, json.dumps(raw, indent=2))
+
+    def pending(self) -> list[TranscriptLedgerEntry]:
+        """Entries where last_mtime > any prior digested state, or digested_hash is None."""
+        result = []
+        for raw_entry in self._load().values():
+            entry = self._entry_from_raw(raw_entry)
+            if entry.digested_hash is None:
+                result.append(entry)
+            elif entry.curator_a_run is not None and entry.last_mtime > entry.curator_a_run:
+                result.append(entry)
+        return result
+
+    def advance(
+        self,
+        host: str,
+        transcript_id: str,
+        *,
+        digested_hash: str,
+        digested_index_hint: int,
+        noteworthy: bool,
+        session_note: str | None = None,
+    ) -> None:
+        """Update an existing entry's digested state. Raises KeyError if absent."""
+        raw = self._load()
+        key = self._key(host, transcript_id)
+        if key not in raw:
+            raise KeyError(f"No ledger entry for {key!r}")
+        entry = self._entry_from_raw(raw[key])
+        entry.digested_hash = digested_hash
+        entry.digested_index_hint = digested_index_hint
+        entry.noteworthy = noteworthy
+        entry.session_note = session_note
+        raw[key] = self._entry_to_raw(entry)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(self._path, json.dumps(raw, indent=2))
+
+
+class WikiLedger:
+    """Per-wiki sidecar tracking last curator/briefing runs + pending counters.
+
+    Path: <lore_root>/.lore/wiki-{wiki_name}-ledger.json
+    """
+
+    def __init__(self, lore_root: Path, wiki_name: str) -> None:
+        self._lore_root = lore_root
+        self._wiki = wiki_name
+        self._path = lore_root / ".lore" / f"wiki-{wiki_name}-ledger.json"
+
+    def read(self) -> WikiLedgerEntry:
+        """Return current state; defaults if file absent."""
+        if not self._path.exists():
+            return WikiLedgerEntry(wiki=self._wiki)
+        try:
+            raw = json.loads(self._path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return WikiLedgerEntry(wiki=self._wiki)
+
+        def _dt(val: str | None) -> datetime | None:
+            return datetime.fromisoformat(val) if val else None
+
+        return WikiLedgerEntry(
+            wiki=raw.get("wiki", self._wiki),
+            last_curator_a=_dt(raw.get("last_curator_a")),
+            last_curator_b=_dt(raw.get("last_curator_b")),
+            last_briefing=_dt(raw.get("last_briefing")),
+            pending_transcripts=raw.get("pending_transcripts", 0),
+            pending_tokens_est=raw.get("pending_tokens_est", 0),
+        )
+
+    def write(self, entry: WikiLedgerEntry) -> None:
+        """Atomic write."""
+
+        def _iso(dt: datetime | None) -> str | None:
+            return dt.isoformat() if dt is not None else None
+
+        raw = {
+            "wiki": entry.wiki,
+            "last_curator_a": _iso(entry.last_curator_a),
+            "last_curator_b": _iso(entry.last_curator_b),
+            "last_briefing": _iso(entry.last_briefing),
+            "pending_transcripts": entry.pending_transcripts,
+            "pending_tokens_est": entry.pending_tokens_est,
+        }
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(self._path, json.dumps(raw, indent=2))
