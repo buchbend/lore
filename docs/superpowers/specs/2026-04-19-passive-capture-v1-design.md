@@ -103,7 +103,9 @@ class Adapter(Protocol):
 
 **Normalisation philosophy:** hybrid. Common fields normalised (role / text / tool / reasoning); `host_extras` dict carries format-specific extras. Specialist passes may peek; curator defaults ignore.
 
-**Handles as retrieval pointers.** A `TranscriptHandle` (`host`, `id`, `path`) is lore's backbone for provenance. Session notes written by Curator A record handles plus a turn range (`from_index..to_index`). Surfaces extracted by Curator B record `synthesis_sources` pointing at session notes, which in turn point at handles. Curator C, when defragmenting weeks later, can walk from a concept back to its originating session notes and from there back to the raw transcript — via the adapter, cross-host. Summaries are lossy by design; the architecture is not, because the transcript stays reachable.
+**Handles as retrieval pointers.** A `TranscriptHandle` (`host`, `id`, `path`) is lore's backbone for provenance. Session notes written by Curator A record handles plus a turn range (`from_hash..to_hash`). Surfaces extracted by Curator B record `synthesis_sources` pointing at session notes, which in turn point at handles. Curator C, when defragmenting weeks later, can walk from a concept back to its originating session notes and from there back to the raw transcript — via the adapter, cross-host. Summaries are lossy by design; the architecture is not, because the transcript stays reachable.
+
+**Content-hash watermarks instead of integer offsets.** Some hosts (notably Cursor's SQLite store) can mutate earlier turns — an edit, a retry, an internal migration. A ledger pointing at "turn index 42" becomes silently wrong when turn 17 gets rewritten and everything after shifts. Instead, the ledger stores a hash of each turn's content (`sha256(role + text + tool_call_json)`) as its watermark. `digested_hash` identifies the *last turn* already processed; on the next run, the adapter streams turns past the matching hash, with a fallback scan if the hash isn't found (turn was edited or deleted). This costs one hash per turn at write-time — negligible — and makes the ledger durable against host-side mutation.
 
 **V1 adapter set:**
 
@@ -134,14 +136,17 @@ Two-level, hybrid — decision (c) from the brainstorm.
   "transcript_id": "uuid...",
   "path": "/home/.../projects/enc/uuid.jsonl",
   "directory": "/home/buchbend/git/lore",
-  "digested_through": 147,
-  "synthesised_through": 147,
+  "digested_hash": "sha256:3f8a…",         // hash of last processed turn
+  "digested_index_hint": 147,              // last known index (advisory)
+  "synthesised_hash": "sha256:3f8a…",
   "last_mtime": "2026-04-19T10:23:44Z",
   "curator_a_run": "2026-04-19T12:00:00Z",
   "noteworthy": true,
   "session_note": "[[2026-04-19-passive-capture-design]]"
 }
 ```
+
+The `digested_index_hint` is advisory: adapters use it as a fast starting point, then verify `digested_hash` still points at the same turn content. On mismatch (host mutated the turn), the adapter falls back to a content-hash scan — O(pending-turns) in the worst case. See §1 "Content-hash watermarks."
 
 Per-wiki:
 
@@ -198,14 +203,18 @@ Three events. All return <100 ms. All spawn detached background processes (`subp
 
 ### 4. Curator A — session-filing
 
-Processes pending transcripts. Kafka-style offset per transcript.
+Processes pending transcripts. Kafka-style offset per transcript — see §1 and §2 for content-hash watermarks used instead of raw integer offsets so host-side edits don't silently drift the ledger.
 
 **Pipeline:**
 
 1. **Load** pending slices from sidecar ledger (attached-only).
-2. **Simple-tier filter.** For each slice: simple-tier produces a compact summary (title, 3–5 bullets, files touched, entities, decisions) + `noteworthy: bool`. If not noteworthy → mark digested, log reason, return. No mid/high-tier calls.
+2. **Noteworthy filter + summary.** For each slice: produce a compact summary (title, 3–5 bullets, files touched, entities, decisions) + `noteworthy: bool`. If not noteworthy → mark digested, log reason, return.
 3. **Middle-tier assemble.** For noteworthy slices: stream full transcript (adapter streams `Turn`s; long tool results truncated to metadata). Check recent session notes in the same scope. If judged a continuation → **merge into existing note** (append body sections, bump mtime, re-extract atoms). Else → file new session note with `draft: true`.
-4. **Advance ledger.** `digested_through = last_turn_index`; `curator_a_run = now`.
+4. **Advance ledger.** `digested_hash = hash(last-included-turn)`; `curator_a_run = now`.
+
+**Model tier for the noteworthy filter (step 2).** Defaults to **middle tier**, not simple. Reason: a false-negative here (filter marks a substantive slice as not-noteworthy) silently drops a session note — the whole-system failure mode we're trying to avoid. False-positives (filter marks noise as noteworthy) only cost extra tokens. The asymmetry argues for middle-tier recall.
+
+Users who prioritise cost (especially during backfill) can opt into `curator.a_noteworthy_tier: simple` with a loud warning on first use: *"Using simple tier for noteworthy filter — some substantive session slices may be silently dropped. Recommended only for bulk backfill where cost dominates."*
 
 **Merge judgment:** middle-tier call with (a) new slice's summary and (b) recent session notes' frontmatter + summaries in scope. Prompt: *"Is this a continuation of any existing note?"* Returns `merge: <note-path>` or `new`.
 
@@ -227,14 +236,16 @@ Reads *recent* session notes, emits surfaces per the wiki's SURFACES.md. Deliber
 
 Curator B never rewrites the wiki. New surfaces only. Cross-cutting merges and supersessions are C's territory.
 
-### 6. Curator C — weekly defragmentation (whole wiki, time-aware)
+### 6. Curator C — weekly defragmentation (whole wiki, time-aware) — **experimental, flag-gated**
+
+**Status:** v1 ships C behind `curator.curator_c.enabled: false` as the default. C is experimental — its prompts are not yet calibrated on real data and its in-place edits have the highest blast radius of any lore component. The sole-dev team adopts it first, iterates on the prompts, promotes to default-on once proven.
 
 Reads the whole wiki, defragments the graph. Distinct from B: broader scope (all notes, not just recent), slower cadence (weekly), heavier model tier (high by default), time-aware (newer overrides older).
 
 **What it does:**
 
 1. **Adjacent-concept merge.** Scan for concepts that share substantial semantic overlap but exist as separate notes. Propose a merged concept with `synthesis_sources` listing both, and `superseded_by` backlinks on the originals.
-2. **Supersession chains.** When a newer decision contradicts an older one (same topic, newer `created:` date, overlapping scope), mark the older `superseded_by: [[newer]]`. Time-awareness: *newer-wins* unless the older note carries explicit `canonical: true` (opt-out).
+2. **Supersession chains.** When a newer decision contradicts an older one (same topic, newer `created:` date, overlapping scope), mark the older `superseded_by: [[newer]]`. Time-awareness: *newer-wins* unless the older note carries explicit `canonical: true` (opt-out). **Conservative default:** unclear-contradiction → don't supersede. User's manual `supersedes:` chain remains the canonical path; C's auto-supersession is opportunistic, not authoritative.
 3. **Orphan wikilink repair.** Broken `[[wikilinks]]` — either the target was renamed (fuzzy-match + propose rewrite) or was deleted (flag for user review).
 4. **Graph-wide frontmatter maintenance.** Everything today's `lore curator` does, but across the whole wiki: `last_reviewed` backfill from git-log, stale flagging, etc.
 5. **Draft promotion proposals.** C may propose promotion of long-standing drafts (see Open Sections §3 for auto-promote rules).
@@ -247,15 +258,15 @@ Output: in-place edits to existing notes (frontmatter + occasional body merges),
 - Jitter: per-user seed from `hash(git.user.email) % 48h`. User A fires Monday morning, user B fires Tuesday afternoon. A team doesn't fire all at once.
 - First-come wins: before running, re-read sidecar's `last_curator_c`. If another user already ran this cycle → skip locally, log "already ran by <user> at <ts>".
 
-**Team coordination:** `.lore-wiki.yml` → `curator.curator_c: local | central | off`.
+**Feature gate + team coordination:** `.lore-wiki.yml` → `curator.curator_c.enabled: true|false` + `curator.curator_c.mode: local|central`.
 
-- `local` (default) — every user can fire locally; sidecar + jitter coordinate.
-- `central` — skip locally; implies a GitHub Actions / cron job runs C elsewhere (stub for v1; implementation deferred).
-- `off` — skip entirely.
+- `enabled: false` (v1 default) — C doesn't run at all. Experimental — promote to `true` once prompts are calibrated on real data.
+- `enabled: true, mode: local` — every user can fire locally; sidecar + jitter coordinate.
+- `enabled: true, mode: central` — skip locally; implies a GitHub Actions / cron job runs C elsewhere (stub for v1; implementation deferred).
 
-**High-tier dependency.** `models.high: off` → Curator C skips steps 1–2 (adjacent-merge and supersession detection need high-tier judgment) and runs only steps 3–5 with middle-tier. First-run warning: *"Curator C running without high-tier — graph defragmentation disabled, only hygiene + orphan repair."*
+**High-tier behaviour.** `models.high: off` is independent of `curator_c.enabled`. When C runs with `high: off`, steps 1–2 (adjacent-merge and supersession detection) degrade to middle-tier with a coarser prompt; steps 3–5 (hygiene + orphan repair) run unchanged. First-run warning: *"Curator C running without high-tier — adjacent-concept merging and supersession detection run at middle tier; expect coarser judgments."*
 
-**Manual trigger:** `lore curator run --defrag`.
+**Manual trigger:** `lore curator run --defrag [--dry-run]`. `--dry-run` reports what C *would* do without touching the vault — essential for safe iteration on C's prompts during dogfood. Every automatic run writes a full pre/post-diff to the audit log.
 
 ### 7. SURFACES.md
 
@@ -303,8 +314,10 @@ required: [type, citekey, title, authors, year, description, tags]
 **Lifecycle:**
 
 - `lore new-wiki <name> --surfaces <template>` — shipped templates: `standard` (concept+decision+session), `science` (+paper+result), `design` (+artefact+critique), `custom`.
-- `lore surface add <name>` — scaffold new section.
+- `lore surface add <name>` — scaffold new section in SURFACES.md.
 - `lore surface lint` — parseable + schema-consistent + no duplicates. Curator B refuses to run on broken SURFACES.md.
+
+**Most users should never need to edit SURFACES.md directly.** The shipped templates are complete and usable as-is; `lore surface add` handles extension. Direct hand-editing is an escape hatch for advanced users customising field requirements. A broken SURFACES.md triggers a loud SessionStart breadcrumb (`lore!: SURFACES.md invalid — run 'lore surface lint'`) every session until fixed — silent degradation is never acceptable here.
 
 **Versioning:** top-level `schema_version: N`. Field changes bump version. Migrations via existing `lib/lore_core/migrate.py`. Per-surface independent versioning deferred to v2.
 
@@ -317,30 +330,37 @@ git:
   auto_commit: true
   auto_push: false
   auto_pull: true
+
 curator:
-  threshold_pending: 3
-  threshold_tokens: 50000
-  curator_c: local              # local | central | off — weekly defrag
+  threshold_pending: 3          # fires Curator A when either threshold is met
+  threshold_tokens: 50000       # (OR semantics)
+  a_noteworthy_tier: middle     # middle (default) | simple (cheap lore)
+  curator_c:
+    enabled: false              # v1 default: off (experimental)
+    mode: local                 # local | central (central stubbed for v2)
+
 models:
   simple: claude-haiku-4-5
   middle: claude-sonnet-4-6
-  high:   claude-opus-4-7       # or 'off'
-  defaults: anthropic
+  high:   claude-opus-4-7       # or 'off' (feature still runs, degrades to middle)
+
 briefing:
   auto: true
   audience: personal            # personal | team
   sinks:
     - matrix:#dev-notes
     - markdown:~/lore-briefing.md
+
 breadcrumb:
-  session_start: true
-  mid_stream:
-    on_commit: true
-    on_precompact: true
-    on_curator_complete: true
-    scope_filter: true          # only fire for current-session scope
-  quiet: false
+  mode: normal                  # quiet (errors-only) | normal | verbose
+  scope_filter: true            # silence cross-scope events
 ```
+
+**Notes on the structure:**
+
+- Feature gating (`curator_c.enabled`) is separate from model availability (`models.high`). Two axes, not one.
+- `breadcrumb.mode` is opinionated — no sub-toggles. Per the UX review: four toggles = sixteen combinations users won't tune correctly.
+- `a_noteworthy_tier: middle` is the safe default; `simple` is the opt-in for cost-constrained users (with warning on first use).
 
 ### 9. Registry tooling
 
@@ -404,7 +424,9 @@ Not the design centre. Wraps `lore new-wiki` + `lore attach` + `lore backfill` +
 
 **B. Mid-stream confidence signals** — fire whenever something worth noting happens in the vault.
 
-All background-job output flows through a **drain file** (`$LORE_ROOT/.lore/breadcrumbs.drain.jsonl`, one JSONL entry per event). Hooks (PostToolUse / UserPromptSubmit) read the drain, emit one `systemMessage` line per undelivered entry, then mark delivered. Background jobs don't write to stdout — they append to the drain and let the next hook surface them.
+All background-job output flows through a **drain file** (`$LORE_ROOT/.lore/breadcrumbs.drain.jsonl`, one JSONL entry per event). Background jobs never write to stdout — they append to the drain and let the next hook surface entries.
+
+**Delivery mechanism — append-only + delivered sidecar (picked, not open).** The drain itself is append-only. A parallel sidecar `.lore/breadcrumbs.delivered.jsonl` records `{ts, entry_id}` for each line already rendered. Hooks (PostToolUse / UserPromptSubmit) read both files, compute the undelivered set, emit `systemMessage` lines, append newly-rendered IDs to the delivered sidecar. Periodic compaction (cron-less: runs opportunistically during SessionStart when drain+delivered exceed a size threshold) rewrites both files to drop delivered entries older than a TTL. Simple, race-safe under concurrent hook invocations, no lost or duplicated events.
 
 **Events that write to the drain:**
 
@@ -434,35 +456,55 @@ All background-job output flows through a **drain file** (`$LORE_ROOT/.lore/brea
  "render": "lore: new concept 'passive-capture'"}
 ```
 
-All single-line, `lore: ` prefix, via `systemMessage` (banner, no multi-line markdown).
+All single-line, via `systemMessage` (banner, no multi-line markdown). **Two prefixes to distinguish channel:** `lore: <text>` for normal events, `lore!: <text>` for errors / actionable warnings. The prefix difference is one character but trains attention — users learn to skim `lore:` lines and read `lore!:` lines.
 
-**Scope filtering** (config: `breadcrumb.mid_stream.scope_filter: true`, default on). Mid-stream signals fire only when the triggering event is in the *current session's attached scope* (or a parent scope). A session note filed for `private/science` while you're working in `private/lore` is silent — the note exists in the vault but doesn't surface here. We know the scope because attach resolution at hot-path time already recorded it.
+**Scope filtering** (config: `breadcrumb.scope_filter: true`, default on). Mid-stream signals fire only when the triggering event is in the *current session's attached scope* (or a parent scope). A session note filed for `private/science` while you're working in `private/lore` is silent — the note exists in the vault but doesn't surface here. We know the scope because attach resolution at hot-path time already recorded it.
 
-Effect: session-relevant breadcrumbs can fire as often as needed to convey genuine activity, because irrelevant-scope events don't surface at all. Target intensity: every relevant event surfaces; cross-scope noise stays silent. `breadcrumb.quiet: true` suppresses all non-error signals.
+**Burst rate-limiting.** Curator C defrag passes and backfill runs can emit many events in quick succession. Same-category events within a short window (default 30 s) coalesce into one line: `lore: 5 concepts merged · lore curator log` (with a path to the deep-dive command). The drain stores individual entries; the hook coalesces on render. Scope: local drain only — the vacation-return scenario doesn't actually happen here because the drain is your-work-only (cross-team activity flows through briefings, §8).
+
+**Config — opinionated, not exposed:**
+
+```yaml
+breadcrumb:
+  mode: normal          # quiet | normal | verbose
+  scope_filter: true
+```
+
+- `normal` (default): SessionStart banner + mid-stream signals with burst coalescing.
+- `verbose`: include non-noteworthy-skipped events, per-turn activity.
+- `quiet`: errors-only — the channel never goes fully silent (silent channels die).
 
 ### 13. Model tier abstraction
 
-Three semantic tiers: `simple`, `middle`, `high`. Every LLM call site references a tier, not a concrete model.
+Three semantic tiers: `simple`, `middle`, `high`. Every LLM call site references a tier, not a concrete model. **Tier selection is separate from feature gating** — see the config split in §8.
+
+**Two orthogonal axes:**
+
+1. **Which concrete model fills each tier.** `models.simple | middle | high`. Each resolves to a provider-specific model. `high: off` means "no high-tier model configured" — curators that require high-tier degrade to middle (with a louder prompt).
+2. **Whether a curator runs at all.** `curator.curator_c.enabled: true|false`. Independent of tier availability.
 
 **Rules:**
 
-- `high: off` → Curator B step 3 falls back to `middle`. First-run warning shown.
-- `simple: simple; middle: simple; high: off` (the "cheap lore" config) → louder warning: *"All tiers on simple — outcomes may be crippled. Proceed?"*
+- `models.high: off` alone → Curator C still runs (if enabled), just at middle tier with a coarser defragmentation prompt. First-run warning: *"Running Curator C without high-tier — adjacent-concept merging and supersession detection run at middle tier; expect coarser judgments."*
+- `curator.curator_c.enabled: false` → C doesn't run at all regardless of tier config.
+- `models.middle: simple; models.high: off; curator.a_noteworthy_tier: simple` — the "cheap lore" configuration. Louder warning on first use covering the whole impact.
 - Non-Anthropic providers: tier names stay; adapter maps to provider tiers.
 - Sane defaults shipped with each new wiki.
 
-**Implementation:** small `ModelTier` enum in code; concrete-model resolution at call time from config. Benchmarking across providers becomes trivial.
+**Implementation:** small `ModelTier` enum in code; concrete-model resolution at call time from config. Benchmarking across providers is trivial.
 
 ---
 
 ## Privacy + safety
 
 - **Attached-only capture** — no accidental private-conversation leaks.
+- **Secret redaction (best-effort).** Before any transcript content is emitted to an LLM or written to a session note, a deterministic pre-pass scrubs common secret patterns: API keys matching known provider prefixes (`sk-…`, `ghp_…`, `AIza…`), JWT-shaped tokens, PEM headers (`-----BEGIN PRIVATE KEY-----`), AWS-style access keys, and high-entropy strings above a threshold in contexts that look like credentials (following a `=` or `:` after a key-like identifier). Detections are replaced with `[REDACTED:type]` markers. Not foolproof — users are still responsible for not pasting secrets — but not silent. Redaction log goes to `vault/.lore/redaction.log`.
 - **Confirmation gate on backfill** before any API call.
 - **Draft-by-default.** Curator-authored notes carry `draft: true`; user edits / deletes freely; git is the undo.
 - **Atomic writes with mtime guard.** Curator re-reads before patching; aborts on mid-edit race (Obsidian-held-file case). Already in existing curator.
 - **Lockfile** prevents concurrent curator runs from corrupting the ledger.
 - **Obsidian-hold detection** retained from existing curator.
+- **Curator C pre/post diff.** Every automatic C run writes a full diff (before + after) to `vault/.lore/curator-c.diff.YYYY-MM-DD.log` for post-hoc review and rollback auditability.
 - **Logging.** `vault/.lore/curator.log` + `lore curator log`. Every curator action auditable.
 
 ---
@@ -479,13 +521,11 @@ Three semantic tiers: `simple`, `middle`, `high`. Every LLM call site references
 
 ---
 
-## Open sections (refine during review)
+## Open sections (refine during implementation)
 
 1. **SURFACES.md → schema.py integration detail.** Exact migration path from today's hardcoded `REQUIRED_FIELDS` dict. Additive; specifics need implementation-plan detail.
-2. **Draft-lifecycle auto-promote rules.** Today v1 ships with *user must remove `draft: true` manually.* Options for future: time-based (30 d), pass-count-based (3 passes across Curator B/C), user-gesture-based. Curator C could propose promotions. Pick during review.
+2. **Draft-lifecycle auto-promote rules.** V1 ships with *user must remove `draft: true` manually.* Options for future: time-based (e.g., 30 d untouched → promote), pass-count-based (3 Curator B/C passes confirming → promote), user-gesture-based. Pick during dogfood once behaviour is observed.
 3. **Curator B abstraction heuristics.** *"Pattern appears across 3+ session notes"* is one shape; LLM judgment on a well-defined prompt is another. Probably a combo. Needs prompt engineering during implementation with worked examples from real sessions.
-4. **Curator C team coordination in central mode.** Local-mode jitter + sidecar first-come-wins is clean. Central mode (GitHub Actions) needs conflict resolution with in-flight local runs if any. V1 ships local-only; central is a `central | off` stub.
-5. **Drain-file delivery semantics.** How does the hook mark entries delivered — rewrite the drain excluding delivered entries, or keep a `.delivered.jsonl` sidecar? Rewrite is simpler but writes under every hook; sidecar is append-only but needs periodic compaction. Pick during implementation.
 
 ---
 
