@@ -32,17 +32,18 @@ The `/lore:session` gesture is too much friction — humans switch contexts fast
 
 ## Architecture overview
 
-Three layers:
+Four layers:
 
 1. **Hot path — capture** (hook-driven, silent, non-LLM).
 2. **Curator A — session-filing** (async, frequent, incremental).
-3. **Curator B — defragmentation / graph-abstraction** (async, daily, optional high tier).
+3. **Curator B — graph abstraction** (async, daily, recent notes only).
+4. **Curator C — wiki-wide defragmentation** (async, weekly, high-tier-gated, whole-graph).
 
 ```
 transcript (host-specific format)
     │
     ▼  [Host adapter — Turn normalisation]
-normalised Turn stream + TranscriptHandle
+normalised Turn stream + TranscriptHandle (handle retained for later re-read)
     │
     ▼  [Hot path — SessionEnd / PreCompact / SessionStart-sweep]
 sidecar ledger: transcript pending
@@ -50,14 +51,18 @@ sidecar ledger: transcript pending
     ▼  [Curator A — async, merge-or-create]
 session note  (canonical vault artefact; draft:true until confirmed)
     │
-    ▼  [Curator B — async daily, clock-rollover trigger]
+    ▼  [Curator B — async daily, clock-rollover trigger, recent notes]
 concept / decision / result / paper / …  (per wiki's SURFACES.md)
     │
-    ▼  [Briefing — downstream of Curator B]
-published digest  (Matrix / Slack / markdown / GH Discussion)
+    ├─▶  [Briefing — downstream of Curator B]
+    │           published digest  (Matrix / Slack / markdown / GH Discussion)
+    │
+    ▼  [Curator C — async weekly + per-user jitter, whole wiki]
+coherent graph:  time-sorted concepts · superseded decisions marked ·
+                 duplicates merged · orphan wikilinks repaired
 ```
 
-Canonical chain: **transcript → Curator A → session note → Curator B → graph edges.** Session note is the first vault artefact. No intermediate fragments.
+Canonical chain: **transcript → Curator A → session note → Curator B → graph edges → Curator C keeps the graph coherent.** Session note is the first vault artefact. No intermediate fragments.
 
 ---
 
@@ -97,6 +102,8 @@ class Adapter(Protocol):
 ```
 
 **Normalisation philosophy:** hybrid. Common fields normalised (role / text / tool / reasoning); `host_extras` dict carries format-specific extras. Specialist passes may peek; curator defaults ignore.
+
+**Handles as retrieval pointers.** A `TranscriptHandle` (`host`, `id`, `path`) is lore's backbone for provenance. Session notes written by Curator A record handles plus a turn range (`from_index..to_index`). Surfaces extracted by Curator B record `synthesis_sources` pointing at session notes, which in turn point at handles. Curator C, when defragmenting weeks later, can walk from a concept back to its originating session notes and from there back to the raw transcript — via the adapter, cross-host. Summaries are lossy by design; the architecture is not, because the transcript stays reachable.
 
 **V1 adapter set:**
 
@@ -204,22 +211,53 @@ Processes pending transcripts. Kafka-style offset per transcript.
 
 **Output:** session notes in `<wiki>/sessions/YYYY-MM-DD-<slug>.md`, frontmatter per existing `session-note-schema-v2`, `draft: true`.
 
-### 5. Curator B — defragmentation
+### 5. Curator B — graph abstraction (daily, recent work)
 
-Reads session notes, emits surfaces per the wiki's SURFACES.md.
+Reads *recent* session notes, emits surfaces per the wiki's SURFACES.md. Deliberately shallow — Curator B surfaces what's new; whole-wiki defragmentation is Curator C's job (§6).
 
 **Trigger:** clock-rollover at SessionStart-sweep (`date.today() > last_curator_b.date()`) OR manual `lore curator run --abstract`. Not tied to any single session.
 
+**Scope of a run:** session notes touched since `last_curator_b` (or last N days, default 3). Older notes are not re-read here.
+
 **Pipeline:**
 
-1. **Cluster.** Middle-tier groups recent session notes (and existing surface notes) by scope + topic. Parallel-session-written notes cluster here.
+1. **Cluster.** Middle-tier groups recent session notes (plus their immediate wikilink neighbours) by scope + topic. Parallel-session-written notes cluster here.
 2. **Abstract.** For clusters crossing the wiki's declared threshold (LLM judgment): extract a note per the wiki's SURFACES.md types. Sessions that contributed feed `synthesis_sources`. New note gets `draft: true` and `curator_pass`.
-3. **Defragment** (if `high` tier enabled). Scan for cross-session drift — duplicate concepts, superseded decisions, orphan wikilinks. Merge duplicates; mark supersessions; propose backlinks.
-4. **Maintain.** Frontmatter hygiene (backfill dates, age-out stale) — today's curator work.
+3. **Maintain.** Frontmatter hygiene on touched notes (backfill dates, age-out stale) — today's lore-curator work, scoped.
 
-**High-tier is config-optional.** `models.high: off` → step 3 falls back to middle tier with a coarser prompt. First-run warning: *"Running without high-tier — expect coarser abstractions, fewer cross-session connections."*
+Curator B never rewrites the wiki. New surfaces only. Cross-cutting merges and supersessions are C's territory.
 
-### 6. SURFACES.md
+### 6. Curator C — weekly defragmentation (whole wiki, time-aware)
+
+Reads the whole wiki, defragments the graph. Distinct from B: broader scope (all notes, not just recent), slower cadence (weekly), heavier model tier (high by default), time-aware (newer overrides older).
+
+**What it does:**
+
+1. **Adjacent-concept merge.** Scan for concepts that share substantial semantic overlap but exist as separate notes. Propose a merged concept with `synthesis_sources` listing both, and `superseded_by` backlinks on the originals.
+2. **Supersession chains.** When a newer decision contradicts an older one (same topic, newer `created:` date, overlapping scope), mark the older `superseded_by: [[newer]]`. Time-awareness: *newer-wins* unless the older note carries explicit `canonical: true` (opt-out).
+3. **Orphan wikilink repair.** Broken `[[wikilinks]]` — either the target was renamed (fuzzy-match + propose rewrite) or was deleted (flag for user review).
+4. **Graph-wide frontmatter maintenance.** Everything today's `lore curator` does, but across the whole wiki: `last_reviewed` backfill from git-log, stale flagging, etc.
+5. **Draft promotion proposals.** C may propose promotion of long-standing drafts (see Open Sections §3 for auto-promote rules).
+
+Output: in-place edits to existing notes (frontmatter + occasional body merges), plus new merged notes and supersession backlinks. Every change carries `curator_c_pass: YYYY-MM-DD` for audit.
+
+**Trigger:** clock-rollover at SessionStart-sweep, **weekly + per-user jitter**:
+
+- Base: new ISO week detected (`iso_week(today) > last_curator_c_week`).
+- Jitter: per-user seed from `hash(git.user.email) % 48h`. User A fires Monday morning, user B fires Tuesday afternoon. A team doesn't fire all at once.
+- First-come wins: before running, re-read sidecar's `last_curator_c`. If another user already ran this cycle → skip locally, log "already ran by <user> at <ts>".
+
+**Team coordination:** `.lore-wiki.yml` → `curator.curator_c: local | central | off`.
+
+- `local` (default) — every user can fire locally; sidecar + jitter coordinate.
+- `central` — skip locally; implies a GitHub Actions / cron job runs C elsewhere (stub for v1; implementation deferred).
+- `off` — skip entirely.
+
+**High-tier dependency.** `models.high: off` → Curator C skips steps 1–2 (adjacent-merge and supersession detection need high-tier judgment) and runs only steps 3–5 with middle-tier. First-run warning: *"Curator C running without high-tier — graph defragmentation disabled, only hygiene + orphan repair."*
+
+**Manual trigger:** `lore curator run --defrag`.
+
+### 7. SURFACES.md
 
 Per-wiki at `$LORE_ROOT/wiki/<name>/SURFACES.md`. Embedded YAML per section — dual-audience.
 
@@ -270,7 +308,7 @@ required: [type, citekey, title, authors, year, description, tags]
 
 **Versioning:** top-level `schema_version: N`. Field changes bump version. Migrations via existing `lib/lore_core/migrate.py`. Per-surface independent versioning deferred to v2.
 
-### 7. Per-wiki configuration
+### 8. Per-wiki configuration
 
 `$LORE_ROOT/wiki/<name>/.lore-wiki.yml`:
 
@@ -282,6 +320,7 @@ git:
 curator:
   threshold_pending: 3
   threshold_tokens: 50000
+  curator_c: local              # local | central | off — weekly defrag
 models:
   simple: claude-haiku-4-5
   middle: claude-sonnet-4-6
@@ -299,10 +338,11 @@ breadcrumb:
     on_commit: true
     on_precompact: true
     on_curator_complete: true
+    scope_filter: true          # only fire for current-session scope
   quiet: false
 ```
 
-### 8. Registry tooling
+### 9. Registry tooling
 
 - `lore registry ls` — all attached `CLAUDE.md` → wiki → scope → git-config summary.
 - `lore registry show <path>` — full config for one attach.
@@ -310,7 +350,7 @@ breadcrumb:
 
 Lightweight, visible on demand, out of the way.
 
-### 9. Backfill
+### 10. Backfill
 
 ```
 lore backfill [--since DATE] [--until DATE] [--hosts h1,...]
@@ -343,7 +383,7 @@ Content may include private conversations, secrets, client data.
 Proceed? [y/N]
 ```
 
-### 10. Onboarding (adjacent feature)
+### 11. Onboarding (adjacent feature)
 
 `lore onboard` — guided first-run. Walks user through:
 
@@ -353,7 +393,7 @@ Proceed? [y/N]
 
 Not the design centre. Wraps `lore new-wiki` + `lore attach` + `lore backfill` + SURFACES.md scaffolder — same primitives.
 
-### 11. Breadcrumb UX
+### 12. Breadcrumb UX
 
 **A. SessionStart banner** — via `additionalContext`:
 
@@ -362,17 +402,45 @@ Not the design centre. Wraps `lore new-wiki` + `lore attach` + `lore backfill` +
 - Curator running: `lore: curator A running in background`
 - Error / schema drift: `lore: Cursor schema v2 unrecognised — run \`lore doctor\``
 
-**B. Mid-stream confidence signals** — fire only on lore-actionable events:
+**B. Mid-stream confidence signals** — fire whenever something worth noting happens in the vault.
 
-- Post-commit (PostToolUse on `git commit`): `lore: commit linked to pending capture`
-- Pre-compact (PreCompact): `lore: slice captured before compaction`
-- Curator-complete async (drain file → next PostToolUse / UserPromptSubmit): `lore: session note filed: 'passive-capture design'`
+All background-job output flows through a **drain file** (`$LORE_ROOT/.lore/breadcrumbs.drain.jsonl`, one JSONL entry per event). Hooks (PostToolUse / UserPromptSubmit) read the drain, emit one `systemMessage` line per undelivered entry, then mark delivered. Background jobs don't write to stdout — they append to the drain and let the next hook surface them.
+
+**Events that write to the drain:**
+
+- **Capture** (written by hot path)
+  - Post-commit (via PostToolUse on `git commit`): `lore: commit linked to pending capture`
+  - Pre-compact (via PreCompact): `lore: slice captured before compaction`
+- **Curator A** (session-filing)
+  - Session note added: `lore: session note filed: 'passive-capture design'`
+  - Session note merged (continuation): `lore: work merged into 'passive-capture design'`
+  - Non-noteworthy transcript skipped: (silent by default; `breadcrumb.verbose: true` to surface)
+- **Curator B** (graph abstraction)
+  - New concept surfaced: `lore: new concept 'peripheral-awareness-pattern'`
+  - New decision surfaced: `lore: new decision 'hybrid-state-tracking'`
+  - Result / paper / custom surface: `lore: new result '<title>'`
+- **Curator C** (defragmentation)
+  - Supersession marked: `lore: 'old-decision' superseded by 'new-decision'`
+  - Concepts merged: `lore: merged 'concept-a' + 'concept-b' → 'concept-c'`
+  - Orphan wikilinks repaired: `lore: 3 wikilinks repaired`
+- **Briefing**
+  - Briefing published: `lore: briefing published to matrix:#dev-notes`
+
+**Drain entry shape:**
+
+```json
+{"ts": "2026-04-19T13:24:12Z", "source": "curator_b", "event": "concept_surfaced",
+ "note": "concepts/passive-capture.md", "scope": "private/lore",
+ "render": "lore: new concept 'passive-capture'"}
+```
 
 All single-line, `lore: ` prefix, via `systemMessage` (banner, no multi-line markdown).
 
-Target intensity: 1–2 mid-stream signals per day at typical usage. `breadcrumb.quiet: true` suppresses non-error signals.
+**Scope filtering** (config: `breadcrumb.mid_stream.scope_filter: true`, default on). Mid-stream signals fire only when the triggering event is in the *current session's attached scope* (or a parent scope). A session note filed for `private/science` while you're working in `private/lore` is silent — the note exists in the vault but doesn't surface here. We know the scope because attach resolution at hot-path time already recorded it.
 
-### 12. Model tier abstraction
+Effect: session-relevant breadcrumbs can fire as often as needed to convey genuine activity, because irrelevant-scope events don't surface at all. Target intensity: every relevant event surfaces; cross-scope noise stays silent. `breadcrumb.quiet: true` suppresses all non-error signals.
+
+### 13. Model tier abstraction
 
 Three semantic tiers: `simple`, `middle`, `high`. Every LLM call site references a tier, not a concrete model.
 
@@ -407,14 +475,17 @@ Three semantic tiers: `simple`, `middle`, `high`. Every LLM call site references
 - Cursor native extension / plugin.
 - Per-surface independent versioning (wiki-wide `schema_version` for v1).
 - Templates polluting Obsidian graph (separate issue).
+- **Central Curator C mode** (GitHub Actions / scheduled CI). Config flag in place; implementation deferred to v2. Local-only for now.
 
 ---
 
 ## Open sections (refine during review)
 
 1. **SURFACES.md → schema.py integration detail.** Exact migration path from today's hardcoded `REQUIRED_FIELDS` dict. Additive; specifics need implementation-plan detail.
-2. **Draft-lifecycle auto-promote rules.** Today v1 ships with *user must remove `draft: true` manually.* Options for future: time-based (30 d), pass-count-based (3 passes), user-gesture-based. Pick during review.
-3. **Curator B abstraction heuristics.** *"Pattern appears across 3+ session notes"* is one shape; LLM judgment on a well-defined prompt is another. Probably a combo. Needs prompt engineering during implementation, with worked examples from real sessions.
+2. **Draft-lifecycle auto-promote rules.** Today v1 ships with *user must remove `draft: true` manually.* Options for future: time-based (30 d), pass-count-based (3 passes across Curator B/C), user-gesture-based. Curator C could propose promotions. Pick during review.
+3. **Curator B abstraction heuristics.** *"Pattern appears across 3+ session notes"* is one shape; LLM judgment on a well-defined prompt is another. Probably a combo. Needs prompt engineering during implementation with worked examples from real sessions.
+4. **Curator C team coordination in central mode.** Local-mode jitter + sidecar first-come-wins is clean. Central mode (GitHub Actions) needs conflict resolution with in-flight local runs if any. V1 ships local-only; central is a `central | off` stub.
+5. **Drain-file delivery semantics.** How does the hook mark entries delivered — rewrite the drain excluding delivered entries, or keep a `.delivered.jsonl` sidecar? Rewrite is simpler but writes under every hook; sidecar is append-only but needs periodic compaction. Pick during implementation.
 
 ---
 
@@ -422,9 +493,10 @@ Three semantic tiers: `simple`, `middle`, `high`. Every LLM call site references
 
 - **Friction removed.** User never types `/lore:session` unless they want to. Session notes appear without gesture.
 - **Graph grows.** After a month of use, the wiki has concept / decision / result notes cross-linked from session notes — without the user writing any of them.
+- **Graph stays coherent.** After a quarter of use, Curator C has merged duplicate concepts, marked superseded decisions, and repaired orphan wikilinks — the wiki doesn't accumulate drift.
 - **Cross-tool continuity.** User switches Claude Code → Cursor for a day; session notes from both appear in the same wiki, linked.
 - **Non-tech onboarding.** A scientist / designer runs `lore onboard`, answers three questions, gets a working system with backfilled history.
-- **No surprise writes.** Only attached-folder transcripts enter the vault. Opus burn is opt-out, not opt-in.
+- **No surprise writes.** Only attached-folder transcripts enter the vault. Opus burn is opt-out, not opt-in. Cross-scope events don't leak into the current session's breadcrumbs.
 
 ---
 
