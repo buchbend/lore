@@ -283,3 +283,64 @@ def test_curator_run_abstract_iterates_all_wikis_when_no_wiki_flag(tmp_path, mon
     # Check that both wikis were processed
     wikis_processed = sorted([call["wiki"] for call in calls_b])
     assert wikis_processed == ["a", "b"]
+
+
+# ---------------------------------------------------------------------------
+# Tests for --trace-llm flag
+# ---------------------------------------------------------------------------
+
+
+def test_curator_run_trace_llm_flag_propagates(tmp_path, monkeypatch):
+    """--trace-llm passes trace_llm=True to run_curator_a."""
+    lore_root = tmp_path / "lore_root"
+    lore_root.mkdir()
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    calls = []
+    monkeypatch.setattr(
+        "lore_curator.curator_a.run_curator_a",
+        _make_fake_run(calls),
+    )
+
+    result = runner.invoke(app, ["curator", "run", "--trace-llm"])
+    assert result.exit_code == 0, result.output
+    assert calls[0]["trace_llm"] is True
+
+
+def test_curator_run_env_var_enables_trace(tmp_path, monkeypatch):
+    """LORE_TRACE_LLM=1 enables trace_llm=True in run_curator_a."""
+    lore_root = tmp_path / "lore_root"
+    lore_root.mkdir()
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    monkeypatch.setenv("LORE_TRACE_LLM", "1")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    calls = []
+    monkeypatch.setattr(
+        "lore_curator.curator_a.run_curator_a",
+        _make_fake_run(calls),
+    )
+
+    result = runner.invoke(app, ["curator", "run"])
+    assert result.exit_code == 0, result.output
+    assert calls[0]["trace_llm"] is True
+
+
+def test_curator_run_trace_llm_and_dry_run_combine(tmp_path, monkeypatch):
+    """--trace-llm and --dry-run work together."""
+    lore_root = tmp_path / "lore_root"
+    lore_root.mkdir()
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    calls = []
+    monkeypatch.setattr(
+        "lore_curator.curator_a.run_curator_a",
+        _make_fake_run(calls),
+    )
+
+    result = runner.invoke(app, ["curator", "run", "--dry-run", "--trace-llm"])
+    assert result.exit_code == 0, result.output
+    assert calls[0]["dry_run"] is True
+    assert calls[0]["trace_llm"] is True
