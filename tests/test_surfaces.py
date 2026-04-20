@@ -339,3 +339,51 @@ def test_render_document_with_header_and_sections():
     assert "schema_version: 2" in out
     assert "## concept" in out
     assert "## decision" in out
+
+
+def test_render_section_escapes_backslash_in_slug_format():
+    from lore_core.surfaces import SurfaceDef, render_section, _parse
+    from pathlib import Path
+    s = SurfaceDef(
+        name="paper",
+        description="A.",
+        required=["type", "citekey"],
+        optional=[],
+        slug_format="{citekey}\\extra",
+    )
+    section = render_section(s)
+    doc_text = f"# Surfaces\nschema_version: 2\n\n{section}"
+    parsed = _parse(doc_text, Path("<test>")).surfaces[0]
+    assert parsed.slug_format == "{citekey}\\extra"
+
+
+def test_render_section_escapes_backslash_in_extract_prompt():
+    from lore_core.surfaces import SurfaceDef, render_section, _parse
+    from pathlib import Path
+    s = SurfaceDef(
+        name="paper",
+        description="A.",
+        required=["type"],
+        optional=[],
+        extract_prompt="Use slash (/), not backslash (\\).",
+    )
+    section = render_section(s)
+    doc_text = f"# Surfaces\nschema_version: 2\n\n{section}"
+    parsed = _parse(doc_text, Path("<test>")).surfaces[0]
+    assert parsed.extract_prompt == "Use slash (/), not backslash (\\)."
+
+
+def test_render_section_multiline_extract_prompt_roundtrips():
+    from lore_core.surfaces import SurfaceDef, render_section, _parse
+    from pathlib import Path
+    s = SurfaceDef(
+        name="paper",
+        description="A publication.",
+        required=["type"],
+        optional=[],
+        extract_prompt="Line one.\nLine two.\nLine three.",
+    )
+    section = render_section(s)
+    doc_text = f"# Surfaces\nschema_version: 2\n\n{section}"
+    parsed = _parse(doc_text, Path("<test>")).surfaces[0]
+    assert parsed.extract_prompt == "Line one.\nLine two.\nLine three."

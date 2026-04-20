@@ -190,6 +190,11 @@ def _parse_section(name: str, body: str, *, source: Path) -> SurfaceDef | None:
     )
 
 
+def _yaml_dq_escape(s: str) -> str:
+    """Escape a string for embedding inside a YAML double-quoted scalar."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def render_section(surface: SurfaceDef) -> str:
     """Render a single `## <name>` section. Output round-trips through _parse."""
     lines: list[str] = [f"## {surface.name}"]
@@ -203,18 +208,16 @@ def render_section(surface: SurfaceDef) -> str:
         lines.append(f"plural: {surface.plural}")
     if surface.slug_format is not None:
         # Use YAML double-quoted form to preserve braces literally.
-        escaped = surface.slug_format.replace('"', '\\"')
-        lines.append(f'slug_format: "{escaped}"')
+        lines.append(f'slug_format: "{_yaml_dq_escape(surface.slug_format)}"')
     if surface.extract_prompt is not None:
         # Block-scalar form for multi-line prompts.
         if "\n" in surface.extract_prompt:
             body = surface.extract_prompt.rstrip("\n")
             indented = "\n".join("  " + ln for ln in body.splitlines())
-            lines.append("extract_prompt: |")
+            lines.append("extract_prompt: |-")
             lines.append(indented)
         else:
-            escaped = surface.extract_prompt.replace('"', '\\"')
-            lines.append(f'extract_prompt: "{escaped}"')
+            lines.append(f'extract_prompt: "{_yaml_dq_escape(surface.extract_prompt)}"')
     lines.append("```")
     if surface.extract_when:
         lines.append("")
