@@ -30,8 +30,14 @@ class ToolUseBlock:
 
 @dataclass(frozen=True)
 class LlmResponse:
-    """Mimics an anthropic.types.Message for the subset curators use."""
+    """Mimics an anthropic.types.Message for the subset curators use.
 
+    ``total_cost_usd`` is a lore-only extension absent on the real SDK type.
+    """
+
+    # Narrow shape used by the SubprocessClient synthesiser.  SDKClient does
+    # NOT construct LlmResponse — it passes through the real SDK Message
+    # object — so this typing is intentional and not a type gap.
     content: list[ToolUseBlock] = field(default_factory=list)
     model: str = ""
     stop_reason: str = "end_turn"
@@ -49,6 +55,29 @@ class LlmClient(Protocol):
 
     Real anthropic.Anthropic satisfies this. SubprocessClient also does.
     FakeAnthropic in tests also does.
+
+    Note: ``@runtime_checkable`` only validates the *presence* of the
+    ``messages`` attribute, not that ``messages.create`` is callable.
+    Callers that need full validation should call the protocol explicitly
+    (e.g. ``isinstance(client, LlmClient)`` is necessary but not sufficient).
     """
 
     messages: _MessagesAPI
+
+
+class SDKClient:
+    """LlmClient backend that delegates to anthropic.Anthropic.
+
+    Holding an explicit class (rather than using a raw ``anthropic.Anthropic``
+    directly) gives one seam to add cost telemetry, retries, or debug logging
+    later, and keeps the factory symmetric with ``SubprocessClient``.
+    """
+
+    def __init__(self, *, api_key: str) -> None:
+        import anthropic  # lazy — keeps anthropic an optional dep
+        self._anthropic = anthropic.Anthropic(api_key=api_key)
+        self.messages = self._anthropic.messages
+
+    @property
+    def backend_name(self) -> str:
+        return "sdk"
