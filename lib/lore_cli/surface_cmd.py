@@ -58,33 +58,36 @@ def _load_template(name: str) -> str:
 
 @app.command("add")
 def cmd_add(
-    name: str = typer.Argument(..., help="Surface name (e.g., 'concept', 'paper')."),
-    wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Inferred from cwd if absent."),
-    template: str = typer.Option(
-        "standard", "--template", help=f"Initial-file template if SURFACES.md is absent: {TEMPLATE_NAMES}"
-    ),
+    ctx: typer.Context,
+    wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Overrides group-level --wiki."),
 ) -> None:
-    """Append a new section to SURFACES.md (creating the file from the chosen template if missing)."""
-    if template not in TEMPLATE_NAMES:
-        err_console.print(f"[red]unknown template {template!r}; choose from {TEMPLATE_NAMES}[/red]")
-        raise typer.Exit(1)
+    """Drop into the /lore:surface-new skill to author a new surface interactively."""
+    wiki = wiki or (ctx.obj or {}).get("wiki")
     wiki_dir = _resolve_wiki_dir(wiki)
-    surfaces_path = wiki_dir / "SURFACES.md"
-    if not surfaces_path.exists():
-        wiki_dir.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(surfaces_path, _load_template(template))
-    # Reject duplicate
-    doc = load_surfaces(wiki_dir)
-    if doc is not None and any(s.name == name for s in doc.surfaces):
-        err_console.print(f"[red]surface '{name}' already exists in {surfaces_path}[/red]")
+    wiki_name = wiki_dir.name
+    _launch_claude_skill(f"/lore:surface-new {wiki_name}")
+
+
+def _launch_claude_skill(slash_command: str) -> None:
+    """Launch the `claude` CLI with a slash command as the initial message."""
+    import shutil
+    import subprocess
+    claude_bin = shutil.which("claude")
+    if claude_bin is None:
+        err_console.print(
+            "[red]`claude` is not on PATH. Install Claude Code "
+            "(https://claude.com/code) to use the interactive authoring "
+            "flow, or write a draft and call `lore surface commit "
+            "<draft.json>` directly.[/red]"
+        )
         raise typer.Exit(1)
-    new_section = f"\n\n## {name}\nTODO: describe this surface.\n\n```yaml\nrequired: [type, created, description, tags]\noptional: [draft]\n```\n"
-    text = surfaces_path.read_text()
-    if not text.endswith("\n"):
-        text += "\n"
-    atomic_write_text(surfaces_path, text + new_section)
-    err_console.print(f"[green]added surface '{name}' to {surfaces_path}[/green]")
-    print(json.dumps({"schema": "lore.surface.add/1", "data": {"path": str(surfaces_path), "name": name}}, indent=2))
+    try:
+        result = subprocess.run([claude_bin, slash_command], check=False)
+    except OSError as e:
+        err_console.print(f"[red]failed to launch claude: {e}[/red]")
+        raise typer.Exit(1)
+    if result.returncode != 0:
+        raise typer.Exit(result.returncode)
 
 
 @app.command("commit")
