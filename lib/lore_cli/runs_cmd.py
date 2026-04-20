@@ -76,11 +76,113 @@ def list_runs(
 
     lore_root = _get_lore_root()
 
+    runs_dir = lore_root / ".lore" / "runs"
+
     if hooks:
-        _render_hooks_table(lore_root, limit)
+        import os as _os
+        # Build combined list of (ts_str, kind, data) tuples.
+        combined: list[tuple[str, str, object]] = []
+
+        # Load runs.
+        if runs_dir.exists():
+            archival_paths = sorted(
+                (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
+                key=lambda p: p.name,
+                reverse=True,
+            )[:limit]
+            for p in archival_paths:
+                records = read_run(p, strict_schema=False)
+                start = next((r for r in records if r.get("type") == "run-start"), {})
+                end = next((r for r in reversed(records) if r.get("type") == "run-end"), {})
+                ts = start.get("ts", "")
+                short_id = p.stem.split("-")[-1]
+                schema_mismatch = any(r.get("_schema_mismatch") for r in records)
+                dur = f"{end.get('duration_ms', 0) / 1000:.1f}s"
+                notes_new = end.get("notes_new", 0)
+                notes_merged = end.get("notes_merged", 0)
+                skipped = end.get("skipped", 0)
+                errors = end.get("errors", 0)
+                if notes_new == 0 and notes_merged == 0:
+                    summary = f"0 skipped ({skipped})" if skipped else "0 \u00b7 0 errors"
+                else:
+                    summary = f"{notes_new} new" + (f"+{notes_merged}m" if notes_merged else "")
+                    summary += f" \u00b7 {errors} errors"
+                combined.append((ts, "run", {
+                    "short_id": short_id,
+                    "started": _relative_time_cli(ts),
+                    "dur": dur,
+                    "summary": summary,
+                    "schema_mismatch": schema_mismatch,
+                }))
+
+        # Load hook events.
+        events_path = lore_root / ".lore" / "hook-events.jsonl"
+        if events_path.exists():
+            try:
+                for line in events_path.read_text().splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    ts = row.get("ts", "")
+                    cwd = row.get("cwd")
+                    where = _os.path.basename(cwd) if cwd else "\u2014"
+                    pid_val = row.get("pid")
+                    pid = str(pid_val) if pid_val is not None else "\u2014"
+                    combined.append((ts, "hook", {
+                        "started": _relative_time_cli(ts),
+                        "event": row.get("event", "?"),
+                        "outcome": row.get("outcome", "?"),
+                        "where": where,
+                        "pid": pid,
+                    }))
+            except OSError:
+                pass
+
+        if not combined:
+            console.print("[dim]No capture activity yet.[/dim]")
+            return
+
+        # Sort newest first, limit total.
+        combined.sort(key=lambda x: x[0], reverse=True)
+        combined = combined[:limit]
+
+        table = Table(title=None)
+        table.add_column("ID / Event")
+        table.add_column("Type")
+        table.add_column("Started")
+        table.add_column("Duration")
+        table.add_column("Summary")
+        table.add_column("Where")
+        table.add_column("PID")
+
+        for _ts, kind, data in combined:
+            if kind == "run":
+                short_id = data["short_id"]  # type: ignore[index]
+                if data["schema_mismatch"]:  # type: ignore[index]
+                    id_cell = f"[dim]{short_id}[/dim]"
+                    summary = f"[dim]{data['summary']} (schema v? \u00b7 upgrade lore)[/dim]"  # type: ignore[index]
+                else:
+                    id_cell = short_id
+                    summary = data["summary"]  # type: ignore[index]
+                table.add_row(id_cell, "run", data["started"], data["dur"],  # type: ignore[index]
+                              summary, "\u2014", "\u2014")
+            else:
+                table.add_row(
+                    f"[dim]\u2500[/dim]", "[dim]hook[/dim]",
+                    f"[dim]{data['started']}[/dim]",  # type: ignore[index]
+                    "[dim]\u2014[/dim]",
+                    f"[dim]{data['event']} \u00b7 {data['outcome']}[/dim]",  # type: ignore[index]
+                    f"[dim]{data['where']}[/dim]",  # type: ignore[index]
+                    f"[dim]{data['pid']}[/dim]",  # type: ignore[index]
+                )
+
+        console.print(table)
         return
 
-    runs_dir = lore_root / ".lore" / "runs"
     if not runs_dir.exists() or not any(runs_dir.iterdir()):
         console.print("[dim]No capture activity yet.[/dim]")
         return
@@ -132,54 +234,6 @@ def list_runs(
 
     console.print(table)
 
-
-def _render_hooks_table(lore_root: Path, limit: int) -> None:
-    """Render a hook-events table with Where (cwd basename) and PID columns."""
-    import os as _os
-    from rich.table import Table
-
-    events_path = lore_root / ".lore" / "hook-events.jsonl"
-    if not events_path.exists():
-        console.print("[dim]No hook events yet.[/dim]")
-        return
-
-    rows: list[dict] = []
-    try:
-        for line in events_path.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    except OSError:
-        console.print("[dim]Could not read hook-events.jsonl.[/dim]")
-        return
-
-    # Most recent first, limited.
-    rows = list(reversed(rows))[:limit]
-
-    table = Table(title=None)
-    table.add_column("When")
-    table.add_column("Event")
-    table.add_column("Outcome")
-    table.add_column("Where")
-    table.add_column("PID")
-
-    for r in rows:
-        when = _relative_time_cli(r.get("ts", ""))
-        event = r.get("event", "?")
-        outcome = r.get("outcome", "?")
-        # Where: cwd basename if present, else "—" (graceful v1 compat)
-        cwd = r.get("cwd")
-        where = _os.path.basename(cwd) if cwd else "\u2014"
-        # PID: present in v2; absent in v1
-        pid_val = r.get("pid")
-        pid = str(pid_val) if pid_val is not None else "\u2014"
-        table.add_row(when, event, outcome, where, pid)
-
-    console.print(table)
 
 
 def _relative_time_cli(ts_iso: str) -> str:

@@ -137,45 +137,86 @@ def test_runs_list_schema_mismatch_dimmed(tmp_path, monkeypatch):
             or "upgrade" in result.stdout.lower())
 
 
-def test_runs_list_hooks_shows_where_and_pid(tmp_path, monkeypatch):
-    """--hooks renders Where (cwd basename) and PID columns for hook rows."""
-    import json
+def _seed_hook_events(tmp_path: Path, rows: list):
+    """Write hook-events.jsonl rows to tmp_path."""
     events = tmp_path / ".lore" / "hook-events.jsonl"
     events.parent.mkdir(parents=True, exist_ok=True)
-    events.write_text(
-        json.dumps({
+    events.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    return events
+
+
+def test_runs_list_hooks_interleaved_run_and_hook(tmp_path, monkeypatch):
+    """--hooks interleaves run rows and hook rows in a single table."""
+    _seed_run(tmp_path)
+    _seed_hook_events(tmp_path, [
+        {
             "schema_version": 2,
-            "ts": "2026-04-20T14:32:05Z",
+            "ts": "2026-04-20T14:32:04Z",  # just before the run
             "event": "session-end",
             "outcome": "spawned-curator",
             "pid": 12345,
             "cwd": "/home/user/myproject",
-            "ppid_cmd": "claude -p",
-        }) + "\n"
-    )
+        }
+    ])
     from lore_cli import runs_cmd
     from typer.testing import CliRunner
     monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
     runner = CliRunner()
     result = runner.invoke(runs_cmd.app, ["list", "--hooks"])
     assert result.exit_code == 0, result.output
-    assert "myproject" in result.stdout       # cwd basename
-    assert "12345" in result.stdout           # pid
+    # Run row present
+    assert "a1b2c3" in result.stdout
+    # Hook row marker and event present
+    assert "\u2500" in result.stdout           # ─ hook marker
+    assert "session-end" in result.stdout
+    # Where and PID columns present
+    assert "myproject" in result.stdout
+    assert "12345" in result.stdout
+
+
+def test_runs_list_hooks_only_hook_events_no_runs(tmp_path, monkeypatch):
+    """--hooks with ONLY hook events (no runs) renders just hook rows."""
+    _seed_hook_events(tmp_path, [
+        {
+            "schema_version": 1,
+            "ts": "2026-04-20T14:32:05Z",
+            "event": "session-start",
+            "outcome": "below-threshold",
+        }
+    ])
+    from lore_cli import runs_cmd
+    from typer.testing import CliRunner
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(runs_cmd.app, ["list", "--hooks"])
+    assert result.exit_code == 0, result.output
+    assert "session-start" in result.stdout
+    assert "\u2500" in result.stdout           # ─ hook marker
+
+
+def test_runs_list_hooks_only_runs_no_hook_events(tmp_path, monkeypatch):
+    """--hooks with ONLY runs (no hook-events.jsonl) renders just run rows."""
+    _seed_run(tmp_path)
+    from lore_cli import runs_cmd
+    from typer.testing import CliRunner
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(runs_cmd.app, ["list", "--hooks"])
+    assert result.exit_code == 0, result.output
+    assert "a1b2c3" in result.stdout
+    assert "1 new" in result.stdout
 
 
 def test_runs_list_hooks_v1_no_crash(tmp_path, monkeypatch):
     """--hooks renders schema v1 hook records without crashing (no Where/PID)."""
-    import json
-    events = tmp_path / ".lore" / "hook-events.jsonl"
-    events.parent.mkdir(parents=True, exist_ok=True)
-    events.write_text(
-        json.dumps({
+    _seed_hook_events(tmp_path, [
+        {
             "schema_version": 1,
             "ts": "2026-04-20T14:32:05Z",
             "event": "session-end",
             "outcome": "spawned-curator",
-        }) + "\n"
-    )
+        }
+    ])
     from lore_cli import runs_cmd
     from typer.testing import CliRunner
     monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
