@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from lore_cli.__main__ import app
@@ -33,6 +32,19 @@ class _FakeCuratorAResult:
 
 def _fake_run_a(**kwargs):
     return _FakeCuratorAResult()
+
+
+@dataclass
+class _FakeCuratorBResult:
+    notes_considered: int = 0
+    clusters_formed: int = 0
+    surfaces_emitted: list = field(default_factory=list)
+    skipped_reasons: dict = field(default_factory=dict)
+    duration_seconds: float = 0.0
+
+
+def _fake_run_b(**kwargs):
+    return _FakeCuratorBResult()
 
 
 # ---------------------------------------------------------------------------
@@ -112,3 +124,26 @@ def test_core_prints_skip_warning_when_nothing_available(tmp_path, monkeypatch):
     combined_err = result.stderr or ""
     assert "Curator will skip AI classification" in combined_err
     assert "ANTHROPIC_API_KEY" in combined_err
+
+
+def test_core_skip_warning_NOT_doubled_on_backend_error(tmp_path, monkeypatch):
+    """LORE_LLM_BACKEND=subscription but no claude on PATH → only ONE warning,
+    the specific one from make_llm_client, NOT the generic skip-AI warning."""
+    lore_root = tmp_path / "lore_root"
+    lore_root.mkdir()
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    monkeypatch.setenv("LORE_LLM_BACKEND", "subscription")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    import shutil as _shutil
+    monkeypatch.setattr(_shutil, "which", lambda name: None)
+
+    monkeypatch.setattr("lore_curator.curator_a.run_curator_a", _fake_run_a)
+
+    local_runner = CliRunner(mix_stderr=False)
+    result = local_runner.invoke(app, ["curator", "run", "--dry-run"])
+
+    # The specific warning from the factory should appear on stderr:
+    assert "subscription backend requested but claude binary not on PATH" in result.stderr
+    # The generic skip-AI warning must NOT appear (wrong message for this case):
+    assert "neither 'claude' CLI on PATH nor ANTHROPIC_API_KEY set" not in result.stderr

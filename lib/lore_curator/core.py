@@ -851,30 +851,34 @@ def run_command(
         )
 
     # Resolve LLM backend via factory
-    from rich.console import Console as _Console
-    from lore_curator.llm_client import make_llm_client, LlmClientError
+    from lore_curator.llm_client import LlmClientError, make_llm_client
 
-    err_console = _Console(stderr=True)
+    err_console = Console(stderr=True)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "") or None
+    backend_error: LlmClientError | None = None
     try:
         llm_client = make_llm_client(api_key=api_key)
     except LlmClientError as exc:
         err_console.print(f"[yellow]Warning:[/yellow] {exc}")
         llm_client = None
+        backend_error = exc
 
     if llm_client is None:
-        err_console.print(
-            "[yellow]Warning:[/yellow] Curator will skip AI classification: "
-            "neither 'claude' CLI on PATH nor ANTHROPIC_API_KEY set. Install "
-            "Claude Code for subscription inference, or export "
-            "ANTHROPIC_API_KEY for API inference."
-        )
+        if backend_error is None:
+            # Auto-detection had nothing to pick — print the skip-AI warning.
+            err_console.print(
+                "[yellow]Warning:[/yellow] Curator will skip AI classification: "
+                "neither 'claude' CLI on PATH nor ANTHROPIC_API_KEY set. Install "
+                "Claude Code for subscription inference, or export "
+                "ANTHROPIC_API_KEY for API inference."
+            )
+        # If backend_error was set, the specific warning was already printed.
     else:
-        backend = getattr(llm_client, "backend_name", "sdk")
+        backend = getattr(llm_client, "backend_name", "")
         label = {
             "subprocess": "Claude Code subscription (claude -p)",
             "sdk": "Anthropic API (anthropic SDK)",
-        }.get(backend, backend)
+        }.get(backend, backend or "unknown backend")
         console.print(f"[dim]Curator backend: {label}[/dim]")
 
     result = run_curator_a(
