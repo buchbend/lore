@@ -137,6 +137,54 @@ def test_runs_list_schema_mismatch_dimmed(tmp_path, monkeypatch):
             or "upgrade" in result.stdout.lower())
 
 
+def test_runs_list_hooks_shows_where_and_pid(tmp_path, monkeypatch):
+    """--hooks renders Where (cwd basename) and PID columns for hook rows."""
+    import json
+    events = tmp_path / ".lore" / "hook-events.jsonl"
+    events.parent.mkdir(parents=True, exist_ok=True)
+    events.write_text(
+        json.dumps({
+            "schema_version": 2,
+            "ts": "2026-04-20T14:32:05Z",
+            "event": "session-end",
+            "outcome": "spawned-curator",
+            "pid": 12345,
+            "cwd": "/home/user/myproject",
+            "ppid_cmd": "claude -p",
+        }) + "\n"
+    )
+    from lore_cli import runs_cmd
+    from typer.testing import CliRunner
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(runs_cmd.app, ["list", "--hooks"])
+    assert result.exit_code == 0, result.output
+    assert "myproject" in result.stdout       # cwd basename
+    assert "12345" in result.stdout           # pid
+
+
+def test_runs_list_hooks_v1_no_crash(tmp_path, monkeypatch):
+    """--hooks renders schema v1 hook records without crashing (no Where/PID)."""
+    import json
+    events = tmp_path / ".lore" / "hook-events.jsonl"
+    events.parent.mkdir(parents=True, exist_ok=True)
+    events.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "ts": "2026-04-20T14:32:05Z",
+            "event": "session-end",
+            "outcome": "spawned-curator",
+        }) + "\n"
+    )
+    from lore_cli import runs_cmd
+    from typer.testing import CliRunner
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(runs_cmd.app, ["list", "--hooks"])
+    assert result.exit_code == 0, result.output
+    assert "session-end" in result.stdout
+
+
 def test_runs_tail_once_reads_to_run_end(tmp_path, monkeypatch):
     from lore_cli import runs_cmd
     live = tmp_path / ".lore" / "runs-live.jsonl"

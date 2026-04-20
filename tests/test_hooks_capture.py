@@ -227,6 +227,32 @@ def test_capture_spawns_when_threshold_exceeded(
     assert spawn_calls[0] == project
 
 
+def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_factory) -> None:
+    """capture emits hook-events record with pid, cwd, schema_version=2."""
+    project = _make_attached_project(tmp_path)
+    handle = _make_handle(project)
+    fake_adapter_factory([handle])
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        env={"LORE_ROOT": str(project)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    import json
+    import os
+    events_path = project / ".lore" / "hook-events.jsonl"
+    assert events_path.exists()
+    record = json.loads(events_path.read_text().splitlines()[-1])
+    assert record["schema_version"] == 2
+    assert record["pid"] == os.getpid()
+    assert record["cwd"] == str(project)
+    # ppid_cmd is present (may be None on some systems)
+    assert "ppid_cmd" in record
+
+
 def test_capture_does_not_spawn_when_under_threshold(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:

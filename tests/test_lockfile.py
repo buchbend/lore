@@ -107,3 +107,88 @@ def test_lock_unaffected_by_parent_dir_mtime_change(tmp_path: Path) -> None:
 
     # After release, lock should be gone
     assert not lock_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Item B — owner.json provenance tests
+# ---------------------------------------------------------------------------
+
+
+def test_lock_writes_and_removes_owner_json(tmp_path):
+    from lore_core.lockfile import curator_lock, read_lock_holder
+
+    assert read_lock_holder(tmp_path) is None
+    with curator_lock(tmp_path, timeout=0.0, run_id="test-run-123"):
+        holder = read_lock_holder(tmp_path)
+        assert holder is not None
+        assert holder["pid"] > 0
+        assert holder["run_id"] == "test-run-123"
+        assert "started_at" in holder
+    # Released.
+    assert read_lock_holder(tmp_path) is None
+
+
+def test_lock_contention_does_not_clobber_owner(tmp_path):
+    from lore_core.lockfile import curator_lock, LockContendedError, read_lock_holder
+
+    with curator_lock(tmp_path, timeout=0.0, run_id="first"):
+        first_holder = read_lock_holder(tmp_path)
+        with pytest.raises(LockContendedError):
+            with curator_lock(tmp_path, timeout=0.0, run_id="second"):
+                pass
+        # First holder info is still there.
+        still = read_lock_holder(tmp_path)
+        assert still == first_holder
+
+
+def test_read_lock_holder_returns_none_when_no_lock(tmp_path):
+    from lore_core.lockfile import read_lock_holder
+
+    assert read_lock_holder(tmp_path) is None
+
+
+def test_lock_owner_has_expected_fields(tmp_path):
+    import socket
+    from lore_core.lockfile import curator_lock, read_lock_holder
+
+    with curator_lock(tmp_path, run_id="r-check"):
+        h = read_lock_holder(tmp_path)
+        assert h["pid"] == os.getpid()
+        assert h["host"] == socket.gethostname()
+        assert h["run_id"] == "r-check"
+        assert "cmd" in h
+        assert "started_at" in h
+        assert h["started_at"].endswith("Z")
+
+
+# ---------------------------------------------------------------------------
+# Item C — skip records enriched with lock-holder info
+# ---------------------------------------------------------------------------
+
+
+def test_skip_lock_held_includes_holder(tmp_path):
+    """run_curator_a skip records contain holder_pid/run_id/age when lock is held."""
+    import json
+    from lore_core.lockfile import curator_lock
+    from lore_curator.curator_a import run_curator_a
+
+    with curator_lock(tmp_path, timeout=0.0, run_id="first-run"):
+        run_curator_a(
+            lore_root=tmp_path,
+            anthropic_client=None,
+            adapter_lookup=lambda h: None,
+        )
+
+    runs = list((tmp_path / ".lore" / "runs").glob("*.jsonl"))
+    archival = [p for p in runs if not p.name.endswith(".trace.jsonl")]
+    assert archival, "Expected at least one run log"
+    records = [json.loads(l) for l in archival[0].read_text().splitlines() if l.strip()]
+    skip_records = [
+        r for r in records
+        if r.get("type") == "skip" and r.get("reason") == "lock-held"
+    ]
+    assert skip_records, "Expected a lock-held skip record"
+    s = skip_records[0]
+    assert s["holder_pid"]
+    assert s["holder_run_id"] == "first-run"
+    assert s["holder_age_s"] is not None and s["holder_age_s"] >= 0

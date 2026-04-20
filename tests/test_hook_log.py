@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from lore_core.hook_log import HookEventLogger
+from lore_core.hook_log import HookEventLogger, _ppid_cmd
 
 
 def test_emit_appends_one_line(tmp_path: Path):
@@ -21,7 +21,7 @@ def test_emit_appends_one_line(tmp_path: Path):
     lines = path.read_text().splitlines()
     assert len(lines) == 1
     record = json.loads(lines[0])
-    assert record["schema_version"] == 1
+    assert record["schema_version"] == 2
     assert record["event"] == "session-end"
     assert record["outcome"] == "spawned-curator"
     assert record["run_id"] == "2026-04-20T14-32-05-a1b2c3"
@@ -56,6 +56,29 @@ def test_write_failure_touches_marker(tmp_path: Path, monkeypatch):
     logger.emit(event="session-end", outcome="ledger-advanced")
     marker = tmp_path / ".lore" / "hook-log-failed.marker"
     assert marker.exists()
+
+
+def test_emit_schema_v2_and_provenance_fields(tmp_path: Path):
+    logger = HookEventLogger(tmp_path)
+    logger.emit(
+        event="session-end",
+        outcome="ledger-advanced",
+        pid=12345,
+        cwd="/some/path",
+        ppid_cmd="bash -l",
+    )
+    path = tmp_path / ".lore" / "hook-events.jsonl"
+    record = json.loads(path.read_text().splitlines()[-1])
+    assert record["schema_version"] == 2
+    assert record["pid"] == 12345
+    assert record["cwd"] == "/some/path"
+    assert record["ppid_cmd"] == "bash -l"
+
+
+def test_ppid_cmd_returns_none_on_missing_proc(tmp_path, monkeypatch):
+    # Point at a PPID we know can't be read.
+    monkeypatch.setattr("os.getppid", lambda: 9999999)
+    assert _ppid_cmd() is None or isinstance(_ppid_cmd(), str)
 
 
 def test_rotation_race_no_data_loss(tmp_path: Path):

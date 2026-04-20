@@ -1219,9 +1219,12 @@ def capture(
     """
     import time as _time
     from lore_adapters import UnknownHostError
+    from lore_core.hook_log import _ppid_cmd
 
     start = _time.monotonic()
     cwd = cwd_override or _resolve_cwd_capture()
+    _capture_pid = os.getpid()
+    _capture_ppid_cmd = _ppid_cmd()
     scope = resolve_scope(cwd)
     if scope is None:
         # Unattached cwd — silently no-op. Not an error.
@@ -1246,6 +1249,9 @@ def capture(
                 outcome="error",
                 pending_after=0,
                 error={"type": "UnknownHostError", "message": host},
+                cwd=str(cwd),
+                pid=_capture_pid,
+                ppid_cmd=_capture_ppid_cmd,
             )
             raise typer.Exit(code=1)
 
@@ -1297,6 +1303,9 @@ def capture(
             outcome="error",
             pending_after=pending_after,
             error={"type": type(exc).__name__, "message": str(exc)},
+            cwd=str(cwd),
+            pid=_capture_pid,
+            ppid_cmd=_capture_ppid_cmd,
         )
         raise
     else:
@@ -1306,6 +1315,9 @@ def capture(
             outcome=outcome,
             pending_after=pending_after,
             run_id=run_id,
+            cwd=str(cwd),
+            pid=_capture_pid,
+            ppid_cmd=_capture_ppid_cmd,
         )
         # Write session-end breadcrumb for display at next SessionStart.
         # Only for session-end and pre-compact; session-start is already visible.

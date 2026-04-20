@@ -110,7 +110,14 @@ def _icon_and_message(r: dict, icons: IconSet) -> tuple[str, str, str]:
             return icons.filed, "filed", wikilink
         return icons.filed, "merged", f"into {wikilink}"
     if t == "skip":
-        return icons.skipped, "skipped", r.get("reason", "?")
+        reason = r.get("reason", "?")
+        if reason == "lock-held" and r.get("holder_pid"):
+            pid = r["holder_pid"]
+            rid = r.get("holder_run_id") or "?"
+            age = r.get("holder_age_s")
+            age_str = f", {age}s" if age is not None else ""
+            return icons.skipped, "skipped", f"lock-held by PID {pid} (run {rid}{age_str})"
+        return icons.skipped, "skipped", reason
     if t == "warning":
         return icons.warning, "warning", r.get("message", "")
     if t == "error":

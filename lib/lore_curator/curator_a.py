@@ -12,7 +12,7 @@ from lore_core.ledger import (
     TranscriptLedgerEntry,
     WikiLedger,
 )
-from lore_core.lockfile import curator_lock, LockContendedError
+from lore_core.lockfile import curator_lock, LockContendedError, read_lock_holder
 from lore_core.redaction import redact
 from lore_core.run_log import RunLogger
 from lore_core.scope_resolver import resolve_scope
@@ -107,7 +107,7 @@ def run_curator_a(
                 _record_outcome(result, outcome)
         else:
             try:
-                with curator_lock(lore_root, timeout=lock_timeout):
+                with curator_lock(lore_root, timeout=lock_timeout, run_id=logger.run_id):
                     pending = tledger.pending()
                     for entry in pending:
                         result.transcripts_considered += 1
@@ -127,7 +127,26 @@ def run_curator_a(
                 result.skipped_reasons["lock_contended"] = (
                     result.skipped_reasons.get("lock_contended", 0) + 1
                 )
-                logger.emit("skip", reason="lock-held")
+                holder = read_lock_holder(lore_root)
+                holder_pid = holder.get("pid") if holder else None
+                holder_run_id = holder.get("run_id") if holder else None
+                holder_started_at = holder.get("started_at") if holder else None
+                holder_age_s = None
+                if holder_started_at:
+                    try:
+                        started = datetime.fromisoformat(holder_started_at.replace("Z", "+00:00"))
+                        if started.tzinfo is None:
+                            started = started.replace(tzinfo=UTC)
+                        holder_age_s = int((datetime.now(UTC) - started).total_seconds())
+                    except ValueError:
+                        pass
+                logger.emit(
+                    "skip",
+                    reason="lock-held",
+                    holder_pid=holder_pid,
+                    holder_run_id=holder_run_id,
+                    holder_age_s=holder_age_s,
+                )
 
     result.duration_seconds = time.monotonic() - start
     return result

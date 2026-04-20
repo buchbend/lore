@@ -275,22 +275,38 @@ def run_capture_panel(lore_root: Path) -> list[str]:
                     f"{last_note.get('wikilink', '')}"
                 )
 
-    # Stale lockfile
-    lock = lore_root / ".lore" / "curator.lock"
-    if lock.exists():
+    # Lock holder / free
+    from lore_core.lockfile import read_lock_holder
+
+    lock_dir = lore_root / ".lore" / "curator.lock"
+    if lock_dir.exists():
+        any_data = True
+        holder = read_lock_holder(lore_root)
         try:
-            age_s = datetime.now().timestamp() - lock.stat().st_mtime
+            age_s = datetime.now(UTC).timestamp() - lock_dir.stat().st_mtime
         except OSError:
             age_s = 0
-        if age_s > 3600:
+        age_str = f"{int(age_s)}s" if age_s < 60 else f"{int(age_s / 60)}m"
+        if holder:
+            pid = holder.get("pid", "?")
+            rid = holder.get("run_id") or "?"
+            icon = "✗" if age_s > 3600 else "✓"
+            suffix = (
+                " — likely stale, remove with `rm -rf $LORE_ROOT/.lore/curator.lock`"
+                if age_s > 3600
+                else ""
+            )
             lines.append(
-                f"  ✗ Stale lockfile ({int(age_s / 60)}min old) — remove with `rm -r {lock}`"
+                f"  {icon} Curator lock held by PID {pid} (run {rid}, {age_str}){suffix}"
             )
         else:
-            lines.append(f"  ✓ Lockfile present (curator running, {int(age_s)}s)")
+            icon = "✗" if age_s > 3600 else "✓"
+            stale_note = " — likely stale" if age_s > 3600 else ""
+            lines.append(
+                f"  {icon} Curator lock held ({age_str}, no holder metadata){stale_note}"
+            )
     else:
-        if any_data:
-            lines.append("  ✓ No stale lockfile")
+        lines.append("  ✓ Curator lock free")
 
     # Hook errors in last 24h
     hook_err = 0

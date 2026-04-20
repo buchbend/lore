@@ -75,6 +75,11 @@ def list_runs(
     from rich.table import Table
 
     lore_root = _get_lore_root()
+
+    if hooks:
+        _render_hooks_table(lore_root, limit)
+        return
+
     runs_dir = lore_root / ".lore" / "runs"
     if not runs_dir.exists() or not any(runs_dir.iterdir()):
         console.print("[dim]No capture activity yet.[/dim]")
@@ -124,6 +129,55 @@ def list_runs(
             id_cell = f"[dim]{short_id}[/dim]"
             reason = f"[dim]{reason} (schema v? \u00b7 upgrade lore)[/dim]"
         table.add_row(id_cell, started, dur, str(t_count), notes_cell, reason, errors)
+
+    console.print(table)
+
+
+def _render_hooks_table(lore_root: Path, limit: int) -> None:
+    """Render a hook-events table with Where (cwd basename) and PID columns."""
+    import os as _os
+    from rich.table import Table
+
+    events_path = lore_root / ".lore" / "hook-events.jsonl"
+    if not events_path.exists():
+        console.print("[dim]No hook events yet.[/dim]")
+        return
+
+    rows: list[dict] = []
+    try:
+        for line in events_path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        console.print("[dim]Could not read hook-events.jsonl.[/dim]")
+        return
+
+    # Most recent first, limited.
+    rows = list(reversed(rows))[:limit]
+
+    table = Table(title=None)
+    table.add_column("When")
+    table.add_column("Event")
+    table.add_column("Outcome")
+    table.add_column("Where")
+    table.add_column("PID")
+
+    for r in rows:
+        when = _relative_time_cli(r.get("ts", ""))
+        event = r.get("event", "?")
+        outcome = r.get("outcome", "?")
+        # Where: cwd basename if present, else "—" (graceful v1 compat)
+        cwd = r.get("cwd")
+        where = _os.path.basename(cwd) if cwd else "\u2014"
+        # PID: present in v2; absent in v1
+        pid_val = r.get("pid")
+        pid = str(pid_val) if pid_val is not None else "\u2014"
+        table.add_row(when, event, outcome, where, pid)
 
     console.print(table)
 
