@@ -83,3 +83,55 @@ def test_runs_show_schema_too_new_refuses(tmp_path, monkeypatch):
     result = runner.invoke(runs_cmd.app, ["show", "latest"])
     assert result.exit_code == 1
     assert "schema" in result.output.lower() or "upgrade" in result.output.lower()
+
+
+def test_runs_list_empty(tmp_path, monkeypatch):
+    from lore_cli import runs_cmd
+    runner = CliRunner()
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    result = runner.invoke(runs_cmd.app, ["list"])
+    assert result.exit_code == 0
+    assert "no capture activity" in result.stdout.lower()
+
+
+def test_runs_list_shows_seeded_run(tmp_path, monkeypatch):
+    from lore_cli import runs_cmd
+    _seed_run(tmp_path)
+    runner = CliRunner()
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    result = runner.invoke(runs_cmd.app, ["list"])
+    assert result.exit_code == 0
+    assert "a1b2c3" in result.stdout          # short suffix
+    assert "1 new" in result.stdout          # notes cell
+
+
+def test_runs_list_json(tmp_path, monkeypatch):
+    from lore_cli import runs_cmd
+    _seed_run(tmp_path)
+    runner = CliRunner()
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    result = runner.invoke(runs_cmd.app, ["list", "--json"])
+    assert result.exit_code == 0
+    # Each non-empty line is valid JSON.
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line:
+            json.loads(line)
+
+
+def test_runs_list_schema_mismatch_dimmed(tmp_path, monkeypatch):
+    from lore_cli import runs_cmd
+    runs = tmp_path / ".lore" / "runs"
+    runs.mkdir(parents=True)
+    (runs / "2026-04-20T10-00-00-xxxxxx.jsonl").write_text(
+        '{"type":"run-start","schema_version":2}\n'
+        '{"type":"run-end","schema_version":2,"notes_new":0,"notes_merged":0,"skipped":0,"errors":0,"duration_ms":0}\n'
+    )
+    runner = CliRunner()
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    result = runner.invoke(runs_cmd.app, ["list"])
+    assert result.exit_code == 0, result.output
+    # List should render the row, with a schema mismatch note.
+    assert "xxxxxx" in result.stdout
+    assert ("schema" in result.stdout.lower() or "v2" in result.stdout.lower()
+            or "upgrade" in result.stdout.lower())

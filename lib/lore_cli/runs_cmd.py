@@ -41,16 +41,86 @@ def _get_lore_root() -> Path:
 
 
 @app.command("list")
-def list_runs() -> None:
+def list_runs(
+    limit: int = typer.Option(20, "--limit", help="Maximum runs to show."),
+    hooks: bool = typer.Option(False, "--hooks", help="Interleave hook events."),
+    json_out: bool = typer.Option(False, "--json", help="Print raw JSONL."),
+) -> None:
     """List recent runs (most recent first)."""
+    from datetime import UTC, datetime
+    from rich.table import Table
+
     lore_root = _get_lore_root()
-    from lore_core.run_reader import _list_runs
-    runs = _list_runs(lore_root)
-    if not runs:
-        console.print("[yellow]No runs on disk.[/yellow]")
+    runs_dir = lore_root / ".lore" / "runs"
+    if not runs_dir.exists() or not any(runs_dir.iterdir()):
+        console.print("[dim]No capture activity yet.[/dim]")
         return
-    for path in reversed(runs):
-        console.print(path.stem)
+
+    archival = sorted(
+        (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
+        key=lambda p: p.name,
+        reverse=True,
+    )[:limit]
+
+    if json_out:
+        for p in archival:
+            sys.stdout.write(p.read_text())
+        return
+
+    table = Table(title=None)
+    table.add_column("ID")
+    table.add_column("Started")
+    table.add_column("Duration")
+    table.add_column("Transcripts")
+    table.add_column("Notes")
+    table.add_column("Reason")
+    table.add_column("Errors")
+
+    for p in archival:
+        records = read_run(p, strict_schema=False)
+        schema_mismatch = any(r.get("_schema_mismatch") for r in records)
+        start = next((r for r in records if r.get("type") == "run-start"), {})
+        end = next((r for r in reversed(records) if r.get("type") == "run-end"), {})
+        short_id = p.stem.split("-")[-1]
+        started = _relative_time_cli(start.get("ts", ""))
+        dur = f"{end.get('duration_ms', 0) / 1000:.1f}s"
+        t_count = sum(1 for r in records if r.get("type") == "transcript-start")
+        notes_new = end.get("notes_new", 0)
+        notes_merged = end.get("notes_merged", 0)
+        skipped = end.get("skipped", 0)
+        if notes_new == 0 and notes_merged == 0:
+            notes_cell = "0"
+            reason = f"all skipped ({skipped})" if skipped else "\u2014"
+        else:
+            notes_cell = f"{notes_new} new" + (f"+{notes_merged}m" if notes_merged else "")
+            reason = "\u2014"
+        errors = str(end.get("errors", 0))
+        id_cell = short_id
+        if schema_mismatch:
+            id_cell = f"[dim]{short_id}[/dim]"
+            reason = f"[dim]{reason} (schema v? \u00b7 upgrade lore)[/dim]"
+        table.add_row(id_cell, started, dur, str(t_count), notes_cell, reason, errors)
+
+    console.print(table)
+
+
+def _relative_time_cli(ts_iso: str) -> str:
+    from datetime import UTC, datetime
+    if not ts_iso:
+        return "?"
+    try:
+        ts = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return ts_iso
+    delta = datetime.now(UTC) - ts
+    s = delta.total_seconds()
+    if s < 60:
+        return "just now"
+    if s < 3600:
+        return f"{int(s // 60)}m ago"
+    if s < 86400:
+        return f"{int(s // 3600)}h ago"
+    return f"{int(s // 86400)}d ago"
 
 
 @app.command("show")
