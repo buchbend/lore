@@ -15,6 +15,7 @@ from pathlib import Path
 from rich.console import Console
 
 console = Console()
+err_console = Console(stderr=True)
 
 # Read-side parsing lives in lore_core.attach so non-CLI modules
 # (e.g. lore_core.scope_resolver) don't need to depend on lore_cli.
@@ -227,7 +228,7 @@ def cmd_write(
     write_attach(target, updates)
     result = read_attach(target)
     # Affordance for humans goes to stderr so stdout stays parseable JSON.
-    console.print(f"[green]Attached {target}[/green]", file=sys.stderr)
+    err_console.print(f"[green]Attached {target}[/green]")
     envelope = {
         "schema": "lore.attach.write/1",
         "data": {"path": str(target), "block": result},

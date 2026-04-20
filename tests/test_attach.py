@@ -10,6 +10,7 @@ Contract (from concepts/lore/claude-md-as-scope-anchor.md):
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -247,3 +248,34 @@ def test_read_absent_returns_empty_dict(claude_md):
 
 def test_read_missing_file_returns_empty_dict(tmp_path):
     assert read_attach(tmp_path / "nope.md") == {}
+
+
+def test_cmd_write_exits_zero_and_emits_parseable_stdout(tmp_path):
+    """Regression for buchbend/lore#13.
+
+    `lore attach write` previously crashed with TypeError on the
+    success-affordance line (`console.print(..., file=sys.stderr)` —
+    rich.Console.print() doesn't accept `file=`). The disk write
+    succeeded but the CLI exited non-zero, polluting any caller relying
+    on exit code or parseable stdout JSON.
+    """
+    from typer.testing import CliRunner
+    from lore_cli.attach_cmd import app
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        app,
+        [
+            "write",
+            "--path", str(tmp_path),
+            "--wiki", "test-wiki",
+            "--scope", "test:scope",
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, f"non-zero exit; stdout={result.stdout!r}"
+    # stdout must remain parseable JSON (no Rich affordance leakage onto stdout).
+    payload = json.loads(result.stdout)
+    assert payload["schema"] == "lore.attach.write/1"
+    assert payload["data"]["block"]["wiki"] == "test-wiki"
+    assert payload["data"]["block"]["scope"] == "test:scope"
