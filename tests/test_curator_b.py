@@ -1,0 +1,491 @@
+"""Tests for lore_curator.curator_b — Curator B pipeline."""
+from __future__ import annotations
+
+import os
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from lore_core.ledger import WikiLedger
+
+
+# ---------------------------------------------------------------------------
+# Standard SURFACES.md content (the canonical template)
+# ---------------------------------------------------------------------------
+
+_STANDARD_SURFACES_MD = """\
+# Surfaces — private
+schema_version: 2
+
+## concept
+Cross-cutting idea or pattern across sessions.
+
+```yaml
+required: [type, created, last_reviewed, description, tags]
+optional: [aliases, superseded_by, draft]
+```
+
+Extract when: pattern appears across 3+ session notes.
+
+## decision
+A trade-off made — alternatives considered, path chosen.
+
+```yaml
+required: [type, created, last_reviewed, description, tags]
+optional: [superseded_by, implements]
+```
+
+Extract when: a session note records a trade-off decision.
+
+## session
+Work session log filed by Curator A.
+
+```yaml
+required: [type, created, last_reviewed, description]
+optional: [scope, tags, draft, source_transcripts]
+```
+"""
+
+# ---------------------------------------------------------------------------
+# Fake Anthropic client — branches on tool_choice.name
+# ---------------------------------------------------------------------------
+
+
+class _FakeContentBlock:
+    def __init__(self, type_, input_=None, text=None):
+        self.type = type_
+        self.input = input_
+        self.text = text
+
+
+class _FakeResponse:
+    def __init__(self, content):
+        self.content = content
+
+
+class _FakeMessagesAPI:
+    """Responds differently based on tool_choice.name ('cluster' vs 'abstract')."""
+
+    def __init__(self, cluster_data: dict, abstract_data: dict):
+        self._cluster_data = cluster_data
+        self._abstract_data = abstract_data
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        tc = kwargs.get("tool_choice", {})
+        name = tc.get("name") if isinstance(tc, dict) else None
+        if name == "abstract":
+            data = self._abstract_data
+        else:
+            data = self._cluster_data
+        block = _FakeContentBlock(type_="tool_use", input_=data)
+        return _FakeResponse([block])
+
+
+class FakeAnthropicClient:
+    def __init__(self, cluster_data: dict, abstract_data: dict):
+        self.messages = _FakeMessagesAPI(
+            cluster_data=cluster_data,
+            abstract_data=abstract_data,
+        )
+
+
+def _make_client(
+    *,
+    note_wikilinks: list[str] | None = None,
+    topic: str = "test topic",
+    surface_name: str = "concept",
+    title: str = "Test Concept",
+    body: str = "This is a test concept body.",
+) -> FakeAnthropicClient:
+    """Build a fake client that returns 1 cluster + 1 abstracted surface."""
+    notes = note_wikilinks or []
+    cluster_data = {
+        "clusters": [
+            {
+                "topic": topic,
+                "scope": "proj:test",
+                "session_notes": notes,
+                "suggested_surface": surface_name,
+            }
+        ]
+    }
+    abstract_data = {
+        "surfaces": [
+            {
+                "surface_name": surface_name,
+                "title": title,
+                "body": body,
+                "extra_frontmatter": {},
+            }
+        ]
+    }
+    return FakeAnthropicClient(cluster_data=cluster_data, abstract_data=abstract_data)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_NOW = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
+
+
+def _setup_wiki(lore_root: Path, wiki_name: str = "private") -> Path:
+    """Create minimal wiki structure + SURFACES.md."""
+    wiki_dir = lore_root / "wiki" / wiki_name
+    wiki_dir.mkdir(parents=True, exist_ok=True)
+    (wiki_dir / "sessions").mkdir(exist_ok=True)
+    (wiki_dir / "SURFACES.md").write_text(_STANDARD_SURFACES_MD)
+    return wiki_dir
+
+
+def _write_session_note(sessions_dir: Path, stem: str, body: str = "") -> Path:
+    """Write a fake session note with frontmatter."""
+    text = f"""\
+---
+schema_version: 2
+type: session
+created: 2026-04-17
+last_reviewed: 2026-04-17
+description: {stem}
+tags: []
+---
+
+{body or f'This session was about {stem}.'}
+"""
+    p = sessions_dir / f"{stem}.md"
+    p.write_text(text)
+    return p
+
+
+# ---------------------------------------------------------------------------
+# Test 1: empty sessions dir → short-circuit; ledger still bumped
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_no_recent_notes_short_circuits(tmp_path):
+    wiki_dir = _setup_wiki(tmp_path)
+    client = _make_client()
+
+    from lore_curator.curator_b import run_curator_b
+
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=client,
+        now=_NOW,
+        since=_NOW - timedelta(days=3),
+    )
+
+    assert result.notes_considered == 0
+    # No LLM calls should have been made
+    assert client.messages.calls == []
+    # Ledger should be bumped to now
+    entry = WikiLedger(tmp_path, "private").read()
+    assert entry.last_curator_b == _NOW
+
+
+# ---------------------------------------------------------------------------
+# Test 2: cluster → abstract → file surface
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_clusters_then_abstracts_then_files(tmp_path):
+    wiki_dir = _setup_wiki(tmp_path)
+    sessions_dir = wiki_dir / "sessions"
+
+    for i in range(3):
+        _write_session_note(sessions_dir, f"2026-04-1{5+i}-work")
+
+    note_stems = [p.stem for p in sessions_dir.glob("*.md")]
+    note_wikilinks = [f"[[{s}]]" for s in note_stems]
+    client = _make_client(
+        note_wikilinks=note_wikilinks,
+        surface_name="concept",
+        title="Test Concept",
+        body="A cross-cutting concept.",
+    )
+
+    from lore_curator.curator_b import run_curator_b
+
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=client,
+        now=_NOW,
+        since=_NOW - timedelta(days=7),
+    )
+
+    assert result.notes_considered == 3
+    assert result.clusters_formed == 1
+    assert len(result.surfaces_emitted) == 1
+
+    surface_path = result.surfaces_emitted[0]
+    assert surface_path.exists(), f"Expected file at {surface_path}"
+    # Should be under concepts/
+    assert "concepts" in str(surface_path)
+    assert surface_path.suffix == ".md"
+
+
+# ---------------------------------------------------------------------------
+# Test 3: filed surfaces always have draft: true in frontmatter
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_files_surfaces_with_draft_true(tmp_path):
+    wiki_dir = _setup_wiki(tmp_path)
+    sessions_dir = wiki_dir / "sessions"
+    _write_session_note(sessions_dir, "2026-04-15-alpha")
+    _write_session_note(sessions_dir, "2026-04-16-beta")
+
+    note_wikilinks = [f"[[2026-04-1{5+i}-{n}]]" for i, n in enumerate(["alpha", "beta"])]
+    client = _make_client(
+        note_wikilinks=note_wikilinks,
+        surface_name="concept",
+        title="Draft Concept",
+        body="Should be filed as draft.",
+    )
+
+    from lore_curator.curator_b import run_curator_b
+
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=client,
+        now=_NOW,
+        since=_NOW - timedelta(days=7),
+    )
+
+    assert len(result.surfaces_emitted) == 1
+    path = result.surfaces_emitted[0]
+    assert path.exists()
+
+    import yaml as _yaml
+
+    text = path.read_text()
+    # Strip frontmatter
+    assert text.startswith("---")
+    end = text.find("\n---", 3)
+    fm_text = text[4:end]
+    fm = _yaml.safe_load(fm_text)
+    assert fm.get("draft") is True
+
+
+# ---------------------------------------------------------------------------
+# Test 4: ledger last_curator_b advances to `now`
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_advances_last_curator_b_on_wiki_ledger(tmp_path):
+    _setup_wiki(tmp_path)
+
+    from lore_curator.curator_b import run_curator_b
+
+    run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=_make_client(),
+        now=_NOW,
+        since=_NOW - timedelta(days=3),
+    )
+
+    entry = WikiLedger(tmp_path, "private").read()
+    assert entry.last_curator_b == _NOW
+
+
+# ---------------------------------------------------------------------------
+# Test 5: dry_run writes nothing; ledger NOT bumped
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_dry_run_writes_nothing(tmp_path):
+    wiki_dir = _setup_wiki(tmp_path)
+    sessions_dir = wiki_dir / "sessions"
+    _write_session_note(sessions_dir, "2026-04-15-note1")
+    _write_session_note(sessions_dir, "2026-04-16-note2")
+
+    note_wikilinks = ["[[2026-04-15-note1]]", "[[2026-04-16-note2]]"]
+    client = _make_client(
+        note_wikilinks=note_wikilinks,
+        surface_name="concept",
+        title="Dry Run Concept",
+        body="Should not be written.",
+    )
+
+    from lore_curator.curator_b import run_curator_b
+
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=client,
+        dry_run=True,
+        now=_NOW,
+        since=_NOW - timedelta(days=7),
+    )
+
+    # surfaces_emitted contains pseudo paths
+    assert len(result.surfaces_emitted) >= 1
+    for p in result.surfaces_emitted:
+        assert not p.exists(), f"Dry run should not create {p}"
+
+    # concepts dir should not exist (or be empty)
+    concepts_dir = wiki_dir / "concepts"
+    if concepts_dir.exists():
+        assert list(concepts_dir.glob("*.md")) == []
+
+    # Ledger should NOT be bumped
+    entry = WikiLedger(tmp_path, "private").read()
+    assert entry.last_curator_b is None
+
+
+# ---------------------------------------------------------------------------
+# Test 6: lock contention records skip
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_lock_contention_records_skip(tmp_path):
+    _setup_wiki(tmp_path)
+
+    # Pre-create lock directory to simulate a held lock
+    lock_dir = tmp_path / ".lore" / "curator.lock"
+    lock_dir.mkdir(parents=True)
+
+    try:
+        from lore_curator.curator_b import run_curator_b
+
+        result = run_curator_b(
+            lore_root=tmp_path,
+            wiki="private",
+            anthropic_client=_make_client(),
+            now=_NOW,
+        )
+
+        assert result.skipped_reasons.get("lock_contended", 0) == 1
+    finally:
+        try:
+            os.rmdir(lock_dir)
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Test 7: no anthropic client → records skip
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_no_anthropic_client_records_skip(tmp_path):
+    _setup_wiki(tmp_path)
+
+    from lore_curator.curator_b import run_curator_b
+
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=None,
+        now=_NOW,
+    )
+
+    assert result.skipped_reasons.get("no_anthropic_client", 0) >= 1
+    # No surfaces written
+    concepts_dir = tmp_path / "wiki" / "private" / "concepts"
+    assert not concepts_dir.exists() or list(concepts_dir.glob("*.md")) == []
+
+
+# ---------------------------------------------------------------------------
+# Test 8: broken SURFACES.md (empty surfaces list) refuses to run
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_broken_surfaces_md_refuses_to_run(tmp_path):
+    wiki_dir = tmp_path / "wiki" / "private"
+    wiki_dir.mkdir(parents=True)
+    (wiki_dir / "sessions").mkdir()
+
+    # Write a SURFACES.md that exists but has no ## sections, so it parses
+    # to zero usable surfaces — the "broken" case the code must refuse.
+    broken_surfaces = """\
+# Surfaces — private
+schema_version: 2
+
+This file has no surface sections defined.
+"""
+    (wiki_dir / "SURFACES.md").write_text(broken_surfaces)
+
+    from lore_curator.curator_b import run_curator_b
+
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=_make_client(),
+        now=_NOW,
+    )
+
+    assert result.skipped_reasons.get("surfaces_md_invalid", 0) == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 9: high_tier_off still runs; warnings.log gets the marker
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_high_tier_off_still_runs_with_warning(tmp_path):
+    wiki_dir = _setup_wiki(tmp_path)
+    sessions_dir = wiki_dir / "sessions"
+    _write_session_note(sessions_dir, "2026-04-15-alpha")
+    _write_session_note(sessions_dir, "2026-04-16-beta")
+
+    # Write a wiki config with high tier off
+    wiki_config_text = """\
+models:
+  high: "off"
+  middle: claude-sonnet-4-6
+  simple: claude-haiku-4-5
+"""
+    (wiki_dir / ".lore-wiki.yml").write_text(wiki_config_text)
+
+    note_wikilinks = ["[[2026-04-15-alpha]]", "[[2026-04-16-beta]]"]
+    client = _make_client(
+        note_wikilinks=note_wikilinks,
+        surface_name="concept",
+        title="High Off Concept",
+        body="Uses middle tier.",
+    )
+
+    from lore_curator.curator_b import run_curator_b
+
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=client,
+        now=_NOW,
+        since=_NOW - timedelta(days=7),
+    )
+
+    # Should still emit surfaces (using middle-tier fallback)
+    assert len(result.surfaces_emitted) >= 1
+
+    # warnings.log should contain the high-off marker
+    warnings_log = tmp_path / ".lore" / "warnings.log"
+    assert warnings_log.exists(), "warnings.log should exist"
+    content = warnings_log.read_text()
+    assert "abstract-high-tier-off-v1" in content
+
+
+# ---------------------------------------------------------------------------
+# Test 10: wiki_not_found records skip
+# ---------------------------------------------------------------------------
+
+
+def test_curator_b_wiki_not_found_records_skip(tmp_path):
+    from lore_curator.curator_b import run_curator_b
+
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="nonexistent",
+        anthropic_client=_make_client(),
+        now=_NOW,
+    )
+
+    assert result.skipped_reasons.get("wiki_not_found", 0) == 1
