@@ -1,6 +1,7 @@
 """Tests for `lore surface add` / `lore surface lint` CLI commands."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -149,3 +150,84 @@ def test_surface_lint_rejects_no_surfaces_md(tmp_path, monkeypatch):
     result = runner.invoke(app, ["lint", "--wiki", "x"])
     assert result.exit_code == 0
     assert "no SURFACES.md" in result.stderr.lower() or "surfaces.md" in result.stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# surface commit
+# ---------------------------------------------------------------------------
+
+
+def test_surface_commit_append_on_missing_file(tmp_path, monkeypatch):
+    """commit with operation=append creates a minimal file and appends the surface."""
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    draft = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "append",
+        "surface": {
+            "name": "paper",
+            "description": "A paper.",
+            "required": ["type", "created", "description", "tags"],
+            "optional": ["draft"],
+            "plural": "papers",
+        },
+    }
+    draft_path = tmp_path / "draft.json"
+    draft_path.write_text(json.dumps(draft))
+    result = runner.invoke(app, ["commit", str(draft_path)])
+    assert result.exit_code == 0, result.output + result.stderr
+    content = (tmp_path / "wiki" / "x" / "SURFACES.md").read_text()
+    assert "schema_version: 2" in content
+    assert "## paper" in content
+    assert "plural: papers" in content
+
+
+def test_surface_commit_append_rejects_duplicate(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    wiki_dir = tmp_path / "wiki" / "x"
+    _make_surfaces_md(
+        wiki_dir,
+        "# Surfaces\nschema_version: 2\n\n## paper\nX.\n\n```yaml\nrequired: [type]\noptional: []\n```\n",
+    )
+    draft = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "append",
+        "surface": {"name": "paper", "description": "Y.", "required": ["type"], "optional": []},
+    }
+    draft_path = tmp_path / "draft.json"
+    draft_path.write_text(json.dumps(draft))
+    result = runner.invoke(app, ["commit", str(draft_path)])
+    assert result.exit_code == 1
+    assert "duplicate_name" in result.stderr or "already exists" in result.stderr.lower()
+
+
+def test_surface_commit_force_overrides_duplicate(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    wiki_dir = tmp_path / "wiki" / "x"
+    _make_surfaces_md(
+        wiki_dir,
+        "# Surfaces\nschema_version: 2\n\n## paper\nX.\n\n```yaml\nrequired: [type]\noptional: []\n```\n",
+    )
+    draft = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "append",
+        "surface": {"name": "paper", "description": "Y (updated).", "required": ["type"], "optional": []},
+    }
+    draft_path = tmp_path / "draft.json"
+    draft_path.write_text(json.dumps(draft))
+    result = runner.invoke(app, ["commit", str(draft_path), "--force"])
+    assert result.exit_code == 0, result.output + result.stderr
+    content = (wiki_dir / "SURFACES.md").read_text()
+    assert content.count("## paper") == 2
+
+
+def test_surface_commit_rejects_invalid_schema(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    draft = {"schema": "wrong/1", "wiki": "x", "operation": "append", "surface": {}}
+    draft_path = tmp_path / "draft.json"
+    draft_path.write_text(json.dumps(draft))
+    result = runner.invoke(app, ["commit", str(draft_path)])
+    assert result.exit_code == 1
+    assert "unknown_schema" in result.stderr or "unsupported" in result.stderr.lower()

@@ -18,6 +18,8 @@ err_console = Console(stderr=True)
 
 TEMPLATE_NAMES = ("standard", "science", "design", "custom")
 
+_BARE_HEADER = "# Surfaces\nschema_version: 2\n"
+
 app = typer.Typer(
     add_completion=False,
     help=__doc__,
@@ -83,6 +85,84 @@ def cmd_add(
     atomic_write_text(surfaces_path, text + new_section)
     err_console.print(f"[green]added surface '{name}' to {surfaces_path}[/green]")
     print(json.dumps({"schema": "lore.surface.add/1", "data": {"path": str(surfaces_path), "name": name}}, indent=2))
+
+
+@app.command("commit")
+def cmd_commit(
+    ctx: typer.Context,
+    draft_path: Path = typer.Argument(..., help="Path to the draft.json file."),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Bypass duplicate/existing-file checks and write anyway.",
+    ),
+) -> None:
+    """Write a surface draft (append or init) to the target wiki's SURFACES.md."""
+    from lore_core.surfaces import (
+        SurfaceDef,
+        render_section,
+        render_document,
+        validate_draft,
+    )
+
+    if not draft_path.exists():
+        err_console.print(f"[red]draft file not found: {draft_path}[/red]")
+        raise typer.Exit(1)
+    try:
+        draft = json.loads(draft_path.read_text())
+    except json.JSONDecodeError as e:
+        err_console.print(f"[red]draft is not valid JSON: {e}[/red]")
+        raise typer.Exit(1)
+
+    wiki = draft.get("wiki")
+    if not wiki:
+        err_console.print("[red]draft.wiki is required[/red]")
+        raise typer.Exit(1)
+    wiki_dir = _resolve_wiki_dir(wiki)
+    wiki_dir.mkdir(parents=True, exist_ok=True)
+
+    issues = validate_draft(draft, wiki_dir=wiki_dir)
+    blocking = [
+        i for i in issues
+        if not (force and i["code"] in {"duplicate_name", "plural_collision"})
+    ]
+    if blocking:
+        for i in blocking:
+            err_console.print(f"[red]✗ {i['code']}[/red]: {i['message']}")
+        raise typer.Exit(1)
+
+    surfaces_path = wiki_dir / "SURFACES.md"
+    op = draft["operation"]
+    if op == "append":
+        spec = draft["surface"]
+        surface_def = SurfaceDef(
+            name=spec["name"],
+            description=spec.get("description", ""),
+            required=list(spec.get("required") or []),
+            optional=list(spec.get("optional") or []),
+            extract_when=spec.get("extract_when", ""),
+            plural=spec.get("plural"),
+            slug_format=spec.get("slug_format"),
+            extract_prompt=spec.get("extract_prompt"),
+        )
+        if not surfaces_path.exists():
+            atomic_write_text(surfaces_path, _BARE_HEADER)
+        text = surfaces_path.read_text()
+        if not text.endswith("\n"):
+            text += "\n"
+        atomic_write_text(surfaces_path, text + "\n" + render_section(surface_def))
+        err_console.print(f"[green]committed surface '{surface_def.name}' to {surfaces_path}[/green]")
+        print(json.dumps({
+            "schema": "lore.surface.commit/1",
+            "data": {"operation": "append", "path": str(surfaces_path), "name": surface_def.name},
+        }, indent=2))
+    elif op == "init":
+        # Handled in T10.
+        err_console.print("[red]init operation not yet implemented[/red]")
+        raise typer.Exit(1)
+    else:
+        err_console.print(f"[red]unknown operation: {op!r}[/red]")
+        raise typer.Exit(1)
 
 
 @app.command("lint")
