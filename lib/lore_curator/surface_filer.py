@@ -53,7 +53,7 @@ def file_surface(
             f"({wiki_root}); declared: {[s.name for s in surfaces_doc.surfaces]}"
         )
 
-    subdir = wiki_root / _pluralise(surface_name)
+    subdir = wiki_root / _directory_for(surface_def)
     subdir.mkdir(parents=True, exist_ok=True)
 
     slug = _slug(title)
@@ -86,6 +86,11 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 def _slug(title: str) -> str:
     s = _SLUG_RE.sub("-", title.lower()).strip("-")
     return s[:60] if s else "surface"
+
+
+def _directory_for(surface_def: SurfaceDef) -> str:
+    """Directory name for surfaces of this type — honours the `plural` override."""
+    return surface_def.plural or _pluralise(surface_def.name)
 
 
 def _pluralise(name: str) -> str:

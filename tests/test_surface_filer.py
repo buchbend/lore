@@ -303,3 +303,48 @@ def test_file_surface_uses_provided_now_for_created(tmp_path):
     )
     fm = _parse_frontmatter(result.path.read_text())
     assert fm["created"] == "2030-01-01"
+
+
+def test_file_surface_uses_plural_override(tmp_path):
+    from lore_core.surfaces import SurfaceDef, SurfacesDoc
+    from lore_curator.surface_filer import file_surface
+    from pathlib import Path
+    surface_def = SurfaceDef(
+        name="study",
+        description="",
+        required=["type", "created", "description"],
+        optional=[],
+        plural="studies",
+    )
+    doc = SurfacesDoc(schema_version=2, surfaces=[surface_def], path=Path("<test>"))
+    filed = file_surface(
+        surface_name="study",
+        title="My study",
+        body="",
+        sources=[],
+        wiki_root=tmp_path,
+        surfaces_doc=doc,
+    )
+    assert filed.path.parent.name == "studies"
+
+
+def test_file_surface_defaults_to_pluralise_when_no_override(tmp_path):
+    from lore_core.surfaces import SurfaceDef, SurfacesDoc
+    from lore_curator.surface_filer import file_surface
+    from pathlib import Path
+    surface_def = SurfaceDef(
+        name="concept",
+        description="",
+        required=["type", "created", "description"],
+        optional=[],
+    )
+    doc = SurfacesDoc(schema_version=2, surfaces=[surface_def], path=Path("<test>"))
+    filed = file_surface(
+        surface_name="concept",
+        title="X",
+        body="",
+        sources=[],
+        wiki_root=tmp_path,
+        surfaces_doc=doc,
+    )
+    assert filed.path.parent.name == "concepts"
