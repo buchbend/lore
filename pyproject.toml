@@ -58,6 +58,7 @@ where = ["lib"]
 
 [tool.setuptools.package-data]
 "lore_cli" = ["hosts.d/*.toml"]
+"lore_core.surface_templates" = ["*.md"]
 
 [tool.ruff]
 line-length = 100

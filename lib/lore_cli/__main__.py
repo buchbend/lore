@@ -29,6 +29,7 @@ from lore_cli import (
     registry_cmd,
     resume_cmd,
     session_cmd,
+    surface_cmd,
 )
 from lore_core import lint as lint_cmd
 from lore_core import migrate as migrate_cmd
@@ -63,6 +64,7 @@ app.add_typer(registry_cmd.app, name="registry")
 app.add_typer(resume_cmd.app, name="resume")
 app.add_typer(search_cmd.app, name="search")
 app.add_typer(session_cmd.app, name="session")
+app.add_typer(surface_cmd.app, name="surface")
 
 
 @app.command(
