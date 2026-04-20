@@ -5,6 +5,7 @@ All tests use a fake runner — no real `claude` binary is invoked.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 
 import pytest
@@ -87,18 +88,13 @@ def test_subprocess_builds_expected_cmdline():
 
     assert cmd[0] == "claude"
     assert cmd[1] == "-p"
-    # prompt is at index 2 (tested in separate test)
-    assert "--output-format" in cmd
-    assert cmd[cmd.index("--output-format") + 1] == "json"
-    assert "--tools" in cmd
-    assert cmd[cmd.index("--tools") + 1] == ""
-    assert "--model" in cmd
-    assert cmd[cmd.index("--model") + 1] == _MODEL
-    assert "--json-schema" in cmd
-    # The value after --json-schema must be valid JSON matching the input_schema
-    schema_json = cmd[cmd.index("--json-schema") + 1]
-    schema = json.loads(schema_json)
-    assert schema == _TOOLS[0]["input_schema"]
+    assert cmd[2] == "Is this noteworthy?"
+    assert cmd[3:5] == ["--output-format", "json"]
+    assert cmd[5:7] == ["--tools", ""]
+    assert cmd[7:9] == ["--model", "claude-haiku-4-5-20251001"]
+    assert cmd[9] == "--json-schema"
+    assert json.loads(cmd[10])["properties"]["noteworthy"]["type"] == "boolean"
+    assert len(cmd) == 11
 
 
 def test_subprocess_passes_user_prompt_as_argv():
@@ -181,8 +177,8 @@ def test_subprocess_passes_model_name_through():
 
 
 def test_subprocess_is_available_honours_path(monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/claude")
-    assert SubprocessClient.is_available() is True
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/claude")
+    assert SubprocessClient.is_available(binary="claude") is True
 
-    monkeypatch.setattr("shutil.which", lambda name: None)
-    assert SubprocessClient.is_available() is False
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert SubprocessClient.is_available(binary="claude") is False

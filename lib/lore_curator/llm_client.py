@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
+from typing import Any, Callable, Protocol, runtime_checkable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
 
 
 class LlmClientError(RuntimeError):
@@ -82,11 +85,6 @@ class SDKClient:
     def backend_name(self) -> str:
         return "sdk"
 
-
-import json
-import shutil
-import subprocess
-from typing import Callable
 
 # A subprocess runner has the same shape as subprocess.run for the kwargs we use.
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -169,8 +167,10 @@ class _SubprocessMessagesAPI:
             content = [block]
         else:
             text = payload.get("result") or ""
-            # Plain-text path — synthesize a text-shaped block. Curators
-            # don't use this path today, but the factory stays symmetric.
+            # NOTE: type="text" intentionally breaks the tool_use contract.
+            # Plain-text path is present for factory symmetry only; curators do
+            # not use it today, and any extractor filtering on type=="tool_use"
+            # will correctly skip these blocks.
             content = [ToolUseBlock(input={"text": text}, type="text", name="")]
 
         return LlmResponse(
@@ -195,6 +195,8 @@ def _extract_user_text(messages: list[dict[str, Any]]) -> str:
             b.get("text", "") for b in content
             if isinstance(b, dict) and b.get("type") == "text"
         ]
+        if not texts:
+            raise LlmClientError("no text blocks found in user message content list")
         return "\n".join(texts)
     raise LlmClientError(f"unsupported message content type: {type(content)!r}")
 
@@ -210,8 +212,12 @@ def _resolve_tool_schema(
     for t in tools:
         if t.get("name") == want:
             schema = t.get("input_schema")
-            if isinstance(schema, dict):
-                return schema
+            if not isinstance(schema, dict):
+                raise LlmClientError(
+                    f"tool {want!r} has invalid input_schema "
+                    f"(expected dict, got {type(schema).__name__!r})"
+                )
+            return schema
     raise LlmClientError(f"tool {want!r} not found in tools=[...]")
 
 
@@ -225,7 +231,6 @@ class SubprocessClient:
         runner: SubprocessRunner | None = None,
         timeout_s: float = 120.0,
     ):
-        self._binary = binary
         self.messages = _SubprocessMessagesAPI(
             binary=binary,
             runner=runner if runner is not None else subprocess.run,
