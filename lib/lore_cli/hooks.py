@@ -968,6 +968,46 @@ def cmd_session_start(
 ) -> None:
     """Inject vault context at session start."""
     out = _session_start(_resolve_cwd(cwd))
+
+    # Attempt to append capture-state breadcrumb banner
+    try:
+        from datetime import UTC, datetime as dt
+        from lore_cli.breadcrumb import BannerContext, render_banner
+        from lore_core.config import get_wiki_root
+
+        cwd_resolved = Path(_resolve_cwd(cwd))
+        scope = resolve_scope(cwd_resolved)
+        if scope is not None:
+            wiki_root = get_wiki_root()
+            if wiki_root.exists():
+                lore_root = _infer_lore_root(scope.claude_md_path)
+                wiki_cfg = _load_wiki_cfg_from_scope(scope, lore_root)
+                now = dt.now(tz=UTC)
+
+                # Count notes in scope if possible (optional for v1)
+                note_count = 0
+                try:
+                    wiki_path = wiki_root / scope.wiki
+                    catalog = _wiki_catalog(wiki_path)
+                    if catalog:
+                        note_count = catalog.get("stats", {}).get("total_notes", 0)
+                except Exception:
+                    pass
+
+                ctx = BannerContext(
+                    lore_root=lore_root,
+                    scope=scope,
+                    wiki_config=wiki_cfg,
+                    now=now,
+                    note_count=note_count,
+                )
+                banner = render_banner(ctx)
+                if banner is not None:
+                    out = out + "\n\n" + banner
+    except Exception:
+        # Banner generation failure is non-fatal — proceed without it.
+        pass
+
     _emit("SessionStart", out, plain=plain)
 
 
