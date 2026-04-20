@@ -140,7 +140,14 @@ def _build_frontmatter(
     if surface_def.required:
         required = list(surface_def.required)
     else:
-        required = required_fields_for(surface_name, wiki_dir=wiki_root)
+        try:
+            required = required_fields_for(surface_name, wiki_dir=wiki_root)
+        except KeyError:
+            # Custom surface declared in SURFACES.md without a YAML block AND
+            # not in the legacy hardcoded set. Treat as no required fields —
+            # caller already enforces type/draft via defaults. Don't propagate
+            # KeyError out of file_surface and through the curator lock block.
+            required = []
     missing = [f for f in required if f not in fm or fm[f] in (None, "")]
     if missing:
         raise ValueError(

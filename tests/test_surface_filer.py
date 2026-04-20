@@ -207,6 +207,42 @@ def test_file_surface_raises_on_missing_required_field(tmp_path):
         )
 
 
+def test_file_surface_custom_surface_with_empty_required_does_not_raise_keyerror(tmp_path):
+    """Regression: a custom surface declared in SURFACES.md without a YAML block
+    (so SurfaceDef.required is empty) AND not in legacy REQUIRED_FIELDS must NOT
+    raise KeyError out of file_surface — it must succeed and produce a note with
+    only the default frontmatter fields populated.
+
+    Pre-fix: required_fields_for("custom_thing", wiki_dir=…) raised KeyError;
+    file_surface didn't catch it; KeyError leaked out of the curator lock block.
+    Post-fix: the fallback catches KeyError and treats it as "no required fields".
+    """
+    from lore_core.surfaces import SurfaceDef, SurfacesDoc
+
+    doc = SurfacesDoc(
+        schema_version=2,
+        surfaces=[
+            SurfaceDef(
+                name="custom_thing",
+                description="A custom surface declared with no YAML block.",
+                required=[],         # empty — triggers the fallback path
+                optional=[],
+            ),
+        ],
+        path=tmp_path / "SURFACES.md",
+    )
+    result = file_surface(
+        surface_name="custom_thing",
+        title="Custom",
+        body="Body",
+        sources=[],
+        wiki_root=tmp_path,
+        surfaces_doc=doc,
+    )
+    assert result.path.exists()
+    assert result.path.parent.name == "custom_things"
+
+
 def test_file_surface_raises_on_unknown_surface_name(tmp_path):
     """Unknown surface name → ValueError listing declared names."""
     doc = _make_surfaces_doc(tmp_path)

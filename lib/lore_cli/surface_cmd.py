@@ -36,11 +36,12 @@ def _resolve_wiki_dir(wiki: str | None) -> Path:
     if wiki:
         return lore_root / "wiki" / wiki
     # Try to infer from cwd: look for wiki/<name>/ ancestor.
+    # Match any ancestor whose parent is named "wiki" — that's the wiki
+    # root by convention. Don't gate on SURFACES.md existence here; the
+    # caller (`add` / `lint`) handles missing-file cases explicitly.
     cwd = Path.cwd().resolve()
     for parent in [cwd, *cwd.parents]:
-        if parent.parent.name == "wiki" and (parent / "SURFACES.md").exists() or (
-            parent.parent.name == "wiki"
-        ):
+        if parent.parent.name == "wiki":
             return parent
     err_console.print("[red]could not resolve wiki — pass --wiki <name>[/red]")
     raise typer.Exit(1)
