@@ -806,12 +806,25 @@ def curator(
         )
 
 
+def _discover_wikis(lore_root: Path) -> list[str]:
+    """Return sorted list of wiki directory names under lore_root/wiki/."""
+    wiki_dir = lore_root / "wiki"
+    if not wiki_dir.exists():
+        return []
+    return sorted([d.name for d in wiki_dir.iterdir() if d.is_dir()])
+
+
 @app.command("run")
 def run_command(
     scope: str = typer.Option(None, "--scope", help="Filter to one scope, e.g. 'mywiki:subproject'."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Classify but don't write notes or advance ledger."),
+    abstract: bool = typer.Option(False, "--abstract", help="Also run Curator B (graph abstraction) after Curator A."),
+    wiki: str = typer.Option(None, "--wiki", help="Limit Curator B to a single wiki (only meaningful with --abstract)."),
 ) -> None:
-    """Run Curator A — classify pending transcripts and file session notes."""
+    """Run Curator A — classify pending transcripts and file session notes.
+
+    With --abstract, also runs Curator B (graph abstraction) for the specified wiki(s).
+    """
     import os
     from datetime import UTC, datetime
     from pathlib import Path
@@ -829,9 +842,9 @@ def run_command(
     scope_obj = None
     if scope:
         from lore_core.types import Scope
-        wiki = scope.split(":")[0] if ":" in scope else scope
+        wiki_name = scope.split(":")[0] if ":" in scope else scope
         scope_obj = Scope(
-            wiki=wiki,
+            wiki=wiki_name,
             scope=scope,
             backend="none",
             claude_md_path=Path("."),
@@ -873,6 +886,33 @@ def run_command(
     )
     console.print(f"  skipped: {{{skipped_summary}}}")
     console.print(f"  took: {result.duration_seconds:.2f}s")
+
+    # Run Curator B if --abstract is specified
+    if abstract:
+        from lore_curator.curator_b import run_curator_b
+
+        wikis_to_process = [wiki] if wiki else _discover_wikis(lore_root)
+
+        for wiki_name in wikis_to_process:
+            b_result = run_curator_b(
+                lore_root=lore_root,
+                wiki=wiki_name,
+                anthropic_client=anthropic_client,
+                dry_run=dry_run,
+                now=datetime.now(UTC),
+            )
+
+            skipped_b_summary = ", ".join(
+                f"{k}: {v}" for k, v in b_result.skipped_reasons.items()
+            ) or "none"
+
+            console.print(
+                f"[bold]Curator B[/bold] ({wiki_name}) — {b_result.notes_considered} note(s) considered"
+            )
+            console.print(f"  clusters: {b_result.clusters_formed}")
+            console.print(f"  surfaces: {len(b_result.surfaces_emitted)}")
+            console.print(f"  skipped: {{{skipped_b_summary}}}")
+            console.print(f"  took: {b_result.duration_seconds:.2f}s")
 
 
 main = argv_main(app)
