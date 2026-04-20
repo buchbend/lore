@@ -79,8 +79,12 @@ def _check_cache_writable() -> Check:
 
 
 def _check_hook_runnable(cwd: str | None) -> Check:
-    """Run `lore hook session-start --plain` and confirm it produces output."""
-    cmd = [sys.executable, "-m", "lore_cli", "hook", "session-start", "--plain"]
+    """Run `lore hook session-start --plain --probe` and confirm it produces output.
+
+    `--probe` suppresses side-effects (curator spawns, stamp/lock writes, ledger
+    mutations) so the diagnostic doesn't mutate the thing it's diagnosing.
+    """
+    cmd = [sys.executable, "-m", "lore_cli", "hook", "session-start", "--plain", "--probe"]
     if cwd:
         cmd += ["--cwd", cwd]
     try:

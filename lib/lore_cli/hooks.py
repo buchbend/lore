@@ -966,6 +966,12 @@ def cmd_session_start(
         "--plain",
         help="Print raw text instead of Claude Code JSON envelope.",
     ),
+    probe: bool = typer.Option(
+        False,
+        "--probe",
+        hidden=True,
+        help="Suppress all side-effects; used by lore doctor.",
+    ),
 ) -> None:
     """Inject vault context at session start."""
     out = _session_start(_resolve_cwd(cwd))
@@ -1009,26 +1015,27 @@ def cmd_session_start(
         # Banner generation failure is non-fatal — proceed without it.
         pass
 
-    # Auto-trigger Curator B on calendar-day rollover
-    try:
-        from datetime import UTC, datetime as dt
+    # Auto-trigger Curator B on calendar-day rollover (suppressed under --probe).
+    if not probe:
+        try:
+            from datetime import UTC, datetime as dt
 
-        cwd_resolved = Path(_resolve_cwd(cwd))
-        scope = resolve_scope(cwd_resolved)
-        if scope is not None:
-            lore_root = _infer_lore_root(scope.claude_md_path)
-            wledger = WikiLedger(lore_root, scope.wiki)
-            wentry = wledger.read()
-            today = dt.now(UTC).date()
-            last_b_date = wentry.last_curator_b.date() if wentry.last_curator_b else None
-            if last_b_date is None or today > last_b_date:
-                cfg_b = _load_wiki_cfg_from_scope(scope, lore_root)
-                _spawn_detached_curator_b(
-                    lore_root, scope.wiki, cooldown_s=cfg_b.curator.curator_b_cooldown_s
-                )
-    except Exception:
-        # Spawn failure is non-fatal — proceed without it.
-        pass
+            cwd_resolved = Path(_resolve_cwd(cwd))
+            scope = resolve_scope(cwd_resolved)
+            if scope is not None:
+                lore_root = _infer_lore_root(scope.claude_md_path)
+                wledger = WikiLedger(lore_root, scope.wiki)
+                wentry = wledger.read()
+                today = dt.now(UTC).date()
+                last_b_date = wentry.last_curator_b.date() if wentry.last_curator_b else None
+                if last_b_date is None or today > last_b_date:
+                    cfg_b = _load_wiki_cfg_from_scope(scope, lore_root)
+                    _spawn_detached_curator_b(
+                        lore_root, scope.wiki, cooldown_s=cfg_b.curator.curator_b_cooldown_s
+                    )
+        except Exception:
+            # Spawn failure is non-fatal — proceed without it.
+            pass
 
     _emit("SessionStart", out, plain=plain)
 
