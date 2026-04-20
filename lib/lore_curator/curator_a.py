@@ -107,7 +107,7 @@ def run_curator_a(
                 _record_outcome(result, outcome)
         else:
             try:
-                with curator_lock(lore_root, timeout=lock_timeout):
+                with curator_lock(lore_root, timeout=lock_timeout, run_id=logger.run_id):
                     pending = tledger.pending()
                     for entry in pending:
                         result.transcripts_considered += 1

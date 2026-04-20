@@ -107,3 +107,55 @@ def test_lock_unaffected_by_parent_dir_mtime_change(tmp_path: Path) -> None:
 
     # After release, lock should be gone
     assert not lock_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Item B — owner.json provenance tests
+# ---------------------------------------------------------------------------
+
+
+def test_lock_writes_and_removes_owner_json(tmp_path):
+    from lore_core.lockfile import curator_lock, read_lock_holder
+
+    assert read_lock_holder(tmp_path) is None
+    with curator_lock(tmp_path, timeout=0.0, run_id="test-run-123"):
+        holder = read_lock_holder(tmp_path)
+        assert holder is not None
+        assert holder["pid"] > 0
+        assert holder["run_id"] == "test-run-123"
+        assert "started_at" in holder
+    # Released.
+    assert read_lock_holder(tmp_path) is None
+
+
+def test_lock_contention_does_not_clobber_owner(tmp_path):
+    from lore_core.lockfile import curator_lock, LockContendedError, read_lock_holder
+
+    with curator_lock(tmp_path, timeout=0.0, run_id="first"):
+        first_holder = read_lock_holder(tmp_path)
+        with pytest.raises(LockContendedError):
+            with curator_lock(tmp_path, timeout=0.0, run_id="second"):
+                pass
+        # First holder info is still there.
+        still = read_lock_holder(tmp_path)
+        assert still == first_holder
+
+
+def test_read_lock_holder_returns_none_when_no_lock(tmp_path):
+    from lore_core.lockfile import read_lock_holder
+
+    assert read_lock_holder(tmp_path) is None
+
+
+def test_lock_owner_has_expected_fields(tmp_path):
+    import socket
+    from lore_core.lockfile import curator_lock, read_lock_holder
+
+    with curator_lock(tmp_path, run_id="r-check"):
+        h = read_lock_holder(tmp_path)
+        assert h["pid"] == os.getpid()
+        assert h["host"] == socket.gethostname()
+        assert h["run_id"] == "r-check"
+        assert "cmd" in h
+        assert "started_at" in h
+        assert h["started_at"].endswith("Z")
