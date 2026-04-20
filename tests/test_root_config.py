@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 from lore_core.root_config import RootConfig, ObservabilityConfig, load_root_config
 
@@ -26,9 +27,24 @@ def test_partial_override(tmp_path: Path):
 
 
 def test_malformed_yaml_warns(tmp_path: Path, recwarn):
+    warnings.simplefilter("always")
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
     (lore_dir / "config.yml").write_text("this: is: not: valid\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.runs.keep == 200
     assert any("malformed YAML" in str(w.message) for w in recwarn)
+
+
+def test_unknown_key_warns(tmp_path: Path, recwarn):
+    warnings.simplefilter("always")
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    (lore_dir / "config.yml").write_text(
+        "observability:\n"
+        "  bogus_section: 42\n"
+    )
+    cfg = load_root_config(tmp_path)
+    assert cfg.observability.runs.keep == 200  # still defaults
+    assert any("bogus_section" in str(w.message) for w in recwarn), \
+        "should warn about unknown key"

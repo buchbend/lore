@@ -39,16 +39,17 @@ class RootConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
 
 
-def _merge(target: Any, raw: dict[str, Any], path: str) -> None:
+def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:
     """Merge raw into target dataclass in place; warn on unknown keys."""
     valid = {f.name for f in fields(target)}
     for key, value in raw.items():
         if key not in valid:
-            warnings.warn(f"root_config: unknown key {path}.{key!r}", stacklevel=3)
+            qualified = f"{path}.{key}" if path else key
+            warnings.warn(f"root_config: unknown key {qualified!r} in {source}", stacklevel=3)
             continue
         current = getattr(target, key)
         if is_dataclass(current) and isinstance(value, dict):
-            _merge(current, value, f"{path}.{key}")
+            _merge(current, value, f"{path}.{key}" if path else key, source)
         else:
             setattr(target, key, value)
 
@@ -71,5 +72,5 @@ def load_root_config(lore_root: Path) -> RootConfig:
     if not isinstance(raw, dict):
         warnings.warn(f"root_config: top-level must be a mapping at {path}", stacklevel=2)
         return cfg
-    _merge(cfg, raw, "")
+    _merge(cfg, raw, "", path)
     return cfg
