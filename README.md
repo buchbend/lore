@@ -185,8 +185,28 @@ lore new-wiki product --surfaces design      # + artefact + critique
 lore new-wiki scratch --surfaces custom      # skeleton you fill yourself
 ```
 
-`SURFACES.md` is human-editable markdown with embedded YAML.
-`lore surface add <name>` and `lore surface lint` manage it afterwards.
+`SURFACES.md` is human-editable markdown with embedded YAML. Three ways
+to author and maintain it:
+
+- **Design a wiki's vocabulary (interactive, LLM-guided):**
+  `lore surface init --wiki <name>` drops into the `/lore:surface-init`
+  skill in Claude Code. Guided holistic design — one open question,
+  full synthesis, per-surface refinement, hybrid commit.
+- **Add one new surface (interactive, LLM-guided):**
+  `lore surface add --wiki <name>` drops into `/lore:surface-new`.
+  Proposes a full draft from one open question with semantic-overlap
+  detection against existing surfaces.
+- **Scripted / automation / no-LLM:** write a `draft.json`
+  (schema: `lore.surface.draft/1`) and run
+  `lore surface commit <path>`. This is also how the skill paths write
+  under the hood. `lore new-wiki <name> --surfaces <template>` (above)
+  remains the fastest way to seed a wiki headlessly.
+
+Both interactive flows require `claude` on PATH. The `commit` primitive
+does not. Run `lore surface lint` anytime to validate the file.
+
+See `docs/superpowers/specs/2026-04-20-surface-authoring-design.md` for
+the full design.
 
 ### What runs automatically
 
