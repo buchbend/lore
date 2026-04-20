@@ -41,8 +41,12 @@ class HookEventLogger:
                 **record,
             }
             payload.setdefault("error", None)
-            with self._path.open("a") as f:
-                f.write(json.dumps(payload) + "\n")
+            line = (json.dumps(payload) + "\n").encode()
+            fd = os.open(self._path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+            try:
+                os.write(fd, line)
+            finally:
+                os.close(fd)
         except OSError:
             self._touch_marker()
 
@@ -57,8 +61,7 @@ class HookEventLogger:
             return
         # Non-blocking flock — loser skips rotation this cycle.
         try:
-            self._rotate_lock.touch(exist_ok=True)
-            with self._rotate_lock.open("r") as lock_f:
+            with self._rotate_lock.open("a") as lock_f:
                 try:
                     fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:

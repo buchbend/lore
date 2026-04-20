@@ -42,15 +42,17 @@ def test_rotation_crosses_threshold(tmp_path: Path):
 
 
 def test_write_failure_touches_marker(tmp_path: Path, monkeypatch):
+    import os as _os
     logger = HookEventLogger(tmp_path)
-    real_open = Path.open
+    real_open = _os.open
 
-    def faulty_open(self, *args, **kwargs):
-        if self.name == "hook-events.jsonl":
+    def faulty_open(path, *args, **kwargs):
+        # Fail only for hook-events.jsonl; allow directories and lock file.
+        if str(path).endswith("hook-events.jsonl"):
             raise OSError("disk full")
-        return real_open(self, *args, **kwargs)
+        return real_open(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "open", faulty_open)
+    monkeypatch.setattr(_os, "open", faulty_open)
     logger.emit(event="session-end", outcome="ledger-advanced")
     marker = tmp_path / ".lore" / "hook-log-failed.marker"
     assert marker.exists()
@@ -73,6 +75,20 @@ def test_rotation_race_no_data_loss(tmp_path: Path):
     t1.start(); t2.start(); t1.join(); t2.join()
     assert not errors
     rotated = tmp_path / ".lore" / "hook-events.jsonl.1"
-    all_text = (rotated.read_text() if rotated.exists() else "") + path.read_text()
-    assert "session-end" in all_text
-    assert "session-start" in all_text
+    all_lines: list[str] = []
+    if rotated.exists():
+        all_lines += [l for l in rotated.read_text().splitlines() if l.strip()]
+    all_lines += [l for l in path.read_text().splitlines() if l.strip()]
+    # Every line from the pre-seeded 1.1MB file is a single "xxx..." block
+    # (no newline inside the filler except the trailing one). So we expect:
+    #   1 pre-seed line + 2 emit lines = 3 total lines across both files
+    new_records = []
+    for l in all_lines:
+        try:
+            rec = json.loads(l)
+        except Exception:
+            continue
+        new_records.append(rec)
+    assert len(new_records) == 2, f"both emits should appear as distinct records, got {new_records}"
+    events_seen = {r.get("event") for r in new_records}
+    assert events_seen == {"session-end", "session-start"}
