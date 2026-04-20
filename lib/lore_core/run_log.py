@@ -128,10 +128,14 @@ class RunLogger:
         tb: TracebackType | None,
     ) -> None:
         if exc is not None:
+            try:
+                exc_message = str(exc)
+            except Exception:
+                exc_message = "<exception __str__ raised>"
             self.emit(
                 "error",
                 exception=type(exc).__name__,
-                message=str(exc),
+                message=exc_message,
             )
         duration_ms = 0
         if self._opened_at is not None:
@@ -153,10 +157,10 @@ class RunLogger:
             fields = {"unknown_type": record_type, **fields}
             record_type = "warning"
         payload = {
+            **fields,
             "type": record_type,
             "schema_version": 1,
             "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            **fields,
         }
         self._counters_bookkeeping(record_type, fields)
         self._write(self._archival, payload, mode="a")
@@ -178,7 +182,12 @@ class RunLogger:
 
     def _write(self, path: Path, payload: dict[str, Any], *, mode: str) -> None:
         try:
+            encoded = json.dumps(payload, default=str) + "\n"
+        except (TypeError, ValueError):
+            self._write_failures += 1
+            return
+        try:
             with path.open(mode) as f:
-                f.write(json.dumps(payload) + "\n")
+                f.write(encoded)
         except OSError:
             self._write_failures += 1
