@@ -57,6 +57,30 @@ def test_surface_add_launcher_missing_claude_prints_helpful_error(tmp_path, monk
 
 
 # ---------------------------------------------------------------------------
+# surface init — launcher tests
+# ---------------------------------------------------------------------------
+
+
+def test_surface_init_launcher_execs_claude(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    (tmp_path / "wiki" / "science").mkdir(parents=True)
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    record = tmp_path / "claude-args.txt"
+    shim = shim_dir / "claude"
+    shim.write_text(
+        "#!/usr/bin/env bash\n"
+        f"printf '%s\\n' \"$@\" > {record}\n"
+    )
+    shim.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
+    result = runner.invoke(app, ["init", "--wiki", "science"])
+    assert result.exit_code == 0, result.output + result.stderr
+    assert record.read_text().strip() == "/lore:surface-init science"
+
+
+# ---------------------------------------------------------------------------
 # surface lint
 # ---------------------------------------------------------------------------
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import sys
-from importlib import resources
 from pathlib import Path
 
 import typer
@@ -15,8 +14,6 @@ from lore_core.surfaces import load_surfaces, SurfaceDef
 
 console = Console()
 err_console = Console(stderr=True)
-
-TEMPLATE_NAMES = ("standard", "science", "design", "custom")
 
 _BARE_HEADER = "# Surfaces\nschema_version: 2\n"
 
@@ -49,11 +46,16 @@ def _resolve_wiki_dir(wiki: str | None) -> Path:
     raise typer.Exit(1)
 
 
-def _load_template(name: str) -> str:
-    """Read a shipped template by name."""
-    if name not in TEMPLATE_NAMES:
-        raise ValueError(f"unknown template {name!r}; choose from {TEMPLATE_NAMES}")
-    return resources.files("lore_core.surface_templates").joinpath(f"{name}.md").read_text()
+@app.command("init")
+def cmd_init(
+    ctx: typer.Context,
+    wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Overrides group-level --wiki."),
+) -> None:
+    """Drop into the /lore:surface-init skill to design the wiki's SURFACES.md set."""
+    wiki = wiki or (ctx.obj or {}).get("wiki")
+    wiki_dir = _resolve_wiki_dir(wiki)
+    wiki_name = wiki_dir.name
+    _launch_claude_skill(f"/lore:surface-init {wiki_name}")
 
 
 @app.command("add")
