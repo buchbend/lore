@@ -31,7 +31,7 @@ contains ``[text, tool_use]`` therefore produces two consecutive ``Turn``\\s.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from lore_core.types import ToolCall, ToolResult, TranscriptHandle, Turn
@@ -49,6 +49,43 @@ def _require_sdk():
     import claude_agent_sdk
 
     return claude_agent_sdk
+
+
+def _encode_project_dir(cwd: Path) -> str:
+    """Encode a cwd to Claude Code's project-directory naming convention.
+
+    Claude Code stores session .jsonl files under
+    ``~/.claude/projects/<encoded-cwd>/`` where the encoding replaces
+    path separators with hyphens (e.g. ``/home/x/proj`` → ``-home-x-proj``).
+    """
+    return str(Path(cwd).resolve()).replace("/", "-")
+
+
+def _session_file_path(cwd: Path, session_id: str) -> Path:
+    return Path.home() / ".claude" / "projects" / _encode_project_dir(cwd) / f"{session_id}.jsonl"
+
+
+def _extract_session_fields(s) -> tuple[str, Path | None, datetime | None]:
+    """Extract (id, path, mtime) from an SDK session info object.
+
+    Tolerates both the legacy field names (``id`` / ``path`` / ``mtime``)
+    and the current ones (``session_id`` / computed path / ``last_modified``
+    as epoch milliseconds).
+    """
+    session_id = getattr(s, "session_id", None) or getattr(s, "id", None)
+
+    path = getattr(s, "path", None)
+    path = Path(path) if path is not None else None
+
+    mtime = getattr(s, "mtime", None)
+    if mtime is None:
+        last_modified = getattr(s, "last_modified", None)
+        if isinstance(last_modified, (int, float)):
+            mtime = datetime.fromtimestamp(last_modified / 1000, tz=UTC)
+        else:
+            mtime = last_modified
+
+    return session_id, path, mtime
 
 
 class ClaudeCodeAdapter:
@@ -69,13 +106,18 @@ class ClaudeCodeAdapter:
         sdk = _require_sdk()
         out = []
         for s in sdk.list_sessions(directory=directory):
+            session_id, path, mtime = _extract_session_fields(s)
+            if session_id is None:
+                continue
+            if path is None:
+                path = _session_file_path(Path(directory), session_id)
             out.append(
                 TranscriptHandle(
                     host=self.host,
-                    id=s.id,
-                    path=Path(s.path),
+                    id=session_id,
+                    path=path,
                     cwd=Path(directory),
-                    mtime=s.mtime,
+                    mtime=mtime,
                 )
             )
         return out
