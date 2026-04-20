@@ -16,7 +16,7 @@ class TestWikiConfigDefaults:
         assert cfg.git.auto_commit is True
         assert cfg.git.auto_push is False
         assert cfg.git.auto_pull is True
-        assert cfg.curator.threshold_pending == 3
+        assert cfg.curator.threshold_pending == 10
         assert cfg.curator.threshold_tokens == 50_000
         assert cfg.curator.a_noteworthy_tier == "middle"
         assert cfg.curator.curator_c.enabled is False
@@ -41,7 +41,7 @@ class TestWikiConfigPartialMerge:
         assert cfg.git.auto_commit is True  # default preserved
         assert cfg.git.auto_pull is True
         # All other sections fully default
-        assert cfg.curator.threshold_pending == 3
+        assert cfg.curator.threshold_pending == 10
         assert cfg.models.simple == "claude-haiku-4-5"
 
 

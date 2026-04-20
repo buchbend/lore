@@ -25,7 +25,7 @@ class CuratorCConfig:
 
 @dataclass
 class CuratorConfig:
-    threshold_pending: int = 3
+    threshold_pending: int = 10
     threshold_tokens: int = 50_000
     a_noteworthy_tier: str = "middle"    # middle | simple
     curator_c: CuratorCConfig = field(default_factory=CuratorCConfig)

@@ -881,12 +881,17 @@ def run_command(
         }.get(backend, backend or "unknown backend")
         console.print(f"[dim]Curator backend: {label}[/dim]")
 
+    # Interactive (TTY) runs wait up to 60s for the lock; detached hook spawns
+    # keep timeout=0.0 (fire-and-forget, yield to any active curator).
+    lock_timeout = 60.0 if sys.stdout.isatty() else 0.0
+
     result = run_curator_a(
         lore_root=lore_root,
         scope=scope_obj,
         anthropic_client=llm_client,
         dry_run=dry_run,
         now=datetime.now(UTC),
+        lock_timeout=lock_timeout,
     )
 
     skipped_summary = ", ".join(
@@ -916,6 +921,7 @@ def run_command(
                 anthropic_client=llm_client,
                 dry_run=dry_run,
                 now=datetime.now(UTC),
+                lock_timeout=lock_timeout,
             )
 
             skipped_b_summary = ", ".join(

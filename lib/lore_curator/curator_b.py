@@ -37,6 +37,7 @@ def run_curator_b(
     dry_run: bool = False,
     now: datetime | None = None,
     since: datetime | None = None,                  # default = wiki_ledger.last_curator_b or now-3d
+    lock_timeout: float = 0.0,                      # interactive callers pass >0 to wait
 ) -> CuratorBResult:
     """One Curator B pass over a single wiki.
 
@@ -81,7 +82,7 @@ def run_curator_b(
     high_tier_off = cfg.models.high == "off"
 
     try:
-        with curator_lock(lore_root, timeout=0.0):
+        with curator_lock(lore_root, timeout=lock_timeout):
             # Determine "recent" cutoff.
             wledger = WikiLedger(lore_root, wiki)
             wentry = wledger.read()

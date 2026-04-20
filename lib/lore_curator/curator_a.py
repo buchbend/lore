@@ -39,6 +39,7 @@ def run_curator_a(
     adapter_lookup: Callable[[str], Adapter] | None = None,
     dry_run: bool = False,
     now: datetime | None = None,
+    lock_timeout: float = 0.0,             # interactive callers pass >0 to wait
 ) -> CuratorAResult:
     """Run Curator A one pass.
 
@@ -62,7 +63,7 @@ def run_curator_a(
     tledger = TranscriptLedger(lore_root)
 
     try:
-        with curator_lock(lore_root, timeout=0.0):
+        with curator_lock(lore_root, timeout=lock_timeout):
             pending = tledger.pending()
             for entry in pending:
                 result.transcripts_considered += 1

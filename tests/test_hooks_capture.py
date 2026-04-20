@@ -187,9 +187,9 @@ def test_capture_spawns_when_threshold_exceeded(
     """capture calls _spawn_detached_curator_a when pending >= threshold."""
     project = _make_attached_project(tmp_path)
 
-    # Default threshold is 3. Pre-seed ledger with 2 pending entries.
+    # Default threshold is 10. Pre-seed ledger with 9 pending entries.
     ledger = TranscriptLedger(project)
-    for i in range(2):
+    for i in range(9):
         ledger.upsert(
             TranscriptLedgerEntry(
                 host="fake",
