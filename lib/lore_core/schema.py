@@ -7,6 +7,7 @@ version. Breaking changes bump this number and ship a migration.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import yaml
 
@@ -143,3 +144,36 @@ def extract_wikilinks(text: str) -> list[str]:
         if end != -1:
             text = text[end + 4 :]
     return [link for link in dict.fromkeys(WIKILINK_RE.findall(text)) if link.strip()]
+
+
+def required_fields_for(type_name: str, *, wiki_dir: Path | None = None) -> list[str]:
+    """Return required frontmatter fields for `type_name`.
+
+    Resolves from the wiki's SURFACES.md when available; falls back to
+    the module-level REQUIRED_FIELDS dict otherwise.
+
+    Args:
+        type_name: The note type (e.g., "concept", "decision", "session").
+        wiki_dir: Optional path to a wiki directory. If provided and
+                  SURFACES.md exists, will check there first for overrides.
+
+    Returns:
+        A list of required field names. Always returns a new list (not the
+        internal one), so callers can mutate freely.
+
+    Raises:
+        KeyError: If the type is not found in either SURFACES.md or
+                  REQUIRED_FIELDS.
+    """
+    if wiki_dir is not None:
+        # Lazy import to avoid circular imports if schema is loaded early.
+        from lore_core.surfaces import load_surfaces
+
+        doc = load_surfaces(wiki_dir)
+        if doc is not None:
+            for surface in doc.surfaces:
+                if surface.name == type_name:
+                    return list(surface.required)
+    if type_name in REQUIRED_FIELDS:
+        return list(REQUIRED_FIELDS[type_name])
+    raise KeyError(type_name)
