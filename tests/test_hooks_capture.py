@@ -716,6 +716,54 @@ def test_spawn_robust_to_corrupt_stamp(
     assert len(no_subprocess) == 1
 
 
+def test_capture_does_not_write_to_real_lore_root(tmp_path, monkeypatch) -> None:
+    """Regression: capture() must not leak records to the user's real vault.
+
+    Verifies that when LORE_ROOT is monkeypatched to tmp_path, no writes
+    reach the real production hook-events.jsonl.
+    """
+    import json
+    import os
+    from pathlib import Path
+    from lore_cli.hooks import capture
+
+    real_lore_root = os.environ.get("LORE_ROOT", "")
+    real_events = (
+        Path(real_lore_root) / ".lore" / "hook-events.jsonl"
+        if real_lore_root
+        else None
+    )
+    before_size = real_events.stat().st_size if real_events and real_events.exists() else -1
+
+    # Isolated env
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    project = _make_attached_project(tmp_path)
+    handle = _make_handle(project, host="fake")
+
+    # Register and clean up fake adapter
+    from lore_adapters import register
+    from lore_adapters.registry import _REGISTRY
+    adapter = _FakeAdapter([handle])
+    register(adapter)
+    try:
+        capture(event="session-end", cwd_override=project, host="fake")
+    finally:
+        _REGISTRY.pop("fake", None)
+
+    # Verify the record went to the isolated tmp location, not the real vault.
+    # LORE_ROOT is set to tmp_path, so HookEventLogger writes to tmp_path/.lore/
+    isolated_log = tmp_path / ".lore" / "hook-events.jsonl"
+    assert isolated_log.exists(), "capture() should write to the isolated tmp_path"
+    records = [json.loads(line) for line in isolated_log.read_text().splitlines()]
+    assert len(records) >= 1, "expected at least one record in isolated log"
+
+    after_size = real_events.stat().st_size if real_events and real_events.exists() else -1
+    assert after_size == before_size, (
+        f"capture() leaked records to real LORE_ROOT={real_lore_root}! "
+        f"size changed from {before_size} to {after_size}"
+    )
+
+
 @pytest.mark.parametrize("role", CURATOR_PARAMS)
 def test_spawn_uses_atomic_rename(
     tmp_path: Path, no_subprocess, monkeypatch, role: str
