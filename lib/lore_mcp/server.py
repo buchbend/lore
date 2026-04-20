@@ -19,6 +19,7 @@ Exposed tools:
     lore_inbox_classify     — read-only inbox walk (file list with type +
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
+    lore_surface_context    — gather context pack for surface-authoring skills
 
 Start:
     lore mcp
@@ -190,6 +191,95 @@ def handle_session_scaffold(
         loose_ends=loose_ends,
         project=project,
     )
+
+
+def handle_surface_context(wiki: str) -> dict[str, Any]:
+    """Gather context pack for surface-authoring skills."""
+    from importlib import resources
+    from lore_core.surfaces import load_surfaces
+    import yaml
+
+    wiki_dir = _resolve_wiki(wiki)
+    if wiki_dir is None:
+        return {
+            "schema": "lore.surface.context/1",
+            "wiki": wiki,
+            "error": f"wiki '{wiki}' not found under $LORE_ROOT/wiki/",
+        }
+
+    surfaces_path = wiki_dir / "SURFACES.md"
+    exists = surfaces_path.exists()
+    doc = load_surfaces(wiki_dir) if exists else None
+    current: list[dict[str, Any]] = []
+    note_samples: dict[str, list[str]] = {}
+
+    if doc is not None:
+        for s in doc.surfaces:
+            current.append({
+                "name": s.name,
+                "description": s.description,
+                "required": list(s.required),
+                "optional": list(s.optional),
+                "extract_when": s.extract_when,
+                "plural": s.plural,
+                "slug_format": s.slug_format,
+                "extract_prompt": s.extract_prompt,
+            })
+            dirname = s.plural or (s.name if s.name.endswith("s") else f"{s.name}s")
+            subdir = wiki_dir / dirname
+            if not subdir.is_dir():
+                continue
+            samples: list[tuple[str, str]] = []
+            for md in subdir.glob("*.md"):
+                try:
+                    txt = md.read_text()
+                except OSError:
+                    continue
+                if not txt.startswith("---\n"):
+                    continue
+                end = txt.find("\n---\n", 4)
+                if end == -1:
+                    continue
+                try:
+                    fm = yaml.safe_load(txt[4:end]) or {}
+                except yaml.YAMLError:
+                    continue
+                created = str(fm.get("created", ""))
+                samples.append((created, md.stem))
+            samples.sort(reverse=True)
+            if samples:
+                note_samples[s.name] = [f"[[{stem}]]" for _created, stem in samples[:3]]
+
+    shipped_templates: dict[str, str] = {}
+    for tmpl in ("standard", "science", "design"):
+        try:
+            shipped_templates[tmpl] = (
+                resources.files("lore_core.surface_templates")
+                .joinpath(f"{tmpl}.md")
+                .read_text()
+            )
+        except (FileNotFoundError, ModuleNotFoundError):
+            continue
+
+    claude_md_attach = ""
+    claude_md = wiki_dir / "CLAUDE.md"
+    if claude_md.exists():
+        txt = claude_md.read_text()
+        start = txt.find("## Lore")
+        if start != -1:
+            end = txt.find("\n## ", start + 1)
+            claude_md_attach = txt[start:end] if end != -1 else txt[start:]
+
+    return {
+        "schema": "lore.surface.context/1",
+        "wiki": wiki,
+        "wiki_dir": str(wiki_dir),
+        "surfaces_md_exists": exists,
+        "current_surfaces": current,
+        "claude_md_attach": claude_md_attach,
+        "note_samples": note_samples,
+        "shipped_templates": shipped_templates,
+    }
 
 
 def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
@@ -419,6 +509,18 @@ def _tool_schema() -> list[dict]:
                 "required": ["cwd", "slug", "description"],
             },
         },
+        {
+            "name": "lore_surface_context",
+            "description": (
+                "Gather context for surface-authoring skills: current SURFACES.md, "
+                "CLAUDE.md attach block, sampled recent notes per surface, shipped templates."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"wiki": {"type": "string"}},
+                "required": ["wiki"],
+            },
+        },
     ]
 
 
@@ -442,6 +544,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_briefing_gather(**args)
         case "lore_inbox_classify":
             return handle_inbox_classify(**args)
+        case "lore_surface_context":
+            return handle_surface_context(**args)
         case _:
             return {"error": f"unknown tool: {tool_name}"}
 
