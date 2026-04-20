@@ -207,3 +207,50 @@ def test_runs_tail_handles_truncation_across_runs(tmp_path, monkeypatch):
     assert result_b.exit_code == 0
     # Run B contains 1 new note, not 0.
     assert "1 new" in result_b.stdout or "manual" in result_b.stdout
+
+
+# ---------------------------------------------------------------------------
+# Shell completion helper
+# ---------------------------------------------------------------------------
+
+
+def test_complete_run_id_returns_candidates(tmp_path, monkeypatch):
+    """_complete_run_id returns suffix matches and static aliases."""
+    from lore_cli import runs_cmd
+    from lore_core import config as cfg_mod
+
+    _seed_run(tmp_path)
+    monkeypatch.setattr(cfg_mod, "get_lore_root", lambda: tmp_path)
+
+    results = runs_cmd._complete_run_id(None, None, "")
+    assert "a1b2c3" in results
+    assert "latest" in results
+    assert "^1" in results
+    assert "^5" in results
+    assert "^6" not in results
+
+
+def test_complete_run_id_filters_by_prefix(tmp_path, monkeypatch):
+    """_complete_run_id filters to matching prefix."""
+    from lore_cli import runs_cmd
+    from lore_core import config as cfg_mod
+
+    _seed_run(tmp_path)
+    monkeypatch.setattr(cfg_mod, "get_lore_root", lambda: tmp_path)
+
+    results = runs_cmd._complete_run_id(None, None, "^")
+    assert all(r.startswith("^") for r in results)
+    assert "latest" not in results
+    assert "a1b2c3" not in results
+
+
+def test_complete_run_id_graceful_on_missing_root(tmp_path, monkeypatch):
+    """_complete_run_id returns only static aliases when runs dir is absent."""
+    from lore_cli import runs_cmd
+    from lore_core import config as cfg_mod
+
+    monkeypatch.setattr(cfg_mod, "get_lore_root", lambda: tmp_path / "nonexistent")
+
+    results = runs_cmd._complete_run_id(None, None, "")
+    assert "latest" in results
+    assert "^1" in results

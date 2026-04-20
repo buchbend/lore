@@ -44,6 +44,26 @@ def _get_lore_root() -> Path:
     return get_lore_root()
 
 
+def _complete_run_id(ctx, args, incomplete: str):
+    """Return matching run-id suffixes + static aliases for shell completion.
+
+    Signature: (ctx: click.Context, args: list[str], incomplete: str) -> list[str]
+    Compatible with typer's ``autocompletion=`` parameter.
+    """
+    try:
+        from lore_core.config import get_lore_root
+        runs_dir = get_lore_root() / ".lore" / "runs"
+        suffixes = [
+            p.stem.split("-")[-1]
+            for p in runs_dir.glob("*.jsonl")
+            if not p.name.endswith(".trace.jsonl")
+        ]
+    except Exception:
+        suffixes = []
+    candidates = suffixes + ["latest"] + [f"^{i}" for i in range(1, 6)]
+    return [c for c in candidates if c.startswith(incomplete)]
+
+
 @app.command("list")
 def list_runs(
     limit: int = typer.Option(20, "--limit", help="Maximum runs to show."),
@@ -189,7 +209,7 @@ def tail(
 
 @app.command("show")
 def show(
-    run_id: str = typer.Argument(..., help="latest | ^N | short suffix | full ID | prefix"),
+    run_id: str = typer.Argument(..., help="latest | ^N | short suffix | full ID | prefix", autocompletion=_complete_run_id),
     verbose: bool = typer.Option(False, "--verbose", help="Include LLM prompts/responses"),
     raw: bool = typer.Option(False, "--raw", help="Disable 3-line trace truncation (requires --verbose)"),
     json_out: bool = typer.Option(False, "--json", help="Print raw JSONL"),
