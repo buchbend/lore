@@ -188,3 +188,48 @@ def _parse_section(name: str, body: str, *, source: Path) -> SurfaceDef | None:
         slug_format=slug_format,
         extract_prompt=extract_prompt,
     )
+
+
+def render_section(surface: SurfaceDef) -> str:
+    """Render a single `## <name>` section. Output round-trips through _parse."""
+    lines: list[str] = [f"## {surface.name}"]
+    if surface.description:
+        lines.append(surface.description)
+    lines.append("")
+    lines.append("```yaml")
+    lines.append(f"required: [{', '.join(surface.required)}]")
+    lines.append(f"optional: [{', '.join(surface.optional)}]")
+    if surface.plural is not None:
+        lines.append(f"plural: {surface.plural}")
+    if surface.slug_format is not None:
+        # Use YAML double-quoted form to preserve braces literally.
+        escaped = surface.slug_format.replace('"', '\\"')
+        lines.append(f'slug_format: "{escaped}"')
+    if surface.extract_prompt is not None:
+        # Block-scalar form for multi-line prompts.
+        if "\n" in surface.extract_prompt:
+            body = surface.extract_prompt.rstrip("\n")
+            indented = "\n".join("  " + ln for ln in body.splitlines())
+            lines.append("extract_prompt: |")
+            lines.append(indented)
+        else:
+            escaped = surface.extract_prompt.replace('"', '\\"')
+            lines.append(f'extract_prompt: "{escaped}"')
+    lines.append("```")
+    if surface.extract_when:
+        lines.append("")
+        lines.append(f"Extract when: {surface.extract_when}")
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def render_document(
+    *, schema_version: int, surfaces: list[SurfaceDef], wiki: str | None = None
+) -> str:
+    """Render a full SURFACES.md file (preamble + sections)."""
+    header = f"# Surfaces — {wiki}" if wiki else "# Surfaces"
+    parts = [f"{header}\n", f"schema_version: {schema_version}\n"]
+    for s in surfaces:
+        parts.append("\n")
+        parts.append(render_section(s))
+    return "".join(parts)

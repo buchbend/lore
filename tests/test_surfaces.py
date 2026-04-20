@@ -271,3 +271,71 @@ def test_surfaces_parse_new_keys_absent_defaults_to_none():
     assert s.plural is None
     assert s.slug_format is None
     assert s.extract_prompt is None
+
+
+def test_render_section_minimal():
+    from lore_core.surfaces import SurfaceDef, render_section
+    s = SurfaceDef(
+        name="concept",
+        description="Cross-cutting idea.",
+        required=["type", "created"],
+        optional=["draft"],
+    )
+    out = render_section(s)
+    assert out.startswith("## concept\n")
+    assert "Cross-cutting idea." in out
+    assert "required: [type, created]" in out
+    assert "optional: [draft]" in out
+    assert out.endswith("\n")
+
+
+def test_render_section_with_new_keys():
+    from lore_core.surfaces import SurfaceDef, render_section
+    s = SurfaceDef(
+        name="paper",
+        description="Publication.",
+        required=["type", "citekey"],
+        optional=[],
+        extract_when="paper discussed",
+        plural="papers",
+        slug_format="{citekey}",
+        extract_prompt="Prefer citekey.",
+    )
+    out = render_section(s)
+    assert "plural: papers" in out
+    assert 'slug_format: "{citekey}"' in out or "slug_format: '{citekey}'" in out
+    assert "extract_prompt: " in out
+    assert "Extract when: paper discussed" in out
+
+
+def test_render_section_roundtrips_through_parser():
+    from lore_core.surfaces import SurfaceDef, render_section, _parse
+    from pathlib import Path
+    s = SurfaceDef(
+        name="paper",
+        description="A publication.",
+        required=["type", "citekey", "title"],
+        optional=["draft"],
+        plural="papers",
+        slug_format="{citekey}",
+        extract_prompt="Use citekey.",
+    )
+    section = render_section(s)
+    doc_text = f"# Surfaces\nschema_version: 2\n\n{section}"
+    parsed = _parse(doc_text, Path("<test>")).surfaces[0]
+    assert parsed.name == "paper"
+    assert parsed.required == ["type", "citekey", "title"]
+    assert parsed.plural == "papers"
+    assert parsed.slug_format == "{citekey}"
+    assert parsed.extract_prompt == "Use citekey."
+
+
+def test_render_document_with_header_and_sections():
+    from lore_core.surfaces import SurfaceDef, render_document
+    a = SurfaceDef(name="concept", description="A.", required=["type"], optional=[])
+    b = SurfaceDef(name="decision", description="B.", required=["type"], optional=[])
+    out = render_document(schema_version=2, surfaces=[a, b], wiki="science")
+    assert out.startswith("# Surfaces — science\n")
+    assert "schema_version: 2" in out
+    assert "## concept" in out
+    assert "## decision" in out
