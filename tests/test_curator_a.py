@@ -577,3 +577,41 @@ def test_curator_a_duration_recorded(tmp_path):
 
     assert isinstance(result.duration_seconds, float)
     assert result.duration_seconds >= 0.0
+
+
+def test_run_curator_a_creates_run_log(tmp_path):
+    """After run_curator_a finishes, a runs/<id>.jsonl file exists with run-start/run-end."""
+    import json
+
+    from lore_curator.curator_a import run_curator_a
+
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+    _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
+    _setup_wiki(tmp_path, "private")
+
+    turns = _make_turns(5)
+    adapter = FakeAdapter(turns)
+    transcript_path = project_dir / "transcript.jsonl"
+    transcript_path.write_text("{}")
+    _seed_ledger(tmp_path, project_dir, transcript_path)
+
+    client = _make_noteworthy_client(noteworthy=True)
+
+    run_curator_a(
+        lore_root=tmp_path,
+        anthropic_client=client,
+        adapter_lookup=_make_adapter_lookup(adapter),
+        now=_NOW,
+    )
+
+    runs_dir = tmp_path / ".lore" / "runs"
+    runs = list(runs_dir.glob("*.jsonl"))
+    archival = [p for p in runs if not p.name.endswith(".trace.jsonl")]
+    assert len(archival) == 1, f"expected 1 run file, got {runs}"
+    records = [json.loads(l) for l in archival[0].read_text().splitlines()]
+    types = [r["type"] for r in records]
+    assert types[0] == "run-start"
+    assert types[-1] == "run-end"
+    # ledger_snapshot_hash should be None for real (non-dry) runs
+    assert records[0].get("ledger_snapshot_hash") is None
