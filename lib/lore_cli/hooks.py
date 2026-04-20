@@ -940,6 +940,7 @@ _HOOK_EVENT = {
 import typer  # noqa: E402
 
 from lore_adapters import get_adapter  # noqa: E402
+from lore_core.hook_log import HookEventLogger  # noqa: E402
 from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry, WikiLedger  # noqa: E402
 from lore_core.scope_resolver import resolve_scope  # noqa: E402
 from lore_cli._compat import argv_main  # noqa: E402
@@ -1166,8 +1167,10 @@ def capture(
     curator when pending work exceeds threshold. No LLM, no network,
     bounded FS walk (8 levels).
     """
+    import time as _time
     from lore_adapters import UnknownHostError
 
+    start = _time.monotonic()
     cwd = cwd_override or _resolve_cwd_capture()
     scope = resolve_scope(cwd)
     if scope is None:
@@ -1175,45 +1178,83 @@ def capture(
         return
 
     lore_root = _infer_lore_root(scope.claude_md_path)
-    tledger = TranscriptLedger(lore_root)
+    logger = HookEventLogger(lore_root)
+    outcome = "no-new-turns"
+    run_id: str | None = None
+    pending_after = 0
+    scope_payload = {"wiki": scope.wiki, "scope": scope.scope}
 
-    # Discover pending transcripts for the attached directory.
     try:
-        adapter = get_adapter(host)
-    except UnknownHostError:
-        raise typer.Exit(code=1)
+        tledger = TranscriptLedger(lore_root)
 
-    if transcript is not None:
-        handles = [h for h in adapter.list_transcripts(cwd) if h.path == transcript]
-    else:
-        handles = adapter.list_transcripts(cwd)
-
-    for h in handles:
-        entry = tledger.get(h.host, h.id)
-        if entry is None:
-            entry = TranscriptLedgerEntry(
-                host=h.host,
-                transcript_id=h.id,
-                path=h.path,
-                directory=h.cwd,
-                digested_hash=None,
-                digested_index_hint=None,
-                synthesised_hash=None,
-                last_mtime=h.mtime,
-                curator_a_run=None,
-                noteworthy=None,
-                session_note=None,
+        try:
+            adapter = get_adapter(host)
+        except UnknownHostError:
+            logger.emit(
+                event=event, host=host, scope=scope_payload,
+                duration_ms=int((_time.monotonic() - start) * 1000),
+                outcome="error",
+                pending_after=0,
+                error={"type": "UnknownHostError", "message": host},
             )
-            tledger.upsert(entry)
-        elif entry.last_mtime != h.mtime:
-            entry.last_mtime = h.mtime
-            tledger.upsert(entry)
+            raise typer.Exit(code=1)
 
-    # Threshold check — spawn detached curator if enough pending.
-    pending = tledger.pending()
-    cfg = _load_wiki_cfg_from_scope(scope, lore_root)
-    if len(pending) >= cfg.curator.threshold_pending:
-        _spawn_detached_curator_a(lore_root)
+        if transcript is not None:
+            handles = [h for h in adapter.list_transcripts(cwd) if h.path == transcript]
+        else:
+            handles = adapter.list_transcripts(cwd)
+
+        for h in handles:
+            entry = tledger.get(h.host, h.id)
+            if entry is None:
+                entry = TranscriptLedgerEntry(
+                    host=h.host,
+                    transcript_id=h.id,
+                    path=h.path,
+                    directory=h.cwd,
+                    digested_hash=None,
+                    digested_index_hint=None,
+                    synthesised_hash=None,
+                    last_mtime=h.mtime,
+                    curator_a_run=None,
+                    noteworthy=None,
+                    session_note=None,
+                )
+                tledger.upsert(entry)
+            elif entry.last_mtime != h.mtime:
+                entry.last_mtime = h.mtime
+                tledger.upsert(entry)
+
+        pending = tledger.pending()
+        pending_after = len(pending)
+        cfg = _load_wiki_cfg_from_scope(scope, lore_root)
+        if pending_after >= cfg.curator.threshold_pending:
+            _spawn_detached_curator_a(lore_root)
+            outcome = "spawned-curator"
+        elif pending_after > 0:
+            outcome = "below-threshold"
+        else:
+            outcome = "no-new-turns"
+
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        logger.emit(
+            event=event, host=host, scope=scope_payload,
+            duration_ms=int((_time.monotonic() - start) * 1000),
+            outcome="error",
+            pending_after=pending_after,
+            error={"type": type(exc).__name__, "message": str(exc)},
+        )
+        raise
+    else:
+        logger.emit(
+            event=event, host=host, scope=scope_payload,
+            duration_ms=int((_time.monotonic() - start) * 1000),
+            outcome=outcome,
+            pending_after=pending_after,
+            run_id=run_id,
+        )
 
 
 main = argv_main(hook_app)
