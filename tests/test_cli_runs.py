@@ -135,3 +135,33 @@ def test_runs_list_schema_mismatch_dimmed(tmp_path, monkeypatch):
     assert "xxxxxx" in result.stdout
     assert ("schema" in result.stdout.lower() or "v2" in result.stdout.lower()
             or "upgrade" in result.stdout.lower())
+
+
+def test_runs_tail_once_reads_to_run_end(tmp_path, monkeypatch):
+    from lore_cli import runs_cmd
+    live = tmp_path / ".lore" / "runs-live.jsonl"
+    live.parent.mkdir(parents=True)
+    live.write_text(
+        json.dumps({"type": "run-start", "ts": "2026-04-20T14:32:05Z",
+                    "run_id": "r1", "trigger": "hook"}) + "\n" +
+        json.dumps({"type": "run-end", "ts": "2026-04-20T14:32:09Z",
+                    "duration_ms": 4000, "notes_new": 1, "notes_merged": 0,
+                    "skipped": 0, "errors": 0}) + "\n"
+    )
+    runner = CliRunner()
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    monkeypatch.setattr(runs_cmd, "_POLL_INTERVAL_S", 0.01)
+    result = runner.invoke(runs_cmd.app, ["tail", "--once"])
+    assert result.exit_code == 0
+    # The flat log contains both the start-run and the end record.
+    assert "start-run" in result.stdout or "trigger" in result.stdout
+    assert "end" in result.stdout
+
+
+def test_runs_tail_missing_live_file(tmp_path, monkeypatch):
+    from lore_cli import runs_cmd
+    runner = CliRunner()
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    result = runner.invoke(runs_cmd.app, ["tail", "--once"])
+    assert result.exit_code == 0
+    assert "no active" in result.stdout.lower() or "no run" in result.stdout.lower()

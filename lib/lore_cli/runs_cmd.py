@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import typer
@@ -33,6 +34,9 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 console = Console()
+
+_POLL_INTERVAL_S = 0.2
+_IDLE_TIMEOUT_S = 30 * 60  # 30 min
 
 
 def _get_lore_root() -> Path:
@@ -121,6 +125,62 @@ def _relative_time_cli(ts_iso: str) -> str:
     if s < 86400:
         return f"{int(s // 3600)}h ago"
     return f"{int(s // 86400)}d ago"
+
+
+@app.command("tail")
+def tail(
+    once: bool = typer.Option(False, "--once", help="Exit on first run-end (don't wait for next run)."),
+) -> None:
+    """Stream runs-live.jsonl. Default: follow forever. --once: exit on run-end or 30min idle timeout."""
+    lore_root = _get_lore_root()
+    live = lore_root / ".lore" / "runs-live.jsonl"
+    if not live.exists():
+        console.print(
+            "[dim]No active run. Use `lore runs show latest` "
+            "for the last completed run.[/dim]"
+        )
+        return
+
+    icons = pick_icon_set()
+    use_color = should_use_color()
+    pos = 0
+    idle_since = time.monotonic()
+    saw_run_end = False
+
+    while True:
+        try:
+            size = live.stat().st_size
+        except FileNotFoundError:
+            console.print("[dim]live log disappeared — exiting.[/dim]")
+            return
+
+        if size > pos:
+            with live.open("r") as f:
+                f.seek(pos)
+                chunk = f.read()
+                pos = f.tell()
+            for line in chunk.splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                console.print(render_flat_log([record], icons=icons, use_color=use_color))
+                if record.get("type") == "run-end":
+                    saw_run_end = True
+            idle_since = time.monotonic()
+
+        if once and saw_run_end:
+            return
+        if once and time.monotonic() - idle_since > _IDLE_TIMEOUT_S:
+            console.print(
+                "[yellow]no new output for 30min — use `lore runs show <id>` "
+                "or check for stale lockfile.[/yellow]"
+            )
+            return
+
+        time.sleep(_POLL_INTERVAL_S)
 
 
 @app.command("show")
