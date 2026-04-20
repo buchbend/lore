@@ -129,3 +129,21 @@ def test_factory_explicit_arg_overrides_env(monkeypatch):
 def test_factory_raises_on_unknown_backend_string():
     with pytest.raises(ValueError, match="unknown backend"):
         make_llm_client(backend="bogus")
+
+
+# ---------------------------------------------------------------------------
+# LORE_LLM_BACKEND=subscription env path
+# ---------------------------------------------------------------------------
+
+def test_factory_reads_env_var_subscription(monkeypatch):
+    """LORE_LLM_BACKEND=subscription + no explicit arg → SubprocessClient."""
+    monkeypatch.setenv("LORE_LLM_BACKEND", "subscription")
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/claude")
+    client = make_llm_client(api_key="sk-x", binary="claude")
+    assert isinstance(client, SubprocessClient)
+
+
+def test_factory_raises_on_uppercase_explicit_arg(monkeypatch):
+    """Explicit backend='AUTO' (uppercase) → ValueError, not auto-detect."""
+    with pytest.raises(ValueError, match="unknown backend"):
+        make_llm_client(backend="AUTO", api_key="sk-x")

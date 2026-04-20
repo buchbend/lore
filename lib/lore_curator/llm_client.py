@@ -248,6 +248,45 @@ class SubprocessClient:
         return shutil.which(binary) is not None
 
 
+_ALLOWED_BACKEND_ARGS = frozenset({"subscription", "api", "auto"})
+
+
+def _normalize_backend_arg(backend: str | None) -> str | None:
+    """Normalize the explicit ``backend`` kwarg.
+
+    - ``None`` → None (triggers auto-detect).
+    - Whitespace is stripped.
+    - Case-sensitive match against ``{"subscription", "api", "auto"}``.
+    - Anything else returns the stripped string verbatim so the caller
+      can raise ``ValueError`` with the original-ish value.
+    """
+    if backend is None:
+        return None
+    stripped = backend.strip()
+    if stripped == "":
+        return None
+    # Case-sensitive — programmer-facing API
+    return stripped
+
+
+def _make_subprocess_client(binary: str) -> "SubprocessClient":
+    """Return a SubprocessClient or raise LlmClientError if binary is absent."""
+    if SubprocessClient.is_available(binary=binary):
+        return SubprocessClient(binary=binary)
+    raise LlmClientError(
+        "subscription backend requested but claude binary not on PATH"
+    )
+
+
+def _make_sdk_client(api_key: str | None) -> "SDKClient":
+    """Return an SDKClient or raise LlmClientError if api_key is absent."""
+    if api_key:
+        return SDKClient(api_key=api_key)
+    raise LlmClientError(
+        "api backend requested but no ANTHROPIC_API_KEY provided"
+    )
+
+
 def make_llm_client(
     *,
     backend: str | None = None,
@@ -265,7 +304,8 @@ def make_llm_client(
        else raise LlmClientError.
 
     3. ``backend`` is None or ``"auto"``: read ``LORE_LLM_BACKEND`` env var
-       and apply rule 1 or 2 if it is set to ``"subscription"`` or ``"api"``.
+       and apply rule 1 or 2 if it is set to ``"subscription"`` or ``"api"``
+       (case-insensitive — shell-facing).
        If the env var is unset or ``"auto"``, use auto-detection:
          - if SubprocessClient.is_available(binary=binary) → SubprocessClient
          - elif api_key → SDKClient
@@ -282,45 +322,37 @@ def make_llm_client(
     ----------
     backend:
         ``"subscription"``, ``"api"``, ``"auto"``, or None.  None and
-        ``"auto"`` are treated identically.
+        ``"auto"`` are treated identically.  **Case-sensitive** — ``"AUTO"``
+        or ``"Subscription"`` will raise ValueError.  Use the env var
+        ``LORE_LLM_BACKEND`` instead if you need case-insensitive input
+        (e.g. from shell scripts).
     api_key:
         Anthropic API key.  Both None and ``""`` are treated as absent.
     binary:
         Name or absolute path of the claude CLI binary (default ``"claude"``).
     """
-    # Normalise explicit arg
-    effective = (backend or "").strip().lower() or None
+    effective = _normalize_backend_arg(backend)
+
+    # Rule 4 — early rejection of unknown values (programmer error)
+    if effective is not None and effective not in _ALLOWED_BACKEND_ARGS:
+        raise ValueError(
+            f"unknown backend {backend!r} (expected 'subscription', 'api', 'auto', or None)"
+        )
 
     if effective == "subscription":
-        if SubprocessClient.is_available(binary=binary):
-            return SubprocessClient(binary=binary)
-        raise LlmClientError(
-            "subscription backend requested but claude binary not on PATH"
-        )
+        return _make_subprocess_client(binary)
 
     if effective == "api":
-        if api_key:
-            return SDKClient(api_key=api_key)
-        raise LlmClientError(
-            "api backend requested but no ANTHROPIC_API_KEY provided"
-        )
+        return _make_sdk_client(api_key)
 
     if effective in (None, "auto"):
         env = os.environ.get("LORE_LLM_BACKEND", "").strip().lower()
 
         if env == "subscription":
-            if SubprocessClient.is_available(binary=binary):
-                return SubprocessClient(binary=binary)
-            raise LlmClientError(
-                "subscription backend requested but claude binary not on PATH"
-            )
+            return _make_subprocess_client(binary)
 
         if env == "api":
-            if api_key:
-                return SDKClient(api_key=api_key)
-            raise LlmClientError(
-                "api backend requested but no ANTHROPIC_API_KEY provided"
-            )
+            return _make_sdk_client(api_key)
 
         # env unset / "auto" — probe
         if SubprocessClient.is_available(binary=binary):
@@ -329,6 +361,7 @@ def make_llm_client(
             return SDKClient(api_key=api_key)
         return None
 
-    raise ValueError(
-        f"unknown backend {backend!r}: expected 'subscription', 'api', 'auto', or None"
+    # Unreachable — all allowed values handled above
+    raise ValueError(  # pragma: no cover
+        f"unknown backend {backend!r} (expected 'subscription', 'api', 'auto', or None)"
     )
