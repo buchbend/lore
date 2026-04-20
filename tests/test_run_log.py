@@ -150,3 +150,41 @@ def test_emit_serializes_non_json_native_types(tmp_path: Path):
     warn = [r for r in records if r.get("type") == "warning"]
     assert warn, "warning record should have landed"
     assert "/tmp/foo" in warn[0]["a_path"]
+
+
+def test_enter_does_not_raise_on_readonly_fs(tmp_path, monkeypatch):
+    """__enter__ must not raise even if mkdir fails."""
+    real_mkdir = Path.mkdir
+
+    def bad_mkdir(self, *args, **kwargs):
+        if "runs" in str(self):
+            raise OSError("read-only")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", bad_mkdir)
+    # Must not raise.
+    with RunLogger(tmp_path, trigger="hook") as logger:
+        logger.emit("transcript-start", transcript_id="t1", new_turns=5)
+
+
+def test_enter_does_not_raise_on_collision_after_retry(tmp_path, monkeypatch):
+    """Double-collision in __enter__ must not raise."""
+    # Pre-create both possible run-id paths by monkeypatching generate_run_id
+    # to return the same collision id twice.
+    from lore_core import run_log as run_log_mod
+
+    fixed_id = "2026-04-20T14-32-05-aaaaaa"
+    (tmp_path / ".lore" / "runs").mkdir(parents=True)
+    (tmp_path / ".lore" / "runs" / f"{fixed_id}.jsonl").write_text("x\n")
+
+    call_count = {"n": 0}
+    def collide(*a, **kw):
+        call_count["n"] += 1
+        return fixed_id
+
+    monkeypatch.setattr(run_log_mod, "generate_run_id", collide)
+    # Must not raise despite the second generate_run_id also colliding.
+    with RunLogger(tmp_path, trigger="hook") as logger:
+        logger.emit("transcript-start", transcript_id="t1", new_turns=5)
+    # Collision was detected, _write_failures incremented
+    assert logger._write_failures >= 1

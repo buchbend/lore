@@ -154,6 +154,10 @@ def tail(
             console.print("[dim]live log disappeared — exiting.[/dim]")
             return
 
+        # Detect truncation (new run-start truncates runs-live.jsonl).
+        if size < pos:
+            pos = 0
+
         if size > pos:
             with live.open("r") as f:
                 f.seek(pos)

@@ -165,3 +165,45 @@ def test_runs_tail_missing_live_file(tmp_path, monkeypatch):
     result = runner.invoke(runs_cmd.app, ["tail", "--once"])
     assert result.exit_code == 0
     assert "no active" in result.stdout.lower() or "no run" in result.stdout.lower()
+
+
+def test_runs_tail_handles_truncation_across_runs(tmp_path, monkeypatch):
+    """runs-live.jsonl is truncated on each new run-start; tail should see
+    the new run's records, not silently skip them."""
+    from lore_cli import runs_cmd
+
+    live = tmp_path / ".lore" / "runs-live.jsonl"
+    live.parent.mkdir(parents=True)
+
+    # Run A — a complete, short run.
+    live.write_text(
+        json.dumps({"type": "run-start", "ts": "2026-04-20T10:00:00Z",
+                    "run_id": "runA", "trigger": "hook"}) + "\n" +
+        json.dumps({"type": "run-end", "ts": "2026-04-20T10:00:01Z",
+                    "duration_ms": 1000, "notes_new": 0, "notes_merged": 0,
+                    "skipped": 0, "errors": 0}) + "\n"
+    )
+
+    runner = CliRunner()
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    monkeypatch.setattr(runs_cmd, "_POLL_INTERVAL_S", 0.01)
+
+    # --once tail of run A.
+    result_a = runner.invoke(runs_cmd.app, ["tail", "--once"])
+    assert result_a.exit_code == 0
+    assert "end" in result_a.stdout
+
+    # Simulate run B: truncate and write new records.
+    live.write_text(
+        json.dumps({"type": "run-start", "ts": "2026-04-20T11:00:00Z",
+                    "run_id": "runB", "trigger": "manual"}) + "\n" +
+        json.dumps({"type": "run-end", "ts": "2026-04-20T11:00:02Z",
+                    "duration_ms": 2000, "notes_new": 1, "notes_merged": 0,
+                    "skipped": 0, "errors": 0}) + "\n"
+    )
+
+    # A fresh tail invocation (new process-equivalent) sees run B.
+    result_b = runner.invoke(runs_cmd.app, ["tail", "--once"])
+    assert result_b.exit_code == 0
+    # Run B contains 1 new note, not 0.
+    assert "1 new" in result_b.stdout or "manual" in result_b.stdout

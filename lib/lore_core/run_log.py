@@ -11,6 +11,7 @@ LORE_TRACE_LLM=1 or --trace-llm is set.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import string
 from datetime import UTC, datetime
@@ -93,22 +94,40 @@ class RunLogger:
         return self._trace_llm
 
     def __enter__(self) -> "RunLogger":
-        self._runs_dir.mkdir(parents=True, exist_ok=True)
-        # Init invariant — suffix collision guard.
-        if self._archival.exists():
-            self.run_id = generate_run_id()
-            self._archival = self._runs_dir / f"{self.run_id}.jsonl"
-            self._trace = self._runs_dir / f"{self.run_id}.trace.jsonl"
+        # Best-effort setup — NEVER raise. Observability must not break
+        # the pipeline. If mkdir or collision-retry fails, subsequent
+        # emit()s will no-op on the missing/locked file and surface via
+        # _write_failures in run-end.
+        try:
+            self._runs_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            self._write_failures += 1
+
+        # Init invariant — suffix collision guard. If BOTH attempts land
+        # on existing files, fall back to a failure-marked state rather
+        # than raising.
+        try:
             if self._archival.exists():
-                raise RuntimeError(
-                    f"run ID collision after retry: {self.run_id} already exists"
-                )
+                self.run_id = generate_run_id()
+                self._archival = self._runs_dir / f"{self.run_id}.jsonl"
+                self._trace = self._runs_dir / f"{self.run_id}.trace.jsonl"
+                if self._archival.exists():
+                    # Extremely unlikely (clock frozen + 36^6 collision).
+                    # Count as a write failure, set paths to /dev/null so
+                    # emit() no-ops safely.
+                    self._write_failures += 1
+                    self._archival = Path(os.devnull)
+                    self._trace = Path(os.devnull)
+        except OSError:
+            self._write_failures += 1
+
         # Truncate live-tee.
         try:
             self._live.parent.mkdir(parents=True, exist_ok=True)
             self._live.write_text("")
         except OSError:
             self._write_failures += 1
+
         self._opened_at = datetime.now(UTC)
         self.emit(
             "run-start",
