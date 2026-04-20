@@ -1,17 +1,20 @@
 """Curator B pipeline — cluster → abstract → file surfaces per wiki."""
 from __future__ import annotations
 
+import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
+from lore_core.io import atomic_write_text
 from lore_core.ledger import WikiLedger, WikiLedgerEntry
 from lore_core.lockfile import LockContendedError, curator_lock
 from lore_core.schema import parse_frontmatter
 from lore_core.surfaces import SurfacesDoc, load_surfaces, load_surfaces_or_default
-from lore_core.wiki_config import load_wiki_config
+from lore_core.wiki_config import WikiConfig, load_wiki_config
 from lore_curator.abstract import AbstractedSurface, abstract_cluster
 from lore_curator.cluster import Cluster, cluster_session_notes
 from lore_curator.surface_filer import FiledSurface, file_surface
@@ -144,6 +147,19 @@ def run_curator_b(
     except LockContendedError:
         result.skipped_reasons["lock_contended"] = result.skipped_reasons.get("lock_contended", 0) + 1
 
+    # Post-lock: auto-briefing (never fails the pipeline).
+    if not dry_run and result.surfaces_emitted:
+        try:
+            _maybe_publish_briefing(
+                lore_root=lore_root,
+                wiki=wiki,
+                wiki_config=cfg,
+                now=now,
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            _curator_log(lore_root, f"_maybe_publish_briefing raised unexpectedly: {exc}")
+
     result.duration_seconds = time.monotonic() - start
     return result
 
@@ -219,3 +235,108 @@ def _short_slug(title: str) -> str:
     import re as _re
     s = _re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     return s[:30] or "surface"
+
+
+def _format_briefing_markdown(gather_result: dict[str, Any], *, wiki: str, now: datetime) -> str:
+    """Render gather() output as a Markdown briefing string."""
+    date_str = now.date().isoformat()
+    lines: list[str] = [f"# Lore briefing — {wiki} · {date_str}", ""]
+
+    new_sessions = gather_result.get("new_sessions", [])
+    surfaces: list[dict] = []
+    session_slugs: list[str] = []
+
+    for sess in new_sessions:
+        slug = sess.get("slug") or sess.get("path", "")
+        session_slugs.append(slug)
+        # Collect surfaces mentioned in frontmatter or sections.
+        fm = sess.get("frontmatter") or {}
+        desc = fm.get("description", "")
+        title = fm.get("title", slug)
+        surfaces.append({"wikilink": f"[[{sess.get('path', slug)}]]", "description": desc or title})
+
+    if surfaces:
+        lines.append("## New surfaces")
+        for s in surfaces:
+            lines.append(f"- {s['wikilink']} — {s['description']}")
+        lines.append("")
+
+    if session_slugs:
+        lines.append("## Sessions covered")
+        for sl in session_slugs:
+            lines.append(f"- [[{sl}]]")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _curator_log(lore_root: Path, message: str) -> None:
+    """Append a timestamped line to <lore_root>/.lore/curator.log."""
+    try:
+        log_dir = lore_root / ".lore"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "curator.log"
+        ts = datetime.now(UTC).isoformat()
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{ts}  {message}\n")
+    except Exception:
+        pass  # logging failure must never propagate
+
+
+def _maybe_publish_briefing(
+    *,
+    lore_root: Path,
+    wiki: str,
+    wiki_config: WikiConfig,
+    now: datetime,
+    dry_run: bool,
+) -> dict | None:
+    """If auto-briefing is on, publish via configured sinks. Return None on skip,
+    or a dict with {sinks_written: list[str]} on success.
+    Errors are caught and logged; never re-raised.
+    """
+    if dry_run:
+        return None
+
+    briefing_cfg = wiki_config.briefing
+    if not briefing_cfg.auto:
+        return None
+
+    try:
+        from lore_core import briefing as _briefing_mod
+
+        gather_result = _briefing_mod.gather(wiki=wiki)
+        if "error" in gather_result:
+            _curator_log(lore_root, f"briefing.gather error for wiki={wiki!r}: {gather_result['error']}")
+            return None
+
+        content = _format_briefing_markdown(gather_result, wiki=wiki, now=now)
+        if not content.strip():
+            return None
+
+        sinks_written: list[str] = []
+        for sink in briefing_cfg.sinks:
+            try:
+                if sink.startswith("markdown:"):
+                    path_str = sink[len("markdown:"):]
+                    out_path = Path(os.path.expanduser(path_str))
+                    atomic_write_text(out_path, content)
+                    sinks_written.append(sink)
+                else:
+                    sink_type = sink.split(":")[0] if ":" in sink else sink
+                    _curator_log(lore_root, f"skipping unsupported sink type '{sink_type}' ({sink!r})")
+            except Exception as exc:
+                _curator_log(lore_root, f"briefing sink error for {sink!r}: {exc}")
+
+        if sinks_written:
+            # Update last_briefing on the wiki ledger.
+            wledger = WikiLedger(lore_root, wiki)
+            wentry = wledger.read()
+            wentry.last_briefing = now
+            wledger.write(wentry)
+
+        return {"sinks_written": sinks_written}
+
+    except Exception as exc:
+        _curator_log(lore_root, f"briefing auto-publish failed for wiki={wiki!r}: {exc}")
+        return None
