@@ -806,6 +806,75 @@ def curator(
         )
 
 
+@app.command("run")
+def run_command(
+    scope: str = typer.Option(None, "--scope", help="Filter to one scope, e.g. 'mywiki:subproject'."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Classify but don't write notes or advance ledger."),
+) -> None:
+    """Run Curator A — classify pending transcripts and file session notes."""
+    import os
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from lore_curator.curator_a import run_curator_a
+
+    lore_root_str = os.environ.get("LORE_ROOT", "")
+    if not lore_root_str:
+        console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
+        raise typer.Exit(1)
+
+    lore_root = Path(lore_root_str)
+
+    # Build scope filter if provided
+    scope_obj = None
+    if scope:
+        from lore_core.types import Scope
+        wiki = scope.split(":")[0] if ":" in scope else scope
+        scope_obj = Scope(
+            wiki=wiki,
+            scope=scope,
+            backend="none",
+            claude_md_path=Path("."),
+        )
+
+    # Attempt to instantiate Anthropic client (lazy)
+    anthropic_client = None
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
+        try:
+            import anthropic as _anthropic
+            anthropic_client = _anthropic.Anthropic(api_key=api_key)
+        except Exception as exc:
+            console.print(f"[yellow]Warning:[/yellow] Could not instantiate Anthropic client: {exc}")
+    else:
+        console.print(
+            "[yellow]Warning:[/yellow] ANTHROPIC_API_KEY not set — "
+            "curator will skip AI classification (dry content pass only)."
+        )
+
+    result = run_curator_a(
+        lore_root=lore_root,
+        scope=scope_obj,
+        anthropic_client=anthropic_client,
+        dry_run=dry_run,
+        now=datetime.now(UTC),
+    )
+
+    skipped_summary = ", ".join(
+        f"{k}: {v}" for k, v in result.skipped_reasons.items()
+    ) or "none"
+
+    console.print(
+        f"[bold]Curator A[/bold] — {result.transcripts_considered} transcript(s) considered"
+    )
+    console.print(f"  noteworthy: {result.noteworthy_count}")
+    console.print(
+        f"  new notes: {len(result.new_notes)}, merged: {len(result.merged_notes)}"
+    )
+    console.print(f"  skipped: {{{skipped_summary}}}")
+    console.print(f"  took: {result.duration_seconds:.2f}s")
+
+
 main = argv_main(app)
 
 

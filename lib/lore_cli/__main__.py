@@ -22,9 +22,11 @@ from lore_cli import (
     doctor_cmd,
     hooks,
     inbox_cmd,
+    ingest_cmd,
     init_cmd,
     install_cmd,
     new_wiki_cmd,
+    registry_cmd,
     resume_cmd,
     session_cmd,
 )
@@ -50,12 +52,14 @@ app.add_typer(detach_cmd.app, name="detach")
 app.add_typer(doctor_cmd.app, name="doctor")
 app.add_typer(hooks.hook_app, name="hook")
 app.add_typer(inbox_cmd.app, name="inbox")
+app.add_typer(ingest_cmd.app, name="ingest")
 app.add_typer(init_cmd.app, name="init")
 app.add_typer(install_cmd.app, name="install")
 app.add_typer(lint_cmd.app, name="lint")
 app.add_typer(mcp_cmd.app, name="mcp")
 app.add_typer(migrate_cmd.app, name="migrate")
 app.add_typer(new_wiki_cmd.app, name="new-wiki")
+app.add_typer(registry_cmd.app, name="registry")
 app.add_typer(resume_cmd.app, name="resume")
 app.add_typer(search_cmd.app, name="search")
 app.add_typer(session_cmd.app, name="session")
