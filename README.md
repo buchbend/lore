@@ -20,14 +20,18 @@ threads live in a chat window that disappears. PRs capture the diff;
 nothing captures *why*. Lore closes the loop:
 
 ```
-Session with AI  →  /lore:session  →  extracted concept / decision note
-                                   →  briefing published to team sink
-                                   →  surfaces again next session, scoped
-                                      to the repo you're in
+Session with AI  →  (auto at SessionEnd / PreCompact)
+                 →  transcript captured, session note filed (draft:true)
+                 →  daily: Curator B abstracts concepts / decisions / results
+                 →  briefing published to configured sinks
+                 →  graph surfaces at next SessionStart, scoped
+                    to the repo you're in
 ```
 
-The flagship is the **session-note pipeline**. Everything else (search,
-MCP, curator) serves it.
+The flagship is the **session-note pipeline**. As of the work on `main`
+(Plans 1 + 2 of the passive-capture roadmap), capture is automatic —
+no `/lore:session` gesture needed. See the "Bootstrap" section below.
+Everything else (search, MCP, curator C) serves the same pipeline.
 
 ## Canonical shape
 
@@ -118,6 +122,138 @@ or use `lore install --host claude` once `lore` is on your PATH
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the editable-from-checkout
 recipe. Same recipe is the path for installs on machines without
 network egress to PyPI / the marketplace.
+
+## Bootstrap: passive capture (new, on `main`)
+
+As of the work on `main` (see
+`docs/superpowers/specs/2026-04-19-passive-capture-v1-design.md`),
+session notes auto-extract from Claude Code transcripts without
+`/lore:session`, and surfaces (concepts, decisions, results, …) are
+abstracted daily by Curator B.
+
+### Update from an older install
+
+```bash
+cd /path/to/your/lore-checkout
+git pull origin main                         # or pull the branch with the passive-capture work
+pip install -e ".[capture]"                  # capture extras: claude-agent-sdk + anthropic
+lore install                                 # re-wire hooks + skills (picks up new SessionEnd wiring)
+```
+
+If you installed via `pipx`:
+
+```bash
+pipx reinstall lore --force                  # rebuilds the editable install from your checkout
+```
+
+### Fresh install
+
+```bash
+pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"
+lore init                                    # scaffold $LORE_ROOT
+lore install                                 # wire Claude Code hooks + skills
+```
+
+### Attach a repo — one step per repo you work in
+
+Each repo needs a `## Lore` block in its root `CLAUDE.md` so the
+capture path knows which wiki / scope to file notes under:
+
+```bash
+cd /path/to/your/repo
+```
+
+Then in a Claude Code session in that repo:
+
+```
+/lore:attach
+```
+
+Interactive — asks for wiki + scope, writes the managed block to
+`CLAUDE.md`. Idempotent; safe to re-run.
+
+### Bootstrap a wiki with surfaces
+
+If you're creating a new wiki, declare which surfaces Curator B should
+extract:
+
+```bash
+lore new-wiki team-wiki --surfaces standard  # concept + decision + session
+# other templates:
+lore new-wiki research --surfaces science    # + paper + result
+lore new-wiki product --surfaces design      # + artefact + critique
+lore new-wiki scratch --surfaces custom      # skeleton you fill yourself
+```
+
+`SURFACES.md` is human-editable markdown with embedded YAML.
+`lore surface add <name>` and `lore surface lint` manage it afterwards.
+
+### What runs automatically
+
+Once attached with a wiki present:
+
+- **Claude Code SessionEnd / PreCompact hooks** update the sidecar
+  transcript ledger. No LLM in the hook itself; Curator A runs in a
+  detached background subprocess when pending work crosses threshold.
+- **First SessionStart of each calendar day** also spawns Curator B
+  for the attached wiki (graph abstraction) and publishes a briefing
+  if configured. All detached — SessionStart never blocks.
+- **Banner at SessionStart** shows pending state:
+  `lore: 3 pending · last curator 2h ago · briefing yesterday`.
+  `lore!:` prefix flags actionable errors (broken SURFACES.md, etc.).
+
+### Manual escape hatches
+
+- `lore ingest --from <file.jsonl> --host cursor --directory <cwd>` —
+  ingest a transcript from any host lore doesn't auto-capture.
+- `lore curator run` — run Curator A now.
+- `lore curator run --abstract [--wiki <name>]` — run A then B.
+- `lore curator run --abstract --dry-run` — see what would happen.
+- `lore registry ls` / `lore registry show <path>` / `lore registry doctor` —
+  inspect configured attach blocks.
+- `/lore:session` — still available for explicit capture.
+
+### Per-wiki configuration
+
+Each wiki can set its own knobs in `<wiki>/.lore-wiki.yml`:
+
+```yaml
+git:
+  auto_commit: true
+  auto_push: false              # push manually by default
+  auto_pull: true
+curator:
+  threshold_pending: 3          # spawn Curator A when ≥ N pending
+  threshold_tokens: 50000       # OR ≥ M tokens accumulated
+  a_noteworthy_tier: middle     # middle (default) | simple (cheap, higher false-neg)
+  curator_c:
+    enabled: false              # experimental weekly defrag — off for v1
+    mode: local
+models:
+  simple: claude-haiku-4-5
+  middle: claude-sonnet-4-6
+  high:   claude-opus-4-7       # or 'off' — degrades Curator B/C abstract to middle
+briefing:
+  auto: true
+  audience: personal
+  sinks:
+    - markdown:~/lore-briefing.md
+breadcrumb:
+  mode: normal                  # quiet | normal | verbose
+  scope_filter: true
+```
+
+All fields default to sane values — start without a `.lore-wiki.yml`
+and add knobs only as you need them.
+
+### Roadmap & implementation notes
+
+- [`docs/superpowers/specs/2026-04-19-passive-capture-v1-design.md`](docs/superpowers/specs/2026-04-19-passive-capture-v1-design.md) —
+  architecture spec (all 5 plans).
+- [`docs/superpowers/HANDOVER-2026-04-19.md`](docs/superpowers/HANDOVER-2026-04-19.md) —
+  roadmap status, gotchas, how to resume Plans 3–5.
+- [`docs/superpowers/plans/`](docs/superpowers/plans/) — executed plans
+  (1 + 2) for reference when writing 3–5.
 
 ## Two onboarding recipes
 
