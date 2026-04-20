@@ -16,6 +16,19 @@ from pathlib import Path
 from typing import Any
 
 
+def _ppid_cmd() -> str | None:
+    """Return /proc/<ppid>/cmdline as space-joined string, or None on non-Linux/error."""
+    try:
+        ppid = os.getppid()
+        data = Path(f"/proc/{ppid}/cmdline").read_bytes()
+        if not data:
+            return None
+        # cmdline is NUL-separated; replace NULs with spaces and strip trailing.
+        return data.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+    except (OSError, ValueError):
+        return None
+
+
 class HookEventLogger:
     """Single-record appender for hook-events.jsonl.
 
@@ -36,7 +49,7 @@ class HookEventLogger:
             self._dir.mkdir(parents=True, exist_ok=True)
             self._maybe_rotate()
             payload = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
                 **record,
             }
