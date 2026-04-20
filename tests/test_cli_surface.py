@@ -317,6 +317,46 @@ def test_surface_commit_receipt_shape_append(tmp_path, monkeypatch):
     assert receipt["data"]["path"].endswith("SURFACES.md")
 
 
+def test_surface_lint_catches_plural_collision(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    wiki_dir = tmp_path / "wiki" / "x"
+    _make_surfaces_md(
+        wiki_dir,
+        "# Surfaces\nschema_version: 2\n\n"
+        "## paper\nA.\n\n```yaml\nrequired: [type]\noptional: []\nplural: papers\n```\n\n"
+        "## study\nB.\n\n```yaml\nrequired: [type]\noptional: []\nplural: papers\n```\n",
+    )
+    result = runner.invoke(app, ["lint", "--wiki", "x"])
+    assert result.exit_code == 1
+    assert "plural" in result.stderr.lower()
+
+
+def test_surface_lint_catches_invalid_slug_format(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    wiki_dir = tmp_path / "wiki" / "x"
+    _make_surfaces_md(
+        wiki_dir,
+        "# Surfaces\nschema_version: 2\n\n"
+        "## paper\nA.\n\n```yaml\nrequired: [type]\noptional: []\nslug_format: \"{nonsense}\"\n```\n",
+    )
+    result = runner.invoke(app, ["lint", "--wiki", "x"])
+    assert result.exit_code == 1
+    assert "slug_format" in result.stderr.lower() or "placeholder" in result.stderr.lower()
+
+
+def test_surface_lint_catches_invalid_plural_shape(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    wiki_dir = tmp_path / "wiki" / "x"
+    _make_surfaces_md(
+        wiki_dir,
+        "# Surfaces\nschema_version: 2\n\n"
+        "## paper\nA.\n\n```yaml\nrequired: [type]\noptional: []\nplural: \"Bad Plural!\"\n```\n",
+    )
+    result = runner.invoke(app, ["lint", "--wiki", "x"])
+    assert result.exit_code == 1
+    assert "plural" in result.stderr.lower()
+
+
 def test_surface_commit_receipt_shape_init(tmp_path, monkeypatch):
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     draft = {

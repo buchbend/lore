@@ -213,13 +213,34 @@ def cmd_lint(
     if doc is None:
         issues.append("file unparseable")
     else:
-        seen: set[str] = set()
+        from lore_core.surfaces import _surface_spec_issues
+        seen_names: set[str] = set()
+        seen_plurals: set[str] = set()
         for s in doc.surfaces:
-            if s.name in seen:
+            if s.name in seen_names:
                 issues.append(f"duplicate surface name: {s.name}")
-            seen.add(s.name)
+            seen_names.add(s.name)
             if not s.required:
                 issues.append(f"surface '{s.name}' has no `required:` list (no YAML block?)")
+            spec = {
+                "name": s.name,
+                "description": s.description,
+                "required": list(s.required),
+                "optional": list(s.optional),
+                "extract_when": s.extract_when,
+                "plural": s.plural,
+                "slug_format": s.slug_format,
+                "extract_prompt": s.extract_prompt,
+            }
+            for sub in _surface_spec_issues(
+                spec, existing_names=set(), existing_plurals=seen_plurals
+            ):
+                # Duplicate-name is already handled with a friendlier message above.
+                if sub["code"] == "duplicate_name":
+                    continue
+                issues.append(f"surface '{s.name}': {sub['message']}")
+            effective_plural = s.plural or (s.name if s.name.endswith("s") else f"{s.name}s")
+            seen_plurals.add(effective_plural)
     if issues:
         for line in issues:
             err_console.print(f"[red]✗[/red] {line}")
