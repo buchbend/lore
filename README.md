@@ -255,6 +255,43 @@ and add knobs only as you need them.
 - [`docs/superpowers/plans/`](docs/superpowers/plans/) — executed plans
   (1 + 2) for reference when writing 3–5.
 
+## Observability
+
+The capture pipeline writes structured logs so you can inspect what it did — and
+why. Three commands cover the common scenarios:
+
+| Scenario | Command |
+|---|---|
+| "I had a session and no note appeared" | `lore runs show latest` |
+| "Hook plumbing feels off" | `lore doctor` |
+| "I'm tuning noteworthy/merge config" | `lore curator run --dry-run --trace-llm` |
+
+`lore runs list` prints a table of recent curator runs. `lore runs show <id>`
+accepts the alias `latest`, carets `^1`..`^N`, the 6-char random suffix
+(e.g. `a1b2c3`), or any unique prefix of the full ID.
+
+Logs live under `$LORE_ROOT/.lore/`:
+
+- `hook-events.jsonl` — one line per hook invocation
+- `runs/<id>.jsonl` — one file per curator run (decision trace)
+- `runs/<id>.trace.jsonl` — optional LLM prompt/response trace (enabled by
+  `LORE_TRACE_LLM=1` or `--trace-llm` on `lore curator run`)
+
+Retention is count + MB capped; configure at `$LORE_ROOT/.lore/config.yml`:
+
+~~~yaml
+observability:
+  hook_events:
+    max_size_mb: 10
+    keep_rotations: 1
+  runs:
+    keep: 200
+    max_total_mb: 100
+    keep_trace: 30
+~~~
+
+Full design: [`docs/superpowers/specs/2026-04-20-auto-session-diagnostics-design.md`](docs/superpowers/specs/2026-04-20-auto-session-diagnostics-design.md).
+
 ## Two onboarding recipes
 
 ### 1. Polymath — many wikis, one brain
