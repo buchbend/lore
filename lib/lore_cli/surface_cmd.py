@@ -157,9 +157,42 @@ def cmd_commit(
             "data": {"operation": "append", "path": str(surfaces_path), "name": surface_def.name},
         }, indent=2))
     elif op == "init":
-        # Handled in T10.
-        err_console.print("[red]init operation not yet implemented[/red]")
-        raise typer.Exit(1)
+        if surfaces_path.exists() and not force:
+            err_console.print(
+                f"[red]SURFACES.md already exists at {surfaces_path} (use --force to overwrite)[/red]"
+            )
+            raise typer.Exit(1)
+        specs = draft.get("surfaces") or []
+        surface_defs = [
+            SurfaceDef(
+                name=s["name"],
+                description=s.get("description", ""),
+                required=list(s.get("required") or []),
+                optional=list(s.get("optional") or []),
+                extract_when=s.get("extract_when", ""),
+                plural=s.get("plural"),
+                slug_format=s.get("slug_format"),
+                extract_prompt=s.get("extract_prompt"),
+            )
+            for s in specs
+        ]
+        text = render_document(
+            schema_version=draft.get("schema_version", 2),
+            surfaces=surface_defs,
+            wiki=wiki,
+        )
+        atomic_write_text(surfaces_path, text)
+        err_console.print(
+            f"[green]initialized {surfaces_path} with {len(surface_defs)} surface(s)[/green]"
+        )
+        print(json.dumps({
+            "schema": "lore.surface.commit/1",
+            "data": {
+                "operation": "init",
+                "path": str(surfaces_path),
+                "surfaces": [s.name for s in surface_defs],
+            },
+        }, indent=2))
     else:
         err_console.print(f"[red]unknown operation: {op!r}[/red]")
         raise typer.Exit(1)
