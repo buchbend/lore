@@ -628,7 +628,9 @@ CURATOR_PARAMS = [
 
 
 def _stamp_path(lore_root: Path, role: str) -> Path:
-    return lore_root / ".lore" / f"last-curator-{role}-spawn"
+    # Post-Task-2: stamp moved from last-curator-<role>-spawn to
+    # curator-<role>.spawn.stamp (flock-based throttle; see lockfile.py).
+    return lore_root / ".lore" / f"curator-{role}.spawn.stamp"
 
 
 def _invoke_spawn(role: str, lore_root: Path, cooldown_s: int) -> bool:

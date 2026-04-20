@@ -1107,17 +1107,8 @@ def _load_wiki_cfg_from_scope(scope, lore_root: Path):
     return load_wiki_config(wiki_dir)
 
 
-def _curator_spawn_stamp(lore_root: Path, role: str) -> Path:
-    return lore_root / ".lore" / f"last-curator-{role}-spawn"
-
-
-def _cooldown_active(stamp: Path, cooldown_s: int) -> bool:
-    """True if a recent stamp indicates the cooldown window is still active.
-
-    Missing or unreadable stamp → cooldown not active (spawn OK). We never
-    let this check block a spawn due to an I/O hiccup: the cooldown is a
-    best-effort throttle, not a correctness gate.
-    """
+def _stamp_within_cooldown(stamp: Path, cooldown_s: int) -> bool:
+    """True if stamp exists and is younger than cooldown_s seconds."""
     import time as _time
     try:
         last = float(stamp.read_text().strip())
@@ -1126,12 +1117,8 @@ def _cooldown_active(stamp: Path, cooldown_s: int) -> bool:
     return (_time.time() - last) < cooldown_s
 
 
-def _write_spawn_stamp(stamp: Path) -> None:
-    """Atomic write of current unix timestamp into `stamp`.
-
-    Writes to `<stamp>.tmp` then `os.replace()` → the final name. The .lore
-    directory is created if missing.
-    """
+def _write_stamp(stamp: Path) -> None:
+    """Atomic write of current unix timestamp into stamp. Best-effort."""
     import time as _time
     stamp.parent.mkdir(parents=True, exist_ok=True)
     tmp = stamp.with_suffix(stamp.suffix + ".tmp")
@@ -1139,68 +1126,98 @@ def _write_spawn_stamp(stamp: Path) -> None:
     os.replace(tmp, stamp)
 
 
-def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
-    """Fire-and-forget subprocess that runs `lore curator run` detached.
+def _migrate_legacy_spawn_stamp(lore_root: Path, role: str) -> None:
+    """Unlink the pre-flock stamp file if present; log to hook-events on failure."""
+    old = lore_root / ".lore" / f"last-curator-{role}-spawn"
+    try:
+        old.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        try:
+            HookEventLogger(lore_root).emit(
+                event="spawn-throttle",
+                outcome="warning",
+                error={
+                    "type": "LegacyStampMigrationFailed",
+                    "message": str(exc),
+                    "role": role,
+                },
+            )
+        except Exception:
+            pass
 
-    Returns True if a subprocess was launched, False if the cooldown
-    window is still active. The cooldown is a best-effort per-vault
-    throttle — see issue #17.
+
+def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
+    """Fire-and-forget `lore curator run` subprocess.
+
+    Acquires a non-blocking flock on the per-role spawn lock. Returns False
+    if another process holds the lock OR the cooldown stamp is still fresh.
+    See ``lore_core.lockfile.try_acquire_spawn_lock`` for the primitive.
     """
     import subprocess
-    stamp = _curator_spawn_stamp(lore_root, "a")
-    if _cooldown_active(stamp, cooldown_s):
-        return False
-    cmd = [sys.executable, "-m", "lore_cli", "curator", "run"]
-    env = os.environ.copy()
-    env["LORE_ROOT"] = str(lore_root)
-    try:
-        subprocess.Popen(
-            cmd,
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            env=env,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    import contextlib
-    with contextlib.suppress(OSError):
-        _write_spawn_stamp(stamp)  # stamp is best-effort; spawn already happened
-    return True
+    from lore_core.lockfile import try_acquire_spawn_lock
+
+    with try_acquire_spawn_lock(lore_root, "a") as (held, stamp):
+        if not held:
+            return False
+        if _stamp_within_cooldown(stamp, cooldown_s):
+            return False
+        _migrate_legacy_spawn_stamp(lore_root, "a")
+        cmd = [sys.executable, "-m", "lore_cli", "curator", "run"]
+        env = os.environ.copy()
+        env["LORE_ROOT"] = str(lore_root)
+        try:
+            subprocess.Popen(
+                cmd,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                env=env,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        import contextlib
+        with contextlib.suppress(OSError):
+            _write_stamp(stamp)
+        return True
 
 
 def _spawn_detached_curator_b(
     lore_root: Path, wiki_name: str, *, cooldown_s: int = 300
 ) -> bool:
-    """Fire-and-forget subprocess that runs Curator B detached.
-
-    Invokes: `lore curator run --abstract --wiki <wiki_name>`.
-    Returns True if a subprocess was launched, False if the cooldown
-    window is still active.
-    """
+    """Fire-and-forget `lore curator run --abstract --wiki <name>` subprocess."""
     import subprocess
-    stamp = _curator_spawn_stamp(lore_root, "b")
-    if _cooldown_active(stamp, cooldown_s):
-        return False
-    cmd = [sys.executable, "-m", "lore_cli", "curator", "run", "--abstract", "--wiki", wiki_name]
-    env = os.environ.copy()
-    env["LORE_ROOT"] = str(lore_root)
-    try:
-        subprocess.Popen(
-            cmd,
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            env=env,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    import contextlib
-    with contextlib.suppress(OSError):
-        _write_spawn_stamp(stamp)
-    return True
+    from lore_core.lockfile import try_acquire_spawn_lock
+
+    with try_acquire_spawn_lock(lore_root, "b") as (held, stamp):
+        if not held:
+            return False
+        if _stamp_within_cooldown(stamp, cooldown_s):
+            return False
+        _migrate_legacy_spawn_stamp(lore_root, "b")
+        cmd = [
+            sys.executable, "-m", "lore_cli",
+            "curator", "run", "--abstract", "--wiki", wiki_name,
+        ]
+        env = os.environ.copy()
+        env["LORE_ROOT"] = str(lore_root)
+        try:
+            subprocess.Popen(
+                cmd,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                env=env,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        import contextlib
+        with contextlib.suppress(OSError):
+            _write_stamp(stamp)
+        return True
 
 
 # ---------------------------------------------------------------------------

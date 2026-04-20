@@ -1,7 +1,21 @@
-"""Atomic mkdir-based lockfile for curator serialization."""
+"""Atomic mkdir-based lockfile for curator serialization.
+
+This module provides two lock primitives that serve distinct purposes:
+
+* ``curator_lock`` (mkdir-based): serializes the *work* of a curator run —
+  held for the full duration of note writing, ledger updates, etc. Stale
+  after 1h of no mtime touch.
+
+* ``try_acquire_spawn_lock`` (fcntl.flock-based): serializes the *decision
+  to spawn* a detached curator — held only across the ``Popen`` call. Uses
+  kernel-level ``flock`` so the lock auto-releases on process exit, which
+  means a crashed spawner never orphans the lock. This is the correct
+  primitive for the spawn-throttle race (see issue #17).
+"""
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import socket
@@ -14,6 +28,54 @@ from pathlib import Path
 
 class LockContendedError(Exception):
     """Raised when the lock is held by another process and timeout expired."""
+
+
+@contextmanager
+def try_acquire_spawn_lock(lore_root: Path, role: str):
+    """Non-blocking per-role spawn lock; yields (held: bool, stamp_path: Path).
+
+    Uses ``fcntl.flock(LOCK_EX | LOCK_NB)`` on
+    ``$LORE_ROOT/.lore/curator-<role>.spawn.lock``. If another process holds
+    the lock, yields (False, stamp_path) immediately — caller should give up.
+    If acquired, yields (True, stamp_path) and releases on context exit.
+
+    Kernel semantics: flock is released when the holding process exits
+    (normal or abnormal), so a crashed spawner never leaves the lock held.
+    No stale-lock recovery is needed.
+
+    The stamp_path is used by callers for cooldown bookkeeping (read at
+    lock-acquire, written after a successful Popen). It is NOT touched by
+    this function.
+    """
+    lock_path = lore_root / ".lore" / f"curator-{role}.spawn.lock"
+    stamp_path = lore_root / ".lore" / f"curator-{role}.spawn.stamp"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fd: int | None = None
+    held = False
+    try:
+        try:
+            fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+        except OSError:
+            yield (False, stamp_path)
+            return
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            held = True
+        except BlockingIOError:
+            held = False
+        yield (held, stamp_path)
+    finally:
+        if fd is not None:
+            if held:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 def read_lock_holder(lore_root: Path) -> dict | None:
