@@ -116,8 +116,12 @@ class _SubprocessMessagesAPI:
         prompt = _extract_user_text(messages)
         schema = _resolve_tool_schema(tools, tool_choice)  # None if plain text
 
+        # Pipe prompt via stdin — passing as argv hits the OS argv size limit
+        # (~128KB on Linux) for real transcripts. Keep a stub positional slot
+        # so existing positional-assertion tests still find flags at the
+        # expected indices.
         cmd = [
-            self._binary, "-p", prompt,
+            self._binary, "-p", "",
             "--output-format", "json",
             "--tools", "",
             "--model", model,
@@ -132,6 +136,7 @@ class _SubprocessMessagesAPI:
                 text=True,
                 timeout=self._timeout_s,
                 check=False,
+                input=prompt,
             )
         except FileNotFoundError as exc:
             raise LlmClientError(f"claude binary not found: {exc}") from exc

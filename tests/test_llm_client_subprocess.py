@@ -88,7 +88,7 @@ def test_subprocess_builds_expected_cmdline():
 
     assert cmd[0] == "claude"
     assert cmd[1] == "-p"
-    assert cmd[2] == "Is this noteworthy?"
+    assert cmd[2] == ""  # prompt moved to stdin to avoid OS argv size limit
     assert cmd[3:5] == ["--output-format", "json"]
     assert cmd[5:7] == ["--tools", ""]
     assert cmd[7:9] == ["--model", "claude-haiku-4-5-20251001"]
@@ -97,11 +97,11 @@ def test_subprocess_builds_expected_cmdline():
     assert len(cmd) == 11
 
 
-def test_subprocess_passes_user_prompt_as_argv():
-    seen_cmds: list[list[str]] = []
+def test_subprocess_passes_user_prompt_on_stdin():
+    seen_kwargs: list[dict] = []
 
     def _runner(cmd, **kw):
-        seen_cmds.append(cmd)
+        seen_kwargs.append(kw)
         return subprocess.CompletedProcess(
             args=cmd,
             returncode=0,
@@ -117,7 +117,7 @@ def test_subprocess_passes_user_prompt_as_argv():
         tool_choice=_TOOL_CHOICE,
     )
 
-    assert seen_cmds[0][2] == "Is this noteworthy?"
+    assert seen_kwargs[0]["input"] == "Is this noteworthy?"
 
 
 def test_subprocess_parses_structured_output_to_tool_use_block():

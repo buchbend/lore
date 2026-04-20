@@ -65,6 +65,21 @@ def _session_file_path(cwd: Path, session_id: str) -> Path:
     return Path.home() / ".claude" / "projects" / _encode_project_dir(cwd) / f"{session_id}.jsonl"
 
 
+def _as_message_dict(raw) -> dict:
+    """Coerce an SDK yield from get_session_messages into the dict shape curators expect.
+
+    Current SDK yields ``SessionMessage`` dataclass objects whose ``.message``
+    attribute holds the real ``{"role": ..., "content": [...]}`` dict; legacy
+    SDKs yielded that dict directly. Tolerates both.
+    """
+    if isinstance(raw, dict):
+        return raw
+    inner = getattr(raw, "message", None)
+    if isinstance(inner, dict):
+        return inner
+    return {}
+
+
 def _extract_session_fields(s) -> tuple[str, Path | None, datetime | None]:
     """Extract (id, path, mtime) from an SDK session info object.
 
@@ -177,7 +192,8 @@ class ClaudeCodeAdapter:
         """
         sdk = _require_sdk()
         index = 0
-        for msg in sdk.get_session_messages(handle.id):
+        for raw in sdk.get_session_messages(handle.id):
+            msg = _as_message_dict(raw)
             role = msg.get("role", "system")
             ts = msg.get("timestamp")  # may be None; SDK may or may not provide
             content = msg.get("content")
