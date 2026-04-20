@@ -940,7 +940,7 @@ _HOOK_EVENT = {
 import typer  # noqa: E402
 
 from lore_adapters import get_adapter  # noqa: E402
-from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry  # noqa: E402
+from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry, WikiLedger  # noqa: E402
 from lore_core.scope_resolver import resolve_scope  # noqa: E402
 from lore_cli._compat import argv_main  # noqa: E402
 
@@ -1006,6 +1006,24 @@ def cmd_session_start(
                     out = out + "\n\n" + banner
     except Exception:
         # Banner generation failure is non-fatal — proceed without it.
+        pass
+
+    # Auto-trigger Curator B on calendar-day rollover
+    try:
+        from datetime import UTC, datetime as dt
+
+        cwd_resolved = Path(_resolve_cwd(cwd))
+        scope = resolve_scope(cwd_resolved)
+        if scope is not None:
+            lore_root = _infer_lore_root(scope.claude_md_path)
+            wledger = WikiLedger(lore_root, scope.wiki)
+            wentry = wledger.read()
+            today = dt.now(UTC).date()
+            last_b_date = wentry.last_curator_b.date() if wentry.last_curator_b else None
+            if last_b_date is None or today > last_b_date:
+                _spawn_detached_curator_b(lore_root, scope.wiki)
+    except Exception:
+        # Spawn failure is non-fatal — proceed without it.
         pass
 
     _emit("SessionStart", out, plain=plain)
@@ -1086,6 +1104,31 @@ def _spawn_detached_curator_a(lore_root: Path) -> None:
     """
     import subprocess
     cmd = [sys.executable, "-m", "lore_cli", "curator", "run"]
+    env = os.environ.copy()
+    env["LORE_ROOT"] = str(lore_root)
+    try:
+        subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # Fire-and-forget — don't propagate failures.
+        pass
+
+
+def _spawn_detached_curator_b(lore_root: Path, wiki_name: str) -> None:
+    """Fire-and-forget subprocess that runs Curator B detached.
+
+    Invokes: lore curator run --abstract --wiki <wiki_name>
+
+    On POSIX uses start_new_session=True for detached execution.
+    """
+    import subprocess
+    cmd = [sys.executable, "-m", "lore_cli", "curator", "run", "--abstract", "--wiki", wiki_name]
     env = os.environ.copy()
     env["LORE_ROOT"] = str(lore_root)
     try:
