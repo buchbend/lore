@@ -133,6 +133,7 @@ def _process_entry(
                 digested_index_hint=entry.digested_index_hint or 0,
                 noteworthy=bool(entry.noteworthy),
                 session_note=entry.session_note,
+                curator_a_run=now,
             )
         return _Outcome(skip_reason="no_new_turns")
 
@@ -172,6 +173,7 @@ def _process_entry(
                 digested_index_hint=last_hint,
                 noteworthy=False,
                 session_note=None,
+                curator_a_run=now,
             )
         return _Outcome(skip_reason=f"not_noteworthy:{noteworthy.reason}", was_noteworthy=False)
 
@@ -196,6 +198,7 @@ def _process_entry(
         digested_index_hint=last_hint,
         noteworthy=True,
         session_note=filed.wikilink,
+        curator_a_run=now,
     )
     return _Outcome(filed=filed, was_noteworthy=True)
 

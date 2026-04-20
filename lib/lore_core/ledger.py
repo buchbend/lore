@@ -135,8 +135,16 @@ class TranscriptLedger:
         digested_index_hint: int,
         noteworthy: bool,
         session_note: str | None = None,
+        curator_a_run: datetime | None = None,
     ) -> None:
-        """Update an existing entry's digested state. Raises KeyError if absent."""
+        """Update an existing entry's digested state. Raises KeyError if absent.
+
+        `curator_a_run` is the timestamp of the run that produced this
+        advance. Required for the mtime-based re-trigger in `pending()`
+        to work — without it, an entry whose transcript grows after a
+        first advance is permanently invisible. Caller should pass
+        `datetime.now(UTC)` (or a frozen test value).
+        """
         raw = self._load()
         key = self._key(host, transcript_id)
         if key not in raw:
@@ -146,6 +154,8 @@ class TranscriptLedger:
         entry.digested_index_hint = digested_index_hint
         entry.noteworthy = noteworthy
         entry.session_note = session_note
+        if curator_a_run is not None:
+            entry.curator_a_run = curator_a_run
         raw[key] = self._entry_to_raw(entry)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(self._path, json.dumps(raw, indent=2))

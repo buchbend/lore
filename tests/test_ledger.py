@@ -160,6 +160,70 @@ def test_transcript_ledger_advance_updates_hash_and_hint(tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
+def test_transcript_ledger_advance_sets_curator_a_run(tmp_path: Path) -> None:
+    """Regression for buchbend/lore#14 — advance must persist curator_a_run.
+
+    Without it, the mtime-based re-trigger in pending() is permanently dead
+    for already-digested entries.
+    """
+    ledger = TranscriptLedger(tmp_path)
+    entry = _make_entry(tmp_path, transcript_id="run-stamp")
+    ledger.upsert(entry)
+    run_ts = datetime(2026, 4, 19, 12, 0, 0, tzinfo=UTC)
+    ledger.advance(
+        "claude",
+        "run-stamp",
+        digested_hash="h1",
+        digested_index_hint=10,
+        noteworthy=True,
+        curator_a_run=run_ts,
+    )
+    result = ledger.get("claude", "run-stamp")
+    assert result is not None
+    assert result.curator_a_run == run_ts
+
+
+def test_transcript_ledger_pending_reappears_when_last_mtime_exceeds_curator_a_run(
+    tmp_path: Path,
+) -> None:
+    """Regression for buchbend/lore#14 — entry must re-appear in pending()
+    when its transcript grows after a previous curator pass.
+    """
+    ledger = TranscriptLedger(tmp_path)
+    initial_mtime = datetime(2026, 4, 19, 10, 0, 0, tzinfo=UTC)
+    entry = _make_entry(tmp_path, transcript_id="growing", last_mtime=initial_mtime)
+    ledger.upsert(entry)
+
+    # First pass — advance with a curator_a_run timestamp.
+    run1_ts = datetime(2026, 4, 19, 11, 0, 0, tzinfo=UTC)
+    ledger.advance(
+        "claude",
+        "growing",
+        digested_hash="h-pass1",
+        digested_index_hint=20,
+        noteworthy=True,
+        curator_a_run=run1_ts,
+    )
+    assert ledger.pending() == []  # nothing pending immediately after
+
+    # Simulate transcript growth — bump last_mtime past curator_a_run.
+    grown = _make_entry(
+        tmp_path,
+        transcript_id="growing",
+        digested_hash="h-pass1",
+        digested_index_hint=20,
+        last_mtime=datetime(2026, 4, 19, 12, 0, 0, tzinfo=UTC),
+        curator_a_run=run1_ts,
+        noteworthy=True,
+    )
+    ledger.upsert(grown)
+
+    # Now the entry must re-appear in pending().
+    pending = ledger.pending()
+    assert len(pending) == 1
+    assert pending[0].transcript_id == "growing"
+
+
 def test_transcript_ledger_advance_raises_on_missing(tmp_path: Path) -> None:
     ledger = TranscriptLedger(tmp_path)
     with pytest.raises(KeyError):

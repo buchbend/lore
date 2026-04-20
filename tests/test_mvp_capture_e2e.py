@@ -458,3 +458,113 @@ def test_mvp_e2e_manual_send_via_cli(tmp_path, monkeypatch):
     assert all_entries[0]["host"] == "manual-send", (
         f"Expected host=manual-send, got {all_entries[0]['host']}"
     )
+
+
+def test_mvp_e2e_second_slice_after_growth_is_processed(
+    lore_root_with_attached_wiki, register_fake_claude_code, monkeypatch
+):
+    """Regression for buchbend/lore#14 — when a transcript grows after a
+    first curator pass, the next pass must process the new turns and
+    file an additional session note (or merge into the existing one).
+    """
+    from lore_cli.hooks import hook_app
+    from lore_core.ledger import TranscriptLedger
+    from lore_curator.curator_a import run_curator_a
+
+    lore_root, work = lore_root_with_attached_wiki
+
+    # First slice — 3 turns at t=10:00
+    initial_turns = _make_turns(3)
+    handle_v1 = TranscriptHandle(
+        host="claude-code",
+        id="uuid-grows",
+        path=work / "uuid-grows.jsonl",
+        cwd=work,
+        mtime=_NOW,
+    )
+    fake = register_fake_claude_code(
+        handles_by_dir={str(work): [handle_v1]},
+        turns_by_id={"uuid-grows": initial_turns},
+    )
+
+    runner = CliRunner()
+    res1 = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(work), "--host", "claude-code"],
+        env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
+        catch_exceptions=False,
+    )
+    assert res1.exit_code == 0
+
+    fake_anthropic = FakeAnthropic({
+        "classify": _FakeResponse([
+            _FakeBlock("tool_use", input_={
+                "noteworthy": True, "reason": "first slice", "title": "First Slice",
+                "bullets": ["b1"], "files_touched": [], "entities": [], "decisions": [],
+            })
+        ]),
+    })
+    first_run_ts = datetime(2026, 4, 18, 11, 0, 0, tzinfo=UTC)
+    r1 = run_curator_a(
+        lore_root=lore_root, anthropic_client=fake_anthropic, dry_run=False, now=first_run_ts,
+    )
+    assert r1.noteworthy_count == 1
+    sessions_dir = lore_root / "wiki" / "private" / "sessions"
+    assert len(list(sessions_dir.glob("*.md"))) == 1
+
+    # Verify the ledger now records curator_a_run (the bug fix).
+    tledger = TranscriptLedger(lore_root)
+    entry_after_pass1 = tledger.get("claude-code", "uuid-grows")
+    assert entry_after_pass1 is not None
+    assert entry_after_pass1.curator_a_run == first_run_ts
+    assert tledger.pending() == [], "no growth yet → nothing pending"
+
+    # Now simulate transcript growth: more turns + later mtime.
+    later_mtime = datetime(2026, 4, 18, 12, 0, 0, tzinfo=UTC)
+    grown_turns = initial_turns + _make_turns(2)
+    # Reindex the appended turns to continue from initial_turns
+    grown_turns = list(initial_turns) + [
+        Turn(index=3, timestamp=None, role="user", text="follow-up 0"),
+        Turn(index=4, timestamp=None, role="assistant", text="follow-up 1"),
+    ]
+    handle_v2 = TranscriptHandle(
+        host="claude-code",
+        id="uuid-grows",
+        path=work / "uuid-grows.jsonl",
+        cwd=work,
+        mtime=later_mtime,
+    )
+    # Re-register fake with the grown state so list_transcripts returns the new mtime.
+    register_fake_claude_code(
+        handles_by_dir={str(work): [handle_v2]},
+        turns_by_id={"uuid-grows": grown_turns},
+    )
+
+    # Second capture: the hook should bump last_mtime in the ledger.
+    res2 = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(work), "--host", "claude-code"],
+        env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
+        catch_exceptions=False,
+    )
+    assert res2.exit_code == 0
+
+    tledger = TranscriptLedger(lore_root)
+    entry_after_capture2 = tledger.get("claude-code", "uuid-grows")
+    assert entry_after_capture2 is not None
+    assert entry_after_capture2.last_mtime == later_mtime
+    # And now it must show up as pending again.
+    pending = tledger.pending()
+    assert len(pending) == 1, f"Expected entry to re-appear in pending() after growth, got {pending}"
+
+    # Run curator again. The fake_anthropic is reused (still returns noteworthy=True).
+    second_run_ts = datetime(2026, 4, 18, 13, 0, 0, tzinfo=UTC)
+    r2 = run_curator_a(
+        lore_root=lore_root, anthropic_client=fake_anthropic, dry_run=False, now=second_run_ts,
+    )
+    # Either a new note is filed OR the existing one is merged into — both are acceptable
+    # for this regression. The key assertion is that *some* curator action occurred for the
+    # grown slice (i.e. it wasn't silently skipped).
+    assert r2.noteworthy_count == 1, (
+        f"Grown transcript should produce one curator action, got {r2.noteworthy_count}"
+    )
