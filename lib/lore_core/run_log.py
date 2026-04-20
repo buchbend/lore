@@ -150,6 +150,19 @@ class RunLogger:
             dry_run=self._dry_run,
             log_write_failures=self._write_failures,
         )
+        # Lazy retention — best-effort, must not raise.
+        try:
+            from lore_core.run_retention import enforce_retention
+            from lore_core.root_config import load_root_config
+            cfg = load_root_config(self._lore_root).observability.runs
+            enforce_retention(
+                self._lore_root,
+                keep=cfg.keep,
+                max_total_mb=cfg.max_total_mb,
+                keep_trace=cfg.keep_trace,
+            )
+        except Exception:
+            pass
 
     def emit(self, record_type: str, **fields: Any) -> None:
         """Emit one decision record. Never raises."""
