@@ -290,3 +290,49 @@ def test_surface_commit_init_force_overwrites(tmp_path, monkeypatch):
     content = (tmp_path / "wiki" / "x" / "SURFACES.md").read_text()
     assert "## old" not in content
     assert "## fresh" in content
+
+
+# ---------------------------------------------------------------------------
+# surface commit — receipt shape contract tests
+# ---------------------------------------------------------------------------
+
+
+def test_surface_commit_receipt_shape_append(tmp_path, monkeypatch):
+    """The receipt JSON on stdout matches the documented schema."""
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    draft = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "append",
+        "surface": {"name": "paper", "description": "A.", "required": ["type"], "optional": []},
+    }
+    draft_path = tmp_path / "draft.json"
+    draft_path.write_text(json.dumps(draft))
+    result = runner.invoke(app, ["commit", str(draft_path)])
+    assert result.exit_code == 0
+    receipt = json.loads(result.stdout)
+    assert receipt["schema"] == "lore.surface.commit/1"
+    assert receipt["data"]["operation"] == "append"
+    assert receipt["data"]["name"] == "paper"
+    assert receipt["data"]["path"].endswith("SURFACES.md")
+
+
+def test_surface_commit_receipt_shape_init(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    draft = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "init",
+        "schema_version": 2,
+        "surfaces": [
+            {"name": "a", "description": "A.", "required": ["type"], "optional": []},
+            {"name": "b", "description": "B.", "required": ["type"], "optional": []},
+        ],
+    }
+    draft_path = tmp_path / "draft.json"
+    draft_path.write_text(json.dumps(draft))
+    result = runner.invoke(app, ["commit", str(draft_path)])
+    receipt = json.loads(result.stdout)
+    assert receipt["schema"] == "lore.surface.commit/1"
+    assert receipt["data"]["operation"] == "init"
+    assert receipt["data"]["surfaces"] == ["a", "b"]
