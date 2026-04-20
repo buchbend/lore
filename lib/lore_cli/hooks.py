@@ -939,6 +939,9 @@ _HOOK_EVENT = {
 
 import typer  # noqa: E402
 
+from lore_adapters import get_adapter  # noqa: E402
+from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry  # noqa: E402
+from lore_core.scope_resolver import resolve_scope  # noqa: E402
 from lore_cli._compat import argv_main  # noqa: E402
 
 hook_app = typer.Typer(
@@ -999,6 +1002,135 @@ def cmd_stop(
 def cmd_why() -> None:
     """Print the SessionStart cache for the current Claude session."""
     sys.stdout.write(_why())
+
+
+# ---------------------------------------------------------------------------
+# Capture hook helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_cwd_capture() -> Path:
+    """Resolve CWD for capture: $CLAUDE_PROJECT_DIR → os.getcwd()."""
+    env = os.environ.get("CLAUDE_PROJECT_DIR")
+    return Path(env) if env else Path(os.getcwd())
+
+
+def _infer_lore_root(claude_md_path: Path) -> Path:
+    """Infer LORE_ROOT from env, else walk up from claude_md_path for a wiki/ dir.
+
+    Preference: $LORE_ROOT env var. Otherwise walk up looking for a directory
+    that contains a `wiki/` subdirectory — that's the lore_root. Falls back
+    to the CLAUDE.md's parent directory.
+    """
+    env = os.environ.get("LORE_ROOT")
+    if env:
+        return Path(env)
+    for parent in [claude_md_path.parent, *claude_md_path.parents]:
+        if (parent / "wiki").is_dir():
+            return parent
+    # Fallback — the CLAUDE.md's parent (best effort).
+    return claude_md_path.parent
+
+
+def _load_wiki_cfg_from_scope(scope, lore_root: Path):
+    from lore_core.wiki_config import load_wiki_config
+    wiki_dir = lore_root / "wiki" / scope.wiki
+    return load_wiki_config(wiki_dir)
+
+
+def _spawn_detached_curator_a(lore_root: Path) -> None:
+    """Fire-and-forget subprocess that runs `lore curator run` detached.
+
+    On POSIX uses start_new_session=True; on Windows uses
+    CREATE_NEW_PROCESS_GROUP (stub for v1; we're Unix-first).
+    """
+    import subprocess
+    cmd = [sys.executable, "-m", "lore_cli", "curator", "run"]
+    env = os.environ.copy()
+    env["LORE_ROOT"] = str(lore_root)
+    try:
+        subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # Fire-and-forget — don't propagate failures.
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Capture subcommand
+# ---------------------------------------------------------------------------
+
+
+@hook_app.command("capture")
+def capture(
+    event: str = typer.Option(
+        ...,
+        help="session-end | pre-compact | session-start",
+    ),
+    transcript: Path | None = typer.Option(None, help="Explicit transcript path; else autodetect via adapter."),
+    cwd_override: Path | None = typer.Option(None, "--cwd", help="Explicit cwd; else CLAUDE_PROJECT_DIR or os.getcwd()."),
+    host: str = typer.Option("claude-code", help="Adapter host name."),
+) -> None:
+    """Hot-path capture hook — called by Claude Code on SessionEnd / PreCompact / SessionStart.
+
+    Must return in <100ms. Updates the sidecar ledger; spawns detached
+    curator when pending work exceeds threshold. No LLM, no network,
+    bounded FS walk (8 levels).
+    """
+    from lore_adapters import UnknownHostError
+
+    cwd = cwd_override or _resolve_cwd_capture()
+    scope = resolve_scope(cwd)
+    if scope is None:
+        # Unattached cwd — silently no-op. Not an error.
+        return
+
+    lore_root = _infer_lore_root(scope.claude_md_path)
+    tledger = TranscriptLedger(lore_root)
+
+    # Discover pending transcripts for the attached directory.
+    try:
+        adapter = get_adapter(host)
+    except UnknownHostError:
+        raise typer.Exit(code=1)
+
+    if transcript is not None:
+        handles = [h for h in adapter.list_transcripts(cwd) if h.path == transcript]
+    else:
+        handles = adapter.list_transcripts(cwd)
+
+    for h in handles:
+        entry = tledger.get(h.host, h.id)
+        if entry is None:
+            entry = TranscriptLedgerEntry(
+                host=h.host,
+                transcript_id=h.id,
+                path=h.path,
+                directory=h.cwd,
+                digested_hash=None,
+                digested_index_hint=None,
+                synthesised_hash=None,
+                last_mtime=h.mtime,
+                curator_a_run=None,
+                noteworthy=None,
+                session_note=None,
+            )
+            tledger.upsert(entry)
+        elif entry.last_mtime != h.mtime:
+            entry.last_mtime = h.mtime
+            tledger.upsert(entry)
+
+    # Threshold check — spawn detached curator if enough pending.
+    pending = tledger.pending()
+    cfg = _load_wiki_cfg_from_scope(scope, lore_root)
+    if len(pending) >= cfg.curator.threshold_pending:
+        _spawn_detached_curator_a(lore_root)
 
 
 main = argv_main(hook_app)
