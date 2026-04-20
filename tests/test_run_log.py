@@ -1,7 +1,11 @@
+import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 
-from lore_core.run_log import generate_run_id
+import pytest
+
+from lore_core.run_log import RunLogger, generate_run_id
 
 
 def test_run_id_format():
@@ -13,3 +17,89 @@ def test_run_id_format():
 def test_run_id_uniqueness():
     ids = {generate_run_id() for _ in range(1000)}
     assert len(ids) == 1000
+
+
+def test_run_start_written_on_enter(tmp_path: Path):
+    with RunLogger(tmp_path, trigger="manual", pending_count=2) as logger:
+        pass
+    archival_files = list((tmp_path / ".lore" / "runs").glob("*.jsonl"))
+    archival = [p for p in archival_files if not p.name.endswith(".trace.jsonl")]
+    assert len(archival) == 1
+    lines = archival[0].read_text().splitlines()
+    records = [json.loads(l) for l in lines]
+    assert records[0]["type"] == "run-start"
+    assert records[0]["trigger"] == "manual"
+    assert records[0]["pending_count"] == 2
+    assert records[-1]["type"] == "run-end"
+    live = tmp_path / ".lore" / "runs-live.jsonl"
+    live_records = [json.loads(l) for l in live.read_text().splitlines()]
+    assert all("run_id" in r for r in live_records)
+    assert live_records[0]["type"] == "run-start"
+
+
+def test_emit_counters_and_ordering(tmp_path: Path):
+    with RunLogger(tmp_path, trigger="hook", pending_count=3) as logger:
+        logger.emit("transcript-start", transcript_id="t1", new_turns=10)
+        logger.emit("noteworthy", transcript_id="t1", verdict=True, reason="x", tier="middle")
+        logger.emit("session-note", transcript_id="t1", action="filed",
+                    path="p.md", wikilink="[[p]]")
+        logger.emit("transcript-start", transcript_id="t2", new_turns=5)
+        logger.emit("skip", transcript_id="t2", reason="noteworthy-false")
+    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
+    records = [json.loads(l) for l in archival.read_text().splitlines()]
+    assert records[0]["type"] == "run-start"
+    assert records[-1]["type"] == "run-end"
+    assert records[-1]["notes_new"] == 1
+    assert records[-1]["notes_merged"] == 0
+    assert records[-1]["skipped"] == 1
+    assert records[-1]["errors"] == 0
+    kinds = [r["type"] for r in records[1:-1]]
+    assert kinds == ["transcript-start", "noteworthy", "session-note",
+                     "transcript-start", "skip"]
+
+
+def test_exception_emits_error_and_runend_then_propagates(tmp_path: Path):
+    with pytest.raises(ValueError, match="boom"):
+        with RunLogger(tmp_path, trigger="hook") as logger:
+            logger.emit("transcript-start", transcript_id="t1", new_turns=5)
+            raise ValueError("boom")
+    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
+    records = [json.loads(l) for l in archival.read_text().splitlines()]
+    types = [r["type"] for r in records]
+    assert "error" in types
+    assert types[-1] == "run-end"
+    assert records[-1]["errors"] >= 1
+
+
+def test_write_failure_increments_counter(tmp_path: Path, monkeypatch):
+    real_open = Path.open
+
+    def faulty_open(self, *args, **kwargs):
+        if "runs" in str(self) and not str(self).endswith("runs"):
+            raise OSError("disk full")
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", faulty_open)
+    with RunLogger(tmp_path, trigger="hook") as logger:
+        logger.emit("transcript-start", transcript_id="t1", new_turns=5)
+    # No raise despite every write failing.
+
+
+def test_trace_llm_writes_companion(tmp_path: Path):
+    with RunLogger(tmp_path, trigger="dry-run", trace_llm=True) as logger:
+        logger.emit("llm-prompt", call="noteworthy", tier="middle",
+                    token_count=100, messages=[{"role": "user", "content": "hi"}])
+        logger.emit("llm-response", call="noteworthy", token_count=5, body="yes")
+    trace_files = list((tmp_path / ".lore" / "runs").glob("*.trace.jsonl"))
+    assert len(trace_files) == 1
+    lines = trace_files[0].read_text().splitlines()
+    types = [json.loads(l)["type"] for l in lines]
+    assert "llm-prompt" in types
+    assert "llm-response" in types
+
+
+def test_trace_llm_off_no_companion(tmp_path: Path):
+    with RunLogger(tmp_path, trigger="hook", trace_llm=False) as logger:
+        logger.emit("llm-prompt", call="noteworthy", tier="middle",
+                    token_count=100, messages=[])
+    assert not list((tmp_path / ".lore" / "runs").glob("*.trace.jsonl"))
