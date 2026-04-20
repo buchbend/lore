@@ -4,7 +4,9 @@ not-on-PATH self-install case."""
 
 from __future__ import annotations
 
+import json
 import shutil
+from pathlib import Path
 
 import pytest
 from lore_core.install import _helpers, claude
@@ -127,3 +129,62 @@ def test_claude_binary_help_smoke():
         check=False,
     )
     assert result.returncode == 0 or "plugin" in (result.stdout + result.stderr).lower()
+
+
+# ---------------------------------------------------------------------------
+# T17: plugin.json capture-hook wiring
+# ---------------------------------------------------------------------------
+
+def _plugin_json_path() -> Path:
+    """Locate .claude-plugin/plugin.json relative to the repo root."""
+    # Walk up from this test file to find the repo root (contains .claude-plugin/)
+    candidate = Path(__file__).resolve().parent
+    for _ in range(10):
+        plugin_json = candidate / ".claude-plugin" / "plugin.json"
+        if plugin_json.exists():
+            return plugin_json
+        parent = candidate.parent
+        if parent == candidate:
+            break
+        candidate = parent
+    raise FileNotFoundError(".claude-plugin/plugin.json not found in repo tree")
+
+
+def test_plugin_json_parses_cleanly():
+    """plugin.json must be valid JSON and declare the expected top-level keys."""
+    path = _plugin_json_path()
+    data = json.loads(path.read_text())
+    assert "hooks" in data, "plugin.json must have a 'hooks' key"
+    assert "mcpServers" in data, "plugin.json must have an 'mcpServers' key"
+
+
+def test_install_writes_capture_hooks():
+    """plugin.json must wire SessionEnd, PreCompact, and SessionStart to
+    `lore hook capture --event <name>` so passive transcript capture fires
+    on every Claude Code hook event.
+
+    The installer runs `claude plugin install lore@lore` which reads the
+    manifest directly — this test asserts the manifest already contains
+    the three required entries.
+    """
+    path = _plugin_json_path()
+    data = json.loads(path.read_text())
+    hooks = data["hooks"]
+
+    # Collect all command strings across all events
+    def all_commands(event_key: str) -> list[str]:
+        return [
+            h["command"]
+            for grp in hooks.get(event_key, [])
+            for h in grp["hooks"]
+        ]
+
+    assert "lore hook capture --event session-end" in all_commands("SessionEnd"), (
+        "SessionEnd must call `lore hook capture --event session-end`"
+    )
+    assert "lore hook capture --event pre-compact" in all_commands("PreCompact"), (
+        "PreCompact must call `lore hook capture --event pre-compact`"
+    )
+    assert "lore hook capture --event session-start" in all_commands("SessionStart"), (
+        "SessionStart must call `lore hook capture --event session-start`"
+    )

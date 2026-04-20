@@ -23,6 +23,14 @@
             "command": "lore hook session-start"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook capture --event session-start"
+          }
+        ]
       }
     ],
     "PreCompact": [
@@ -31,6 +39,24 @@
           {
             "type": "command",
             "command": "lore hook pre-compact"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook capture --event pre-compact"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook capture --event session-end"
           }
         ]
       }
