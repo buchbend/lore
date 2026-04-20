@@ -5,6 +5,12 @@ from __future__ import annotations
 from lore_adapters.protocol import Adapter
 
 
+# Module-level registry — declared FIRST so `register()` calls during
+# module-import (including any from third-party adapter modules that
+# self-register at import time) write into the canonical dict.
+_REGISTRY: dict[str, Adapter] = {}
+
+
 class UnknownHostError(KeyError):
     """Raised when no adapter is registered for the requested host."""
 
@@ -31,11 +37,9 @@ def register(adapter: Adapter) -> None:
     _REGISTRY[adapter.host] = adapter
 
 
-# Registry populated at import time with the v1 adapters
-from lore_adapters.claude_code import ClaudeCodeAdapter
-from lore_adapters.manual_send import ManualSendAdapter
+# Built-in adapters — imported and registered after `_REGISTRY` is alive.
+from lore_adapters.claude_code import ClaudeCodeAdapter  # noqa: E402
+from lore_adapters.manual_send import ManualSendAdapter  # noqa: E402
 
-
-_REGISTRY: dict[str, Adapter] = {}
 register(ClaudeCodeAdapter())
 register(ManualSendAdapter())

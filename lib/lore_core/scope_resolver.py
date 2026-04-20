@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lore_cli.attach_cmd import read_attach
-
+from lore_core.attach import read_attach
 from lore_core.types import Scope
 
 

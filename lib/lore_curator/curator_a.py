@@ -142,8 +142,9 @@ def _process_entry(
     for t in turns:
         _redact_turn_in_place_best_effort(t, log_path)
 
-    # Load per-wiki config for model tiers.
-    wiki_dir = _wiki_dir_from_claude_md(attached.claude_md_path, lore_root)
+    # Load per-wiki config for model tiers — use `attached.wiki` directly,
+    # don't re-parse CLAUDE.md (avoids TOCTOU mismatch with resolve_scope).
+    wiki_dir = lore_root / "wiki" / attached.wiki
     cfg = load_wiki_config(wiki_dir)
     tier = cfg.curator.a_noteworthy_tier
 
@@ -245,20 +246,7 @@ def _redact_turn_in_place_best_effort(t: Turn, log_path: Path) -> None:
         redact(t.tool_result.output, log_path=log_path)
 
 
-def _wiki_dir_from_claude_md(claude_md_path: Path, lore_root: Path) -> Path:
-    """Infer the wiki directory from the attached CLAUDE.md + scope.
-
-    For v1, use `<lore_root>/wiki/<first-scope-segment>/` — the plan's
-    `$LORE_ROOT/wiki/<name>/` convention.
-    """
-    return lore_root / "wiki" / _first_scope_segment_from(claude_md_path)
-
-
-def _first_scope_segment_from(claude_md_path: Path) -> str:
-    """Read the attached CLAUDE.md, extract the wiki name from the block."""
-    from lore_cli.attach_cmd import read_attach
-
-    data = read_attach(claude_md_path)
-    # read_attach returns the key-value dict directly (not nested under "block")
-    wiki = data.get("wiki") if isinstance(data, dict) else None
-    return wiki or "unknown"
+# Note: prior helpers `_wiki_dir_from_claude_md` and `_first_scope_segment_from`
+# were removed — the pipeline now reads `attached.wiki` directly from the
+# resolved Scope, eliminating a redundant CLAUDE.md re-parse and a layer
+# violation (lore_curator → lore_cli).

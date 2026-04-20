@@ -16,23 +16,24 @@ from rich.console import Console
 
 console = Console()
 
-SECTION_HEADING = "## Lore"
+# Read-side parsing lives in lore_core.attach so non-CLI modules
+# (e.g. lore_core.scope_resolver) don't need to depend on lore_cli.
+# Re-exported here for backward compatibility.
+from lore_core.attach import (  # noqa: F401  (re-exports)
+    BULLET_RE,
+    HEADING_RE,
+    LORE_KEYS,
+    SECTION_HEADING,
+    _split_lines,
+    find_section,
+    parse_section_body,
+    read_attach,
+)
+
 MANAGED_COMMENT = (
     "<!-- Managed by /lore:attach. "
     "Safe to edit — changes are preserved on re-run. -->"
 )
-LORE_KEYS: tuple[str, ...] = ("wiki", "scope", "backend", "issues", "prs")
-BULLET_RE = re.compile(r"^- ([A-Za-z][\w-]*): ?(.*)$")
-HEADING_RE = re.compile(r"^## (.+?)\s*$")
-
-
-def _split_lines(text: str) -> tuple[list[str], bool]:
-    """Split text into lines, remembering whether it ended with a newline."""
-    if not text:
-        return [], False
-    trailing = text.endswith("\n")
-    body = text[:-1] if trailing else text
-    return body.split("\n"), trailing
 
 
 def _join_lines(lines: list[str], trailing: bool) -> str:
@@ -40,53 +41,6 @@ def _join_lines(lines: list[str], trailing: bool) -> str:
     if trailing and not text.endswith("\n"):
         text += "\n"
     return text
-
-
-def find_section(lines: list[str]) -> tuple[int, int] | None:
-    """Return (start, end) of the `## Lore` section.
-
-    `start` is the line index of the `## Lore` heading.
-    `end` is the exclusive line index where the section body ends — either
-    the index of the next `## ` heading, or `len(lines)` for EOF.
-    Returns None if the section is absent.
-    """
-    start = None
-    for i, line in enumerate(lines):
-        if line.strip() == SECTION_HEADING:
-            start = i
-            break
-    if start is None:
-        return None
-    end = len(lines)
-    for j in range(start + 1, len(lines)):
-        m = HEADING_RE.match(lines[j])
-        if m and m.group(1).strip() != "Lore":
-            end = j
-            break
-    return start, end
-
-
-def parse_section_body(body_lines: list[str]) -> dict[str, str]:
-    """Extract `- key: value` bullets from a section body as a dict."""
-    out: dict[str, str] = {}
-    for line in body_lines:
-        m = BULLET_RE.match(line)
-        if m:
-            key, value = m.group(1), m.group(2)
-            out[key] = value
-    return out
-
-
-def read_attach(path: Path) -> dict[str, str]:
-    """Return the parsed Lore block as a dict, or {} if absent."""
-    if not path.exists():
-        return {}
-    lines, _ = _split_lines(path.read_text())
-    bounds = find_section(lines)
-    if bounds is None:
-        return {}
-    start, end = bounds
-    return parse_section_body(lines[start + 1 : end])
 
 
 def _render_fresh_section() -> list[str]:
