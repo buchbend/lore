@@ -221,3 +221,53 @@ def test_load_no_yaml_block_section_still_parses_with_empty_required(tmp_path: P
     assert sd.required == []
     assert sd.optional == []
     assert sd.description == "Just prose, no YAML block at all."
+
+
+def test_surfaces_parse_plural_key():
+    text = (
+        "# Surfaces\nschema_version: 2\n\n"
+        "## paper\nA paper.\n\n"
+        "```yaml\nrequired: [type]\noptional: []\nplural: papers\n```\n"
+    )
+    from lore_core.surfaces import _parse
+    from pathlib import Path
+    doc = _parse(text, Path("<test>"))
+    assert doc.surfaces[0].plural == "papers"
+
+
+def test_surfaces_parse_slug_format_key():
+    text = (
+        "# Surfaces\nschema_version: 2\n\n"
+        "## paper\nA paper.\n\n"
+        "```yaml\nrequired: [type, citekey]\noptional: []\nslug_format: \"{citekey}\"\n```\n"
+    )
+    from lore_core.surfaces import _parse
+    from pathlib import Path
+    doc = _parse(text, Path("<test>"))
+    assert doc.surfaces[0].slug_format == "{citekey}"
+
+
+def test_surfaces_parse_extract_prompt_key():
+    text = (
+        "# Surfaces\nschema_version: 2\n\n"
+        "## paper\nA paper.\n\n"
+        "```yaml\nrequired: [type]\noptional: []\nextract_prompt: \"Prefer citekey.\"\n```\n"
+    )
+    from lore_core.surfaces import _parse
+    from pathlib import Path
+    doc = _parse(text, Path("<test>"))
+    assert doc.surfaces[0].extract_prompt == "Prefer citekey."
+
+
+def test_surfaces_parse_new_keys_absent_defaults_to_none():
+    text = (
+        "# Surfaces\nschema_version: 2\n\n"
+        "## concept\nA concept.\n\n"
+        "```yaml\nrequired: [type]\noptional: []\n```\n"
+    )
+    from lore_core.surfaces import _parse
+    from pathlib import Path
+    s = _parse(text, Path("<test>")).surfaces[0]
+    assert s.plural is None
+    assert s.slug_format is None
+    assert s.extract_prompt is None

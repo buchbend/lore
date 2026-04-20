@@ -15,6 +15,9 @@ class SurfaceDef:
     required: list[str] = field(default_factory=list)
     optional: list[str] = field(default_factory=list)
     extract_when: str = ""  # free-text rule for the LLM
+    plural: str | None = None
+    slug_format: str | None = None
+    extract_prompt: str | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +138,9 @@ def _parse_section(name: str, body: str, *, source: Path) -> SurfaceDef | None:
 
     required: list[str] = []
     optional: list[str] = []
+    plural: str | None = None
+    slug_format: str | None = None
+    extract_prompt: str | None = None
 
     if yaml_match:
         yaml_text = yaml_match.group(1)
@@ -157,6 +163,12 @@ def _parse_section(name: str, body: str, *, source: Path) -> SurfaceDef | None:
                 required = list(value or [])
             elif key == "optional":
                 optional = list(value or [])
+            elif key == "plural":
+                plural = str(value) if value is not None else None
+            elif key == "slug_format":
+                slug_format = str(value) if value is not None else None
+            elif key == "extract_prompt":
+                extract_prompt = str(value) if value is not None else None
             else:
                 warnings.warn(
                     f"surfaces: unknown YAML key '{key}' in section '{name}' at {source}",
@@ -172,4 +184,7 @@ def _parse_section(name: str, body: str, *, source: Path) -> SurfaceDef | None:
         required=required,
         optional=optional,
         extract_when=extract_when,
+        plural=plural,
+        slug_format=slug_format,
+        extract_prompt=extract_prompt,
     )
