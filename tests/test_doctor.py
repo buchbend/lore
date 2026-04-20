@@ -130,6 +130,33 @@ def test_doctor_capture_panel_last_hook_and_run_and_note(tmp_path):
     assert "some-note" in flat
 
 
+def test_doctor_capture_panel_lock_holder(tmp_path):
+    from lore_core.lockfile import curator_lock
+    with curator_lock(tmp_path, timeout=0.0, run_id="r-abc123"):
+        from lore_cli.doctor_cmd import run_capture_panel
+        lines = run_capture_panel(tmp_path)
+    flat = " ".join(lines)
+    assert "Curator lock held by PID" in flat
+    assert "r-abc123" in flat
+
+
+def test_doctor_capture_panel_lock_free(tmp_path):
+    events = tmp_path / ".lore" / "hook-events.jsonl"
+    events.parent.mkdir(parents=True, exist_ok=True)
+    events.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "ts": "2026-04-20T14:32:05Z",
+            "event": "session-end",
+            "outcome": "ledger-advanced",
+        }) + "\n"
+    )
+    from lore_cli.doctor_cmd import run_capture_panel
+    lines = run_capture_panel(tmp_path)
+    flat = " ".join(lines)
+    assert "Curator lock free" in flat
+
+
 def test_doctor_capture_panel_hook_error_warning(tmp_path):
     from lore_cli.doctor_cmd import run_capture_panel
 
