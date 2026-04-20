@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import warnings
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -31,34 +32,6 @@ class SurfacesError(ValueError):
     """Raised by lint paths; load_* never raises (warns + falls back)."""
 
 
-_DEFAULT_STANDARD = SurfacesDoc(
-    schema_version=2,
-    surfaces=[
-        SurfaceDef(
-            name="concept",
-            description="Cross-cutting idea or pattern across sessions.",
-            required=["type", "created", "last_reviewed", "description", "tags"],
-            optional=["aliases", "superseded_by", "draft"],
-            extract_when="pattern appears across 3+ session notes",
-        ),
-        SurfaceDef(
-            name="decision",
-            description="A trade-off made — alternatives, path chosen.",
-            required=["type", "created", "last_reviewed", "description", "tags"],
-            optional=["superseded_by", "implements"],
-            extract_when="session note records a trade-off decision",
-        ),
-        SurfaceDef(
-            name="session",
-            description="Work session log filed by Curator A.",
-            required=["type", "created", "last_reviewed", "description"],
-            optional=["scope", "tags", "draft", "source_transcripts"],
-        ),
-    ],
-    path=Path("<built-in default>"),
-)
-
-
 def load_surfaces(wiki_dir: Path) -> SurfacesDoc | None:
     """Parse <wiki_dir>/SURFACES.md. Return None if absent.
 
@@ -72,10 +45,18 @@ def load_surfaces(wiki_dir: Path) -> SurfacesDoc | None:
     return _parse(text, path)
 
 
+@lru_cache(maxsize=1)
+def _load_packaged_standard() -> SurfacesDoc:
+    """Read the shipped 'standard.md' template and parse it. Cached."""
+    from importlib import resources
+    text = resources.files("lore_core.surface_templates").joinpath("standard.md").read_text()
+    return _parse(text, Path("<packaged:standard.md>"))
+
+
 def load_surfaces_or_default(wiki_dir: Path) -> SurfacesDoc:
-    """Like load_surfaces, returning the built-in standard set when absent."""
+    """Like load_surfaces, returning the packaged 'standard' template when absent."""
     doc = load_surfaces(wiki_dir)
-    return doc if doc is not None else _DEFAULT_STANDARD
+    return doc if doc is not None else _load_packaged_standard()
 
 
 def _parse(text: str, path: Path) -> SurfacesDoc:

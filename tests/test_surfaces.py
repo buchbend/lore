@@ -491,6 +491,21 @@ def test_validate_draft_init_operation(tmp_path):
     assert issues == []
 
 
+def test_load_surfaces_or_default_reads_packaged_standard(tmp_path):
+    from lore_core.surfaces import load_surfaces_or_default
+    doc = load_surfaces_or_default(tmp_path)  # no SURFACES.md → fallback
+    names = [s.name for s in doc.surfaces]
+    assert names == ["concept", "decision", "session"]
+    assert doc.schema_version == 2
+
+
+def test_load_surfaces_or_default_cache_returns_same_object(tmp_path):
+    from lore_core.surfaces import load_surfaces_or_default
+    a = load_surfaces_or_default(tmp_path)
+    b = load_surfaces_or_default(tmp_path)
+    assert [s.name for s in a.surfaces] == [s.name for s in b.surfaces]
+
+
 def test_validate_draft_init_detects_internal_collision(tmp_path):
     d = {
         "schema": "lore.surface.draft/1",
