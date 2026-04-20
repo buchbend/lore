@@ -236,3 +236,147 @@ def render_document(
         parts.append("\n")
         parts.append(render_section(s))
     return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Shared validator
+# ---------------------------------------------------------------------------
+
+_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_SLUG_PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+_SLUG_BUILTINS = frozenset({"date", "title", "slug"})
+
+
+def _surface_spec_issues(
+    spec: dict,
+    *,
+    existing_names: set[str],
+    existing_plurals: set[str],
+    path_prefix: str = "surface",
+) -> list[dict]:
+    """Validate one surface spec dict. Returns a list of issue dicts."""
+    issues: list[dict] = []
+    name = spec.get("name", "")
+    if not isinstance(name, str) or not _NAME_RE.match(name):
+        issues.append({
+            "level": "error",
+            "code": "invalid_name",
+            "message": f"{path_prefix}.name must match ^[a-z][a-z0-9_]*$ (got {name!r})",
+        })
+        return issues  # name is load-bearing for the rest
+    if name in existing_names:
+        issues.append({
+            "level": "error",
+            "code": "duplicate_name",
+            "message": f"surface '{name}' already exists",
+        })
+    required = list(spec.get("required") or [])
+    optional = list(spec.get("optional") or [])
+    if not isinstance(spec.get("required"), list) or not isinstance(spec.get("optional"), list):
+        issues.append({
+            "level": "error",
+            "code": "invalid_fields",
+            "message": f"{path_prefix}.required and .optional must be lists",
+        })
+        return issues
+    overlap = set(required) & set(optional)
+    if overlap:
+        issues.append({
+            "level": "error",
+            "code": "required_optional_overlap",
+            "message": f"{path_prefix}: required and optional overlap on {sorted(overlap)}",
+        })
+    plural = spec.get("plural")
+    if plural is not None:
+        if not isinstance(plural, str) or not _NAME_RE.match(plural):
+            issues.append({
+                "level": "error",
+                "code": "invalid_plural",
+                "message": f"{path_prefix}.plural must match ^[a-z][a-z0-9_]*$ (got {plural!r})",
+            })
+    effective_plural = plural if plural else f"{name}s" if not name.endswith("s") else name
+    if effective_plural in existing_plurals:
+        issues.append({
+            "level": "error",
+            "code": "plural_collision",
+            "message": f"{path_prefix}.plural '{effective_plural}' collides with an existing surface's directory",
+        })
+    slug_format = spec.get("slug_format")
+    if slug_format is not None:
+        if not isinstance(slug_format, str):
+            issues.append({
+                "level": "error",
+                "code": "invalid_slug_format",
+                "message": f"{path_prefix}.slug_format must be a string",
+            })
+        else:
+            allowed = _SLUG_BUILTINS | set(required) | set(optional)
+            placeholders = set(_SLUG_PLACEHOLDER_RE.findall(slug_format))
+            unknown = placeholders - allowed
+            if unknown:
+                issues.append({
+                    "level": "error",
+                    "code": "invalid_slug_format",
+                    "message": f"{path_prefix}.slug_format uses unknown placeholders {sorted(unknown)}; allowed: {sorted(allowed)}",
+                })
+    extract_prompt = spec.get("extract_prompt")
+    if extract_prompt is not None:
+        if not isinstance(extract_prompt, str) or not extract_prompt.strip():
+            issues.append({
+                "level": "error",
+                "code": "empty_extract_prompt",
+                "message": f"{path_prefix}.extract_prompt must be a non-empty string when present",
+            })
+    return issues
+
+
+def validate_draft(draft: dict, *, wiki_dir: Path) -> list[dict]:
+    """Validate a draft-spec (single append or full init). Returns issue list (empty = ok)."""
+    issues: list[dict] = []
+    if draft.get("schema") != "lore.surface.draft/1":
+        issues.append({
+            "level": "error",
+            "code": "unknown_schema",
+            "message": f"unsupported draft schema: {draft.get('schema')!r}",
+        })
+        return issues
+    op = draft.get("operation")
+    if op == "append":
+        existing = load_surfaces(wiki_dir)
+        existing_names = {s.name for s in (existing.surfaces if existing else [])}
+        existing_plurals = {
+            (s.plural or (s.name if s.name.endswith("s") else f"{s.name}s"))
+            for s in (existing.surfaces if existing else [])
+        }
+        spec = draft.get("surface") or {}
+        issues.extend(_surface_spec_issues(
+            spec,
+            existing_names=existing_names,
+            existing_plurals=existing_plurals,
+        ))
+    elif op == "init":
+        surfaces = list(draft.get("surfaces") or [])
+        existing_names: set[str] = set()
+        existing_plurals: set[str] = set()
+        for i, spec in enumerate(surfaces):
+            sub = _surface_spec_issues(
+                spec,
+                existing_names=existing_names,
+                existing_plurals=existing_plurals,
+                path_prefix=f"surfaces[{i}]",
+            )
+            issues.extend(sub)
+            # Track for intra-draft collision detection.
+            if isinstance(spec.get("name"), str) and _NAME_RE.match(spec["name"]):
+                existing_names.add(spec["name"])
+                plural = spec.get("plural") or (
+                    spec["name"] if spec["name"].endswith("s") else f"{spec['name']}s"
+                )
+                existing_plurals.add(plural)
+    else:
+        issues.append({
+            "level": "error",
+            "code": "unknown_operation",
+            "message": f"draft.operation must be 'append' or 'init' (got {op!r})",
+        })
+    return issues

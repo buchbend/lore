@@ -387,3 +387,120 @@ def test_render_section_multiline_extract_prompt_roundtrips():
     doc_text = f"# Surfaces\nschema_version: 2\n\n{section}"
     parsed = _parse(doc_text, Path("<test>")).surfaces[0]
     assert parsed.extract_prompt == "Line one.\nLine two.\nLine three."
+
+
+# ---------------------------------------------------------------------------
+# validate_draft tests
+# ---------------------------------------------------------------------------
+
+from lore_core.surfaces import validate_draft  # noqa: E402
+
+
+def _minimal_append_draft(**overrides):
+    base = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "append",
+        "surface": {
+            "name": "paper",
+            "description": "A paper.",
+            "required": ["type", "created", "description", "tags"],
+            "optional": ["draft"],
+        },
+    }
+    base["surface"].update(overrides)
+    return base
+
+
+def test_validate_draft_happy_path_append(tmp_path):
+    (tmp_path / "SURFACES.md").write_text(
+        "# Surfaces\nschema_version: 2\n\n## concept\nA.\n\n```yaml\nrequired: [type]\noptional: []\n```\n"
+    )
+    issues = validate_draft(_minimal_append_draft(), wiki_dir=tmp_path)
+    assert issues == []
+
+
+def test_validate_draft_rejects_duplicate_name(tmp_path):
+    (tmp_path / "SURFACES.md").write_text(
+        "# Surfaces\nschema_version: 2\n\n## paper\nA.\n\n```yaml\nrequired: [type]\noptional: []\n```\n"
+    )
+    issues = validate_draft(_minimal_append_draft(), wiki_dir=tmp_path)
+    assert any(i["code"] == "duplicate_name" for i in issues)
+
+
+def test_validate_draft_rejects_required_optional_overlap(tmp_path):
+    d = _minimal_append_draft(required=["type", "draft"], optional=["draft"])
+    issues = validate_draft(d, wiki_dir=tmp_path)
+    assert any(i["code"] == "required_optional_overlap" for i in issues)
+
+
+def test_validate_draft_rejects_bad_name_shape(tmp_path):
+    d = _minimal_append_draft(name="My Fancy Surface!")
+    issues = validate_draft(d, wiki_dir=tmp_path)
+    assert any(i["code"] == "invalid_name" for i in issues)
+
+
+def test_validate_draft_rejects_bad_plural_shape(tmp_path):
+    d = _minimal_append_draft(plural="Papers Galore!")
+    issues = validate_draft(d, wiki_dir=tmp_path)
+    assert any(i["code"] == "invalid_plural" for i in issues)
+
+
+def test_validate_draft_rejects_plural_collision(tmp_path):
+    (tmp_path / "SURFACES.md").write_text(
+        "# Surfaces\nschema_version: 2\n\n## paper\nA.\n\n```yaml\nrequired: [type]\noptional: []\n```\n"
+    )
+    d = _minimal_append_draft(name="study", plural="papers")
+    issues = validate_draft(d, wiki_dir=tmp_path)
+    assert any(i["code"] == "plural_collision" for i in issues)
+
+
+def test_validate_draft_rejects_unknown_slug_format_placeholder(tmp_path):
+    d = _minimal_append_draft(slug_format="{nonsense}")
+    issues = validate_draft(d, wiki_dir=tmp_path)
+    assert any(i["code"] == "invalid_slug_format" for i in issues)
+
+
+def test_validate_draft_accepts_known_slug_format_placeholders(tmp_path):
+    d = _minimal_append_draft(
+        required=["type", "created", "description", "tags", "citekey"],
+        slug_format="{citekey}-{date}",
+    )
+    issues = validate_draft(d, wiki_dir=tmp_path)
+    assert issues == []
+
+
+def test_validate_draft_rejects_empty_extract_prompt(tmp_path):
+    d = _minimal_append_draft(extract_prompt="")
+    issues = validate_draft(d, wiki_dir=tmp_path)
+    assert any(i["code"] == "empty_extract_prompt" for i in issues)
+
+
+def test_validate_draft_init_operation(tmp_path):
+    d = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "init",
+        "schema_version": 2,
+        "surfaces": [
+            {"name": "a", "description": "A", "required": ["type"], "optional": []},
+            {"name": "b", "description": "B", "required": ["type"], "optional": []},
+        ],
+    }
+    issues = validate_draft(d, wiki_dir=tmp_path)
+    assert issues == []
+
+
+def test_validate_draft_init_detects_internal_collision(tmp_path):
+    d = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "init",
+        "schema_version": 2,
+        "surfaces": [
+            {"name": "concept", "description": "", "required": ["type"], "optional": []},
+            {"name": "concept", "description": "", "required": ["type"], "optional": []},
+        ],
+    }
+    issues = validate_draft(d, wiki_dir=tmp_path)
+    assert any(i["code"] == "duplicate_name" for i in issues)
