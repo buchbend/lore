@@ -53,10 +53,16 @@ def file_surface(
             f"({wiki_root}); declared: {[s.name for s in surfaces_doc.surfaces]}"
         )
 
-    subdir = wiki_root / _pluralise(surface_name)
+    subdir = wiki_root / _directory_for(surface_def)
     subdir.mkdir(parents=True, exist_ok=True)
 
-    slug = _slug(title)
+    slug_ctx: dict[str, Any] = {
+        "title": title,
+        "slug": _slug_title(title),
+        "date": (now or datetime.now(UTC)).date().isoformat(),
+    }
+    slug_ctx.update(extra_frontmatter or {})
+    slug = _slug_for(title, surface_def, slug_ctx)
     path = subdir / f"{slug}.md"
     counter = 1
     while path.exists():
@@ -83,9 +89,31 @@ def file_surface(
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
-def _slug(title: str) -> str:
+def _slug_title(title: str) -> str:
     s = _SLUG_RE.sub("-", title.lower()).strip("-")
     return s[:60] if s else "surface"
+
+
+def _slug_for(
+    title: str,
+    surface_def: SurfaceDef,
+    ctx: dict[str, Any],
+) -> str:
+    """Build the note slug. Honours SurfaceDef.slug_format when set and all
+    placeholders resolve from ctx; otherwise falls back to title slug."""
+    if surface_def.slug_format:
+        try:
+            resolved = surface_def.slug_format.format(**ctx)
+            if resolved:
+                return _slug_title(resolved)
+        except (KeyError, IndexError):
+            pass
+    return _slug_title(title)
+
+
+def _directory_for(surface_def: SurfaceDef) -> str:
+    """Directory name for surfaces of this type — honours the `plural` override."""
+    return surface_def.plural or _pluralise(surface_def.name)
 
 
 def _pluralise(name: str) -> str:

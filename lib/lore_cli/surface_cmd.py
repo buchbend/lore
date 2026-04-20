@@ -1,10 +1,9 @@
-"""`lore surface init` / `add` / `lint` — manage SURFACES.md per wiki."""
+"""`lore surface init` / `add` / `commit` / `lint` — manage SURFACES.md per wiki."""
 
 from __future__ import annotations
 
 import json
 import sys
-from importlib import resources
 from pathlib import Path
 
 import typer
@@ -16,7 +15,7 @@ from lore_core.surfaces import load_surfaces, SurfaceDef
 console = Console()
 err_console = Console(stderr=True)
 
-TEMPLATE_NAMES = ("standard", "science", "design", "custom")
+_BARE_HEADER = "# Surfaces\nschema_version: 2\n"
 
 app = typer.Typer(
     add_completion=False,
@@ -30,7 +29,7 @@ app = typer.Typer(
 def _surface_group(
     ctx: typer.Context,
     wiki: str | None = typer.Option(
-        None, "--wiki", help="Wiki name. Inferred from cwd if absent. Shared by `add` and `lint`."
+        None, "--wiki", help="Wiki name. Inferred from cwd if absent. Shared by all subcommands."
     ),
 ) -> None:
     """Group-level `--wiki` flag, shared by all subcommands."""
@@ -48,9 +47,6 @@ def _resolve_wiki_dir(wiki: str | None) -> Path:
     if wiki:
         return lore_root / "wiki" / wiki
     # Try to infer from cwd: look for wiki/<name>/ ancestor.
-    # Match any ancestor whose parent is named "wiki" — that's the wiki
-    # root by convention. Don't gate on SURFACES.md existence here; the
-    # caller (`add` / `lint`) handles missing-file cases explicitly.
     cwd = Path.cwd().resolve()
     for parent in [cwd, *cwd.parents]:
         if parent.parent.name == "wiki":
@@ -59,66 +55,161 @@ def _resolve_wiki_dir(wiki: str | None) -> Path:
     raise typer.Exit(1)
 
 
-def _load_template(name: str) -> str:
-    """Read a shipped template by name."""
-    if name not in TEMPLATE_NAMES:
-        raise ValueError(f"unknown template {name!r}; choose from {TEMPLATE_NAMES}")
-    return resources.files("lore_core.surface_templates").joinpath(f"{name}.md").read_text()
-
-
-_BARE_HEADER = "# Surfaces\nschema_version: 2\n"
-
-
 @app.command("init")
 def cmd_init(
     ctx: typer.Context,
     wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Overrides group-level --wiki."),
-    template: str = typer.Option(
-        "standard", "--template", help=f"Template to seed from: {TEMPLATE_NAMES}"
-    ),
-    force: bool = typer.Option(False, "--force", help="Overwrite SURFACES.md if it already exists."),
 ) -> None:
-    """Create SURFACES.md from a shipped template. Refuses to overwrite unless --force."""
-    if template not in TEMPLATE_NAMES:
-        err_console.print(f"[red]unknown template {template!r}; choose from {TEMPLATE_NAMES}[/red]")
-        raise typer.Exit(1)
+    """Drop into the /lore:surface-init skill to design the wiki's SURFACES.md set."""
     wiki = wiki or (ctx.obj or {}).get("wiki")
     wiki_dir = _resolve_wiki_dir(wiki)
-    surfaces_path = wiki_dir / "SURFACES.md"
-    if surfaces_path.exists() and not force:
-        err_console.print(f"[red]SURFACES.md already exists at {surfaces_path} (use --force to overwrite)[/red]")
-        raise typer.Exit(1)
-    wiki_dir.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(surfaces_path, _load_template(template))
-    err_console.print(f"[green]initialized {surfaces_path} from template '{template}'[/green]")
-    print(json.dumps({"schema": "lore.surface.init/1", "data": {"path": str(surfaces_path), "template": template}}, indent=2))
+    wiki_name = wiki_dir.name
+    _launch_claude_skill(f"/lore:surface-init {wiki_name}")
 
 
 @app.command("add")
 def cmd_add(
     ctx: typer.Context,
-    name: str = typer.Argument(..., help="Surface name (e.g., 'concept', 'paper')."),
     wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Overrides group-level --wiki."),
 ) -> None:
-    """Append a new section to SURFACES.md. Creates a minimal file if missing (use `init` to seed from a template)."""
+    """Drop into the /lore:surface-new skill to author a new surface interactively."""
     wiki = wiki or (ctx.obj or {}).get("wiki")
     wiki_dir = _resolve_wiki_dir(wiki)
-    surfaces_path = wiki_dir / "SURFACES.md"
-    if not surfaces_path.exists():
-        wiki_dir.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(surfaces_path, _BARE_HEADER)
-    # Reject duplicate
-    doc = load_surfaces(wiki_dir)
-    if doc is not None and any(s.name == name for s in doc.surfaces):
-        err_console.print(f"[red]surface '{name}' already exists in {surfaces_path}[/red]")
+    wiki_name = wiki_dir.name
+    _launch_claude_skill(f"/lore:surface-new {wiki_name}")
+
+
+def _launch_claude_skill(slash_command: str) -> None:
+    """Launch the `claude` CLI with a slash command as the initial message."""
+    import shutil
+    import subprocess
+    claude_bin = shutil.which("claude")
+    if claude_bin is None:
+        err_console.print(
+            "[red]`claude` is not on PATH. Install Claude Code "
+            "(https://claude.com/code) to use the interactive authoring "
+            "flow, or write a draft and call `lore surface commit "
+            "<draft.json>` directly.[/red]"
+        )
         raise typer.Exit(1)
-    new_section = f"\n\n## {name}\nTODO: describe this surface.\n\n```yaml\nrequired: [type, created, description, tags]\noptional: [draft]\n```\n"
-    text = surfaces_path.read_text()
-    if not text.endswith("\n"):
-        text += "\n"
-    atomic_write_text(surfaces_path, text + new_section)
-    err_console.print(f"[green]added surface '{name}' to {surfaces_path}[/green]")
-    print(json.dumps({"schema": "lore.surface.add/1", "data": {"path": str(surfaces_path), "name": name}}, indent=2))
+    try:
+        result = subprocess.run([claude_bin, slash_command], check=False)
+    except OSError as e:
+        err_console.print(f"[red]failed to launch claude: {e}[/red]")
+        raise typer.Exit(1)
+    if result.returncode != 0:
+        raise typer.Exit(result.returncode)
+
+
+@app.command("commit")
+def cmd_commit(
+    ctx: typer.Context,
+    draft_path: Path = typer.Argument(..., help="Path to the draft.json file."),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Bypass duplicate/existing-file checks and write anyway.",
+    ),
+) -> None:
+    """Write a surface draft (append or init) to the target wiki's SURFACES.md."""
+    from lore_core.surfaces import (
+        SurfaceDef,
+        render_section,
+        render_document,
+        validate_draft,
+    )
+
+    if not draft_path.exists():
+        err_console.print(f"[red]draft file not found: {draft_path}[/red]")
+        raise typer.Exit(1)
+    try:
+        draft = json.loads(draft_path.read_text())
+    except json.JSONDecodeError as e:
+        err_console.print(f"[red]draft is not valid JSON: {e}[/red]")
+        raise typer.Exit(1)
+
+    wiki = draft.get("wiki")
+    if not wiki:
+        err_console.print("[red]draft.wiki is required[/red]")
+        raise typer.Exit(1)
+    wiki_dir = _resolve_wiki_dir(wiki)
+    wiki_dir.mkdir(parents=True, exist_ok=True)
+
+    issues = validate_draft(draft, wiki_dir=wiki_dir)
+    blocking = [
+        i for i in issues
+        if not (force and i["code"] in {"duplicate_name", "plural_collision"})
+    ]
+    if blocking:
+        for i in blocking:
+            err_console.print(f"[red]✗ {i['code']}[/red]: {i['message']}")
+        raise typer.Exit(1)
+
+    surfaces_path = wiki_dir / "SURFACES.md"
+    op = draft["operation"]
+    if op == "append":
+        spec = draft["surface"]
+        surface_def = SurfaceDef(
+            name=spec["name"],
+            description=spec.get("description", ""),
+            required=list(spec.get("required") or []),
+            optional=list(spec.get("optional") or []),
+            extract_when=spec.get("extract_when", ""),
+            plural=spec.get("plural"),
+            slug_format=spec.get("slug_format"),
+            extract_prompt=spec.get("extract_prompt"),
+        )
+        if not surfaces_path.exists():
+            atomic_write_text(surfaces_path, _BARE_HEADER)
+        text = surfaces_path.read_text()
+        if not text.endswith("\n"):
+            text += "\n"
+        atomic_write_text(surfaces_path, text + "\n" + render_section(surface_def))
+        err_console.print(f"[green]committed surface '{surface_def.name}' to {surfaces_path}[/green]")
+        print(json.dumps({
+            "schema": "lore.surface.commit/1",
+            "data": {"operation": "append", "path": str(surfaces_path), "name": surface_def.name},
+        }, indent=2))
+    elif op == "init":
+        if surfaces_path.exists() and not force:
+            err_console.print(
+                f"[red]SURFACES.md already exists at {surfaces_path} (use --force to overwrite)[/red]"
+            )
+            raise typer.Exit(1)
+        specs = draft.get("surfaces") or []
+        surface_defs = [
+            SurfaceDef(
+                name=s["name"],
+                description=s.get("description", ""),
+                required=list(s.get("required") or []),
+                optional=list(s.get("optional") or []),
+                extract_when=s.get("extract_when", ""),
+                plural=s.get("plural"),
+                slug_format=s.get("slug_format"),
+                extract_prompt=s.get("extract_prompt"),
+            )
+            for s in specs
+        ]
+        text = render_document(
+            schema_version=draft.get("schema_version", 2),
+            surfaces=surface_defs,
+            wiki=wiki,
+        )
+        atomic_write_text(surfaces_path, text)
+        err_console.print(
+            f"[green]initialized {surfaces_path} with {len(surface_defs)} surface(s)[/green]"
+        )
+        print(json.dumps({
+            "schema": "lore.surface.commit/1",
+            "data": {
+                "operation": "init",
+                "path": str(surfaces_path),
+                "surfaces": [s.name for s in surface_defs],
+            },
+        }, indent=2))
+    else:
+        err_console.print(f"[red]unknown operation: {op!r}[/red]")
+        raise typer.Exit(1)
 
 
 @app.command("lint")
@@ -138,13 +229,33 @@ def cmd_lint(
     if doc is None:
         issues.append("file unparseable")
     else:
-        seen: set[str] = set()
+        from lore_core.surfaces import _surface_spec_issues
+        seen_names: set[str] = set()
+        seen_plurals: set[str] = set()
         for s in doc.surfaces:
-            if s.name in seen:
+            if s.name in seen_names:
                 issues.append(f"duplicate surface name: {s.name}")
-            seen.add(s.name)
+            seen_names.add(s.name)
             if not s.required:
                 issues.append(f"surface '{s.name}' has no `required:` list (no YAML block?)")
+            spec = {
+                "name": s.name,
+                "description": s.description,
+                "required": list(s.required),
+                "optional": list(s.optional),
+                "extract_when": s.extract_when,
+                "plural": s.plural,
+                "slug_format": s.slug_format,
+                "extract_prompt": s.extract_prompt,
+            }
+            for sub in _surface_spec_issues(
+                spec, existing_names=set(), existing_plurals=seen_plurals
+            ):
+                if sub["code"] == "duplicate_name":
+                    continue
+                issues.append(f"surface '{s.name}': {sub['message']}")
+            effective_plural = s.plural or (s.name if s.name.endswith("s") else f"{s.name}s")
+            seen_plurals.add(effective_plural)
     if issues:
         for line in issues:
             err_console.print(f"[red]✗[/red] {line}")

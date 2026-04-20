@@ -302,3 +302,44 @@ def test_abstract_empty_surfaces_doc_returns_empty():
     )
     assert result == []
     assert client.messages.calls == []
+
+
+def test_abstract_prompt_includes_extract_prompt_when_set():
+    """When a surface has extract_prompt, it appears in the LLM abstract call."""
+    doc = SurfacesDoc(
+        schema_version=2,
+        surfaces=[
+            SurfaceDef(
+                name="paper",
+                description="A publication.",
+                required=["type", "citekey"],
+                optional=[],
+                extract_prompt="Prefer citekey over title for slug.",
+            ),
+        ],
+        path=Path("/x"),
+    )
+    client = _make_client({"surfaces": []})
+    abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=doc,
+        source_notes_by_wikilink={"[[note1]]": "body"},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    prompt = client.messages.calls[0]["messages"][0]["content"]
+    assert "Prefer citekey over title for slug." in prompt
+
+
+def test_abstract_prompt_omits_extract_prompt_when_absent():
+    """A surface with no extract_prompt does not inject the guidance line."""
+    client = _make_client({"surfaces": []})
+    abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),  # no extract_prompt on any surface
+        source_notes_by_wikilink={"[[note1]]": "body"},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    prompt = client.messages.calls[0]["messages"][0]["content"]
+    assert "guidance:" not in prompt

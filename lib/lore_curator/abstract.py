@@ -98,6 +98,8 @@ def _build_prompt(
         lines.append(f"  - {s.name}: {s.description}")
         if s.extract_when:
             lines.append(f"    extract when: {s.extract_when}")
+        if s.extract_prompt:
+            lines.append(f"    guidance: {s.extract_prompt}")
     lines.append("")
     lines.append("SOURCE SESSION NOTES (truncated):")
     for wl in cluster.session_notes:
