@@ -40,3 +40,60 @@ def test_surface_context_with_existing_surfaces_and_notes(tmp_path, monkeypatch)
     assert len(ctx["current_surfaces"]) == 1
     assert ctx["current_surfaces"][0]["name"] == "concept"
     assert ctx["note_samples"]["concept"][0].endswith("2026-04-02-beta]]")
+
+
+def test_surface_validate_happy_path_append(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    wiki_dir = tmp_path / "wiki" / "x"
+    wiki_dir.mkdir(parents=True)
+    (wiki_dir / "SURFACES.md").write_text(
+        "# Surfaces\nschema_version: 2\n\n## concept\nA.\n\n```yaml\nrequired: [type]\noptional: []\n```\n"
+    )
+    from lore_mcp.server import handle_surface_validate
+    draft = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "append",
+        "surface": {"name": "paper", "description": "A paper.", "required": ["type"], "optional": []},
+    }
+    result = handle_surface_validate(wiki="x", draft=draft)
+    assert result["schema"] == "lore.surface.validate/1"
+    assert result["ok"] is True
+    assert result["issues"] == []
+    assert "## paper" in result["rendered_markdown"]
+    assert "+## paper" in result["diff_preview"]
+
+
+def test_surface_validate_surfaces_issues(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    wiki_dir = tmp_path / "wiki" / "x"
+    wiki_dir.mkdir(parents=True)
+    (wiki_dir / "SURFACES.md").write_text(
+        "# Surfaces\nschema_version: 2\n\n## paper\nA.\n\n```yaml\nrequired: [type]\noptional: []\n```\n"
+    )
+    from lore_mcp.server import handle_surface_validate
+    draft = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "append",
+        "surface": {"name": "paper", "description": "dup", "required": ["type"], "optional": []},
+    }
+    result = handle_surface_validate(wiki="x", draft=draft)
+    assert result["ok"] is False
+    assert any(i["code"] == "duplicate_name" for i in result["issues"])
+
+
+def test_surface_validate_init_diff_is_new_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    (tmp_path / "wiki" / "x").mkdir(parents=True)
+    from lore_mcp.server import handle_surface_validate
+    draft = {
+        "schema": "lore.surface.draft/1",
+        "wiki": "x",
+        "operation": "init",
+        "schema_version": 2,
+        "surfaces": [{"name": "a", "description": "A.", "required": ["type"], "optional": []}],
+    }
+    result = handle_surface_validate(wiki="x", draft=draft)
+    assert result["ok"] is True
+    assert result["diff_preview"].count("\n+") >= 3

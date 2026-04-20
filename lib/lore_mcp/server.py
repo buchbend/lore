@@ -20,6 +20,7 @@ Exposed tools:
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
     lore_surface_context    — gather context pack for surface-authoring skills
+    lore_surface_validate   — validate draft-spec + preview diff (no writes)
 
 Start:
     lore mcp
@@ -282,6 +283,103 @@ def handle_surface_context(wiki: str) -> dict[str, Any]:
     }
 
 
+def handle_surface_validate(wiki: str, draft: dict) -> dict[str, Any]:
+    """Validate a draft-spec. Returns issues + rendered markdown + unified diff."""
+    import difflib
+    from lore_core.surfaces import (
+        SurfaceDef,
+        render_section,
+        render_document,
+        validate_draft,
+    )
+
+    wiki_dir = _resolve_wiki(wiki)
+    if wiki_dir is None:
+        return {
+            "schema": "lore.surface.validate/1",
+            "ok": False,
+            "issues": [{
+                "level": "error",
+                "code": "unknown_wiki",
+                "message": f"wiki '{wiki}' not found under $LORE_ROOT/wiki/",
+            }],
+            "rendered_markdown": "",
+            "diff_preview": "",
+        }
+
+    issues = validate_draft(draft, wiki_dir=wiki_dir)
+    ok = not any(i["level"] == "error" for i in issues)
+
+    rendered = ""
+    op = draft.get("operation")
+    surfaces_path = wiki_dir / "SURFACES.md"
+    current_text = surfaces_path.read_text() if surfaces_path.exists() else ""
+    new_text = current_text
+
+    try:
+        if op == "append" and isinstance(draft.get("surface"), dict):
+            s = draft["surface"]
+            sd = SurfaceDef(
+                name=s.get("name", ""),
+                description=s.get("description", ""),
+                required=list(s.get("required") or []),
+                optional=list(s.get("optional") or []),
+                extract_when=s.get("extract_when", ""),
+                plural=s.get("plural"),
+                slug_format=s.get("slug_format"),
+                extract_prompt=s.get("extract_prompt"),
+            )
+            rendered = render_section(sd)
+            if current_text:
+                new_text = current_text.rstrip("\n") + "\n\n" + rendered
+            else:
+                new_text = "# Surfaces\nschema_version: 2\n\n" + rendered
+        elif op == "init" and isinstance(draft.get("surfaces"), list):
+            sds = [
+                SurfaceDef(
+                    name=s.get("name", ""),
+                    description=s.get("description", ""),
+                    required=list(s.get("required") or []),
+                    optional=list(s.get("optional") or []),
+                    extract_when=s.get("extract_when", ""),
+                    plural=s.get("plural"),
+                    slug_format=s.get("slug_format"),
+                    extract_prompt=s.get("extract_prompt"),
+                )
+                for s in draft["surfaces"]
+            ]
+            new_text = render_document(
+                schema_version=draft.get("schema_version", 2),
+                surfaces=sds,
+                wiki=wiki,
+            )
+            rendered = new_text
+    except Exception as e:
+        issues.append({
+            "level": "error",
+            "code": "render_failed",
+            "message": str(e),
+        })
+        ok = False
+
+    diff_lines = list(difflib.unified_diff(
+        current_text.splitlines(keepends=True),
+        new_text.splitlines(keepends=True),
+        fromfile="a/SURFACES.md",
+        tofile="b/SURFACES.md",
+    ))
+    diff_preview = "".join(diff_lines)
+
+    return {
+        "schema": "lore.surface.validate/1",
+        "wiki": wiki,
+        "ok": ok,
+        "issues": issues,
+        "rendered_markdown": rendered,
+        "diff_preview": diff_preview,
+    }
+
+
 def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
@@ -521,6 +619,22 @@ def _tool_schema() -> list[dict]:
                 "required": ["wiki"],
             },
         },
+        {
+            "name": "lore_surface_validate",
+            "description": (
+                "Validate a surface draft-spec (append or init). Returns structured "
+                "issue list + rendered markdown + unified diff preview against the "
+                "current SURFACES.md. Never writes."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "wiki": {"type": "string"},
+                    "draft": {"type": "object"},
+                },
+                "required": ["wiki", "draft"],
+            },
+        },
     ]
 
 
@@ -546,6 +660,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_inbox_classify(**args)
         case "lore_surface_context":
             return handle_surface_context(**args)
+        case "lore_surface_validate":
+            return handle_surface_validate(**args)
         case _:
             return {"error": f"unknown tool: {tool_name}"}
 
