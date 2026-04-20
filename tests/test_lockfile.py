@@ -159,3 +159,36 @@ def test_lock_owner_has_expected_fields(tmp_path):
         assert "cmd" in h
         assert "started_at" in h
         assert h["started_at"].endswith("Z")
+
+
+# ---------------------------------------------------------------------------
+# Item C — skip records enriched with lock-holder info
+# ---------------------------------------------------------------------------
+
+
+def test_skip_lock_held_includes_holder(tmp_path):
+    """run_curator_a skip records contain holder_pid/run_id/age when lock is held."""
+    import json
+    from lore_core.lockfile import curator_lock
+    from lore_curator.curator_a import run_curator_a
+
+    with curator_lock(tmp_path, timeout=0.0, run_id="first-run"):
+        run_curator_a(
+            lore_root=tmp_path,
+            anthropic_client=None,
+            adapter_lookup=lambda h: None,
+        )
+
+    runs = list((tmp_path / ".lore" / "runs").glob("*.jsonl"))
+    archival = [p for p in runs if not p.name.endswith(".trace.jsonl")]
+    assert archival, "Expected at least one run log"
+    records = [json.loads(l) for l in archival[0].read_text().splitlines() if l.strip()]
+    skip_records = [
+        r for r in records
+        if r.get("type") == "skip" and r.get("reason") == "lock-held"
+    ]
+    assert skip_records, "Expected a lock-held skip record"
+    s = skip_records[0]
+    assert s["holder_pid"]
+    assert s["holder_run_id"] == "first-run"
+    assert s["holder_age_s"] is not None and s["holder_age_s"] >= 0
