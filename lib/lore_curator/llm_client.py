@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from typing import Any, Callable, Protocol, runtime_checkable
@@ -245,3 +246,89 @@ class SubprocessClient:
     def is_available(cls, *, binary: str = "claude") -> bool:
         """Cheap PATH probe — used by make_llm_client to decide backend."""
         return shutil.which(binary) is not None
+
+
+def make_llm_client(
+    *,
+    backend: str | None = None,
+    api_key: str | None = None,
+    binary: str = "claude",
+) -> "LlmClient | None":
+    """Select and return an LlmClient backend, or None if nothing is available.
+
+    Resolution rules — first rule that applies wins:
+
+    1. ``backend == "subscription"``: return SubprocessClient if ``binary``
+       is on PATH, else raise LlmClientError.
+
+    2. ``backend == "api"``: return SDKClient if ``api_key`` is truthy,
+       else raise LlmClientError.
+
+    3. ``backend`` is None or ``"auto"``: read ``LORE_LLM_BACKEND`` env var
+       and apply rule 1 or 2 if it is set to ``"subscription"`` or ``"api"``.
+       If the env var is unset or ``"auto"``, use auto-detection:
+         - if SubprocessClient.is_available(binary=binary) → SubprocessClient
+         - elif api_key → SDKClient
+         - else → None   (caller should render "AI classification skipped")
+
+    4. Any other ``backend`` string → ValueError (programmer error, not a
+       runtime failure).
+
+    Returning None is deliberately allowed.  Callers that receive None should
+    reproduce the existing "AI classification skipped" warning with no
+    behaviour change from Plans 1/2.
+
+    Parameters
+    ----------
+    backend:
+        ``"subscription"``, ``"api"``, ``"auto"``, or None.  None and
+        ``"auto"`` are treated identically.
+    api_key:
+        Anthropic API key.  Both None and ``""`` are treated as absent.
+    binary:
+        Name or absolute path of the claude CLI binary (default ``"claude"``).
+    """
+    # Normalise explicit arg
+    effective = (backend or "").strip().lower() or None
+
+    if effective == "subscription":
+        if SubprocessClient.is_available(binary=binary):
+            return SubprocessClient(binary=binary)
+        raise LlmClientError(
+            "subscription backend requested but claude binary not on PATH"
+        )
+
+    if effective == "api":
+        if api_key:
+            return SDKClient(api_key=api_key)
+        raise LlmClientError(
+            "api backend requested but no ANTHROPIC_API_KEY provided"
+        )
+
+    if effective in (None, "auto"):
+        env = os.environ.get("LORE_LLM_BACKEND", "").strip().lower()
+
+        if env == "subscription":
+            if SubprocessClient.is_available(binary=binary):
+                return SubprocessClient(binary=binary)
+            raise LlmClientError(
+                "subscription backend requested but claude binary not on PATH"
+            )
+
+        if env == "api":
+            if api_key:
+                return SDKClient(api_key=api_key)
+            raise LlmClientError(
+                "api backend requested but no ANTHROPIC_API_KEY provided"
+            )
+
+        # env unset / "auto" — probe
+        if SubprocessClient.is_available(binary=binary):
+            return SubprocessClient(binary=binary)
+        if api_key:
+            return SDKClient(api_key=api_key)
+        return None
+
+    raise ValueError(
+        f"unknown backend {backend!r}: expected 'subscription', 'api', 'auto', or None"
+    )
