@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 from lore_core.types import Turn
+
+if TYPE_CHECKING:
+    from lore_core.run_log import RunLogger
 
 
 _SIMPLE_TIER_WARNING_ID = "noteworthy-simple-tier-v1"
@@ -39,6 +43,8 @@ def classify_slice(
     model_resolver: Callable[[str], str],         # e.g. lambda t: cfg.models.middle
     anthropic_client: AnthropicClientProtocol,
     lore_root: Path | None = None,
+    logger: "RunLogger | None" = None,
+    transcript_id: str | None = None,
 ) -> NoteworthyResult:
     """Classify a Turn slice via the LLM.
 
@@ -55,20 +61,57 @@ def classify_slice(
 
     model = model_resolver(tier)
     prompt_text = _build_prompt_text(turns)
+    prompt_messages = [{"role": "user", "content": prompt_text}]
 
     # Request structured output via tool_use
     tool_schema = _classify_tool_schema()
+
+    if logger is not None and logger.trace_enabled:
+        logger.emit(
+            "llm-prompt",
+            call="noteworthy",
+            tier=tier,
+            token_count=0,
+            messages=prompt_messages,
+        )
+
+    t_before = time.monotonic()
     resp = anthropic_client.messages.create(
         model=model,
         max_tokens=1024,
         tools=[tool_schema],
         tool_choice={"type": "tool", "name": "classify"},
-        messages=[{"role": "user", "content": prompt_text}],
+        messages=prompt_messages,
     )
+    latency_ms = int((time.monotonic() - t_before) * 1000)
 
     # Extract the tool_use block's input — that's our structured result
     data = _extract_tool_input(resp)
-    return _data_to_result(data)
+    result = _data_to_result(data)
+
+    if logger is not None and logger.trace_enabled:
+        try:
+            body = resp.content[0].text if resp.content else ""
+        except Exception:
+            body = ""
+        logger.emit(
+            "llm-response",
+            call="noteworthy",
+            token_count=len(body),
+            body=body,
+        )
+
+    if logger is not None:
+        logger.emit(
+            "noteworthy",
+            transcript_id=transcript_id,
+            verdict=result.noteworthy,
+            reason=result.reason,
+            tier=tier,
+            latency_ms=latency_ms,
+        )
+
+    return result
 
 
 def _build_prompt_text(turns: list[Turn]) -> str:

@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import typer
@@ -191,6 +192,19 @@ def doctor(
         for r in results:
             mark = "[green]✓[/green]" if r["ok"] else "[red]✗[/red]"
             console.print(f"{mark} [bold]{r['check']:<20}[/bold] {r['message']}")
+
+        # Capture pipeline panel
+        from lore_core.config import get_lore_root as _gl
+
+        try:
+            lr = _gl()
+        except Exception:
+            lr = None
+        if lr is not None:
+            console.print()
+            for line in run_capture_panel(lr):
+                console.print(line)
+
         if all_ok:
             console.print("\n[green]All checks passed.[/green]")
         else:
@@ -198,6 +212,168 @@ def doctor(
 
     if not all_ok:
         raise typer.Exit(code=1)
+
+
+def run_capture_panel(lore_root: Path) -> list[str]:
+    """Return lines for the Capture pipeline panel of `lore doctor`."""
+    lines: list[str] = ["Capture pipeline"]
+    any_data = False
+
+    # Last hook
+    events_path = lore_root / ".lore" / "hook-events.jsonl"
+    if events_path.exists():
+        any_data = True
+        last = _last_json_line(events_path)
+        if last:
+            event = last.get("event", "?")
+            outcome = last.get("outcome", "?")
+            ago = _relative_cap(last.get("ts", ""))
+            lines.append(f"  ✓ Last hook fired {ago} ({event}, outcome: {outcome})")
+
+    # Last curator run + last note filed (walk newest→oldest)
+    runs_dir = lore_root / ".lore" / "runs"
+    if runs_dir.exists():
+        files = sorted(
+            (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
+            key=lambda p: p.name,
+            reverse=True,
+        )
+        if files:
+            any_data = True
+            latest = files[0]
+            try:
+                records = [json.loads(l) for l in latest.read_text().splitlines() if l.strip()]
+            except (OSError, json.JSONDecodeError):
+                records = []
+            end = next((r for r in reversed(records) if r.get("type") == "run-end"), None)
+            if end:
+                ago = _relative_cap(end.get("ts", ""))
+                dur = f"{end.get('duration_ms', 0) / 1000:.1f}s"
+                t_count = sum(1 for r in records if r.get("type") == "transcript-start")
+                errors = end.get("errors", 0)
+                lines.append(
+                    f"  ✓ Last curator run {ago} ({dur}, {t_count} transcripts, {errors} errors)"
+                )
+            last_note = None
+            for p in files:
+                try:
+                    for l in p.read_text().splitlines():
+                        try:
+                            r = json.loads(l)
+                        except json.JSONDecodeError:
+                            continue
+                        if r.get("type") == "session-note" and r.get("action") == "filed":
+                            last_note = r
+                            break
+                except OSError:
+                    continue
+                if last_note:
+                    break
+            if last_note:
+                lines.append(
+                    f"  ✓ Last note filed {_relative_cap(last_note.get('ts', ''))} — "
+                    f"{last_note.get('wikilink', '')}"
+                )
+
+    # Stale lockfile
+    lock = lore_root / ".lore" / "curator.lock"
+    if lock.exists():
+        try:
+            age_s = datetime.now().timestamp() - lock.stat().st_mtime
+        except OSError:
+            age_s = 0
+        if age_s > 3600:
+            lines.append(
+                f"  ✗ Stale lockfile ({int(age_s / 60)}min old) — remove with `rm -r {lock}`"
+            )
+        else:
+            lines.append(f"  ✓ Lockfile present (curator running, {int(age_s)}s)")
+    else:
+        if any_data:
+            lines.append("  ✓ No stale lockfile")
+
+    # Hook errors in last 24h
+    hook_err = 0
+    if events_path.exists():
+        threshold = datetime.now(UTC) - timedelta(hours=24)
+        try:
+            for l in events_path.read_text().splitlines():
+                try:
+                    r = json.loads(l)
+                except json.JSONDecodeError:
+                    continue
+                if r.get("outcome") != "error":
+                    continue
+                ts_str = r.get("ts")
+                if not ts_str:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
+                if ts >= threshold:
+                    hook_err += 1
+        except OSError:
+            pass
+    if hook_err > 0:
+        lines.append(
+            f"  ✗ {hook_err} hook error{'s' if hook_err > 1 else ''} in last 24h "
+            f"— lore runs list --hooks"
+        )
+
+    # Observability log-write failures sentinel
+    marker = lore_root / ".lore" / "hook-log-failed.marker"
+    if marker.exists():
+        try:
+            mtime = datetime.fromtimestamp(marker.stat().st_mtime, tz=UTC)
+            age = datetime.now(UTC) - mtime
+            if age < timedelta(days=1):
+                lines.append(
+                    f"  ✗ Hook log write failed {_relative_cap(mtime.isoformat().replace('+00:00', 'Z'))} "
+                    f"— check disk space / permissions on {lore_root / '.lore'}"
+                )
+        except OSError:
+            pass
+
+    if not any_data:
+        lines.append("  No capture activity yet")
+    return lines
+
+
+def _last_json_line(path: Path) -> dict | None:
+    """Read the last JSON line from a file, skipping decode errors."""
+    try:
+        for line in reversed(path.read_text().splitlines()):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        return None
+    return None
+
+
+def _relative_cap(ts_iso: str) -> str:
+    """Convert ISO timestamp to relative time (e.g., '5m ago')."""
+    if not ts_iso:
+        return "?"
+    try:
+        ts = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return ts_iso
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    delta = datetime.now(UTC) - ts
+    s = delta.total_seconds()
+    if s < 60:
+        return "just now"
+    if s < 3600:
+        return f"{int(s // 60)}m ago"
+    if s < 86400:
+        return f"{int(s // 3600)}h ago"
+    return f"{int(s // 86400)}d ago"
 
 
 # Backwards-compat shim for tests + the legacy SUBCOMMANDS dispatcher.

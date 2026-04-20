@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import yaml
 
@@ -20,6 +20,9 @@ from lore_core.io import atomic_write_text
 from lore_core.schema import parse_frontmatter
 from lore_core.types import Scope, TranscriptHandle, Turn
 from lore_curator.noteworthy import NoteworthyResult
+
+if TYPE_CHECKING:
+    from lore_core.run_log import RunLogger
 
 
 @dataclass
@@ -39,6 +42,8 @@ def file_session_note(
     anthropic_client,
     model_resolver: Callable[[str], str],
     now: datetime | None = None,
+    logger: "RunLogger | None" = None,
+    transcript_id: str | None = None,
 ) -> FiledNote:
     """Create or merge a session note from a classified Turn slice."""
     now = now or datetime.now(UTC)
@@ -57,8 +62,28 @@ def file_session_note(
         target = Path(decision["merge"])
         if not target.is_absolute():
             target = sessions_dir / target
+        target_slug = target.stem
+
+        if logger is not None:
+            logger.emit(
+                "merge-check",
+                transcript_id=transcript_id,
+                target=f"[[{target_slug}]]",
+                similarity=None,
+                decision="merge",
+            )
+
         _append_to_note(target, noteworthy=noteworthy, handle=handle, turns=turns, now=now)
         wikilink = _wikilink_for(target)
+
+        if logger is not None:
+            logger.emit(
+                "session-note",
+                transcript_id=transcript_id,
+                action="merged",
+                wikilink=wikilink,
+            )
+
         return FiledNote(path=target, wikilink=wikilink, was_merge=True)
 
     # New note
@@ -70,6 +95,16 @@ def file_session_note(
     while path.exists():
         counter += 1
         path = sessions_dir / f"{date_str}-{slug}-{counter}.md"
+
+    if logger is not None and recent_notes:
+        logger.emit(
+            "merge-check",
+            transcript_id=transcript_id,
+            target=None,
+            similarity=None,
+            decision="new",
+        )
+
     _write_new_note(
         path,
         scope=scope,
@@ -78,7 +113,18 @@ def file_session_note(
         turns=turns,
         now=now,
     )
-    return FiledNote(path=path, wikilink=_wikilink_for(path), was_merge=False)
+    wikilink = _wikilink_for(path)
+
+    if logger is not None:
+        logger.emit(
+            "session-note",
+            transcript_id=transcript_id,
+            action="filed",
+            path=str(path),
+            wikilink=wikilink,
+        )
+
+    return FiledNote(path=path, wikilink=wikilink, was_merge=False)
 
 
 # ---- private helpers ----

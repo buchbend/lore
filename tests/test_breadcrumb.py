@@ -344,3 +344,123 @@ def test_banner_verbose_vs_normal(
     # For v1, verbose == normal (same string returned)
     # Just verify it produces a valid banner
     assert result.startswith("lore: ")
+
+
+# ---------------------------------------------------------------------------
+# 11. All-skips hint
+# ---------------------------------------------------------------------------
+
+
+def test_banner_all_skips_hint(tmp_path: Path) -> None:
+    """Most recent run: errors=0, filed=0, skipped>0, no pending → hint appears."""
+    import json
+
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir(parents=True)
+    runs = lore_dir / "runs"
+    runs.mkdir(parents=True)
+    (runs / "2026-04-20T14-32-05-skipsr.jsonl").write_text(
+        json.dumps({"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"}) + "\n"
+        + json.dumps({"type": "run-end", "ts": "2026-04-20T14:32:09Z",
+                      "duration_ms": 4000, "notes_new": 0, "notes_merged": 0,
+                      "skipped": 3, "errors": 0}) + "\n"
+    )
+    from lore_cli.breadcrumb import render_banner
+    now = datetime(2026, 4, 20, 15, 0, 0, tzinfo=UTC)
+    scope = Scope(
+        wiki="private",
+        scope="private:root",
+        backend="none",
+        claude_md_path=tmp_path / "CLAUDE.md",
+    )
+    ctx = BannerContext(
+        lore_root=tmp_path,
+        scope=scope,
+        wiki_config=WikiConfig(breadcrumb=BreadcrumbConfig(mode="normal")),
+        now=now,
+        note_count=5,
+    )
+    banner = render_banner(ctx)
+    assert banner is not None
+    assert "0 notes" in banner
+    assert "3 skipped" in banner
+    assert "lore runs show latest" in banner
+
+
+# ---------------------------------------------------------------------------
+# 12. Last-run error prefix
+# ---------------------------------------------------------------------------
+
+
+def test_banner_last_run_error_prefix(tmp_path: Path) -> None:
+    """Most recent run ended with errors > 0 → lore!: prefix."""
+    import json
+
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir(parents=True)
+    runs = lore_dir / "runs"
+    runs.mkdir(parents=True)
+    (runs / "2026-04-20T14-32-05-errrun.jsonl").write_text(
+        json.dumps({"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"}) + "\n"
+        + json.dumps({"type": "run-end", "ts": "2026-04-20T14:32:09Z",
+                      "duration_ms": 4000, "notes_new": 0, "notes_merged": 0,
+                      "skipped": 0, "errors": 2}) + "\n"
+    )
+    from lore_cli.breadcrumb import render_banner
+    now = datetime(2026, 4, 20, 15, 0, 0, tzinfo=UTC)
+    scope = Scope(
+        wiki="private",
+        scope="private:root",
+        backend="none",
+        claude_md_path=tmp_path / "CLAUDE.md",
+    )
+    ctx = BannerContext(
+        lore_root=tmp_path,
+        scope=scope,
+        wiki_config=WikiConfig(breadcrumb=BreadcrumbConfig(mode="normal")),
+        now=now,
+        note_count=5,
+    )
+    banner = render_banner(ctx)
+    assert banner is not None
+    assert banner.startswith("lore!:")
+    assert "2 errors" in banner
+    assert "errrun" in banner
+
+
+# ---------------------------------------------------------------------------
+# 13. Hook-error trailing segment
+# ---------------------------------------------------------------------------
+
+
+def test_banner_hook_error_trailing_segment(tmp_path: Path) -> None:
+    """A recent hook-events record with outcome=error appends trailing segment."""
+    import json
+    from datetime import UTC, datetime
+
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir(parents=True)
+    events = lore_dir / "hook-events.jsonl"
+    recent = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    events.write_text(
+        json.dumps({"schema_version": 1, "ts": recent, "event": "session-end",
+                    "outcome": "error"}) + "\n"
+    )
+    from lore_cli.breadcrumb import render_banner
+    now = datetime.now(UTC)
+    scope = Scope(
+        wiki="private",
+        scope="private:root",
+        backend="none",
+        claude_md_path=tmp_path / "CLAUDE.md",
+    )
+    ctx = BannerContext(
+        lore_root=tmp_path,
+        scope=scope,
+        wiki_config=WikiConfig(breadcrumb=BreadcrumbConfig(mode="normal")),
+        now=now,
+        note_count=5,
+    )
+    banner = render_banner(ctx)
+    assert banner is not None
+    assert "hook error" in banner

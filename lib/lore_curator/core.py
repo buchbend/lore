@@ -820,6 +820,7 @@ def run_command(
     dry_run: bool = typer.Option(False, "--dry-run", help="Classify but don't write notes or advance ledger."),
     abstract: bool = typer.Option(False, "--abstract", help="Also run Curator B (graph abstraction) after Curator A."),
     wiki: str = typer.Option(None, "--wiki", help="Limit Curator B to a single wiki (only meaningful with --abstract)."),
+    trace_llm: bool = typer.Option(False, "--trace-llm", help="Capture LLM prompts/responses to runs/<id>.trace.jsonl (equivalent to LORE_TRACE_LLM=1)."),
 ) -> None:
     """Run Curator A — classify pending transcripts and file session notes.
 
@@ -885,6 +886,9 @@ def run_command(
     # keep timeout=0.0 (fire-and-forget, yield to any active curator).
     lock_timeout = 60.0 if sys.stdout.isatty() else 0.0
 
+    # Compute effective trace_llm from flag or environment variable
+    effective_trace = trace_llm or os.environ.get("LORE_TRACE_LLM") == "1"
+
     result = run_curator_a(
         lore_root=lore_root,
         scope=scope_obj,
@@ -892,6 +896,8 @@ def run_command(
         dry_run=dry_run,
         now=datetime.now(UTC),
         lock_timeout=lock_timeout,
+        trigger="manual",
+        trace_llm=effective_trace,
     )
 
     skipped_summary = ", ".join(

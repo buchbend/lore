@@ -29,6 +29,7 @@ from lore_cli import (
     new_wiki_cmd,
     registry_cmd,
     resume_cmd,
+    runs_cmd,
     session_cmd,
     surface_cmd,
 )
@@ -63,6 +64,7 @@ app.add_typer(migrate_cmd.app, name="migrate")
 app.add_typer(new_wiki_cmd.app, name="new-wiki")
 app.add_typer(registry_cmd.app, name="registry")
 app.add_typer(resume_cmd.app, name="resume")
+app.add_typer(runs_cmd.app, name="runs")
 app.add_typer(search_cmd.app, name="search")
 app.add_typer(session_cmd.app, name="session")
 app.add_typer(surface_cmd.app, name="surface")

@@ -384,3 +384,52 @@ def test_capture_handles_unknown_host_gracefully(tmp_path: Path) -> None:
     assert result.exit_code in (0, 1), (
         f"Expected exit code 0 or 1, got {result.exit_code}.\n{result.output}"
     )
+
+
+def test_capture_emits_hook_event_happy_path(tmp_path: Path, fake_adapter_factory, monkeypatch) -> None:
+    """capture() writes one line to hook-events.jsonl with expected outcome."""
+    import json
+    from lore_cli.hooks import capture
+
+    project = _make_attached_project(tmp_path)
+    handle = _make_handle(project, host="fake")
+    fake_adapter_factory([handle])
+
+    monkeypatch.setenv("LORE_ROOT", str(project))
+    capture(event="session-end", cwd_override=project, host="fake")
+
+    log = project / ".lore" / "hook-events.jsonl"
+    assert log.exists(), "hook-events.jsonl should be created"
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len(records) >= 1
+    latest = records[-1]
+    assert latest["event"] == "session-end"
+    assert latest["outcome"] in {"ledger-advanced", "below-threshold", "spawned-curator", "no-new-turns"}
+    assert "duration_ms" in latest
+    assert latest["error"] is None
+
+
+def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_factory, monkeypatch) -> None:
+    """An adapter that raises during discovery should write outcome=error and re-raise."""
+    import json
+    from lore_cli import hooks
+
+    project = _make_attached_project(tmp_path)
+    handle = _make_handle(project, host="fake")
+    fake_adapter_factory([handle])
+
+    monkeypatch.setenv("LORE_ROOT", str(project))
+
+    def boom(*a, **kw):
+        raise RuntimeError("adapter boom")
+
+    monkeypatch.setattr(hooks, "get_adapter", boom)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        hooks.capture(event="session-end", cwd_override=project, host="fake")
+
+    log = project / ".lore" / "hook-events.jsonl"
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    errors = [r for r in records if r["outcome"] == "error"]
+    assert errors, "expected at least one error record"
+    assert errors[-1]["error"]["type"] == "RuntimeError"

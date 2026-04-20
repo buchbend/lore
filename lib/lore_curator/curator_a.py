@@ -14,6 +14,7 @@ from lore_core.ledger import (
 )
 from lore_core.lockfile import curator_lock, LockContendedError
 from lore_core.redaction import redact
+from lore_core.run_log import RunLogger
 from lore_core.scope_resolver import resolve_scope
 from lore_core.types import Scope, Turn, TranscriptHandle
 from lore_core.wiki_config import WikiConfig, load_wiki_config
@@ -40,6 +41,8 @@ def run_curator_a(
     dry_run: bool = False,
     now: datetime | None = None,
     lock_timeout: float = 0.0,             # interactive callers pass >0 to wait
+    trigger: str = "hook",
+    trace_llm: bool = False,
 ) -> CuratorAResult:
     """Run Curator A one pass.
 
@@ -53,7 +56,7 @@ def run_curator_a(
       or not) so we don't re-process.
     - `dry_run=True` skips all writes (including ledger advance and
       session-note file creation) but still runs the classification
-      (unless anthropic_client is None).
+      (unless anthropic_client is None). Dry-run bypasses the lockfile.
     """
     start = time.monotonic()
     now = now or datetime.now(UTC)
@@ -61,9 +64,32 @@ def run_curator_a(
 
     lookup = adapter_lookup or get_adapter
     tledger = TranscriptLedger(lore_root)
+    pending_snapshot = tledger.pending()
 
-    try:
-        with curator_lock(lore_root, timeout=lock_timeout):
+    config_snapshot = {"noteworthy_tier": "middle"}
+    effective_trigger = "dry-run" if dry_run else trigger
+
+    # Compute a ledger snapshot hash for dry-runs so divergent output is debuggable.
+    ledger_snapshot_hash = None
+    if dry_run:
+        import hashlib
+        h = hashlib.sha256()
+        for e in sorted(pending_snapshot, key=lambda x: (x.host, x.transcript_id)):
+            h.update(f"{e.host}:{e.transcript_id}:{e.digested_hash or ''}\n".encode())
+        ledger_snapshot_hash = h.hexdigest()[:16]
+
+    with RunLogger(
+        lore_root,
+        trigger=effective_trigger,
+        pending_count=len(pending_snapshot),
+        config_snapshot=config_snapshot,
+        dry_run=dry_run,
+        trace_llm=trace_llm,
+        ledger_snapshot_hash=ledger_snapshot_hash,
+    ) as logger:
+        if dry_run:
+            # Dry-run bypasses the lockfile — must not block on a real run,
+            # and writes nothing anyway.
             pending = tledger.pending()
             for entry in pending:
                 result.transcripts_considered += 1
@@ -74,12 +100,34 @@ def run_curator_a(
                     lore_root=lore_root,
                     lookup=lookup,
                     anthropic_client=anthropic_client,
-                    dry_run=dry_run,
+                    dry_run=True,
                     now=now,
+                    logger=logger,
                 )
                 _record_outcome(result, outcome)
-    except LockContendedError:
-        result.skipped_reasons["lock_contended"] = result.skipped_reasons.get("lock_contended", 0) + 1
+        else:
+            try:
+                with curator_lock(lore_root, timeout=lock_timeout):
+                    pending = tledger.pending()
+                    for entry in pending:
+                        result.transcripts_considered += 1
+                        outcome = _process_entry(
+                            entry,
+                            tledger=tledger,
+                            requested_scope=scope,
+                            lore_root=lore_root,
+                            lookup=lookup,
+                            anthropic_client=anthropic_client,
+                            dry_run=False,
+                            now=now,
+                            logger=logger,
+                        )
+                        _record_outcome(result, outcome)
+            except LockContendedError:
+                result.skipped_reasons["lock_contended"] = (
+                    result.skipped_reasons.get("lock_contended", 0) + 1
+                )
+                logger.emit("skip", reason="lock-held")
 
     result.duration_seconds = time.monotonic() - start
     return result
@@ -102,19 +150,34 @@ def _process_entry(
     anthropic_client: Any,
     dry_run: bool,
     now: datetime,
+    logger: RunLogger | None = None,
 ) -> _Outcome:
     # Resolve scope from the transcript's directory; must be attached.
     attached = resolve_scope(entry.directory)
     if attached is None:
+        if logger is not None:
+            logger.emit("skip", transcript_id=entry.transcript_id, reason="unattached")
         return _Outcome(skip_reason="unattached")
     if requested_scope is not None and attached.scope != requested_scope.scope:
+        if logger is not None:
+            logger.emit("skip", transcript_id=entry.transcript_id, reason="scope-mismatch")
         return _Outcome(skip_reason="scope_mismatch")
 
     # Adapter lookup
     try:
         adapter = lookup(entry.host)
     except Exception:
+        if logger is not None:
+            logger.emit("skip", transcript_id=entry.transcript_id, reason="unknown-host")
         return _Outcome(skip_reason="unknown_host")
+
+    if logger is not None:
+        logger.emit(
+            "transcript-start",
+            transcript_id=entry.transcript_id,
+            hash_before=entry.digested_hash,
+            new_turns=0,  # approximate until Plan 3 breadcrumb drain exists
+        )
 
     handle = _handle_from_entry(entry)
     turns = list(
@@ -136,6 +199,8 @@ def _process_entry(
                 session_note=entry.session_note,
                 curator_a_run=now,
             )
+        if logger is not None:
+            logger.emit("skip", transcript_id=entry.transcript_id, reason="no-new-turns")
         return _Outcome(skip_reason="no_new_turns")
 
     # Redact content before it ever sees the LLM.
@@ -153,6 +218,8 @@ def _process_entry(
         return {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}[t]
 
     if anthropic_client is None:
+        if logger is not None:
+            logger.emit("skip", transcript_id=entry.transcript_id, reason="no-anthropic-client")
         return _Outcome(skip_reason="no_anthropic_client")
 
     noteworthy = classify_slice(
@@ -161,6 +228,8 @@ def _process_entry(
         model_resolver=model_resolver,
         anthropic_client=anthropic_client,
         lore_root=lore_root,
+        logger=logger,
+        transcript_id=entry.transcript_id,
     )
 
     last_hash = turns[-1].content_hash()
@@ -177,6 +246,8 @@ def _process_entry(
                 session_note=None,
                 curator_a_run=now,
             )
+        if logger is not None:
+            logger.emit("skip", transcript_id=entry.transcript_id, reason="noteworthy-false")
         return _Outcome(skip_reason=f"not_noteworthy:{noteworthy.reason}", was_noteworthy=False)
 
     # File it.
@@ -192,6 +263,8 @@ def _process_entry(
         anthropic_client=anthropic_client,
         model_resolver=model_resolver,
         now=now,
+        logger=logger,
+        transcript_id=entry.transcript_id,
     )
     tledger.advance(
         host=entry.host,
