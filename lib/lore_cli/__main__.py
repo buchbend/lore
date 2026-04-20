@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 
+import click
 import typer
 
 # Subcommand apps — every one of these is a typer.Typer instance with
@@ -101,6 +102,12 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(result, int):
             return result
         return 0
+    except click.exceptions.ClickException as e:
+        e.show()
+        return e.exit_code
+    except click.exceptions.Abort:
+        print("Aborted.", file=sys.stderr)
+        return 130
     except typer.Exit as e:
         return int(e.exit_code or 0)
     except SystemExit as e:

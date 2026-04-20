@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import click
 import typer
 
 
@@ -50,6 +51,14 @@ def argv_main(app: typer.Typer) -> Callable[[list[str] | None], int]:
             if isinstance(result, int):
                 return result
             return 0
+        except click.exceptions.ClickException as e:
+            e.show()
+            return e.exit_code
+        except click.exceptions.Abort:
+            import sys as _sys
+
+            print("Aborted.", file=_sys.stderr)
+            return 130
         except typer.Exit as e:
             return int(e.exit_code or 0)
         except SystemExit as e:

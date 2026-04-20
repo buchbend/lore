@@ -24,38 +24,34 @@ def _make_surfaces_md(wiki_dir: Path, content: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_surface_add_creates_surfaces_md_when_missing(tmp_path, monkeypatch):
-    """fresh wiki dir; surface add concept --wiki testwiki creates SURFACES.md from standard template.
+def test_surface_add_creates_bare_surfaces_md_when_missing(tmp_path, monkeypatch):
+    """fresh wiki dir; surface add concept --wiki testwiki creates a minimal SURFACES.md with only concept.
 
-    The standard template already contains a ## concept section, so the command
-    creates the file but then exits 1 with a duplicate-rejection (the file is
-    created as a side-effect of initialising from the template).
+    `add` no longer auto-seeds from the standard template — that's `init`'s job.
+    A missing SURFACES.md gets a bare header + the requested surface appended.
     """
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     result = runner.invoke(app, ["add", "concept", "--wiki", "testwiki"])
+    assert result.exit_code == 0, result.output + result.stderr
     surfaces_path = tmp_path / "wiki" / "testwiki" / "SURFACES.md"
-    # File must have been created (from standard template) even though we exit 1
     assert surfaces_path.exists()
     content = surfaces_path.read_text()
-    # Standard template content is present
     assert "schema_version: 2" in content
     assert "## concept" in content
-    # Duplicate rejected — the standard template already defines concept
-    assert result.exit_code == 1
-    assert "already exists" in result.stderr
+    # Template-only surfaces (decision/session) must NOT be pre-seeded
+    assert "## decision" not in content
+    assert "## session" not in content
 
 
 def test_surface_add_creates_surfaces_md_when_missing_new_surface(tmp_path, monkeypatch):
-    """fresh wiki dir; surface add newsurface --wiki testwiki creates SURFACES.md and appends."""
+    """fresh wiki dir; surface add newsurface --wiki testwiki creates minimal SURFACES.md and appends."""
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     result = runner.invoke(app, ["add", "newsurface", "--wiki", "testwiki"])
     assert result.exit_code == 0, result.output + result.stderr
     surfaces_path = tmp_path / "wiki" / "testwiki" / "SURFACES.md"
     assert surfaces_path.exists()
     content = surfaces_path.read_text()
-    # Standard template content is present
     assert "schema_version: 2" in content
-    # New section appended
     assert "## newsurface" in content
 
 
@@ -89,24 +85,62 @@ def test_surface_add_rejects_duplicate_name(tmp_path, monkeypatch):
     assert "already exists" in result.stderr
 
 
-def test_surface_add_uses_template_initial_content(tmp_path, monkeypatch):
-    """fresh wiki dir; surface add my_surface --template science creates SURFACES.md with science template."""
+# ---------------------------------------------------------------------------
+# surface init
+# ---------------------------------------------------------------------------
+
+
+def test_surface_init_seeds_from_standard_template(tmp_path, monkeypatch):
+    """fresh wiki dir; surface init --wiki x seeds SURFACES.md from standard template."""
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
-    result = runner.invoke(app, ["add", "my_surface", "--wiki", "x", "--template", "science"])
+    result = runner.invoke(app, ["init", "--wiki", "x"])
     assert result.exit_code == 0, result.output + result.stderr
     surfaces_path = tmp_path / "wiki" / "x" / "SURFACES.md"
     assert surfaces_path.exists()
     content = surfaces_path.read_text()
-    # Science template contains ## paper
-    assert "## paper" in content
-    # And my_surface was appended
-    assert "## my_surface" in content
+    assert "schema_version: 2" in content
+    # Standard template ships concept/decision/session
+    assert "## concept" in content
+    assert "## decision" in content
 
 
-def test_surface_add_unknown_template_rejected(tmp_path, monkeypatch):
-    """surface add x --wiki x --template nonsense exits non-zero."""
+def test_surface_init_uses_template_option(tmp_path, monkeypatch):
+    """surface init --template science seeds from the science template."""
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
-    result = runner.invoke(app, ["add", "x", "--wiki", "x", "--template", "nonsense"])
+    result = runner.invoke(app, ["init", "--wiki", "x", "--template", "science"])
+    assert result.exit_code == 0, result.output + result.stderr
+    content = (tmp_path / "wiki" / "x" / "SURFACES.md").read_text()
+    assert "## paper" in content
+
+
+def test_surface_init_refuses_to_overwrite(tmp_path, monkeypatch):
+    """surface init refuses to overwrite an existing SURFACES.md without --force."""
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    wiki_dir = tmp_path / "wiki" / "x"
+    _make_surfaces_md(wiki_dir, "# Surfaces\nschema_version: 2\n\n## existing\n")
+    result = runner.invoke(app, ["init", "--wiki", "x"])
+    assert result.exit_code == 1
+    assert "already exists" in result.stderr.lower()
+    # File unchanged
+    assert "## existing" in (wiki_dir / "SURFACES.md").read_text()
+
+
+def test_surface_init_force_overwrites(tmp_path, monkeypatch):
+    """surface init --force overwrites an existing SURFACES.md."""
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    wiki_dir = tmp_path / "wiki" / "x"
+    _make_surfaces_md(wiki_dir, "# Surfaces\nschema_version: 2\n\n## existing\n")
+    result = runner.invoke(app, ["init", "--wiki", "x", "--force"])
+    assert result.exit_code == 0, result.output + result.stderr
+    content = (wiki_dir / "SURFACES.md").read_text()
+    assert "## existing" not in content
+    assert "## concept" in content
+
+
+def test_surface_init_unknown_template_rejected(tmp_path, monkeypatch):
+    """surface init --template nonsense exits non-zero."""
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    result = runner.invoke(app, ["init", "--wiki", "x", "--template", "nonsense"])
     assert result.exit_code != 0
 
 

@@ -1,4 +1,4 @@
-"""`lore surface add` / `lore surface lint` — manage SURFACES.md per wiki."""
+"""`lore surface init` / `add` / `lint` — manage SURFACES.md per wiki."""
 
 from __future__ import annotations
 
@@ -24,6 +24,18 @@ app = typer.Typer(
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
+
+
+@app.callback()
+def _surface_group(
+    ctx: typer.Context,
+    wiki: str | None = typer.Option(
+        None, "--wiki", help="Wiki name. Inferred from cwd if absent. Shared by `add` and `lint`."
+    ),
+) -> None:
+    """Group-level `--wiki` flag, shared by all subcommands."""
+    ctx.ensure_object(dict)
+    ctx.obj["wiki"] = wiki
 
 
 def _resolve_wiki_dir(wiki: str | None) -> Path:
@@ -54,23 +66,47 @@ def _load_template(name: str) -> str:
     return resources.files("lore_core.surface_templates").joinpath(f"{name}.md").read_text()
 
 
-@app.command("add")
-def cmd_add(
-    name: str = typer.Argument(..., help="Surface name (e.g., 'concept', 'paper')."),
-    wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Inferred from cwd if absent."),
+_BARE_HEADER = "# Surfaces\nschema_version: 2\n"
+
+
+@app.command("init")
+def cmd_init(
+    ctx: typer.Context,
+    wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Overrides group-level --wiki."),
     template: str = typer.Option(
-        "standard", "--template", help=f"Initial-file template if SURFACES.md is absent: {TEMPLATE_NAMES}"
+        "standard", "--template", help=f"Template to seed from: {TEMPLATE_NAMES}"
     ),
+    force: bool = typer.Option(False, "--force", help="Overwrite SURFACES.md if it already exists."),
 ) -> None:
-    """Append a new section to SURFACES.md (creating the file from the chosen template if missing)."""
+    """Create SURFACES.md from a shipped template. Refuses to overwrite unless --force."""
     if template not in TEMPLATE_NAMES:
         err_console.print(f"[red]unknown template {template!r}; choose from {TEMPLATE_NAMES}[/red]")
         raise typer.Exit(1)
+    wiki = wiki or (ctx.obj or {}).get("wiki")
+    wiki_dir = _resolve_wiki_dir(wiki)
+    surfaces_path = wiki_dir / "SURFACES.md"
+    if surfaces_path.exists() and not force:
+        err_console.print(f"[red]SURFACES.md already exists at {surfaces_path} (use --force to overwrite)[/red]")
+        raise typer.Exit(1)
+    wiki_dir.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(surfaces_path, _load_template(template))
+    err_console.print(f"[green]initialized {surfaces_path} from template '{template}'[/green]")
+    print(json.dumps({"schema": "lore.surface.init/1", "data": {"path": str(surfaces_path), "template": template}}, indent=2))
+
+
+@app.command("add")
+def cmd_add(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Surface name (e.g., 'concept', 'paper')."),
+    wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Overrides group-level --wiki."),
+) -> None:
+    """Append a new section to SURFACES.md. Creates a minimal file if missing (use `init` to seed from a template)."""
+    wiki = wiki or (ctx.obj or {}).get("wiki")
     wiki_dir = _resolve_wiki_dir(wiki)
     surfaces_path = wiki_dir / "SURFACES.md"
     if not surfaces_path.exists():
         wiki_dir.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(surfaces_path, _load_template(template))
+        atomic_write_text(surfaces_path, _BARE_HEADER)
     # Reject duplicate
     doc = load_surfaces(wiki_dir)
     if doc is not None and any(s.name == name for s in doc.surfaces):
@@ -87,9 +123,11 @@ def cmd_add(
 
 @app.command("lint")
 def cmd_lint(
-    wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Inferred from cwd if absent."),
+    ctx: typer.Context,
+    wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Overrides group-level --wiki."),
 ) -> None:
     """Validate SURFACES.md: parseable, no duplicate names, each surface has a YAML block."""
+    wiki = wiki or (ctx.obj or {}).get("wiki")
     wiki_dir = _resolve_wiki_dir(wiki)
     surfaces_path = wiki_dir / "SURFACES.md"
     if not surfaces_path.exists():

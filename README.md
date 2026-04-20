@@ -186,6 +186,7 @@ lore new-wiki scratch --surfaces custom      # skeleton you fill yourself
 ```
 
 `SURFACES.md` is human-editable markdown with embedded YAML.
+`lore surface init [--template <name>]` seeds it from a shipped template;
 `lore surface add <name>` and `lore surface lint` manage it afterwards.
 
 ### What runs automatically
