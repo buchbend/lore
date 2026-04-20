@@ -100,11 +100,14 @@ def test_curator_run_reports_summary_to_stdout(tmp_path, monkeypatch):
 
 
 def test_curator_run_missing_anthropic_key_warns(tmp_path, monkeypatch):
-    """Without ANTHROPIC_API_KEY the command runs without crashing and hints."""
+    """Without ANTHROPIC_API_KEY (and no claude binary), the command runs and warns."""
     lore_root = tmp_path / "lore_root"
     lore_root.mkdir()
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("LORE_LLM_BACKEND", raising=False)
+    # Ensure no subprocess backend is picked up either
+    monkeypatch.setattr("shutil.which", lambda name: None)
 
     calls = []
     monkeypatch.setattr(
@@ -114,12 +117,13 @@ def test_curator_run_missing_anthropic_key_warns(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["curator", "run"])
     assert result.exit_code == 0, result.output
-    # Should mention no key / anthropic / api_key in output
-    combined = (result.output or "").lower()
+    # Warning now goes to stderr via err_console; check it mentions classification skip
+    combined = ((result.output or "") + (result.stderr or "")).lower()
     assert (
         "anthropic" in combined
         or "api_key" in combined
         or "key" in combined
+        or "skip" in combined
     )
 
 

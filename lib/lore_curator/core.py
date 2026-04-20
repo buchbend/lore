@@ -850,25 +850,41 @@ def run_command(
             claude_md_path=Path("."),
         )
 
-    # Attempt to instantiate Anthropic client (lazy)
-    anthropic_client = None
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if api_key:
-        try:
-            import anthropic as _anthropic
-            anthropic_client = _anthropic.Anthropic(api_key=api_key)
-        except Exception as exc:
-            console.print(f"[yellow]Warning:[/yellow] Could not instantiate Anthropic client: {exc}")
+    # Resolve LLM backend via factory
+    from lore_curator.llm_client import LlmClientError, make_llm_client
+
+    err_console = Console(stderr=True)
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or None
+    backend_error: LlmClientError | None = None
+    try:
+        llm_client = make_llm_client(api_key=api_key)
+    except LlmClientError as exc:
+        err_console.print(f"[yellow]Warning:[/yellow] {exc}")
+        llm_client = None
+        backend_error = exc
+
+    if llm_client is None:
+        if backend_error is None:
+            # Auto-detection had nothing to pick — print the skip-AI warning.
+            err_console.print(
+                "[yellow]Warning:[/yellow] Curator will skip AI classification: "
+                "neither 'claude' CLI on PATH nor ANTHROPIC_API_KEY set. Install "
+                "Claude Code for subscription inference, or export "
+                "ANTHROPIC_API_KEY for API inference."
+            )
+        # If backend_error was set, the specific warning was already printed.
     else:
-        console.print(
-            "[yellow]Warning:[/yellow] ANTHROPIC_API_KEY not set — "
-            "curator will skip AI classification (dry content pass only)."
-        )
+        backend = getattr(llm_client, "backend_name", "")
+        label = {
+            "subprocess": "Claude Code subscription (claude -p)",
+            "sdk": "Anthropic API (anthropic SDK)",
+        }.get(backend, backend or "unknown backend")
+        console.print(f"[dim]Curator backend: {label}[/dim]")
 
     result = run_curator_a(
         lore_root=lore_root,
         scope=scope_obj,
-        anthropic_client=anthropic_client,
+        anthropic_client=llm_client,
         dry_run=dry_run,
         now=datetime.now(UTC),
     )
@@ -897,7 +913,7 @@ def run_command(
             b_result = run_curator_b(
                 lore_root=lore_root,
                 wiki=wiki_name,
-                anthropic_client=anthropic_client,
+                anthropic_client=llm_client,
                 dry_run=dry_run,
                 now=datetime.now(UTC),
             )
