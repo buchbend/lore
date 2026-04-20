@@ -81,3 +81,162 @@ class SDKClient:
     @property
     def backend_name(self) -> str:
         return "sdk"
+
+
+import json
+import shutil
+import subprocess
+from typing import Callable
+
+# A subprocess runner has the same shape as subprocess.run for the kwargs we use.
+SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
+
+
+class _SubprocessMessagesAPI:
+    def __init__(
+        self,
+        *,
+        binary: str,
+        runner: SubprocessRunner,
+        timeout_s: float,
+    ):
+        self._binary = binary
+        self._runner = runner
+        self._timeout_s = timeout_s
+
+    def create(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: dict[str, Any] | None = None,
+        max_tokens: int | None = None,   # accepted for API compat; ignored by claude -p
+        **_extra: Any,
+    ) -> LlmResponse:
+        prompt = _extract_user_text(messages)
+        schema = _resolve_tool_schema(tools, tool_choice)  # None if plain text
+
+        cmd = [
+            self._binary, "-p", prompt,
+            "--output-format", "json",
+            "--tools", "",
+            "--model", model,
+        ]
+        if schema is not None:
+            cmd += ["--json-schema", json.dumps(schema)]
+
+        try:
+            completed = self._runner(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._timeout_s,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise LlmClientError(f"claude binary not found: {exc}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise LlmClientError(f"claude -p timed out after {self._timeout_s}s") from exc
+
+        if completed.returncode != 0:
+            raise LlmClientError(
+                f"claude -p exit {completed.returncode}: "
+                f"{(completed.stderr or '').strip()[:500]}"
+            )
+
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise LlmClientError(
+                f"claude -p returned non-JSON: {completed.stdout[:200]!r}"
+            ) from exc
+
+        if payload.get("is_error"):
+            raise LlmClientError(
+                f"claude -p reported error: subtype={payload.get('subtype')!r}, "
+                f"api={payload.get('api_error_status')!r}"
+            )
+
+        if schema is not None:
+            structured = payload.get("structured_output")
+            if not isinstance(structured, dict):
+                raise LlmClientError(
+                    "claude -p returned no structured_output despite --json-schema"
+                )
+            tool_name = (tool_choice or {}).get("name") or ""
+            block = ToolUseBlock(input=structured, name=tool_name)
+            content = [block]
+        else:
+            text = payload.get("result") or ""
+            # Plain-text path — synthesize a text-shaped block. Curators
+            # don't use this path today, but the factory stays symmetric.
+            content = [ToolUseBlock(input={"text": text}, type="text", name="")]
+
+        return LlmResponse(
+            content=content,
+            model=payload.get("model", model),
+            stop_reason=payload.get("stop_reason", "end_turn"),
+            usage=(payload.get("usage") or {}),
+            total_cost_usd=payload.get("total_cost_usd"),
+        )
+
+
+def _extract_user_text(messages: list[dict[str, Any]]) -> str:
+    """Pull the single user-role text blob. Curators only ever send one user message."""
+    if not messages:
+        raise LlmClientError("messages=[] — nothing to send to claude -p")
+    msg = messages[-1]
+    content = msg.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        texts = [
+            b.get("text", "") for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        ]
+        return "\n".join(texts)
+    raise LlmClientError(f"unsupported message content type: {type(content)!r}")
+
+
+def _resolve_tool_schema(
+    tools: list[dict[str, Any]] | None,
+    tool_choice: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Find the tool the caller picked and return its input_schema."""
+    if not tools or not tool_choice or tool_choice.get("type") != "tool":
+        return None
+    want = tool_choice.get("name")
+    for t in tools:
+        if t.get("name") == want:
+            schema = t.get("input_schema")
+            if isinstance(schema, dict):
+                return schema
+    raise LlmClientError(f"tool {want!r} not found in tools=[...]")
+
+
+class SubprocessClient:
+    """LlmClient backend that shells out to `claude -p`."""
+
+    def __init__(
+        self,
+        *,
+        binary: str = "claude",
+        runner: SubprocessRunner | None = None,
+        timeout_s: float = 120.0,
+    ):
+        self._binary = binary
+        self.messages = _SubprocessMessagesAPI(
+            binary=binary,
+            runner=runner if runner is not None else subprocess.run,
+            timeout_s=timeout_s,
+        )
+
+    @property
+    def backend_name(self) -> str:
+        return "subprocess"
+
+    @classmethod
+    def is_available(cls, *, binary: str = "claude") -> bool:
+        """Cheap PATH probe — used by make_llm_client to decide backend."""
+        return shutil.which(binary) is not None
