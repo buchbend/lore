@@ -85,8 +85,9 @@ def test_session_start_spawns_curator_b_on_new_day(tmp_path: Path) -> None:
     # Monkeypatch _spawn_detached_curator_b to track calls
     calls = []
 
-    def mock_spawn(lore_root: Path, wiki: str):
+    def mock_spawn(lore_root: Path, wiki: str, **kw):
         calls.append((lore_root, wiki))
+        return True
 
     with patch("lore_cli.hooks._spawn_detached_curator_b", side_effect=mock_spawn):
         result = runner.invoke(
@@ -116,8 +117,9 @@ def test_session_start_does_not_spawn_curator_b_same_day(tmp_path: Path) -> None
 
     calls = []
 
-    def mock_spawn(lore_root: Path, wiki: str):
+    def mock_spawn(lore_root: Path, wiki: str, **kw):
         calls.append((lore_root, wiki))
+        return True
 
     with patch("lore_cli.hooks._spawn_detached_curator_b", side_effect=mock_spawn):
         result = runner.invoke(
@@ -146,8 +148,9 @@ def test_session_start_spawns_curator_b_when_never_run(tmp_path: Path) -> None:
 
     calls = []
 
-    def mock_spawn(lore_root: Path, wiki: str):
+    def mock_spawn(lore_root: Path, wiki: str, **kw):
         calls.append((lore_root, wiki))
+        return True
 
     with patch("lore_cli.hooks._spawn_detached_curator_b", side_effect=mock_spawn):
         result = runner.invoke(
@@ -170,8 +173,9 @@ def test_session_start_does_not_spawn_when_unattached(tmp_path: Path) -> None:
 
     calls = []
 
-    def mock_spawn(lore_root: Path, wiki: str):
+    def mock_spawn(lore_root: Path, wiki: str, **kw):
         calls.append((lore_root, wiki))
+        return True
 
     with patch("lore_cli.hooks._spawn_detached_curator_b", side_effect=mock_spawn):
         result = runner.invoke(
@@ -198,7 +202,7 @@ def test_session_start_curator_b_spawn_does_not_break_hook_on_error(tmp_path: Pa
     )
     wledger.write(entry)
 
-    def mock_spawn_raises(lore_root: Path, wiki: str):
+    def mock_spawn_raises(lore_root: Path, wiki: str, **kw):
         raise RuntimeError("Intentional spawn failure for testing")
 
     with patch("lore_cli.hooks._spawn_detached_curator_b", side_effect=mock_spawn_raises):

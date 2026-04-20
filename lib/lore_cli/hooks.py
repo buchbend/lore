@@ -1022,7 +1022,10 @@ def cmd_session_start(
             today = dt.now(UTC).date()
             last_b_date = wentry.last_curator_b.date() if wentry.last_curator_b else None
             if last_b_date is None or today > last_b_date:
-                _spawn_detached_curator_b(lore_root, scope.wiki)
+                cfg_b = _load_wiki_cfg_from_scope(scope, lore_root)
+                _spawn_detached_curator_b(
+                    lore_root, scope.wiki, cooldown_s=cfg_b.curator.curator_b_cooldown_s
+                )
     except Exception:
         # Spawn failure is non-fatal — proceed without it.
         pass
@@ -1097,13 +1100,49 @@ def _load_wiki_cfg_from_scope(scope, lore_root: Path):
     return load_wiki_config(wiki_dir)
 
 
-def _spawn_detached_curator_a(lore_root: Path) -> None:
+def _curator_spawn_stamp(lore_root: Path, role: str) -> Path:
+    return lore_root / ".lore" / f"last-curator-{role}-spawn"
+
+
+def _cooldown_active(stamp: Path, cooldown_s: int) -> bool:
+    """True if a recent stamp indicates the cooldown window is still active.
+
+    Missing or unreadable stamp → cooldown not active (spawn OK). We never
+    let this check block a spawn due to an I/O hiccup: the cooldown is a
+    best-effort throttle, not a correctness gate.
+    """
+    import time as _time
+    try:
+        last = float(stamp.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    return (_time.time() - last) < cooldown_s
+
+
+def _write_spawn_stamp(stamp: Path) -> None:
+    """Atomic write of current unix timestamp into `stamp`.
+
+    Writes to `<stamp>.tmp` then `os.replace()` → the final name. The .lore
+    directory is created if missing.
+    """
+    import time as _time
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    tmp = stamp.with_suffix(stamp.suffix + ".tmp")
+    tmp.write_text(f"{_time.time():.6f}")
+    os.replace(tmp, stamp)
+
+
+def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
     """Fire-and-forget subprocess that runs `lore curator run` detached.
 
-    On POSIX uses start_new_session=True; on Windows uses
-    CREATE_NEW_PROCESS_GROUP (stub for v1; we're Unix-first).
+    Returns True if a subprocess was launched, False if the cooldown
+    window is still active. The cooldown is a best-effort per-vault
+    throttle — see issue #17.
     """
     import subprocess
+    stamp = _curator_spawn_stamp(lore_root, "a")
+    if _cooldown_active(stamp, cooldown_s):
+        return False
     cmd = [sys.executable, "-m", "lore_cli", "curator", "run"]
     env = os.environ.copy()
     env["LORE_ROOT"] = str(lore_root)
@@ -1117,18 +1156,26 @@ def _spawn_detached_curator_a(lore_root: Path) -> None:
             env=env,
         )
     except (OSError, subprocess.SubprocessError):
-        # Fire-and-forget — don't propagate failures.
-        pass
+        return False
+    import contextlib
+    with contextlib.suppress(OSError):
+        _write_spawn_stamp(stamp)  # stamp is best-effort; spawn already happened
+    return True
 
 
-def _spawn_detached_curator_b(lore_root: Path, wiki_name: str) -> None:
+def _spawn_detached_curator_b(
+    lore_root: Path, wiki_name: str, *, cooldown_s: int = 300
+) -> bool:
     """Fire-and-forget subprocess that runs Curator B detached.
 
-    Invokes: lore curator run --abstract --wiki <wiki_name>
-
-    On POSIX uses start_new_session=True for detached execution.
+    Invokes: `lore curator run --abstract --wiki <wiki_name>`.
+    Returns True if a subprocess was launched, False if the cooldown
+    window is still active.
     """
     import subprocess
+    stamp = _curator_spawn_stamp(lore_root, "b")
+    if _cooldown_active(stamp, cooldown_s):
+        return False
     cmd = [sys.executable, "-m", "lore_cli", "curator", "run", "--abstract", "--wiki", wiki_name]
     env = os.environ.copy()
     env["LORE_ROOT"] = str(lore_root)
@@ -1142,8 +1189,11 @@ def _spawn_detached_curator_b(lore_root: Path, wiki_name: str) -> None:
             env=env,
         )
     except (OSError, subprocess.SubprocessError):
-        # Fire-and-forget — don't propagate failures.
-        pass
+        return False
+    import contextlib
+    with contextlib.suppress(OSError):
+        _write_spawn_stamp(stamp)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -1229,8 +1279,10 @@ def capture(
         pending_after = len(pending)
         cfg = _load_wiki_cfg_from_scope(scope, lore_root)
         if pending_after >= cfg.curator.threshold_pending:
-            _spawn_detached_curator_a(lore_root)
-            outcome = "spawned-curator"
+            spawned = _spawn_detached_curator_a(
+                lore_root, cooldown_s=cfg.curator.curator_a_cooldown_s
+            )
+            outcome = "spawned-curator" if spawned else "spawn-cooldown"
         elif pending_after > 0:
             outcome = "below-threshold"
         else:

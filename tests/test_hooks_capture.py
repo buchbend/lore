@@ -166,7 +166,7 @@ def test_capture_under_100ms(tmp_path: Path, fake_adapter_factory, monkeypatch) 
     fake_adapter_factory([handle])
 
     # Prevent actual subprocess spawn
-    monkeypatch.setattr("lore_cli.hooks._spawn_detached_curator_a", lambda *a, **kw: None)
+    monkeypatch.setattr("lore_cli.hooks._spawn_detached_curator_a", lambda *a, **kw: True)
 
     start = time.monotonic()
     result = runner.invoke(
@@ -213,7 +213,7 @@ def test_capture_spawns_when_threshold_exceeded(
     spawn_calls: list[Path] = []
     monkeypatch.setattr(
         "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root: spawn_calls.append(lore_root),
+        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
     )
 
     result = runner.invoke(
@@ -240,7 +240,7 @@ def test_capture_does_not_spawn_when_under_threshold(
     spawn_calls: list[Path] = []
     monkeypatch.setattr(
         "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root: spawn_calls.append(lore_root),
+        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
     )
 
     result = runner.invoke(
@@ -573,3 +573,140 @@ def test_capture_session_start_no_breadcrumb(
 
     crumb_path = project / ".lore" / "pending-breadcrumb.txt"
     assert not crumb_path.exists(), "session-start should not write a breadcrumb"
+
+
+# ---------------------------------------------------------------------------
+# Spawn-cooldown tests (issue #17)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def no_subprocess(monkeypatch):
+    """Intercept subprocess.Popen so spawn functions do not actually fork."""
+    import subprocess as _subprocess
+
+    calls: list[list[str]] = []
+
+    class _FakePopen:
+        def __init__(self, cmd, **kw):
+            calls.append(cmd)
+
+    monkeypatch.setattr(_subprocess, "Popen", _FakePopen)
+    return calls
+
+
+CURATOR_PARAMS = [
+    pytest.param("a", id="curator-a"),
+    pytest.param("b", id="curator-b"),
+]
+
+
+def _stamp_path(lore_root: Path, role: str) -> Path:
+    return lore_root / ".lore" / f"last-curator-{role}-spawn"
+
+
+def _invoke_spawn(role: str, lore_root: Path, cooldown_s: int) -> bool:
+    from lore_cli.hooks import (
+        _spawn_detached_curator_a,
+        _spawn_detached_curator_b,
+    )
+    if role == "a":
+        return _spawn_detached_curator_a(lore_root, cooldown_s=cooldown_s)
+    return _spawn_detached_curator_b(lore_root, "testwiki", cooldown_s=cooldown_s)
+
+
+@pytest.mark.parametrize("role", CURATOR_PARAMS)
+def test_spawn_writes_stamp_file_on_success(tmp_path: Path, no_subprocess, role: str) -> None:
+    """On successful spawn, a stamp file is written with a recent timestamp."""
+    lore_root = tmp_path
+    spawned = _invoke_spawn(role, lore_root, cooldown_s=60)
+    assert spawned is True, f"expected first spawn to proceed; subprocess calls={no_subprocess}"
+    assert len(no_subprocess) == 1
+    stamp = _stamp_path(lore_root, role)
+    assert stamp.exists(), f"stamp file {stamp} should be created"
+    now = time.time()
+    written = float(stamp.read_text().strip())
+    assert abs(now - written) < 5.0, "stamp should be close to current time"
+
+
+@pytest.mark.parametrize("role", CURATOR_PARAMS)
+def test_spawn_skipped_within_cooldown_window(
+    tmp_path: Path, no_subprocess, role: str
+) -> None:
+    """A stamp file written 'recently' blocks a new spawn within the cooldown."""
+    lore_root = tmp_path
+    stamp = _stamp_path(lore_root, role)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(f"{time.time() - 5.0:.6f}")  # 5s ago
+
+    spawned = _invoke_spawn(role, lore_root, cooldown_s=60)
+    assert spawned is False, "expected spawn to be skipped during cooldown"
+    assert len(no_subprocess) == 0, "no subprocess should be spawned"
+
+
+@pytest.mark.parametrize("role", CURATOR_PARAMS)
+def test_spawn_proceeds_after_cooldown_elapsed(
+    tmp_path: Path, no_subprocess, role: str
+) -> None:
+    """A stamp file older than cooldown_s allows a new spawn."""
+    lore_root = tmp_path
+    stamp = _stamp_path(lore_root, role)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(f"{time.time() - 120.0:.6f}")  # 120s ago
+    old_value = stamp.read_text()
+
+    spawned = _invoke_spawn(role, lore_root, cooldown_s=60)
+    assert spawned is True
+    assert len(no_subprocess) == 1
+    new_value = stamp.read_text()
+    assert new_value != old_value, "stamp should be refreshed on spawn"
+
+
+@pytest.mark.parametrize("role", CURATOR_PARAMS)
+def test_spawn_proceeds_when_stamp_missing(
+    tmp_path: Path, no_subprocess, role: str
+) -> None:
+    """Missing stamp file → treat as cooldown satisfied → spawn proceeds."""
+    lore_root = tmp_path
+    assert not _stamp_path(lore_root, role).exists()
+
+    spawned = _invoke_spawn(role, lore_root, cooldown_s=60)
+    assert spawned is True
+    assert len(no_subprocess) == 1
+
+
+@pytest.mark.parametrize("role", CURATOR_PARAMS)
+def test_spawn_robust_to_corrupt_stamp(
+    tmp_path: Path, no_subprocess, role: str
+) -> None:
+    """An unreadable/corrupt stamp file should not prevent a spawn."""
+    lore_root = tmp_path
+    stamp = _stamp_path(lore_root, role)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text("not-a-number\nabc")
+
+    spawned = _invoke_spawn(role, lore_root, cooldown_s=60)
+    assert spawned is True
+    assert len(no_subprocess) == 1
+
+
+@pytest.mark.parametrize("role", CURATOR_PARAMS)
+def test_spawn_uses_atomic_rename(
+    tmp_path: Path, no_subprocess, monkeypatch, role: str
+) -> None:
+    """Stamp file is written via a tmp path + os.replace (atomic rename)."""
+    lore_root = tmp_path
+    replace_calls: list[tuple[str, str]] = []
+    real_replace = __import__("os").replace
+
+    def tracking_replace(src, dst):
+        replace_calls.append((str(src), str(dst)))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("os.replace", tracking_replace)
+
+    _invoke_spawn(role, lore_root, cooldown_s=60)
+    stamp = _stamp_path(lore_root, role)
+    # exactly one os.replace targeting our stamp file
+    matching = [c for c in replace_calls if c[1] == str(stamp)]
+    assert matching, f"expected os.replace onto {stamp}, got {replace_calls}"

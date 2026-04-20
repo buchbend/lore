@@ -28,6 +28,8 @@ class CuratorConfig:
     threshold_pending: int = 10
     threshold_tokens: int = 50_000
     a_noteworthy_tier: str = "middle"    # middle | simple
+    curator_a_cooldown_s: int = 60
+    curator_b_cooldown_s: int = 300
     curator_c: CuratorCConfig = field(default_factory=CuratorCConfig)
 
 
