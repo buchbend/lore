@@ -348,3 +348,74 @@ def test_file_surface_defaults_to_pluralise_when_no_override(tmp_path):
         surfaces_doc=doc,
     )
     assert filed.path.parent.name == "concepts"
+
+
+def test_file_surface_uses_slug_format_with_frontmatter_field(tmp_path):
+    from lore_core.surfaces import SurfaceDef, SurfacesDoc
+    from lore_curator.surface_filer import file_surface
+    from pathlib import Path
+    surface_def = SurfaceDef(
+        name="paper",
+        description="",
+        required=["type", "citekey", "title", "created", "description"],
+        optional=[],
+        plural="papers",
+        slug_format="{citekey}",
+    )
+    doc = SurfacesDoc(schema_version=2, surfaces=[surface_def], path=Path("<test>"))
+    filed = file_surface(
+        surface_name="paper",
+        title="ISM structure of galaxies",
+        body="",
+        sources=[],
+        wiki_root=tmp_path,
+        surfaces_doc=doc,
+        extra_frontmatter={"citekey": "smith2024ism", "title": "ISM structure of galaxies"},
+    )
+    assert filed.path.name == "smith2024ism.md"
+
+
+def test_file_surface_slug_format_fallback_when_missing_key(tmp_path):
+    from lore_core.surfaces import SurfaceDef, SurfacesDoc
+    from lore_curator.surface_filer import file_surface
+    from pathlib import Path
+    surface_def = SurfaceDef(
+        name="paper",
+        description="",
+        required=["type", "citekey", "created", "description"],
+        optional=[],
+        slug_format="{citekey}",
+    )
+    doc = SurfacesDoc(schema_version=2, surfaces=[surface_def], path=Path("<test>"))
+    filed = file_surface(
+        surface_name="paper",
+        title="Untitled paper",
+        body="",
+        sources=[],
+        wiki_root=tmp_path,
+        surfaces_doc=doc,
+        extra_frontmatter={"citekey": "fallback-key"},
+    )
+    assert filed.path.name == "fallback-key.md"
+
+
+def test_file_surface_no_slug_format_uses_title_slug(tmp_path):
+    from lore_core.surfaces import SurfaceDef, SurfacesDoc
+    from lore_curator.surface_filer import file_surface
+    from pathlib import Path
+    surface_def = SurfaceDef(
+        name="concept",
+        description="",
+        required=["type", "created", "description"],
+        optional=[],
+    )
+    doc = SurfacesDoc(schema_version=2, surfaces=[surface_def], path=Path("<test>"))
+    filed = file_surface(
+        surface_name="concept",
+        title="Hot Load Standing Waves",
+        body="",
+        sources=[],
+        wiki_root=tmp_path,
+        surfaces_doc=doc,
+    )
+    assert filed.path.name == "hot-load-standing-waves.md"
