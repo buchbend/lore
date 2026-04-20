@@ -19,6 +19,7 @@ import typer
 from lore_cli import (
     attach_cmd,
     briefing_cmd,
+    completions_cmd,
     detach_cmd,
     doctor_cmd,
     hooks,
@@ -50,6 +51,7 @@ app = typer.Typer(
 # `lore <verb>` invocations stay backwards-compatible.
 app.add_typer(attach_cmd.app, name="attach")
 app.add_typer(briefing_cmd.app, name="briefing")
+app.add_typer(completions_cmd.app, name="completions")
 app.add_typer(curator_cmd.app, name="curator")
 app.add_typer(detach_cmd.app, name="detach")
 app.add_typer(doctor_cmd.app, name="doctor")

@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from lore_cli.breadcrumb import BannerContext, render_banner
+from lore_cli.breadcrumb import (
+    BannerContext,
+    consume_pending_breadcrumb,
+    render_banner,
+    render_session_end_breadcrumb,
+    write_pending_breadcrumb,
+)
 from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry, WikiLedger, WikiLedgerEntry
 from lore_core.types import Scope
 from lore_core.wiki_config import BreadcrumbConfig, WikiConfig
@@ -464,3 +470,133 @@ def test_banner_hook_error_trailing_segment(tmp_path: Path) -> None:
     banner = render_banner(ctx)
     assert banner is not None
     assert "hook error" in banner
+
+
+# ---------------------------------------------------------------------------
+# 14. render_session_end_breadcrumb — pure function tests
+# ---------------------------------------------------------------------------
+
+
+def test_session_end_breadcrumb_spawned_curator() -> None:
+    result = render_session_end_breadcrumb("spawned-curator", pending_after=3, threshold=3)
+    assert result == "lore: capture queued · curator spawned (pending 3)"
+
+
+def test_session_end_breadcrumb_below_threshold() -> None:
+    result = render_session_end_breadcrumb("below-threshold", pending_after=2, threshold=3)
+    assert result == "lore: capture queued · below threshold (pending 2/3)"
+
+
+def test_session_end_breadcrumb_no_new_turns_is_none() -> None:
+    result = render_session_end_breadcrumb("no-new-turns", pending_after=0, threshold=3)
+    assert result is None
+
+
+def test_session_end_breadcrumb_error() -> None:
+    result = render_session_end_breadcrumb("error", pending_after=0, error_message="disk full")
+    assert result is not None
+    assert result.startswith("lore!:")
+    assert "disk full" in result
+
+
+def test_session_end_breadcrumb_error_default_message() -> None:
+    result = render_session_end_breadcrumb("error", pending_after=0)
+    assert result is not None
+    assert result.startswith("lore!:")
+    assert "unknown error" in result
+
+
+def test_session_end_breadcrumb_unattached_is_none() -> None:
+    result = render_session_end_breadcrumb("unattached", pending_after=0)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# 15. write_pending_breadcrumb / consume_pending_breadcrumb round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_pending_breadcrumb_roundtrip(tmp_path: Path) -> None:
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    write_pending_breadcrumb(tmp_path, "lore: capture queued · below threshold (pending 1/3)")
+    result = consume_pending_breadcrumb(tmp_path)
+    assert result == "lore: capture queued · below threshold (pending 1/3)"
+    # Second consume returns None — file was deleted
+    assert consume_pending_breadcrumb(tmp_path) is None
+
+
+def test_pending_breadcrumb_absent_returns_none(tmp_path: Path) -> None:
+    (tmp_path / ".lore").mkdir()
+    assert consume_pending_breadcrumb(tmp_path) is None
+
+
+def test_pending_breadcrumb_stale_returns_none(tmp_path: Path) -> None:
+    import time as _time
+
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    dest = lore_dir / "pending-breadcrumb.txt"
+    dest.write_text("old line")
+    # Back-date mtime by 2 hours
+    old_time = _time.time() - 7200
+    import os
+    os.utime(dest, (old_time, old_time))
+    assert consume_pending_breadcrumb(tmp_path) is None
+
+
+# ---------------------------------------------------------------------------
+# 16. render_banner with pending breadcrumb prepended
+# ---------------------------------------------------------------------------
+
+
+def test_render_banner_prepends_session_end_line(tmp_path: Path) -> None:
+    """A pending breadcrumb file is prepended to the SessionStart banner."""
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    write_pending_breadcrumb(tmp_path, "lore: capture queued · below threshold (pending 1/3)")
+
+    now = datetime(2026, 4, 20, 10, 0, 0, tzinfo=UTC)
+    scope = Scope(
+        wiki="private",
+        scope="private:root",
+        backend="none",
+        claude_md_path=tmp_path / "CLAUDE.md",
+    )
+    ctx = BannerContext(
+        lore_root=tmp_path,
+        scope=scope,
+        wiki_config=WikiConfig(breadcrumb=BreadcrumbConfig(mode="normal")),
+        now=now,
+        note_count=5,
+    )
+    banner = render_banner(ctx)
+    assert banner is not None
+    lines = banner.splitlines()
+    assert lines[0] == "lore: capture queued · below threshold (pending 1/3)"
+    assert len(lines) >= 2
+
+
+def test_render_banner_quiet_with_session_end_line(tmp_path: Path) -> None:
+    """Quiet mode still surfaces the pending breadcrumb."""
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    write_pending_breadcrumb(tmp_path, "lore: capture queued · curator spawned (pending 5)")
+
+    now = datetime(2026, 4, 20, 10, 0, 0, tzinfo=UTC)
+    scope = Scope(
+        wiki="private",
+        scope="private:root",
+        backend="none",
+        claude_md_path=tmp_path / "CLAUDE.md",
+    )
+    ctx = BannerContext(
+        lore_root=tmp_path,
+        scope=scope,
+        wiki_config=WikiConfig(breadcrumb=BreadcrumbConfig(mode="quiet")),
+        now=now,
+        note_count=5,
+    )
+    banner = render_banner(ctx)
+    assert banner is not None
+    assert "curator spawned" in banner

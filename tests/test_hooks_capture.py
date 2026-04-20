@@ -433,3 +433,143 @@ def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_facto
     errors = [r for r in records if r["outcome"] == "error"]
     assert errors, "expected at least one error record"
     assert errors[-1]["error"]["type"] == "RuntimeError"
+
+
+# ---------------------------------------------------------------------------
+# Breadcrumb wiring tests
+# ---------------------------------------------------------------------------
+
+
+def test_capture_session_end_writes_breadcrumb_when_below_threshold(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """capture --event session-end with pending transcripts writes pending-breadcrumb.txt.
+
+    Uses the CLI runner (like the other tests) so typer default resolution works.
+    Pre-seeds ledger with entries that have digested_hash=None (pending).
+    """
+    from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
+
+    project = _make_attached_project(tmp_path)
+
+    # Pre-seed ledger with 2 pending entries (no digested_hash) to produce below-threshold.
+    ledger = TranscriptLedger(project)
+    for i in range(2):
+        ledger.upsert(
+            TranscriptLedgerEntry(
+                host="fake",
+                transcript_id=f"pre{i}",
+                path=project / f"pre{i}.jsonl",
+                directory=project,
+                digested_hash=None,
+                digested_index_hint=None,
+                synthesised_hash=None,
+                last_mtime=_now(),
+                curator_a_run=None,
+                noteworthy=None,
+                session_note=None,
+            )
+        )
+
+    # Use the CLI runner so typer option defaults are resolved correctly.
+    handle = _make_handle(project, host="fake")
+    fake_adapter_factory([handle])
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        env={"LORE_ROOT": str(project)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    crumb_path = project / ".lore" / "pending-breadcrumb.txt"
+    assert crumb_path.exists(), "pending-breadcrumb.txt should be created"
+    content = crumb_path.read_text()
+    assert "below threshold" in content or "curator spawned" in content
+
+
+def test_capture_session_end_no_breadcrumb_when_no_new_turns(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """When outcome=no-new-turns (all pending=0), no breadcrumb file is written."""
+    from datetime import timezone
+    from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
+
+    project = _make_attached_project(tmp_path)
+    old_mtime = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+    # Pre-seed ledger with a digested entry (same mtime as handle → no-new-turns).
+    ledger = TranscriptLedger(project)
+    ledger.upsert(
+        TranscriptLedgerEntry(
+            host="fake",
+            transcript_id="t1",
+            path=project / "t1.jsonl",
+            directory=project,
+            digested_hash="abc",  # already digested
+            digested_index_hint=None,
+            synthesised_hash=None,
+            last_mtime=old_mtime,
+            curator_a_run=None,
+            noteworthy=None,
+            session_note=None,
+        )
+    )
+
+    handle = _make_handle(project, host="fake", mtime=old_mtime)
+    fake_adapter_factory([handle])
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        env={"LORE_ROOT": str(project)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    crumb_path = project / ".lore" / "pending-breadcrumb.txt"
+    # no-new-turns → no breadcrumb written
+    assert not crumb_path.exists(), "no breadcrumb expected when outcome=no-new-turns"
+
+
+def test_capture_session_start_no_breadcrumb(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """capture --event session-start does NOT write a pending breadcrumb."""
+    from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
+
+    project = _make_attached_project(tmp_path)
+
+    # Pre-seed with 2 pending entries so there's a breadcrumb-worthy outcome.
+    ledger = TranscriptLedger(project)
+    for i in range(2):
+        ledger.upsert(
+            TranscriptLedgerEntry(
+                host="fake",
+                transcript_id=f"pre{i}",
+                path=project / f"pre{i}.jsonl",
+                directory=project,
+                digested_hash=None,
+                digested_index_hint=None,
+                synthesised_hash=None,
+                last_mtime=_now(),
+                curator_a_run=None,
+                noteworthy=None,
+                session_note=None,
+            )
+        )
+
+    handle = _make_handle(project, host="fake", transcript_id="s1")
+    fake_adapter_factory([handle])
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-start", "--cwd", str(project), "--host", "fake"],
+        env={"LORE_ROOT": str(project)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    crumb_path = project / ".lore" / "pending-breadcrumb.txt"
+    assert not crumb_path.exists(), "session-start should not write a breadcrumb"

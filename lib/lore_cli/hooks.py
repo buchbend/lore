@@ -1255,6 +1255,25 @@ def capture(
             pending_after=pending_after,
             run_id=run_id,
         )
+        # Write session-end breadcrumb for display at next SessionStart.
+        # Only for session-end and pre-compact; session-start is already visible.
+        if event in ("session-end", "pre-compact"):
+            try:
+                from lore_cli.breadcrumb import render_session_end_breadcrumb, write_pending_breadcrumb
+                threshold = 3
+                try:
+                    threshold = cfg.curator.threshold_pending
+                except Exception:
+                    pass
+                crumb = render_session_end_breadcrumb(
+                    outcome=outcome,
+                    pending_after=pending_after,
+                    threshold=threshold,
+                )
+                if crumb is not None:
+                    write_pending_breadcrumb(lore_root, crumb)
+            except Exception:
+                pass  # breadcrumb is best-effort, never fatal
 
 
 main = argv_main(hook_app)
