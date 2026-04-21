@@ -36,7 +36,7 @@ from lore_cli import (
 )
 from lore_core import lint as lint_cmd
 from lore_core import migrate as migrate_cmd
-from lore_curator import core as curator_cmd
+from lore_curator import curator_c as curator_cmd
 from lore_mcp import server as mcp_cmd
 from lore_search import cli as search_cmd
 

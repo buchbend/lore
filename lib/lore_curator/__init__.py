@@ -6,7 +6,7 @@ decisions from `supersedes [[X]]` refs, backfills missing `created` /
 against Obsidian edit races.
 """
 
-from lore_curator.core import main, run_curator
+from lore_curator.curator_c import main, run_curator
 
 __all__ = ["main", "run_curator"]
 
