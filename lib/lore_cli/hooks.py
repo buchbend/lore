@@ -757,43 +757,106 @@ def _pre_compact(cwd: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _why() -> str:
-    """Return the SessionStart cache for the current Claude Code session.
+def _render_live_state(cwd: Path | None = None) -> str:
+    """Render the live-state section for /lore:loaded.
 
-    Resolution order:
-      1. `$LORE_CACHE/sessions/<claude_code_pid>.md` (per-session, crosstalk-free)
-      2. `$LORE_CACHE/last-session-start.md` (legacy fallback, may belong
-         to a different concurrent session — flagged as such)
-      3. An explanatory error string if nothing is cached yet.
+    Uses the same CaptureState that `lore status` consumes, rendered via
+    status_cmd's helpers so the output shape matches. On failure returns
+    a one-line error so /lore:loaded never crashes on cache rendering.
     """
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+
+    try:
+        from lore_core import capture_state as _cs_mod
+        from lore_core.config import get_lore_root
+        from lore_cli import status_cmd
+
+        lore_root = get_lore_root()
+        now = _dt.now(_UTC)
+        state = _cs_mod.query_capture_state(
+            lore_root,
+            cwd=Path(_resolve_cwd_capture()) if cwd is None else cwd,
+            now=now,
+        )
+    except Exception as exc:
+        return f"(live state unavailable: {type(exc).__name__}: {exc})"
+
+    lines: list[str] = []
+    if not state.scope_attached:
+        lines.append("(not attached to a wiki — run /lore:attach)")
+    else:
+        lines.append(f"scope: {state.scope_name}")
+        for glyph, msg in [
+            status_cmd._render_last_note(state, now),
+            status_cmd._render_last_run(state, now),
+            status_cmd._render_pending(state),
+            status_cmd._render_lock(state),
+        ]:
+            lines.append(f"  {glyph} {msg}")
+    return "\n".join(lines)
+
+
+def _why() -> str:
+    """Return live state + the SessionStart cache for the current session.
+
+    Output shape (post-Task-13):
+
+        ── Live state (as of now) ────
+        <rendered CaptureState>
+
+        ── Injected at SessionStart ────
+        <cached hook body>
+
+    Live state comes first per UX review: a Claude session opening
+    ``/lore:loaded`` wants "what's true now" before "what was injected."
+
+    Cache resolution order (unchanged):
+      1. ``$LORE_CACHE/sessions/<claude_code_pid>.md``
+      2. ``$LORE_CACHE/last-session-start.md`` (legacy, flagged)
+      3. An explanatory error if nothing is cached.
+    """
+    live = _render_live_state()
+
+    # Resolve cached body.
+    cached_body: str | None = None
     cc_pid = _claude_code_pid()
     if cc_pid is not None:
         primary = _cache_path_for_pid(cc_pid)
         if primary.exists():
             try:
-                return primary.read_text(errors="replace")
+                cached_body = primary.read_text(errors="replace")
             except OSError:
-                pass
+                cached_body = None
 
-    legacy = _legacy_cache_path()
-    if legacy.exists():
-        try:
-            body = legacy.read_text(errors="replace")
-        except OSError:
-            body = ""
-        if body:
-            note = (
-                "_(read from legacy singleton cache — may be from a "
-                "different concurrent Claude session)_\n\n"
-            )
-            return note + body
+    if cached_body is None:
+        legacy = _legacy_cache_path()
+        if legacy.exists():
+            try:
+                body = legacy.read_text(errors="replace")
+            except OSError:
+                body = ""
+            if body:
+                cached_body = (
+                    "_(read from legacy singleton cache — may be from a "
+                    "different concurrent Claude session)_\n\n"
+                ) + body
+
+    if cached_body is None:
+        cached_body = (
+            "lore: no SessionStart cache found. Either the hook has not "
+            "fired yet in this session, or hooks are disabled. Check "
+            "`~/.claude/settings.json` for a SessionStart entry invoking "
+            "`lore hook session-start`, or re-run the installer with "
+            "`--with-hooks`.\n"
+        )
 
     return (
-        "lore: no SessionStart cache found. Either the hook has not "
-        "fired yet in this session, or hooks are disabled. Check "
-        "`~/.claude/settings.json` for a SessionStart entry invoking "
-        "`lore hook session-start`, or re-run the installer with "
-        "`--with-hooks`.\n"
+        "── Live state (as of now) ────\n"
+        f"{live}\n"
+        "\n"
+        "── Injected at SessionStart ────\n"
+        f"{cached_body}"
     )
 
 
