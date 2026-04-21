@@ -60,17 +60,26 @@ def _read_lore_block(claude_md: Path) -> dict[str, str]:
     return out
 
 
-MAX_ANCESTOR_WALK = 12
+MAX_ANCESTOR_WALK = 20  # reconciled from 12 (session) + 20 (hooks) at Task 7 — 20 is the safer of the two finite loops.
 
 
 def _walk_up_lore_config(cwd: Path) -> tuple[Path, dict] | None:
-    """Walk ancestors of cwd looking for a CLAUDE.md with a `## Lore` block."""
+    """Walk ancestors of cwd looking for a CLAUDE.md with a ``## Lore`` block.
+
+    Uses ``lore_core.attach.read_attach`` as the parser — the canonical
+    implementation. Returns (claude_md_path, parsed_block_dict) or None.
+    """
+    # Local import to avoid a module-load-order edge case: session.py is
+    # imported by some doctor paths before attach.py's deps settle.
+    from lore_core.attach import read_attach
+
     current = cwd.resolve()
     for _ in range(MAX_ANCESTOR_WALK):
         claude_md = current / "CLAUDE.md"
-        block = _read_lore_block(claude_md)
-        if block:
-            return claude_md, block
+        if claude_md.exists():
+            block = read_attach(claude_md)
+            if block:
+                return claude_md, block
         parent = current.parent
         if parent == current:
             break

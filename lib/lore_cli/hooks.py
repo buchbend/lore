@@ -454,30 +454,12 @@ def _stale_count(wiki: Path) -> int:
 # ---------------------------------------------------------------------------
 
 
-MAX_ANCESTOR_WALK = 20
 GH_TIMEOUT_SECONDS = 10
 MAX_ISSUES_INLINE = 5
 MAX_PRS_INLINE = 3
 
-
-def _find_lore_config(cwd: Path) -> tuple[Path, dict] | None:
-    """Walk up from cwd looking for an ancestor CLAUDE.md with `## Lore`.
-
-    Returns (claude_md_path, parsed_block) or None if not found within
-    MAX_ANCESTOR_WALK steps. The walk terminates at the filesystem root.
-    """
-    current = cwd.resolve()
-    for _ in range(MAX_ANCESTOR_WALK):
-        claude_md = current / "CLAUDE.md"
-        if claude_md.exists():
-            block = read_attach(claude_md)
-            if block:
-                return claude_md, block
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-    return None
+# Ancestor-walk for ## Lore is canonical in lore_core.session. Imported
+# lazily below at call sites to avoid a module-load-order wobble.
 
 
 # Scope helpers now live in `lore_core.scopes` so the `lore resume` CLI
@@ -646,7 +628,8 @@ def _session_start(cwd: str | None) -> str:
 
     # Schema v2 path: cwd has (or inherits) a `## Lore` section.
     if cwd:
-        cfg = _find_lore_config(Path(cwd))
+        from lore_core.session import _walk_up_lore_config
+        cfg = _walk_up_lore_config(Path(cwd))
         if cfg is not None:
             v2 = _session_start_from_lore(cwd, cfg, wiki_root)
             if v2 is not None:
