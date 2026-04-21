@@ -25,11 +25,19 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class CuratorStatus:
-    """Per-curator slice of state. role ∈ {'a', 'b', 'c'}."""
+    """Per-curator slice of state. role ∈ {'a', 'b', 'c'}.
+
+    The ``last_run_*`` fields (notes_new, notes_merged, skipped, errors,
+    short_id) are populated for role=='a' only — the run-log is emitted
+    by Curator A. B and C populate only ``last_run_ts`` (via their own
+    ledger entries) and ``overdue``.
+    """
 
     role: str
     last_run_ts: datetime | None
     last_run_notes_new: int | None
+    last_run_notes_merged: int | None
+    last_run_skipped: int | None
     last_run_errors: int | None
     last_run_short_id: str | None   # for "lore runs show <id>" hint copy
     work_lock_held: bool
@@ -44,6 +52,7 @@ class CaptureState:
     scope_root: Path | None                       # parent of the CLAUDE.md
     curators: list[CuratorStatus] = field(default_factory=list)
     last_note_filed: tuple[datetime, str] | None = None  # (ts, wikilink)
+    last_briefing_ts: datetime | None = None  # newest across all WikiLedgers
     pending_transcripts: int = 0
     hook_errors_24h: int = 0
     hook_log_failed_marker_age_s: int | None = None
@@ -98,20 +107,27 @@ def _resolve_scope(cwd: Path | None) -> tuple[bool, str | None, Path | None]:
     return (True, name, scope.claude_md_path.parent)
 
 
+@dataclass(frozen=True)
+class _RunSummary:
+    ts: datetime | None
+    notes_new: int | None
+    notes_merged: int | None
+    skipped: int | None
+    errors: int | None
+    short_id: str | None
+
+
 def _last_run_summary(
     lore_root: Path,
-) -> tuple[datetime | None, int | None, int | None, str | None, tuple[datetime, str] | None]:
-    """Return (last_run_ts, last_notes_new, last_errors, last_short_id, last_note_filed).
+) -> tuple[_RunSummary, tuple[datetime, str] | None]:
+    """Return (most-recent-run summary, last_note_filed).
 
     "Last note filed" walks newest→oldest runs for the first session-note
     record with action=filed.
     """
     from lore_core.run_reader import iter_archival_runs
 
-    last_ts: datetime | None = None
-    last_notes_new: int | None = None
-    last_errors: int | None = None
-    last_short_id: str | None = None
+    summary = _RunSummary(None, None, None, None, None, None)
     last_note: tuple[datetime, str] | None = None
 
     for i, path in enumerate(iter_archival_runs(lore_root)):
@@ -120,7 +136,6 @@ def _last_run_summary(
         except OSError:
             continue
 
-        # Walk backwards inside the file looking for run-end + session-note.
         run_end: dict | None = None
         for line in reversed(lines):
             if not line.strip():
@@ -141,15 +156,19 @@ def _last_run_summary(
                 break
 
         if i == 0 and run_end is not None:
-            last_ts = _parse_iso(run_end.get("ts"))
-            last_notes_new = run_end.get("notes_new")
-            last_errors = run_end.get("errors")
-            last_short_id = path.stem.split("-")[-1]
+            summary = _RunSummary(
+                ts=_parse_iso(run_end.get("ts")),
+                notes_new=run_end.get("notes_new"),
+                notes_merged=run_end.get("notes_merged"),
+                skipped=run_end.get("skipped"),
+                errors=run_end.get("errors"),
+                short_id=path.stem.split("-")[-1],
+            )
 
         if last_note is not None and i > 0:
-            break  # note was found in a prior run; no need to walk further
+            break
 
-    return (last_ts, last_notes_new, last_errors, last_short_id, last_note)
+    return (summary, last_note)
 
 
 def _count_hook_errors_24h(lore_root: Path, now: datetime) -> int:
@@ -205,24 +224,29 @@ def _work_lock_held(lore_root: Path) -> bool:
     return (lore_root / ".lore" / "curator.lock").exists()
 
 
-def _per_role_last_run(lore_root: Path, role: str) -> datetime | None:
-    """Read last_curator_{role} from the first WikiLedger we can find.
+def _newest_across_wikis(lore_root: Path, field_name: str) -> datetime | None:
+    """Return the newest ``field_name`` across all WikiLedgers in the vault.
 
-    For vaults with multiple wikis this is an approximation: we take the
-    newest last_curator_{role} across all wikis. That's what the user
-    cares about for "is the curator alive?" — not which specific wiki.
+    Iterates WikiLedger JSON files directly (``.lore/wiki-<name>-ledger.json``)
+    rather than the wiki/ directory — this is robust to vaults where the
+    ledger exists but the wiki directory doesn't (e.g. test fixtures).
     """
     from lore_core.ledger import WikiLedger
-    wiki_dir = lore_root / "wiki"
-    if not wiki_dir.exists():
+    lore_dir = lore_root / ".lore"
+    if not lore_dir.exists():
         return None
     newest: datetime | None = None
-    for w in sorted(p for p in wiki_dir.iterdir() if p.is_dir()):
+    for ledger_file in lore_dir.glob("wiki-*-ledger.json"):
+        # Extract the wiki name: "wiki-{name}-ledger.json"
+        stem = ledger_file.stem
+        if not (stem.startswith("wiki-") and stem.endswith("-ledger")):
+            continue
+        wiki_name = stem[len("wiki-"):-len("-ledger")]
         try:
-            entry = WikiLedger(lore_root, w.name).read()
+            entry = WikiLedger(lore_root, wiki_name).read()
         except Exception:
             continue
-        ts = getattr(entry, f"last_curator_{role}", None)
+        ts = getattr(entry, field_name, None)
         if ts is None:
             continue
         if ts.tzinfo is None:
@@ -230,6 +254,11 @@ def _per_role_last_run(lore_root: Path, role: str) -> datetime | None:
         if newest is None or ts > newest:
             newest = ts
     return newest
+
+
+def _per_role_last_run(lore_root: Path, role: str) -> datetime | None:
+    """Newest last_curator_{role} across all WikiLedgers in the vault."""
+    return _newest_across_wikis(lore_root, f"last_curator_{role}")
 
 
 def query_capture_state(
@@ -251,23 +280,23 @@ def query_capture_state(
 
     attached, scope_name, scope_root = _resolve_scope(cwd)
 
-    last_ts, last_notes, last_errors, last_short, last_note = _last_run_summary(lore_root)
+    summary, last_note = _last_run_summary(lore_root)
     work_lock = _work_lock_held(lore_root)
 
     curators: list[CuratorStatus] = []
     for role in ("a", "b", "c"):
         per_role_ts = _per_role_last_run(lore_root, role)
-        # For role A only, fall back to the overall "last_ts" from the run log
-        # if the WikiLedger has no per-role entry yet. B and C are calendar-
-        # scheduled and should rely on their ledger entries explicitly.
-        effective_ts = per_role_ts if per_role_ts is not None else (last_ts if role == "a" else None)
+        effective_ts = per_role_ts if per_role_ts is not None else (summary.ts if role == "a" else None)
+        is_a = role == "a"
         curators.append(
             CuratorStatus(
                 role=role,
                 last_run_ts=effective_ts,
-                last_run_notes_new=last_notes if role == "a" else None,
-                last_run_errors=last_errors if role == "a" else None,
-                last_run_short_id=last_short if role == "a" else None,
+                last_run_notes_new=summary.notes_new if is_a else None,
+                last_run_notes_merged=summary.notes_merged if is_a else None,
+                last_run_skipped=summary.skipped if is_a else None,
+                last_run_errors=summary.errors if is_a else None,
+                last_run_short_id=summary.short_id if is_a else None,
                 work_lock_held=work_lock,
                 overdue=_is_overdue(role, effective_ts, now),
             )
@@ -280,6 +309,7 @@ def query_capture_state(
         scope_root=scope_root,
         curators=curators,
         last_note_filed=last_note,
+        last_briefing_ts=_newest_across_wikis(lore_root, "last_briefing"),
         pending_transcripts=_pending_transcripts(lore_root),
         hook_errors_24h=_count_hook_errors_24h(lore_root, now),
         hook_log_failed_marker_age_s=_marker_age_s(lore_root, now),
