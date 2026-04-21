@@ -571,14 +571,78 @@ def _apply_safely(action: CuratorAction) -> tuple[bool, str]:
     return (True, "applied")
 
 
+# Registry for LLM-driven Curator C defrag passes. Phase B of Plan 5
+# appends callables here; each callable has signature
+# ``(wiki_path, *, anthropic_client, dry_run) -> dict[str, int]`` (summary counts).
+_DEFRAG_PASSES: list = []
+
+
+def _run_defrag_passes(
+    wiki_path,
+    *,
+    anthropic_client,
+    dry_run: bool,
+) -> dict[str, int]:
+    """Run every registered LLM pass for one wiki; return merged summary."""
+    summary: dict[str, int] = {}
+    for pass_fn in _DEFRAG_PASSES:
+        counts = pass_fn(
+            wiki_path, anthropic_client=anthropic_client, dry_run=dry_run
+        ) or {}
+        for k, v in counts.items():
+            summary[k] = summary.get(k, 0) + v
+    return summary
+
+
+def _snapshot_wiki(wiki_path) -> dict:
+    """Return {relative_path: content_str} for every .md file under wiki_path."""
+    out: dict = {}
+    if not wiki_path.exists():
+        return out
+    for p in sorted(wiki_path.rglob("*.md")):
+        if p.is_file():
+            try:
+                out[str(p.relative_to(wiki_path))] = p.read_text(errors="replace")
+            except OSError:
+                continue
+    return out
+
+
 def run_curator_c(
     wiki_filter: str | None = None,
     dry_run: bool = True,
     stale_threshold: int = STALENESS_DAYS,
+    *,
+    defrag: bool = False,
+    anthropic_client=None,
+    run_id: str | None = None,
 ) -> list[CuratorReport]:
+    """Run Curator C — hygiene by default; with ``defrag=True`` also runs
+    LLM passes (adjacent-merge, auto-supersede, orphan-repair) registered
+    in ``_DEFRAG_PASSES``.
+
+    When ``defrag=True``:
+      - pre-flight: abort if wiki repo has merge conflicts
+      - snapshot wiki before running passes
+      - run hygiene passes (pre-existing) + defrag passes
+      - write a diff-log entry
+      - prune old diff logs (90d retention)
+      - update ``WikiLedger.last_curator_c`` on success (atomic)
+    """
+    from datetime import UTC, datetime as _dt
+    from lore_core.config import get_lore_root
+    from lore_core.ledger import WikiLedger
+
     wikis = discover_wikis(wiki_filter)
     reports: list[CuratorReport] = []
     today = date.today()
+    now = _dt.now(UTC)
+    rid = run_id or now.strftime("%Y-%m-%dT%H-%M-%S")
+
+    try:
+        lore_root = get_lore_root()
+    except Exception:
+        lore_root = None
 
     for wiki_path in wikis:
         if is_obsidian_holding(wiki_path) and not dry_run:
@@ -587,6 +651,17 @@ def run_curator_c(
                 f"{wiki_path}. Proceeding — but if you have mid-edit "
                 "buffers, close them first."
             )
+
+        if defrag:
+            # Pre-flight: bail on mid-merge vault.
+            from lore_curator.c_passes import has_merge_conflicts
+            if has_merge_conflicts(wiki_path):
+                console.print(
+                    f"[yellow]Skipping wiki/{wiki_path.name}:[/yellow] "
+                    "merge conflicts detected. Resolve first."
+                )
+                continue
+
         report = CuratorReport(wiki=wiki_path.name)
         report.actions.extend(_pass_staleness(wiki_path, today, stale_threshold))
         report.actions.extend(_pass_supersession(wiki_path))
@@ -598,6 +673,13 @@ def run_curator_c(
     for report in reports:
         _print_report(report, dry_run)
 
+    defrag_summary_by_wiki: dict[str, dict[str, int]] = {}
+    wiki_snapshots_before: dict[str, dict] = {}
+
+    if defrag:
+        for wiki_path in wikis:
+            wiki_snapshots_before[wiki_path.name] = _snapshot_wiki(wiki_path)
+
     if not dry_run:
         for report in reports:
             for action in report.actions:
@@ -608,10 +690,50 @@ def run_curator_c(
                         f"  [red]skipped[/red] {action.path.name}: {reason}"
                     )
 
-    # Write a review summary file per wiki so next SessionStart can surface it
+    if defrag:
+        for wiki_path in wikis:
+            summary = _run_defrag_passes(
+                wiki_path, anthropic_client=anthropic_client, dry_run=dry_run
+            )
+            defrag_summary_by_wiki[wiki_path.name] = summary
+
     for report in reports:
         wiki_path = next(w for w in wikis if w.name == report.wiki)
         _write_review(wiki_path, report)
+
+    if defrag and lore_root is not None:
+        from lore_curator.curator_c_diff import (
+            prune_old_diff_logs,
+            write_diff_log_entry,
+        )
+        for wiki_path in wikis:
+            before = wiki_snapshots_before.get(wiki_path.name, {})
+            after = _snapshot_wiki(wiki_path)
+            summary = defrag_summary_by_wiki.get(wiki_path.name, {})
+            # Merge hygiene-pass action counts into the summary.
+            hygiene_report = next(
+                (r for r in reports if r.wiki == wiki_path.name), None
+            )
+            if hygiene_report:
+                for action in hygiene_report.actions:
+                    summary[action.kind] = summary.get(action.kind, 0) + 1
+            write_diff_log_entry(
+                lore_root,
+                run_id=rid,
+                snapshot_before=before,
+                snapshot_after=after,
+                dry_run=dry_run,
+                summary=summary,
+                now=now,
+            )
+        prune_old_diff_logs(lore_root)
+
+        # Atomic last_curator_c update — only reached on full-run success.
+        for wiki_path in wikis:
+            try:
+                WikiLedger(lore_root, wiki_path.name).update_last_curator("c", at=now)
+            except Exception:
+                pass
 
     return reports
 
