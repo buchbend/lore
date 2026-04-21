@@ -500,6 +500,57 @@ def _pass_implements(wiki_path: Path) -> list[CuratorAction]:
     return actions
 
 
+def _pass_draft_promotion(
+    wiki_path: Path, today: date, threshold_days: int = 14
+) -> list[CuratorAction]:
+    """Time-based proposal: mark long-standing drafts with
+    ``promotion_candidate: true``. NEVER flips ``draft: false``.
+
+    A note is a candidate when:
+      - ``draft: true`` AND
+      - ``created`` date is older than ``threshold_days`` days ago AND
+      - ``promotion_candidate`` is not already set
+    """
+    from datetime import date as _date_t, timedelta
+    actions: list[CuratorAction] = []
+    cutoff = today - timedelta(days=threshold_days)
+
+    for fpath in discover_notes(wiki_path):
+        try:
+            text = fpath.read_text(errors="replace")
+        except OSError:
+            continue
+        fm = parse_frontmatter(text)
+        if fm is None:
+            continue
+        if fm.get("draft") is not True:
+            continue
+        if fm.get("promotion_candidate") is True:
+            continue  # idempotent
+        created = fm.get("created")
+        if isinstance(created, str):
+            try:
+                created = _date_t.fromisoformat(created)
+            except ValueError:
+                continue
+        if not isinstance(created, _date_t):
+            continue
+        # Strictly older than cutoff — boundary exclusive.
+        if not (created < cutoff):
+            continue
+
+        # Patch: append promotion_candidate: true at end of frontmatter.
+        actions.append(
+            CuratorAction(
+                path=fpath,
+                kind="promote-draft",
+                reason=f"draft created {(today - created).days}d ago ({created.isoformat()})",
+                patch={"promotion_candidate": True},
+            )
+        )
+    return actions
+
+
 def _pass_team_mode_hint(wiki_path: Path) -> list[str]:
     """Check whether the wiki has outgrown solo mode.
 
@@ -571,14 +622,116 @@ def _apply_safely(action: CuratorAction) -> tuple[bool, str]:
     return (True, "applied")
 
 
+# Registry for LLM-driven Curator C defrag passes. Phase B of Plan 5
+# appends callables here; each callable has signature
+# ``(wiki_path, *, anthropic_client, dry_run) -> dict[str, int]`` (summary counts).
+_DEFRAG_PASSES: list = []
+
+
+def _ensure_passes_registered() -> None:
+    """Lazy-import pass modules so their _register() side effects fire.
+
+    The pass modules each register themselves into _DEFRAG_PASSES on
+    import. Importing them eagerly from this module would circular-
+    import. Instead, we trigger them here the first time defrag runs.
+    """
+    import lore_curator.c_adjacent_merge  # noqa: F401
+    import lore_curator.c_auto_supersede  # noqa: F401
+    import lore_curator.c_orphan_links   # noqa: F401
+
+
+def _run_defrag_passes(
+    wiki_path,
+    *,
+    anthropic_client,
+    dry_run: bool,
+) -> dict[str, int]:
+    """Run every registered LLM pass for one wiki; return merged summary."""
+    _ensure_passes_registered()
+    summary: dict[str, int] = {}
+    for pass_fn in _DEFRAG_PASSES:
+        counts = pass_fn(
+            wiki_path, anthropic_client=anthropic_client, dry_run=dry_run
+        ) or {}
+        for k, v in counts.items():
+            summary[k] = summary.get(k, 0) + v
+    return summary
+
+
+def _snapshot_wiki(wiki_path) -> dict:
+    """Return {relative_path: content_str} for every .md file under wiki_path."""
+    out: dict = {}
+    if not wiki_path.exists():
+        return out
+    for p in sorted(wiki_path.rglob("*.md")):
+        if p.is_file():
+            try:
+                out[str(p.relative_to(wiki_path))] = p.read_text(errors="replace")
+            except OSError:
+                continue
+    return out
+
+
 def run_curator_c(
     wiki_filter: str | None = None,
     dry_run: bool = True,
     stale_threshold: int = STALENESS_DAYS,
+    *,
+    defrag: bool = False,
+    anthropic_client=None,
+    run_id: str | None = None,
 ) -> list[CuratorReport]:
+    """Run Curator C — hygiene by default; with ``defrag=True`` also runs
+    LLM passes (adjacent-merge, auto-supersede, orphan-repair) registered
+    in ``_DEFRAG_PASSES``.
+
+    When ``defrag=True``:
+      - pre-flight: abort if wiki repo has merge conflicts
+      - snapshot wiki before running passes
+      - run hygiene passes (pre-existing) + defrag passes
+      - write a diff-log entry
+      - prune old diff logs (90d retention)
+      - update ``WikiLedger.last_curator_c`` on success (atomic)
+    """
+    from datetime import UTC, datetime as _dt
+    from lore_core.config import get_lore_root
+    from lore_core.ledger import WikiLedger
+
     wikis = discover_wikis(wiki_filter)
     reports: list[CuratorReport] = []
     today = date.today()
+    now = _dt.now(UTC)
+    rid = run_id or now.strftime("%Y-%m-%dT%H-%M-%S")
+
+    try:
+        lore_root = get_lore_root()
+    except Exception:
+        lore_root = None
+
+    # Task 11: team-mode first-come-wins. Under defrag=True, re-read
+    # each wiki's last_curator_c at entry. If it matches the current ISO
+    # week we skip — another user already ran this cycle. Uses iso-week
+    # equivalence rather than timestamp comparison to survive clock skew
+    # across team members.
+    if defrag and lore_root is not None:
+        iso_now = now.isocalendar()[:2]
+        already_ran: set[str] = set()
+        for wiki_path in wikis:
+            entry = WikiLedger(lore_root, wiki_path.name).read()
+            last_c = entry.last_curator_c
+            if last_c is None:
+                continue
+            if last_c.tzinfo is None:
+                from datetime import UTC as _UTC
+                last_c = last_c.replace(tzinfo=_UTC)
+            if last_c.isocalendar()[:2] == iso_now:
+                already_ran.add(wiki_path.name)
+                console.print(
+                    f"[dim]Skipping wiki/{wiki_path.name}: already ran "
+                    f"this ISO week ({last_c.isoformat()}).[/dim]"
+                )
+        if already_ran:
+            wikis = [w for w in wikis if w.name not in already_ran]
 
     for wiki_path in wikis:
         if is_obsidian_holding(wiki_path) and not dry_run:
@@ -587,16 +740,36 @@ def run_curator_c(
                 f"{wiki_path}. Proceeding — but if you have mid-edit "
                 "buffers, close them first."
             )
+
+        if defrag:
+            # Pre-flight: bail on mid-merge vault.
+            from lore_curator.c_passes import has_merge_conflicts
+            if has_merge_conflicts(wiki_path):
+                console.print(
+                    f"[yellow]Skipping wiki/{wiki_path.name}:[/yellow] "
+                    "merge conflicts detected. Resolve first."
+                )
+                continue
+
         report = CuratorReport(wiki=wiki_path.name)
         report.actions.extend(_pass_staleness(wiki_path, today, stale_threshold))
         report.actions.extend(_pass_supersession(wiki_path))
         report.actions.extend(_pass_implements(wiki_path))
         report.actions.extend(_pass_git_backfill(wiki_path))
+        if defrag:
+            report.actions.extend(_pass_draft_promotion(wiki_path, today))
         report.hints.extend(_pass_team_mode_hint(wiki_path))
         reports.append(report)
 
     for report in reports:
         _print_report(report, dry_run)
+
+    defrag_summary_by_wiki: dict[str, dict[str, int]] = {}
+    wiki_snapshots_before: dict[str, dict] = {}
+
+    if defrag:
+        for wiki_path in wikis:
+            wiki_snapshots_before[wiki_path.name] = _snapshot_wiki(wiki_path)
 
     if not dry_run:
         for report in reports:
@@ -608,10 +781,50 @@ def run_curator_c(
                         f"  [red]skipped[/red] {action.path.name}: {reason}"
                     )
 
-    # Write a review summary file per wiki so next SessionStart can surface it
+    if defrag:
+        for wiki_path in wikis:
+            summary = _run_defrag_passes(
+                wiki_path, anthropic_client=anthropic_client, dry_run=dry_run
+            )
+            defrag_summary_by_wiki[wiki_path.name] = summary
+
     for report in reports:
         wiki_path = next(w for w in wikis if w.name == report.wiki)
         _write_review(wiki_path, report)
+
+    if defrag and lore_root is not None:
+        from lore_curator.curator_c_diff import (
+            prune_old_diff_logs,
+            write_diff_log_entry,
+        )
+        for wiki_path in wikis:
+            before = wiki_snapshots_before.get(wiki_path.name, {})
+            after = _snapshot_wiki(wiki_path)
+            summary = defrag_summary_by_wiki.get(wiki_path.name, {})
+            # Merge hygiene-pass action counts into the summary.
+            hygiene_report = next(
+                (r for r in reports if r.wiki == wiki_path.name), None
+            )
+            if hygiene_report:
+                for action in hygiene_report.actions:
+                    summary[action.kind] = summary.get(action.kind, 0) + 1
+            write_diff_log_entry(
+                lore_root,
+                run_id=rid,
+                snapshot_before=before,
+                snapshot_after=after,
+                dry_run=dry_run,
+                summary=summary,
+                now=now,
+            )
+        prune_old_diff_logs(lore_root)
+
+        # Atomic last_curator_c update — only reached on full-run success.
+        for wiki_path in wikis:
+            try:
+                WikiLedger(lore_root, wiki_path.name).update_last_curator("c", at=now)
+            except Exception:
+                pass
 
     return reports
 
@@ -756,6 +969,7 @@ app = typer.Typer(
 
 @app.callback(invoke_without_command=True)
 def curator(
+    ctx: typer.Context,
     wiki: str = typer.Option(None, "--wiki", help="Scope to one wiki."),
     apply: bool = typer.Option(
         False, "--apply", help="Actually write changes. Without this, runs dry."
@@ -775,6 +989,11 @@ def curator(
     ),
 ) -> None:
     """Run curator passes — flag stale, propagate implements, etc."""
+    # If a subcommand was invoked (e.g. `lore curator run --defrag`), let it
+    # handle the flow; the callback's hygiene-only path is for bare
+    # `lore curator` only.
+    if ctx.invoked_subcommand is not None:
+        return
     if migrate_open_items:
         run_open_items_migration(wiki_filter=wiki, dry_run=not apply)
         return
@@ -830,13 +1049,53 @@ def run_command(
     scope: str = typer.Option(None, "--scope", help="Filter to one scope, e.g. 'mywiki:subproject'."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Classify but don't write notes or advance ledger."),
     abstract: bool = typer.Option(False, "--abstract", help="Also run the surface-extraction pass after filing session notes."),
-    wiki: str = typer.Option(None, "--wiki", help="Limit the surface-extraction pass to a single wiki (only meaningful with --abstract)."),
+    defrag: bool = typer.Option(False, "--defrag", help="Run Curator C weekly defragmentation (hygiene + LLM adjacent-merge / auto-supersede / orphan-repair / draft-promotion)."),
+    wiki: str = typer.Option(None, "--wiki", help="Limit the surface-extraction / defrag pass to a single wiki."),
     trace_llm: bool = typer.Option(False, "--trace-llm", help="Capture LLM prompts/responses to runs/<id>.trace.jsonl (equivalent to LORE_TRACE_LLM=1)."),
 ) -> None:
-    """Run the curator — classify pending transcripts and file session notes.
+    """Run the curator.
 
-    With --abstract, also runs the surface-extraction pass for the specified wiki(s).
+    Default: classify pending transcripts and file session notes.
+    --abstract also runs the surface-extraction pass.
+    --defrag runs the weekly whole-wiki defragmentation (hygiene passes
+    + LLM proposals for adjacent-concept merges, auto-supersession,
+    orphan wikilink repair, and draft promotions).
     """
+    import os as _os_check
+    if defrag:
+        # --defrag runs Curator C directly, not Curator A. Bypass the
+        # transcript classification path and go straight to the whole-wiki
+        # pipeline.
+        from pathlib import Path as _P
+        lore_root_str = _os_check.environ.get("LORE_ROOT", "")
+        if not lore_root_str:
+            console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
+            raise typer.Exit(1)
+
+        # LLM client resolution (same seam as Curator A).
+        from lore_curator.llm_client import LlmClientError, make_llm_client
+        err_console = Console(stderr=True)
+        api_key = _os_check.environ.get("ANTHROPIC_API_KEY", "") or None
+        try:
+            llm_client = make_llm_client(api_key=api_key)
+        except LlmClientError as exc:
+            err_console.print(f"[yellow]Warning:[/yellow] {exc}")
+            llm_client = None
+        if llm_client is None:
+            console.print(
+                "[yellow]Running --defrag without an LLM client — "
+                "LLM passes (adjacent-merge, auto-supersede, orphan-repair) "
+                "will be skipped.[/yellow]"
+            )
+
+        reports = run_curator_c(
+            wiki_filter=wiki,
+            dry_run=dry_run,
+            defrag=True,
+            anthropic_client=llm_client,
+        )
+        # Exit success — report already printed by run_curator_c.
+        return
     import os
     from datetime import UTC, datetime
     from pathlib import Path
