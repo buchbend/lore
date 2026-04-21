@@ -245,9 +245,14 @@ def auto_supersede_pass(
             f"--- OLDER: {older.name} ---\n{older.read_text(errors='replace')[:1500]}\n\n"
             f"--- NEWER: {newer.name} ---\n{newer.read_text(errors='replace')[:1500]}\n"
         )
+        from lore_curator.c_passes import resolve_tier_for_pass
+        model = resolve_tier_for_pass(
+            wiki_path, pass_name="auto_supersede", preferred_tier="high",
+            lore_root=lore_root,
+        )
         try:
             resp = anthropic_client.messages.create(
-                model="high",
+                model=model,
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],
                 tools=[_SUPERSEDE_TOOL],

@@ -121,9 +121,18 @@ def _propose_merge(
         f"{body_b[:2000]}\n"
     )
 
+    from lore_curator.c_passes import resolve_tier_for_pass
+    # Resolve actual model ID from wiki config; degrades to middle if high=off.
+    model = resolve_tier_for_pass(
+        note_a.parent.parent,  # wiki_path
+        pass_name="adjacent_merge",
+        preferred_tier="high",
+        lore_root=lore_root,
+    )
+
     try:
         resp = anthropic_client.messages.create(
-            model="high",
+            model=model,
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
             tools=[_MERGE_TOOL],

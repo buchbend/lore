@@ -25,6 +25,52 @@ class ProposalOnlyError(RuntimeError):
     """Raised when a proposal-only pass attempts to mutate an existing note."""
 
 
+def resolve_tier_for_pass(
+    wiki_path: Path,
+    *,
+    pass_name: str,
+    preferred_tier: str = "high",
+    lore_root: Path | None = None,
+) -> str:
+    """Return a real model ID for ``preferred_tier``, with high→middle
+    degradation when ``models.high`` is ``"off"``.
+
+    Emits a ``curator-c/high-tier-off`` warning event to hook-events
+    every time a pass degrades (not once-per-run — merciless must-fix:
+    once-per-sentinel added complexity without signal). The warning
+    rides into CaptureState's ``simple_tier_fallback_active`` field via
+    the warnings log (CaptureState sentinel layer — Plan A).
+    """
+    from lore_core.wiki_config import load_wiki_config
+
+    cfg = load_wiki_config(wiki_path)
+    models = cfg.models
+    if preferred_tier == "high":
+        if models.high == "off" or not models.high:
+            # Degrade to middle + warn.
+            if lore_root is not None:
+                try:
+                    from lore_core.hook_log import HookEventLogger
+                    HookEventLogger(lore_root).emit(
+                        event="curator-c",
+                        outcome="high-tier-off",
+                        error={
+                            "pass": pass_name,
+                            "message": (
+                                f"Curator C {pass_name} running at middle tier "
+                                "— high tier is off; expect coarser judgments."
+                            ),
+                        },
+                    )
+                except Exception:
+                    pass
+            return models.middle
+        return models.high
+    if preferred_tier == "middle":
+        return models.middle
+    return models.simple
+
+
 def validate_llm_response(
     response: dict | None,
     *,
