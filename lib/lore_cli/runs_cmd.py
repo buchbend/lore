@@ -52,12 +52,8 @@ def _complete_run_id(ctx, args, incomplete: str):
     """
     try:
         from lore_core.config import get_lore_root
-        runs_dir = get_lore_root() / ".lore" / "runs"
-        suffixes = [
-            p.stem.split("-")[-1]
-            for p in runs_dir.glob("*.jsonl")
-            if not p.name.endswith(".trace.jsonl")
-        ]
+        from lore_core.run_reader import list_archival_runs
+        suffixes = [p.stem.split("-")[-1] for p in list_archival_runs(get_lore_root())]
     except Exception:
         suffixes = []
     candidates = suffixes + ["latest"] + [f"^{i}" for i in range(1, 6)]
