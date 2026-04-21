@@ -20,7 +20,8 @@ class GitConfig:
 @dataclass
 class CuratorCConfig:
     enabled: bool = False
-    mode: str = "local"          # local | central
+    mode: str = "local"                 # local | central
+    defrag_body_writes: bool = False    # gates orphan-link in-place body rewrites
 
 
 @dataclass
