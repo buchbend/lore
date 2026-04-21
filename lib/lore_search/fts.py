@@ -53,6 +53,13 @@ def _sha256(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Bump when the on-disk schema changes in a way that requires a rebuild.
+# The v1→v2 jump added `contentless_delete=1` to `notes_fts`; without
+# it, `DELETE FROM notes_fts WHERE rowid=?` raises
+# `OperationalError: cannot DELETE from contentless fts5 table: notes_fts`
+# on any reindex that updates or removes an already-indexed note.
+SCHEMA_VERSION = 2
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS notes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +80,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     tags,
     body,
     content='',
+    contentless_delete=1,
     tokenize='porter unicode61'
 );
 
@@ -83,10 +91,52 @@ CREATE TABLE IF NOT EXISTS meta (
 """
 
 
+def _stored_schema_version(conn: sqlite3.Connection) -> int:
+    """Return the on-disk schema version, or 0 if uninitialised/legacy."""
+    has_meta = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
+    ).fetchone()
+    if not has_meta:
+        return 0
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key='schema_version'"
+    ).fetchone()
+    if not row:
+        return 0
+    try:
+        return int(row[0])
+    except (TypeError, ValueError):
+        return 0
+
+
+def _migrate_if_needed(conn: sqlite3.Connection) -> None:
+    """Drop any pre-SCHEMA_VERSION tables so the next reindex rebuilds.
+
+    The only on-disk state worth preserving is the mtime/sha256 cache in
+    `notes` — but that cache is only useful when `notes_fts` is in sync
+    with it. Since the legacy `notes_fts` is unusable (DELETE fails),
+    dropping both keeps them consistent and the next reindex repopulates.
+    """
+    if _stored_schema_version(conn) >= SCHEMA_VERSION:
+        return
+    conn.executescript(
+        """
+        DROP TABLE IF EXISTS notes_fts;
+        DROP TABLE IF EXISTS notes;
+        """
+    )
+
+
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(_db_path())
     conn.row_factory = sqlite3.Row
+    _migrate_if_needed(conn)
     conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
+        (str(SCHEMA_VERSION),),
+    )
+    conn.commit()
     return conn
 
 
