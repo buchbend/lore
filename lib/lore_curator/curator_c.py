@@ -628,6 +628,18 @@ def _apply_safely(action: CuratorAction) -> tuple[bool, str]:
 _DEFRAG_PASSES: list = []
 
 
+def _ensure_passes_registered() -> None:
+    """Lazy-import pass modules so their _register() side effects fire.
+
+    The pass modules each register themselves into _DEFRAG_PASSES on
+    import. Importing them eagerly from this module would circular-
+    import. Instead, we trigger them here the first time defrag runs.
+    """
+    import lore_curator.c_adjacent_merge  # noqa: F401
+    import lore_curator.c_auto_supersede  # noqa: F401
+    import lore_curator.c_orphan_links   # noqa: F401
+
+
 def _run_defrag_passes(
     wiki_path,
     *,
@@ -635,6 +647,7 @@ def _run_defrag_passes(
     dry_run: bool,
 ) -> dict[str, int]:
     """Run every registered LLM pass for one wiki; return merged summary."""
+    _ensure_passes_registered()
     summary: dict[str, int] = {}
     for pass_fn in _DEFRAG_PASSES:
         counts = pass_fn(
