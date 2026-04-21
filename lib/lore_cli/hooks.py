@@ -1083,6 +1083,49 @@ def cmd_session_start(
             # Spawn failure is non-fatal — proceed without it.
             pass
 
+    # Auto-trigger Curator C weekly (UTC ISO-week + per-user 48h jitter).
+    # Flag-gated off by default; see project_curator_triad + spec §6.
+    if not probe:
+        try:
+            cwd_resolved = Path(_resolve_cwd(cwd))
+            scope = resolve_scope(cwd_resolved)
+            if scope is not None:
+                lore_root = _infer_lore_root(scope.claude_md_path)
+                cfg = _load_wiki_cfg_from_scope(scope, lore_root)
+                c_cfg = cfg.curator.curator_c
+                if c_cfg.enabled:
+                    if c_cfg.mode != "local":
+                        # Fail loudly — don't silently skip.
+                        HookEventLogger(lore_root).emit(
+                            event="curator-c",
+                            outcome="central-mode-skipped",
+                            error={
+                                "message": "mode=central deferred to v2; local spawn skipped",
+                                "wiki": scope.wiki,
+                            },
+                        )
+                    else:
+                        wledger = WikiLedger(lore_root, scope.wiki)
+                        wentry = wledger.read()
+                        now = _now_utc()
+                        last_c = wentry.last_curator_c
+                        if last_c is not None and last_c.tzinfo is None:
+                            from datetime import UTC as _UTC
+                            last_c = last_c.replace(tzinfo=_UTC)
+                        iso_now = now.isocalendar()
+                        needs_rollover = (
+                            last_c is None
+                            or last_c.isocalendar()[:2] != iso_now[:2]
+                        )
+                        if needs_rollover:
+                            monday = _iso_week_monday_utc(now)
+                            offset = _curator_c_jitter_seconds(_curator_c_email())
+                            from datetime import timedelta as _td
+                            if now >= monday + _td(seconds=offset):
+                                _spawn_detached_curator_c(lore_root)
+        except Exception:
+            pass
+
     _emit("SessionStart", out, plain=plain)
 
 
@@ -1211,6 +1254,87 @@ def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
             return False
         _migrate_legacy_spawn_stamp(lore_root, "a")
         cmd = [sys.executable, "-m", "lore_cli", "curator", "run"]
+        env = os.environ.copy()
+        env["LORE_ROOT"] = str(lore_root)
+        try:
+            subprocess.Popen(
+                cmd,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                env=env,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        import contextlib
+        with contextlib.suppress(OSError):
+            _write_stamp(stamp)
+        return True
+
+
+def _now_utc() -> "datetime":
+    """Return datetime.now(UTC). Isolated as a seam so tests can pin time."""
+    from datetime import UTC, datetime as _dt
+    return _dt.now(UTC)
+
+
+def _curator_c_email() -> str:
+    """Resolve git user.email → hostname fallback → empty (offset=0)."""
+    import socket
+    import subprocess
+    # Cheap test override.
+    env_email = os.environ.get("GIT_AUTHOR_EMAIL")
+    if env_email:
+        return env_email
+    try:
+        res = subprocess.run(
+            ["git", "config", "user.email"],
+            capture_output=True, text=True, timeout=2, check=False,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        return socket.gethostname()
+    except OSError:
+        return ""
+
+
+def _curator_c_jitter_seconds(email: str) -> int:
+    """Deterministic 0-48h offset from SHA-256(email). Empty → 0 (fire at Monday 00Z)."""
+    import hashlib
+    if not email:
+        return 0
+    h = hashlib.sha256(email.encode()).hexdigest()[:8]
+    return int(h, 16) % 172800  # 48h in seconds
+
+
+def _iso_week_monday_utc(ts: "datetime") -> "datetime":
+    """Monday 00:00Z of the ISO week containing ts."""
+    from datetime import datetime as _dt
+    from datetime import UTC, timedelta
+    weekday = ts.isocalendar().weekday  # 1..7, Monday=1
+    date = ts.date() - timedelta(days=weekday - 1)
+    return _dt(date.year, date.month, date.day, tzinfo=UTC)
+
+
+def _spawn_detached_curator_c(
+    lore_root: Path, *, cooldown_s: int = 3600
+) -> bool:
+    """Fire-and-forget `lore curator run --defrag` subprocess (Curator C)."""
+    import subprocess
+    from lore_core.lockfile import try_acquire_spawn_lock
+
+    with try_acquire_spawn_lock(lore_root, "c") as (held, stamp):
+        if not held:
+            return False
+        if _stamp_within_cooldown(stamp, cooldown_s):
+            return False
+        cmd = [
+            sys.executable, "-m", "lore_cli", "curator", "run", "--defrag",
+        ]
         env = os.environ.copy()
         env["LORE_ROOT"] = str(lore_root)
         try:
