@@ -39,7 +39,11 @@ def register(adapter: Adapter) -> None:
 
 # Built-in adapters — imported and registered after `_REGISTRY` is alive.
 from lore_adapters.claude_code import ClaudeCodeAdapter  # noqa: E402
+from lore_adapters.cursor_agent import CursorAgentAdapter  # noqa: E402
 from lore_adapters.manual_send import ManualSendAdapter  # noqa: E402
+from lore_adapters.vscode_copilot import VSCodeCopilotAdapter  # noqa: E402
 
 register(ClaudeCodeAdapter())
+register(CursorAgentAdapter())
 register(ManualSendAdapter())
+register(VSCodeCopilotAdapter())
