@@ -261,6 +261,135 @@ def test_slug_sanitises_title():
     assert all(c.isalnum() or c == "-" for c in s)
 
 
+# ---------------------------------------------------------------------------
+# Phase 1 — work-date propagation
+#
+# Symptom: if the ledger wasn't kept current and curator ran "catch-up",
+# every backlogged transcript was filed under today's date. The user's
+# session notes claimed all prior work happened today. Fix: each note
+# takes its date from the transcript it came from, not from curation time.
+# ---------------------------------------------------------------------------
+
+
+def _make_handle_with_mtime(mtime: datetime) -> TranscriptHandle:
+    return TranscriptHandle(
+        host="claude-code",
+        id="transcript-abc123",
+        path=Path("/tmp/transcript.jsonl"),
+        cwd=Path("/tmp"),
+        mtime=mtime,
+    )
+
+
+def test_work_time_drives_filename_date(tmp_path):
+    """Filename's YYYY-MM-DD comes from work_time, not curation `now`."""
+    work_time = datetime(2026, 4, 18, 22, 30, tzinfo=UTC)  # prior day
+    curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
+
+    result = file_session_note(
+        scope=_make_scope(),
+        handle=_make_handle_with_mtime(work_time),
+        noteworthy=_make_noteworthy(),
+        turns=_make_turns(),
+        wiki_root=tmp_path,
+        anthropic_client=_make_new_client(),
+        model_resolver=_resolver,
+        now=curation_time,
+        work_time=work_time,
+    )
+    assert result.path.name.startswith("2026-04-18-"), (
+        f"filename must use work date, got {result.path.name}"
+    )
+
+
+def test_work_time_drives_frontmatter_created_and_last_reviewed(tmp_path):
+    """Frontmatter `created` and `last_reviewed` use work_time, not `now`."""
+    work_time = datetime(2026, 4, 15, 9, 0, tzinfo=UTC)  # 4 days ago
+    curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
+
+    result = file_session_note(
+        scope=_make_scope(),
+        handle=_make_handle_with_mtime(work_time),
+        noteworthy=_make_noteworthy(),
+        turns=_make_turns(),
+        wiki_root=tmp_path,
+        anthropic_client=_make_new_client(),
+        model_resolver=_resolver,
+        now=curation_time,
+        work_time=work_time,
+    )
+    fm = parse_frontmatter(result.path.read_text())
+    assert fm["created"] == "2026-04-15"
+    assert fm["last_reviewed"] == "2026-04-15"
+
+
+def test_curator_a_run_stays_curation_time_even_when_work_time_older(tmp_path):
+    """`curator_a_run` is an audit field — records when we LOOKED, not
+    when the work happened. Keeps curation timestamp."""
+    work_time = datetime(2026, 4, 15, 9, 0, tzinfo=UTC)
+    curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
+
+    result = file_session_note(
+        scope=_make_scope(),
+        handle=_make_handle_with_mtime(work_time),
+        noteworthy=_make_noteworthy(),
+        turns=_make_turns(),
+        wiki_root=tmp_path,
+        anthropic_client=_make_new_client(),
+        model_resolver=_resolver,
+        now=curation_time,
+        work_time=work_time,
+    )
+    fm = parse_frontmatter(result.path.read_text())
+    assert fm["curator_a_run"].startswith("2026-04-19"), (
+        f"curator_a_run must record curation time, got {fm['curator_a_run']}"
+    )
+
+
+def test_work_time_defaults_to_now_when_not_supplied(tmp_path):
+    """Backward compat: callers that don't pass work_time get today's date
+    (matches old behavior; preserves legacy tests)."""
+    now = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
+    result = _file_note(tmp_path, now=now)  # no work_time passed
+    assert result.path.name.startswith("2026-04-19-")
+    fm = parse_frontmatter(result.path.read_text())
+    assert fm["created"] == "2026-04-19"
+
+
+def test_merge_last_reviewed_uses_newest_work_time(tmp_path):
+    """On merge, last_reviewed advances to the new slice's work_time —
+    which may be earlier or later than the existing created date.
+    Semantically: the note's "last touched" matches the newest work it
+    contains, not the curation run."""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    existing = _write_session_note(
+        sessions_dir, "2026-04-15-old.md",
+        created="2026-04-15",
+        body="### Summary\n- old bullet",
+    )
+
+    work_time = datetime(2026, 4, 17, 14, 0, tzinfo=UTC)  # between created and now
+    curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
+
+    client = _make_client({"merge": str(existing)})
+    file_session_note(
+        scope=_make_scope(),
+        handle=_make_handle_with_mtime(work_time),
+        noteworthy=_make_noteworthy("Merged Work"),
+        turns=_make_turns(),
+        wiki_root=tmp_path,
+        anthropic_client=client,
+        model_resolver=_resolver,
+        now=curation_time,
+        work_time=work_time,
+    )
+    fm = parse_frontmatter(existing.read_text())
+    assert fm["last_reviewed"] == "2026-04-17", fm
+    # `created` is never rewritten on merge.
+    assert fm["created"] == "2026-04-15"
+
+
 def test_collision_appends_counter(tmp_path):
     """Second note with same day + slug gets a -2 suffix."""
     result1 = _file_note(tmp_path)

@@ -290,6 +290,12 @@ def _process_entry(
     if dry_run:
         return _Outcome(was_noteworthy=True, wiki_name=attached.wiki)
 
+    # Work time is when the turns were actually written, not when we're
+    # curating them. Prefer the newest turn's timestamp (end of the work
+    # slice); fall back to the transcript file's mtime. Only reach `now`
+    # if both are missing — which should never happen for real data.
+    work_time = turns[-1].timestamp or handle.mtime or now
+
     filed = file_session_note(
         scope=attached,
         handle=handle,
@@ -299,6 +305,7 @@ def _process_entry(
         anthropic_client=anthropic_client,
         model_resolver=model_resolver,
         now=now,
+        work_time=work_time,
         logger=logger,
         transcript_id=entry.transcript_id,
     )

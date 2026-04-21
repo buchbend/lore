@@ -42,11 +42,20 @@ def file_session_note(
     anthropic_client,
     model_resolver: Callable[[str], str],
     now: datetime | None = None,
+    work_time: datetime | None = None,
     logger: "RunLogger | None" = None,
     transcript_id: str | None = None,
 ) -> FiledNote:
-    """Create or merge a session note from a classified Turn slice."""
+    """Create or merge a session note from a classified Turn slice.
+
+    `now` is *curation* time (when we looked). `work_time` is when the
+    work in the turns actually happened — drives filename date and
+    frontmatter `created` / `last_reviewed`. When omitted, falls back
+    to `now` (legacy behavior; callers that want accurate dates must
+    pass the transcript's timestamp explicitly).
+    """
     now = now or datetime.now(UTC)
+    work_time = work_time or now
     sessions_dir = wiki_root / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
 
@@ -73,7 +82,14 @@ def file_session_note(
                 decision="merge",
             )
 
-        _append_to_note(target, noteworthy=noteworthy, handle=handle, turns=turns, now=now)
+        _append_to_note(
+            target,
+            noteworthy=noteworthy,
+            handle=handle,
+            turns=turns,
+            now=now,
+            work_time=work_time,
+        )
         wikilink = _wikilink_for(target)
 
         if logger is not None:
@@ -88,7 +104,7 @@ def file_session_note(
 
     # New note
     slug = _slug(noteworthy.title)
-    date_str = now.date().isoformat()
+    date_str = work_time.date().isoformat()
     path = sessions_dir / f"{date_str}-{slug}.md"
     # Avoid collisions — append counter if needed
     counter = 1
@@ -112,6 +128,7 @@ def file_session_note(
         noteworthy=noteworthy,
         turns=turns,
         now=now,
+        work_time=work_time,
     )
     wikilink = _wikilink_for(path)
 
@@ -272,14 +289,15 @@ def _write_new_note(
     noteworthy: NoteworthyResult,
     turns: list[Turn],
     now: datetime,
+    work_time: datetime,
 ) -> None:
     from_hash = turns[0].content_hash() if turns else None
     to_hash = turns[-1].content_hash() if turns else None
     fm = {
         "schema_version": 2,
         "type": "session",
-        "created": now.date().isoformat(),
-        "last_reviewed": now.date().isoformat(),
+        "created": work_time.date().isoformat(),
+        "last_reviewed": work_time.date().isoformat(),
         "description": noteworthy.title,
         "scope": scope.scope,
         "draft": True,
@@ -306,12 +324,13 @@ def _append_to_note(
     handle: TranscriptHandle,
     turns: list[Turn],
     now: datetime,
+    work_time: datetime,
 ) -> None:
     """Append a new section to an existing note; update frontmatter source_transcripts.
 
     Frontmatter updates:
-      - last_reviewed → today
-      - curator_a_run → now ISO
+      - last_reviewed → work_time (when the newly-added work happened)
+      - curator_a_run → now ISO (audit field: when WE looked)
       - source_transcripts gets a new entry
     Body: append a `## <noteworthy.title>` section with bullets + findings.
     """
@@ -329,7 +348,7 @@ def _append_to_note(
         "to_hash": to_hash,
     })
     fm["source_transcripts"] = src
-    fm["last_reviewed"] = now.date().isoformat()
+    fm["last_reviewed"] = work_time.date().isoformat()
     fm["curator_a_run"] = now.isoformat()
 
     new_section = (
