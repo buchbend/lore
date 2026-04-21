@@ -500,6 +500,57 @@ def _pass_implements(wiki_path: Path) -> list[CuratorAction]:
     return actions
 
 
+def _pass_draft_promotion(
+    wiki_path: Path, today: date, threshold_days: int = 14
+) -> list[CuratorAction]:
+    """Time-based proposal: mark long-standing drafts with
+    ``promotion_candidate: true``. NEVER flips ``draft: false``.
+
+    A note is a candidate when:
+      - ``draft: true`` AND
+      - ``created`` date is older than ``threshold_days`` days ago AND
+      - ``promotion_candidate`` is not already set
+    """
+    from datetime import date as _date_t, timedelta
+    actions: list[CuratorAction] = []
+    cutoff = today - timedelta(days=threshold_days)
+
+    for fpath in discover_notes(wiki_path):
+        try:
+            text = fpath.read_text(errors="replace")
+        except OSError:
+            continue
+        fm = parse_frontmatter(text)
+        if fm is None:
+            continue
+        if fm.get("draft") is not True:
+            continue
+        if fm.get("promotion_candidate") is True:
+            continue  # idempotent
+        created = fm.get("created")
+        if isinstance(created, str):
+            try:
+                created = _date_t.fromisoformat(created)
+            except ValueError:
+                continue
+        if not isinstance(created, _date_t):
+            continue
+        # Strictly older than cutoff — boundary exclusive.
+        if not (created < cutoff):
+            continue
+
+        # Patch: append promotion_candidate: true at end of frontmatter.
+        actions.append(
+            CuratorAction(
+                path=fpath,
+                kind="promote-draft",
+                reason=f"draft created {(today - created).days}d ago ({created.isoformat()})",
+                patch={"promotion_candidate": True},
+            )
+        )
+    return actions
+
+
 def _pass_team_mode_hint(wiki_path: Path) -> list[str]:
     """Check whether the wiki has outgrown solo mode.
 
@@ -667,6 +718,8 @@ def run_curator_c(
         report.actions.extend(_pass_supersession(wiki_path))
         report.actions.extend(_pass_implements(wiki_path))
         report.actions.extend(_pass_git_backfill(wiki_path))
+        if defrag:
+            report.actions.extend(_pass_draft_promotion(wiki_path, today))
         report.hints.extend(_pass_team_mode_hint(wiki_path))
         reports.append(report)
 
