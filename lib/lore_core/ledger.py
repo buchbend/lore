@@ -28,6 +28,7 @@ class TranscriptLedgerEntry:
     curator_a_run: datetime | None
     noteworthy: bool | None
     session_note: str | None  # wikilink, e.g. "[[2026-04-19-slug]]"
+    orphan: bool = False  # cwd permanently gone; excluded from pending()
 
 
 @dataclass
@@ -81,6 +82,7 @@ class TranscriptLedger:
             "curator_a_run": e.curator_a_run.isoformat() if e.curator_a_run is not None else None,
             "noteworthy": e.noteworthy,
             "session_note": e.session_note,
+            "orphan": e.orphan,
         }
 
     @staticmethod
@@ -99,6 +101,7 @@ class TranscriptLedger:
             curator_a_run=datetime.fromisoformat(curator_a_run_raw) if curator_a_run_raw else None,
             noteworthy=raw.get("noteworthy"),
             session_note=raw.get("session_note"),
+            orphan=raw.get("orphan", False),
         )
 
     def get(self, host: str, transcript_id: str) -> TranscriptLedgerEntry | None:
@@ -116,16 +119,135 @@ class TranscriptLedger:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(self._path, json.dumps(raw, indent=2))
 
-    def pending(self) -> list[TranscriptLedgerEntry]:
-        """Entries where last_mtime > any prior digested state, or digested_hash is None."""
-        result = []
+    @staticmethod
+    def _is_pending(entry: TranscriptLedgerEntry) -> bool:
+        """Pending semantics:
+
+        * ``orphan=True``                  → never pending (retired).
+        * ``curator_a_run is None``        → pending (never scanned).
+        * ``last_mtime > curator_a_run``   → pending (grew since scan).
+        * otherwise                        → not pending.
+
+        ``curator_a_run`` is the "I looked at this entry" marker. It is
+        stamped on every scan outcome — noteworthy, not-noteworthy, skip
+        because no new turns, skip because below wiki threshold, skip
+        because orphan. Without this, entries whose wiki never reaches
+        threshold would re-trip on every hook forever.
+        """
+        if entry.orphan:
+            return False
+        if entry.curator_a_run is None:
+            return True
+        return entry.last_mtime > entry.curator_a_run
+
+    def pending(self, wiki: str | None = None) -> list[TranscriptLedgerEntry]:
+        """Entries still awaiting a curator scan.
+
+        When ``wiki`` is given, restrict to entries whose ``directory``
+        resolves to that wiki via :func:`resolve_scope`. Orphan/unattached
+        entries are dropped silently — use :meth:`pending_by_wiki` if you
+        want the buckets surfaced.
+        """
+        from lore_core.scope_resolver import resolve_scope
+
+        result: list[TranscriptLedgerEntry] = []
+        resolve_cache: dict[Path, str | None] = {}
         for raw_entry in self._load().values():
             entry = self._entry_from_raw(raw_entry)
-            if entry.digested_hash is None:
-                result.append(entry)
-            elif entry.curator_a_run is not None and entry.last_mtime > entry.curator_a_run:
-                result.append(entry)
+            if not self._is_pending(entry):
+                continue
+
+            if wiki is not None:
+                entry_wiki = self._resolve_wiki_cached(entry.directory, resolve_cache, resolve_scope)
+                if entry_wiki != wiki:
+                    continue
+
+            result.append(entry)
         return result
+
+    def pending_by_wiki(self) -> dict[str, list[TranscriptLedgerEntry]]:
+        """Group pending entries by resolved wiki, with special buckets.
+
+        Buckets:
+          - ``<wiki-name>``  — attached entries grouped by their wiki.
+          - ``__orphan__``   — entry.directory no longer exists on disk.
+          - ``__unattached__`` — directory exists but has no CLAUDE.md with
+            a ``## Lore`` block.
+
+        Orphan-flagged entries (``entry.orphan=True``) are excluded — the
+        curator has already retired them.
+        """
+        from lore_core.scope_resolver import resolve_scope
+
+        buckets: dict[str, list[TranscriptLedgerEntry]] = {}
+        for raw_entry in self._load().values():
+            entry = self._entry_from_raw(raw_entry)
+            if not self._is_pending(entry):
+                continue
+
+            key = self._bucket_for(entry.directory, resolve_scope)
+            buckets.setdefault(key, []).append(entry)
+        return buckets
+
+    @staticmethod
+    def _bucket_for(directory: Path, resolver) -> str:
+        """Classify an entry's directory into a wiki name or special bucket."""
+        if not directory.exists():
+            return "__orphan__"
+        scope = resolver(directory)
+        if scope is None:
+            return "__unattached__"
+        return scope.wiki
+
+    @classmethod
+    def _resolve_wiki_cached(
+        cls,
+        directory: Path,
+        cache: dict[Path, str | None],
+        resolver,
+    ) -> str | None:
+        if directory in cache:
+            return cache[directory]
+        if not directory.exists():
+            cache[directory] = None
+            return None
+        scope = resolver(directory)
+        value = scope.wiki if scope is not None else None
+        cache[directory] = value
+        return value
+
+    def stamp_scan(
+        self,
+        host: str,
+        transcript_id: str,
+        *,
+        curator_a_run: datetime,
+        orphan: bool = False,
+    ) -> None:
+        """Mark an entry as "scanned at curator_a_run" without altering its
+        content-hash watermark.
+
+        Used by the curator when it inspected an entry but did not actually
+        digest its turns — e.g. the entry's wiki was below threshold, or its
+        cwd no longer exists. Setting ``curator_a_run`` shuts up
+        :meth:`pending` until the transcript grows past that timestamp.
+
+        When ``orphan=True``, the entry is also flagged as permanently
+        retired and excluded from all future :meth:`pending` results.
+
+        Raises ``KeyError`` if the entry is missing.
+        """
+        raw = self._load()
+        key = self._key(host, transcript_id)
+        if key not in raw:
+            raise KeyError(f"No ledger entry for {key!r}")
+        entry = self._entry_from_raw(raw[key])
+        entry.curator_a_run = curator_a_run
+        if orphan:
+            entry.orphan = True
+        raw[key] = self._entry_to_raw(entry)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(self._path, json.dumps(raw, indent=2))
 
     def advance(
         self,

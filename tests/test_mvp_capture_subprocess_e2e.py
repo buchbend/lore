@@ -68,7 +68,11 @@ _NOW = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
 
 def _setup_lore_root(tmp_path: Path, wiki_name: str = "private") -> tuple[Path, Path]:
     lore_root = tmp_path / "vault"
-    (lore_root / "wiki" / wiki_name / "sessions").mkdir(parents=True)
+    wiki_dir = lore_root / "wiki" / wiki_name
+    (wiki_dir / "sessions").mkdir(parents=True)
+    # P2: per-wiki threshold gate. Tests seed one pending transcript,
+    # so lower the threshold to 1.
+    (wiki_dir / ".lore-wiki.yml").write_text("curator:\n  threshold_pending: 1\n")
 
     work = tmp_path / "work" / "project-a"
     work.mkdir(parents=True)

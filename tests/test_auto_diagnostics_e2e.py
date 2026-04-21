@@ -111,6 +111,8 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
     lore_root = tmp_path
     wiki_dir = lore_root / "wiki" / wiki_name
     (wiki_dir / "sessions").mkdir(parents=True)
+    # P2 per-wiki threshold — single-transcript e2e needs threshold=1.
+    (wiki_dir / ".lore-wiki.yml").write_text("curator:\n  threshold_pending: 1\n")
 
     cwd = lore_root / "project"
     cwd.mkdir()

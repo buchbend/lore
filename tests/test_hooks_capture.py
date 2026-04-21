@@ -821,3 +821,245 @@ def test_spawn_uses_atomic_rename(
     # exactly one os.replace targeting our stamp file
     matching = [c for c in replace_calls if c[1] == str(stamp)]
     assert matching, f"expected os.replace onto {stamp}, got {replace_calls}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: per-wiki pending threshold
+# ---------------------------------------------------------------------------
+
+
+def _make_two_wiki_lore_root(
+    root: Path,
+    *,
+    alpha_threshold: int = 2,
+    beta_threshold: int = 10,
+) -> tuple[Path, Path, Path]:
+    """Create a lore_root with two attached projects + two wiki dirs.
+
+    Returns (lore_root, proj_a, proj_b). The per-wiki `.lore-wiki.yml`
+    files set distinct `curator.threshold_pending` values so we can
+    verify each wiki's threshold is honoured independently.
+    """
+    lore_root = root / "lore_root"
+    lore_root.mkdir()
+
+    for name, threshold in [("alpha", alpha_threshold), ("beta", beta_threshold)]:
+        wiki_dir = lore_root / "wiki" / name
+        wiki_dir.mkdir(parents=True)
+        (wiki_dir / ".lore-wiki.yml").write_text(
+            f"curator:\n  threshold_pending: {threshold}\n"
+        )
+
+    proj_a = lore_root / "proj_a"
+    proj_a.mkdir()
+    (proj_a / "CLAUDE.md").write_text(
+        "# A\n\n## Lore\n\n- wiki: alpha\n- scope: proj:a\n- backend: none\n"
+    )
+
+    proj_b = lore_root / "proj_b"
+    proj_b.mkdir()
+    (proj_b / "CLAUDE.md").write_text(
+        "# B\n\n## Lore\n\n- wiki: beta\n- scope: proj:b\n- backend: none\n"
+    )
+
+    return lore_root, proj_a, proj_b
+
+
+def test_capture_spawns_when_any_wiki_crosses_threshold(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """One wiki (alpha, threshold=2) has 2 pending; other (beta, threshold=10) has 1.
+    The capture hook runs in proj_b's cwd but must still spawn because alpha crosses."""
+    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
+        tmp_path, alpha_threshold=2, beta_threshold=10
+    )
+
+    ledger = TranscriptLedger(lore_root)
+    # Two pending entries for alpha (pre-seed).
+    for i in range(2):
+        ledger.upsert(
+            TranscriptLedgerEntry(
+                host="fake",
+                transcript_id=f"a{i}",
+                path=proj_a / f"a{i}.jsonl",
+                directory=proj_a,
+                digested_hash=None,
+                digested_index_hint=None,
+                synthesised_hash=None,
+                last_mtime=_now(),
+                curator_a_run=None,
+                noteworthy=None,
+                session_note=None,
+            )
+        )
+
+    # Capture fires in proj_b — its own wiki (beta) is below its threshold.
+    handle = _make_handle(proj_b, transcript_id="b1")
+    fake_adapter_factory([handle])
+
+    spawn_calls: list[Path] = []
+    monkeypatch.setattr(
+        "lore_cli.hooks._spawn_detached_curator_a",
+        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
+    )
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(proj_b), "--host", "fake"],
+        env={"LORE_ROOT": str(lore_root)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert len(spawn_calls) == 1, (
+        "Expected spawn because alpha crossed its threshold, even though the "
+        "hook's cwd was proj_b."
+    )
+
+
+def test_capture_no_spawn_when_no_wiki_crosses_its_threshold(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """Neither wiki crosses its per-wiki threshold → no spawn, even with
+    multiple pending entries globally."""
+    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
+        tmp_path, alpha_threshold=5, beta_threshold=5
+    )
+
+    ledger = TranscriptLedger(lore_root)
+    for i in range(3):
+        ledger.upsert(
+            TranscriptLedgerEntry(
+                host="fake",
+                transcript_id=f"a{i}",
+                path=proj_a / f"a{i}.jsonl",
+                directory=proj_a,
+                digested_hash=None,
+                digested_index_hint=None,
+                synthesised_hash=None,
+                last_mtime=_now(),
+                curator_a_run=None,
+                noteworthy=None,
+                session_note=None,
+            )
+        )
+    # Add 3 to beta — global count is 6, but no single wiki crosses 5.
+    for i in range(3):
+        ledger.upsert(
+            TranscriptLedgerEntry(
+                host="fake",
+                transcript_id=f"b{i}",
+                path=proj_b / f"b{i}.jsonl",
+                directory=proj_b,
+                digested_hash=None,
+                digested_index_hint=None,
+                synthesised_hash=None,
+                last_mtime=_now(),
+                curator_a_run=None,
+                noteworthy=None,
+                session_note=None,
+            )
+        )
+
+    handle = _make_handle(proj_a, transcript_id="new1")
+    fake_adapter_factory([handle])
+
+    spawn_calls: list[Path] = []
+    monkeypatch.setattr(
+        "lore_cli.hooks._spawn_detached_curator_a",
+        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
+    )
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(proj_a), "--host", "fake"],
+        env={"LORE_ROOT": str(lore_root)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert len(spawn_calls) == 0, (
+        "No single wiki crossed its threshold — global pending (6) must "
+        "not trigger a spawn."
+    )
+
+
+def test_capture_threshold_zero_empty_wiki_does_not_spawn(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """Guard the edge case: threshold_pending=0 AND wiki empty → no spawn.
+    Without the `len > 0` guard, `0 >= 0` would incorrectly trip."""
+    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
+        tmp_path, alpha_threshold=0, beta_threshold=10
+    )
+
+    # No pending entries anywhere. Adapter returns nothing either (empty list).
+    fake_adapter_factory([])
+
+    spawn_calls: list[Path] = []
+    monkeypatch.setattr(
+        "lore_cli.hooks._spawn_detached_curator_a",
+        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
+    )
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(proj_a), "--host", "fake"],
+        env={"LORE_ROOT": str(lore_root)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert len(spawn_calls) == 0, "Empty wiki with threshold=0 must not spawn."
+
+
+def test_capture_emits_pending_by_wiki_in_hook_event(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """The hook-event record gains a `pending_by_wiki` counts-dict alongside
+    the existing `pending_after` scalar (back-compat)."""
+    import json
+
+    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
+        tmp_path, alpha_threshold=10, beta_threshold=10
+    )
+
+    ledger = TranscriptLedger(lore_root)
+    for i in range(2):
+        ledger.upsert(
+            TranscriptLedgerEntry(
+                host="fake",
+                transcript_id=f"a{i}",
+                path=proj_a / f"a{i}.jsonl",
+                directory=proj_a,
+                digested_hash=None,
+                digested_index_hint=None,
+                synthesised_hash=None,
+                last_mtime=_now(),
+                curator_a_run=None,
+                noteworthy=None,
+                session_note=None,
+            )
+        )
+
+    handle = _make_handle(proj_b, transcript_id="b1")
+    fake_adapter_factory([handle])
+    monkeypatch.setattr(
+        "lore_cli.hooks._spawn_detached_curator_a",
+        lambda lore_root, **kw: True,
+    )
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(proj_b), "--host", "fake"],
+        env={"LORE_ROOT": str(lore_root)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    log = lore_root / ".lore" / "hook-events.jsonl"
+    records = [json.loads(l) for l in log.read_text().splitlines() if l.strip()]
+    capture_records = [r for r in records if r.get("event") == "session-end"]
+    assert capture_records
+    rec = capture_records[-1]
+    assert "pending_after" in rec
+    assert "pending_by_wiki" in rec
+    # Counts dict, not the full entry list.
+    assert rec["pending_by_wiki"] == {"alpha": 2, "beta": 1}

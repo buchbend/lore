@@ -310,3 +310,123 @@ def test_wiki_ledger_write_read_roundtrip(tmp_path: Path) -> None:
     assert result.last_briefing == datetime(2026, 4, 18, 11, 0, 0, tzinfo=UTC)
     assert result.pending_transcripts == 3
     assert result.pending_tokens_est == 15000
+
+
+# ---------------------------------------------------------------------------
+# 10. Per-wiki pending filtering (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def _write_claude_md(path: Path, wiki: str, scope: str = "proj:test") -> None:
+    path.write_text(
+        f"# P\n\n## Lore\n\n- wiki: {wiki}\n- scope: {scope}\n- backend: none\n"
+    )
+
+
+def _make_pending_entry(
+    lore_root: Path,
+    *,
+    transcript_id: str,
+    directory: Path,
+) -> TranscriptLedgerEntry:
+    """Build a never-digested (pending) entry rooted in `directory`."""
+    return TranscriptLedgerEntry(
+        host="claude",
+        transcript_id=transcript_id,
+        path=directory / f"{transcript_id}.jsonl",
+        directory=directory,
+        digested_hash=None,
+        digested_index_hint=None,
+        synthesised_hash=None,
+        last_mtime=datetime(2026, 4, 20, 10, 0, 0, tzinfo=UTC),
+        curator_a_run=None,
+        noteworthy=None,
+        session_note=None,
+    )
+
+
+def test_pending_by_wiki_buckets_orphan_and_unattached_correctly(tmp_path: Path) -> None:
+    """pending_by_wiki() returns dict keyed by wiki name, with
+    __orphan__ (cwd gone) and __unattached__ (no ## Lore) buckets."""
+    ledger = TranscriptLedger(tmp_path)
+
+    # wiki-A: attached directory with CLAUDE.md pointing to wiki "alpha"
+    dir_a = tmp_path / "proj-alpha"
+    dir_a.mkdir()
+    _write_claude_md(dir_a / "CLAUDE.md", wiki="alpha", scope="proj:alpha")
+    ledger.upsert(_make_pending_entry(tmp_path, transcript_id="a1", directory=dir_a))
+    ledger.upsert(_make_pending_entry(tmp_path, transcript_id="a2", directory=dir_a))
+
+    # wiki-B: attached directory pointing to wiki "beta"
+    dir_b = tmp_path / "proj-beta"
+    dir_b.mkdir()
+    _write_claude_md(dir_b / "CLAUDE.md", wiki="beta", scope="proj:beta")
+    ledger.upsert(_make_pending_entry(tmp_path, transcript_id="b1", directory=dir_b))
+
+    # orphan: directory no longer exists on disk
+    orphan_dir = tmp_path / "gone"
+    ledger.upsert(_make_pending_entry(tmp_path, transcript_id="o1", directory=orphan_dir))
+
+    # unattached: directory exists but no CLAUDE.md
+    dir_u = tmp_path / "proj-unattached"
+    dir_u.mkdir()
+    ledger.upsert(_make_pending_entry(tmp_path, transcript_id="u1", directory=dir_u))
+
+    buckets = ledger.pending_by_wiki()
+
+    assert set(buckets.keys()) == {"alpha", "beta", "__orphan__", "__unattached__"}
+    assert {e.transcript_id for e in buckets["alpha"]} == {"a1", "a2"}
+    assert {e.transcript_id for e in buckets["beta"]} == {"b1"}
+    assert {e.transcript_id for e in buckets["__orphan__"]} == {"o1"}
+    assert {e.transcript_id for e in buckets["__unattached__"]} == {"u1"}
+
+
+def test_pending_filters_by_wiki_when_wiki_arg_given(tmp_path: Path) -> None:
+    """pending(wiki='alpha') returns only entries resolving to 'alpha'."""
+    ledger = TranscriptLedger(tmp_path)
+
+    dir_a = tmp_path / "proj-alpha"
+    dir_a.mkdir()
+    _write_claude_md(dir_a / "CLAUDE.md", wiki="alpha")
+    ledger.upsert(_make_pending_entry(tmp_path, transcript_id="a1", directory=dir_a))
+
+    dir_b = tmp_path / "proj-beta"
+    dir_b.mkdir()
+    _write_claude_md(dir_b / "CLAUDE.md", wiki="beta")
+    ledger.upsert(_make_pending_entry(tmp_path, transcript_id="b1", directory=dir_b))
+
+    only_alpha = ledger.pending(wiki="alpha")
+    assert {e.transcript_id for e in only_alpha} == {"a1"}
+
+    only_beta = ledger.pending(wiki="beta")
+    assert {e.transcript_id for e in only_beta} == {"b1"}
+
+
+def test_pending_excludes_orphan_flagged_entries(tmp_path: Path) -> None:
+    """Entries with entry.orphan=True never reappear in pending()."""
+    ledger = TranscriptLedger(tmp_path)
+
+    dir_a = tmp_path / "proj-a"
+    dir_a.mkdir()
+    _write_claude_md(dir_a / "CLAUDE.md", wiki="alpha")
+    entry = _make_pending_entry(tmp_path, transcript_id="orph-1", directory=dir_a)
+    entry.orphan = True
+    ledger.upsert(entry)
+
+    # Baseline: pending() respects the orphan flag
+    assert ledger.pending() == []
+    assert "alpha" not in ledger.pending_by_wiki()
+
+
+def test_orphan_field_round_trips_through_upsert(tmp_path: Path) -> None:
+    """The orphan boolean survives the JSON roundtrip."""
+    ledger = TranscriptLedger(tmp_path)
+    dir_a = tmp_path / "proj-a"
+    dir_a.mkdir()
+    entry = _make_pending_entry(tmp_path, transcript_id="t1", directory=dir_a)
+    entry.orphan = True
+    ledger.upsert(entry)
+
+    got = ledger.get("claude", "t1")
+    assert got is not None
+    assert got.orphan is True

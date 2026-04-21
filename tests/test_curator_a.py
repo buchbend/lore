@@ -160,11 +160,19 @@ def _seed_ledger(
     return ledger
 
 
-def _setup_wiki(lore_root: Path, wiki_name: str = "private") -> Path:
-    """Create minimal wiki directory structure."""
+def _setup_wiki(lore_root: Path, wiki_name: str = "private", *, threshold: int = 1) -> Path:
+    """Create minimal wiki directory structure.
+
+    Writes a ``.lore-wiki.yml`` with ``curator.threshold_pending = 1`` by
+    default so tests that seed a single pending transcript aren't gated
+    by the P2 per-wiki threshold. Override by passing ``threshold=...``.
+    """
     wiki_dir = lore_root / "wiki" / wiki_name
     wiki_dir.mkdir(parents=True, exist_ok=True)
     (wiki_dir / "sessions").mkdir(exist_ok=True)
+    (wiki_dir / ".lore-wiki.yml").write_text(
+        f"curator:\n  threshold_pending: {threshold}\n"
+    )
     return wiki_dir
 
 
@@ -615,3 +623,120 @@ def test_run_curator_a_creates_run_log(tmp_path):
     assert types[-1] == "run-end"
     # ledger_snapshot_hash should be None for real (non-dry) runs
     assert records[0].get("ledger_snapshot_hash") is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — below-threshold + orphan handling
+# ---------------------------------------------------------------------------
+
+
+def _write_wiki_cfg(wiki_dir: Path, *, threshold: int) -> None:
+    (wiki_dir / ".lore-wiki.yml").write_text(
+        f"curator:\n  threshold_pending: {threshold}\n"
+    )
+
+
+def test_curator_a_below_threshold_advances_curator_a_run_but_not_digested_hash(tmp_path):
+    """A wiki below its own threshold is skipped, but curator_a_run is stamped
+    so pending() stops re-tripping on the same entry forever."""
+    from lore_curator.curator_a import run_curator_a
+
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
+    wiki_dir = _setup_wiki(tmp_path, "private")
+    _write_wiki_cfg(wiki_dir, threshold=5)  # wiki requires 5, only have 1
+
+    transcript_path = project_dir / "transcript.jsonl"
+    transcript_path.write_text("{}")
+    _seed_ledger(tmp_path, project_dir, transcript_path)
+
+    result = run_curator_a(
+        lore_root=tmp_path,
+        anthropic_client=_make_noteworthy_client(),
+        adapter_lookup=_make_adapter_lookup(FakeAdapter(_make_turns(3))),
+        now=_NOW,
+    )
+
+    assert result.skipped_reasons.get("below_wiki_threshold", 0) == 1, (
+        f"expected below_wiki_threshold skip, got {result.skipped_reasons}"
+    )
+
+    ledger = TranscriptLedger(tmp_path)
+    entry = ledger.get("fake", "txn-001")
+    assert entry is not None
+    assert entry.curator_a_run == _NOW, "curator_a_run must be stamped on skip"
+    assert entry.digested_hash is None, "digested_hash must remain untouched"
+    assert entry.orphan is False
+
+
+def test_curator_a_orphan_directory_marks_entry_orphan(tmp_path):
+    """Entry whose directory no longer exists → orphan=True, curator_a_run stamped.
+    The entry is then excluded from future pending() calls."""
+    from lore_curator.curator_a import run_curator_a
+
+    # Gone directory: never created.
+    gone_dir = tmp_path / "ghost-project"
+    _setup_wiki(tmp_path, "private")
+
+    ledger = TranscriptLedger(tmp_path)
+    entry = TranscriptLedgerEntry(
+        host="fake",
+        transcript_id="orph-1",
+        path=gone_dir / "transcript.jsonl",
+        directory=gone_dir,
+        digested_hash=None,
+        digested_index_hint=None,
+        synthesised_hash=None,
+        last_mtime=_NOW,
+        curator_a_run=None,
+        noteworthy=None,
+        session_note=None,
+    )
+    ledger.upsert(entry)
+
+    result = run_curator_a(
+        lore_root=tmp_path,
+        anthropic_client=_make_noteworthy_client(),
+        adapter_lookup=_make_adapter_lookup(FakeAdapter([])),
+        now=_NOW,
+    )
+
+    assert result.skipped_reasons.get("orphan_cwd", 0) == 1, (
+        f"expected orphan_cwd skip, got {result.skipped_reasons}"
+    )
+
+    got = ledger.get("fake", "orph-1")
+    assert got is not None
+    assert got.orphan is True
+    assert got.curator_a_run == _NOW
+
+    # And the entry must no longer appear in pending()
+    assert ledger.pending() == []
+
+
+def test_curator_a_below_threshold_skip_is_idempotent_no_perpetual_retrip(tmp_path):
+    """Two consecutive runs on a below-threshold wiki do not keep re-tripping:
+    after the first run stamps curator_a_run, pending() no longer returns the entry."""
+    from lore_curator.curator_a import run_curator_a
+
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
+    wiki_dir = _setup_wiki(tmp_path, "private")
+    _write_wiki_cfg(wiki_dir, threshold=5)
+
+    transcript_path = project_dir / "transcript.jsonl"
+    transcript_path.write_text("{}")
+    _seed_ledger(tmp_path, project_dir, transcript_path)
+
+    run_curator_a(
+        lore_root=tmp_path,
+        anthropic_client=_make_noteworthy_client(),
+        adapter_lookup=_make_adapter_lookup(FakeAdapter(_make_turns(3))),
+        now=_NOW,
+    )
+
+    # After the first pass, pending() must be empty — nothing new arrived.
+    ledger = TranscriptLedger(tmp_path)
+    assert ledger.pending() == [], "curator_a_run stamp must shut up pending() until new content"

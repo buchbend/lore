@@ -66,6 +66,12 @@ def run_curator_a(
     tledger = TranscriptLedger(lore_root)
     pending_snapshot = tledger.pending()
 
+    # Pre-compute which wikis are below their own threshold_pending so the
+    # per-entry loop can short-circuit without re-reading every wiki's config
+    # once per entry. Entries in below-threshold wikis are still marked
+    # (curator_a_run stamped) so pending() stops re-tripping forever.
+    below_threshold_wikis = _compute_below_threshold_wikis(tledger, lore_root)
+
     config_snapshot = {"noteworthy_tier": "middle"}
     effective_trigger = "dry-run" if dry_run else trigger
 
@@ -105,6 +111,7 @@ def run_curator_a(
                     dry_run=True,
                     now=now,
                     logger=logger,
+                    below_threshold_wikis=below_threshold_wikis,
                 )
                 _record_outcome(result, outcome)
                 if outcome.wiki_name is not None:
@@ -125,6 +132,7 @@ def run_curator_a(
                             dry_run=False,
                             now=now,
                             logger=logger,
+                            below_threshold_wikis=below_threshold_wikis,
                         )
                         _record_outcome(result, outcome)
                         if outcome.wiki_name is not None:
@@ -172,6 +180,22 @@ class _Outcome:
     wiki_name: str | None = None            # wiki the entry resolved into (None if unattached)
 
 
+def _compute_below_threshold_wikis(tledger: TranscriptLedger, lore_root: Path) -> set[str]:
+    """Return the set of wiki names whose pending count is < their own
+    ``curator.threshold_pending``. Orphan/unattached buckets are skipped —
+    those are handled per-entry, not via threshold gating.
+    """
+    below: set[str] = set()
+    buckets = tledger.pending_by_wiki()
+    for wiki_name, entries in buckets.items():
+        if wiki_name.startswith("__"):
+            continue
+        cfg = load_wiki_config(lore_root / "wiki" / wiki_name)
+        if len(entries) < cfg.curator.threshold_pending:
+            below.add(wiki_name)
+    return below
+
+
 def _process_entry(
     entry: TranscriptLedgerEntry,
     *,
@@ -183,13 +207,47 @@ def _process_entry(
     dry_run: bool,
     now: datetime,
     logger: RunLogger | None = None,
+    below_threshold_wikis: set[str] | None = None,
 ) -> _Outcome:
+    # Orphan cwd: the directory the transcript was captured in no longer
+    # exists. Mark the entry as orphan and stamp curator_a_run so it
+    # never resurfaces in pending().
+    if not entry.directory.exists():
+        if not dry_run:
+            tledger.stamp_scan(
+                host=entry.host,
+                transcript_id=entry.transcript_id,
+                curator_a_run=now,
+                orphan=True,
+            )
+        if logger is not None:
+            logger.emit("skip", transcript_id=entry.transcript_id, reason="orphan-cwd")
+        return _Outcome(skip_reason="orphan_cwd")
+
     # Resolve scope from the transcript's directory; must be attached.
     attached = resolve_scope(entry.directory)
     if attached is None:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="unattached")
         return _Outcome(skip_reason="unattached")
+
+    # Per-wiki threshold gate: if this wiki is below its own threshold,
+    # skip the entry but stamp curator_a_run so pending() doesn't re-trip
+    # the same entries on every hook forever.
+    if below_threshold_wikis is not None and attached.wiki in below_threshold_wikis:
+        if not dry_run:
+            tledger.stamp_scan(
+                host=entry.host,
+                transcript_id=entry.transcript_id,
+                curator_a_run=now,
+            )
+        if logger is not None:
+            logger.emit(
+                "skip",
+                transcript_id=entry.transcript_id,
+                reason="below-wiki-threshold",
+            )
+        return _Outcome(skip_reason="below_wiki_threshold", wiki_name=attached.wiki)
     if requested_scope is not None and attached.scope != requested_scope.scope:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="scope-mismatch")

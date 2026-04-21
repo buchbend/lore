@@ -125,7 +125,14 @@ def _minimal_curator_a_setup(tmp_path: Path):
     (project_dir / "CLAUDE.md").write_text(
         "# Project\n\n## Lore\n\n- wiki: private\n- scope: proj:test\n- backend: none\n"
     )
-    (tmp_path / "wiki" / "private" / "sessions").mkdir(parents=True)
+    wiki_dir = tmp_path / "wiki" / "private"
+    (wiki_dir / "sessions").mkdir(parents=True)
+    # P2: Curator A gates per-wiki by threshold_pending. Default is 10, and
+    # this fixture only seeds one pending transcript — set threshold=1 so
+    # the test actually exercises the classification / ledger-write path.
+    (wiki_dir / ".lore-wiki.yml").write_text(
+        "curator:\n  threshold_pending: 1\n"
+    )
 
     turns = [
         Turn(index=i, timestamp=None, role="user" if i % 2 == 0 else "assistant", text=f"msg {i}")

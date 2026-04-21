@@ -1196,6 +1196,17 @@ def _load_wiki_cfg_from_scope(scope, lore_root: Path):
     return load_wiki_config(wiki_dir)
 
 
+def _load_wiki_cfg_for_wiki(lore_root: Path, wiki_name: str):
+    """Load the config for `<lore_root>/wiki/<wiki_name>/.lore-wiki.yml`.
+
+    Separate from `_load_wiki_cfg_from_scope` because per-wiki threshold
+    checks need each wiki's own config, not just the scope the hook was
+    invoked under.
+    """
+    from lore_core.wiki_config import load_wiki_config
+    return load_wiki_config(lore_root / "wiki" / wiki_name)
+
+
 def _stamp_within_cooldown(stamp: Path, cooldown_s: int) -> bool:
     """True if stamp exists and is younger than cooldown_s seconds."""
     import time as _time
@@ -1443,6 +1454,7 @@ def capture(
     outcome = "no-new-turns"
     run_id: str | None = None
     pending_after = 0
+    pending_by_wiki_counts: dict[str, int] = {}
     scope_payload = {"wiki": scope.wiki, "scope": scope.scope}
 
     try:
@@ -1491,8 +1503,26 @@ def capture(
 
         pending = tledger.pending()
         pending_after = len(pending)
+        buckets = tledger.pending_by_wiki()
+        # Counts-dict for telemetry (includes __orphan__/__unattached__ buckets).
+        pending_by_wiki_counts = {k: len(v) for k, v in buckets.items()}
         cfg = _load_wiki_cfg_from_scope(scope, lore_root)
-        if pending_after >= cfg.curator.threshold_pending:
+
+        # Spawn when any *attached* wiki crosses its own threshold_pending.
+        # The `len > 0` clause guards threshold_pending=0 + empty-wiki: the
+        # bucket wouldn't be in `buckets` at all, but an explicit guard keeps
+        # the intent obvious if the dict later gains zero-count entries.
+        crossed: list[str] = []
+        for wiki_name, entries in buckets.items():
+            if wiki_name.startswith("__"):
+                continue
+            if len(entries) == 0:
+                continue
+            wiki_cfg = _load_wiki_cfg_for_wiki(lore_root, wiki_name)
+            if len(entries) >= wiki_cfg.curator.threshold_pending:
+                crossed.append(wiki_name)
+
+        if crossed:
             spawned = _spawn_detached_curator_a(
                 lore_root, cooldown_s=cfg.curator.curator_a_cooldown_s
             )
@@ -1510,6 +1540,7 @@ def capture(
             duration_ms=int((_time.monotonic() - start) * 1000),
             outcome="error",
             pending_after=pending_after,
+            pending_by_wiki=pending_by_wiki_counts,
             error={"type": type(exc).__name__, "message": str(exc)},
             cwd=str(cwd),
             pid=_capture_pid,
@@ -1522,6 +1553,7 @@ def capture(
             duration_ms=int((_time.monotonic() - start) * 1000),
             outcome=outcome,
             pending_after=pending_after,
+            pending_by_wiki=pending_by_wiki_counts,
             run_id=run_id,
             cwd=str(cwd),
             pid=_capture_pid,

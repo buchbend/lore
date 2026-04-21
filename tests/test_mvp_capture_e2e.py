@@ -122,9 +122,16 @@ _NOW = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
 
 
 def _setup_lore_root(tmp_path: Path, wiki_name: str = "private") -> tuple[Path, Path]:
-    """Create lore_root with wiki/<wiki_name>/sessions/ and an attached work dir."""
+    """Create lore_root with wiki/<wiki_name>/sessions/ and an attached work dir.
+
+    Writes a per-wiki ``.lore-wiki.yml`` with ``threshold_pending: 1`` so
+    tests that seed a single pending transcript still exercise the full
+    curator path (P2 introduced per-wiki gating).
+    """
     lore_root = tmp_path / "vault"
-    (lore_root / "wiki" / wiki_name / "sessions").mkdir(parents=True)
+    wiki_dir = lore_root / "wiki" / wiki_name
+    (wiki_dir / "sessions").mkdir(parents=True)
+    (wiki_dir / ".lore-wiki.yml").write_text("curator:\n  threshold_pending: 1\n")
 
     work = tmp_path / "work" / "project-a"
     work.mkdir(parents=True)
