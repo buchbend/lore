@@ -16,8 +16,10 @@ from lore_core.wiki_config import WikiConfig
 # SessionEnd breadcrumb (file-based buffer, Option B)
 # ---------------------------------------------------------------------------
 
-_PENDING_BREADCRUMB_NAME = "pending-breadcrumb.txt"
+_PENDING_BREADCRUMB_NAME = "pending-breadcrumb.txt"  # legacy; migration only
 _PENDING_BREADCRUMB_MAX_AGE_S = 3600  # 1 hour
+_EV_WRITTEN = "pending-breadcrumb-written"
+_EV_CONSUMED = "pending-breadcrumb-consumed"
 
 
 def render_session_end_breadcrumb(
@@ -49,36 +51,106 @@ def render_session_end_breadcrumb(
 
 
 def write_pending_breadcrumb(lore_root: Path, line: str) -> None:
-    """Write *line* to .lore/pending-breadcrumb.txt (best-effort, never raises)."""
-    try:
-        dest = lore_root / ".lore" / _PENDING_BREADCRUMB_NAME
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(line)
-    except OSError:
-        pass
+    """Emit a ``pending-breadcrumb-written`` event to hook-events.jsonl.
+
+    Post-Task-9b: storage is a hook-events record, not a standalone file.
+    Best-effort; never raises (HookEventLogger swallows OSError internally).
+    """
+    from lore_core.hook_log import HookEventLogger
+
+    HookEventLogger(lore_root).emit(event=_EV_WRITTEN, line=line)
 
 
 def consume_pending_breadcrumb(lore_root: Path) -> str | None:
-    """Read and delete the pending breadcrumb file if it exists and is fresh.
+    """Return the most recent unconsumed pending-breadcrumb line.
 
-    Returns the stored line (stripped), or None if absent / stale / unreadable.
-    Deletes the file after reading so it is shown at most once.
+    Scans ``hook-events.jsonl`` for the most recent written/consumed pair.
+    Returns the written line iff it is newer than the last consumed event
+    AND younger than ``_PENDING_BREADCRUMB_MAX_AGE_S``. On success, appends
+    a ``pending-breadcrumb-consumed`` event so the line is shown at most
+    once.
+
+    Also runs the one-shot legacy-file migration: a pre-Task-9b legacy
+    ``.lore/pending-breadcrumb.txt`` is read, converted to a written
+    event preserving its mtime, and unlinked.
     """
-    import time as _time
+    from datetime import UTC, datetime as _dt
+    from lore_core.hook_log import HookEventLogger
 
-    dest = lore_root / ".lore" / _PENDING_BREADCRUMB_NAME
-    if not dest.exists():
+    # Migration: convert legacy file to event before scanning.
+    migrate_legacy_pending_breadcrumb(lore_root)
+
+    events_path = lore_root / ".lore" / "hook-events.jsonl"
+    if not events_path.exists():
         return None
+
+    last_written: dict | None = None
+    last_consumed_ts: str | None = None
     try:
-        age = _time.time() - dest.stat().st_mtime
-        if age > _PENDING_BREADCRUMB_MAX_AGE_S:
-            dest.unlink(missing_ok=True)
-            return None
-        line = dest.read_text().strip()
-        dest.unlink(missing_ok=True)
-        return line or None
+        for raw in events_path.read_text().splitlines():
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                rec = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            ev = rec.get("event")
+            if ev == _EV_WRITTEN:
+                last_written = rec
+            elif ev == _EV_CONSUMED:
+                last_consumed_ts = rec.get("ts")
     except OSError:
         return None
+
+    if last_written is None:
+        return None
+
+    written_ts = last_written.get("ts")
+    if last_consumed_ts is not None and written_ts is not None and written_ts <= last_consumed_ts:
+        return None  # already consumed
+
+    try:
+        written_dt = _dt.fromisoformat(str(written_ts).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if written_dt.tzinfo is None:
+        written_dt = written_dt.replace(tzinfo=UTC)
+    age = (_dt.now(UTC) - written_dt).total_seconds()
+    if age > _PENDING_BREADCRUMB_MAX_AGE_S:
+        return None  # stale
+
+    HookEventLogger(lore_root).emit(event=_EV_CONSUMED)
+    return last_written.get("line") or None
+
+
+def migrate_legacy_pending_breadcrumb(lore_root: Path) -> None:
+    """One-shot: convert a pre-Task-9b .txt file to a written event + unlink.
+
+    Idempotent — second call is a no-op because the file is unlinked on
+    first success. Called from ``consume_pending_breadcrumb`` so users pay
+    the migration cost exactly once per vault on the first SessionStart
+    after upgrading.
+    """
+    from datetime import UTC, datetime as _dt
+    from lore_core.hook_log import HookEventLogger
+
+    legacy = lore_root / ".lore" / _PENDING_BREADCRUMB_NAME
+    if not legacy.exists():
+        return
+    try:
+        line = legacy.read_text().strip()
+        mtime = legacy.stat().st_mtime
+    except OSError:
+        return
+    if line:
+        ts = _dt.fromtimestamp(mtime, tz=UTC).isoformat().replace("+00:00", "Z")
+        # Emit with an explicit ts so staleness uses the file mtime, not now.
+        HookEventLogger(lore_root).emit(event=_EV_WRITTEN, line=line, ts=ts)
+    try:
+        legacy.unlink()
+    except OSError:
+        pass
 
 
 @dataclass
@@ -92,75 +164,23 @@ class BannerContext:
     note_count: int = 0  # optional — caller may count <wiki>/sessions/*.md
 
 
-def _most_recent_run_end(lore_root: Path) -> tuple[Path | None, dict | None]:
-    """Return (path, run_end_record) or (None, None) if no runs."""
-    from lore_core.run_reader import iter_archival_runs
-    latest = next(iter(iter_archival_runs(lore_root)), None)
-    if latest is None:
-        return None, None
-    try:
-        lines = latest.read_text().splitlines()
-    except OSError:
-        return None, None
-    for line in reversed(lines):
-        try:
-            r = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if r.get("type") == "run-end":
-            return latest, r
-    return latest, None
-
-
-def _recent_hook_errors(lore_root: Path, *, within: timedelta, now: datetime) -> int:
-    """Count hook-events records with outcome=error within the given window."""
-    path = lore_root / ".lore" / "hook-events.jsonl"
-    if not path.exists():
-        return 0
-    threshold = now - within
-    count = 0
-    try:
-        for line in path.read_text().splitlines():
-            try:
-                r = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if r.get("outcome") != "error":
-                continue
-            ts_str = r.get("ts")
-            if not ts_str:
-                continue
-            try:
-                ts = _parse_ts(ts_str)
-            except ValueError:
-                continue
-            if ts >= threshold:
-                count += 1
-    except OSError:
-        return 0
-    return count
-
-
-def _parse_ts(ts_iso: str) -> datetime:
-    ts = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=UTC)
-    return ts
-
-
 def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str | None:
     """Return the banner string, or None if nothing to show (quiet mode + no errors).
 
-    Always single-line. Prefix `lore:` for normal events, `lore!:` for errors.
-    Prepends a pending breadcrumb from the last SessionEnd/PreCompact if present.
+    Always single-line. Prefix ``lore:`` for normal events, ``lore!:`` for
+    errors. Prepends a pending breadcrumb from the last SessionEnd/PreCompact
+    if present.
+
+    Post-Task-12b: reads from ``query_capture_state`` — no direct file
+    reads in this function. All liveness fields flow through CaptureState.
     """
+    from lore_core.capture_state import query_capture_state
+
     mode = ctx.wiki_config.breadcrumb.mode
     errors = errors or []
 
-    # Consume any pending SessionEnd breadcrumb — prepend it regardless of mode.
     session_end_line = consume_pending_breadcrumb(ctx.lore_root)
 
-    # Errors always surface (even in quiet mode).
     if errors:
         banner = "lore!: " + " · ".join(errors)
         if session_end_line:
@@ -168,60 +188,51 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
         return banner
 
     if session_end_line and mode == "quiet":
-        # Quiet mode: only show the session-end breadcrumb, suppress the rest.
         return session_end_line
 
     def _prepend(line: str | None, banner: str) -> str:
-        """Prepend session_end_line to banner if present."""
         if line:
             return line + "\n" + banner
         return banner
 
-    # Last-run error prefix — preempts all other banners.
-    latest_path, run_end = _most_recent_run_end(ctx.lore_root)
-    if run_end and run_end.get("errors", 0) > 0:
-        short = latest_path.stem.split("-")[-1]
+    state = query_capture_state(ctx.lore_root, now=ctx.now)
+    a = next((c for c in state.curators if c.role == "a"), None)
+
+    # Last-run error prefix — preempts everything else (banner's error mode).
+    if a and a.last_run_errors and a.last_run_errors > 0 and a.last_run_ts and a.last_run_short_id:
         banner = (
-            f"lore!: last run had {run_end['errors']} errors "
-            f"({relative_time(_parse_ts(run_end['ts']), now=ctx.now)}) "
-            f"· lore runs show {short}"
+            f"lore!: last run had {a.last_run_errors} errors "
+            f"({relative_time(a.last_run_ts, now=ctx.now)}) "
+            f"· lore runs show {a.last_run_short_id}"
         )
         return _prepend(session_end_line, banner)
 
     if mode == "quiet":
         return None
 
-    tledger = TranscriptLedger(ctx.lore_root)
-    pending = tledger.pending()
-    wledger = WikiLedger(ctx.lore_root, ctx.scope.wiki)
-    entry = wledger.read()
-
-    # Lockfile check — curator is running.
-    lock_dir = ctx.lore_root / ".lore" / "curator.lock"
-    if lock_dir.exists():
+    # Curator working → dedicated line.
+    if a and a.work_lock_held:
         return _prepend(session_end_line, "lore: curator A running in background")
 
-    parts = []
-    if pending:
-        parts.append(f"{len(pending)} pending")
-        if entry.last_curator_a:
-            parts.append(f"last curator {relative_time(entry.last_curator_a, now=ctx.now)}")
-        if entry.last_briefing:
-            parts.append(f"briefing {relative_day(entry.last_briefing, now=ctx.now)}")
+    parts: list[str] = []
+    if state.pending_transcripts > 0:
+        parts.append(f"{state.pending_transcripts} pending")
+        if a and a.last_run_ts:
+            parts.append(f"last curator {relative_time(a.last_run_ts, now=ctx.now)}")
+        if state.last_briefing_ts:
+            parts.append(f"briefing {relative_day(state.last_briefing_ts, now=ctx.now)}")
         banner = "lore: " + " · ".join(parts)
     else:
-        # All-skips hint beats the generic "up to date" when the last run
-        # filed nothing (errors=0 already ruled out above).
         if (
-            run_end is not None
-            and run_end.get("errors", 0) == 0
-            and run_end.get("notes_new", 0) == 0
-            and run_end.get("notes_merged", 0) == 0
-            and run_end.get("skipped", 0) > 0
+            a
+            and a.last_run_notes_new == 0
+            and a.last_run_notes_merged == 0
+            and (a.last_run_skipped or 0) > 0
+            and (a.last_run_errors or 0) == 0
         ):
             banner = (
                 f"lore: last run filed 0 notes "
-                f"({run_end['skipped']} skipped) · lore runs show latest"
+                f"({a.last_run_skipped} skipped) · lore runs show latest"
             )
         else:
             parts.append("up to date")
@@ -229,11 +240,9 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
             banner = "lore: " + " · ".join(parts)
 
     # Trailing hook-error segment — non-blocking.
-    hook_errors_24h = _recent_hook_errors(
-        ctx.lore_root, within=timedelta(hours=24), now=ctx.now
-    )
-    if hook_errors_24h > 0:
-        banner += f" · {hook_errors_24h} hook error{'s' if hook_errors_24h > 1 else ''} today (lore doctor)"
+    if state.hook_errors_24h > 0:
+        suffix = "s" if state.hook_errors_24h > 1 else ""
+        banner += f" · {state.hook_errors_24h} hook error{suffix} today (lore doctor)"
     return _prepend(session_end_line, banner)
 
 

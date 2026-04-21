@@ -245,7 +245,15 @@ def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_
     import os
     events_path = project / ".lore" / "hook-events.jsonl"
     assert events_path.exists()
-    record = json.loads(events_path.read_text().splitlines()[-1])
+    # Post-Task-9b the event log can contain pending-breadcrumb-* records
+    # after the capture event; assert provenance on the capture event
+    # specifically rather than "last line".
+    records = [
+        json.loads(l) for l in events_path.read_text().splitlines() if l.strip()
+    ]
+    capture_records = [r for r in records if r.get("event") == "session-end"]
+    assert capture_records, f"expected a session-end capture record; got {records}"
+    record = capture_records[-1]
     assert record["schema_version"] == 2
     assert record["pid"] == os.getpid()
     assert record["cwd"] == str(project)
@@ -469,10 +477,11 @@ def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_facto
 def test_capture_session_end_writes_breadcrumb_when_below_threshold(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:
-    """capture --event session-end with pending transcripts writes pending-breadcrumb.txt.
+    """capture --event session-end with pending transcripts emits a
+    pending-breadcrumb-written event to hook-events.jsonl.
 
-    Uses the CLI runner (like the other tests) so typer default resolution works.
-    Pre-seeds ledger with entries that have digested_hash=None (pending).
+    Post-Task-9b the storage moved from a standalone .txt file to a record
+    in the existing hook-events log.
     """
     from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
 
@@ -509,10 +518,14 @@ def test_capture_session_end_writes_breadcrumb_when_below_threshold(
     )
     assert result.exit_code == 0, result.output
 
-    crumb_path = project / ".lore" / "pending-breadcrumb.txt"
-    assert crumb_path.exists(), "pending-breadcrumb.txt should be created"
-    content = crumb_path.read_text()
-    assert "below threshold" in content or "curator spawned" in content
+    import json as _json
+    events_path = project / ".lore" / "hook-events.jsonl"
+    assert events_path.exists(), "hook-events.jsonl should be created"
+    events = [_json.loads(l) for l in events_path.read_text().splitlines() if l.strip()]
+    written = [e for e in events if e.get("event") == "pending-breadcrumb-written"]
+    assert written, f"expected a pending-breadcrumb-written event; got {events}"
+    line = written[-1].get("line", "")
+    assert "below threshold" in line or "curator spawned" in line
 
 
 def test_capture_session_end_no_breadcrumb_when_no_new_turns(
