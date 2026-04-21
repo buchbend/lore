@@ -1421,7 +1421,21 @@ def capture(
     _capture_ppid_cmd = _ppid_cmd()
     scope = resolve_scope(cwd)
     if scope is None:
-        # Unattached cwd — silently no-op. Not an error.
+        # Unattached cwd — no ledger work to do, but we still emit a hook
+        # event so "hook fired but declined" is distinguishable from "hook
+        # never fired" in `lore status` / `lore runs list --hooks`.
+        from lore_core.config import get_lore_root
+        try:
+            HookEventLogger(get_lore_root()).emit(
+                event=event, host=host, scope=None,
+                duration_ms=int((_time.monotonic() - start) * 1000),
+                outcome="no-scope",
+                cwd=str(cwd),
+                pid=_capture_pid,
+                ppid_cmd=_capture_ppid_cmd,
+            )
+        except Exception:
+            pass
         return
 
     lore_root = _infer_lore_root(scope.claude_md_path)

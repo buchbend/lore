@@ -153,6 +153,65 @@ def test_capture_state_overdue_calculation_per_role(
 
 
 # ---------------------------------------------------------------------------
+# Hook liveness (Fix #2 — surface "is capture hook firing?")
+# ---------------------------------------------------------------------------
+
+
+def test_capture_state_hook_liveness_absent_when_file_missing(tmp_path: Path) -> None:
+    """No hook-events.jsonl → last_hook_event_ts is None."""
+    lore_root = _seed_lore_root(tmp_path)
+    state = query_capture_state(lore_root, now=_NOW)
+    assert state.last_hook_event_ts is None
+    assert state.last_hook_event_outcome is None
+    assert state.last_hook_event_kind is None
+
+
+def test_capture_state_hook_liveness_from_newest_event(tmp_path: Path) -> None:
+    """Last hook fields read the newest record in hook-events.jsonl."""
+    lore_root = _seed_lore_root(tmp_path)
+    # Mix of ages; newest should win regardless of file order.
+    _write_hook_events(
+        lore_root,
+        [
+            {
+                "ts": _iso(_NOW - timedelta(hours=6)),
+                "event": "session-end",
+                "outcome": "below-threshold",
+            },
+            {
+                "ts": _iso(_NOW - timedelta(minutes=10)),
+                "event": "session-start",
+                "outcome": "spawned-curator",
+            },
+            {
+                "ts": _iso(_NOW - timedelta(hours=3)),
+                "event": "pre-compact",
+                "outcome": "no-new-turns",
+            },
+        ],
+    )
+    state = query_capture_state(lore_root, now=_NOW)
+    assert state.last_hook_event_ts == _NOW - timedelta(minutes=10)
+    assert state.last_hook_event_outcome == "spawned-curator"
+    assert state.last_hook_event_kind == "session-start"
+
+
+def test_capture_state_hook_liveness_skips_malformed_lines(tmp_path: Path) -> None:
+    """Garbled lines in hook-events.jsonl don't crash or mask a real newest."""
+    lore_root = _seed_lore_root(tmp_path)
+    path = lore_root / ".lore" / "hook-events.jsonl"
+    good = {
+        "ts": _iso(_NOW - timedelta(minutes=5)),
+        "event": "session-start",
+        "outcome": "no-scope",
+    }
+    path.write_text("{not json\n" + json.dumps(good) + "\n\n")
+    state = query_capture_state(lore_root, now=_NOW)
+    assert state.last_hook_event_ts == _NOW - timedelta(minutes=5)
+    assert state.last_hook_event_outcome == "no-scope"
+
+
+# ---------------------------------------------------------------------------
 # Populated vault — end-to-end
 # ---------------------------------------------------------------------------
 

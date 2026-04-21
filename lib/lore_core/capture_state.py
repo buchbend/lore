@@ -57,6 +57,12 @@ class CaptureState:
     hook_errors_24h: int = 0
     hook_log_failed_marker_age_s: int | None = None
     simple_tier_fallback_active: bool = False
+    # Liveness of the capture hook itself — answers "did Claude Code actually
+    # invoke our SessionStart/PreCompact/SessionEnd hook recently?". All
+    # three fields come from the newest record in hook-events.jsonl.
+    last_hook_event_ts: datetime | None = None
+    last_hook_event_outcome: str | None = None    # e.g. "spawned-curator" | "no-scope"
+    last_hook_event_kind: str | None = None       # e.g. "session-start"
 
 
 # Overdue thresholds per project_curator_triad memory.
@@ -197,6 +203,43 @@ def _count_hook_errors_24h(lore_root: Path, now: datetime) -> int:
     return count
 
 
+def _newest_hook_event(
+    lore_root: Path,
+) -> tuple[datetime | None, str | None, str | None]:
+    """Return (ts, outcome, event-kind) of the newest record in
+    hook-events.jsonl, or (None, None, None) if the file is missing,
+    empty, or has no parseable records.
+
+    Scans the whole file because records are append-only but not
+    guaranteed to be strictly time-ordered (rotations, clock skew).
+    At ~10 MB cap (see hook_log.HookEventLogger) this is fine.
+    """
+    path = lore_root / ".lore" / "hook-events.jsonl"
+    if not path.exists():
+        return (None, None, None)
+    newest_ts: datetime | None = None
+    newest_outcome: str | None = None
+    newest_kind: str | None = None
+    try:
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            ts = _parse_iso(rec.get("ts"))
+            if ts is None:
+                continue
+            if newest_ts is None or ts > newest_ts:
+                newest_ts = ts
+                newest_outcome = rec.get("outcome")
+                newest_kind = rec.get("event")
+    except OSError:
+        return (None, None, None)
+    return (newest_ts, newest_outcome, newest_kind)
+
+
 def _marker_age_s(lore_root: Path, now: datetime) -> int | None:
     marker = lore_root / ".lore" / "hook-log-failed.marker"
     if not marker.exists():
@@ -302,6 +345,8 @@ def query_capture_state(
             )
         )
 
+    last_hook_ts, last_hook_outcome, last_hook_kind = _newest_hook_event(lore_root)
+
     return CaptureState(
         lore_root=lore_root,
         scope_attached=attached,
@@ -314,4 +359,7 @@ def query_capture_state(
         hook_errors_24h=_count_hook_errors_24h(lore_root, now),
         hook_log_failed_marker_age_s=_marker_age_s(lore_root, now),
         simple_tier_fallback_active=_simple_tier_fallback_active(lore_root),
+        last_hook_event_ts=last_hook_ts,
+        last_hook_event_outcome=last_hook_outcome,
+        last_hook_event_kind=last_hook_kind,
     )

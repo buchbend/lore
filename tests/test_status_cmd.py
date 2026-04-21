@@ -98,8 +98,9 @@ def test_status_happy_path_line_count(tmp_path: Path, monkeypatch) -> None:
     _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
 
     out = _invoke(lore_root, project, monkeypatch=monkeypatch)
-    # 7 newlines on happy path (1 header + 1 blank + 5 body lines = 7 '\n')
-    assert out.count("\n") == 7, f"expected 7 newlines on happy path; got {out.count(chr(10))}:\n{out!r}"
+    # 8 newlines on happy path (1 header + 1 blank + 6 body lines = 8 '\n').
+    # 6th body line = Hook (added for capture-hook liveness surface).
+    assert out.count("\n") == 8, f"expected 8 newlines on happy path; got {out.count(chr(10))}:\n{out!r}"
 
 
 def test_status_happy_path_no_alert_glyphs(tmp_path: Path, monkeypatch) -> None:
@@ -118,10 +119,13 @@ def test_status_line_order_is_decay_first(tmp_path: Path, monkeypatch) -> None:
     out = _invoke(lore_root, project, monkeypatch=monkeypatch)
     note_idx = out.find("Last note")
     run_idx = out.find("Last run")
+    hook_idx = out.find("Hook")
     pending_idx = out.find("Pending")
     session_idx = out.find("Session")
     lock_idx = out.find("Lock")
-    assert 0 < note_idx < run_idx < pending_idx < session_idx < lock_idx, (
+    # Hook sits between "Last run" (effect) and "Pending" (hook's input queue):
+    # note ← run ← hook ← pending ← session ← lock.
+    assert 0 < note_idx < run_idx < hook_idx < pending_idx < session_idx < lock_idx, (
         f"decay-first order violated: {out!r}"
     )
 
@@ -194,6 +198,116 @@ def test_status_hook_log_failed_red(tmp_path: Path, monkeypatch) -> None:
     out = _invoke(lore_root, project, monkeypatch=monkeypatch)
     assert "hook log" in out.lower()
     assert "x " in out
+
+
+def test_status_hook_body_line_renders_recent_event(tmp_path: Path, monkeypatch) -> None:
+    """Healthy path: Hook body line shows most recent hook-event summary."""
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    events = lore_root / ".lore" / "hook-events.jsonl"
+    events.write_text(
+        json.dumps({
+            "ts": _iso(_NOW - timedelta(minutes=12)),
+            "event": "session-start",
+            "outcome": "spawned-curator",
+        }) + "\n"
+    )
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch)
+    # Line shape: "  · Hook         12m ago · session-start · spawned-curator"
+    assert "Hook" in out
+    assert "session-start" in out
+    assert "spawned-curator" in out
+
+
+def test_status_hook_body_line_dash_when_no_events(tmp_path: Path, monkeypatch) -> None:
+    """Fresh vault with no hook-events.jsonl → Hook line shows dash, no alert."""
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch)
+    # 8-line happy path; no alert because pending=0.
+    assert "Hook" in out
+    assert "!" not in out
+    assert "no hook events" not in out
+
+
+def test_status_hook_alert_when_pending_but_hook_stale(tmp_path: Path, monkeypatch) -> None:
+    """Pending transcripts exist AND hook events are missing/stale → alert.
+
+    This is the exact diagnostic: "something wants capturing, but capture
+    hook isn't leaving traces." Without the alert, the user sees only
+    empty runs and has to guess why.
+    """
+    from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
+
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+
+    # Seed pending transcript.
+    ledger = TranscriptLedger(lore_root)
+    ledger.upsert(
+        TranscriptLedgerEntry(
+            host="claude-code",
+            transcript_id="t1",
+            path=project / "t1.jsonl",
+            directory=project,
+            digested_hash=None,  # pending
+            digested_index_hint=None,
+            synthesised_hash=None,
+            last_mtime=_NOW - timedelta(hours=1),
+            curator_a_run=None,
+            noteworthy=None,
+            session_note=None,
+        )
+    )
+    # No hook-events.jsonl at all → stale/missing.
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch)
+    assert "!" in out, f"expected alert line; got:\n{out}"
+    assert "no hook events" in out.lower()
+
+
+def test_status_hook_alert_when_pending_and_hook_events_all_old(tmp_path: Path, monkeypatch) -> None:
+    """Same alert when hook-events exist but the newest is > 24h stale."""
+    from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
+
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+
+    ledger = TranscriptLedger(lore_root)
+    ledger.upsert(
+        TranscriptLedgerEntry(
+            host="claude-code", transcript_id="t2",
+            path=project / "t2.jsonl", directory=project,
+            digested_hash=None, digested_index_hint=None,
+            synthesised_hash=None,
+            last_mtime=_NOW - timedelta(hours=1),
+            curator_a_run=None, noteworthy=None, session_note=None,
+        )
+    )
+    (lore_root / ".lore" / "hook-events.jsonl").write_text(
+        json.dumps({
+            "ts": _iso(_NOW - timedelta(days=2)),
+            "event": "session-start",
+            "outcome": "below-threshold",
+        }) + "\n"
+    )
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch)
+    assert "no hook events" in out.lower()
+
+
+def test_status_no_hook_alert_when_pending_zero(tmp_path: Path, monkeypatch) -> None:
+    """No pending work → no alert even if hook-events is missing.
+
+    Avoids crying wolf on fresh vaults where nothing needs capturing yet.
+    """
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch)
+    assert "no hook events" not in out.lower()
 
 
 def test_status_simple_tier_fallback_yellow(tmp_path: Path, monkeypatch) -> None:

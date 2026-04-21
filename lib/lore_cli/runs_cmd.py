@@ -78,11 +78,17 @@ def list_runs(
         import os as _os
         # Build combined list of (ts_str, kind, data) tuples.
         combined: list[tuple[str, str, object]] = []
+        has_runs = False
+        hook_events_path = lore_root / ".lore" / "hook-events.jsonl"
+        has_hook_events = (
+            hook_events_path.exists() and hook_events_path.stat().st_size > 0
+        )
 
         # Load runs.
         if runs_dir.exists():
             from lore_core.run_reader import iter_archival_runs
             archival_paths = list(iter_archival_runs(lore_root, limit=limit))
+            has_runs = bool(archival_paths)
             for p in archival_paths:
                 records = read_run(p, strict_schema=False)
                 start = next((r for r in records if r.get("type") == "run-start"), {})
@@ -142,6 +148,17 @@ def list_runs(
         # Sort newest first, limit total.
         combined.sort(key=lambda x: x[0], reverse=True)
         combined = combined[:limit]
+
+        # Diagnostic banner: runs without hook events means curator ran
+        # but Claude Code's capture hook never logged — strong signal
+        # that SessionStart isn't invoking `lore hook capture`.
+        if has_runs and not has_hook_events:
+            console.print(
+                "[yellow]! hook-events.jsonl is empty — SessionStart capture "
+                "hook may not be firing.[/yellow]\n"
+                "  [dim]Try: lore doctor · check $CLAUDE_PROJECT_DIR · "
+                "verify plugin hooks are installed[/dim]"
+            )
 
         table = Table(title=None)
         table.add_column("ID / Event")

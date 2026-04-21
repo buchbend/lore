@@ -142,7 +142,18 @@ def test_capture_session_end_creates_ledger_entry(tmp_path: Path, fake_adapter_f
 
 
 def test_capture_unattached_cwd_returns_without_ledger_write(tmp_path: Path) -> None:
-    """capture on an unattached cwd silently no-ops — no ledger file created."""
+    """capture on an unattached cwd emits a no-scope hook event and skips
+    ledger writes.
+
+    Previously this path silently returned with zero trace. That made it
+    impossible to tell "hook never fired" apart from "hook fired but
+    cwd wasn't attached" — the dominant silent-failure mode reported
+    in debugging. Now every capture invocation leaves a record, so
+    `lore status` and `lore runs list --hooks` can always answer
+    "is my capture hook firing?".
+    """
+    import json as _json
+
     unattached = tmp_path / "unattached"
     unattached.mkdir()
     # No CLAUDE.md with ## Lore
@@ -156,7 +167,18 @@ def test_capture_unattached_cwd_returns_without_ledger_write(tmp_path: Path) -> 
     assert result.exit_code == 0, result.output
 
     ledger_path = tmp_path / ".lore" / "transcript-ledger.json"
-    assert not ledger_path.exists()
+    assert not ledger_path.exists(), "unattached cwd must not touch the ledger"
+
+    events_path = tmp_path / ".lore" / "hook-events.jsonl"
+    assert events_path.exists(), "no-scope path must still log a hook event"
+    records = [_json.loads(ln) for ln in events_path.read_text().splitlines() if ln.strip()]
+    assert len(records) == 1
+    ev = records[0]
+    assert ev["outcome"] == "no-scope"
+    assert ev["event"] == "session-end"
+    assert ev["cwd"] == str(unattached)
+    assert ev["scope"] is None
+    assert ev.get("error") is None
 
 
 def test_capture_under_100ms(tmp_path: Path, fake_adapter_factory, monkeypatch) -> None:

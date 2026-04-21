@@ -195,7 +195,14 @@ def test_runs_list_hooks_only_hook_events_no_runs(tmp_path, monkeypatch):
 
 
 def test_runs_list_hooks_only_runs_no_hook_events(tmp_path, monkeypatch):
-    """--hooks with ONLY runs (no hook-events.jsonl) renders just run rows."""
+    """--hooks with runs but NO hook-events.jsonl renders the run rows AND
+    a warning line above the table.
+
+    This is the exact pattern when Claude Code's capture hook never fires
+    (e.g. plugin not installed, or silently-failing scope resolution).
+    Without the warning, the user sees a table full of empty runs and
+    has no signal that the hook pipeline itself is broken.
+    """
     _seed_run(tmp_path)
     from lore_cli import runs_cmd
     from typer.testing import CliRunner
@@ -205,6 +212,24 @@ def test_runs_list_hooks_only_runs_no_hook_events(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "a1b2c3" in result.stdout
     assert "1 new" in result.stdout
+    # New: diagnostic banner when hook-events.jsonl is empty/missing.
+    assert "hook-events" in result.output.lower()
+    assert "may not be firing" in result.output.lower()
+
+
+def test_runs_list_hooks_no_runs_no_events_no_warning(tmp_path, monkeypatch):
+    """Fresh vault: no runs AND no hook events → the empty-state copy,
+    not the "hooks aren't firing" warning (which only makes sense when
+    runs are actually appearing)."""
+    (tmp_path / ".lore" / "runs").mkdir(parents=True)
+    from lore_cli import runs_cmd
+    from typer.testing import CliRunner
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(runs_cmd.app, ["list", "--hooks"])
+    assert result.exit_code == 0, result.output
+    assert "no capture activity" in result.output.lower()
+    assert "may not be firing" not in result.output.lower()
 
 
 def test_runs_list_hooks_v1_no_crash(tmp_path, monkeypatch):

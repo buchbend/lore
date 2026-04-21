@@ -164,6 +164,22 @@ def _render_pending(state: CaptureState) -> tuple[str, str]:
     return (_HEALTHY, f"Pending      {n} {label}")
 
 
+def _render_hook(state: CaptureState, now: datetime) -> tuple[str, str]:
+    """Liveness of the capture hook itself.
+
+    Answers "did Claude Code actually invoke my SessionStart/SessionEnd
+    hook recently?" — which is structurally different from "did curator
+    run?" (runs can be triggered manually; hooks can't).
+    """
+    ts = state.last_hook_event_ts
+    if ts is None:
+        return (_HEALTHY, "Hook         —")
+    when = relative_time(ts, now=now)
+    kind = state.last_hook_event_kind or "?"
+    outcome = state.last_hook_event_outcome or "?"
+    return (_HEALTHY, f"Hook         {when} · {kind} · {outcome}")
+
+
 def _render_session(now: datetime) -> tuple[str, str]:
     ts = _session_loaded_ts(now)
     if ts is None:
@@ -207,6 +223,19 @@ def _render_alerts(state: CaptureState, now: datetime) -> list[str]:
         alerts.append(
             f"{_WARN} simple-tier fallback active — high tier unavailable"
         )
+
+    # Work is waiting but the capture hook isn't leaving traces — strong
+    # signal that Claude Code is not invoking the hook (plugin install
+    # issue, silent scope-resolution failure, timeout kill, etc.).
+    if state.pending_transcripts > 0:
+        ts = state.last_hook_event_ts
+        stale = ts is None or (now - ts) > timedelta(hours=24)
+        if stale:
+            alerts.append(
+                f"{_WARN} no hook events in 24h while {state.pending_transcripts} "
+                f"transcript(s) pending — capture hook may not be firing "
+                f"(try `lore doctor`)"
+            )
 
     return alerts
 
@@ -299,6 +328,7 @@ def status(
     for glyph, message in [
         _render_last_note(state, now),
         _render_last_run(state, now),
+        _render_hook(state, now),
         _render_pending(state),
         _render_session(now),
         _render_lock(state),
