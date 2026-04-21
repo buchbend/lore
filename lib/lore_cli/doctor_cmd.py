@@ -237,11 +237,8 @@ def run_capture_panel(lore_root: Path) -> list[str]:
     # Last curator run + last note filed (walk newest→oldest)
     runs_dir = lore_root / ".lore" / "runs"
     if runs_dir.exists():
-        files = sorted(
-            (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
-            key=lambda p: p.name,
-            reverse=True,
-        )
+        from lore_core.run_reader import iter_archival_runs
+        files = list(iter_archival_runs(lore_root))
         if files:
             any_data = True
             latest = files[0]

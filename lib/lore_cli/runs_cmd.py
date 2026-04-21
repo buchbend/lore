@@ -85,11 +85,8 @@ def list_runs(
 
         # Load runs.
         if runs_dir.exists():
-            archival_paths = sorted(
-                (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
-                key=lambda p: p.name,
-                reverse=True,
-            )[:limit]
+            from lore_core.run_reader import iter_archival_runs
+            archival_paths = list(iter_archival_runs(lore_root, limit=limit))
             for p in archival_paths:
                 records = read_run(p, strict_schema=False)
                 start = next((r for r in records if r.get("type") == "run-start"), {})
@@ -187,11 +184,8 @@ def list_runs(
         console.print("[dim]No capture activity yet.[/dim]")
         return
 
-    archival = sorted(
-        (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
-        key=lambda p: p.name,
-        reverse=True,
-    )[:limit]
+    from lore_core.run_reader import iter_archival_runs
+    archival = list(iter_archival_runs(lore_root, limit=limit))
 
     if json_out:
         for p in archival:

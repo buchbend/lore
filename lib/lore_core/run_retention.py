@@ -34,10 +34,8 @@ def enforce_retention(
         return
 
     try:
-        archival = sorted(
-            (p for p in runs.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
-            key=lambda p: p.name,
-        )
+        from lore_core.run_reader import list_archival_runs
+        archival = list_archival_runs(lore_root)
         trace = sorted(runs.glob("*.trace.jsonl"), key=lambda p: p.name)
     except OSError:
         return

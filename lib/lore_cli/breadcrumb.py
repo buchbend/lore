@@ -94,16 +94,10 @@ class BannerContext:
 
 def _most_recent_run_end(lore_root: Path) -> tuple[Path | None, dict | None]:
     """Return (path, run_end_record) or (None, None) if no runs."""
-    runs_dir = lore_root / ".lore" / "runs"
-    if not runs_dir.exists():
+    from lore_core.run_reader import iter_archival_runs
+    latest = next(iter(iter_archival_runs(lore_root)), None)
+    if latest is None:
         return None, None
-    files = sorted(
-        (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
-        key=lambda p: p.name,
-    )
-    if not files:
-        return None, None
-    latest = files[-1]
     try:
         lines = latest.read_text().splitlines()
     except OSError:
