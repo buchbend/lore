@@ -68,79 +68,28 @@ def test_doctor_attach_check_finds_lore_block(healthy_vault, tmp_path, monkeypat
     assert "wiki=ccat" in checks["## Lore attach"]["message"]
 
 
-def test_doctor_capture_panel_empty(tmp_path):
-    from lore_cli.doctor_cmd import run_capture_panel
-
-    lines = run_capture_panel(tmp_path)
-    assert any("no capture activity" in l.lower() for l in lines)
-
-
-def test_doctor_capture_panel_last_hook_and_run_and_note(tmp_path):
-    from lore_cli.doctor_cmd import run_capture_panel
-
-    events = tmp_path / ".lore" / "hook-events.jsonl"
-    runs = tmp_path / ".lore" / "runs"
-    events.parent.mkdir(parents=True)
-    runs.mkdir()
-    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-    events.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "ts": now,
-                "event": "session-end",
-                "outcome": "spawned-curator",
-                "duration_ms": 40,
-            }
-        )
-        + "\n"
-    )
-    (runs / "2026-04-20T14-32-05-aaaaaa.jsonl").write_text(
-        json.dumps(
-            {"type": "run-start", "ts": now, "trigger": "hook"}
-        )
-        + "\n"
-        + json.dumps(
-            {
-                "type": "session-note",
-                "ts": now,
-                "action": "filed",
-                "wikilink": "[[some-note]]",
-            }
-        )
-        + "\n"
-        + json.dumps(
-            {
-                "type": "run-end",
-                "ts": now,
-                "duration_ms": 3000,
-                "notes_new": 1,
-                "notes_merged": 0,
-                "skipped": 0,
-                "errors": 0,
-            }
-        )
-        + "\n"
-    )
-    lines = run_capture_panel(tmp_path)
-    flat = " ".join(lines)
-    assert "Last hook fired" in flat
-    assert "Last curator run" in flat
-    assert "Last note filed" in flat
-    assert "some-note" in flat
+def test_doctor_has_no_capture_pipeline_panel(healthy_vault, capsys):
+    """Post-Task-12a: doctor is install-integrity only; capture activity
+    moved to `lore status`. The 'Capture pipeline' header must be absent.
+    """
+    rc = doctor_cmd.main(["--cwd", str(healthy_vault)])
+    out = capsys.readouterr().out
+    assert "Capture pipeline" not in out
+    assert rc == 0
 
 
-def test_doctor_capture_panel_lock_holder(tmp_path):
-    from lore_core.lockfile import curator_lock
-    with curator_lock(tmp_path, timeout=0.0, run_id="r-abc123"):
-        from lore_cli.doctor_cmd import run_capture_panel
-        lines = run_capture_panel(tmp_path)
-    flat = " ".join(lines)
-    assert "Curator lock held by PID" in flat
-    assert "r-abc123" in flat
+def test_doctor_footer_points_to_status(healthy_vault, capsys):
+    """Doctor's footer points the user at `lore status` for activity."""
+    doctor_cmd.main(["--cwd", str(healthy_vault)])
+    out = capsys.readouterr().out
+    assert "lore status" in out
 
 
-def test_doctor_capture_panel_lock_free(tmp_path):
+def test_doctor_capture_panel_lock_free_removed_smoke(tmp_path):
+    """Placeholder so pytest collection still passes; old capture-panel
+    tests for free-lock / hook-errors / marker are superseded by
+    tests/test_capture_state.py (CaptureState field coverage).
+    """
     events = tmp_path / ".lore" / "hook-events.jsonl"
     events.parent.mkdir(parents=True, exist_ok=True)
     events.write_text(
@@ -151,24 +100,7 @@ def test_doctor_capture_panel_lock_free(tmp_path):
             "outcome": "ledger-advanced",
         }) + "\n"
     )
-    from lore_cli.doctor_cmd import run_capture_panel
-    lines = run_capture_panel(tmp_path)
-    flat = " ".join(lines)
-    assert "Curator lock free" in flat
-
-
-def test_doctor_capture_panel_hook_error_warning(tmp_path):
-    from lore_cli.doctor_cmd import run_capture_panel
-
-    events = tmp_path / ".lore" / "hook-events.jsonl"
-    events.parent.mkdir(parents=True)
-    ts = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-    events.write_text(
-        json.dumps(
-            {"schema_version": 1, "ts": ts, "event": "session-end", "outcome": "error"}
-        )
-        + "\n"
-    )
-    lines = run_capture_panel(tmp_path)
-    flat = " ".join(lines)
-    assert "hook error" in flat.lower()
+    # Post-Task-12a: capture-pipeline details now live in CaptureState /
+    # `lore status`; nothing to assert about the doctor panel here.
+    # Kept as a smoke fixture so future test additions have a starting
+    # point; delete the whole test if it starts rotting.

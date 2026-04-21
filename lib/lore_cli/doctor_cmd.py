@@ -197,166 +197,17 @@ def doctor(
             mark = "[green]✓[/green]" if r["ok"] else "[red]✗[/red]"
             console.print(f"{mark} [bold]{r['check']:<20}[/bold] {r['message']}")
 
-        # Capture pipeline panel
-        from lore_core.config import get_lore_root as _gl
-
-        try:
-            lr = _gl()
-        except Exception:
-            lr = None
-        if lr is not None:
-            console.print()
-            for line in run_capture_panel(lr):
-                console.print(line)
-
+        # Post-Task-12a: doctor is install-integrity only. The activity
+        # panel lived here pre-Task-12a; it now ships as `lore status`
+        # (which renders from lore_core.capture_state). Footer pointer
+        # so the user knows where to look for the other half.
         if all_ok:
-            console.print("\n[green]All checks passed.[/green]")
+            console.print("\n[green]Install looks good.[/green] For activity: [bold]lore status[/bold]")
         else:
-            console.print("\n[red]Some checks failed — see above.[/red]")
+            console.print("\n[red]Some checks failed — see above.[/red] For activity: [bold]lore status[/bold]")
 
     if not all_ok:
         raise typer.Exit(code=1)
-
-
-def run_capture_panel(lore_root: Path) -> list[str]:
-    """Return lines for the Capture pipeline panel of `lore doctor`."""
-    lines: list[str] = ["Capture pipeline"]
-    any_data = False
-
-    # Last hook
-    events_path = lore_root / ".lore" / "hook-events.jsonl"
-    if events_path.exists():
-        any_data = True
-        last = _last_json_line(events_path)
-        if last:
-            event = last.get("event", "?")
-            outcome = last.get("outcome", "?")
-            ago = _relative_cap(last.get("ts", ""))
-            lines.append(f"  ✓ Last hook fired {ago} ({event}, outcome: {outcome})")
-
-    # Last curator run + last note filed (walk newest→oldest)
-    runs_dir = lore_root / ".lore" / "runs"
-    if runs_dir.exists():
-        from lore_core.run_reader import iter_archival_runs
-        files = list(iter_archival_runs(lore_root))
-        if files:
-            any_data = True
-            latest = files[0]
-            try:
-                records = [json.loads(l) for l in latest.read_text().splitlines() if l.strip()]
-            except (OSError, json.JSONDecodeError):
-                records = []
-            end = next((r for r in reversed(records) if r.get("type") == "run-end"), None)
-            if end:
-                ago = _relative_cap(end.get("ts", ""))
-                dur = f"{end.get('duration_ms', 0) / 1000:.1f}s"
-                t_count = sum(1 for r in records if r.get("type") == "transcript-start")
-                errors = end.get("errors", 0)
-                lines.append(
-                    f"  ✓ Last curator run {ago} ({dur}, {t_count} transcripts, {errors} errors)"
-                )
-            last_note = None
-            for p in files:
-                try:
-                    for l in p.read_text().splitlines():
-                        try:
-                            r = json.loads(l)
-                        except json.JSONDecodeError:
-                            continue
-                        if r.get("type") == "session-note" and r.get("action") == "filed":
-                            last_note = r
-                            break
-                except OSError:
-                    continue
-                if last_note:
-                    break
-            if last_note:
-                lines.append(
-                    f"  ✓ Last note filed {_relative_cap(last_note.get('ts', ''))} — "
-                    f"{last_note.get('wikilink', '')}"
-                )
-
-    # Lock holder / free
-    from lore_core.lockfile import read_lock_holder
-
-    lock_dir = lore_root / ".lore" / "curator.lock"
-    if lock_dir.exists():
-        any_data = True
-        holder = read_lock_holder(lore_root)
-        try:
-            age_s = datetime.now(UTC).timestamp() - lock_dir.stat().st_mtime
-        except OSError:
-            age_s = 0
-        age_str = f"{int(age_s)}s" if age_s < 60 else f"{int(age_s / 60)}m"
-        if holder:
-            pid = holder.get("pid", "?")
-            rid = holder.get("run_id") or "?"
-            icon = "✗" if age_s > 3600 else "✓"
-            suffix = (
-                " — likely stale, remove with `rm -rf $LORE_ROOT/.lore/curator.lock`"
-                if age_s > 3600
-                else ""
-            )
-            lines.append(
-                f"  {icon} Curator lock held by PID {pid} (run {rid}, {age_str}){suffix}"
-            )
-        else:
-            icon = "✗" if age_s > 3600 else "✓"
-            stale_note = " — likely stale" if age_s > 3600 else ""
-            lines.append(
-                f"  {icon} Curator lock held ({age_str}, no holder metadata){stale_note}"
-            )
-    else:
-        lines.append("  ✓ Curator lock free")
-
-    # Hook errors in last 24h
-    hook_err = 0
-    if events_path.exists():
-        threshold = datetime.now(UTC) - timedelta(hours=24)
-        try:
-            for l in events_path.read_text().splitlines():
-                try:
-                    r = json.loads(l)
-                except json.JSONDecodeError:
-                    continue
-                if r.get("outcome") != "error":
-                    continue
-                ts_str = r.get("ts")
-                if not ts_str:
-                    continue
-                try:
-                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                except ValueError:
-                    continue
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=UTC)
-                if ts >= threshold:
-                    hook_err += 1
-        except OSError:
-            pass
-    if hook_err > 0:
-        lines.append(
-            f"  ✗ {hook_err} hook error{'s' if hook_err > 1 else ''} in last 24h "
-            f"— lore runs list --hooks"
-        )
-
-    # Observability log-write failures sentinel
-    marker = lore_root / ".lore" / "hook-log-failed.marker"
-    if marker.exists():
-        try:
-            mtime = datetime.fromtimestamp(marker.stat().st_mtime, tz=UTC)
-            age = datetime.now(UTC) - mtime
-            if age < timedelta(days=1):
-                lines.append(
-                    f"  ✗ Hook log write failed {_relative_cap(mtime.isoformat().replace('+00:00', 'Z'))} "
-                    f"— check disk space / permissions on {lore_root / '.lore'}"
-                )
-        except OSError:
-            pass
-
-    if not any_data:
-        lines.append("  No capture activity yet")
-    return lines
 
 
 def _last_json_line(path: Path) -> dict | None:
