@@ -32,6 +32,7 @@ from lore_cli import (
     resume_cmd,
     runs_cmd,
     session_cmd,
+    status_cmd,
     surface_cmd,
 )
 from lore_core import lint as lint_cmd
@@ -69,6 +70,7 @@ app.add_typer(resume_cmd.app, name="resume")
 app.add_typer(runs_cmd.app, name="runs")
 app.add_typer(search_cmd.app, name="search")
 app.add_typer(session_cmd.app, name="session")
+app.add_typer(status_cmd.app, name="status")
 app.add_typer(surface_cmd.app, name="surface")
 
 
