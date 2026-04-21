@@ -16,8 +16,10 @@ from lore_core.wiki_config import WikiConfig
 # SessionEnd breadcrumb (file-based buffer, Option B)
 # ---------------------------------------------------------------------------
 
-_PENDING_BREADCRUMB_NAME = "pending-breadcrumb.txt"
+_PENDING_BREADCRUMB_NAME = "pending-breadcrumb.txt"  # legacy; migration only
 _PENDING_BREADCRUMB_MAX_AGE_S = 3600  # 1 hour
+_EV_WRITTEN = "pending-breadcrumb-written"
+_EV_CONSUMED = "pending-breadcrumb-consumed"
 
 
 def render_session_end_breadcrumb(
@@ -49,36 +51,106 @@ def render_session_end_breadcrumb(
 
 
 def write_pending_breadcrumb(lore_root: Path, line: str) -> None:
-    """Write *line* to .lore/pending-breadcrumb.txt (best-effort, never raises)."""
-    try:
-        dest = lore_root / ".lore" / _PENDING_BREADCRUMB_NAME
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(line)
-    except OSError:
-        pass
+    """Emit a ``pending-breadcrumb-written`` event to hook-events.jsonl.
+
+    Post-Task-9b: storage is a hook-events record, not a standalone file.
+    Best-effort; never raises (HookEventLogger swallows OSError internally).
+    """
+    from lore_core.hook_log import HookEventLogger
+
+    HookEventLogger(lore_root).emit(event=_EV_WRITTEN, line=line)
 
 
 def consume_pending_breadcrumb(lore_root: Path) -> str | None:
-    """Read and delete the pending breadcrumb file if it exists and is fresh.
+    """Return the most recent unconsumed pending-breadcrumb line.
 
-    Returns the stored line (stripped), or None if absent / stale / unreadable.
-    Deletes the file after reading so it is shown at most once.
+    Scans ``hook-events.jsonl`` for the most recent written/consumed pair.
+    Returns the written line iff it is newer than the last consumed event
+    AND younger than ``_PENDING_BREADCRUMB_MAX_AGE_S``. On success, appends
+    a ``pending-breadcrumb-consumed`` event so the line is shown at most
+    once.
+
+    Also runs the one-shot legacy-file migration: a pre-Task-9b legacy
+    ``.lore/pending-breadcrumb.txt`` is read, converted to a written
+    event preserving its mtime, and unlinked.
     """
-    import time as _time
+    from datetime import UTC, datetime as _dt
+    from lore_core.hook_log import HookEventLogger
 
-    dest = lore_root / ".lore" / _PENDING_BREADCRUMB_NAME
-    if not dest.exists():
+    # Migration: convert legacy file to event before scanning.
+    migrate_legacy_pending_breadcrumb(lore_root)
+
+    events_path = lore_root / ".lore" / "hook-events.jsonl"
+    if not events_path.exists():
         return None
+
+    last_written: dict | None = None
+    last_consumed_ts: str | None = None
     try:
-        age = _time.time() - dest.stat().st_mtime
-        if age > _PENDING_BREADCRUMB_MAX_AGE_S:
-            dest.unlink(missing_ok=True)
-            return None
-        line = dest.read_text().strip()
-        dest.unlink(missing_ok=True)
-        return line or None
+        for raw in events_path.read_text().splitlines():
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                rec = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            ev = rec.get("event")
+            if ev == _EV_WRITTEN:
+                last_written = rec
+            elif ev == _EV_CONSUMED:
+                last_consumed_ts = rec.get("ts")
     except OSError:
         return None
+
+    if last_written is None:
+        return None
+
+    written_ts = last_written.get("ts")
+    if last_consumed_ts is not None and written_ts is not None and written_ts <= last_consumed_ts:
+        return None  # already consumed
+
+    try:
+        written_dt = _dt.fromisoformat(str(written_ts).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if written_dt.tzinfo is None:
+        written_dt = written_dt.replace(tzinfo=UTC)
+    age = (_dt.now(UTC) - written_dt).total_seconds()
+    if age > _PENDING_BREADCRUMB_MAX_AGE_S:
+        return None  # stale
+
+    HookEventLogger(lore_root).emit(event=_EV_CONSUMED)
+    return last_written.get("line") or None
+
+
+def migrate_legacy_pending_breadcrumb(lore_root: Path) -> None:
+    """One-shot: convert a pre-Task-9b .txt file to a written event + unlink.
+
+    Idempotent — second call is a no-op because the file is unlinked on
+    first success. Called from ``consume_pending_breadcrumb`` so users pay
+    the migration cost exactly once per vault on the first SessionStart
+    after upgrading.
+    """
+    from datetime import UTC, datetime as _dt
+    from lore_core.hook_log import HookEventLogger
+
+    legacy = lore_root / ".lore" / _PENDING_BREADCRUMB_NAME
+    if not legacy.exists():
+        return
+    try:
+        line = legacy.read_text().strip()
+        mtime = legacy.stat().st_mtime
+    except OSError:
+        return
+    if line:
+        ts = _dt.fromtimestamp(mtime, tz=UTC).isoformat().replace("+00:00", "Z")
+        # Emit with an explicit ts so staleness uses the file mtime, not now.
+        HookEventLogger(lore_root).emit(event=_EV_WRITTEN, line=line, ts=ts)
+    try:
+        legacy.unlink()
+    except OSError:
+        pass
 
 
 @dataclass
