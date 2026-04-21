@@ -236,23 +236,7 @@ def list_runs(
 
 
 
-def _relative_time_cli(ts_iso: str) -> str:
-    from datetime import UTC, datetime
-    if not ts_iso:
-        return "?"
-    try:
-        ts = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
-    except ValueError:
-        return ts_iso
-    delta = datetime.now(UTC) - ts
-    s = delta.total_seconds()
-    if s < 60:
-        return "just now"
-    if s < 3600:
-        return f"{int(s // 60)}m ago"
-    if s < 86400:
-        return f"{int(s // 3600)}h ago"
-    return f"{int(s // 86400)}d ago"
+from lore_core.timefmt import relative_time as _relative_time_cli  # noqa: E402
 
 
 @app.command("tail")

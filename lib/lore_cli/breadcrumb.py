@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from lore_core.ledger import TranscriptLedger, WikiLedger
+from lore_core.timefmt import relative_day, relative_time
 from lore_core.types import Scope
 from lore_core.wiki_config import WikiConfig
 
@@ -188,7 +189,7 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
         short = latest_path.stem.split("-")[-1]
         banner = (
             f"lore!: last run had {run_end['errors']} errors "
-            f"({_relative_time(_parse_ts(run_end['ts']), ctx.now)}) "
+            f"({relative_time(_parse_ts(run_end['ts']), now=ctx.now)}) "
             f"· lore runs show {short}"
         )
         return _prepend(session_end_line, banner)
@@ -210,9 +211,9 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
     if pending:
         parts.append(f"{len(pending)} pending")
         if entry.last_curator_a:
-            parts.append(f"last curator {_relative_time(entry.last_curator_a, ctx.now)}")
+            parts.append(f"last curator {relative_time(entry.last_curator_a, now=ctx.now)}")
         if entry.last_briefing:
-            parts.append(f"briefing {_relative_time_short(entry.last_briefing, ctx.now)}")
+            parts.append(f"briefing {relative_day(entry.last_briefing, now=ctx.now)}")
         banner = "lore: " + " · ".join(parts)
     else:
         # All-skips hint beats the generic "up to date" when the last run
@@ -242,39 +243,3 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
     return _prepend(session_end_line, banner)
 
 
-def _relative_time(ts: datetime, now: datetime) -> str:
-    """'2h ago' | '3d ago' | 'yesterday' | 'just now' — short form."""
-    # Ensure tz-aware subtraction
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=UTC)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=UTC)
-    delta = now - ts
-    seconds = delta.total_seconds()
-    if seconds < 60:
-        return "just now"
-    if seconds < 3600:
-        m = int(seconds // 60)
-        return f"{m}m ago"
-    if seconds < 86400:
-        h = int(seconds // 3600)
-        return f"{h}h ago"
-    d = int(seconds // 86400)
-    if d == 1:
-        return "yesterday"
-    if d < 7:
-        return f"{d}d ago"
-    return f"{d // 7}w ago"
-
-
-def _relative_time_short(ts: datetime, now: datetime) -> str:
-    """'yesterday' | 'today' | '3d ago' — for briefing."""
-    if hasattr(ts, "date") and hasattr(now, "date"):
-        delta_days = (now.date() - ts.date()).days
-        if delta_days == 0:
-            return "today"
-        if delta_days == 1:
-            return "yesterday"
-        if delta_days < 7:
-            return f"{delta_days}d ago"
-    return _relative_time(ts, now)
