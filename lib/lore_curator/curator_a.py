@@ -18,7 +18,7 @@ from lore_core.run_log import RunLogger
 from lore_core.scope_resolver import resolve_scope
 from lore_core.types import Scope, Turn, TranscriptHandle
 from lore_core.wiki_config import WikiConfig, load_wiki_config
-from lore_curator.noteworthy import NoteworthyResult, classify_slice
+from lore_curator.noteworthy import classify_slice
 from lore_curator.session_filer import FiledNote, file_session_note
 
 
@@ -133,9 +133,8 @@ def run_curator_a(
                 # On dry-run: skip (telemetry is only for real runs).
                 # On mid-run exception: this line is unreachable, prior value
                 # preserved — atomic-or-unchanged contract.
-                from lore_core.ledger import WikiLedger as _WikiLedger
                 for wname in touched_wikis:
-                    _WikiLedger(lore_root, wname).update_last_curator("a", at=now)
+                    WikiLedger(lore_root, wname).update_last_curator("a", at=now)
             except LockContendedError:
                 result.skipped_reasons["lock_contended"] = (
                     result.skipped_reasons.get("lock_contended", 0) + 1
