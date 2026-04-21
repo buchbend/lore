@@ -10,6 +10,36 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-04-21
+
+### Fixed
+
+- **Capture hooks were never registered with Claude Code after v0.2.3**.
+  `.claude-plugin/plugin.json` gained `SessionEnd` + `lore hook capture`
+  wiring for `SessionStart`/`PreCompact` in commit `004d033`, but the
+  package version wasn't bumped. `claude plugin update lore@lore` had
+  nothing to re-fetch, so installed plugin caches stayed on the
+  pre-capture manifest — the banner hook fired but the capture hook
+  never did, and no transcripts were ever ledgered unless curator was
+  run by hand. Bump forces a re-fetch.
+- `lore_search` FTS5 index auto-migrates from the legacy contentless
+  schema (which couldn't DELETE). `/lore:resume <keyword>` and
+  `lore_search` MCP calls no longer raise
+  `cannot DELETE from contentless fts5 table: notes_fts`.
+
+### Added
+
+- `lore hook capture` now emits a `hook-events.jsonl` record with
+  `outcome="no-scope"` when the cwd isn't inside a configured wiki
+  instead of silently returning. Makes "hook never fired" vs "hook
+  fired but declined" distinguishable in `lore status` and
+  `lore runs list --hooks`.
+- `lore status` gains a `Hook` line between `Last run` and `Pending`
+  (`· Hook  12m ago · session-start · spawned-curator`) plus a
+  loud-on-earning alert when pending > 0 AND no hook events in 24h.
+- `lore runs list --hooks` prints a diagnostic banner when runs
+  exist but `hook-events.jsonl` is empty/missing.
+
 ## [0.2.3] — 2026-04-18
 
 ### Fixed
