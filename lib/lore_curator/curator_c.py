@@ -1,17 +1,28 @@
-"""Lore curator — per-wiki maintenance that keeps auto-inject trustworthy.
+"""Curator C — weekly defrag / converge / stale-flag / supersession.
 
-What the curator does (frontmatter-only edits):
+The third member of the A/B/C curator triad. A writes session notes
+(per-session), B extracts concept surfaces (per-day-rollover), C runs
+weekly to keep the vault's frontmatter trustworthy so SessionStart
+auto-injection doesn't surface stale or superseded notes.
 
-    1. Flag `status: active` + `last_reviewed > 90d` as `status: stale`
-    2. Detect `supersedes [[X]]` in decision notes; mark X as
-       superseded and backlink.
+What Curator C does (frontmatter-only edits — never touches note bodies):
+
+    1. Flag `status: active` + `last_reviewed > 90d` as `status: stale`.
+    2. Detect `supersedes [[X]]` in decision notes; mark X as superseded
+       and backlink.
     3. Backfill missing `last_reviewed` / `created` from `git log --follow`.
-    4. Writes a `_review.md` summary the hook can surface next session.
+    4. Propagate `implements:` status flips.
+    5. Write a `_review.md` summary the hook can surface next session.
+
+Cadence: weekly. Triggered from SessionStart when `now - last_curator_c
+> 7d` and no global curator lock is held (see project_lore_heartbeat.md).
+Currently manual-only via `lore curator`; the SessionStart trigger is
+scheduled for Plan 5.
 
 Safety:
     - Never edits note bodies without explicit user approval.
-    - Mtime guard: reads mtime before patch, re-reads file and aborts
-      if it changed mid-patch (Obsidian-open race).
+    - Mtime guard: reads mtime before patch, re-reads and aborts if the
+      file changed mid-patch (Obsidian-open race).
     - Warns if Obsidian appears to hold the vault.
 """
 
@@ -560,7 +571,7 @@ def _apply_safely(action: CuratorAction) -> tuple[bool, str]:
     return (True, "applied")
 
 
-def run_curator(
+def run_curator_c(
     wiki_filter: str | None = None,
     dry_run: bool = True,
     stale_threshold: int = STALENESS_DAYS,
@@ -768,7 +779,7 @@ def curator(
         run_open_items_migration(wiki_filter=wiki, dry_run=not apply)
         return
 
-    reports = run_curator(
+    reports = run_curator_c(
         wiki_filter=wiki,
         dry_run=not apply,
         stale_threshold=stale_threshold,
@@ -818,13 +829,13 @@ def _discover_wikis(lore_root: Path) -> list[str]:
 def run_command(
     scope: str = typer.Option(None, "--scope", help="Filter to one scope, e.g. 'mywiki:subproject'."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Classify but don't write notes or advance ledger."),
-    abstract: bool = typer.Option(False, "--abstract", help="Also run Curator B (graph abstraction) after Curator A."),
-    wiki: str = typer.Option(None, "--wiki", help="Limit Curator B to a single wiki (only meaningful with --abstract)."),
+    abstract: bool = typer.Option(False, "--abstract", help="Also run the surface-extraction pass after filing session notes."),
+    wiki: str = typer.Option(None, "--wiki", help="Limit the surface-extraction pass to a single wiki (only meaningful with --abstract)."),
     trace_llm: bool = typer.Option(False, "--trace-llm", help="Capture LLM prompts/responses to runs/<id>.trace.jsonl (equivalent to LORE_TRACE_LLM=1)."),
 ) -> None:
-    """Run Curator A — classify pending transcripts and file session notes.
+    """Run the curator — classify pending transcripts and file session notes.
 
-    With --abstract, also runs Curator B (graph abstraction) for the specified wiki(s).
+    With --abstract, also runs the surface-extraction pass for the specified wiki(s).
     """
     import os
     from datetime import UTC, datetime
