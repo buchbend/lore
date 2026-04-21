@@ -695,6 +695,31 @@ def run_curator_c(
     except Exception:
         lore_root = None
 
+    # Task 11: team-mode first-come-wins. Under defrag=True, re-read
+    # each wiki's last_curator_c at entry. If it matches the current ISO
+    # week we skip — another user already ran this cycle. Uses iso-week
+    # equivalence rather than timestamp comparison to survive clock skew
+    # across team members.
+    if defrag and lore_root is not None:
+        iso_now = now.isocalendar()[:2]
+        already_ran: set[str] = set()
+        for wiki_path in wikis:
+            entry = WikiLedger(lore_root, wiki_path.name).read()
+            last_c = entry.last_curator_c
+            if last_c is None:
+                continue
+            if last_c.tzinfo is None:
+                from datetime import UTC as _UTC
+                last_c = last_c.replace(tzinfo=_UTC)
+            if last_c.isocalendar()[:2] == iso_now:
+                already_ran.add(wiki_path.name)
+                console.print(
+                    f"[dim]Skipping wiki/{wiki_path.name}: already ran "
+                    f"this ISO week ({last_c.isoformat()}).[/dim]"
+                )
+        if already_ran:
+            wikis = [w for w in wikis if w.name not in already_ran]
+
     for wiki_path in wikis:
         if is_obsidian_holding(wiki_path) and not dry_run:
             console.print(
