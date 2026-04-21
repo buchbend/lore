@@ -25,3 +25,6 @@ htmlcov/
 
 # Git worktrees (local workspaces, never committed)
 .worktrees/
+
+# Personal session-handover notes (per-user)
+NEXT_SESSION.md
