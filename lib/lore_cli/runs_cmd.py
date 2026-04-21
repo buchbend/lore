@@ -85,11 +85,8 @@ def list_runs(
 
         # Load runs.
         if runs_dir.exists():
-            archival_paths = sorted(
-                (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
-                key=lambda p: p.name,
-                reverse=True,
-            )[:limit]
+            from lore_core.run_reader import iter_archival_runs
+            archival_paths = list(iter_archival_runs(lore_root, limit=limit))
             for p in archival_paths:
                 records = read_run(p, strict_schema=False)
                 start = next((r for r in records if r.get("type") == "run-start"), {})
@@ -187,11 +184,8 @@ def list_runs(
         console.print("[dim]No capture activity yet.[/dim]")
         return
 
-    archival = sorted(
-        (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
-        key=lambda p: p.name,
-        reverse=True,
-    )[:limit]
+    from lore_core.run_reader import iter_archival_runs
+    archival = list(iter_archival_runs(lore_root, limit=limit))
 
     if json_out:
         for p in archival:
@@ -236,23 +230,7 @@ def list_runs(
 
 
 
-def _relative_time_cli(ts_iso: str) -> str:
-    from datetime import UTC, datetime
-    if not ts_iso:
-        return "?"
-    try:
-        ts = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
-    except ValueError:
-        return ts_iso
-    delta = datetime.now(UTC) - ts
-    s = delta.total_seconds()
-    if s < 60:
-        return "just now"
-    if s < 3600:
-        return f"{int(s // 60)}m ago"
-    if s < 86400:
-        return f"{int(s // 3600)}h ago"
-    return f"{int(s // 86400)}d ago"
+from lore_core.timefmt import relative_time as _relative_time_cli  # noqa: E402
 
 
 @app.command("tail")

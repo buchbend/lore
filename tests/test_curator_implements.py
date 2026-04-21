@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from lore_curator.core import _parse_implements_entry, _pass_implements
+from lore_curator.curator_c import _parse_implements_entry, _pass_implements
 
 # ---------- parser ----------
 
@@ -118,7 +118,7 @@ def test_canonical_target_no_frontmatter_effect(wiki):
         assert len(actions) == 1
         assert "draft" not in actions[0].patch  # nothing to promote
     # Idempotency check — apply any action, re-run, expect no further actions.
-    from lore_curator.core import _apply_patch
+    from lore_curator.curator_c import _apply_patch
     if actions:
         new_text = _apply_patch(
             actions[0].path.read_text(), actions[0].patch
@@ -180,7 +180,7 @@ def test_mixed_list_only_promotes_drafts(wiki):
 def test_idempotent_on_second_run(wiki):
     _write_concept(wiki, "promote-me", draft=True)
     _write_session(wiki, "s8", ["promote-me"])
-    from lore_curator.core import _apply_patch
+    from lore_curator.curator_c import _apply_patch
     actions = _pass_implements(wiki)
     assert len(actions) == 1
     # Apply the patch and re-run.

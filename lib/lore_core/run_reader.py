@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 
@@ -36,7 +37,16 @@ class SchemaVersionTooNew(ValueError):
 _CARET_RE = re.compile(r"^\^(\d+)$")
 
 
-def _list_runs(lore_root: Path) -> list[Path]:
+def list_archival_runs(lore_root: Path) -> list[Path]:
+    """Return archival run files sorted oldest → newest (chronological).
+
+    Used by ``resolve_run_id`` for prefix matching and by retention for
+    FIFO deletion. For newest-first iteration (the common case for
+    renderers) use :func:`iter_archival_runs`.
+
+    Excludes ``.trace.jsonl`` companions. Returns empty list if the
+    ``.lore/runs/`` directory doesn't exist.
+    """
     runs_dir = lore_root / ".lore" / "runs"
     if not runs_dir.exists():
         return []
@@ -44,6 +54,40 @@ def _list_runs(lore_root: Path) -> list[Path]:
         (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
         key=lambda p: p.name,  # timestamp-prefixed → lexicographic == chronological
     )
+
+
+# Back-compat alias; prefer list_archival_runs in new code.
+_list_runs = list_archival_runs
+
+
+def iter_archival_runs(
+    lore_root: Path,
+    *,
+    limit: int | None = None,
+) -> Iterator[Path]:
+    """Yield archival run files, newest → oldest, filtering .trace.jsonl.
+
+    Replaces five pre-Task-8 copies of the same glob-sort-filter pattern
+    (doctor, runs list, runs list --hooks, breadcrumb, run_retention).
+
+    Ordering is deterministic: run IDs are timestamp-prefixed, so lex
+    order == chronological. Ties (same-second writes) are broken by the
+    random suffix also being lex-sorted, so the order is stable.
+
+    Partial-write / zero-byte files are still yielded (callers decide
+    how to handle them); this helper only enumerates paths.
+    """
+    runs = list_archival_runs(lore_root)
+    reversed_runs = reversed(runs)
+    if limit is None:
+        yield from reversed_runs
+        return
+    count = 0
+    for path in reversed_runs:
+        if count >= limit:
+            return
+        yield path
+        count += 1
 
 
 def resolve_run_id(lore_root: Path, identifier: str) -> Path:

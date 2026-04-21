@@ -119,17 +119,18 @@ def test_load_scopes_yml_malformed(tmp_path):
     assert hooks._load_scopes_yml(tmp_path) == {}
 
 
-# ---------- _find_lore_config ----------
+# ---------- _walk_up_lore_config (post-Task-7, was hooks._find_lore_config) ----------
 
 
-def test_find_lore_config_walks_up(tmp_path):
+def test_walk_up_lore_config_walks_up(tmp_path):
+    from lore_core.session import _walk_up_lore_config
     parent = tmp_path / "repo"
     child = parent / "sub" / "deep"
     child.mkdir(parents=True)
     (parent / "CLAUDE.md").write_text(
         "## Lore\n\n- wiki: ccat\n- scope: ccat:data-center:data-transfer\n"
     )
-    result = hooks._find_lore_config(child)
+    result = _walk_up_lore_config(child)
     assert result is not None
     path, block = result
     assert path == parent / "CLAUDE.md"
@@ -137,13 +138,15 @@ def test_find_lore_config_walks_up(tmp_path):
     assert block["scope"] == "ccat:data-center:data-transfer"
 
 
-def test_find_lore_config_returns_none_when_absent(tmp_path):
+def test_walk_up_lore_config_returns_none_when_absent(tmp_path):
+    from lore_core.session import _walk_up_lore_config
     (tmp_path / "CLAUDE.md").write_text("# Just prose\n\nNo lore block here.\n")
-    assert hooks._find_lore_config(tmp_path) is None
+    assert _walk_up_lore_config(tmp_path) is None
 
 
-def test_find_lore_config_missing_file(tmp_path):
-    assert hooks._find_lore_config(tmp_path) is None
+def test_walk_up_lore_config_missing_file(tmp_path):
+    from lore_core.session import _walk_up_lore_config
+    assert _walk_up_lore_config(tmp_path) is None
 
 
 # ---------- formatters ----------

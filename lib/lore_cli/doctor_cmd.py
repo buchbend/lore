@@ -79,8 +79,12 @@ def _check_cache_writable() -> Check:
 
 
 def _check_hook_runnable(cwd: str | None) -> Check:
-    """Run `lore hook session-start --plain` and confirm it produces output."""
-    cmd = [sys.executable, "-m", "lore_cli", "hook", "session-start", "--plain"]
+    """Run `lore hook session-start --plain --probe` and confirm it produces output.
+
+    `--probe` suppresses side-effects (curator spawns, stamp/lock writes, ledger
+    mutations) so the diagnostic doesn't mutate the thing it's diagnosing.
+    """
+    cmd = [sys.executable, "-m", "lore_cli", "hook", "session-start", "--plain", "--probe"]
     if cwd:
         cmd += ["--cwd", cwd]
     try:
@@ -233,11 +237,8 @@ def run_capture_panel(lore_root: Path) -> list[str]:
     # Last curator run + last note filed (walk newest→oldest)
     runs_dir = lore_root / ".lore" / "runs"
     if runs_dir.exists():
-        files = sorted(
-            (p for p in runs_dir.glob("*.jsonl") if not p.name.endswith(".trace.jsonl")),
-            key=lambda p: p.name,
-            reverse=True,
-        )
+        from lore_core.run_reader import iter_archival_runs
+        files = list(iter_archival_runs(lore_root))
         if files:
             any_data = True
             latest = files[0]
@@ -371,25 +372,7 @@ def _last_json_line(path: Path) -> dict | None:
     return None
 
 
-def _relative_cap(ts_iso: str) -> str:
-    """Convert ISO timestamp to relative time (e.g., '5m ago')."""
-    if not ts_iso:
-        return "?"
-    try:
-        ts = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
-    except ValueError:
-        return ts_iso
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=UTC)
-    delta = datetime.now(UTC) - ts
-    s = delta.total_seconds()
-    if s < 60:
-        return "just now"
-    if s < 3600:
-        return f"{int(s // 60)}m ago"
-    if s < 86400:
-        return f"{int(s // 3600)}h ago"
-    return f"{int(s // 86400)}d ago"
+from lore_core.timefmt import relative_time as _relative_cap  # noqa: E402
 
 
 # Backwards-compat shim for tests + the legacy SUBCOMMANDS dispatcher.

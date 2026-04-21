@@ -18,7 +18,7 @@ from lore_core.run_log import RunLogger
 from lore_core.scope_resolver import resolve_scope
 from lore_core.types import Scope, Turn, TranscriptHandle
 from lore_core.wiki_config import WikiConfig, load_wiki_config
-from lore_curator.noteworthy import NoteworthyResult, classify_slice
+from lore_curator.noteworthy import classify_slice
 from lore_curator.session_filer import FiledNote, file_session_note
 
 
@@ -78,6 +78,8 @@ def run_curator_a(
             h.update(f"{e.host}:{e.transcript_id}:{e.digested_hash or ''}\n".encode())
         ledger_snapshot_hash = h.hexdigest()[:16]
 
+    touched_wikis: set[str] = set()
+
     with RunLogger(
         lore_root,
         trigger=effective_trigger,
@@ -105,6 +107,8 @@ def run_curator_a(
                     logger=logger,
                 )
                 _record_outcome(result, outcome)
+                if outcome.wiki_name is not None:
+                    touched_wikis.add(outcome.wiki_name)
         else:
             try:
                 with curator_lock(lore_root, timeout=lock_timeout, run_id=logger.run_id):
@@ -123,6 +127,14 @@ def run_curator_a(
                             logger=logger,
                         )
                         _record_outcome(result, outcome)
+                        if outcome.wiki_name is not None:
+                            touched_wikis.add(outcome.wiki_name)
+                # Only update last_curator_a on successful run completion.
+                # On dry-run: skip (telemetry is only for real runs).
+                # On mid-run exception: this line is unreachable, prior value
+                # preserved — atomic-or-unchanged contract.
+                for wname in touched_wikis:
+                    WikiLedger(lore_root, wname).update_last_curator("a", at=now)
             except LockContendedError:
                 result.skipped_reasons["lock_contended"] = (
                     result.skipped_reasons.get("lock_contended", 0) + 1
@@ -157,6 +169,7 @@ class _Outcome:
     skip_reason: str | None = None          # if set, no session-note path follows
     filed: FiledNote | None = None
     was_noteworthy: bool = False
+    wiki_name: str | None = None            # wiki the entry resolved into (None if unattached)
 
 
 def _process_entry(
@@ -180,7 +193,7 @@ def _process_entry(
     if requested_scope is not None and attached.scope != requested_scope.scope:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="scope-mismatch")
-        return _Outcome(skip_reason="scope_mismatch")
+        return _Outcome(skip_reason="scope_mismatch", wiki_name=attached.wiki)
 
     # Adapter lookup
     try:
@@ -188,7 +201,7 @@ def _process_entry(
     except Exception:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="unknown-host")
-        return _Outcome(skip_reason="unknown_host")
+        return _Outcome(skip_reason="unknown_host", wiki_name=attached.wiki)
 
     if logger is not None:
         logger.emit(
@@ -220,7 +233,7 @@ def _process_entry(
             )
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="no-new-turns")
-        return _Outcome(skip_reason="no_new_turns")
+        return _Outcome(skip_reason="no_new_turns", wiki_name=attached.wiki)
 
     # Redact content before it ever sees the LLM.
     log_path = lore_root / ".lore" / "redaction.log"
@@ -239,7 +252,7 @@ def _process_entry(
     if anthropic_client is None:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="no-anthropic-client")
-        return _Outcome(skip_reason="no_anthropic_client")
+        return _Outcome(skip_reason="no_anthropic_client", wiki_name=attached.wiki)
 
     noteworthy = classify_slice(
         turns,
@@ -267,11 +280,15 @@ def _process_entry(
             )
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="noteworthy-false")
-        return _Outcome(skip_reason=f"not_noteworthy:{noteworthy.reason}", was_noteworthy=False)
+        return _Outcome(
+            skip_reason=f"not_noteworthy:{noteworthy.reason}",
+            was_noteworthy=False,
+            wiki_name=attached.wiki,
+        )
 
     # File it.
     if dry_run:
-        return _Outcome(was_noteworthy=True)
+        return _Outcome(was_noteworthy=True, wiki_name=attached.wiki)
 
     filed = file_session_note(
         scope=attached,
@@ -294,7 +311,7 @@ def _process_entry(
         session_note=filed.wikilink,
         curator_a_run=now,
     )
-    return _Outcome(filed=filed, was_noteworthy=True)
+    return _Outcome(filed=filed, was_noteworthy=True, wiki_name=attached.wiki)
 
 
 def _record_outcome(result: CuratorAResult, outcome: _Outcome) -> None:
