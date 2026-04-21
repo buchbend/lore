@@ -878,6 +878,7 @@ app = typer.Typer(
 
 @app.callback(invoke_without_command=True)
 def curator(
+    ctx: typer.Context,
     wiki: str = typer.Option(None, "--wiki", help="Scope to one wiki."),
     apply: bool = typer.Option(
         False, "--apply", help="Actually write changes. Without this, runs dry."
@@ -897,6 +898,11 @@ def curator(
     ),
 ) -> None:
     """Run curator passes — flag stale, propagate implements, etc."""
+    # If a subcommand was invoked (e.g. `lore curator run --defrag`), let it
+    # handle the flow; the callback's hygiene-only path is for bare
+    # `lore curator` only.
+    if ctx.invoked_subcommand is not None:
+        return
     if migrate_open_items:
         run_open_items_migration(wiki_filter=wiki, dry_run=not apply)
         return
@@ -952,13 +958,53 @@ def run_command(
     scope: str = typer.Option(None, "--scope", help="Filter to one scope, e.g. 'mywiki:subproject'."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Classify but don't write notes or advance ledger."),
     abstract: bool = typer.Option(False, "--abstract", help="Also run the surface-extraction pass after filing session notes."),
-    wiki: str = typer.Option(None, "--wiki", help="Limit the surface-extraction pass to a single wiki (only meaningful with --abstract)."),
+    defrag: bool = typer.Option(False, "--defrag", help="Run Curator C weekly defragmentation (hygiene + LLM adjacent-merge / auto-supersede / orphan-repair / draft-promotion)."),
+    wiki: str = typer.Option(None, "--wiki", help="Limit the surface-extraction / defrag pass to a single wiki."),
     trace_llm: bool = typer.Option(False, "--trace-llm", help="Capture LLM prompts/responses to runs/<id>.trace.jsonl (equivalent to LORE_TRACE_LLM=1)."),
 ) -> None:
-    """Run the curator — classify pending transcripts and file session notes.
+    """Run the curator.
 
-    With --abstract, also runs the surface-extraction pass for the specified wiki(s).
+    Default: classify pending transcripts and file session notes.
+    --abstract also runs the surface-extraction pass.
+    --defrag runs the weekly whole-wiki defragmentation (hygiene passes
+    + LLM proposals for adjacent-concept merges, auto-supersession,
+    orphan wikilink repair, and draft promotions).
     """
+    import os as _os_check
+    if defrag:
+        # --defrag runs Curator C directly, not Curator A. Bypass the
+        # transcript classification path and go straight to the whole-wiki
+        # pipeline.
+        from pathlib import Path as _P
+        lore_root_str = _os_check.environ.get("LORE_ROOT", "")
+        if not lore_root_str:
+            console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
+            raise typer.Exit(1)
+
+        # LLM client resolution (same seam as Curator A).
+        from lore_curator.llm_client import LlmClientError, make_llm_client
+        err_console = Console(stderr=True)
+        api_key = _os_check.environ.get("ANTHROPIC_API_KEY", "") or None
+        try:
+            llm_client = make_llm_client(api_key=api_key)
+        except LlmClientError as exc:
+            err_console.print(f"[yellow]Warning:[/yellow] {exc}")
+            llm_client = None
+        if llm_client is None:
+            console.print(
+                "[yellow]Running --defrag without an LLM client — "
+                "LLM passes (adjacent-merge, auto-supersede, orphan-repair) "
+                "will be skipped.[/yellow]"
+            )
+
+        reports = run_curator_c(
+            wiki_filter=wiki,
+            dry_run=dry_run,
+            defrag=True,
+            anthropic_client=llm_client,
+        )
+        # Exit success — report already printed by run_curator_c.
+        return
     import os
     from datetime import UTC, datetime
     from pathlib import Path
