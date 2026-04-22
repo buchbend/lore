@@ -265,6 +265,167 @@ def _render_unattached(lore_root: Path, cwd: Path) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Verbose sections
+# ---------------------------------------------------------------------------
+
+_OVERDUE_A_S = 86400      # 24h
+_OVERDUE_C_S = 7 * 86400  # 7d
+
+
+def _render_verbose_curator_schedule(lore_root: Path, now: datetime) -> list[str]:
+    from lore_core.ledger import WikiLedger
+
+    lines = ["  Curator Schedule"]
+    lore_dir = lore_root / ".lore"
+    wikis: list[str] = []
+    try:
+        for p in sorted(lore_dir.glob("wiki-*-ledger.json")):
+            name = p.stem.removeprefix("wiki-").removesuffix("-ledger")
+            wikis.append(name)
+    except OSError:
+        pass
+
+    if not wikis:
+        lines.append("no wiki ledgers")
+        return lines
+
+    for wiki in wikis:
+        entry = WikiLedger(lore_root, wiki).read()
+        parts: list[str] = []
+        for role, ts, threshold_s in [
+            ("A", entry.last_curator_a, _OVERDUE_A_S),
+            ("B", entry.last_curator_b, _OVERDUE_A_S),
+            ("C", entry.last_curator_c, _OVERDUE_C_S),
+        ]:
+            if ts is None:
+                parts.append(f"{role} —")
+            else:
+                rel = relative_time(ts, now=now, short=True)
+                age_s = (now - ts).total_seconds()
+                marker = " !" if age_s > threshold_s else ""
+                parts.append(f"{role} {rel}{marker}")
+        lines.append(f"    {wiki:12s}  {'  '.join(parts)}")
+    return lines
+
+
+def _render_verbose_recent_hooks(lore_root: Path, n: int = 5) -> list[str]:
+    lines = ["  Recent Hooks"]
+    events_path = lore_root / ".lore" / "hook-events.jsonl"
+    if not events_path.exists():
+        lines.append("no hook events")
+        return lines
+
+    records: list[dict] = []
+    try:
+        for raw_line in events_path.read_text().splitlines():
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                records.append(json.loads(raw_line))
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        lines.append("read error")
+        return lines
+
+    tail = records[-n:]
+    now = _resolve_now()
+    for rec in tail:
+        ts_raw = rec.get("ts")
+        event = rec.get("event", "?")
+        outcome = rec.get("outcome", "?")
+        if ts_raw:
+            try:
+                ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                rel = relative_time(ts, now=now, short=True)
+            except (ValueError, TypeError):
+                rel = "?"
+        else:
+            rel = "?"
+        lines.append(f"    {rel:>5}  {event}  {outcome}")
+    return lines
+
+
+def _render_verbose_pending(lore_root: Path) -> list[str]:
+    from lore_core.ledger import TranscriptLedger, WikiLedger
+
+    lines = ["  Pending Detail"]
+    try:
+        ledger = TranscriptLedger(lore_root)
+        buckets = ledger.pending_by_wiki()
+    except Exception:
+        lines.append("unavailable")
+        return lines
+
+    if not buckets:
+        lines.append("no pending transcripts")
+        return lines
+
+    for wiki, entries in sorted(buckets.items()):
+        n = len(entries)
+        label = "transcript" if n == 1 else "transcripts"
+        token_str = ""
+        if wiki not in ("__orphan__", "__unattached__"):
+            try:
+                wl_entry = WikiLedger(lore_root, wiki).read()
+                if wl_entry.pending_tokens_est > 0:
+                    token_str = f"  ~{wl_entry.pending_tokens_est // 1000}k tokens"
+            except Exception:
+                pass
+        lines.append(f"    {wiki:12s}  {n} {label}{token_str}")
+    return lines
+
+
+def _verbose_json_data(lore_root: Path, now: datetime) -> dict:
+    from lore_core.ledger import TranscriptLedger, WikiLedger
+
+    wiki_schedules: list[dict] = []
+    lore_dir = lore_root / ".lore"
+    try:
+        for p in sorted(lore_dir.glob("wiki-*-ledger.json")):
+            name = p.stem.removeprefix("wiki-").removesuffix("-ledger")
+            entry = WikiLedger(lore_root, name).read()
+            wiki_schedules.append({
+                "wiki": name,
+                "last_curator_a": entry.last_curator_a.isoformat() if entry.last_curator_a else None,
+                "last_curator_b": entry.last_curator_b.isoformat() if entry.last_curator_b else None,
+                "last_curator_c": entry.last_curator_c.isoformat() if entry.last_curator_c else None,
+                "pending_tokens_est": entry.pending_tokens_est,
+            })
+    except OSError:
+        pass
+
+    recent_hooks: list[dict] = []
+    events_path = lore_root / ".lore" / "hook-events.jsonl"
+    if events_path.exists():
+        try:
+            raw_lines = events_path.read_text().splitlines()
+            for line in raw_lines[-5:]:
+                line = line.strip()
+                if line:
+                    try:
+                        recent_hooks.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+        except OSError:
+            pass
+
+    pending: dict[str, int] = {}
+    try:
+        buckets = TranscriptLedger(lore_root).pending_by_wiki()
+        pending = {k: len(v) for k, v in buckets.items()}
+    except Exception:
+        pass
+
+    return {
+        "wiki_schedules": wiki_schedules,
+        "recent_hooks": recent_hooks,
+        "pending_by_wiki": pending,
+    }
+
+
 def _state_to_json(state: CaptureState) -> str:
     def _default(obj):
         if isinstance(obj, datetime):
@@ -299,6 +460,7 @@ def _resolve_now() -> datetime:
 def status(
     cwd: str = typer.Option(None, "--cwd", help="Directory to resolve scope from (default: $PWD)."),
     json_out: bool = typer.Option(False, "--json", help="Emit the raw CaptureState as JSON."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show curator schedule, recent hooks, and pending breakdown."),
 ) -> None:
     """Is lore doing anything for me right now?"""
     resolved_cwd = Path(cwd) if cwd else Path(os.getcwd())
@@ -313,7 +475,10 @@ def status(
     state = query_capture_state(lore_root, cwd=resolved_cwd, now=now)
 
     if json_out:
-        print(_state_to_json(state))
+        data = json.loads(_state_to_json(state))
+        if verbose:
+            data["verbose"] = _verbose_json_data(lore_root, now)
+        print(json.dumps(data, indent=2))
         return
 
     if not state.scope_attached:
@@ -340,6 +505,14 @@ def status(
         lines.append("")
         for a in alerts:
             lines.append(f"  {a}")
+
+    if verbose:
+        lines.append("")
+        lines.extend(_render_verbose_curator_schedule(lore_root, now))
+        lines.append("")
+        lines.extend(_render_verbose_recent_hooks(lore_root))
+        lines.append("")
+        lines.extend(_render_verbose_pending(lore_root))
 
     print("\n".join(lines))
 

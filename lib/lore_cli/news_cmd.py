@@ -109,12 +109,8 @@ def _collect_events(
 
 def _advance_cursor(store: DrainStore, events: list[DrainEvent]) -> None:
     """Stamp the store's cursor at the newest ts in ``events``; no-op if empty."""
-    newest: datetime | None = None
-    for e in events:
-        if newest is None or e.ts > newest:
-            newest = e.ts
-    if newest is not None:
-        store.write_cursor(newest)
+    if events:
+        store.write_cursor(max(e.ts for e in events))
 
 
 @app.callback()

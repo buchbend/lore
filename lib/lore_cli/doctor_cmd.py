@@ -45,6 +45,16 @@ app = typer.Typer(
 Check = tuple[bool, str]
 
 
+def _issue_summary(label: str, issues: list[str], ok_msg: str) -> Check:
+    """Format a check result from an item label and a list of issue strings."""
+    if issues:
+        summary = issues[0]
+        if len(issues) > 1:
+            summary += f" (+ {len(issues) - 1} more)"
+        return False, f"{label} — {len(issues)} issue(s): {summary}"
+    return True, ok_msg
+
+
 def _check_lore_root(cwd: str) -> Check:
     from lore_core.config import get_lore_root
 
@@ -177,12 +187,7 @@ def _check_attachments(cwd: str) -> Check:
                 if offer is not None and offer_fingerprint(offer) != a.offer_fingerprint:
                     issues.append(f"{a.path}: .lore.yml fingerprint drift (run `lore attach accept`)")
 
-    if issues:
-        issue_summary = issues[0]
-        if len(issues) > 1:
-            issue_summary += f" (+ {len(issues) - 1} more)"
-        return False, f"{total} attachment(s) — {len(issues)} issue(s): {issue_summary}"
-    return True, f"{total} attachment(s), all valid"
+    return _issue_summary(f"{total} attachment(s)", issues, f"{total} attachment(s), all valid")
 
 
 def _check_scope_tree(cwd: str) -> Check:
@@ -213,12 +218,7 @@ def _check_scope_tree(cwd: str) -> Check:
         elif not (wiki_root / resolved_wiki).exists():
             issues.append(f"{sid}: resolved wiki `{resolved_wiki}` does not exist")
 
-    if issues:
-        issue_summary = issues[0]
-        if len(issues) > 1:
-            issue_summary += f" (+ {len(issues) - 1} more)"
-        return False, f"{len(ids)} scope(s) — {len(issues)} issue(s): {issue_summary}"
-    return True, f"{len(ids)} scope(s), tree healthy"
+    return _issue_summary(f"{len(ids)} scope(s)", issues, f"{len(ids)} scope(s), tree healthy")
 
 
 def _check_ledger_buckets(cwd: str) -> Check:

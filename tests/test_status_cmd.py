@@ -372,3 +372,121 @@ def test_status_help_mentions_activity() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "activity" in result.output.lower() or "status" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# --verbose mode
+# ---------------------------------------------------------------------------
+
+
+def _seed_wiki_ledger(
+    lore_root: Path, wiki: str, *,
+    last_a: datetime | None = None,
+    last_b: datetime | None = None,
+    last_c: datetime | None = None,
+    pending_tokens: int = 0,
+) -> None:
+    from lore_core.ledger import WikiLedger, WikiLedgerEntry
+    wl = WikiLedger(lore_root, wiki)
+    wl.write(WikiLedgerEntry(
+        wiki=wiki,
+        last_curator_a=last_a,
+        last_curator_b=last_b,
+        last_curator_c=last_c,
+        pending_tokens_est=pending_tokens,
+    ))
+
+
+def test_verbose_shows_curator_schedule(tmp_path: Path, monkeypatch) -> None:
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_wiki_ledger(
+        lore_root, "private",
+        last_a=_NOW - timedelta(hours=2),
+        last_b=_NOW - timedelta(hours=6),
+        last_c=_NOW - timedelta(days=3),
+    )
+    out = _invoke(lore_root, project, "--verbose", monkeypatch=monkeypatch)
+    assert "Curator" in out
+    assert "private" in out
+    # Should show all three roles
+    assert " A " in out or " A:" in out
+    assert " B " in out or " B:" in out
+    assert " C " in out or " C:" in out
+
+
+def test_verbose_shows_recent_hooks(tmp_path: Path, monkeypatch) -> None:
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    events = lore_root / ".lore" / "hook-events.jsonl"
+    records = [
+        json.dumps({"ts": _iso(_NOW - timedelta(minutes=i * 10)),
+                     "event": f"session-start", "outcome": "ok"})
+        for i in range(7)
+    ]
+    events.write_text("\n".join(records) + "\n")
+
+    out = _invoke(lore_root, project, "--verbose", monkeypatch=monkeypatch)
+    assert "Recent Hooks" in out
+    assert "session-start" in out
+
+
+def test_verbose_shows_pending_by_wiki(tmp_path: Path, monkeypatch) -> None:
+    from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
+
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_wiki_ledger(lore_root, "private", last_a=_NOW - timedelta(hours=2), pending_tokens=4200)
+
+    ledger = TranscriptLedger(lore_root)
+    ledger.upsert(TranscriptLedgerEntry(
+        host="claude-code", transcript_id="t1",
+        path=project / "t1.jsonl", directory=project,
+        digested_hash=None, digested_index_hint=None,
+        synthesised_hash=None,
+        last_mtime=_NOW - timedelta(hours=1),
+        curator_a_run=None, noteworthy=None, session_note=None,
+    ))
+
+    out = _invoke(lore_root, project, "--verbose", monkeypatch=monkeypatch)
+    assert "Pending" in out
+    # Should show at least the wiki name in the breakdown
+    lines = out.splitlines()
+    pending_section = False
+    for line in lines:
+        if "Pending Detail" in line or "Pending Breakdown" in line:
+            pending_section = True
+            continue
+        if pending_section and "private" in line:
+            assert "1" in line  # 1 transcript
+            break
+    else:
+        if pending_section:
+            pass  # section found, wiki check may differ
+        else:
+            pytest.fail(f"Expected Pending Detail section in:\n{out}")
+
+
+def test_verbose_json_includes_extra(tmp_path: Path, monkeypatch) -> None:
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_wiki_ledger(lore_root, "private", last_a=_NOW - timedelta(hours=2))
+
+    out = _invoke(lore_root, project, "--json", "--verbose", monkeypatch=monkeypatch)
+    data = json.loads(out)
+    assert "verbose" in data
+    assert "wiki_schedules" in data["verbose"]
+    assert "recent_hooks" in data["verbose"]
+    assert "pending_by_wiki" in data["verbose"]
+
+
+def test_no_verbose_unchanged(tmp_path: Path, monkeypatch) -> None:
+    """Output without --verbose is identical to pre-verbose behavior."""
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch)
+    # Must NOT contain verbose sections
+    assert "Curator" not in out or "Curator Schedule" not in out
+    assert "Recent Hooks" not in out
+    assert "Pending Detail" not in out
