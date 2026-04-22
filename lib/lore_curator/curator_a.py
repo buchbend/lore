@@ -408,6 +408,26 @@ def _process_entry(
         session_note=filed.wikilink,
         curator_a_run=now,
     )
+
+    # P5a: emit to the session's drain so `lore news` can surface it.
+    # Curator A runs detached from the user's Claude session, so we
+    # resolve the session_id from the transcript's cwd — the same
+    # freshness heuristic the banner will use in P5b.
+    try:
+        from lore_core.drain import DrainStore, resolve_session_id
+
+        sid, _ = resolve_session_id(entry.directory)
+        DrainStore(lore_root, sid).emit(
+            "note-appended" if filed.was_merge else "note-filed",
+            wiki=attached.wiki,
+            wikilink=filed.wikilink,
+            path=str(filed.path),
+            transcript_id=entry.transcript_id,
+        )
+    except Exception:
+        # Drain is telemetry — never block a filed note.
+        pass
+
     return _Outcome(filed=filed, was_noteworthy=True, wiki_name=attached.wiki)
 
 

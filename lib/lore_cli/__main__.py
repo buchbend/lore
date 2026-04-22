@@ -28,6 +28,7 @@ from lore_cli import (
     ingest_cmd,
     init_cmd,
     install_cmd,
+    news_cmd,
     new_wiki_cmd,
     registry_cmd,
     resume_cmd,
@@ -68,6 +69,7 @@ app.add_typer(install_cmd.app, name="install")
 app.add_typer(lint_cmd.app, name="lint")
 app.add_typer(mcp_cmd.app, name="mcp")
 app.add_typer(migrate_cmd.app, name="migrate")
+app.add_typer(news_cmd.app, name="news")
 app.add_typer(new_wiki_cmd.app, name="new-wiki")
 app.add_typer(registry_cmd.app, name="registry")
 app.add_typer(resume_cmd.app, name="resume")

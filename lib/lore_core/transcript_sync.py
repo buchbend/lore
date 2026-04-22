@@ -261,6 +261,16 @@ def sync_transcripts(
         try:
             _copy_transcript_atomically(src, dst)
             result.copied += 1
+            try:
+                from lore_core.drain import SYSTEM_SESSION, DrainStore
+
+                DrainStore(lore_root, SYSTEM_SESSION).emit(
+                    "transcript-synced",
+                    wiki=scope.wiki,
+                    transcript_id=entry.transcript_id,
+                )
+            except Exception:
+                pass  # drain is telemetry — never block the sync
         except OSError as exc:
             result.errors.append(f"{entry.transcript_id}: {exc}")
 
