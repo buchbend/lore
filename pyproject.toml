@@ -42,7 +42,6 @@ dev = [
     "mypy>=1.10",
 ]
 capture = [
-    "claude-agent-sdk>=0.1",
     "anthropic>=0.40",
 ]
 

@@ -55,20 +55,53 @@ class TranscriptLedger:
     Tracks per-transcript processing state with content-hash watermarks
     rather than integer offsets — host-side edits to prior turns don't
     silently desync the Kafka-style offset.
+
+    The on-disk JSON is cached within a single ``TranscriptLedger``
+    instance, keyed on the file's mtime. The hot-path capture hook
+    issues 5+ reads against the ledger; re-parsing a 180KB+ file per
+    call dominated the previous budget. External writers (other
+    processes) are picked up on the next mtime change.
     """
 
     def __init__(self, lore_root: Path) -> None:
         self._lore_root = lore_root
         self._path = lore_root / ".lore" / "transcript-ledger.json"
+        self._cache: dict[str, dict] | None = None
+        self._cache_mtime: float | None = None
 
     def _load(self) -> dict[str, dict]:
-        """Return the raw JSON dict (key → raw entry dict). Empty if absent."""
-        if not self._path.exists():
-            return {}
+        """Return the raw JSON dict (key → raw entry dict). Empty if absent.
+
+        Cached on the instance; invalidates when the file mtime changes
+        (another process wrote) or when this instance writes via
+        :meth:`_write_raw`.
+        """
         try:
-            return json.loads(self._path.read_text())
+            current_mtime = self._path.stat().st_mtime
+        except FileNotFoundError:
+            return {}
+        except OSError:
+            return {}
+        if self._cache is not None and self._cache_mtime == current_mtime:
+            return self._cache
+        try:
+            raw = json.loads(self._path.read_text())
         except (OSError, json.JSONDecodeError):
             return {}
+        self._cache = raw
+        self._cache_mtime = current_mtime
+        return raw
+
+    def _write_raw(self, raw: dict[str, dict]) -> None:
+        """Atomic-write the ledger and refresh the in-instance cache."""
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(self._path, json.dumps(raw, indent=2))
+        try:
+            self._cache_mtime = self._path.stat().st_mtime
+            self._cache = raw
+        except OSError:
+            self._cache = None
+            self._cache_mtime = None
 
     @staticmethod
     def _key(host: str, transcript_id: str) -> str:
@@ -123,8 +156,21 @@ class TranscriptLedger:
         raw = self._load()
         key = self._key(entry.host, entry.transcript_id)
         raw[key] = self._entry_to_raw(entry)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(self._path, json.dumps(raw, indent=2))
+        self._write_raw(raw)
+
+    def bulk_upsert(self, entries: list[TranscriptLedgerEntry]) -> None:
+        """Upsert multiple entries with a single atomic write.
+
+        The hot-path capture hook collects every discovered transcript
+        into one call, avoiding an atomic-write-per-entry storm when
+        seeding a fresh vault or a previously-unseen cwd.
+        """
+        if not entries:
+            return
+        raw = self._load()
+        for entry in entries:
+            raw[self._key(entry.host, entry.transcript_id)] = self._entry_to_raw(entry)
+        self._write_raw(raw)
 
     @staticmethod
     def _is_pending(entry: TranscriptLedgerEntry) -> bool:
@@ -270,8 +316,7 @@ class TranscriptLedger:
         if orphan:
             entry.orphan = True
         raw[key] = self._entry_to_raw(entry)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(self._path, json.dumps(raw, indent=2))
+        self._write_raw(raw)
 
     def advance(
         self,
@@ -304,8 +349,7 @@ class TranscriptLedger:
         if curator_a_run is not None:
             entry.curator_a_run = curator_a_run
         raw[key] = self._entry_to_raw(entry)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(self._path, json.dumps(raw, indent=2))
+        self._write_raw(raw)
 
 
 class WikiLedger:

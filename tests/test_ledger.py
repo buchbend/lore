@@ -451,3 +451,88 @@ def test_orphan_field_round_trips_through_upsert(tmp_path: Path) -> None:
     got = ledger.get("claude", "t1")
     assert got is not None
     assert got.orphan is True
+
+
+# ---------------------------------------------------------------------------
+# P0 — in-instance ledger cache + bulk_upsert
+# ---------------------------------------------------------------------------
+
+
+def test_load_cache_avoids_redundant_json_parse(tmp_path: Path, monkeypatch) -> None:
+    """Within one instance, identical reads don't re-parse the JSON."""
+    import json as _json
+
+    ledger = TranscriptLedger(tmp_path)
+    entry = _make_entry(tmp_path, transcript_id="cached")
+    ledger.upsert(entry)
+
+    parses = {"n": 0}
+    real_loads = _json.loads
+
+    def counting_loads(s, *a, **kw):
+        parses["n"] += 1
+        return real_loads(s, *a, **kw)
+
+    monkeypatch.setattr("lore_core.ledger.json.loads", counting_loads)
+
+    assert ledger.get("claude", "cached") is not None
+    assert ledger.get("claude", "cached") is not None
+    assert ledger.get("claude", "cached") is not None
+
+    assert parses["n"] == 0, (
+        f"cache should have served all three get() calls; json.loads was called {parses['n']}×"
+    )
+
+
+def test_write_refreshes_cache_for_subsequent_reads(tmp_path: Path) -> None:
+    """After upsert, the cache reflects the new state without a disk re-read."""
+    ledger = TranscriptLedger(tmp_path)
+    e1 = _make_entry(tmp_path, transcript_id="a")
+    ledger.upsert(e1)
+    assert ledger.get("claude", "a") is not None
+
+    e2 = _make_entry(tmp_path, transcript_id="b")
+    ledger.upsert(e2)
+    # Both live in cache; reads don't race disk.
+    assert ledger.get("claude", "a") is not None
+    assert ledger.get("claude", "b") is not None
+
+
+def test_cache_invalidates_when_other_writer_updates_file(tmp_path: Path) -> None:
+    """Another process's write (mtime change) invalidates the cache."""
+    ledger_a = TranscriptLedger(tmp_path)
+    ledger_b = TranscriptLedger(tmp_path)
+
+    e1 = _make_entry(tmp_path, transcript_id="via-a")
+    ledger_a.upsert(e1)
+
+    # ledger_b observes e1 via a fresh load.
+    assert ledger_b.get("claude", "via-a") is not None
+
+    # ledger_a writes a second entry. ledger_b's next read must see it.
+    # Guarantee a distinct mtime — filesystems with 1s mtime granularity
+    # would otherwise reuse the cached value.
+    time.sleep(0.02)
+    e2 = _make_entry(tmp_path, transcript_id="after")
+    ledger_a.upsert(e2)
+
+    assert ledger_b.get("claude", "after") is not None
+
+
+def test_bulk_upsert_writes_once(tmp_path: Path) -> None:
+    """bulk_upsert issues a single atomic write for N entries."""
+    ledger = TranscriptLedger(tmp_path)
+    entries = [
+        _make_entry(tmp_path, transcript_id=f"b{i}") for i in range(10)
+    ]
+    ledger.bulk_upsert(entries)
+
+    for e in entries:
+        assert ledger.get("claude", e.transcript_id) is not None
+
+
+def test_bulk_upsert_empty_list_is_noop(tmp_path: Path) -> None:
+    """bulk_upsert with no entries does not create the ledger file."""
+    ledger = TranscriptLedger(tmp_path)
+    ledger.bulk_upsert([])
+    assert not (tmp_path / ".lore" / "transcript-ledger.json").exists()

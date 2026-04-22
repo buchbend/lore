@@ -1553,26 +1553,33 @@ def capture(
         else:
             handles = adapter.list_transcripts(cwd)
 
+        # Collect new + mtime-changed entries into a single bulk_upsert so
+        # the 180KB+ ledger is serialised once per hook, not once per
+        # transcript. Keeps the capture path well under its <500ms budget.
+        to_write: list[TranscriptLedgerEntry] = []
         for h in handles:
             entry = tledger.get(h.host, h.id)
             if entry is None:
-                entry = TranscriptLedgerEntry(
-                    host=h.host,
-                    transcript_id=h.id,
-                    path=h.path,
-                    directory=h.cwd,
-                    digested_hash=None,
-                    digested_index_hint=None,
-                    synthesised_hash=None,
-                    last_mtime=h.mtime,
-                    curator_a_run=None,
-                    noteworthy=None,
-                    session_note=None,
+                to_write.append(
+                    TranscriptLedgerEntry(
+                        host=h.host,
+                        transcript_id=h.id,
+                        path=h.path,
+                        directory=h.cwd,
+                        digested_hash=None,
+                        digested_index_hint=None,
+                        synthesised_hash=None,
+                        last_mtime=h.mtime,
+                        curator_a_run=None,
+                        noteworthy=None,
+                        session_note=None,
+                    )
                 )
-                tledger.upsert(entry)
             elif entry.last_mtime != h.mtime:
                 entry.last_mtime = h.mtime
-                tledger.upsert(entry)
+                to_write.append(entry)
+        if to_write:
+            tledger.bulk_upsert(to_write)
 
         pending = tledger.pending()
         pending_after = len(pending)

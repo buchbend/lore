@@ -221,6 +221,94 @@ def test_capture_under_100ms(tmp_path: Path, fake_adapter_factory, monkeypatch) 
     assert elapsed < 0.2, f"capture took {elapsed:.3f}s — must be <200ms"
 
 
+def test_capture_hook_under_500ms_with_50_transcripts(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """Capture stays under 500ms even with 50 pre-existing ledger entries.
+
+    The pre-P0 hook took ~15s end-to-end against a vault with hundreds of
+    entries; the dominant costs were (a) claude-agent-sdk cold-start and
+    (b) re-parsing the 180KB+ ledger JSON on every ``get()``/``upsert()``.
+    This regression test locks in the fix: fs-based adapter + ledger
+    in-instance cache + single-bulk-upsert per hook.
+    """
+    project = _make_attached_project(tmp_path)
+
+    # Pre-seed 50 ledger entries to simulate a long-running vault.
+    ledger = TranscriptLedger(project)
+    pre_entries = [
+        TranscriptLedgerEntry(
+            host="fake",
+            transcript_id=f"seed{i}",
+            path=project / f"seed{i}.jsonl",
+            directory=project,
+            digested_hash=None,
+            digested_index_hint=None,
+            synthesised_hash=None,
+            last_mtime=_now(),
+            curator_a_run=_now(),  # not pending → keeps spawn decision clean
+            noteworthy=None,
+            session_note=None,
+        )
+        for i in range(50)
+    ]
+    ledger.bulk_upsert(pre_entries)
+
+    handle = _make_handle(project)
+    fake_adapter_factory([handle])
+
+    # Block subprocess spawn so we time the hook, not curator bootstrap.
+    monkeypatch.setattr("lore_cli.hooks._spawn_detached_curator_a", lambda *a, **kw: True)
+
+    start = time.monotonic()
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        env={"LORE_ROOT": str(project)},
+        catch_exceptions=False,
+    )
+    elapsed = time.monotonic() - start
+
+    assert result.exit_code == 0, result.output
+    assert elapsed < 0.5, (
+        f"capture took {elapsed:.3f}s — must stay <500ms with 50 pre-existing entries"
+    )
+
+
+def test_capture_issues_single_ledger_write_for_many_new_transcripts(
+    tmp_path: Path, fake_adapter_factory
+) -> None:
+    """Discovering N new transcripts produces one ledger write, not N.
+
+    Regression against the per-transcript ``upsert()`` storm that caused
+    the pre-P0 hook to rewrite the entire 180KB+ ledger file once per
+    handle. With ``bulk_upsert``, the mtime advances exactly once.
+    """
+    project = _make_attached_project(tmp_path)
+    handles = [_make_handle(project, transcript_id=f"new{i}") for i in range(10)]
+    fake_adapter_factory(handles)
+
+    ledger_path = project / ".lore" / "transcript-ledger.json"
+    pre_mtime = ledger_path.stat().st_mtime if ledger_path.exists() else 0.0
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        env={"LORE_ROOT": str(project)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    assert ledger_path.exists()
+    # All 10 new entries landed in one write.
+    ledger = TranscriptLedger(project)
+    for h in handles:
+        assert ledger.get(h.host, h.id) is not None
+    # File was written exactly once (mtime advanced from zero/stale to a single new value).
+    post_mtime = ledger_path.stat().st_mtime
+    assert post_mtime != pre_mtime
+
+
 def test_capture_spawns_when_threshold_exceeded(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:
