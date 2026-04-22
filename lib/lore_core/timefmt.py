@@ -1,9 +1,7 @@
 """Relative-time formatting.
 
-One canonical ``relative_time()`` replaces four pre-Task-6 duplicates
-(``_relative_cap`` in doctor, ``_relative_time_cli`` in runs,
-``_relative_time`` + ``_relative_time_short`` in breadcrumb) with
-consistent tz handling and bucket labels.
+One canonical ``relative_time()`` with consistent tz handling and
+bucket labels for every caller that needs "how long ago".
 
 **Future-timestamp policy (pinned):** a timestamp in the future (clock
 skew, not-yet-happened event) renders as ``"just now"`` rather than a

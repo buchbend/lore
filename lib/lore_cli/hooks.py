@@ -627,8 +627,8 @@ def _session_start(cwd: str | None) -> str:
 
     # Schema v2 path: cwd has (or inherits) a `## Lore` section.
     if cwd:
-        from lore_core.session import _walk_up_lore_config
-        cfg = _walk_up_lore_config(Path(cwd))
+        from lore_core.session import _resolve_attach_block
+        cfg = _resolve_attach_block(Path(cwd))
         if cfg is not None:
             v2 = _session_start_from_lore(cwd, cfg, wiki_root)
             if v2 is not None:

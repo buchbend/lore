@@ -56,8 +56,8 @@ def test_doctor_lore_root_missing_fails(tmp_path, monkeypatch, capsys):
 
 
 def test_doctor_attach_check_finds_lore_block(healthy_vault, tmp_path, monkeypatch, capsys):
-    """Registry-era: the `## Lore attach` check reads the synthesised
-    block from the attachments registry (same message shape)."""
+    """The `attach` check reads the synthesised block from the
+    attachments registry."""
     from datetime import UTC, datetime
     from lore_core.state.attachments import Attachment, AttachmentsFile
     from lore_core.state.scopes import ScopesFile
@@ -78,12 +78,12 @@ def test_doctor_attach_check_finds_lore_block(healthy_vault, tmp_path, monkeypat
     assert rc == 0
     envelope = json.loads(capsys.readouterr().out)
     checks = {c["check"]: c for c in envelope["data"]["checks"]}
-    assert "wiki=ccat" in checks["## Lore attach"]["message"]
+    assert "wiki=ccat" in checks["attach"]["message"]
 
 
 def test_doctor_has_no_capture_pipeline_panel(healthy_vault, capsys):
-    """Post-Task-12a: doctor is install-integrity only; capture activity
-    moved to `lore status`. The 'Capture pipeline' header must be absent.
+    """Doctor is install-integrity only; capture activity lives in
+    `lore status`. The 'Capture pipeline' header must be absent.
     """
     rc = doctor_cmd.main(["--cwd", str(healthy_vault)])
     out = capsys.readouterr().out

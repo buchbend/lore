@@ -119,16 +119,16 @@ def test_load_scopes_yml_malformed(tmp_path):
     assert hooks._load_scopes_yml(tmp_path) == {}
 
 
-# ---------- _walk_up_lore_config (post-Task-7, was hooks._find_lore_config) ----------
+# ---------- _resolve_attach_block ----------
 
 
-def test_walk_up_lore_config_walks_up(tmp_path, monkeypatch):
-    """Post-Phase-6: _walk_up_lore_config is a thin wrapper over the
-    registry resolver. It returns the synthetic claude_md_path sentinel
-    and a block dict derived from the attachment."""
+def test_resolve_attach_block_returns_scope_and_merged_block(tmp_path, monkeypatch):
+    """_resolve_attach_block is a thin wrapper over the registry resolver.
+    It returns the synthetic claude_md_path sentinel and a block dict
+    derived from the attachment."""
     from datetime import UTC, datetime
 
-    from lore_core.session import _walk_up_lore_config
+    from lore_core.session import _resolve_attach_block
     from lore_core.state.attachments import Attachment, AttachmentsFile
 
     parent = tmp_path / "repo"
@@ -144,7 +144,7 @@ def test_walk_up_lore_config_walks_up(tmp_path, monkeypatch):
     ))
     af.save()
 
-    result = _walk_up_lore_config(child)
+    result = _resolve_attach_block(child)
     assert result is not None
     path, block = result
     assert path == parent / "CLAUDE.md"      # synthetic sentinel
@@ -152,17 +152,17 @@ def test_walk_up_lore_config_walks_up(tmp_path, monkeypatch):
     assert block["scope"] == "ccat:data-center:data-transfer"
 
 
-def test_walk_up_lore_config_returns_none_when_absent(tmp_path, monkeypatch):
-    from lore_core.session import _walk_up_lore_config
+def test_resolve_attach_block_returns_none_when_absent(tmp_path, monkeypatch):
+    from lore_core.session import _resolve_attach_block
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     (tmp_path / ".lore").mkdir()
-    assert _walk_up_lore_config(tmp_path) is None
+    assert _resolve_attach_block(tmp_path) is None
 
 
-def test_walk_up_lore_config_missing_file(tmp_path, monkeypatch):
-    from lore_core.session import _walk_up_lore_config
+def test_resolve_attach_block_missing_file(tmp_path, monkeypatch):
+    from lore_core.session import _resolve_attach_block
     monkeypatch.delenv("LORE_ROOT", raising=False)
-    assert _walk_up_lore_config(tmp_path) is None
+    assert _resolve_attach_block(tmp_path) is None
 
 
 # ---------- formatters ----------
@@ -239,7 +239,7 @@ def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
     repo_dir.mkdir()
     _register_attachment(vault, repo_dir, wiki="ccat", scope="ccat:data-center:data-transfer")
     # Write a .lore.yml so the backend/issues/prs fields surface to
-    # _session_start_from_lore (block dict merge in _walk_up_lore_config).
+    # _session_start_from_lore (block dict merge in _resolve_attach_block).
     (repo_dir / ".lore.yml").write_text(
         "wiki: ccat\nscope: ccat:data-center:data-transfer\nbackend: github\n"
         "issues: --assignee @me --state open\nprs: --author @me\n"

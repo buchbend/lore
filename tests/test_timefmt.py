@@ -1,12 +1,5 @@
-"""Task 6: one relative_time() replaces 4 duplicates.
+"""Tests for the canonical relative_time / relative_day formatters.
 
-Pre-Task-6: _relative_cap (doctor), _relative_time_cli (runs), and
-_relative_time + _relative_time_short (breadcrumb) — four nearly-equal
-implementations with subtly divergent tz handling (only _relative_time
-handled naive datetimes) and different bucket labels. The code-review
-agent flagged this explicitly.
-
-timefmt canonicalizes:
 - Seconds-granular "X ago" → relative_time
 - Day-granular "today / yesterday / 3d ago" → relative_day
 - Future timestamps → "just now" (clock-skew robust; pinned here and
@@ -70,7 +63,7 @@ def test_relative_time_yesterday_bucket(delta_seconds: float, expected: str) -> 
 
 
 def test_relative_time_handles_naive_datetime() -> None:
-    """Naive datetimes are assumed UTC (matches pre-Task-6 _relative_time semantics)."""
+    """Naive datetimes are assumed UTC."""
     naive = (_NOW - timedelta(minutes=30)).replace(tzinfo=None)
     assert relative_time(naive, now=_NOW) == "30m ago"
 

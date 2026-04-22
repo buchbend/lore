@@ -67,9 +67,6 @@ def iter_archival_runs(
 ) -> Iterator[Path]:
     """Yield archival run files, newest → oldest, filtering .trace.jsonl.
 
-    Replaces five pre-Task-8 copies of the same glob-sort-filter pattern
-    (doctor, runs list, runs list --hooks, breadcrumb, run_retention).
-
     Ordering is deterministic: run IDs are timestamp-prefixed, so lex
     order == chronological. Ties (same-second writes) are broken by the
     random suffix also being lex-sorted, so the order is stable.

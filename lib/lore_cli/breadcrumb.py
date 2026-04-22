@@ -53,7 +53,6 @@ def render_session_end_breadcrumb(
 def write_pending_breadcrumb(lore_root: Path, line: str) -> None:
     """Emit a ``pending-breadcrumb-written`` event to hook-events.jsonl.
 
-    Post-Task-9b: storage is a hook-events record, not a standalone file.
     Best-effort; never raises (HookEventLogger swallows OSError internally).
     """
     from lore_core.hook_log import HookEventLogger
@@ -70,7 +69,7 @@ def consume_pending_breadcrumb(lore_root: Path) -> str | None:
     a ``pending-breadcrumb-consumed`` event so the line is shown at most
     once.
 
-    Also runs the one-shot legacy-file migration: a pre-Task-9b legacy
+    Also runs the one-shot legacy-file migration: a legacy
     ``.lore/pending-breadcrumb.txt`` is read, converted to a written
     event preserving its mtime, and unlinked.
     """
@@ -125,7 +124,7 @@ def consume_pending_breadcrumb(lore_root: Path) -> str | None:
 
 
 def migrate_legacy_pending_breadcrumb(lore_root: Path) -> None:
-    """One-shot: convert a pre-Task-9b .txt file to a written event + unlink.
+    """One-shot: convert a legacy .txt file to a written event + unlink.
 
     Idempotent — second call is a no-op because the file is unlinked on
     first success. Called from ``consume_pending_breadcrumb`` so users pay
@@ -171,8 +170,8 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
     errors. Prepends a pending breadcrumb from the last SessionEnd/PreCompact
     if present.
 
-    Post-Task-12b: reads from ``query_capture_state`` — no direct file
-    reads in this function. All liveness fields flow through CaptureState.
+    Reads from ``query_capture_state`` — all liveness fields flow
+    through CaptureState, no direct file reads in this function.
     """
     from lore_core.capture_state import query_capture_state
 

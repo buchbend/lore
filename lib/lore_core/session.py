@@ -31,11 +31,10 @@ from lore_core.identity import (
 )
 
 
-def _walk_up_lore_config(cwd: Path) -> tuple[Path, dict] | None:
+def _resolve_attach_block(cwd: Path) -> tuple[Path, dict] | None:
     """Registry-backed lookup for the attachment covering ``cwd``.
 
-    Name retained for compatibility with callers that still expect a
-    (path, block_dict) tuple. Returns:
+    Returns:
       * ``(synthetic_claude_md_path, {"wiki": ..., "scope": ..., ...})``
         for attached cwds (the block dict merges the attachment + any
         ``.lore.yml`` at the repo root, so fields like ``backend``,
@@ -257,7 +256,7 @@ def scaffold(
     # 1. Routing — `## Lore` block is authoritative; otherwise fall back
     #    to the explicit target_wiki, otherwise to the only-wiki case.
     scope = ""
-    config = _walk_up_lore_config(cwd_path)
+    config = _resolve_attach_block(cwd_path)
     if config:
         _, block = config
         if not target_wiki and "wiki" in block:

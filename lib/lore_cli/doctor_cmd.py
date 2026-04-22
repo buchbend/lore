@@ -21,7 +21,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
@@ -39,12 +39,13 @@ app = typer.Typer(
 )
 
 
-# A check returns (ok: bool, message: str). Side-effect-free except
-# for the cache-write probe which is reverted immediately.
+# A check takes the current cwd (most ignore it) and returns
+# (ok: bool, message: str). Side-effect-free except for the
+# cache-write probe which is reverted immediately.
 Check = tuple[bool, str]
 
 
-def _check_lore_root() -> Check:
+def _check_lore_root(cwd: str) -> Check:
     from lore_core.config import get_lore_root
 
     root = get_lore_root()
@@ -53,7 +54,7 @@ def _check_lore_root() -> Check:
     return True, f"LORE_ROOT={root}"
 
 
-def _check_wikis() -> Check:
+def _check_wikis(cwd: str) -> Check:
     from lore_core.config import get_wiki_root
 
     wiki_root = get_wiki_root()
@@ -65,7 +66,7 @@ def _check_wikis() -> Check:
     return True, f"{len(wikis)} wiki(s): {', '.join(w.name for w in wikis)}"
 
 
-def _check_cache_writable() -> Check:
+def _check_cache_writable(cwd: str) -> Check:
     cache_env = os.environ.get("LORE_CACHE")
     cache = Path(cache_env).expanduser() if cache_env else Path.home() / ".cache" / "lore"
     try:
@@ -78,15 +79,14 @@ def _check_cache_writable() -> Check:
     return True, f"cache {cache} writable"
 
 
-def _check_hook_runnable(cwd: str | None) -> Check:
+def _check_hook_runnable(cwd: str) -> Check:
     """Run `lore hook session-start --plain --probe` and confirm it produces output.
 
     `--probe` suppresses side-effects (curator spawns, stamp/lock writes, ledger
     mutations) so the diagnostic doesn't mutate the thing it's diagnosing.
     """
-    cmd = [sys.executable, "-m", "lore_cli", "hook", "session-start", "--plain", "--probe"]
-    if cwd:
-        cmd += ["--cwd", cwd]
+    cmd = [sys.executable, "-m", "lore_cli", "hook", "session-start", "--plain", "--probe",
+           "--cwd", cwd]
     try:
         result = subprocess.run(
             cmd,
@@ -105,7 +105,7 @@ def _check_hook_runnable(cwd: str | None) -> Check:
     return True, f"hook → `{first_line}`"
 
 
-def _check_mcp_imports() -> Check:
+def _check_mcp_imports(cwd: str) -> Check:
     try:
         import lore_mcp.server  # noqa: F401
 
@@ -116,7 +116,7 @@ def _check_mcp_imports() -> Check:
     return True, f"MCP server ready ({len(schema)} tools)"
 
 
-def _check_search_backend() -> Check:
+def _check_search_backend(cwd: str) -> Check:
     try:
         from lore_search.fts import FtsBackend
 
@@ -127,19 +127,17 @@ def _check_search_backend() -> Check:
     return True, f"FTS index: {stats.get('total_notes', '?')} notes"
 
 
-def _check_attach(cwd: str | None) -> Check:
-    if not cwd:
-        return True, "skip (no --cwd given)"
-    from lore_core.session import _walk_up_lore_config
+def _check_attach(cwd: str) -> Check:
+    from lore_core.session import _resolve_attach_block
 
-    cfg = _walk_up_lore_config(Path(cwd))
+    cfg = _resolve_attach_block(Path(cwd))
     if cfg is None:
-        return True, f"no `## Lore` block in {cwd} ancestors (skipped)"
+        return True, f"no attachment covers {cwd} (skipped)"
     path, block = cfg
-    return True, f"`## Lore` at {path.parent}: wiki={block.get('wiki')}"
+    return True, f"attached at {path.parent}: wiki={block.get('wiki')}"
 
 
-def _check_attachments() -> Check:
+def _check_attachments(cwd: str) -> Check:
     """Validate every attachments.json row: path exists, wiki dir exists,
     scope in scopes.json, fingerprint matches current `.lore.yml` if one
     exists at the attachment path.
@@ -187,7 +185,7 @@ def _check_attachments() -> Check:
     return True, f"{total} attachment(s), all valid"
 
 
-def _check_scope_tree() -> Check:
+def _check_scope_tree(cwd: str) -> Check:
     """Scope-tree integrity: every scope's ID-derived parent exists, every
     root has a wiki, and flag scopes whose resolved wiki doesn't match a
     real wiki dir.
@@ -223,7 +221,7 @@ def _check_scope_tree() -> Check:
     return True, f"{len(ids)} scope(s), tree healthy"
 
 
-def _check_ledger_buckets() -> Check:
+def _check_ledger_buckets(cwd: str) -> Check:
     """Surface the ledger's __orphan__/__unattached__ buckets as
     actionable informational output. Never fails — these are not errors,
     they're surfaces the user may want to act on via
@@ -256,15 +254,20 @@ def _check_ledger_buckets() -> Check:
     return True, " · ".join(parts)
 
 
-_CHECKS = [
-    ("LORE_ROOT", _check_lore_root),
-    ("wikis", _check_wikis),
-    ("cache", _check_cache_writable),
-    ("MCP server", _check_mcp_imports),
-    ("FTS backend", _check_search_backend),
-    ("attachments", _check_attachments),
-    ("scope tree", _check_scope_tree),
-    ("ledger buckets", _check_ledger_buckets),
+# (name, check_fn, fails_run). `fails_run=False` means the check is
+# informational — its `ok=False` is rendered as ✗ but does not set the
+# overall non-zero exit.
+_CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
+    ("LORE_ROOT", _check_lore_root, True),
+    ("wikis", _check_wikis, True),
+    ("cache", _check_cache_writable, True),
+    ("MCP server", _check_mcp_imports, True),
+    ("FTS backend", _check_search_backend, True),
+    ("attachments", _check_attachments, True),
+    ("scope tree", _check_scope_tree, True),
+    ("ledger buckets", _check_ledger_buckets, True),
+    ("SessionStart hook", _check_hook_runnable, True),
+    ("attach", _check_attach, False),
 ]
 
 
@@ -286,21 +289,11 @@ def doctor(
 
     results: list[dict] = []
     all_ok = True
-    for name, check in _CHECKS:
-        ok, msg = check()
+    for name, check, fails_run in _CHECKS:
+        ok, msg = check(cwd)
         results.append({"check": name, "ok": ok, "message": msg})
-        if not ok:
+        if not ok and fails_run:
             all_ok = False
-
-    # Hook + attach checks need cwd
-    ok, msg = _check_hook_runnable(cwd)
-    results.append({"check": "SessionStart hook", "ok": ok, "message": msg})
-    if not ok:
-        all_ok = False
-
-    ok, msg = _check_attach(cwd)
-    results.append({"check": "## Lore attach", "ok": ok, "message": msg})
-    # Attach failures don't fail the run — informational.
 
     if json_out:
         print(
@@ -317,10 +310,8 @@ def doctor(
             mark = "[green]✓[/green]" if r["ok"] else "[red]✗[/red]"
             console.print(f"{mark} [bold]{r['check']:<20}[/bold] {r['message']}")
 
-        # Post-Task-12a: doctor is install-integrity only. The activity
-        # panel lived here pre-Task-12a; it now ships as `lore status`
-        # (which renders from lore_core.capture_state). Footer pointer
-        # so the user knows where to look for the other half.
+        # Doctor is install-integrity only; `lore status` is the
+        # activity panel — point there so users know where to look.
         if all_ok:
             console.print("\n[green]Install looks good.[/green] For activity: [bold]lore status[/bold]")
         else:

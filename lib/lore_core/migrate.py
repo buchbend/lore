@@ -8,7 +8,6 @@ CLI flag on `python -m lore_core.migrate`. Most users only need
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -233,125 +232,6 @@ def migrate(
     # No migration flag and no subcommand → show help
     print(ctx.get_help())
     raise typer.Exit(code=2)
-
-
-@app.command("attachments")
-def cmd_migrate_attachments(
-    root: str = typer.Option(
-        None,
-        "--root",
-        help="Directory to scan for legacy ## Lore blocks (default: $HOME).",
-    ),
-    repo: str = typer.Option(
-        None,
-        "--repo",
-        help="Migrate exactly one repo (overrides --root scan).",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Report what would be migrated without writing.",
-    ),
-    yes: bool = typer.Option(
-        False,
-        "--yes",
-        help="Skip confirmation prompt. Required for non-interactive runs.",
-    ),
-) -> None:
-    """Migrate legacy ``## Lore`` CLAUDE.md blocks to `.lore.yml` + registry.
-
-    Walks ``root`` (default ``$HOME``) looking for CLAUDE.md files that
-    contain a ``## Lore`` section and migrates each in place. Pass
-    ``--repo PATH`` to migrate exactly one directory. Idempotent.
-    """
-    import os
-    from pathlib import Path as _Path
-
-    from lore_core.config import get_lore_root
-    from lore_core.migration import migrate_repo
-
-    lore_root = get_lore_root()
-    if not lore_root.exists():
-        console.print(
-            f"[red]LORE_ROOT={lore_root} does not exist[/red] — run `lore init` first."
-        )
-        raise typer.Exit(1)
-
-    if repo:
-        targets = [_Path(repo).expanduser().resolve()]
-    else:
-        scan_root = _Path(root).expanduser().resolve() if root else _Path.home()
-        targets = _discover_legacy_repos(scan_root)
-
-    if not targets:
-        console.print("[green]No legacy `## Lore` blocks found. Nothing to migrate.[/green]")
-        return
-
-    console.print(f"[bold]Found {len(targets)} candidate repo(s):[/bold]")
-    for t in targets:
-        console.print(f"  - {t}")
-
-    if dry_run:
-        console.print("\n[dim]Dry-run:[/dim]")
-        for t in targets:
-            result = migrate_repo(t, lore_root=lore_root, dry_run=True)
-            console.print(f"  {result.action}: {t} — {result.detail}")
-        return
-
-    if not yes and not typer.confirm("\nMigrate all?", default=False):
-        console.print("[yellow]Cancelled.[/yellow]")
-        raise typer.Exit(0)
-
-    migrated = skipped = noops = 0
-    for t in targets:
-        result = migrate_repo(t, lore_root=lore_root, dry_run=False)
-        mark = {
-            "migrated": "[green]✓[/green]",
-            "already": "[dim]·[/dim]",
-            "no-block": "[dim]·[/dim]",
-            "skipped": "[yellow]![/yellow]",
-        }.get(result.action, "?")
-        console.print(f"  {mark} {t} — {result.detail}")
-        if result.action == "migrated":
-            migrated += 1
-        elif result.action == "skipped":
-            skipped += 1
-        else:
-            noops += 1
-
-    console.print(
-        f"\n[bold]Done.[/bold] migrated={migrated} skipped={skipped} already/no-op={noops}"
-    )
-
-
-def _discover_legacy_repos(scan_root: "Path") -> list["Path"]:
-    """Walk ``scan_root`` for CLAUDE.md files containing a ``## Lore`` section.
-
-    Bounded to avoid pathological traversal: skips ``.git``, ``node_modules``,
-    ``.cache``, ``__pycache__``, ``.venv``, and virtualenv-style dirs.
-    """
-    from pathlib import Path as _Path
-    from lore_core.attach import read_attach
-
-    SKIP = {".git", "node_modules", ".cache", "__pycache__", ".venv", "venv",
-            ".tox", "dist", "build", ".pytest_cache", ".mypy_cache"}
-    found: list[_Path] = []
-    for dirpath, dirnames, filenames in _walk_pruned(scan_root, SKIP):
-        if "CLAUDE.md" in filenames:
-            claude_md = dirpath / "CLAUDE.md"
-            block = read_attach(claude_md)
-            if block and block.get("wiki") and block.get("scope"):
-                found.append(dirpath)
-    return found
-
-
-def _walk_pruned(root: "Path", skip: set[str]):
-    """os.walk analogue that prunes skip-dirs in place. Yields (dirpath, dirnames, filenames)."""
-    import os
-    for dp, dn, fn in os.walk(root):
-        # Mutate dn in place to prune descent
-        dn[:] = [d for d in dn if d not in skip and not d.startswith(".lore")]
-        yield Path(dp), dn, fn
 
 
 main = argv_main(app)
