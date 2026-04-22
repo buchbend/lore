@@ -1020,7 +1020,16 @@ def cmd_session_start(
     ),
 ) -> None:
     """Inject vault context at session start."""
+    cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(_resolve_cwd(cwd))
+
+    # Phase 2: surface pending `.lore.yml` offers. Gated by LORE_NEW_STATE.
+    try:
+        notice = _offer_notice_line(cwd_resolved)
+        if notice:
+            out = notice + "\n\n" + out
+    except Exception:
+        pass
 
     # Attempt to append capture-state breadcrumb banner
     try:
@@ -1194,6 +1203,71 @@ def _load_wiki_cfg_from_scope(scope, lore_root: Path):
     from lore_core.wiki_config import load_wiki_config
     wiki_dir = lore_root / "wiki" / scope.wiki
     return load_wiki_config(wiki_dir)
+
+
+def _offer_notice_line(cwd: Path) -> str | None:
+    """Return a one-line notice when a ``.lore.yml`` offer is pending acceptance.
+
+    Returns ``None`` if:
+      - ``LORE_NEW_STATE`` is not enabled (Phase 2 gate);
+      - no ``.lore.yml`` covers ``cwd``;
+      - an attachment with the matching fingerprint already exists
+        (state=ATTACHED);
+      - the offer was previously declined (state=DORMANT);
+      - ``$LORE_ROOT`` cannot be located on this host.
+
+    Logs a ``lore-yml-offered`` event when it does emit (OFFERED, DRIFT)
+    so telemetry captures the prompt even if the user ignores it.
+    """
+    if os.environ.get("LORE_NEW_STATE") != "1":
+        return None
+
+    lore_root_env = os.environ.get("LORE_ROOT")
+    if not lore_root_env:
+        return None
+    lore_root = Path(lore_root_env)
+
+    try:
+        from lore_core.consent import ConsentState, classify_state
+        from lore_core.state.attachments import AttachmentsFile
+
+        attachments = AttachmentsFile(lore_root)
+        attachments.load()
+        result = classify_state(cwd, attachments)
+    except Exception:
+        return None
+
+    if result.state not in (ConsentState.OFFERED, ConsentState.DRIFT):
+        return None
+
+    try:
+        HookEventLogger(lore_root).emit(
+            event="lore-yml-offered",
+            outcome=result.state.value,
+            detail={
+                "wiki": result.offer.wiki if result.offer else None,
+                "scope": result.offer.scope if result.offer else None,
+                "repo_root": str(result.repo_root) if result.repo_root else None,
+                "offer_fingerprint": result.offer_fingerprint,
+            },
+        )
+    except Exception:
+        pass
+
+    offer = result.offer
+    assert offer is not None  # OFFERED/DRIFT imply offer present
+    if result.state is ConsentState.OFFERED:
+        return (
+            f"lore: this repo offers attachment to wiki `{offer.wiki}` "
+            f"(scope `{offer.scope}`). Run `/lore:attach` to accept or "
+            f"`/lore:attach --decline` to dismiss."
+        )
+    # DRIFT
+    return (
+        f"lore: the `.lore.yml` offer for this repo has changed since you "
+        f"attached (wiki `{offer.wiki}`, scope `{offer.scope}`). Run "
+        f"`/lore:attach` to re-accept."
+    )
 
 
 def _load_wiki_cfg_for_wiki(lore_root: Path, wiki_name: str):
