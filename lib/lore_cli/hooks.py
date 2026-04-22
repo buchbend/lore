@@ -1065,6 +1065,17 @@ def cmd_session_start(
                 banner = render_banner(ctx)
                 if banner is not None:
                     out = out + "\n\n" + banner
+
+                # P5b: appended drain lines — "this session" and "since you
+                # left." Session-scoped cursor prevents the same event from
+                # showing up on repeat SessionStarts within one Claude run.
+                try:
+                    drain_lines = _render_drain_lines(lore_root, cwd_resolved)
+                    if drain_lines:
+                        out = out + "\n" + "\n".join(drain_lines)
+                except Exception:
+                    # Drain rendering is telemetry — never block the hook.
+                    pass
     except Exception:
         # Banner generation failure is non-fatal — proceed without it.
         pass
@@ -1450,6 +1461,109 @@ def _spawn_detached_curator_c(
         with contextlib.suppress(OSError):
             _write_stamp(stamp)
         return True
+
+
+def _render_drain_lines(lore_root: Path, cwd: Path) -> list[str]:
+    """Compile the two drain-banner lines shown at SessionStart.
+
+    Line 1 — "· This session"   — session-scoped notes filed/appended
+    Line 2 — "· Since you left" — _system events since this session
+                                  last rendered a banner
+
+    Both lines are omitted when their respective stream has no new
+    events. Returns an empty list when both are silent (callers
+    suppress the newline).
+
+    Cursor advance: the session drain's cursor is bumped to the newest
+    ts rendered so a second SessionStart inside the same Claude session
+    (e.g. re-opening a window) doesn't re-surface the same events.
+    """
+    from lore_core.drain import SYSTEM_SESSION, DrainStore, resolve_session_id
+
+    sid, _ = resolve_session_id(cwd)
+    session_store = DrainStore(lore_root, sid)
+    system_store = DrainStore(lore_root, SYSTEM_SESSION)
+
+    # Session cursor = "what have I already shown this session?"
+    session_cursor = session_store.read_cursor()
+    session_events = session_store.read(since=session_cursor, limit=200)
+
+    # System cursor per-session so repeat SessionStarts in the same
+    # Claude run don't spam; we piggyback on the session drain's cursor
+    # (events from both streams are only surfaced once per session_cursor
+    # advance). This is the simplest model that also handles the "user
+    # opens two windows at once" case sanely.
+    system_events = system_store.read(since=session_cursor, limit=200)
+
+    lines: list[str] = []
+    if session_events:
+        counts = _tally_drain(session_events)
+        summary = _format_drain_summary(counts, session_events)
+        if summary:
+            lines.append(f"  · This session   {summary}")
+
+    if system_events:
+        counts = _tally_drain(system_events)
+        summary = _format_drain_summary(counts, system_events)
+        if summary:
+            lines.append(f"  · Since you left {summary}")
+
+    # Advance cursor to ``newest + 1µs`` — `since` in DrainStore.read is
+    # inclusive (``ts >= since``), so setting the cursor to the event's
+    # own ts would resurface it on the next banner call.
+    newest = None
+    for e in list(session_events) + list(system_events):
+        if newest is None or e.ts > newest:
+            newest = e.ts
+    if newest is not None:
+        from datetime import timedelta
+        session_store.write_cursor(newest + timedelta(microseconds=1))
+
+    return lines
+
+
+def _tally_drain(events) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for e in events:
+        counts[e.event] = counts.get(e.event, 0) + 1
+    return counts
+
+
+def _format_drain_summary(counts: dict[str, int], events) -> str:
+    """Render a short "N notes · M appended · K synced" phrase."""
+    parts: list[str] = []
+    n_filed = counts.get("note-filed", 0)
+    n_appended = counts.get("note-appended", 0)
+    n_synced = counts.get("transcript-synced", 0)
+    n_surface = counts.get("surface-proposed", 0)
+
+    if n_filed:
+        # Prefer to name the most recent filed note so the user can jump.
+        wikilink = None
+        for e in reversed(events):
+            if e.event == "note-filed":
+                wikilink = e.data.get("wikilink")
+                break
+        if wikilink and n_filed == 1:
+            parts.append(f"new note {wikilink}")
+        else:
+            parts.append(f"{n_filed} new notes")
+    if n_appended:
+        # Name the latest-appended note for single-case.
+        wikilink = None
+        for e in reversed(events):
+            if e.event == "note-appended":
+                wikilink = e.data.get("wikilink")
+                break
+        if wikilink and n_appended == 1:
+            parts.append(f"added to {wikilink}")
+        else:
+            parts.append(f"{n_appended} added")
+    if n_synced:
+        parts.append(f"{n_synced} transcript{'s' if n_synced != 1 else ''} synced")
+    if n_surface:
+        parts.append(f"{n_surface} surface proposed")
+    return " · ".join(parts)
 
 
 def _spawn_detached_transcript_sync(
