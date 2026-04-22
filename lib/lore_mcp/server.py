@@ -79,10 +79,41 @@ def handle_search(
     ]
 
 
+def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
+    """Resolve a note slug to a relative path via catalog or rglob."""
+    cat_path = wiki_path / "_catalog.json"
+    if cat_path.exists():
+        try:
+            catalog = json.loads(cat_path.read_text())
+            for entries in catalog.get("sections", {}).values():
+                for entry in entries:
+                    if entry["name"] == slug:
+                        return entry["path"]
+        except (json.JSONDecodeError, KeyError):
+            pass
+    candidates = list(wiki_path.rglob(f"{slug}.md"))
+    if candidates:
+        return str(candidates[0].relative_to(wiki_path))
+    return None
+
+
 def handle_read(path: str, wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
         return {"error": f"wiki not found: {wiki}"}
+
+    # Resolve wikilink syntax or bare slug.
+    slug = None
+    if path.startswith("[[") and path.endswith("]]"):
+        slug = path[2:-2]
+    elif "/" not in path and not path.endswith(".md"):
+        slug = path
+    if slug:
+        resolved = _resolve_slug(wiki_path, slug)
+        if resolved is None:
+            return {"error": f"note not found: {slug}"}
+        path = resolved
+
     target = (wiki_path / path).resolve()
     try:
         target.relative_to(wiki_path.resolve())
@@ -440,7 +471,7 @@ def _tool_schema() -> list[dict]:
         },
         {
             "name": "lore_read",
-            "description": "Read one note by relative path within a wiki.",
+            "description": "Read one note by relative path, [[wikilink]], or bare slug within a wiki.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

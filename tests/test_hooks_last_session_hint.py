@@ -5,13 +5,17 @@ from pathlib import Path
 from lore_cli.hooks import _last_session_hint
 
 
-def _write_session(wiki: Path, slug: str, description: str | None = None) -> None:
+def _write_session(
+    wiki: Path, slug: str, description: str | None = None, summary: str | None = None,
+) -> None:
     sessions = wiki / "sessions"
     sessions.mkdir(parents=True, exist_ok=True)
     lines = ["---"]
     lines.append("type: session")
     if description is not None:
         lines.append(f"description: '{description}'")
+    if summary is not None:
+        lines.append(f"summary: '{summary}'")
     lines.append("---")
     lines.append("")
     (sessions / f"{slug}.md").write_text("\n".join(lines))
@@ -78,3 +82,26 @@ def test_max_notes_respected(tmp_path: Path) -> None:
 
     result = _last_session_hint(wiki, max_notes=1)
     assert len(result) == 1
+
+
+def test_summary_preferred_over_description(tmp_path: Path) -> None:
+    wiki = tmp_path / "wiki" / "private"
+    _write_session(
+        wiki, "2026-04-22-both-fields",
+        description="Short title",
+        summary="Detailed summary of what was decided and changed.",
+    )
+
+    result = _last_session_hint(wiki, max_notes=1)
+    assert len(result) == 1
+    assert "Detailed summary" in result[0]
+    assert "Short title" not in result[0]
+
+
+def test_falls_back_to_description_when_no_summary(tmp_path: Path) -> None:
+    wiki = tmp_path / "wiki" / "private"
+    _write_session(wiki, "2026-04-22-desc-only", description="Just a description")
+
+    result = _last_session_hint(wiki, max_notes=1)
+    assert len(result) == 1
+    assert "Just a description" in result[0]

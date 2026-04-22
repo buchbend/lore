@@ -177,7 +177,7 @@ def _load_recent_session_notes(sessions_dir: Path, *, cutoff: datetime) -> list[
         return []
     cutoff_ts = cutoff.timestamp()
     out: list[tuple[float, dict]] = []
-    for p in sessions_dir.glob("*.md"):
+    for p in sessions_dir.rglob("*.md"):
         try:
             text = p.read_text()
         except OSError:

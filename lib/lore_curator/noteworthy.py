@@ -21,6 +21,7 @@ class NoteworthyResult:
     noteworthy: bool
     reason: str                     # short — "single-shot bash question" | "substantive refactor"
     title: str                      # 5-10 words
+    summary: str = ""               # 2-3 sentences of substance
     bullets: list[str] = field(default_factory=list)   # 3-5 items, short phrases
     files_touched: list[str] = field(default_factory=list)
     entities: list[str] = field(default_factory=list)  # wikilink candidates
@@ -150,12 +151,16 @@ def _classify_tool_schema() -> dict[str, Any]:
                 "noteworthy": {"type": "boolean"},
                 "reason": {"type": "string"},
                 "title": {"type": "string"},
+                "summary": {
+                    "type": "string",
+                    "description": "2-3 sentence summary of what was accomplished, decided, or changed. Focus on substance, not mechanics.",
+                },
                 "bullets": {"type": "array", "items": {"type": "string"}},
                 "files_touched": {"type": "array", "items": {"type": "string"}},
                 "entities": {"type": "array", "items": {"type": "string"}},
                 "decisions": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["noteworthy", "reason", "title"],
+            "required": ["noteworthy", "reason", "title", "summary"],
         },
     }
 
@@ -178,6 +183,7 @@ def _data_to_result(data: dict[str, Any]) -> NoteworthyResult:
         noteworthy=bool(data.get("noteworthy")),
         reason=str(data.get("reason", "")),
         title=str(data.get("title", "")),
+        summary=str(data.get("summary", "")),
         bullets=list(data.get("bullets", [])),
         files_touched=list(data.get("files_touched", [])),
         entities=list(data.get("entities", [])),

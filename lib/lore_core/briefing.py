@@ -68,6 +68,7 @@ def gather(
     wiki: str,
     since: str | None = None,
     include_body_sections: bool = True,
+    user: str | None = None,
 ) -> dict[str, Any]:
     """Collect new session notes since the last briefing.
 
@@ -127,6 +128,8 @@ def gather(
                 "slug": stem[11:] or stem,
                 "frontmatter": parse_frontmatter(text),
             }
+            if user and entry["frontmatter"].get("user") != user:
+                continue
             if include_body_sections:
                 entry["sections"] = _extract_sections(text)
             new_sessions.append(entry)

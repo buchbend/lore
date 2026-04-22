@@ -78,6 +78,7 @@ def test_classify_returns_noteworthy_true_for_substantive_slice():
         "noteworthy": True,
         "reason": "substantive refactor",
         "title": "Add ledger",
+        "summary": "Added append-only ledger module for tracking curator runs. Decided on JSONL format over SQLite for simplicity.",
         "bullets": ["Added ledger module", "Tests passing"],
         "files_touched": ["ledger.py"],
         "entities": ["ledger"],
@@ -89,6 +90,7 @@ def test_classify_returns_noteworthy_true_for_substantive_slice():
     assert result.noteworthy is True
     assert result.reason == "substantive refactor"
     assert result.title == "Add ledger"
+    assert "append-only ledger" in result.summary
 
 
 def test_classify_returns_noteworthy_false_for_trivial():

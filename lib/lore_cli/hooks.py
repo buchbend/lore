@@ -371,7 +371,7 @@ def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[str]:
         except OSError:
             continue
         fm = parse_frontmatter(head)
-        desc = fm.get("description")
+        desc = fm.get("summary") or fm.get("description")
         if not desc:
             continue
         slug = path.stem

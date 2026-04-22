@@ -268,7 +268,7 @@ def _recent_session_notes(
         return []
     cutoff = datetime.now(UTC).timestamp() - within_days * 86400
     results: list[tuple[float, Path, dict[str, Any], str]] = []
-    for p in sessions_dir.glob("*.md"):
+    for p in sessions_dir.rglob("*.md"):
         try:
             text = p.read_text()
         except OSError:
@@ -399,6 +399,7 @@ def _write_new_note(
         "created": work_time.date().isoformat(),
         "last_reviewed": work_time.date().isoformat(),
         "description": noteworthy.title,
+        "summary": noteworthy.summary or None,
         "scope": scope.scope,
         "draft": True,
         "curator_a_run": now.isoformat(),
