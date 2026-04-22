@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date as _date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -58,6 +58,42 @@ def file_session_note(
     work_time = work_time or now
     sessions_dir = wiki_root / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    # P3': when an open session note for this scope already exists on the
+    # transcript's work date, append to it directly — no LLM merge judgment,
+    # no new-note-per-slice proliferation. `closed:` frontmatter (set by
+    # Curator B when a note is folded into a surface) opts the note out.
+    # Cross-day continuations still go through the LLM path below.
+    today_note = _find_todays_open_note(
+        sessions_dir, scope=scope, work_date=work_time.date()
+    )
+    if today_note is not None:
+        target_slug = today_note.stem
+        if logger is not None:
+            logger.emit(
+                "merge-check",
+                transcript_id=transcript_id,
+                target=f"[[{target_slug}]]",
+                similarity=None,
+                decision="append-today",
+            )
+        _append_to_note(
+            today_note,
+            noteworthy=noteworthy,
+            handle=handle,
+            turns=turns,
+            now=now,
+            work_time=work_time,
+        )
+        wikilink = _wikilink_for(today_note)
+        if logger is not None:
+            logger.emit(
+                "session-note",
+                transcript_id=transcript_id,
+                action="merged",
+                wikilink=wikilink,
+            )
+        return FiledNote(path=today_note, wikilink=wikilink, was_merge=True)
 
     recent_notes = _recent_session_notes(sessions_dir, scope=scope, within_days=7, limit=20)
     decision = _merge_judgment(
@@ -157,6 +193,48 @@ def _slug(title: str) -> str:
 
 def _wikilink_for(path: Path) -> str:
     return f"[[{path.stem}]]"
+
+
+def _find_todays_open_note(
+    sessions_dir: Path,
+    *,
+    scope: Scope,
+    work_date: _date,
+) -> Path | None:
+    """Return today's open session note for ``scope``, or ``None``.
+
+    A note is "today's open note" when all of:
+      - filename prefix matches ``work_date`` (e.g. ``2026-04-22-*.md``),
+      - frontmatter ``scope`` equals ``scope.scope``,
+      - frontmatter ``closed`` is absent or falsy.
+
+    When a counter-suffixed collision produced multiple candidates, the
+    most-recently-modified file wins — that is the note the previous
+    slice appended to.
+    """
+    if not sessions_dir.exists():
+        return None
+    prefix = work_date.isoformat()
+    candidates: list[tuple[float, Path]] = []
+    for p in sessions_dir.glob(f"{prefix}-*.md"):
+        try:
+            text = p.read_text()
+        except OSError:
+            continue
+        fm = parse_frontmatter(text)
+        if fm.get("scope") != scope.scope:
+            continue
+        if fm.get("closed"):
+            continue
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            continue
+        candidates.append((mtime, p))
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    return candidates[0][1]
 
 
 def _recent_session_notes(

@@ -391,22 +391,55 @@ def test_merge_last_reviewed_uses_newest_work_time(tmp_path):
 
 
 def test_collision_appends_counter(tmp_path):
-    """Second note with same day + slug gets a -2 suffix."""
-    result1 = _file_note(tmp_path)
-    # Same slug, same day — force a second call with a fresh "new" client
-    result2 = _file_note(tmp_path, client=_make_new_client())
-    assert result1.path != result2.path
-    assert result2.path.name.endswith("-2.md")
+    """Second note with same day + slug gets a -2 suffix.
+
+    Post-P3', same-day same-scope slices append instead of colliding.
+    The collision-counter path now only fires when today's note is closed
+    (frontmatter ``closed: true``) and a new note must land on the same
+    filename.
+    """
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    # Plant a closed first note that shares the expected slug.
+    closed_first = sessions_dir / "2026-04-19-add-ledger-feature.md"
+    fm = {
+        "schema_version": 2,
+        "type": "session",
+        "created": "2026-04-19",
+        "last_reviewed": "2026-04-19",
+        "description": "first slice",
+        "scope": "proj:feature",
+        "closed": True,
+        "draft": False,
+        "source_transcripts": [],
+        "tags": [],
+    }
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    closed_first.write_text(f"---\n{dumped}\n---\n\nfirst\n")
+
+    result = _file_note(tmp_path, client=_make_new_client())
+    assert result.path != closed_first
+    assert result.path.name.endswith("-2.md")
+    assert result.was_merge is False
 
 
 def test_recent_notes_filter_excludes_wrong_scope(tmp_path):
-    """Only notes with matching scope are passed to merge judgment."""
+    """Only notes with matching scope are passed to merge judgment.
+
+    Uses older notes (not today's) so P3''s append-to-today fast path
+    doesn't short-circuit the LLM merge judgment this test is about.
+    """
     sessions_dir = tmp_path / "sessions"
     sessions_dir.mkdir(parents=True)
-    # right scope
-    right = _write_session_note(sessions_dir, "2026-04-19-right.md", scope_str="proj:feature")
-    # wrong scope
-    _write_session_note(sessions_dir, "2026-04-19-wrong.md", scope_str="other:scope")
+    # Yesterday — avoids P3' same-day append path.
+    right = _write_session_note(
+        sessions_dir, "2026-04-18-right.md",
+        scope_str="proj:feature", created="2026-04-18",
+    )
+    _write_session_note(
+        sessions_dir, "2026-04-18-wrong.md",
+        scope_str="other:scope", created="2026-04-18",
+    )
 
     seen_prompts = []
 
@@ -423,7 +456,7 @@ def test_recent_notes_filter_excludes_wrong_scope(tmp_path):
 
     _file_note(tmp_path, client=RecordingClient(), scope=_make_scope("proj:feature"))
 
-    # At least one LLM call was made (because there was 1 recent note)
+    # One LLM call made (there was 1 recent matching note from yesterday).
     assert len(RecordingClient.messages.calls) == 1
     prompt = seen_prompts[0]
     assert str(right) in prompt
@@ -462,3 +495,162 @@ def test_merge_into_existing_updates_source_transcripts_list(tmp_path):
     assert fm_after["source_transcripts"][0]["id"] == "old-id"
     # New entry added
     assert fm_after["source_transcripts"][1]["id"] == "transcript-abc123"
+
+
+# ---------------------------------------------------------------------------
+# P3' — append-to-today's-open-note rule
+#
+# Symptom: arbitrary pending-count thresholds made the curator fire at
+# points that rarely aligned with narrative boundaries, producing multiple
+# stranded same-day notes that each captured a fragment. Fix: if there's
+# already an open session note for the transcript's work date in this
+# scope, append to it — no LLM merge judgment required. Cross-day
+# continuations still go through the existing LLM path.
+# ---------------------------------------------------------------------------
+
+
+def test_filer_appends_to_todays_open_note_for_same_scope(tmp_path):
+    """Existing today + same-scope open note → append, no LLM call."""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    existing = _write_session_note(
+        sessions_dir, "2026-04-19-morning-work.md",
+        scope_str="proj:feature", created="2026-04-19",
+        body="### Summary\n- morning slice",
+    )
+
+    # Client would never be called — but give it a clearly-wrong response
+    # so any regression that hits the LLM path fails loudly instead of
+    # silently going through.
+    client = _make_client({"merge": "/nonexistent.md"})
+    result = _file_note(
+        tmp_path,
+        client=client,
+        noteworthy=_make_noteworthy("Afternoon Work"),
+        scope=_make_scope("proj:feature"),
+    )
+
+    assert result.was_merge is True
+    assert result.path == existing
+    text = existing.read_text()
+    assert "## Afternoon Work" in text
+    assert "- morning slice" in text  # original body preserved
+    assert client.messages.calls == [], "P3' must not call the LLM when today's note exists"
+
+
+def test_filer_creates_new_note_when_todays_note_is_closed(tmp_path):
+    """closed: in frontmatter opts a note out of P3' append."""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    # Plant a closed today's note
+    closed_note = sessions_dir / "2026-04-19-finished.md"
+    fm = {
+        "schema_version": 2,
+        "type": "session",
+        "created": "2026-04-19",
+        "last_reviewed": "2026-04-19",
+        "description": "Finished session",
+        "scope": "proj:feature",
+        "closed": True,
+        "draft": False,
+        "source_transcripts": [],
+        "tags": [],
+    }
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    closed_body_before = "body"
+    closed_note.write_text(f"---\n{dumped}\n---\n\n{closed_body_before}\n")
+    closed_before = closed_note.read_text()
+
+    client = _make_new_client()
+    result = _file_note(
+        tmp_path, client=client, scope=_make_scope("proj:feature")
+    )
+    # New note created — original closed note untouched.
+    assert result.path != closed_note
+    assert result.was_merge is False
+    assert closed_note.read_text() == closed_before
+
+
+def test_filer_creates_new_note_when_no_todays_note_exists(tmp_path):
+    """Empty sessions dir → new note, same as legacy behavior."""
+    client = _make_new_client()
+    result = _file_note(tmp_path, client=client)
+    assert result.was_merge is False
+    assert result.path.exists()
+
+
+def test_filer_creates_new_note_for_different_scope_same_day(tmp_path):
+    """Same-day note for a DIFFERENT scope must not trigger append."""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    other_scope = _write_session_note(
+        sessions_dir, "2026-04-19-other.md",
+        scope_str="other:scope", created="2026-04-19",
+    )
+    other_before = other_scope.read_text()
+
+    client = _make_new_client()
+    result = _file_note(
+        tmp_path, client=client, scope=_make_scope("proj:feature")
+    )
+    # New note created for proj:feature; other-scope note untouched.
+    assert result.was_merge is False
+    assert result.path != other_scope
+    assert other_scope.read_text() == other_before
+
+
+def test_find_todays_open_note_ignores_notes_from_other_dates(tmp_path):
+    """Yesterday's same-scope note should not be appended to by P3'."""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    yesterday = _write_session_note(
+        sessions_dir, "2026-04-18-yesterday.md",
+        scope_str="proj:feature", created="2026-04-18",
+    )
+    yesterday_before = yesterday.read_text()
+
+    # LLM merge judgment says "new"
+    client = _make_new_client()
+    result = _file_note(
+        tmp_path, client=client, scope=_make_scope("proj:feature")
+    )
+    # New note for today; yesterday's note unchanged.
+    assert result.path != yesterday
+    assert result.was_merge is False
+    assert yesterday.read_text() == yesterday_before
+
+
+def test_find_todays_open_note_respects_work_time_not_now(tmp_path):
+    """Work-date-backdated slice appends to that date's open note.
+
+    Preserves the Phase 1 work-date invariant: a backlogged transcript
+    from 2026-04-17 merges into 2026-04-17's open note, even if curation
+    is running on 2026-04-19.
+    """
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    existing = _write_session_note(
+        sessions_dir, "2026-04-17-prior.md",
+        scope_str="proj:feature", created="2026-04-17",
+    )
+
+    work_time = datetime(2026, 4, 17, 14, 0, tzinfo=UTC)
+    curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
+
+    client = _make_client({"merge": "/wrong.md"})  # must NOT be called
+    result = file_session_note(
+        scope=_make_scope("proj:feature"),
+        handle=_make_handle_with_mtime(work_time),
+        noteworthy=_make_noteworthy("Back-dated Slice"),
+        turns=_make_turns(),
+        wiki_root=tmp_path,
+        anthropic_client=client,
+        model_resolver=_resolver,
+        now=curation_time,
+        work_time=work_time,
+    )
+
+    assert result.path == existing
+    assert result.was_merge is True
+    assert client.messages.calls == []
+
