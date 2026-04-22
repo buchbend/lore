@@ -1,10 +1,17 @@
-"""Tests for scope_resolver: walking up for CLAUDE.md with ## Lore block."""
+"""Tests for scope_resolver.
+
+Covers both the legacy CLAUDE.md walk-up path and the new registry-backed
+``resolve_scope_via_registry`` path. Legacy tests remain until Phase 6
+retires the walk-up.
+"""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
-from lore_core.scope_resolver import resolve_scope
+from lore_core.scope_resolver import resolve_scope, resolve_scope_via_registry
+from lore_core.state.attachments import Attachment, AttachmentsFile
 from lore_core.types import Scope
 
 
@@ -137,3 +144,97 @@ def test_resolve_handles_cwd_at_fs_root(tmp_path: Path) -> None:
     # We just ensure it doesn't hang or error
     result = resolve_scope(Path("/"), max_depth=2)
     assert result is None
+
+
+# ---- Registry-backed path (new in Phase 1) ----
+
+def _attach(path: Path, *, wiki: str = "w", scope: str = "w:s") -> Attachment:
+    return Attachment(
+        path=path,
+        wiki=wiki,
+        scope=scope,
+        attached_at=datetime(2026, 4, 22, 9, 0, 0, tzinfo=UTC),
+    )
+
+
+def test_registry_resolves_exact_path(tmp_path: Path) -> None:
+    (tmp_path / ".lore").mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    af = AttachmentsFile(tmp_path)
+    af.load()
+    af.add(_attach(repo, wiki="ccat", scope="ccat:ds"))
+
+    result = resolve_scope_via_registry(repo, af)
+    assert result is not None
+    assert result.wiki == "ccat"
+    assert result.scope == "ccat:ds"
+    # claude_md_path is a synthetic sentinel under the attached path
+    assert result.claude_md_path == repo / "CLAUDE.md"
+
+
+def test_registry_resolves_descendant(tmp_path: Path) -> None:
+    (tmp_path / ".lore").mkdir()
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    af = AttachmentsFile(tmp_path)
+    af.load()
+    af.add(_attach(repo, scope="x:y"))
+
+    result = resolve_scope_via_registry(repo / "src", af)
+    assert result is not None
+    assert result.scope == "x:y"
+
+
+def test_registry_returns_none_on_unattached(tmp_path: Path) -> None:
+    (tmp_path / ".lore").mkdir()
+    stranger = tmp_path / "stranger"
+    stranger.mkdir()
+    af = AttachmentsFile(tmp_path)
+    af.load()
+    assert resolve_scope_via_registry(stranger, af) is None
+
+
+def test_registry_most_specific_wins(tmp_path: Path) -> None:
+    (tmp_path / ".lore").mkdir()
+    outer = tmp_path / "outer"
+    inner = outer / "inner"
+    inner.mkdir(parents=True)
+    af = AttachmentsFile(tmp_path)
+    af.load()
+    af.add(_attach(outer, wiki="wo", scope="o"))
+    af.add(_attach(inner, wiki="wi", scope="o:i"))
+
+    result = resolve_scope_via_registry(inner / "deep", af)
+    assert result is not None
+    assert result.scope == "o:i"
+
+
+def test_resolve_scope_dispatches_to_registry_when_attachments_provided(
+    tmp_path: Path,
+) -> None:
+    """resolve_scope(cwd, attachments=af) uses the registry, not walk-up."""
+    (tmp_path / ".lore").mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    # Deliberately DO NOT write a CLAUDE.md; only the registry knows about this repo.
+    af = AttachmentsFile(tmp_path)
+    af.load()
+    af.add(_attach(repo, wiki="registry-wiki", scope="r:a"))
+
+    result = resolve_scope(repo, attachments=af)
+    assert result is not None
+    assert result.wiki == "registry-wiki"
+
+
+def test_resolve_scope_falls_back_to_walkup_when_no_attachments(tmp_path: Path) -> None:
+    """resolve_scope(cwd) without attachments still walks up for CLAUDE.md."""
+    block = """## Lore
+
+- wiki: legacy
+- scope: a:b
+"""
+    (tmp_path / "CLAUDE.md").write_text(block)
+    result = resolve_scope(tmp_path)
+    assert result is not None
+    assert result.wiki == "legacy"

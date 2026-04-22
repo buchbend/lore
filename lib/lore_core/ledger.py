@@ -8,11 +8,18 @@ partial file.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from lore_core.io import atomic_write_text
+
+if TYPE_CHECKING:
+    from lore_core.types import Scope
+
+Resolver = Callable[[Path], "Scope | None"]
 
 
 @dataclass
@@ -140,15 +147,25 @@ class TranscriptLedger:
             return True
         return entry.last_mtime > entry.curator_a_run
 
-    def pending(self, wiki: str | None = None) -> list[TranscriptLedgerEntry]:
+    def pending(
+        self,
+        wiki: str | None = None,
+        *,
+        resolver: Resolver | None = None,
+    ) -> list[TranscriptLedgerEntry]:
         """Entries still awaiting a curator scan.
 
         When ``wiki`` is given, restrict to entries whose ``directory``
-        resolves to that wiki via :func:`resolve_scope`. Orphan/unattached
-        entries are dropped silently — use :meth:`pending_by_wiki` if you
-        want the buckets surfaced.
+        resolves to that wiki via ``resolver``. Orphan/unattached entries
+        are dropped silently — use :meth:`pending_by_wiki` if you want
+        the buckets surfaced.
+
+        ``resolver`` defaults to the legacy CLAUDE.md walk-up for
+        back-compat; Phase 1 callers that want the registry path pass in
+        a closure bound to an ``AttachmentsFile``.
         """
-        from lore_core.scope_resolver import resolve_scope
+        if resolver is None:
+            from lore_core.scope_resolver import resolve_scope as resolver
 
         result: list[TranscriptLedgerEntry] = []
         resolve_cache: dict[Path, str | None] = {}
@@ -158,26 +175,35 @@ class TranscriptLedger:
                 continue
 
             if wiki is not None:
-                entry_wiki = self._resolve_wiki_cached(entry.directory, resolve_cache, resolve_scope)
+                entry_wiki = self._resolve_wiki_cached(entry.directory, resolve_cache, resolver)
                 if entry_wiki != wiki:
                     continue
 
             result.append(entry)
         return result
 
-    def pending_by_wiki(self) -> dict[str, list[TranscriptLedgerEntry]]:
+    def pending_by_wiki(
+        self,
+        *,
+        resolver: Resolver | None = None,
+    ) -> dict[str, list[TranscriptLedgerEntry]]:
         """Group pending entries by resolved wiki, with special buckets.
 
         Buckets:
           - ``<wiki-name>``  — attached entries grouped by their wiki.
           - ``__orphan__``   — entry.directory no longer exists on disk.
-          - ``__unattached__`` — directory exists but has no CLAUDE.md with
-            a ``## Lore`` block.
+          - ``__unattached__`` — directory exists but is not covered by
+            any attachment (registry path) or has no ``## Lore`` block
+            in its ancestor CLAUDE.md (legacy walk-up).
 
         Orphan-flagged entries (``entry.orphan=True``) are excluded — the
         curator has already retired them.
+
+        ``resolver`` defaults to the legacy walk-up. Phase 1+ callers can
+        pass a registry-backed resolver.
         """
-        from lore_core.scope_resolver import resolve_scope
+        if resolver is None:
+            from lore_core.scope_resolver import resolve_scope as resolver
 
         buckets: dict[str, list[TranscriptLedgerEntry]] = {}
         for raw_entry in self._load().values():
@@ -185,7 +211,7 @@ class TranscriptLedger:
             if not self._is_pending(entry):
                 continue
 
-            key = self._bucket_for(entry.directory, resolve_scope)
+            key = self._bucket_for(entry.directory, resolver)
             buckets.setdefault(key, []).append(entry)
         return buckets
 

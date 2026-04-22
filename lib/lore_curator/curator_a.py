@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -16,10 +17,36 @@ from lore_core.lockfile import curator_lock, LockContendedError, read_lock_holde
 from lore_core.redaction import redact
 from lore_core.run_log import RunLogger
 from lore_core.scope_resolver import resolve_scope
+from lore_core.state.attachments import AttachmentsFile
 from lore_core.types import Scope, Turn, TranscriptHandle
 from lore_core.wiki_config import WikiConfig, load_wiki_config
 from lore_curator.noteworthy import classify_slice
 from lore_curator.session_filer import FiledNote, file_session_note
+
+
+Resolver = Callable[[Path], "Scope | None"]
+
+
+def _build_resolver(lore_root: Path) -> Resolver:
+    """Select the registry-backed resolver when ``LORE_NEW_STATE=1``,
+    otherwise fall back to the legacy CLAUDE.md walk-up.
+
+    The registry path loads ``AttachmentsFile`` once per curator pass and
+    binds it into a closure — all subsequent ``resolver(cwd)`` calls are
+    O(log n) dict lookups with no filesystem I/O. When the attachments
+    file is missing, the closure returns ``None`` for every cwd, which
+    the curator surfaces as an ``__unattached__`` bucket.
+    """
+    if os.environ.get("LORE_NEW_STATE") != "1":
+        return resolve_scope
+
+    attachments = AttachmentsFile(lore_root)
+    attachments.load()
+
+    def _resolver(cwd: Path) -> "Scope | None":
+        return resolve_scope(cwd, attachments=attachments)
+
+    return _resolver
 
 
 @dataclass
@@ -64,13 +91,14 @@ def run_curator_a(
 
     lookup = adapter_lookup or get_adapter
     tledger = TranscriptLedger(lore_root)
-    pending_snapshot = tledger.pending()
+    resolver = _build_resolver(lore_root)
+    pending_snapshot = tledger.pending(resolver=resolver)
 
     # Pre-compute which wikis are below their own threshold_pending so the
     # per-entry loop can short-circuit without re-reading every wiki's config
     # once per entry. Entries in below-threshold wikis are still marked
     # (curator_a_run stamped) so pending() stops re-tripping forever.
-    below_threshold_wikis = _compute_below_threshold_wikis(tledger, lore_root)
+    below_threshold_wikis = _compute_below_threshold_wikis(tledger, lore_root, resolver=resolver)
 
     config_snapshot = {"noteworthy_tier": "middle"}
     effective_trigger = "dry-run" if dry_run else trigger
@@ -98,7 +126,7 @@ def run_curator_a(
         if dry_run:
             # Dry-run bypasses the lockfile — must not block on a real run,
             # and writes nothing anyway.
-            pending = tledger.pending()
+            pending = tledger.pending(resolver=resolver)
             for entry in pending:
                 result.transcripts_considered += 1
                 outcome = _process_entry(
@@ -112,6 +140,7 @@ def run_curator_a(
                     now=now,
                     logger=logger,
                     below_threshold_wikis=below_threshold_wikis,
+                    resolver=resolver,
                 )
                 _record_outcome(result, outcome)
                 if outcome.wiki_name is not None:
@@ -119,7 +148,7 @@ def run_curator_a(
         else:
             try:
                 with curator_lock(lore_root, timeout=lock_timeout, run_id=logger.run_id):
-                    pending = tledger.pending()
+                    pending = tledger.pending(resolver=resolver)
                     for entry in pending:
                         result.transcripts_considered += 1
                         outcome = _process_entry(
@@ -133,6 +162,7 @@ def run_curator_a(
                             now=now,
                             logger=logger,
                             below_threshold_wikis=below_threshold_wikis,
+                            resolver=resolver,
                         )
                         _record_outcome(result, outcome)
                         if outcome.wiki_name is not None:
@@ -180,13 +210,18 @@ class _Outcome:
     wiki_name: str | None = None            # wiki the entry resolved into (None if unattached)
 
 
-def _compute_below_threshold_wikis(tledger: TranscriptLedger, lore_root: Path) -> set[str]:
+def _compute_below_threshold_wikis(
+    tledger: TranscriptLedger,
+    lore_root: Path,
+    *,
+    resolver: Resolver | None = None,
+) -> set[str]:
     """Return the set of wiki names whose pending count is < their own
     ``curator.threshold_pending``. Orphan/unattached buckets are skipped —
     those are handled per-entry, not via threshold gating.
     """
     below: set[str] = set()
-    buckets = tledger.pending_by_wiki()
+    buckets = tledger.pending_by_wiki(resolver=resolver)
     for wiki_name, entries in buckets.items():
         if wiki_name.startswith("__"):
             continue
@@ -208,6 +243,7 @@ def _process_entry(
     now: datetime,
     logger: RunLogger | None = None,
     below_threshold_wikis: set[str] | None = None,
+    resolver: Resolver | None = None,
 ) -> _Outcome:
     # Orphan cwd: the directory the transcript was captured in no longer
     # exists. Mark the entry as orphan and stamp curator_a_run so it
@@ -225,7 +261,10 @@ def _process_entry(
         return _Outcome(skip_reason="orphan_cwd")
 
     # Resolve scope from the transcript's directory; must be attached.
-    attached = resolve_scope(entry.directory)
+    # Uses the injected resolver (registry-backed when LORE_NEW_STATE=1,
+    # legacy walk-up otherwise).
+    _resolve = resolver if resolver is not None else resolve_scope
+    attached = _resolve(entry.directory)
     if attached is None:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="unattached")
