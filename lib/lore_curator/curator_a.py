@@ -256,8 +256,7 @@ def _process_entry(
         return _Outcome(skip_reason="orphan_cwd")
 
     # Resolve scope from the transcript's directory; must be attached.
-    # Uses the injected resolver (registry-backed when LORE_NEW_STATE=1,
-    # legacy walk-up otherwise).
+    # Uses the injected resolver (registry-backed longest-prefix match).
     _resolve = resolver if resolver is not None else resolve_scope
     attached = _resolve(entry.directory)
     if attached is None:

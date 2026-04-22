@@ -12,8 +12,7 @@ Steps for one repo at ``repo_path`` (a directory):
   5. Strip the ``## Lore`` section from ``CLAUDE.md`` using the existing
      ``remove_section`` helper (leaves surrounding content untouched).
 
-Shared by both the one-shot CLI (``lore migrate attachments``) and the
-lazy fallback in the legacy walk-up resolver (Phase 5 transition).
+Called by the one-shot CLI ``lore migrate attachments``.
 """
 
 from __future__ import annotations

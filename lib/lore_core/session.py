@@ -31,38 +31,6 @@ from lore_core.identity import (
 )
 
 
-# ---------------------------------------------------------------------------
-# `## Lore` block reader (minimal — duplicates lore_cli.attach_cmd.read_attach
-# to avoid the lore_core → lore_cli import direction)
-# ---------------------------------------------------------------------------
-
-
-_LORE_HEADING = "## Lore"
-
-
-def _read_lore_block(claude_md: Path) -> dict[str, str]:
-    """Return parsed `- key: value` bullets from the `## Lore` section."""
-    if not claude_md.exists():
-        return {}
-    out: dict[str, str] = {}
-    in_block = False
-    for line in claude_md.read_text(errors="replace").splitlines():
-        stripped = line.strip()
-        if stripped == _LORE_HEADING:
-            in_block = True
-            continue
-        if in_block:
-            if stripped.startswith("## "):
-                break
-            if stripped.startswith("- ") and ":" in stripped[2:]:
-                key, _, value = stripped[2:].partition(":")
-                out[key.strip()] = value.strip()
-    return out
-
-
-MAX_ANCESTOR_WALK = 20  # reconciled from 12 (session) + 20 (hooks) at Task 7 — 20 is the safer of the two finite loops.
-
-
 def _walk_up_lore_config(cwd: Path) -> tuple[Path, dict] | None:
     """Registry-backed lookup for the attachment covering ``cwd``.
 

@@ -330,22 +330,6 @@ def doctor(
         raise typer.Exit(code=1)
 
 
-def _last_json_line(path: Path) -> dict | None:
-    """Read the last JSON line from a file, skipping decode errors."""
-    try:
-        for line in reversed(path.read_text().splitlines()):
-            try:
-                return json.loads(line)
-            except json.JSONDecodeError:
-                continue
-    except OSError:
-        return None
-    return None
-
-
-from lore_core.timefmt import relative_time as _relative_cap  # noqa: E402
-
-
 # Backwards-compat shim for tests + the legacy SUBCOMMANDS dispatcher.
 main = argv_main(app)
 

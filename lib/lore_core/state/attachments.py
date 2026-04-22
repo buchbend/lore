@@ -202,15 +202,7 @@ def _normalise_path(p: Path) -> Path:
 
 def _is_subpath(child: Path, parent: Path) -> bool:
     """True if ``child`` is a proper descendant of ``parent``."""
-    try:
-        return child.is_relative_to(parent) and child != parent
-    except AttributeError:
-        # Python < 3.9 fallback — we target 3.10+ but be defensive
-        try:
-            child.relative_to(parent)
-            return child != parent
-        except ValueError:
-            return False
+    return child.is_relative_to(parent) and child != parent
 
 
 def _attachment_to_raw(a: Attachment) -> dict[str, Any]:

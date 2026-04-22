@@ -25,16 +25,7 @@ from lore_cli._compat import argv_main
 console = Console()
 err_console = Console(stderr=True)
 
-# Migration-only: the legacy `## Lore` block parser lives in
-# lore_core.attach. The migration tool (Phase 5) is its only caller
-# after Phase 6. We re-export the stripper used to remove the section
-# from CLAUDE.md during migration + `lore detach`.
-from lore_core.attach import (  # noqa: F401  (kept for migration / detach)
-    _split_lines,
-    find_section,
-    parse_section_body,
-    read_attach,
-)
+from lore_core.attach import _split_lines, find_section
 
 
 def _join_lines(lines: list[str], trailing: bool) -> str:
