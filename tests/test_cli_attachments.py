@@ -124,3 +124,58 @@ def test_ls_without_lore_root_env_fails(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.delenv("LORE_ROOT", raising=False)
     result = runner.invoke(app, ["attachments", "ls"])
     assert result.exit_code == 1
+
+
+# ---- purge-unattached ----
+
+def _seed_ledger_entry(lore_root: Path, directory: Path) -> None:
+    """Insert a pending transcript-ledger entry pointing at `directory`."""
+    from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
+
+    ledger = TranscriptLedger(lore_root)
+    entry = TranscriptLedgerEntry(
+        host="claude-code",
+        transcript_id=f"test-{directory.name}",
+        path=directory / "transcript.jsonl",
+        directory=directory,
+        digested_hash=None,
+        digested_index_hint=None,
+        synthesised_hash=None,
+        last_mtime=datetime(2026, 4, 22, 9, 0, tzinfo=UTC),
+        curator_a_run=None,
+        noteworthy=None,
+        session_note=None,
+    )
+    ledger.upsert(entry)
+
+
+def test_purge_unattached_empty(lore_root: Path) -> None:
+    result = runner.invoke(app, ["attachments", "purge-unattached"])
+    assert result.exit_code == 0
+    assert "Nothing to purge" in result.stdout
+
+
+def test_purge_unattached_dry_run(lore_root: Path, tmp_path: Path) -> None:
+    unattached_dir = tmp_path / "unattached-repo"
+    unattached_dir.mkdir()
+    _seed_ledger_entry(lore_root, unattached_dir)
+
+    result = runner.invoke(app, ["attachments", "purge-unattached", "--dry-run"])
+    assert result.exit_code == 0
+    assert "Dry-run" in result.stdout
+    # Ledger entry still pending
+    from lore_core.ledger import TranscriptLedger
+    assert len(TranscriptLedger(lore_root).pending()) == 1
+
+
+def test_purge_unattached_applies(lore_root: Path, tmp_path: Path) -> None:
+    unattached_dir = tmp_path / "unattached-repo"
+    unattached_dir.mkdir()
+    _seed_ledger_entry(lore_root, unattached_dir)
+
+    result = runner.invoke(app, ["attachments", "purge-unattached", "--yes"])
+    assert result.exit_code == 0
+
+    from lore_core.ledger import TranscriptLedger
+    # After purge, pending is empty (orphan=True excludes from pending)
+    assert TranscriptLedger(lore_root).pending() == []

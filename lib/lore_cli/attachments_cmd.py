@@ -145,6 +145,59 @@ def cmd_rm(
     console.print(f"[green]Removed attachment[/green] {target}")
 
 
+@app.command("purge-unattached")
+def cmd_purge_unattached(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report only; do not mutate."),
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompt."),
+) -> None:
+    """Retire ledger entries in the ``__unattached__`` bucket.
+
+    For every pending transcript whose cwd doesn't resolve to any
+    attachment, stamp ``orphan=True`` and ``curator_a_run=now`` so the
+    entry never resurfaces. Idempotent; safe to run repeatedly.
+    """
+    from datetime import UTC, datetime
+
+    from lore_core.ledger import TranscriptLedger
+
+    lore_root = _lore_root_or_die()
+    ledger = TranscriptLedger(lore_root)
+    buckets = ledger.pending_by_wiki()
+    unattached = buckets.get("__unattached__", [])
+
+    if not unattached:
+        console.print("[green]Nothing to purge — no unattached entries.[/green]")
+        return
+
+    console.print(f"[bold]{len(unattached)} unattached transcript(s):[/bold]")
+    for entry in unattached:
+        console.print(f"  - {entry.transcript_id}  [dim]({entry.directory})[/dim]")
+
+    if dry_run:
+        console.print("\n[yellow]Dry-run — no changes written.[/yellow]")
+        return
+
+    if not yes and not typer.confirm("\nMark all as orphan and retire?", default=False):
+        console.print("[yellow]Cancelled.[/yellow]")
+        raise typer.Exit(0)
+
+    now = datetime.now(UTC)
+    retired = 0
+    for entry in unattached:
+        try:
+            ledger.stamp_scan(
+                host=entry.host,
+                transcript_id=entry.transcript_id,
+                curator_a_run=now,
+                orphan=True,
+            )
+            retired += 1
+        except KeyError:
+            # Entry vanished between snapshot and stamp — skip.
+            continue
+    console.print(f"[green]Retired {retired} unattached transcript(s).[/green]")
+
+
 main = argv_main(app)
 
 

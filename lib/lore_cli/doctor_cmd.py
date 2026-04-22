@@ -139,12 +139,132 @@ def _check_attach(cwd: str | None) -> Check:
     return True, f"`## Lore` at {path.parent}: wiki={block.get('wiki')}"
 
 
+def _check_attachments() -> Check:
+    """Validate every attachments.json row: path exists, wiki dir exists,
+    scope in scopes.json, fingerprint matches current `.lore.yml` if one
+    exists at the attachment path.
+    """
+    from lore_core.config import get_lore_root, get_wiki_root
+    from lore_core.offer import offer_fingerprint, parse_lore_yml, FILENAME as LORE_YML
+    from lore_core.state.attachments import AttachmentsFile
+    from lore_core.state.scopes import ScopesFile
+
+    lore_root = get_lore_root()
+    if not (lore_root / ".lore" / "attachments.json").exists():
+        return True, "no attachments.json (run `lore attach accept` to register)"
+
+    af = AttachmentsFile(lore_root)
+    af.load()
+    sf = ScopesFile(lore_root)
+    sf.load()
+    wiki_root = get_wiki_root()
+
+    issues: list[str] = []
+    total = 0
+    for a in af.all():
+        total += 1
+        if not a.path.exists():
+            issues.append(f"{a.path}: missing on disk")
+            continue
+        wiki_dir = wiki_root / a.wiki
+        if not wiki_dir.exists():
+            issues.append(f"{a.path}: wiki `{a.wiki}` does not exist in {wiki_root}")
+        if sf.get(a.scope) is None:
+            issues.append(f"{a.path}: scope `{a.scope}` not in scopes.json")
+        # Fingerprint check — only when a .lore.yml is present at the attachment root
+        if a.offer_fingerprint is not None:
+            lore_yml = a.path / LORE_YML
+            if lore_yml.exists():
+                offer = parse_lore_yml(lore_yml)
+                if offer is not None and offer_fingerprint(offer) != a.offer_fingerprint:
+                    issues.append(f"{a.path}: .lore.yml fingerprint drift (run `lore attach accept`)")
+
+    if issues:
+        issue_summary = issues[0]
+        if len(issues) > 1:
+            issue_summary += f" (+ {len(issues) - 1} more)"
+        return False, f"{total} attachment(s) — {len(issues)} issue(s): {issue_summary}"
+    return True, f"{total} attachment(s), all valid"
+
+
+def _check_scope_tree() -> Check:
+    """Scope-tree integrity: every scope's ID-derived parent exists, every
+    root has a wiki, and flag scopes whose resolved wiki doesn't match a
+    real wiki dir.
+    """
+    from lore_core.config import get_lore_root, get_wiki_root
+    from lore_core.state.scopes import ScopesFile, parent_of
+
+    lore_root = get_lore_root()
+    if not (lore_root / ".lore" / "scopes.json").exists():
+        return True, "no scopes.json (builds on first attach)"
+
+    sf = ScopesFile(lore_root)
+    sf.load()
+    ids = sf.all_ids()
+    wiki_root = get_wiki_root()
+
+    issues: list[str] = []
+    for sid in ids:
+        parent = parent_of(sid)
+        if parent is not None and sf.get(parent) is None:
+            issues.append(f"{sid}: parent `{parent}` missing")
+        resolved_wiki = sf.resolve_wiki(sid)
+        if resolved_wiki is None:
+            issues.append(f"{sid}: no resolved wiki")
+        elif not (wiki_root / resolved_wiki).exists():
+            issues.append(f"{sid}: resolved wiki `{resolved_wiki}` does not exist")
+
+    if issues:
+        issue_summary = issues[0]
+        if len(issues) > 1:
+            issue_summary += f" (+ {len(issues) - 1} more)"
+        return False, f"{len(ids)} scope(s) — {len(issues)} issue(s): {issue_summary}"
+    return True, f"{len(ids)} scope(s), tree healthy"
+
+
+def _check_ledger_buckets() -> Check:
+    """Surface the ledger's __orphan__/__unattached__ buckets as
+    actionable informational output. Never fails — these are not errors,
+    they're surfaces the user may want to act on via
+    `lore attachments purge-unattached`.
+    """
+    from lore_core.config import get_lore_root
+    from lore_core.ledger import TranscriptLedger
+
+    lore_root = get_lore_root()
+    ledger_path = lore_root / ".lore" / "transcript-ledger.json"
+    if not ledger_path.exists():
+        return True, "no transcript ledger (capture hasn't fired yet)"
+
+    try:
+        buckets = TranscriptLedger(lore_root).pending_by_wiki()
+    except Exception as e:
+        return False, f"ledger read failed: {e}"
+
+    orphan = len(buckets.get("__orphan__", []))
+    unattached = len(buckets.get("__unattached__", []))
+    attached_total = sum(
+        len(v) for k, v in buckets.items() if not k.startswith("__")
+    )
+
+    parts = [f"{attached_total} attached"]
+    if orphan:
+        parts.append(f"{orphan} orphan")
+    if unattached:
+        parts.append(f"{unattached} unattached (run `lore attachments purge-unattached`)")
+    return True, " · ".join(parts)
+
+
 _CHECKS = [
     ("LORE_ROOT", _check_lore_root),
     ("wikis", _check_wikis),
     ("cache", _check_cache_writable),
     ("MCP server", _check_mcp_imports),
     ("FTS backend", _check_search_backend),
+    ("attachments", _check_attachments),
+    ("scope tree", _check_scope_tree),
+    ("ledger buckets", _check_ledger_buckets),
 ]
 
 
