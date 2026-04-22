@@ -36,6 +36,7 @@ from lore_cli import (
     session_cmd,
     status_cmd,
     surface_cmd,
+    transcripts_cmd,
 )
 from lore_core import lint as lint_cmd
 from lore_core import migrate as migrate_cmd
@@ -76,6 +77,7 @@ app.add_typer(search_cmd.app, name="search")
 app.add_typer(session_cmd.app, name="session")
 app.add_typer(status_cmd.app, name="status")
 app.add_typer(surface_cmd.app, name="surface")
+app.add_typer(transcripts_cmd.app, name="transcripts")
 
 
 @app.command(

@@ -1091,6 +1091,20 @@ def cmd_session_start(
             # Spawn failure is non-fatal — proceed without it.
             pass
 
+    # Fire-and-forget transcript mirror (P4a). Idempotent, gitignored
+    # destination, own spawn lock. Cheap when nothing changed; keeps the
+    # wiki's .transcripts/ warm so `lore transcripts show <uuid>` always
+    # has a local copy for context restoration.
+    if not probe:
+        try:
+            cwd_resolved = Path(_resolve_cwd(cwd))
+            scope = resolve_scope(cwd_resolved)
+            if scope is not None:
+                lore_root = _infer_lore_root(scope.claude_md_path)
+                _spawn_detached_transcript_sync(lore_root)
+        except Exception:
+            pass
+
     # Auto-trigger Curator C weekly (UTC ISO-week + per-user 48h jitter).
     # Flag-gated off by default; see project_curator_triad + spec §6.
     if not probe:
@@ -1419,6 +1433,44 @@ def _spawn_detached_curator_c(
         cmd = [
             sys.executable, "-m", "lore_cli", "curator", "run", "--defrag",
         ]
+        env = os.environ.copy()
+        env["LORE_ROOT"] = str(lore_root)
+        try:
+            subprocess.Popen(
+                cmd,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                env=env,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        import contextlib
+        with contextlib.suppress(OSError):
+            _write_stamp(stamp)
+        return True
+
+
+def _spawn_detached_transcript_sync(
+    lore_root: Path, *, cooldown_s: int = 300
+) -> bool:
+    """Fire-and-forget ``lore transcripts sync`` subprocess.
+
+    Runs on the same spawn-lock + cooldown pattern as the curators, so
+    a busy SessionStart hook can't stampede the filesystem with parallel
+    sync jobs. The P4a sync itself is idempotent; the lock exists purely
+    as a politeness budget.
+    """
+    import subprocess
+    from lore_core.lockfile import try_acquire_spawn_lock
+
+    with try_acquire_spawn_lock(lore_root, "transcripts") as (held, stamp):
+        if not held:
+            return False
+        if _stamp_within_cooldown(stamp, cooldown_s):
+            return False
+        cmd = [sys.executable, "-m", "lore_cli", "transcripts", "sync"]
         env = os.environ.copy()
         env["LORE_ROOT"] = str(lore_root)
         try:
