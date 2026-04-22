@@ -76,34 +76,32 @@ def registry_ls(
 
 @app.command("show")
 def registry_show(
-    path: str = typer.Argument(..., help="Path to search for CLAUDE.md with Lore block."),
+    path: str = typer.Argument(..., help="Path to look up in the attachments registry."),
 ) -> None:
-    """Read and print the Lore attach block from CLAUDE.md at or above <path>."""
-    from lore_cli.attach_cmd import read_attach
+    """Show the attachment (if any) covering ``path`` via longest-prefix match.
 
-    search_path = Path(path).resolve()
+    Thin wrapper over ``lore attachments show`` retained for back-compat.
+    """
+    from lore_core.state.attachments import AttachmentsFile
 
-    # Walk up to find a CLAUDE.md with a Lore block
-    candidate = search_path if search_path.is_dir() else search_path.parent
-    found_block: dict[str, str] | None = None
-    found_at: Path | None = None
-
-    for ancestor in [candidate, *candidate.parents]:
-        claude_md = ancestor / "CLAUDE.md"
-        if claude_md.exists():
-            block = read_attach(claude_md)
-            if block:
-                found_block = block
-                found_at = claude_md
-                break
-
-    if not found_block:
-        console.print(f"[yellow]No Lore attach block found at or above[/yellow] {path}")
+    lore_root = _get_lore_root()
+    if lore_root is None:
+        err_console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
         raise typer.Exit(1)
 
-    console.print(f"[bold]Lore block[/bold] from [dim]{found_at}[/dim]")
-    for key, value in found_block.items():
-        console.print(f"  [cyan]{key}[/cyan]: {value}")
+    search_path = Path(path).resolve()
+    af = AttachmentsFile(lore_root)
+    af.load()
+    match = af.longest_prefix_match(search_path)
+
+    if match is None:
+        console.print(f"[yellow]No attachment covers[/yellow] {path}")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]Attachment[/bold] from [dim]{match.path}[/dim]")
+    console.print(f"  [cyan]wiki[/cyan]: {match.wiki}")
+    console.print(f"  [cyan]scope[/cyan]: {match.scope}")
+    console.print(f"  [cyan]source[/cyan]: {match.source}")
 
 
 @app.command("doctor")

@@ -64,27 +64,41 @@ MAX_ANCESTOR_WALK = 20  # reconciled from 12 (session) + 20 (hooks) at Task 7 â€
 
 
 def _walk_up_lore_config(cwd: Path) -> tuple[Path, dict] | None:
-    """Walk ancestors of cwd looking for a CLAUDE.md with a ``## Lore`` block.
+    """Registry-backed lookup for the attachment covering ``cwd``.
 
-    Uses ``lore_core.attach.read_attach`` as the parser â€” the canonical
-    implementation. Returns (claude_md_path, parsed_block_dict) or None.
+    Name retained for compatibility with callers that still expect a
+    (path, block_dict) tuple. Returns:
+      * ``(synthetic_claude_md_path, {"wiki": ..., "scope": ..., ...})``
+        for attached cwds (the block dict merges the attachment + any
+        ``.lore.yml`` at the repo root, so fields like ``backend``,
+        ``issues``, ``prs`` surface to callers that need them), or
+      * ``None`` for unattached cwds.
     """
-    # Local import to avoid a module-load-order edge case: session.py is
-    # imported by some doctor paths before attach.py's deps settle.
-    from lore_core.attach import read_attach
+    from lore_core.offer import parse_lore_yml, FILENAME as LORE_YML
+    from lore_core.scope_resolver import resolve_scope
 
-    current = cwd.resolve()
-    for _ in range(MAX_ANCESTOR_WALK):
-        claude_md = current / "CLAUDE.md"
-        if claude_md.exists():
-            block = read_attach(claude_md)
-            if block:
-                return claude_md, block
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-    return None
+    scope = resolve_scope(cwd)
+    if scope is None:
+        return None
+    block = {"wiki": scope.wiki, "scope": scope.scope, "backend": scope.backend}
+
+    # Attachment paths store the repo root; look for a `.lore.yml` there
+    # and merge its non-routing fields (backend, issues, prs, wiki_source)
+    # into the block dict. This keeps downstream callers
+    # (`_session_start_from_lore`, etc.) working unchanged.
+    repo_root = scope.claude_md_path.parent
+    offer = parse_lore_yml(repo_root / LORE_YML)
+    if offer is not None:
+        if offer.backend:
+            block["backend"] = offer.backend
+        if offer.issues:
+            block["issues"] = offer.issues
+        if offer.prs:
+            block["prs"] = offer.prs
+        if offer.wiki_source:
+            block["wiki_source"] = offer.wiki_source
+
+    return scope.claude_md_path, block
 
 
 # ---------------------------------------------------------------------------

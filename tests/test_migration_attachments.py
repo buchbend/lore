@@ -198,44 +198,6 @@ def test_cli_migrate_no_lore_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert result.exit_code == 1
 
 
-# ---- lazy fallback in legacy resolver ----
-
-def test_lazy_migration_fires_when_flag_set(
-    lore_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Invoking the legacy walk-up resolver triggers migration when
-    LORE_NEW_STATE=1."""
-    from lore_core.scope_resolver import _legacy_walk_up_resolve
-
-    monkeypatch.setenv("LORE_NEW_STATE", "1")
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "CLAUDE.md").write_text(LEGACY_BLOCK)
-
-    scope = _legacy_walk_up_resolve(repo)
-    assert scope is not None
-    assert scope.wiki == "team-alpha"
-
-    # Side effect: .lore.yml written, attachment registered
-    assert (repo / LORE_YML).exists()
-    af = AttachmentsFile(lore_root); af.load()
-    assert len(af.all()) == 1
-
-    # Hook event logged
-    events = (lore_root / ".lore" / "hook-events.jsonl").read_text().splitlines()
-    matching = [json.loads(l) for l in events if l]
-    assert any(r.get("event") == "attachments-migrated-lazy" for r in matching)
-
-
-def test_lazy_migration_does_not_fire_when_flag_unset(
-    lore_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from lore_core.scope_resolver import _legacy_walk_up_resolve
-
-    monkeypatch.delenv("LORE_NEW_STATE", raising=False)
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "CLAUDE.md").write_text(LEGACY_BLOCK)
-
-    _legacy_walk_up_resolve(repo)
-    assert not (repo / LORE_YML).exists()
+# Note: the lazy-migration fallback that fired during Phase 5 was
+# retired in Phase 6 along with the legacy walk-up resolver. Users
+# migrate explicitly via `lore migrate attachments` now.

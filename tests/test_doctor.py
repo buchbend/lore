@@ -56,11 +56,24 @@ def test_doctor_lore_root_missing_fails(tmp_path, monkeypatch, capsys):
 
 
 def test_doctor_attach_check_finds_lore_block(healthy_vault, tmp_path, monkeypatch, capsys):
+    """Registry-era: the `## Lore attach` check reads the synthesised
+    block from the attachments registry (same message shape)."""
+    from datetime import UTC, datetime
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+    from lore_core.state.scopes import ScopesFile
+
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "CLAUDE.md").write_text(
-        "# proj\n\n## Lore\n- wiki: ccat\n- scope: ccat\n"
-    )
+    af = AttachmentsFile(healthy_vault); af.load()
+    af.add(Attachment(
+        path=project, wiki="ccat", scope="ccat",
+        attached_at=datetime.now(UTC), source="manual",
+    ))
+    af.save()
+    sf = ScopesFile(healthy_vault); sf.load()
+    sf.ingest_chain("ccat", "ccat")
+    sf.save()
+
     rc = doctor_cmd.main(["--cwd", str(project), "--json"])
     assert rc == 0
     envelope = json.loads(capsys.readouterr().out)

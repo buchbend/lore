@@ -32,7 +32,6 @@ from lore_core.scopes import (
     walk_scope_leaves,
 )
 
-from lore_cli.attach_cmd import read_attach
 
 
 # SessionStart writes its injected context to a cache file so /lore:loaded

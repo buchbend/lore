@@ -30,22 +30,25 @@ def test_registry_ls_lists_wiki_dirs(tmp_path, monkeypatch):
 
 
 def test_registry_show_prints_attach_block(tmp_path, monkeypatch):
-    """show <path>: output includes wiki and scope from the Lore block."""
+    """show <path>: output includes wiki and scope from the attachments registry."""
+    from datetime import UTC, datetime
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
     lore_root = tmp_path / "lore_root"
     lore_root.mkdir(parents=True)
+    (lore_root / ".lore").mkdir()
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
 
-    claude_md = tmp_path / "CLAUDE.md"
-    claude_md.write_text(
-        "# Project\n\n"
-        "## Lore\n\n"
-        "<!-- Managed by /lore:attach. -->\n\n"
-        "- wiki: mywiki\n"
-        "- scope: mywiki:myproject\n"
-        "- backend: none\n"
-    )
+    repo = tmp_path / "project"
+    repo.mkdir()
+    af = AttachmentsFile(lore_root); af.load()
+    af.add(Attachment(
+        path=repo, wiki="mywiki", scope="mywiki:myproject",
+        attached_at=datetime.now(UTC), source="manual",
+    ))
+    af.save()
 
-    result = runner.invoke(app, ["registry", "show", str(tmp_path)])
+    result = runner.invoke(app, ["registry", "show", str(repo)])
     assert result.exit_code == 0, result.output
     assert "mywiki" in result.output
     assert "mywiki:myproject" in result.output

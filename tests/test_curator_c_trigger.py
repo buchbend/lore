@@ -39,11 +39,19 @@ LORE_BLOCK = """\
 def _make_attached_project(
     root: Path, *, enabled: bool = True, mode: str = "local"
 ) -> Path:
+    from datetime import UTC, datetime
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
     project = root / "project"
     project.mkdir()
-    (project / "CLAUDE.md").write_text(LORE_BLOCK)
     (project / "wiki" / "testwiki").mkdir(parents=True)
     (project / ".lore").mkdir(parents=True, exist_ok=True)
+    af = AttachmentsFile(project); af.load()
+    af.add(Attachment(
+        path=project, wiki="testwiki", scope="testscope",
+        attached_at=datetime.now(UTC), source="manual",
+    ))
+    af.save()
     # Per-wiki config enabling / configuring Curator C.
     wiki_cfg = project / "wiki" / "testwiki" / ".lore-wiki.yml"
     wiki_cfg.write_text(

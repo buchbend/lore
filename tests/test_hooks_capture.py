@@ -35,12 +35,30 @@ LORE_BLOCK = """\
 
 
 def _make_attached_project(root: Path) -> Path:
-    """Create a directory with an attached CLAUDE.md and required wiki layout."""
+    """Create a directory with a registered attachment and required wiki layout.
+
+    Post-Phase-6, routing uses ``attachments.json`` instead of CLAUDE.md
+    walk-up. The lore_root for tests is ``project`` (because
+    ``_infer_lore_root`` walks up from the scope's path looking for a
+    ``wiki/`` subdirectory).
+    """
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
     project = root / "project"
     project.mkdir()
-    (project / "CLAUDE.md").write_text(LORE_BLOCK)
-    # wiki directory so _infer_lore_root walks up correctly
+    # Wiki directory so _infer_lore_root walks up correctly (project is the lore_root)
     (project / "wiki" / "testwiki").mkdir(parents=True)
+    (project / ".lore").mkdir()
+    af = AttachmentsFile(project)
+    af.load()
+    af.add(Attachment(
+        path=project,
+        wiki="testwiki",
+        scope="testscope",
+        attached_at=_now(),
+        source="manual",
+    ))
+    af.save()
     return project
 
 
@@ -403,10 +421,30 @@ def test_capture_existing_entry_updates_mtime_when_changed(
 
 
 def test_capture_respects_lore_root_env(tmp_path: Path, fake_adapter_factory) -> None:
-    """LORE_ROOT env var determines the ledger file location."""
-    project = _make_attached_project(tmp_path)
+    """LORE_ROOT env var determines the ledger file location.
+
+    Registry-era: the attachment must live in the custom lore root for
+    the capture to route there.
+    """
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
+    _make_attached_project(tmp_path)  # sets up wiki/
+    project = tmp_path / "project"
     custom_lore_root = tmp_path / "custom_lore_root"
-    custom_lore_root.mkdir()
+    (custom_lore_root / ".lore").mkdir(parents=True)
+    (custom_lore_root / "wiki" / "testwiki").mkdir(parents=True)
+
+    # Register attachment in the CUSTOM lore root
+    af = AttachmentsFile(custom_lore_root)
+    af.load()
+    af.add(Attachment(
+        path=project,
+        wiki="testwiki",
+        scope="testscope",
+        attached_at=_now(),
+        source="manual",
+    ))
+    af.save()
 
     handle = _make_handle(project)
     fake_adapter_factory([handle])
@@ -852,15 +890,23 @@ def _make_two_wiki_lore_root(
 
     proj_a = lore_root / "proj_a"
     proj_a.mkdir()
-    (proj_a / "CLAUDE.md").write_text(
-        "# A\n\n## Lore\n\n- wiki: alpha\n- scope: proj:a\n- backend: none\n"
-    )
-
     proj_b = lore_root / "proj_b"
     proj_b.mkdir()
-    (proj_b / "CLAUDE.md").write_text(
-        "# B\n\n## Lore\n\n- wiki: beta\n- scope: proj:b\n- backend: none\n"
-    )
+
+    # Register both projects in the lore_root's attachments.json
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+    (lore_root / ".lore").mkdir(exist_ok=True)
+    af = AttachmentsFile(lore_root)
+    af.load()
+    af.add(Attachment(
+        path=proj_a, wiki="alpha", scope="proj:a",
+        attached_at=_now(), source="manual",
+    ))
+    af.add(Attachment(
+        path=proj_b, wiki="beta", scope="proj:b",
+        attached_at=_now(), source="manual",
+    ))
+    af.save()
 
     return lore_root, proj_a, proj_b
 

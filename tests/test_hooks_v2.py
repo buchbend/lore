@@ -122,30 +122,46 @@ def test_load_scopes_yml_malformed(tmp_path):
 # ---------- _walk_up_lore_config (post-Task-7, was hooks._find_lore_config) ----------
 
 
-def test_walk_up_lore_config_walks_up(tmp_path):
+def test_walk_up_lore_config_walks_up(tmp_path, monkeypatch):
+    """Post-Phase-6: _walk_up_lore_config is a thin wrapper over the
+    registry resolver. It returns the synthetic claude_md_path sentinel
+    and a block dict derived from the attachment."""
+    from datetime import UTC, datetime
+
     from lore_core.session import _walk_up_lore_config
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
     parent = tmp_path / "repo"
     child = parent / "sub" / "deep"
     child.mkdir(parents=True)
-    (parent / "CLAUDE.md").write_text(
-        "## Lore\n\n- wiki: ccat\n- scope: ccat:data-center:data-transfer\n"
-    )
+
+    (tmp_path / ".lore").mkdir()
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    af = AttachmentsFile(tmp_path); af.load()
+    af.add(Attachment(
+        path=parent, wiki="ccat", scope="ccat:data-center:data-transfer",
+        attached_at=datetime(2026, 4, 22, 9, 0, tzinfo=UTC), source="manual",
+    ))
+    af.save()
+
     result = _walk_up_lore_config(child)
     assert result is not None
     path, block = result
-    assert path == parent / "CLAUDE.md"
+    assert path == parent / "CLAUDE.md"      # synthetic sentinel
     assert block["wiki"] == "ccat"
     assert block["scope"] == "ccat:data-center:data-transfer"
 
 
-def test_walk_up_lore_config_returns_none_when_absent(tmp_path):
+def test_walk_up_lore_config_returns_none_when_absent(tmp_path, monkeypatch):
     from lore_core.session import _walk_up_lore_config
-    (tmp_path / "CLAUDE.md").write_text("# Just prose\n\nNo lore block here.\n")
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    (tmp_path / ".lore").mkdir()
     assert _walk_up_lore_config(tmp_path) is None
 
 
-def test_walk_up_lore_config_missing_file(tmp_path):
+def test_walk_up_lore_config_missing_file(tmp_path, monkeypatch):
     from lore_core.session import _walk_up_lore_config
+    monkeypatch.delenv("LORE_ROOT", raising=False)
     assert _walk_up_lore_config(tmp_path) is None
 
 
@@ -203,19 +219,30 @@ def _fake_gh_factory(responses: dict[tuple[str, str], list[dict]]):
     return _fake
 
 
+def _register_attachment(lore_root: Path, repo: Path, *, wiki: str, scope: str) -> None:
+    """Register ``repo`` in ``lore_root/.lore/attachments.json``."""
+    from datetime import UTC, datetime
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
+    (lore_root / ".lore").mkdir(exist_ok=True)
+    af = AttachmentsFile(lore_root); af.load()
+    af.add(Attachment(
+        path=repo, wiki=wiki, scope=scope,
+        attached_at=datetime(2026, 4, 22, 9, 0, tzinfo=UTC), source="manual",
+    ))
+    af.save()
+
+
 def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
     vault, wiki = fake_vault
     repo_dir = tmp_path / "data-transfer"
     repo_dir.mkdir()
-    (repo_dir / "CLAUDE.md").write_text(
-        """## Lore
-
-- wiki: ccat
-- scope: ccat:data-center:data-transfer
-- backend: github
-- issues: --assignee @me --state open
-- prs: --author @me
-"""
+    _register_attachment(vault, repo_dir, wiki="ccat", scope="ccat:data-center:data-transfer")
+    # Write a .lore.yml so the backend/issues/prs fields surface to
+    # _session_start_from_lore (block dict merge in _walk_up_lore_config).
+    (repo_dir / ".lore.yml").write_text(
+        "wiki: ccat\nscope: ccat:data-center:data-transfer\nbackend: github\n"
+        "issues: --assignee @me --state open\nprs: --author @me\n"
     )
     monkeypatch.setattr(hooks, "current_repo", lambda _cwd: "ccatobs/data-transfer")
     monkeypatch.setattr(
@@ -252,13 +279,9 @@ def test_session_start_from_lore_falls_back_when_gh_fails(fake_vault, tmp_path, 
     vault, wiki = fake_vault
     repo_dir = tmp_path / "data-transfer"
     repo_dir.mkdir()
-    (repo_dir / "CLAUDE.md").write_text(
-        """## Lore
-
-- wiki: ccat
-- scope: ccat:data-center:data-transfer
-- backend: github
-"""
+    _register_attachment(vault, repo_dir, wiki="ccat", scope="ccat:data-center:data-transfer")
+    (repo_dir / ".lore.yml").write_text(
+        "wiki: ccat\nscope: ccat:data-center:data-transfer\nbackend: github\n"
     )
     monkeypatch.setattr(hooks, "current_repo", lambda _cwd: "ccatobs/data-transfer")
     # gh returns nothing for everything

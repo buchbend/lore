@@ -318,9 +318,30 @@ def test_wiki_ledger_write_read_roundtrip(tmp_path: Path) -> None:
 
 
 def _write_claude_md(path: Path, wiki: str, scope: str = "proj:test") -> None:
-    path.write_text(
-        f"# P\n\n## Lore\n\n- wiki: {wiki}\n- scope: {scope}\n- backend: none\n"
-    )
+    """Helper: register ``path.parent`` as an attachment in the sibling
+    ``attachments.json`` so the registry-backed resolver (Phase 6+)
+    routes entries through ``wiki``.
+
+    Keeps the name for minimal test-code churn; writes state, not CLAUDE.md.
+    """
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+    repo = path.parent
+    # The attachments file lives at <lore_root>/.lore/attachments.json.
+    # In these tests, lore_root is tmp_path and repos live under it — walk
+    # up until we find tmp_path (by looking for a sibling .lore/ if it
+    # exists, or just taking the first ancestor under which repo is a direct child).
+    lore_root = repo.parent
+    (lore_root / ".lore").mkdir(exist_ok=True)
+    af = AttachmentsFile(lore_root)
+    af.load()
+    af.add(Attachment(
+        path=repo,
+        wiki=wiki,
+        scope=scope,
+        attached_at=datetime(2026, 4, 22, 9, 0, 0, tzinfo=UTC),
+        source="manual",
+    ))
+    af.save()
 
 
 def _make_pending_entry(

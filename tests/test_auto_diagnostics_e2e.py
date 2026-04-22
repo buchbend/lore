@@ -116,15 +116,17 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
 
     cwd = lore_root / "project"
     cwd.mkdir()
-    (cwd / "CLAUDE.md").write_text(
-        "# Project\n\n"
-        f"## Lore\n\n"
-        f"- wiki: {wiki_name}\n"
-        f"- scope: proj:e2e\n"
-        f"- backend: none\n"
-    )
 
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    from datetime import UTC, datetime as _dt
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+    (lore_root / ".lore").mkdir(parents=True, exist_ok=True)
+    _af = AttachmentsFile(lore_root); _af.load()
+    _af.add(Attachment(
+        path=cwd, wiki=wiki_name, scope="proj:e2e",
+        attached_at=_dt.now(UTC), source="manual",
+    ))
+    _af.save()
 
     # ------------------------------------------------------------------
     # Step 2 — build fake adapter and register it

@@ -40,16 +40,22 @@ def _iso(dt: datetime) -> str:
 
 
 def _seed_vault(tmp_path: Path) -> tuple[Path, Path]:
-    """Returns (lore_root, project_dir-with-CLAUDE.md)."""
+    """Returns (lore_root, attached_project_dir)."""
+    from datetime import UTC, datetime as _dt
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
     lore_root = tmp_path / "vault"
     (lore_root / ".lore").mkdir(parents=True)
     (lore_root / "wiki" / "private" / "sessions").mkdir(parents=True)
 
     project = tmp_path / "project"
     project.mkdir()
-    (project / "CLAUDE.md").write_text(
-        "# P\n\n## Lore\n\n- wiki: private\n- scope: proj:test\n- backend: none\n"
-    )
+    af = AttachmentsFile(lore_root); af.load()
+    af.add(Attachment(
+        path=project, wiki="private", scope="proj:test",
+        attached_at=_dt.now(UTC), source="manual",
+    ))
+    af.save()
     return lore_root, project
 
 

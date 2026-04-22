@@ -39,11 +39,25 @@ LORE_BLOCK = """\
 
 
 def _make_attached_project(root: Path) -> Path:
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+    from lore_core.state.scopes import ScopesFile
+
     project = root / "project"
     project.mkdir()
-    (project / "CLAUDE.md").write_text(LORE_BLOCK)
     (project / "wiki" / "testwiki").mkdir(parents=True)
     (project / ".lore").mkdir(parents=True, exist_ok=True)
+
+    af = AttachmentsFile(project); af.load()
+    af.add(Attachment(
+        path=project, wiki="testwiki", scope="testscope",
+        attached_at=datetime.now(tz=timezone.utc), source="manual",
+    ))
+    af.save()
+
+    sf = ScopesFile(project); sf.load()
+    sf.ingest_chain("testscope", "testwiki")
+    sf.save()
+
     return project
 
 

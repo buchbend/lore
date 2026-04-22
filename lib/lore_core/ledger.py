@@ -147,6 +147,24 @@ class TranscriptLedger:
             return True
         return entry.last_mtime > entry.curator_a_run
 
+    def _default_resolver(self) -> "Resolver":
+        """Build a resolver bound to this ledger's ``lore_root``.
+
+        Prefers the ledger's own ``_lore_root`` over the process
+        environment so tests with a ``tmp_path`` ledger resolve against
+        their own attachments file, not a host-wide one.
+        """
+        from lore_core.scope_resolver import resolve_scope
+        from lore_core.state.attachments import AttachmentsFile
+
+        attachments = AttachmentsFile(self._lore_root)
+        attachments.load()
+
+        def _resolver(cwd: Path) -> "Scope | None":
+            return resolve_scope(cwd, attachments=attachments)
+
+        return _resolver
+
     def pending(
         self,
         wiki: str | None = None,
@@ -160,22 +178,23 @@ class TranscriptLedger:
         are dropped silently — use :meth:`pending_by_wiki` if you want
         the buckets surfaced.
 
-        ``resolver`` defaults to the legacy CLAUDE.md walk-up for
-        back-compat; Phase 1 callers that want the registry path pass in
-        a closure bound to an ``AttachmentsFile``.
+        ``resolver`` defaults to one bound to this ledger's
+        ``lore_root``'s ``attachments.json``. Callers with a pre-loaded
+        ``AttachmentsFile`` (e.g. curator A) can pass a custom closure
+        to avoid re-loading per call.
         """
         if resolver is None:
-            from lore_core.scope_resolver import resolve_scope as resolver
+            resolver = self._default_resolver()
 
         result: list[TranscriptLedgerEntry] = []
-        resolve_cache: dict[Path, str | None] = {}
         for raw_entry in self._load().values():
             entry = self._entry_from_raw(raw_entry)
             if not self._is_pending(entry):
                 continue
 
             if wiki is not None:
-                entry_wiki = self._resolve_wiki_cached(entry.directory, resolve_cache, resolver)
+                scope = resolver(entry.directory) if entry.directory.exists() else None
+                entry_wiki = scope.wiki if scope is not None else None
                 if entry_wiki != wiki:
                     continue
 
@@ -193,17 +212,13 @@ class TranscriptLedger:
           - ``<wiki-name>``  — attached entries grouped by their wiki.
           - ``__orphan__``   — entry.directory no longer exists on disk.
           - ``__unattached__`` — directory exists but is not covered by
-            any attachment (registry path) or has no ``## Lore`` block
-            in its ancestor CLAUDE.md (legacy walk-up).
+            any attachment.
 
         Orphan-flagged entries (``entry.orphan=True``) are excluded — the
         curator has already retired them.
-
-        ``resolver`` defaults to the legacy walk-up. Phase 1+ callers can
-        pass a registry-backed resolver.
         """
         if resolver is None:
-            from lore_core.scope_resolver import resolve_scope as resolver
+            resolver = self._default_resolver()
 
         buckets: dict[str, list[TranscriptLedgerEntry]] = {}
         for raw_entry in self._load().values():
@@ -224,23 +239,6 @@ class TranscriptLedger:
         if scope is None:
             return "__unattached__"
         return scope.wiki
-
-    @classmethod
-    def _resolve_wiki_cached(
-        cls,
-        directory: Path,
-        cache: dict[Path, str | None],
-        resolver,
-    ) -> str | None:
-        if directory in cache:
-            return cache[directory]
-        if not directory.exists():
-            cache[directory] = None
-            return None
-        scope = resolver(directory)
-        value = scope.wiki if scope is not None else None
-        cache[directory] = value
-        return value
 
     def stamp_scan(
         self,

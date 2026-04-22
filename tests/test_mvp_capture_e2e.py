@@ -128,16 +128,23 @@ def _setup_lore_root(tmp_path: Path, wiki_name: str = "private") -> tuple[Path, 
     tests that seed a single pending transcript still exercise the full
     curator path (P2 introduced per-wiki gating).
     """
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
     lore_root = tmp_path / "vault"
     wiki_dir = lore_root / "wiki" / wiki_name
     (wiki_dir / "sessions").mkdir(parents=True)
     (wiki_dir / ".lore-wiki.yml").write_text("curator:\n  threshold_pending: 1\n")
+    (lore_root / ".lore").mkdir(parents=True, exist_ok=True)
 
     work = tmp_path / "work" / "project-a"
     work.mkdir(parents=True)
-    (work / "CLAUDE.md").write_text(
-        f"# Project\n\n## Lore\n\n- wiki: {wiki_name}\n- scope: projectA\n- backend: none\n"
-    )
+
+    af = AttachmentsFile(lore_root); af.load()
+    af.add(Attachment(
+        path=work, wiki=wiki_name, scope="projectA",
+        attached_at=_NOW, source="manual",
+    ))
+    af.save()
     return lore_root, work
 
 

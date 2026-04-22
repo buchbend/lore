@@ -119,16 +119,26 @@ _NOW = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
 
 
 def _write_claude_md(path: Path, wiki: str = "private", scope: str = "proj:test") -> Path:
-    """Write a minimal CLAUDE.md with a valid ## Lore block."""
-    content = f"""# Project
-
-## Lore
-
-- wiki: {wiki}
-- scope: {scope}
-- backend: none
-"""
-    path.write_text(content)
+    """Register ``path.parent`` as an attachment in the sibling lore root's
+    ``attachments.json`` (Phase 6 replaced the CLAUDE.md walk-up with
+    registry lookup). Name preserved for minimal test churn.
+    """
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+    repo = path.parent
+    # In these tests, tmp_path is the lore_root and project dirs live
+    # directly under it.
+    lore_root = repo.parent
+    (lore_root / ".lore").mkdir(exist_ok=True)
+    af = AttachmentsFile(lore_root)
+    af.load()
+    af.add(Attachment(
+        path=repo,
+        wiki=wiki,
+        scope=scope,
+        attached_at=_NOW,
+        source="manual",
+    ))
+    af.save()
     return path
 
 

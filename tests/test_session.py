@@ -25,21 +25,21 @@ def solo_vault(tmp_path, monkeypatch):
 
 @pytest.fixture
 def attached_project(tmp_path, solo_vault, monkeypatch):
-    """A working repo that has `## Lore` attached to the ccat wiki."""
-    _, wiki = solo_vault
+    """A working repo registered as an attachment (Phase 6 registry)."""
+    from datetime import UTC, datetime as _dt
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
+    lore_root, wiki = solo_vault
     project = tmp_path / "myproject"
     project.mkdir()
-    (project / "CLAUDE.md").write_text(
-        dedent(
-            f"""\
-            # My Project
 
-            ## Lore
-            - wiki: {wiki.name}
-            - scope: ccat:data-center
-            """
-        )
-    )
+    (lore_root / ".lore").mkdir(parents=True, exist_ok=True)
+    af = AttachmentsFile(lore_root); af.load()
+    af.add(Attachment(
+        path=project, wiki=wiki.name, scope="ccat:data-center",
+        attached_at=_dt.now(UTC), source="manual",
+    ))
+    af.save()
     # Make it a real git repo so current_repo() works in scaffold
     subprocess.run(["git", "init", "-q"], cwd=str(project), check=True)
     subprocess.run(
@@ -77,9 +77,13 @@ def test_format_frontmatter_drops_empty_values():
 
 
 def test_scaffold_solo_no_attach(solo_vault, attached_project):
-    """No `## Lore` block in cwd → falls back to wiki resolution + wiki=scope."""
-    # Strip the attach so we exercise the fallback
-    (attached_project / "CLAUDE.md").write_text("# project\n")
+    """No attachment in the registry → falls back to wiki resolution + wiki=scope."""
+    # Strip the registry attachment so we exercise the fallback
+    from lore_core.state.attachments import AttachmentsFile
+    from lore_core.config import get_lore_root
+    _af = AttachmentsFile(get_lore_root()); _af.load()
+    _af.remove(attached_project)
+    _af.save()
     result = scaffold(
         cwd=attached_project,
         slug="fix-retry",

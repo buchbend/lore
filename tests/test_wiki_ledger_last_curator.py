@@ -120,11 +120,18 @@ def _minimal_curator_a_setup(tmp_path: Path):
     from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
     from lore_core.types import Turn
 
+    from datetime import UTC, datetime as _dt
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
-    (project_dir / "CLAUDE.md").write_text(
-        "# Project\n\n## Lore\n\n- wiki: private\n- scope: proj:test\n- backend: none\n"
-    )
+    (tmp_path / ".lore").mkdir(parents=True, exist_ok=True)
+    _af = AttachmentsFile(tmp_path); _af.load()
+    _af.add(Attachment(
+        path=project_dir, wiki="private", scope="proj:test",
+        attached_at=_dt.now(UTC), source="manual",
+    ))
+    _af.save()
     wiki_dir = tmp_path / "wiki" / "private"
     (wiki_dir / "sessions").mkdir(parents=True)
     # P2: Curator A gates per-wiki by threshold_pending. Default is 10, and

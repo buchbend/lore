@@ -28,18 +28,13 @@ Resolver = Callable[[Path], "Scope | None"]
 
 
 def _build_resolver(lore_root: Path) -> Resolver:
-    """Select the registry-backed resolver when ``LORE_NEW_STATE=1``,
-    otherwise fall back to the legacy CLAUDE.md walk-up.
+    """Load the registry once per curator pass and bind it into a closure.
 
-    The registry path loads ``AttachmentsFile`` once per curator pass and
-    binds it into a closure — all subsequent ``resolver(cwd)`` calls are
-    O(log n) dict lookups with no filesystem I/O. When the attachments
-    file is missing, the closure returns ``None`` for every cwd, which
-    the curator surfaces as an ``__unattached__`` bucket.
+    All subsequent ``resolver(cwd)`` calls are O(log n) dict lookups with
+    no filesystem I/O. When ``attachments.json`` is missing, the closure
+    returns ``None`` for every cwd, which the curator surfaces as an
+    ``__unattached__`` bucket.
     """
-    if os.environ.get("LORE_NEW_STATE") != "1":
-        return resolve_scope
-
     attachments = AttachmentsFile(lore_root)
     attachments.load()
 
@@ -337,8 +332,6 @@ def _process_entry(
     for t in turns:
         _redact_turn_in_place_best_effort(t, log_path)
 
-    # Load per-wiki config for model tiers — use `attached.wiki` directly,
-    # don't re-parse CLAUDE.md (avoids TOCTOU mismatch with resolve_scope).
     wiki_dir = lore_root / "wiki" / attached.wiki
     cfg = load_wiki_config(wiki_dir)
     tier = cfg.curator.a_noteworthy_tier
@@ -460,7 +453,3 @@ def _redact_turn_in_place_best_effort(t: Turn, log_path: Path) -> None:
         redact(t.tool_result.output, log_path=log_path)
 
 
-# Note: prior helpers `_wiki_dir_from_claude_md` and `_first_scope_segment_from`
-# were removed — the pipeline now reads `attached.wiki` directly from the
-# resolved Scope, eliminating a redundant CLAUDE.md re-parse and a layer
-# violation (lore_curator → lore_cli).

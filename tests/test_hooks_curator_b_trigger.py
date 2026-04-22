@@ -31,14 +31,20 @@ LORE_BLOCK = """\
 
 
 def _make_attached_project(root: Path) -> Path:
-    """Create a directory with an attached CLAUDE.md and required wiki layout."""
+    """Create a directory registered as an attachment (Phase 6 registry)."""
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
     project = root / "project"
     project.mkdir()
-    (project / "CLAUDE.md").write_text(LORE_BLOCK)
     # wiki directory so _infer_lore_root walks up correctly
     (project / "wiki" / "testwiki").mkdir(parents=True)
-    # Initialize the .lore directory for ledger
     (project / ".lore").mkdir(parents=True, exist_ok=True)
+    af = AttachmentsFile(project); af.load()
+    af.add(Attachment(
+        path=project, wiki="testwiki", scope="testscope",
+        attached_at=_now(), source="manual",
+    ))
+    af.save()
     return project
 
 

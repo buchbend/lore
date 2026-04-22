@@ -79,12 +79,26 @@ def test_lore_loaded_live_section_updates_across_calls(tmp_path: Path, monkeypat
     """A pending transcript added between two calls is reflected in the
     second call's live section — demonstrates the state is queried fresh.
     """
+    from datetime import UTC, datetime as _dt
     from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
+    from lore_core.state.attachments import Attachment, AttachmentsFile
 
     cache_dir = tmp_path / "cache"
     lore_root = tmp_path / "vault"
     (lore_root / ".lore").mkdir(parents=True)
     (lore_root / "wiki" / "private").mkdir(parents=True)
+
+    # Registry-era: register the test's expected cwd as an attachment so
+    # the "Live state" branch renders ("not attached" is the alternative).
+    project = tmp_path / "proj"
+    project.mkdir()
+    af = AttachmentsFile(lore_root); af.load()
+    af.add(Attachment(
+        path=project, wiki="private", scope="proj:test",
+        attached_at=_dt.now(UTC), source="manual",
+    ))
+    af.save()
+    monkeypatch.chdir(project)
 
     _seed_cache(cache_dir, pid=99999, body="body\n")
     _set_env(monkeypatch, cache_dir, lore_root)
