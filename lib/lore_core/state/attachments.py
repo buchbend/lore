@@ -147,6 +147,28 @@ class AttachmentsFile:
             for d in self._declined
         )
 
+    def rewrite_scopes(self, mapping: dict[str, str]) -> int:
+        """Apply a scope-rename mapping to attachment rows.
+
+        For each attachment whose ``scope`` is a key in ``mapping``,
+        rewrite it to the mapped value. Returns the number of rows
+        changed. Caller is responsible for saving.
+        """
+        self._ensure_loaded()
+        changed = 0
+        for i, a in enumerate(self._attachments):
+            if a.scope in mapping:
+                self._attachments[i] = Attachment(
+                    path=a.path,
+                    wiki=a.wiki,
+                    scope=mapping[a.scope],
+                    attached_at=a.attached_at,
+                    source=a.source,
+                    offer_fingerprint=a.offer_fingerprint,
+                )
+                changed += 1
+        return changed
+
     # ---- internals ----
 
     def _ensure_loaded(self) -> None:

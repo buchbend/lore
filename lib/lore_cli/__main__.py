@@ -18,6 +18,7 @@ import typer
 # unified `lore --help` listing.
 from lore_cli import (
     attach_cmd,
+    attachments_cmd,
     briefing_cmd,
     completions_cmd,
     detach_cmd,
@@ -31,6 +32,7 @@ from lore_cli import (
     registry_cmd,
     resume_cmd,
     runs_cmd,
+    scopes_cmd,
     session_cmd,
     status_cmd,
     surface_cmd,
@@ -51,6 +53,7 @@ app = typer.Typer(
 # Mount every subcommand. Names match the legacy SUBCOMMANDS dict so
 # `lore <verb>` invocations stay backwards-compatible.
 app.add_typer(attach_cmd.app, name="attach")
+app.add_typer(attachments_cmd.app, name="attachments")
 app.add_typer(briefing_cmd.app, name="briefing")
 app.add_typer(completions_cmd.app, name="completions")
 app.add_typer(curator_cmd.app, name="curator")
@@ -68,6 +71,7 @@ app.add_typer(new_wiki_cmd.app, name="new-wiki")
 app.add_typer(registry_cmd.app, name="registry")
 app.add_typer(resume_cmd.app, name="resume")
 app.add_typer(runs_cmd.app, name="runs")
+app.add_typer(scopes_cmd.app, name="scopes")
 app.add_typer(search_cmd.app, name="search")
 app.add_typer(session_cmd.app, name="session")
 app.add_typer(status_cmd.app, name="status")
