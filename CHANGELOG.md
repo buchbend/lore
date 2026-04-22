@@ -10,6 +10,73 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-04-22
+
+Local-Lore-state release. Replaces the distributed `## Lore` CLAUDE.md
+routing model with a host-local registry + optional `.lore.yml` offer.
+CLAUDE.md is no longer a routing artifact. See issue #22 and
+`docs/superpowers/plans/2026-04-22-local-lore-state-plan.md`.
+
+### Added
+
+- **Host-local state** — `$LORE_ROOT/.lore/attachments.json` (which
+  paths route where) and `$LORE_ROOT/.lore/scopes.json` (the scope
+  tree, flat ID-as-path with wiki-inheritance).
+- **`.lore.yml` offer format** — optional checked-in repo file
+  declaring `wiki`, `scope`, `backend`, `issues`, `prs`, and
+  `wiki_source`. Fingerprinted over routing fields only so non-routing
+  tweaks don't re-prompt users who accepted.
+- **Consent state machine** — `UNTRACKED | OFFERED | ATTACHED |
+  DORMANT | MANUAL | DRIFT` surfaced by a non-blocking notice in
+  SessionStart when `.lore.yml` is pending acceptance.
+- **Registry CLI** — `lore attach {accept, decline, manual, offer}`,
+  `lore attachments {ls, show, rm, purge-unattached}`,
+  `lore scopes {ls, show, rename, reparent, rm}`. Scope rename/reparent
+  propagates across both state files atomically.
+- **Doctor extensions** — `lore doctor` validates attachments (path
+  exists, wiki dir exists, scope in tree, fingerprint matches) and
+  scope-tree integrity; surfaces `__orphan__` / `__unattached__` ledger
+  buckets with actionable suggestions.
+- **Migration tool** — `lore migrate attachments` (one-shot,
+  idempotent, dry-run) converts legacy `## Lore` CLAUDE.md blocks into
+  `.lore.yml` + registry rows and strips the section from CLAUDE.md
+  (surrounding content preserved).
+- **Reinstall shortcut** — `lore install reinstall` composes
+  `uninstall` + `install` in one step.
+
+### Changed
+
+- `resolve_scope(cwd)` is registry-only — longest-prefix match on
+  `attachments.json`. No filesystem walk-up. O(log n) lookup.
+- Ledger's `pending()` / `pending_by_wiki()` default resolver is
+  bound to the ledger's own `lore_root`, not `$LORE_ROOT` env —
+  simplifies test fixtures.
+- `_walk_up_lore_config` is now a registry-backed shim that returns
+  a synthetic `claude_md_path` sentinel plus a block dict derived from
+  the resolved scope (merged with any `.lore.yml` at the attachment
+  path for non-routing fields).
+
+### Removed
+
+- Legacy `## Lore` CLAUDE.md walk-up resolver (`_legacy_walk_up_resolve`).
+- Lazy-migration hook in the legacy resolver (transition-only,
+  superseded by explicit `lore migrate attachments`).
+- `TranscriptLedger._resolve_wiki_cached` + cache dict (redundant now
+  that longest-prefix match is O(log n)).
+- Legacy `lore attach read` / `lore attach write` commands (replaced
+  by `lore attach accept|manual|offer` + `lore attachments show`).
+
+### Migration
+
+On machines with existing `## Lore` blocks in CLAUDE.md:
+
+```
+lore migrate attachments --dry-run   # preview
+lore migrate attachments --yes       # apply
+```
+
+Idempotent. Re-runs are no-op. Preserves surrounding CLAUDE.md content.
+
 ## [0.2.4] — 2026-04-21
 
 ### Fixed

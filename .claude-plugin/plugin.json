@@ -1,7 +1,7 @@
 {
   "name": "lore",
   "description": "LLM-optimized knowledge graph for AI-coding teams — session notes, auto-extracted knowledge, pluggable briefings, magic context injection at session start.",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "author": {
     "name": "Christof Buchbender"
   },

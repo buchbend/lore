@@ -561,6 +561,59 @@ def cmd_uninstall(
     _exit_with(_cmd_install(args, mode="uninstall"))
 
 
+@app.command("reinstall")
+def cmd_reinstall(
+    host: str = _HOST,
+    yes: bool = _YES,
+    quiet: bool = _QUIET,
+    json_out: bool = _JSON,
+    force: bool = _FORCE,
+    lore_repo: str = _LORE_REPO,
+) -> None:
+    """Uninstall then install — useful after upgrading the Lore package.
+
+    Equivalent to:
+
+        lore install uninstall && lore install
+
+    Pair with ``claude plugin update lore@lore`` to force Claude's
+    plugin cache to re-fetch (the ``.claude-plugin/plugin.json``
+    version must be bumped in the repo for the update to do anything
+    — see CHANGELOG.md).
+    """
+    uninstall_args = _make_args(
+        "reinstall",
+        host=host,
+        yes=yes,
+        quiet=quiet,
+        json_out=json_out,
+        force=force,
+        lore_repo=lore_repo,
+    )
+    rc = _cmd_install(uninstall_args, mode="uninstall")
+    if rc != 0:
+        _exit_with(rc)
+
+    install_args = _make_args(
+        "reinstall",
+        host=host,
+        yes=yes,
+        quiet=quiet,
+        json_out=json_out,
+        force=force,
+        lore_repo=lore_repo,
+    )
+    rc = _cmd_install(install_args, mode="install")
+
+    if rc == 0 and not json_out and not quiet:
+        from rich.console import Console
+        Console().print(
+            "\n[dim]Next:[/dim] run [bold]claude plugin update lore@lore[/bold] "
+            "(or restart Claude) to re-fetch the plugin cache."
+        )
+    _exit_with(rc)
+
+
 main = argv_main(app)
 
 
