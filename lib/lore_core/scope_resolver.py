@@ -63,6 +63,11 @@ def _legacy_walk_up_resolve(cwd: Path, *, max_depth: int = 8) -> Scope | None:
     Returns the nearest :class:`Scope` (child wins over ancestor), or
     None if no attached CLAUDE.md is found within ``max_depth`` levels.
     Retired in Phase 6.
+
+    Phase 5: when ``LORE_NEW_STATE=1`` and the block resolves, also fires
+    a best-effort lazy migration into the registry. Idempotent — the
+    second firing is a no-op because ``migrate_repo`` sees an existing
+    ``.lore.yml``. Never raises past the migration call.
     """
     current = cwd.resolve()
     depth = 0
@@ -77,6 +82,7 @@ def _legacy_walk_up_resolve(cwd: Path, *, max_depth: int = 8) -> Scope | None:
 
             if wiki and scope:
                 backend = block.get("backend", "none")
+                _maybe_lazy_migrate(claude_md_path.parent)
                 return Scope(
                     wiki=wiki,
                     scope=scope,
@@ -91,3 +97,39 @@ def _legacy_walk_up_resolve(cwd: Path, *, max_depth: int = 8) -> Scope | None:
         depth += 1
 
     return None
+
+
+def _maybe_lazy_migrate(repo_path: Path) -> None:
+    """Trigger a one-shot migration of ``repo_path`` into the registry when
+    ``LORE_NEW_STATE=1``. Swallows every exception — this is a best-effort
+    transition path, never a correctness requirement.
+    """
+    import os
+
+    if os.environ.get("LORE_NEW_STATE") != "1":
+        return
+    lore_root_env = os.environ.get("LORE_ROOT")
+    if not lore_root_env:
+        return
+    lore_root = Path(lore_root_env)
+    if not lore_root.exists():
+        return
+
+    try:
+        from lore_core.hook_log import HookEventLogger
+        from lore_core.migration import migrate_repo
+
+        result = migrate_repo(repo_path, lore_root=lore_root, dry_run=False)
+        if result.action == "migrated":
+            try:
+                HookEventLogger(lore_root).emit(
+                    event="attachments-migrated-lazy",
+                    outcome="migrated",
+                    detail={"repo_path": str(repo_path)},
+                )
+            except Exception:
+                pass
+    except Exception:
+        # Migration failure is non-fatal — the legacy resolver already
+        # returned the right Scope to the caller.
+        pass
