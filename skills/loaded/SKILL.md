@@ -15,7 +15,7 @@ session start. Read-only: no re-gather, no LLM judgment, no commentary.
 ## Implementation
 
 ```
-lore hook why
+lore hook live-state
 ```
 
 That's it. One Bash call. Print the output verbatim. **Do not add a
@@ -35,10 +35,7 @@ The output is structured:
 Live state comes first because for a Claude session asking "what's the
 state?", current matters more than historical. The cache is context.
 
-The CLI subcommand keeps the legacy `why` name for backwards compat
-with older skill installs; the user-facing skill name was renamed
-to `loaded` because it matches the SessionStart status line text
-(`lore: loaded ...`).
+The CLI subcommand was renamed from `why` to `live-state`.
 
 ## When the cache is empty
 

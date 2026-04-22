@@ -116,7 +116,7 @@ def _claude_code_pid() -> int | None:
         # version path. The bare "claude" match is deliberately exact
         # (== "claude") to avoid matching unrelated processes that
         # happen to contain the substring.
-        if cmdline == "claude" or cmdline.rstrip() == "claude":
+        if cmdline.rstrip() == "claude":
             return ppid
         if execpath and execpath in cmdline:
             return ppid
@@ -342,14 +342,64 @@ def _session_touches_repo(text: str, fm: dict, repo: str) -> bool:
         return True
     tail = repo.rsplit("/", 1)[-1]
     # Cheap substring check — false positives are tolerable here
-    if repo in text or (tail and tail in text):
-        return True
-    return False
+    return repo in text or (tail and tail in text)
 
 
 def _is_ephemeral(item: str) -> bool:
     lower = item.lower()
     return any(marker in lower for marker in EPHEMERAL_MARKERS)
+
+
+def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[str]:
+    """Return compact breadcrumbs for the most recent session notes.
+
+    Reads only YAML frontmatter (first ~1KB). Does not filter by user —
+    any user's sessions are shown for cross-user awareness.
+    """
+    from lore_core.schema import parse_frontmatter
+
+    sessions_dir = wiki / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+    candidates = sorted(sessions_dir.glob("*.md"), reverse=True)
+    lines: list[str] = []
+    for path in candidates:
+        if len(lines) >= max_notes:
+            break
+        try:
+            head = path.read_text(errors="replace")[:1024]
+        except OSError:
+            continue
+        fm = parse_frontmatter(head)
+        desc = fm.get("description")
+        if not desc:
+            continue
+        slug = path.stem
+        lines.append(f"Last: [[{slug}]] — {desc}")
+    return lines
+
+
+def _cross_scope_breadcrumbs(lore_root: Path, current_wiki: str) -> list[str]:
+    """One-liner per other-wiki with activity in the last 24h."""
+    from collections import Counter
+    from datetime import UTC, datetime, timedelta
+
+    from lore_core.drain import SYSTEM_SESSION, DrainStore
+
+    store = DrainStore(lore_root, SYSTEM_SESSION)
+    cutoff = datetime.now(UTC) - timedelta(hours=24)
+    events = store.read(since=cutoff, limit=500)
+    if not events:
+        return []
+    wiki_counts: Counter[str] = Counter()
+    for e in events:
+        if e.wiki and e.wiki != current_wiki:
+            wiki_counts[e.wiki] += 1
+    lines: list[str] = []
+    for wiki_name, count in wiki_counts.most_common():
+        noun = "event" if count == 1 else "events"
+        lines.append(f"Also today: {count} {noun} in {wiki_name}")
+    return lines
 
 
 def _recent_open_items(
@@ -580,6 +630,11 @@ def _session_start_from_lore(
         out_parts.append(f"_Repo `{repo}` has no dedicated project note in {wiki_name}._")
         out_parts.append("")
 
+    session_hints = _last_session_hint(wiki)
+    if session_hints:
+        out_parts.extend(session_hints)
+        out_parts.append("")
+
     if issues:
         header = f"## Open issues ({scope})" if scope else "## Open issues"
         out_parts.append(header)
@@ -689,6 +744,11 @@ def _session_start(cwd: str | None) -> str:
         parts.append(f"_Repo `{repo}` has no dedicated project note in {wiki.name}._")
         parts.append("")
 
+    session_hints = _last_session_hint(wiki)
+    if session_hints:
+        parts.extend(session_hints)
+        parts.append("")
+
     if items:
         parts.append(f"## Open items{' (this repo)' if repo else ''}")
         for item in items[:MAX_OPEN_ITEMS_INLINE]:
@@ -796,7 +856,7 @@ def _render_live_state(cwd: Path | None = None) -> str:
     return "\n".join(lines)
 
 
-def _why() -> str:
+def _live_state() -> str:
     """Return live state + the SessionStart cache for the current session.
 
     Output shape (post-Task-13):
@@ -964,11 +1024,10 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
                 "additionalContext": context_text,
             },
         }
-    elif hook_event == "PreCompact":
-        envelope = {"systemMessage": text}
     elif hook_event == "Stop":
         envelope = {"systemMessage": text.strip()}
     else:
+        # PreCompact and any future events — systemMessage only.
         envelope = {"systemMessage": text}
 
     sys.stdout.write(json.dumps(envelope))
@@ -1020,7 +1079,7 @@ def cmd_session_start(
 ) -> None:
     """Inject vault context at session start."""
     cwd_resolved = Path(_resolve_cwd(cwd))
-    out = _session_start(_resolve_cwd(cwd))
+    out = _session_start(str(cwd_resolved))
 
     # Surface pending `.lore.yml` offers at the top of the banner.
     try:
@@ -1030,18 +1089,20 @@ def cmd_session_start(
     except Exception:
         pass
 
+    # Resolve scope once — reused by the banner, curator spawns, and
+    # transcript sync below. None means "unattached cwd."
+    scope = resolve_scope(cwd_resolved)
+    lore_root = _infer_lore_root(scope.claude_md_path) if scope is not None else None
+
     # Attempt to append capture-state breadcrumb banner
     try:
         from datetime import UTC, datetime as dt
         from lore_cli.breadcrumb import BannerContext, render_banner
         from lore_core.config import get_wiki_root
 
-        cwd_resolved = Path(_resolve_cwd(cwd))
-        scope = resolve_scope(cwd_resolved)
-        if scope is not None:
+        if scope is not None and lore_root is not None:
             wiki_root = get_wiki_root()
             if wiki_root.exists():
-                lore_root = _infer_lore_root(scope.claude_md_path)
                 wiki_cfg = _load_wiki_cfg_from_scope(scope, lore_root)
                 now = dt.now(tz=UTC)
 
@@ -1074,88 +1135,77 @@ def cmd_session_start(
                     if drain_lines:
                         out = out + "\n" + "\n".join(drain_lines)
                 except Exception:
-                    # Drain rendering is telemetry — never block the hook.
+                    pass
+
+                try:
+                    cross = _cross_scope_breadcrumbs(lore_root, scope.wiki)
+                    if cross:
+                        out = out + "\n" + "\n".join(cross)
+                except Exception:
                     pass
     except Exception:
         # Banner generation failure is non-fatal — proceed without it.
         pass
 
-    # Auto-trigger Curator B on calendar-day rollover (suppressed under --probe).
-    if not probe:
+    # Side-effect spawns — suppressed under --probe.
+    if not probe and scope is not None and lore_root is not None:
+        # Auto-trigger Curator B on calendar-day rollover.
         try:
             from datetime import UTC, datetime as dt
 
-            cwd_resolved = Path(_resolve_cwd(cwd))
-            scope = resolve_scope(cwd_resolved)
-            if scope is not None:
-                lore_root = _infer_lore_root(scope.claude_md_path)
-                wledger = WikiLedger(lore_root, scope.wiki)
-                wentry = wledger.read()
-                today = dt.now(UTC).date()
-                last_b_date = wentry.last_curator_b.date() if wentry.last_curator_b else None
-                if last_b_date is None or today > last_b_date:
-                    cfg_b = _load_wiki_cfg_from_scope(scope, lore_root)
-                    _spawn_detached_curator_b(
-                        lore_root, scope.wiki, cooldown_s=cfg_b.curator.curator_b_cooldown_s
+            wledger = WikiLedger(lore_root, scope.wiki)
+            wentry = wledger.read()
+            today = dt.now(UTC).date()
+            last_b_date = wentry.last_curator_b.date() if wentry.last_curator_b else None
+            if last_b_date is None or today > last_b_date:
+                cfg_b = _load_wiki_cfg_from_scope(scope, lore_root)
+                _spawn_detached_curator_b(
+                    lore_root, scope.wiki, cooldown_s=cfg_b.curator.curator_b_cooldown_s
+                )
+        except Exception:
+            pass
+
+        # Fire-and-forget transcript mirror (P4a). Idempotent, gitignored
+        # destination, own spawn lock.
+        try:
+            _spawn_detached_transcript_sync(lore_root)
+        except Exception:
+            pass
+
+        # Auto-trigger Curator C weekly (UTC ISO-week + per-user 48h jitter).
+        # Flag-gated off by default; see project_curator_triad + spec §6.
+        try:
+            cfg = _load_wiki_cfg_from_scope(scope, lore_root)
+            c_cfg = cfg.curator.curator_c
+            if c_cfg.enabled:
+                if c_cfg.mode != "local":
+                    HookEventLogger(lore_root).emit(
+                        event="curator-c",
+                        outcome="central-mode-skipped",
+                        error={
+                            "message": "mode=central deferred to v2; local spawn skipped",
+                            "wiki": scope.wiki,
+                        },
                     )
-        except Exception:
-            # Spawn failure is non-fatal — proceed without it.
-            pass
-
-    # Fire-and-forget transcript mirror (P4a). Idempotent, gitignored
-    # destination, own spawn lock. Cheap when nothing changed; keeps the
-    # wiki's .transcripts/ warm so `lore transcripts show <uuid>` always
-    # has a local copy for context restoration.
-    if not probe:
-        try:
-            cwd_resolved = Path(_resolve_cwd(cwd))
-            scope = resolve_scope(cwd_resolved)
-            if scope is not None:
-                lore_root = _infer_lore_root(scope.claude_md_path)
-                _spawn_detached_transcript_sync(lore_root)
-        except Exception:
-            pass
-
-    # Auto-trigger Curator C weekly (UTC ISO-week + per-user 48h jitter).
-    # Flag-gated off by default; see project_curator_triad + spec §6.
-    if not probe:
-        try:
-            cwd_resolved = Path(_resolve_cwd(cwd))
-            scope = resolve_scope(cwd_resolved)
-            if scope is not None:
-                lore_root = _infer_lore_root(scope.claude_md_path)
-                cfg = _load_wiki_cfg_from_scope(scope, lore_root)
-                c_cfg = cfg.curator.curator_c
-                if c_cfg.enabled:
-                    if c_cfg.mode != "local":
-                        # Fail loudly — don't silently skip.
-                        HookEventLogger(lore_root).emit(
-                            event="curator-c",
-                            outcome="central-mode-skipped",
-                            error={
-                                "message": "mode=central deferred to v2; local spawn skipped",
-                                "wiki": scope.wiki,
-                            },
-                        )
-                    else:
-                        wledger = WikiLedger(lore_root, scope.wiki)
-                        wentry = wledger.read()
-                        now = _now_utc()
-                        last_c = wentry.last_curator_c
-                        if last_c is not None and last_c.tzinfo is None:
-                            from datetime import UTC as _UTC
-                            last_c = last_c.replace(tzinfo=_UTC)
-                        iso_now = now.isocalendar()
-                        needs_rollover = (
-                            last_c is None
-                            or last_c.isocalendar()[:2] != iso_now[:2]
-                        )
-                        if needs_rollover:
-                            monday = _iso_week_monday_utc(now)
-                            offset = _curator_c_jitter_seconds(_curator_c_email())
-                            from datetime import timedelta as _td
-                            if now >= monday + _td(seconds=offset):
-                                _spawn_detached_curator_c(lore_root)
+                else:
+                    wledger = WikiLedger(lore_root, scope.wiki)
+                    wentry = wledger.read()
+                    now = _now_utc()
+                    last_c = wentry.last_curator_c
+                    if last_c is not None and last_c.tzinfo is None:
+                        from datetime import UTC as _UTC
+                        last_c = last_c.replace(tzinfo=_UTC)
+                    iso_now = now.isocalendar()
+                    needs_rollover = (
+                        last_c is None
+                        or last_c.isocalendar()[:2] != iso_now[:2]
+                    )
+                    if needs_rollover:
+                        monday = _iso_week_monday_utc(now)
+                        offset = _curator_c_jitter_seconds(_curator_c_email())
+                        from datetime import timedelta as _td
+                        if now >= monday + _td(seconds=offset):
+                            _spawn_detached_curator_c(lore_root)
         except Exception:
             pass
 
@@ -1189,10 +1239,130 @@ def cmd_stop(
     _emit("Stop", out, plain=plain)
 
 
-@hook_app.command("why")
-def cmd_why() -> None:
-    """Print the SessionStart cache for the current Claude session."""
-    sys.stdout.write(_why())
+@hook_app.command("live-state")
+def cmd_live_state() -> None:
+    """Print live capture state + the SessionStart cache."""
+    sys.stdout.write(_live_state())
+
+
+# ---------------------------------------------------------------------------
+# UserPromptSubmit heartbeat
+# ---------------------------------------------------------------------------
+
+
+def _heartbeat(
+    lore_root: Path,
+    cwd: Path,
+    wiki_cfg: "WikiConfig",
+    *,
+    pid: int | None = None,
+) -> tuple[str | None, str | None]:
+    """Check drain for new events; return (system_message, additional_context).
+
+    Both may be None. Cooldown-gated: returns (None, None) immediately
+    when the stamp is fresh.
+    """
+    from lore_core.drain import SYSTEM_SESSION, DrainStore
+
+    hb = wiki_cfg.heartbeat
+    if not hb.enabled:
+        return None, None
+
+    stamp = lore_root / ".lore" / "curator-heartbeat.spawn.stamp"
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    if _stamp_within_cooldown(stamp, hb.cooldown_s):
+        return None, None
+
+    effective_pid = pid or _claude_code_pid() or os.getpid()
+    cursor_path = lore_root / ".lore" / "drain" / f"heartbeat-{effective_pid}.cursor"
+
+    # Read cursor (shared concept — SessionStart advances the session
+    # drain cursor; heartbeat uses its own PID-scoped cursor over the
+    # system drain so the two don't interfere).
+    cursor_ts = None
+    if cursor_path.exists():
+        try:
+            from datetime import datetime as _dt, UTC as _UTC
+            raw = cursor_path.read_text().strip()
+            if raw:
+                cursor_ts = _dt.fromisoformat(raw).replace(tzinfo=_UTC)
+        except (OSError, ValueError):
+            pass
+
+    system_store = DrainStore(lore_root, SYSTEM_SESSION)
+    events = system_store.read(since=cursor_ts, limit=200)
+
+    if not events:
+        _write_stamp(stamp)
+        return None, None
+
+    counts = _tally_drain(events)
+    summary = _format_drain_summary(counts, events)
+    sys_msg = f"lore: {summary}" if summary else None
+
+    # Build additionalContext with wikilinks when push_context is on.
+    ctx = None
+    if hb.push_context and events:
+        wikilinks = []
+        for e in events:
+            wl = e.data.get("wikilink")
+            if wl:
+                wikilinks.append(wl)
+        if wikilinks:
+            ctx = "New in vault: " + ", ".join(dict.fromkeys(wikilinks))
+
+    # Advance cursor to newest + 1µs.
+    from datetime import timedelta
+    newest = max(e.ts for e in events)
+    try:
+        tmp = cursor_path.with_suffix(".cursor.tmp")
+        tmp.write_text((newest + timedelta(microseconds=1)).isoformat())
+        os.replace(tmp, cursor_path)
+    except OSError:
+        pass
+
+    _write_stamp(stamp)
+    return sys_msg, ctx
+
+
+@hook_app.command("user-prompt-submit")
+def cmd_user_prompt_submit(
+    cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
+    plain: bool = typer.Option(
+        False,
+        "--plain",
+        help="Print raw text instead of Claude Code JSON envelope.",
+    ),
+) -> None:
+    """Lightweight heartbeat — check drain for new events."""
+    cwd_resolved = Path(_resolve_cwd(cwd))
+    scope = resolve_scope(cwd_resolved)
+    if scope is None:
+        return
+    lore_root = _infer_lore_root(scope.claude_md_path)
+    wiki_cfg = _load_wiki_cfg_from_scope(scope, lore_root)
+
+    sys_msg, ctx = _heartbeat(lore_root, cwd_resolved, wiki_cfg)
+    if not sys_msg and not ctx:
+        return
+
+    if plain:
+        if sys_msg:
+            sys.stdout.write(sys_msg + "\n")
+        if ctx:
+            sys.stdout.write(ctx + "\n")
+        return
+
+    envelope: dict = {}
+    if sys_msg:
+        envelope["systemMessage"] = sys_msg
+    if ctx:
+        envelope["hookSpecificOutput"] = {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": ctx,
+        }
+    if envelope:
+        sys.stdout.write(json.dumps(envelope) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -1342,23 +1512,30 @@ def _migrate_legacy_spawn_stamp(lore_root: Path, role: str) -> None:
             pass
 
 
-def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
-    """Fire-and-forget `lore curator run` subprocess.
+def _spawn_detached(
+    lore_root: Path,
+    role: str,
+    cmd: list[str],
+    *,
+    cooldown_s: int,
+    migrate_stamp: bool = False,
+) -> bool:
+    """Fire-and-forget a subprocess under a spawn lock + cooldown stamp.
 
     Acquires a non-blocking flock on the per-role spawn lock. Returns False
     if another process holds the lock OR the cooldown stamp is still fresh.
-    See ``lore_core.lockfile.try_acquire_spawn_lock`` for the primitive.
     """
+    import contextlib
     import subprocess
     from lore_core.lockfile import try_acquire_spawn_lock
 
-    with try_acquire_spawn_lock(lore_root, "a") as (held, stamp):
+    with try_acquire_spawn_lock(lore_root, role) as (held, stamp):
         if not held:
             return False
         if _stamp_within_cooldown(stamp, cooldown_s):
             return False
-        _migrate_legacy_spawn_stamp(lore_root, "a")
-        cmd = [sys.executable, "-m", "lore_cli", "curator", "run"]
+        if migrate_stamp:
+            _migrate_legacy_spawn_stamp(lore_root, role)
         env = os.environ.copy()
         env["LORE_ROOT"] = str(lore_root)
         try:
@@ -1372,10 +1549,18 @@ def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
             )
         except (OSError, subprocess.SubprocessError):
             return False
-        import contextlib
         with contextlib.suppress(OSError):
             _write_stamp(stamp)
         return True
+
+
+def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
+    """Fire-and-forget `lore curator run` subprocess."""
+    return _spawn_detached(
+        lore_root, "a",
+        [sys.executable, "-m", "lore_cli", "curator", "run"],
+        cooldown_s=cooldown_s, migrate_stamp=True,
+    )
 
 
 def _now_utc() -> "datetime":
@@ -1429,34 +1614,11 @@ def _spawn_detached_curator_c(
     lore_root: Path, *, cooldown_s: int = 3600
 ) -> bool:
     """Fire-and-forget `lore curator run --defrag` subprocess (Curator C)."""
-    import subprocess
-    from lore_core.lockfile import try_acquire_spawn_lock
-
-    with try_acquire_spawn_lock(lore_root, "c") as (held, stamp):
-        if not held:
-            return False
-        if _stamp_within_cooldown(stamp, cooldown_s):
-            return False
-        cmd = [
-            sys.executable, "-m", "lore_cli", "curator", "run", "--defrag",
-        ]
-        env = os.environ.copy()
-        env["LORE_ROOT"] = str(lore_root)
-        try:
-            subprocess.Popen(
-                cmd,
-                start_new_session=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                env=env,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        import contextlib
-        with contextlib.suppress(OSError):
-            _write_stamp(stamp)
-        return True
+    return _spawn_detached(
+        lore_root, "c",
+        [sys.executable, "-m", "lore_cli", "curator", "run", "--defrag"],
+        cooldown_s=cooldown_s,
+    )
 
 
 def _render_drain_lines(lore_root: Path, cwd: Path) -> list[str]:
@@ -1507,22 +1669,26 @@ def _render_drain_lines(lore_root: Path, cwd: Path) -> list[str]:
     # Advance cursor to ``newest + 1µs`` — `since` in DrainStore.read is
     # inclusive (``ts >= since``), so setting the cursor to the event's
     # own ts would resurface it on the next banner call.
-    newest = None
-    for e in list(session_events) + list(system_events):
-        if newest is None or e.ts > newest:
-            newest = e.ts
-    if newest is not None:
+    all_events = session_events + system_events
+    if all_events:
         from datetime import timedelta
+        newest = max(e.ts for e in all_events)
         session_store.write_cursor(newest + timedelta(microseconds=1))
 
     return lines
 
 
 def _tally_drain(events) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for e in events:
-        counts[e.event] = counts.get(e.event, 0) + 1
-    return counts
+    from collections import Counter
+    return dict(Counter(e.event for e in events))
+
+
+def _latest_wikilink(events, event_name: str) -> str | None:
+    """Return the wikilink from the most recent event of the given type."""
+    for e in reversed(events):
+        if e.event == event_name:
+            return e.data.get("wikilink")
+    return None
 
 
 def _format_drain_summary(counts: dict[str, int], events) -> str:
@@ -1534,23 +1700,13 @@ def _format_drain_summary(counts: dict[str, int], events) -> str:
     n_surface = counts.get("surface-proposed", 0)
 
     if n_filed:
-        # Prefer to name the most recent filed note so the user can jump.
-        wikilink = None
-        for e in reversed(events):
-            if e.event == "note-filed":
-                wikilink = e.data.get("wikilink")
-                break
+        wikilink = _latest_wikilink(events, "note-filed")
         if wikilink and n_filed == 1:
             parts.append(f"new note {wikilink}")
         else:
             parts.append(f"{n_filed} new notes")
     if n_appended:
-        # Name the latest-appended note for single-case.
-        wikilink = None
-        for e in reversed(events):
-            if e.event == "note-appended":
-                wikilink = e.data.get("wikilink")
-                break
+        wikilink = _latest_wikilink(events, "note-appended")
         if wikilink and n_appended == 1:
             parts.append(f"added to {wikilink}")
         else:
@@ -1572,68 +1728,23 @@ def _spawn_detached_transcript_sync(
     sync jobs. The P4a sync itself is idempotent; the lock exists purely
     as a politeness budget.
     """
-    import subprocess
-    from lore_core.lockfile import try_acquire_spawn_lock
-
-    with try_acquire_spawn_lock(lore_root, "transcripts") as (held, stamp):
-        if not held:
-            return False
-        if _stamp_within_cooldown(stamp, cooldown_s):
-            return False
-        cmd = [sys.executable, "-m", "lore_cli", "transcripts", "sync"]
-        env = os.environ.copy()
-        env["LORE_ROOT"] = str(lore_root)
-        try:
-            subprocess.Popen(
-                cmd,
-                start_new_session=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                env=env,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        import contextlib
-        with contextlib.suppress(OSError):
-            _write_stamp(stamp)
-        return True
+    return _spawn_detached(
+        lore_root, "transcripts",
+        [sys.executable, "-m", "lore_cli", "transcripts", "sync"],
+        cooldown_s=cooldown_s,
+    )
 
 
 def _spawn_detached_curator_b(
     lore_root: Path, wiki_name: str, *, cooldown_s: int = 300
 ) -> bool:
     """Fire-and-forget `lore curator run --abstract --wiki <name>` subprocess."""
-    import subprocess
-    from lore_core.lockfile import try_acquire_spawn_lock
-
-    with try_acquire_spawn_lock(lore_root, "b") as (held, stamp):
-        if not held:
-            return False
-        if _stamp_within_cooldown(stamp, cooldown_s):
-            return False
-        _migrate_legacy_spawn_stamp(lore_root, "b")
-        cmd = [
-            sys.executable, "-m", "lore_cli",
-            "curator", "run", "--abstract", "--wiki", wiki_name,
-        ]
-        env = os.environ.copy()
-        env["LORE_ROOT"] = str(lore_root)
-        try:
-            subprocess.Popen(
-                cmd,
-                start_new_session=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                env=env,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        import contextlib
-        with contextlib.suppress(OSError):
-            _write_stamp(stamp)
-        return True
+    return _spawn_detached(
+        lore_root, "b",
+        [sys.executable, "-m", "lore_cli",
+         "curator", "run", "--abstract", "--wiki", wiki_name],
+        cooldown_s=cooldown_s, migrate_stamp=True,
+    )
 
 
 # ---------------------------------------------------------------------------

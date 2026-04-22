@@ -49,6 +49,12 @@ class BriefingConfig:
 
 
 @dataclass
+class HeartbeatConfig:
+    enabled: bool = True
+    cooldown_s: int = 120
+    push_context: bool = False            # inject additionalContext with wikilinks
+
+@dataclass
 class BreadcrumbConfig:
     mode: str = "normal"                  # quiet | normal | verbose
     scope_filter: bool = True
@@ -60,6 +66,7 @@ class WikiConfig:
     curator: CuratorConfig = field(default_factory=CuratorConfig)
     models: ModelsConfig = field(default_factory=ModelsConfig)
     briefing: BriefingConfig = field(default_factory=BriefingConfig)
+    heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     breadcrumb: BreadcrumbConfig = field(default_factory=BreadcrumbConfig)
 
 

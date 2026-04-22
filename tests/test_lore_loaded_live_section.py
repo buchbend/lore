@@ -3,7 +3,7 @@
 Per UX review: a Claude session opening /lore:loaded wants to know
 "what's true NOW" before "what was injected at SessionStart."
 
-The skill routes to `lore hook why`; we extend _why() with a live
+The skill routes to `lore hook live-state`; we extend _live_state() with a live
 section rendered from CaptureState.
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from lore_cli.hooks import _why
+from lore_cli.hooks import _live_state
 
 
 def _iso(dt: datetime) -> str:
@@ -22,7 +22,7 @@ def _iso(dt: datetime) -> str:
 
 
 def _seed_cache(tmp_path: Path, pid: int, body: str) -> Path:
-    """Write a SessionStart cache file that _why() will find."""
+    """Write a SessionStart cache file that _live_state() will find."""
     sessions = tmp_path / "sessions"
     sessions.mkdir(parents=True)
     cache = sessions / f"{pid}.md"
@@ -51,7 +51,7 @@ def test_lore_loaded_contains_live_then_cache(tmp_path: Path, monkeypatch) -> No
     # Force _claude_code_pid to resolve to the seeded pid.
     monkeypatch.setattr("lore_cli.hooks._claude_code_pid", lambda: 99999)
 
-    out = _why()
+    out = _live_state()
     assert "Live state" in out, f"expected live section header; got:\n{out}"
     assert "CACHED_BODY_MARKER" in out, "cached section must still be present"
     # Live must come before cache (bytes-wise).
@@ -70,7 +70,7 @@ def test_lore_loaded_handles_missing_cache(tmp_path: Path, monkeypatch) -> None:
     _set_env(monkeypatch, cache_dir, lore_root)
     monkeypatch.setattr("lore_cli.hooks._claude_code_pid", lambda: 99999)
 
-    out = _why()
+    out = _live_state()
     assert "Live state" in out
     assert "no SessionStart cache" in out.lower() or "not fired" in out.lower()
 
@@ -104,7 +104,7 @@ def test_lore_loaded_live_section_updates_across_calls(tmp_path: Path, monkeypat
     _set_env(monkeypatch, cache_dir, lore_root)
     monkeypatch.setattr("lore_cli.hooks._claude_code_pid", lambda: 99999)
 
-    first = _why()
+    first = _live_state()
     assert "Pending" in first
 
     # Add a pending transcript between calls.
@@ -125,7 +125,7 @@ def test_lore_loaded_live_section_updates_across_calls(tmp_path: Path, monkeypat
         )
     )
 
-    second = _why()
+    second = _live_state()
     # The Pending line changed between calls (from "no transcripts" to "1 transcript").
     assert first != second, (
         "live section must refresh across calls — first and second should differ"
@@ -150,7 +150,7 @@ def test_lore_loaded_handles_capture_state_failure(tmp_path: Path, monkeypatch) 
 
     monkeypatch.setattr("lore_core.capture_state.query_capture_state", boom)
 
-    out = _why()
+    out = _live_state()
     assert "CACHED_MARKER" in out, "cache must still render when live fails"
     assert "unavailable" in out.lower() or "error" in out.lower(), (
         f"live section should degrade gracefully; got:\n{out}"
