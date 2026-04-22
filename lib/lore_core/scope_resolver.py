@@ -45,10 +45,6 @@ def resolve_scope(
     )
 
 
-# Backward-compat alias retained for explicit-registry callers (curator_a).
-resolve_scope_via_registry = resolve_scope
-
-
 def _load_default_attachments() -> AttachmentsFile | None:
     env = os.environ.get("LORE_ROOT")
     if not env:

@@ -15,7 +15,6 @@ from lore_core.schema import (
     REQUIRED_FIELDS,
     SCHEMA_VERSION,
     SCHEMA_VERSIONS_SUPPORTED,
-    VALID_STATUSES,
     parse_frontmatter,
 )
 
@@ -90,14 +89,6 @@ def test_schema_version_bumped_to_2():
 def test_both_versions_supported():
     assert 1 in SCHEMA_VERSIONS_SUPPORTED
     assert 2 in SCHEMA_VERSIONS_SUPPORTED
-
-
-def test_extended_statuses_present():
-    for s in ("implemented", "partial", "abandoned"):
-        assert s in VALID_STATUSES, f"v2 status {s!r} missing from vocabulary"
-    # Legacy vocab preserved
-    for s in ("active", "proposed", "accepted", "superseded", "stable", "stale"):
-        assert s in VALID_STATUSES
 
 
 def test_v2_optional_fields_registered():

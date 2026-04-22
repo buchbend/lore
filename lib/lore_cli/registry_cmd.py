@@ -1,9 +1,11 @@
-"""`lore registry {ls,show,doctor}` — discover and validate wiki registrations.
+"""`lore registry {ls,doctor}` — discover and validate wiki registrations.
 
 v1 narrow scope:
   ls      — list wiki dirs under $LORE_ROOT/wiki/
-  show    — print the Lore attach block from CLAUDE.md at or above <path>
   doctor  — validate wiki dirs for basic health
+
+(The former ``lore registry show`` was a back-compat shim; use
+``lore attachments show PATH`` instead.)
 """
 
 from __future__ import annotations
@@ -72,36 +74,6 @@ def registry_ls(
         for rec in records:
             table.add_row(rec["wiki"], rec["scopes_yml"], rec["wiki_config"])
         console.print(table)
-
-
-@app.command("show")
-def registry_show(
-    path: str = typer.Argument(..., help="Path to look up in the attachments registry."),
-) -> None:
-    """Show the attachment (if any) covering ``path`` via longest-prefix match.
-
-    Thin wrapper over ``lore attachments show`` retained for back-compat.
-    """
-    from lore_core.state.attachments import AttachmentsFile
-
-    lore_root = _get_lore_root()
-    if lore_root is None:
-        err_console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
-        raise typer.Exit(1)
-
-    search_path = Path(path).resolve()
-    af = AttachmentsFile(lore_root)
-    af.load()
-    match = af.longest_prefix_match(search_path)
-
-    if match is None:
-        console.print(f"[yellow]No attachment covers[/yellow] {path}")
-        raise typer.Exit(1)
-
-    console.print(f"[bold]Attachment[/bold] from [dim]{match.path}[/dim]")
-    console.print(f"  [cyan]wiki[/cyan]: {match.wiki}")
-    console.print(f"  [cyan]scope[/cyan]: {match.scope}")
-    console.print(f"  [cyan]source[/cyan]: {match.source}")
 
 
 @app.command("doctor")

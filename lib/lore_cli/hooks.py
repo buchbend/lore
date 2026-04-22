@@ -1022,7 +1022,7 @@ def cmd_session_start(
     cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(_resolve_cwd(cwd))
 
-    # Phase 2: surface pending `.lore.yml` offers. Gated by LORE_NEW_STATE.
+    # Surface pending `.lore.yml` offers at the top of the banner.
     try:
         notice = _offer_notice_line(cwd_resolved)
         if notice:
@@ -1233,7 +1233,6 @@ def _offer_notice_line(cwd: Path) -> str | None:
     """Return a one-line notice when a ``.lore.yml`` offer is pending acceptance.
 
     Returns ``None`` if:
-      - ``LORE_NEW_STATE`` is not enabled (Phase 2 gate);
       - no ``.lore.yml`` covers ``cwd``;
       - an attachment with the matching fingerprint already exists
         (state=ATTACHED);
@@ -1243,9 +1242,6 @@ def _offer_notice_line(cwd: Path) -> str | None:
     Logs a ``lore-yml-offered`` event when it does emit (OFFERED, DRIFT)
     so telemetry captures the prompt even if the user ignores it.
     """
-    if os.environ.get("LORE_NEW_STATE") != "1":
-        return None
-
     lore_root_env = os.environ.get("LORE_ROOT")
     if not lore_root_env:
         return None

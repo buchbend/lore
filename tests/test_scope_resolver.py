@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from lore_core.scope_resolver import resolve_scope, resolve_scope_via_registry
+from lore_core.scope_resolver import resolve_scope
 from lore_core.state.attachments import Attachment, AttachmentsFile
 
 
@@ -34,7 +34,7 @@ def test_registry_resolves_exact_path(tmp_path: Path) -> None:
     af.load()
     af.add(_attach(repo, wiki="ccat", scope="ccat:ds"))
 
-    result = resolve_scope_via_registry(repo, af)
+    result = resolve_scope(repo, af)
     assert result is not None
     assert result.wiki == "ccat"
     assert result.scope == "ccat:ds"
@@ -50,7 +50,7 @@ def test_registry_resolves_descendant(tmp_path: Path) -> None:
     af.load()
     af.add(_attach(repo, scope="x:y"))
 
-    result = resolve_scope_via_registry(repo / "src", af)
+    result = resolve_scope(repo / "src", af)
     assert result is not None
     assert result.scope == "x:y"
 
@@ -61,7 +61,7 @@ def test_registry_returns_none_on_unattached(tmp_path: Path) -> None:
     stranger.mkdir()
     af = AttachmentsFile(tmp_path)
     af.load()
-    assert resolve_scope_via_registry(stranger, af) is None
+    assert resolve_scope(stranger, af) is None
 
 
 def test_registry_most_specific_wins(tmp_path: Path) -> None:
@@ -74,7 +74,7 @@ def test_registry_most_specific_wins(tmp_path: Path) -> None:
     af.add(_attach(outer, wiki="wo", scope="o"))
     af.add(_attach(inner, wiki="wi", scope="o:i"))
 
-    result = resolve_scope_via_registry(inner / "deep", af)
+    result = resolve_scope(inner / "deep", af)
     assert result is not None
     assert result.scope == "o:i"
 

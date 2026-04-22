@@ -229,8 +229,10 @@ Once attached with a wiki present:
 - `lore curator run` — run Curator A now.
 - `lore curator run --abstract [--wiki <name>]` — run A then B.
 - `lore curator run --abstract --dry-run` — see what would happen.
-- `lore registry ls` / `lore registry show <path>` / `lore registry doctor` —
-  inspect configured attach blocks.
+- `lore registry ls` / `lore registry doctor` —
+  list configured wikis and validate them. (For looking up the
+  attachment covering a specific path, use `lore attachments show
+  <path>`.)
 - `/lore:session` — still available for explicit capture.
 
 ### Per-wiki configuration

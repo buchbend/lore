@@ -1,13 +1,12 @@
 """Tests for SessionStart offer-notice emission (`_offer_notice_line`).
 
-Covers the five gate conditions (flag, LORE_ROOT, OFFERED, DRIFT,
-other states) and the hook-event logging side-effect.
+Covers the gate conditions (LORE_ROOT, OFFERED, DRIFT, other states)
+and the hook-event logging side-effect.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,7 +21,6 @@ from lore_core.state.attachments import Attachment, AttachmentsFile
 def lore_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (tmp_path / ".lore").mkdir()
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
-    monkeypatch.setenv("LORE_NEW_STATE", "1")
     return tmp_path
 
 
@@ -43,22 +41,9 @@ def _attach(path: Path, *, fp: str | None = None, source: str = "accepted-offer"
 
 # ---- gate conditions ----
 
-def test_returns_none_when_flag_unset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("LORE_NEW_STATE", raising=False)
-    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
-    (tmp_path / ".lore").mkdir()
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _write_offer(repo)
-    assert _offer_notice_line(repo) is None
-
-
 def test_returns_none_when_lore_root_unset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LORE_NEW_STATE", "1")
     monkeypatch.delenv("LORE_ROOT", raising=False)
     repo = tmp_path / "repo"
     repo.mkdir()

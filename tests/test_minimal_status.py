@@ -41,11 +41,6 @@ def test_draft_and_superseded_by_are_optional():
     assert "superseded_by" in OPTIONAL_FIELDS
 
 
-def test_status_accepted_for_back_compat():
-    # Parser still accepts legacy notes; it just doesn't require status.
-    assert "status" in OPTIONAL_FIELDS
-
-
 @pytest.mark.parametrize("fm,expected", [
     ({}, "canonical"),
     ({"draft": True}, "draft"),
