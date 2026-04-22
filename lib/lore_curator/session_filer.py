@@ -4,6 +4,21 @@ Given a `NoteworthyResult` + full `Turn` slice + existing recent session
 notes in scope, creates a new session note or merges into an existing one.
 Uses session-note-schema-v2 frontmatter. `draft: true`. Records source
 transcripts with hash watermarks.
+
+P4b — ``transcripts:`` frontmatter invariant
+---------------------------------------------
+
+Session notes carry a ``transcripts:`` list of source UUIDs in their
+frontmatter. This list is **append-only provenance**. UUIDs must
+never be *moved* between notes during merges, splits, or renames —
+they tag the note's origin, not its ownership. A UUID appears on
+every note that originated from it; if a later process splits a note,
+both children keep the UUID.
+
+Cap: the list is capped at 20 most-recent UUIDs (oldest drop first).
+The cap is a pragmatic size-limit; for full provenance, cross-reference
+with ``source_transcripts`` (which carries hash watermarks and is NOT
+capped).
 """
 from __future__ import annotations
 
@@ -359,6 +374,9 @@ def _merge_judgment_tool_schema(recent_notes: list) -> dict[str, Any]:
     }
 
 
+_TRANSCRIPTS_CAP = 20
+
+
 def _write_new_note(
     path: Path,
     *,
@@ -371,6 +389,10 @@ def _write_new_note(
 ) -> None:
     from_hash = turns[0].content_hash() if turns else None
     to_hash = turns[-1].content_hash() if turns else None
+    # P4b: ``transcripts`` is placed LAST in the frontmatter so machine-
+    # facing provenance stays visually out of the way of the human-facing
+    # description / scope / tags. See module docstring for the append-only
+    # invariant.
     fm = {
         "schema_version": 2,
         "type": "session",
@@ -389,6 +411,7 @@ def _write_new_note(
             }
         ],
         "tags": [],
+        "transcripts": [handle.id],
     }
     body = _render_body(noteworthy)
     text = _render_markdown(fm, body)
@@ -428,6 +451,19 @@ def _append_to_note(
     fm["source_transcripts"] = src
     fm["last_reviewed"] = work_time.date().isoformat()
     fm["curator_a_run"] = now.isoformat()
+
+    # P4b: append to the transcripts UUID list, dedupe, cap at 20 most
+    # recent. Order is insertion-order with the newest at the end; if a
+    # UUID is already present, it moves to the tail.
+    existing = fm.get("transcripts") or []
+    if not isinstance(existing, list):
+        existing = []
+    # Remove any prior occurrence so re-adding lands at the tail.
+    uuid_list = [u for u in existing if u != handle.id]
+    uuid_list.append(handle.id)
+    if len(uuid_list) > _TRANSCRIPTS_CAP:
+        uuid_list = uuid_list[-_TRANSCRIPTS_CAP:]
+    fm["transcripts"] = uuid_list
 
     new_section = (
         f"\n\n## {noteworthy.title}\n\n"

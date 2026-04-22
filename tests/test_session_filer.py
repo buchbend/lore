@@ -654,3 +654,124 @@ def test_find_todays_open_note_respects_work_time_not_now(tmp_path):
     assert result.was_merge is True
     assert client.messages.calls == []
 
+
+# ---------------------------------------------------------------------------
+# P4b — transcripts: frontmatter list
+#
+# `transcripts:` is append-only provenance: every UUID that contributed
+# to a note lives here. Capped at 20 most-recent so long-running daily
+# notes don't bloat; full history lives in `source_transcripts` (which
+# also carries hash watermarks and is not capped).
+# ---------------------------------------------------------------------------
+
+
+def _transcripts_list(text: str) -> list[str]:
+    return parse_frontmatter(text).get("transcripts") or []
+
+
+def test_new_note_has_transcripts_frontmatter_with_handle_uuid(tmp_path):
+    """A new note's frontmatter carries the originating UUID in `transcripts:`."""
+    result = _file_note(tmp_path)
+    fm = parse_frontmatter(result.path.read_text())
+    assert fm.get("transcripts") == ["transcript-abc123"]
+
+
+def test_new_note_places_transcripts_last_in_frontmatter(tmp_path):
+    """UI ordering: human-facing fields above the machine-facing UUID list."""
+    result = _file_note(tmp_path)
+    text = result.path.read_text()
+    # Raw frontmatter ordering check (yaml dump preserves insertion order)
+    fm_text = text.split("---\n", 2)[1]
+    keys_in_order = [line.split(":", 1)[0] for line in fm_text.splitlines() if line and not line.startswith(" ") and not line.startswith("-")]
+    # transcripts must be present and after tags / description / scope
+    assert "transcripts" in keys_in_order
+    assert keys_in_order.index("transcripts") > keys_in_order.index("description")
+    assert keys_in_order.index("transcripts") > keys_in_order.index("scope")
+
+
+def test_append_extends_transcripts_list(tmp_path):
+    """Appending a slice from a different session adds its UUID to the list."""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    existing = _write_session_note(
+        sessions_dir, "2026-04-19-open.md",
+        scope_str="proj:feature", created="2026-04-19",
+    )
+    # Seed the existing note with a transcripts list
+    text = existing.read_text()
+    fm = parse_frontmatter(text)
+    fm["transcripts"] = ["uuid-prior"]
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    body = text.split("---\n", 2)[2] if text.count("---\n") >= 2 else ""
+    existing.write_text(f"---\n{dumped}\n---\n{body}")
+
+    # Use a handle whose UUID is different
+    new_handle = TranscriptHandle(
+        host="claude-code",
+        id="uuid-new",
+        path=Path("/tmp/x.jsonl"),
+        cwd=Path("/tmp"),
+        mtime=datetime.now(UTC),
+    )
+    _file_note(tmp_path, handle=new_handle, scope=_make_scope("proj:feature"))
+
+    assert _transcripts_list(existing.read_text()) == ["uuid-prior", "uuid-new"]
+
+
+def test_append_dedupes_repeated_uuid_moving_it_to_tail(tmp_path):
+    """A repeated UUID moves to the list's tail — no duplicate entries."""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    existing = _write_session_note(
+        sessions_dir, "2026-04-19-open.md",
+        scope_str="proj:feature", created="2026-04-19",
+    )
+    text = existing.read_text()
+    fm = parse_frontmatter(text)
+    fm["transcripts"] = ["uuid-a", "uuid-b", "uuid-c"]
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    body = text.split("---\n", 2)[2] if text.count("---\n") >= 2 else ""
+    existing.write_text(f"---\n{dumped}\n---\n{body}")
+
+    # Re-add uuid-a — it should move to the end, not appear twice
+    repeat_handle = TranscriptHandle(
+        host="claude-code", id="uuid-a",
+        path=Path("/tmp/x.jsonl"), cwd=Path("/tmp"),
+        mtime=datetime.now(UTC),
+    )
+    _file_note(tmp_path, handle=repeat_handle, scope=_make_scope("proj:feature"))
+
+    assert _transcripts_list(existing.read_text()) == ["uuid-b", "uuid-c", "uuid-a"]
+
+
+def test_append_caps_transcripts_list_at_20_most_recent(tmp_path):
+    """25 unique UUIDs → list stays at 20 (oldest 5 dropped)."""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(parents=True)
+    existing = _write_session_note(
+        sessions_dir, "2026-04-19-open.md",
+        scope_str="proj:feature", created="2026-04-19",
+    )
+    # Seed 20 existing UUIDs
+    text = existing.read_text()
+    fm = parse_frontmatter(text)
+    fm["transcripts"] = [f"u{i:02d}" for i in range(20)]
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    body = text.split("---\n", 2)[2] if text.count("---\n") >= 2 else ""
+    existing.write_text(f"---\n{dumped}\n---\n{body}")
+
+    new_handle = TranscriptHandle(
+        host="claude-code", id="u-fresh",
+        path=Path("/tmp/x.jsonl"), cwd=Path("/tmp"),
+        mtime=datetime.now(UTC),
+    )
+    _file_note(tmp_path, handle=new_handle, scope=_make_scope("proj:feature"))
+
+    got = _transcripts_list(existing.read_text())
+    assert len(got) == 20
+    assert got[-1] == "u-fresh"
+    # Oldest (u00) dropped.
+    assert "u00" not in got
+    # u01 remains (it was the second-oldest, now shifted up one).
+    assert "u01" in got
+
