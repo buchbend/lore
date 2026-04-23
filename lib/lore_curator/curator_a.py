@@ -89,12 +89,6 @@ def run_curator_a(
     resolver = _build_resolver(lore_root)
     pending_snapshot = tledger.pending(resolver=resolver)
 
-    # Pre-compute which wikis are below their own threshold_pending so the
-    # per-entry loop can short-circuit without re-reading every wiki's config
-    # once per entry. Entries in below-threshold wikis are still marked
-    # (curator_a_run stamped) so pending() stops re-tripping forever.
-    below_threshold_wikis = _compute_below_threshold_wikis(tledger, lore_root, resolver=resolver)
-
     config_snapshot = {"noteworthy_tier": "middle"}
     effective_trigger = "dry-run" if dry_run else trigger
 
@@ -134,7 +128,7 @@ def run_curator_a(
                     dry_run=True,
                     now=now,
                     logger=logger,
-                    below_threshold_wikis=below_threshold_wikis,
+
                     resolver=resolver,
                 )
                 _record_outcome(result, outcome)
@@ -156,7 +150,7 @@ def run_curator_a(
                             dry_run=False,
                             now=now,
                             logger=logger,
-                            below_threshold_wikis=below_threshold_wikis,
+        
                             resolver=resolver,
                         )
                         _record_outcome(result, outcome)
@@ -205,26 +199,6 @@ class _Outcome:
     wiki_name: str | None = None            # wiki the entry resolved into (None if unattached)
 
 
-def _compute_below_threshold_wikis(
-    tledger: TranscriptLedger,
-    lore_root: Path,
-    *,
-    resolver: Resolver | None = None,
-) -> set[str]:
-    """Return the set of wiki names whose pending count is < their own
-    ``curator.threshold_pending``. Orphan/unattached buckets are skipped —
-    those are handled per-entry, not via threshold gating.
-    """
-    below: set[str] = set()
-    buckets = tledger.pending_by_wiki(resolver=resolver)
-    for wiki_name, entries in buckets.items():
-        if wiki_name.startswith("__"):
-            continue
-        cfg = load_wiki_config(lore_root / "wiki" / wiki_name)
-        if len(entries) < cfg.curator.threshold_pending:
-            below.add(wiki_name)
-    return below
-
 
 def _process_entry(
     entry: TranscriptLedgerEntry,
@@ -237,7 +211,6 @@ def _process_entry(
     dry_run: bool,
     now: datetime,
     logger: RunLogger | None = None,
-    below_threshold_wikis: set[str] | None = None,
     resolver: Resolver | None = None,
 ) -> _Outcome:
     # Orphan cwd: the directory the transcript was captured in no longer
@@ -264,23 +237,6 @@ def _process_entry(
             logger.emit("skip", transcript_id=entry.transcript_id, reason="unattached")
         return _Outcome(skip_reason="unattached")
 
-    # Per-wiki threshold gate: if this wiki is below its own threshold,
-    # skip the entry but stamp curator_a_run so pending() doesn't re-trip
-    # the same entries on every hook forever.
-    if below_threshold_wikis is not None and attached.wiki in below_threshold_wikis:
-        if not dry_run:
-            tledger.stamp_scan(
-                host=entry.host,
-                transcript_id=entry.transcript_id,
-                curator_a_run=now,
-            )
-        if logger is not None:
-            logger.emit(
-                "skip",
-                transcript_id=entry.transcript_id,
-                reason="below-wiki-threshold",
-            )
-        return _Outcome(skip_reason="below_wiki_threshold", wiki_name=attached.wiki)
     if requested_scope is not None and attached.scope != requested_scope.scope:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="scope-mismatch")
@@ -356,6 +312,26 @@ def _process_entry(
     last_hash = turns[-1].content_hash()
     last_hint = turns[-1].index
 
+    # Cross-scope bleed guard: redirect to the wiki where the actual
+    # work happened when it differs from the launch directory's wiki.
+    _resolve = resolver if resolver is not None else resolve_scope
+    file_paths = _extract_tool_file_paths(turns)
+    override = _detect_scope_override(file_paths, attached, _resolve)
+    scope_redirected_from: str | None = None
+    if override is not None:
+        if logger is not None:
+            logger.emit(
+                "scope-redirect",
+                transcript_id=entry.transcript_id,
+                from_scope=attached.scope,
+                to_scope=override.scope,
+                to_wiki=override.wiki,
+            )
+        scope_redirected_from = attached.scope
+        attached = override
+        wiki_dir = lore_root / "wiki" / attached.wiki
+        cfg = load_wiki_config(wiki_dir)
+
     if not noteworthy.noteworthy:
         if not dry_run:
             tledger.advance(
@@ -397,6 +373,7 @@ def _process_entry(
         work_time=work_time,
         logger=logger,
         transcript_id=entry.transcript_id,
+        scope_redirected_from=scope_redirected_from,
     )
     tledger.advance(
         host=entry.host,
@@ -453,6 +430,57 @@ def _handle_from_entry(e: TranscriptLedgerEntry) -> TranscriptHandle:
         cwd=e.directory,
         mtime=e.last_mtime,
     )
+
+
+_FILE_PATH_TOOLS = frozenset({"Read", "Write", "Edit"})
+_REDIRECT_THRESHOLD = 0.6
+
+
+def _extract_tool_file_paths(turns: list[Turn]) -> list[Path]:
+    """Extract absolute file paths from file-manipulation tool calls."""
+    paths: list[Path] = []
+    for t in turns:
+        if t.tool_call is None or t.tool_call.name not in _FILE_PATH_TOOLS:
+            continue
+        fp = t.tool_call.input.get("file_path")
+        if not fp or not isinstance(fp, str):
+            continue
+        p = Path(fp)
+        if not p.is_absolute():
+            continue
+        s = str(p)
+        if s.startswith(("/tmp/", "/dev/", "/proc/")):
+            continue
+        paths.append(p)
+    return paths
+
+
+def _detect_scope_override(
+    file_paths: list[Path],
+    launch_scope: Scope,
+    resolver: Resolver,
+) -> Scope | None:
+    """Return an override Scope when ≥60% of file paths resolve to a different wiki."""
+    if not file_paths:
+        return None
+    wiki_counts: dict[str, int] = {}
+    scope_for_wiki: dict[str, Scope] = {}
+    for p in file_paths:
+        s = resolver(p)
+        if s is None:
+            continue
+        wiki_counts[s.wiki] = wiki_counts.get(s.wiki, 0) + 1
+        if s.wiki not in scope_for_wiki or len(s.scope) > len(scope_for_wiki[s.wiki].scope):
+            scope_for_wiki[s.wiki] = s
+    if not wiki_counts:
+        return None
+    total = sum(wiki_counts.values())
+    for wiki, count in sorted(wiki_counts.items(), key=lambda x: -x[1]):
+        if wiki == launch_scope.wiki:
+            continue
+        if count / total >= _REDIRECT_THRESHOLD:
+            return scope_for_wiki[wiki]
+    return None
 
 
 def _redact_turn_in_place_best_effort(t: Turn, log_path: Path) -> None:

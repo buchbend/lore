@@ -646,16 +646,15 @@ def _write_wiki_cfg(wiki_dir: Path, *, threshold: int) -> None:
     )
 
 
-def test_curator_a_below_threshold_advances_curator_a_run_but_not_digested_hash(tmp_path):
-    """A wiki below its own threshold is skipped, but curator_a_run is stamped
-    so pending() stops re-tripping on the same entry forever."""
+def test_curator_a_processes_entry_regardless_of_wiki_count(tmp_path):
+    """Every pending entry is processed — no per-wiki session-count gate.
+    The noteworthy classifier is the quality gate, not batch size."""
     from lore_curator.curator_a import run_curator_a
 
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
     _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
-    wiki_dir = _setup_wiki(tmp_path, "private")
-    _write_wiki_cfg(wiki_dir, threshold=5)  # wiki requires 5, only have 1
+    _setup_wiki(tmp_path, "private")
 
     transcript_path = project_dir / "transcript.jsonl"
     transcript_path.write_text("{}")
@@ -668,16 +667,8 @@ def test_curator_a_below_threshold_advances_curator_a_run_but_not_digested_hash(
         now=_NOW,
     )
 
-    assert result.skipped_reasons.get("below_wiki_threshold", 0) == 1, (
-        f"expected below_wiki_threshold skip, got {result.skipped_reasons}"
-    )
-
-    ledger = TranscriptLedger(tmp_path)
-    entry = ledger.get("fake", "txn-001")
-    assert entry is not None
-    assert entry.curator_a_run == _NOW, "curator_a_run must be stamped on skip"
-    assert entry.digested_hash is None, "digested_hash must remain untouched"
-    assert entry.orphan is False
+    assert result.transcripts_considered == 1
+    assert result.noteworthy_count == 1
 
 
 def test_curator_a_orphan_directory_marks_entry_orphan(tmp_path):
@@ -725,9 +716,8 @@ def test_curator_a_orphan_directory_marks_entry_orphan(tmp_path):
     assert ledger.pending() == []
 
 
-def test_curator_a_below_threshold_skip_is_idempotent_no_perpetual_retrip(tmp_path):
-    """Two consecutive runs on a below-threshold wiki do not keep re-tripping:
-    after the first run stamps curator_a_run, pending() no longer returns the entry."""
+def test_curator_a_processed_entry_not_re_tripped(tmp_path):
+    """After processing, pending() no longer returns the entry."""
     from lore_curator.curator_a import run_curator_a
 
     project_dir = tmp_path / "proj"
