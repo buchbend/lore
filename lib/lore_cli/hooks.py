@@ -1062,6 +1062,10 @@ def _resolve_cwd(explicit: str | None) -> str:
     return explicit or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
+def _in_curator_mode() -> bool:
+    return os.environ.get("LORE_CURATOR_MODE") == "1"
+
+
 @hook_app.command("session-start")
 def cmd_session_start(
     cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
@@ -1078,6 +1082,8 @@ def cmd_session_start(
     ),
 ) -> None:
     """Inject vault context at session start."""
+    if _in_curator_mode():
+        return
     cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(str(cwd_resolved))
 
@@ -1222,6 +1228,8 @@ def cmd_pre_compact(
     ),
 ) -> None:
     """Inject open items before compaction."""
+    if _in_curator_mode():
+        return
     out = _pre_compact(_resolve_cwd(cwd))
     _emit("PreCompact", out, plain=plain)
 
@@ -1235,6 +1243,8 @@ def cmd_stop(
     ),
 ) -> None:
     """Hint to capture a session note."""
+    if _in_curator_mode():
+        return
     out = _stop()
     _emit("Stop", out, plain=plain)
 
@@ -1335,6 +1345,8 @@ def cmd_user_prompt_submit(
     ),
 ) -> None:
     """Lightweight heartbeat — check drain for new events."""
+    if _in_curator_mode():
+        return
     cwd_resolved = Path(_resolve_cwd(cwd))
     scope = resolve_scope(cwd_resolved)
     if scope is None:
@@ -1538,6 +1550,7 @@ def _spawn_detached(
             _migrate_legacy_spawn_stamp(lore_root, role)
         env = os.environ.copy()
         env["LORE_ROOT"] = str(lore_root)
+        env["LORE_CURATOR_MODE"] = "1"
         try:
             subprocess.Popen(
                 cmd,
@@ -1769,6 +1782,8 @@ def capture(
     curator when pending work exceeds threshold. No LLM, no network,
     bounded FS walk (8 levels).
     """
+    if _in_curator_mode():
+        return
     import time as _time
     from lore_adapters import UnknownHostError
     from lore_core.hook_log import _ppid_cmd
