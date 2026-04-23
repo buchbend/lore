@@ -1541,6 +1541,7 @@ def _spawn_detached(
         try:
             subprocess.Popen(
                 cmd,
+                cwd=str(lore_root),
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -1776,6 +1777,20 @@ def capture(
     cwd = cwd_override or _resolve_cwd_capture()
     _capture_pid = os.getpid()
     _capture_ppid_cmd = _ppid_cmd()
+
+    # Never capture transcripts from the vault root — curator subprocesses
+    # run with cwd=LORE_ROOT and their claude -p transcripts must not be
+    # re-ingested as user sessions. Only skip when the cwd is the vault root
+    # AND has no explicit scope attachment (a real project attached at the
+    # vault root would still be captured).
+    try:
+        from lore_core.config import get_lore_root as _glr
+        _vault = _glr().resolve()
+        if Path(cwd).resolve() == _vault and resolve_scope(cwd) is None:
+            return
+    except Exception:
+        pass
+
     scope = resolve_scope(cwd)
     if scope is None:
         # Unattached cwd — no ledger work to do, but we still emit a hook
