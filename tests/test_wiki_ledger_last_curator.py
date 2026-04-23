@@ -380,10 +380,6 @@ def test_banner_renders_real_last_curator_time(tmp_path: Path) -> None:
         note_count=0,
     )
     banner = render_banner(ctx)
-    assert banner is not None
-    assert "30m" in banner, (
-        f"banner should render the real 30m-ago last_curator_a; got: {banner!r}"
-    )
-    assert "last curator" in banner, (
-        f"banner must include 'last curator' segment; got: {banner!r}"
+    assert banner is None, (
+        "non-error pipeline state should not produce a banner"
     )

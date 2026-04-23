@@ -82,10 +82,10 @@ def _make_transcript_entry(
 # ---------------------------------------------------------------------------
 
 
-def test_banner_up_to_date_when_no_pending(
+def test_banner_no_pending_no_errors_is_silent(
     lore_root: Path, wiki_config_normal: WikiConfig, scope: Scope
 ) -> None:
-    """Empty ledger with no pending → 'up to date' message."""
+    """Empty ledger with no pending, no errors → None."""
     now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
     ctx = BannerContext(
         lore_root=lore_root,
@@ -95,10 +95,7 @@ def test_banner_up_to_date_when_no_pending(
         note_count=0,
     )
     result = render_banner(ctx)
-    assert result is not None
-    assert result.startswith("lore: ")
-    assert "up to date" in result
-    assert "0 notes" in result
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -106,14 +103,13 @@ def test_banner_up_to_date_when_no_pending(
 # ---------------------------------------------------------------------------
 
 
-def test_banner_pending_format(
+def test_banner_pending_is_silent(
     lore_root: Path, wiki_config_normal: WikiConfig, scope: Scope
 ) -> None:
-    """Seed 3 pending entries in ledger."""
+    """Pending entries without errors → None (pipeline state is internal)."""
     now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
     tledger = TranscriptLedger(lore_root)
 
-    # Add 3 pending entries (no digested_hash)
     for i in range(3):
         entry = _make_transcript_entry(lore_root, transcript_id=f"t{i+1}", digested_hash=None)
         tledger.upsert(entry)
@@ -126,9 +122,7 @@ def test_banner_pending_format(
         note_count=10,
     )
     result = render_banner(ctx)
-    assert result is not None
-    assert result.startswith("lore: ")
-    assert "3 pending" in result
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -136,10 +130,10 @@ def test_banner_pending_format(
 # ---------------------------------------------------------------------------
 
 
-def test_banner_curator_running_when_lock_exists(
+def test_banner_curator_running_is_silent(
     lore_root: Path, wiki_config_normal: WikiConfig, scope: Scope
 ) -> None:
-    """Pre-create .lore/curator.lock directory."""
+    """Curator running without errors → None (pipeline state is internal)."""
     lock_dir = lore_root / ".lore" / "curator.lock"
     lock_dir.mkdir(parents=True, exist_ok=True)
 
@@ -151,7 +145,7 @@ def test_banner_curator_running_when_lock_exists(
         now=now,
     )
     result = render_banner(ctx)
-    assert result == "lore: curator A running in background"
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -225,19 +219,17 @@ def test_banner_lore_bang_prefix_on_errors(
 # ---------------------------------------------------------------------------
 
 
-def test_banner_relative_time_minutes(
+def test_banner_pending_with_curator_history_is_silent(
     lore_root: Path, wiki_config_normal: WikiConfig, scope: Scope
 ) -> None:
-    """Last curator run 5 minutes ago → '5m ago'."""
+    """Pending entries with curator history → None (pipeline state is internal)."""
     now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
     curator_time = now - timedelta(minutes=5)
 
-    # Add 1 pending entry
     tledger = TranscriptLedger(lore_root)
     entry = _make_transcript_entry(lore_root, transcript_id="t1", digested_hash=None)
     tledger.upsert(entry)
 
-    # Set last_curator_a in wiki ledger
     wledger = WikiLedger(lore_root, "private")
     wiki_entry = WikiLedgerEntry(wiki="private", last_curator_a=curator_time)
     wledger.write(wiki_entry)
@@ -250,94 +242,19 @@ def test_banner_relative_time_minutes(
         note_count=10,
     )
     result = render_banner(ctx)
-    assert result is not None
-    assert "5m ago" in result
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
-# 8. Relative time: hours
-# ---------------------------------------------------------------------------
-
-
-def test_banner_relative_time_hours(
-    lore_root: Path, wiki_config_normal: WikiConfig, scope: Scope
-) -> None:
-    """Last curator run 3 hours ago → '3h ago'."""
-    now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
-    curator_time = now - timedelta(hours=3)
-
-    # Add 1 pending entry
-    tledger = TranscriptLedger(lore_root)
-    entry = _make_transcript_entry(lore_root, transcript_id="t1", digested_hash=None)
-    tledger.upsert(entry)
-
-    # Set last_curator_a in wiki ledger
-    wledger = WikiLedger(lore_root, "private")
-    wiki_entry = WikiLedgerEntry(wiki="private", last_curator_a=curator_time)
-    wledger.write(wiki_entry)
-
-    ctx = BannerContext(
-        lore_root=lore_root,
-        scope=scope,
-        wiki_config=wiki_config_normal,
-        now=now,
-        note_count=10,
-    )
-    result = render_banner(ctx)
-    assert result is not None
-    assert "3h ago" in result
-
-
-# ---------------------------------------------------------------------------
-# 9. Relative time: yesterday
-# ---------------------------------------------------------------------------
-
-
-def test_banner_relative_time_yesterday(
-    lore_root: Path, wiki_config_normal: WikiConfig, scope: Scope
-) -> None:
-    """Last curator run 1 day + 1 second ago → 'yesterday'."""
-    now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
-    curator_time = now - timedelta(days=1, seconds=1)
-
-    # Add 1 pending entry
-    tledger = TranscriptLedger(lore_root)
-    entry = _make_transcript_entry(lore_root, transcript_id="t1", digested_hash=None)
-    tledger.upsert(entry)
-
-    # Set last_curator_a in wiki ledger
-    wledger = WikiLedger(lore_root, "private")
-    wiki_entry = WikiLedgerEntry(wiki="private", last_curator_a=curator_time)
-    wledger.write(wiki_entry)
-
-    ctx = BannerContext(
-        lore_root=lore_root,
-        scope=scope,
-        wiki_config=wiki_config_normal,
-        now=now,
-        note_count=10,
-    )
-    result = render_banner(ctx)
-    assert result is not None
-    assert "yesterday" in result
-
-
-# ---------------------------------------------------------------------------
-# 10. Verbose mode (optional for v1, stub)
+# 10. Verbose mode: same as normal (no pipeline jargon)
 # ---------------------------------------------------------------------------
 
 
 def test_banner_verbose_vs_normal(
     lore_root: Path, wiki_config_verbose: WikiConfig, scope: Scope
 ) -> None:
-    """Verbose mode returns same string as normal for v1."""
+    """Verbose mode without errors → None."""
     now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
-
-    # Add 1 pending entry
-    tledger = TranscriptLedger(lore_root)
-    entry = _make_transcript_entry(lore_root, transcript_id="t1", digested_hash=None)
-    tledger.upsert(entry)
-
     ctx = BannerContext(
         lore_root=lore_root,
         scope=scope,
@@ -346,19 +263,16 @@ def test_banner_verbose_vs_normal(
         note_count=10,
     )
     result = render_banner(ctx)
-    assert result is not None
-    # For v1, verbose == normal (same string returned)
-    # Just verify it produces a valid banner
-    assert result.startswith("lore: ")
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
-# 11. All-skips hint
+# 11. All-skips: no longer surfaced (pipeline state is internal)
 # ---------------------------------------------------------------------------
 
 
-def test_banner_all_skips_hint(tmp_path: Path) -> None:
-    """Most recent run: errors=0, filed=0, skipped>0, no pending → hint appears."""
+def test_banner_all_skips_is_silent(tmp_path: Path) -> None:
+    """Most recent run: errors=0, filed=0, skipped>0, no pending → None."""
     import json
 
     lore_dir = tmp_path / ".lore"
@@ -387,10 +301,7 @@ def test_banner_all_skips_hint(tmp_path: Path) -> None:
         note_count=5,
     )
     banner = render_banner(ctx)
-    assert banner is not None
-    assert "0 notes" in banner
-    assert "3 skipped" in banner
-    assert "lore runs show latest" in banner
+    assert banner is None
 
 
 # ---------------------------------------------------------------------------
@@ -477,14 +388,14 @@ def test_banner_hook_error_trailing_segment(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_session_end_breadcrumb_spawned_curator() -> None:
+def test_session_end_breadcrumb_spawned_curator_is_silent() -> None:
     result = render_session_end_breadcrumb("spawned-curator", pending_after=3, threshold=3)
-    assert result == "lore: capture queued · curator spawned (pending 3)"
+    assert result is None
 
 
-def test_session_end_breadcrumb_below_threshold() -> None:
+def test_session_end_breadcrumb_below_threshold_is_silent() -> None:
     result = render_session_end_breadcrumb("below-threshold", pending_after=2, threshold=3)
-    assert result == "lore: capture queued · below threshold (pending 2/3)"
+    assert result is None
 
 
 def test_session_end_breadcrumb_no_new_turns_is_none() -> None:
@@ -519,10 +430,10 @@ def test_session_end_breadcrumb_unattached_is_none() -> None:
 def test_pending_breadcrumb_roundtrip(tmp_path: Path) -> None:
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
-    write_pending_breadcrumb(tmp_path, "lore: capture queued · below threshold (pending 1/3)")
+    write_pending_breadcrumb(tmp_path, "lore!: capture error — disk full")
     result = consume_pending_breadcrumb(tmp_path)
-    assert result == "lore: capture queued · below threshold (pending 1/3)"
-    # Second consume returns None — file was deleted
+    assert result == "lore!: capture error — disk full"
+    # Second consume returns None — already consumed
     assert consume_pending_breadcrumb(tmp_path) is None
 
 
@@ -550,11 +461,11 @@ def test_pending_breadcrumb_stale_returns_none(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_render_banner_prepends_session_end_line(tmp_path: Path) -> None:
-    """A pending breadcrumb file is prepended to the SessionStart banner."""
+def test_render_banner_prepends_session_end_error(tmp_path: Path) -> None:
+    """A pending error breadcrumb is prepended to the SessionStart banner."""
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
-    write_pending_breadcrumb(tmp_path, "lore: capture queued · below threshold (pending 1/3)")
+    write_pending_breadcrumb(tmp_path, "lore!: capture error — disk full")
 
     now = datetime(2026, 4, 20, 10, 0, 0, tzinfo=UTC)
     scope = Scope(
@@ -572,16 +483,14 @@ def test_render_banner_prepends_session_end_line(tmp_path: Path) -> None:
     )
     banner = render_banner(ctx)
     assert banner is not None
-    lines = banner.splitlines()
-    assert lines[0] == "lore: capture queued · below threshold (pending 1/3)"
-    assert len(lines) >= 2
+    assert "capture error" in banner
 
 
-def test_render_banner_quiet_with_session_end_line(tmp_path: Path) -> None:
-    """Quiet mode still surfaces the pending breadcrumb."""
+def test_render_banner_quiet_with_session_end_error(tmp_path: Path) -> None:
+    """Quiet mode still surfaces error breadcrumbs."""
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
-    write_pending_breadcrumb(tmp_path, "lore: capture queued · curator spawned (pending 5)")
+    write_pending_breadcrumb(tmp_path, "lore!: capture error — timeout")
 
     now = datetime(2026, 4, 20, 10, 0, 0, tzinfo=UTC)
     scope = Scope(
@@ -599,4 +508,4 @@ def test_render_banner_quiet_with_session_end_line(tmp_path: Path) -> None:
     )
     banner = render_banner(ctx)
     assert banner is not None
-    assert "curator spawned" in banner
+    assert "capture error" in banner

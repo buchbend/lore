@@ -52,7 +52,7 @@ class BriefingConfig:
 class HeartbeatConfig:
     enabled: bool = True
     cooldown_s: int = 120
-    push_context: bool = False            # inject additionalContext with wikilinks
+    push_context: bool = True             # inject additionalContext with wikilinks
 
 @dataclass
 class BreadcrumbConfig:

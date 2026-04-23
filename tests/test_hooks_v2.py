@@ -263,8 +263,7 @@ def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
     )
 
     out = hooks._session_start(str(repo_dir))
-    assert "ccat:data-center:data-transfer" in out
-    assert "14 notes" in out
+    assert "lore: active" in out
     assert "2 issues" in out
     assert "1 PR" in out
     assert "#47 retry cap missing" in out
@@ -289,7 +288,7 @@ def test_session_start_from_lore_falls_back_when_gh_fails(fake_vault, tmp_path, 
 
     out = hooks._session_start(str(repo_dir))
     # Status line still renders
-    assert "lore: loaded" in out
+    assert "lore: active" in out
     # No issues → placeholder line
     assert "No open issues matched your filters" in out
 
@@ -304,7 +303,7 @@ def test_session_start_no_lore_config_uses_legacy_path(fake_vault, tmp_path, mon
     out = hooks._session_start(str(repo_dir))
     # Should hit the legacy branch — emits a resolved-wiki status line
     # (single wiki in vault → auto-selected)
-    assert "lore: loaded" in out or "no wiki resolved" in out
+    assert "lore: active" in out or "no wiki resolved" in out
 
 
 def test_session_start_from_lore_missing_wiki_falls_through(fake_vault, tmp_path, monkeypatch):
@@ -320,4 +319,4 @@ def test_session_start_from_lore_missing_wiki_falls_through(fake_vault, tmp_path
     out = hooks._session_start(str(repo_dir))
     # Wiki doesn't exist → _session_start_from_lore returns None →
     # legacy branch kicks in → single wiki in vault is picked
-    assert "lore: loaded" in out or "no wiki" in out
+    assert "lore: active" in out or "no wiki" in out

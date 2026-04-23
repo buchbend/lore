@@ -622,20 +622,14 @@ def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_facto
 # ---------------------------------------------------------------------------
 
 
-def test_capture_session_end_writes_breadcrumb_when_below_threshold(
+def test_capture_session_end_no_breadcrumb_when_below_threshold(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:
-    """capture --event session-end with pending transcripts emits a
-    pending-breadcrumb-written event to hook-events.jsonl.
-
-    Post-Task-9b the storage moved from a standalone .txt file to a record
-    in the existing hook-events log.
-    """
+    """below-threshold is internal pipeline state — no breadcrumb written."""
     from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
 
     project = _make_attached_project(tmp_path)
 
-    # Pre-seed ledger with 2 pending entries (no digested_hash) to produce below-threshold.
     ledger = TranscriptLedger(project)
     for i in range(2):
         ledger.upsert(
@@ -654,7 +648,6 @@ def test_capture_session_end_writes_breadcrumb_when_below_threshold(
             )
         )
 
-    # Use the CLI runner so typer option defaults are resolved correctly.
     handle = _make_handle(project, host="fake")
     fake_adapter_factory([handle])
 
@@ -668,12 +661,10 @@ def test_capture_session_end_writes_breadcrumb_when_below_threshold(
 
     import json as _json
     events_path = project / ".lore" / "hook-events.jsonl"
-    assert events_path.exists(), "hook-events.jsonl should be created"
-    events = [_json.loads(l) for l in events_path.read_text().splitlines() if l.strip()]
-    written = [e for e in events if e.get("event") == "pending-breadcrumb-written"]
-    assert written, f"expected a pending-breadcrumb-written event; got {events}"
-    line = written[-1].get("line", "")
-    assert "below threshold" in line or "curator spawned" in line
+    if events_path.exists():
+        events = [_json.loads(l) for l in events_path.read_text().splitlines() if l.strip()]
+        written = [e for e in events if e.get("event") == "pending-breadcrumb-written"]
+        assert not written, "below-threshold should not write a breadcrumb"
 
 
 def test_capture_session_end_no_breadcrumb_when_no_new_turns(

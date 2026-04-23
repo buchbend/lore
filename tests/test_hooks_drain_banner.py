@@ -42,22 +42,29 @@ def test_render_this_session_line_after_note_filed(tmp_path, pid_session):
 
 def test_render_since_you_left_line_from_system_drain(tmp_path, pid_session):
     system = DrainStore(tmp_path, SYSTEM_SESSION)
-    system.emit("transcript-synced", wiki="ccat", transcript_id="u1")
-    system.emit("transcript-synced", wiki="ccat", transcript_id="u2")
     system.emit("surface-proposed", wiki="ccat")
 
     lines = _render_drain_lines(tmp_path, tmp_path)
     assert len(lines) == 1
     assert "Since you left" in lines[0]
-    assert "2 transcripts synced" in lines[0]
     assert "1 surface proposed" in lines[0]
+
+
+def test_transcript_synced_only_produces_no_drain_line(tmp_path, pid_session):
+    """transcript-synced is internal bookkeeping — not surfaced."""
+    system = DrainStore(tmp_path, SYSTEM_SESSION)
+    system.emit("transcript-synced", wiki="ccat", transcript_id="u1")
+    system.emit("transcript-synced", wiki="ccat", transcript_id="u2")
+
+    lines = _render_drain_lines(tmp_path, tmp_path)
+    assert lines == []
 
 
 def test_render_both_lines_when_both_streams_have_events(tmp_path, pid_session):
     session_store = DrainStore(tmp_path, pid_session)
     system_store = DrainStore(tmp_path, SYSTEM_SESSION)
     session_store.emit("note-filed", wiki="a", wikilink="[[n]]")
-    system_store.emit("transcript-synced", wiki="a", transcript_id="u")
+    system_store.emit("note-filed", wiki="a", wikilink="[[m]]")
 
     lines = _render_drain_lines(tmp_path, tmp_path)
     assert len(lines) == 2

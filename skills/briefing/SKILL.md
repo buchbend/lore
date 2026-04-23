@@ -116,5 +116,5 @@ works for any path inside a wiki, not just session notes.)
 
 ## Related
 
-- `/lore:loaded` — what SessionStart cached
+- `/lore:context` — what SessionStart cached
 - `/lore:resume` — fresh gather (different shape: per-topic / per-scope)

@@ -7,7 +7,7 @@ that everything user-facing can render against:
 - ``lore doctor``'s capture panel (Task 12a keeps it only for the install-
   mode footer pointer — doctor itself moves off)
 - SessionStart banner (Task 12b)
-- ``/lore:loaded`` live-state section (Task 13)
+- ``/lore:context`` live-state section (Task 13)
 - ``lore runs list`` stays a history view and does NOT render CaptureState.
 
 Read-only by construction. The query opens files for reading but never

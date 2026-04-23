@@ -100,7 +100,7 @@ the keyboard shortcut and the renderer. Token-economy by construction.
 
 ## Related
 
-- `/lore:loaded` — show what SessionStart already cached (no fresh
+- `/lore:context` — show what SessionStart already cached (no fresh
   gather)
 - `/lore:search` — direct FTS query without the open-items / recency
   framing

@@ -72,5 +72,5 @@ Next SessionStart reads `_review.md` (or its absence means "all clear")
 and folds the count into the one-liner status:
 
 ```
-lore: loaded <wiki> (N notes, M open items, 3 stale flagged) · /lore:loaded
+lore: loaded <wiki> (N notes, M open items, 3 stale flagged) · /lore:context
 ```

@@ -34,7 +34,7 @@ from lore_core.scopes import (
 
 
 
-# SessionStart writes its injected context to a cache file so /lore:loaded
+# SessionStart writes its injected context to a cache file so /lore:context
 # can show it back to the user. Two concurrent Claude sessions would
 # stomp on a single shared file, so the cache is keyed by the Claude
 # Code process PID — stable for the life of a session, unique across
@@ -323,7 +323,7 @@ def _read_wiki_index(wiki: Path, max_chars: int) -> str:
     text = index_path.read_text(errors="replace")
     if len(text) <= max_chars:
         return text
-    return text[: max_chars - 40] + "\n... (truncated — run /lore:loaded for full)"
+    return text[: max_chars - 40] + "\n... (truncated — run /lore:context for full)"
 
 
 # Matches "## Open items" section up to next `##` or EOF.
@@ -597,24 +597,23 @@ def _session_start_from_lore(
                     continue
                 subtree_issues += len(_gh_issues(sib_repo, issues_filter))
 
-    catalog = _wiki_catalog(wiki) or {}
-    note_count = catalog.get("stats", {}).get("total_notes", "?")
-    stale = _stale_count(wiki)
+    project_entry = _project_note_for_repo(wiki, repo) if repo else None
+    session_hints = _last_session_hint(wiki)
 
-    scope_label = scope or wiki_name
-    status_bits: list[str] = [f"{note_count} notes"]
+    injected_bits: list[str] = []
+    if project_entry is not None:
+        injected_bits.append(f"[[{project_entry['name']}]]")
+    if session_hints:
+        n = len(session_hints)
+        injected_bits.append(f"{n} session{'s' if n != 1 else ''}")
     if issues:
-        status_bits.append(f"{len(issues)} issue{'s' if len(issues) != 1 else ''}")
+        injected_bits.append(f"{len(issues)} issue{'s' if len(issues) != 1 else ''}")
     if prs:
-        status_bits.append(f"{len(prs)} PR{'s' if len(prs) != 1 else ''}")
-    if stale:
-        status_bits.append(f"{stale} stale")
-    status_line = f"lore: loaded {scope_label} ({', '.join(status_bits)}) · /lore:loaded"
+        injected_bits.append(f"{len(prs)} PR{'s' if len(prs) != 1 else ''}")
+    status_line = "lore: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     out_parts: list[str] = [status_line, ""]
     out_parts.extend(_load_directive_lines())
-
-    project_entry = _project_note_for_repo(wiki, repo) if repo else None
     if project_entry is not None:
         out_parts.append(f"## Focus: [[{project_entry['name']}]]")
         desc = project_entry.get("description")
@@ -630,7 +629,6 @@ def _session_start_from_lore(
         out_parts.append(f"_Repo `{repo}` has no dedicated project note in {wiki_name}._")
         out_parts.append("")
 
-    session_hints = _last_session_hint(wiki)
     if session_hints:
         out_parts.extend(session_hints)
         out_parts.append("")
@@ -706,25 +704,23 @@ def _session_start(cwd: str | None) -> str:
             )
         return f"lore: no wiki resolved in {wiki_root}."
 
-    # Core stats
-    catalog = _wiki_catalog(wiki) or {}
-    stats = catalog.get("stats", {})
-    note_count = stats.get("total_notes", "?")
-    stale = _stale_count(wiki)
-
     # Repo-scoped open items (repo or None for wiki-wide)
     items, elsewhere = _recent_open_items(wiki, repo=repo)
 
     # Project note focused on this repo, if any
     project_entry = _project_note_for_repo(wiki, repo) if repo else None
+    session_hints = _last_session_hint(wiki)
 
-    # One-liner status — repo-scoped when we can
-    scope_label = wiki.name if project_entry is None else f"{wiki.name}:{project_entry['name']}"
-    stale_tag = f", {stale} stale" if stale else ""
-    status_line = (
-        f"lore: loaded {scope_label} ({note_count} notes, "
-        f"{len(items)} open{stale_tag}) · /lore:loaded"
-    )
+    # Status line enumerates what's actually injected into context
+    injected_bits: list[str] = []
+    if project_entry is not None:
+        injected_bits.append(f"[[{project_entry['name']}]]")
+    if session_hints:
+        n = len(session_hints)
+        injected_bits.append(f"{n} session{'s' if n != 1 else ''}")
+    if items:
+        injected_bits.append(f"{len(items)} open item{'s' if len(items) != 1 else ''}")
+    status_line = "lore: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     parts: list[str] = [status_line, ""]
     parts.extend(_load_directive_lines())
@@ -744,7 +740,6 @@ def _session_start(cwd: str | None) -> str:
         parts.append(f"_Repo `{repo}` has no dedicated project note in {wiki.name}._")
         parts.append("")
 
-    session_hints = _last_session_hint(wiki)
     if session_hints:
         parts.extend(session_hints)
         parts.append("")
@@ -812,111 +807,47 @@ def _pre_compact(cwd: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# `lore hook why` — read-only cache lookup for the /lore:loaded skill
+# `lore hook why` — read-only cache lookup for the /lore:context skill
 # ---------------------------------------------------------------------------
 
 
-def _render_live_state(cwd: Path | None = None) -> str:
-    """Render the live-state section for /lore:loaded.
-
-    Uses the same CaptureState that `lore status` consumes, rendered via
-    status_cmd's helpers so the output shape matches. On failure returns
-    a one-line error so /lore:loaded never crashes on cache rendering.
-    """
-    from datetime import UTC as _UTC
-    from datetime import datetime as _dt
-
-    try:
-        from lore_core import capture_state as _cs_mod
-        from lore_core.config import get_lore_root
-        from lore_cli import status_cmd
-
-        lore_root = get_lore_root()
-        now = _dt.now(_UTC)
-        state = _cs_mod.query_capture_state(
-            lore_root,
-            cwd=Path(_resolve_cwd_capture()) if cwd is None else cwd,
-            now=now,
-        )
-    except Exception as exc:
-        return f"(live state unavailable: {type(exc).__name__}: {exc})"
-
-    lines: list[str] = []
-    if not state.scope_attached:
-        lines.append("(not attached to a wiki — run /lore:attach)")
-    else:
-        lines.append(f"scope: {state.scope_name}")
-        for glyph, msg in [
-            status_cmd._render_last_note(state, now),
-            status_cmd._render_last_run(state, now),
-            status_cmd._render_pending(state),
-            status_cmd._render_lock(state),
-        ]:
-            lines.append(f"  {glyph} {msg}")
-    return "\n".join(lines)
-
-
-def _live_state() -> str:
-    """Return live state + the SessionStart cache for the current session.
-
-    Output shape (post-Task-13):
-
-        ── Live state (as of now) ────
-        <rendered CaptureState>
-
-        ── Injected at SessionStart ────
-        <cached hook body>
-
-    Live state comes first per UX review: a Claude session opening
-    ``/lore:loaded`` wants "what's true now" before "what was injected."
-
-    Cache resolution order (unchanged):
-      1. ``$LORE_CACHE/sessions/<claude_code_pid>.md``
-      2. ``$LORE_CACHE/last-session-start.md`` (legacy, flagged)
-      3. An explanatory error if nothing is cached.
-    """
-    live = _render_live_state()
-
-    # Resolve cached body.
-    cached_body: str | None = None
+def _context_log() -> str:
+    """Read the PID-scoped context log. Pure file read — no live I/O."""
     cc_pid = _claude_code_pid()
     if cc_pid is not None:
-        primary = _cache_path_for_pid(cc_pid)
-        if primary.exists():
+        path = _cache_path_for_pid(cc_pid)
+        if path.exists():
             try:
-                cached_body = primary.read_text(errors="replace")
+                return path.read_text(errors="replace")
             except OSError:
-                cached_body = None
+                pass
+    legacy = _legacy_cache_path()
+    if legacy.exists():
+        try:
+            body = legacy.read_text(errors="replace")
+        except OSError:
+            body = ""
+        if body:
+            return "_(legacy cache — may be from another session)_\n\n" + body
+    return "lore: no context log found. SessionStart may not have fired. Run `lore doctor`.\n"
 
-    if cached_body is None:
-        legacy = _legacy_cache_path()
-        if legacy.exists():
-            try:
-                body = legacy.read_text(errors="replace")
-            except OSError:
-                body = ""
-            if body:
-                cached_body = (
-                    "_(read from legacy singleton cache — may be from a "
-                    "different concurrent Claude session)_\n\n"
-                ) + body
 
-    if cached_body is None:
-        cached_body = (
-            "lore: no SessionStart cache found. Either the hook has not "
-            "fired yet in this session, or hooks are disabled. Check "
-            "`~/.claude/settings.json` for a SessionStart entry invoking "
-            "`lore hook session-start`, or re-run the installer with "
-            "`--with-hooks`.\n"
-        )
-
-    return (
-        "── Live state (as of now) ────\n"
-        f"{live}\n"
-        "\n"
-        "── Injected at SessionStart ────\n"
-        f"{cached_body}"
-    )
+def _append_context_log(sys_msg: str, ctx: str | None = None) -> None:
+    """Append a timestamped heartbeat entry to the PID-scoped context log."""
+    from datetime import UTC as _UTC, datetime as _dt
+    cc_pid = _claude_code_pid() or os.getppid()
+    cache = _cache_path_for_pid(cc_pid)
+    if not cache.exists():
+        return
+    ts = _dt.now(_UTC).strftime("%H:%M")
+    entry = f"\n── {ts} ──\n{sys_msg}\n"
+    if ctx:
+        entry += f"  → injected: {ctx}\n"
+    try:
+        with open(cache, "a") as f:
+            f.write(entry)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -925,14 +856,8 @@ def _live_state() -> str:
 
 
 def _stop() -> str:
-    """Emit a terse reminder to capture a session note.
-
-    True timeout / Esc-to-skip behaviour requires terminal interactivity
-    and isn't reliable in non-TTY hook contexts. We emit an agent-
-    readable hint so the model can offer to run `/lore:session` on exit
-    — the user can ignore it.
-    """
-    return "lore: consider `/lore:session` to capture this session.\n"
+    """No-op — session capture is automatic."""
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -970,7 +895,7 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
       Stop — `hookSpecificOutput` is NOT allowed. Only top-level fields.
         We emit the hint via `systemMessage`.
 
-    `--plain` dumps raw text to stdout — used by the /lore:loaded skill and
+    `--plain` dumps raw text to stdout — used by the /lore:context skill and
     for manual inspection.
     """
     if plain:
@@ -986,36 +911,27 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
     envelope: dict
 
     if hook_event == "SessionStart":
-        # Cache the injected body so `/lore:loaded` can surface it back to
-        # the user. Key by the Claude Code PID so two concurrent
-        # sessions don't stomp each other. We walk process ancestry
-        # rather than trusting os.getppid() directly: today Claude Code
-        # spawns hooks without a shell wrapper (PPID == Claude Code),
-        # but the walker keeps us correct if that ever changes. Fall
-        # back to PPID if the walker can't resolve (e.g. non-Linux).
-        # Keep writing the legacy singleton path too so older skill
-        # installs still see *something*. Ignore cache errors — they
-        # must never break the hook.
+        from datetime import UTC as _UTC, datetime as _dt
+        ts_hm = _dt.now(_UTC).strftime("%H:%M")
+        log_text = f"── SessionStart {ts_hm} ──\n{text}"
         cc_pid = _claude_code_pid() or os.getppid()
         try:
-            atomic_write_text(_cache_path_for_pid(cc_pid), text)
+            atomic_write_text(_cache_path_for_pid(cc_pid), log_text)
         except OSError:
             pass
         try:
-            atomic_write_text(_legacy_cache_path(), text)
+            atomic_write_text(_legacy_cache_path(), log_text)
         except OSError:
             pass
         try:
             _gc_sessions_cache()
         except OSError:
             pass
-        # Cache stores the full text so /lore:loaded can show everything;
-        # additionalContext gets truncated only for the agent-facing inject.
         context_text = text
         if len(context_text) > MAX_CONTEXT_CHARS:
             context_text = (
                 context_text[: MAX_CONTEXT_CHARS - 40]
-                + "\n... (truncated — /lore:loaded for full)"
+                + "\n... (truncated — /lore:context for full)"
             )
         envelope = {
             "systemMessage": one_liner,
@@ -1249,15 +1165,46 @@ def cmd_stop(
     _emit("Stop", out, plain=plain)
 
 
-@hook_app.command("live-state")
+@hook_app.command("context-log")
+def cmd_context_log() -> None:
+    """Print the context log — what Lore injected this session."""
+    sys.stdout.write(_context_log())
+
+
+@hook_app.command("live-state", hidden=True)
 def cmd_live_state() -> None:
-    """Print live capture state + the SessionStart cache."""
-    sys.stdout.write(_live_state())
+    """Deprecated alias for context-log."""
+    sys.stdout.write(_context_log())
 
 
 # ---------------------------------------------------------------------------
 # UserPromptSubmit heartbeat
 # ---------------------------------------------------------------------------
+
+
+def _read_cursor(path: Path) -> "datetime | None":
+    """Read a drain cursor file. Returns None if missing or unparseable."""
+    if not path.exists():
+        return None
+    try:
+        from datetime import datetime as _dt, UTC as _UTC
+        raw = path.read_text().strip()
+        if raw:
+            return _dt.fromisoformat(raw).replace(tzinfo=_UTC)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _write_cursor(path: Path, ts: "datetime") -> None:
+    """Atomic cursor write; best-effort."""
+    from datetime import timedelta
+    try:
+        tmp = path.with_suffix(".cursor.tmp")
+        tmp.write_text((ts + timedelta(microseconds=1)).isoformat())
+        os.replace(tmp, path)
+    except OSError:
+        pass
 
 
 def _heartbeat(
@@ -1269,10 +1216,11 @@ def _heartbeat(
 ) -> tuple[str | None, str | None]:
     """Check drain for new events; return (system_message, additional_context).
 
-    Both may be None. Cooldown-gated: returns (None, None) immediately
-    when the stamp is fresh.
+    Reads both the system drain (background work) and session-scoped
+    drain (notes filed for this session). Both may be None. Cooldown-
+    gated: returns (None, None) when the stamp is fresh.
     """
-    from lore_core.drain import SYSTEM_SESSION, DrainStore
+    from lore_core.drain import SYSTEM_SESSION, DrainStore, resolve_session_id
 
     hb = wiki_cfg.heartbeat
     if not hb.enabled:
@@ -1284,23 +1232,23 @@ def _heartbeat(
         return None, None
 
     effective_pid = pid or _claude_code_pid() or os.getpid()
-    cursor_path = lore_root / ".lore" / "drain" / f"heartbeat-{effective_pid}.cursor"
+    drain_dir = lore_root / ".lore" / "drain"
+    drain_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read cursor (shared concept — SessionStart advances the session
-    # drain cursor; heartbeat uses its own PID-scoped cursor over the
-    # system drain so the two don't interfere).
-    cursor_ts = None
-    if cursor_path.exists():
-        try:
-            from datetime import datetime as _dt, UTC as _UTC
-            raw = cursor_path.read_text().strip()
-            if raw:
-                cursor_ts = _dt.fromisoformat(raw).replace(tzinfo=_UTC)
-        except (OSError, ValueError):
-            pass
+    sys_cursor_path = drain_dir / f"heartbeat-{effective_pid}.cursor"
+    sess_cursor_path = drain_dir / f"heartbeat-session-{effective_pid}.cursor"
+
+    sys_cursor_ts = _read_cursor(sys_cursor_path)
+    sess_cursor_ts = _read_cursor(sess_cursor_path)
 
     system_store = DrainStore(lore_root, SYSTEM_SESSION)
-    events = system_store.read(since=cursor_ts, limit=200)
+    system_events = system_store.read(since=sys_cursor_ts, limit=200)
+
+    sid, _ = resolve_session_id(cwd)
+    session_store = DrainStore(lore_root, sid)
+    session_events = session_store.read(since=sess_cursor_ts, limit=200)
+
+    events = system_events + session_events
 
     if not events:
         _write_stamp(stamp)
@@ -1310,7 +1258,6 @@ def _heartbeat(
     summary = _format_drain_summary(counts, events)
     sys_msg = f"lore: {summary}" if summary else None
 
-    # Build additionalContext with wikilinks when push_context is on.
     ctx = None
     if hb.push_context and events:
         wikilinks = []
@@ -1321,15 +1268,10 @@ def _heartbeat(
         if wikilinks:
             ctx = "New in vault: " + ", ".join(dict.fromkeys(wikilinks))
 
-    # Advance cursor to newest + 1µs.
-    from datetime import timedelta
-    newest = max(e.ts for e in events)
-    try:
-        tmp = cursor_path.with_suffix(".cursor.tmp")
-        tmp.write_text((newest + timedelta(microseconds=1)).isoformat())
-        os.replace(tmp, cursor_path)
-    except OSError:
-        pass
+    if system_events:
+        _write_cursor(sys_cursor_path, max(e.ts for e in system_events))
+    if session_events:
+        _write_cursor(sess_cursor_path, max(e.ts for e in session_events))
 
     _write_stamp(stamp)
     return sys_msg, ctx
@@ -1375,6 +1317,9 @@ def cmd_user_prompt_submit(
         }
     if envelope:
         sys.stdout.write(json.dumps(envelope) + "\n")
+
+    if sys_msg:
+        _append_context_log(sys_msg, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -1710,7 +1655,6 @@ def _format_drain_summary(counts: dict[str, int], events) -> str:
     parts: list[str] = []
     n_filed = counts.get("note-filed", 0)
     n_appended = counts.get("note-appended", 0)
-    n_synced = counts.get("transcript-synced", 0)
     n_surface = counts.get("surface-proposed", 0)
 
     if n_filed:
@@ -1725,8 +1669,6 @@ def _format_drain_summary(counts: dict[str, int], events) -> str:
             parts.append(f"added to {wikilink}")
         else:
             parts.append(f"{n_appended} added")
-    if n_synced:
-        parts.append(f"{n_synced} transcript{'s' if n_synced != 1 else ''} synced")
     if n_surface:
         parts.append(f"{n_surface} surface proposed")
     return " · ".join(parts)

@@ -266,7 +266,7 @@ def _execute_actions(
 
 _SUCCESS_HOST_SENTENCE = {
     "claude": (
-        "Done. Open a Claude Code session and run /lore:loaded to verify."
+        "Done. Open a Claude Code session and run /lore:context to verify."
     ),
     "cursor": (
         "Done. Restart Cursor and open the MCP tools panel; you should "

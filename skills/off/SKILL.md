@@ -35,4 +35,4 @@ or when you just want a clean context without auto-injection.
 ## Related
 
 - `/lore:quiet` — silence only inline citations, keep SessionStart
-- `/lore:loaded` — audit what SessionStart would have injected
+- `/lore:context` — audit what SessionStart would have injected

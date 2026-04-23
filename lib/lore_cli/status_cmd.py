@@ -186,7 +186,7 @@ def _render_session(now: datetime) -> tuple[str, str]:
         return (_HEALTHY, "Session      not loaded in this shell")
     return (
         _HEALTHY,
-        f"Session      loaded {relative_time(ts, now=now)} · /lore:loaded",
+        f"Session      loaded {relative_time(ts, now=now)} · /lore:context",
     )
 
 

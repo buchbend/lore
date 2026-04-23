@@ -39,14 +39,9 @@ def render_session_end_breadcrumb(
       error              → "lore!: capture error — <message>"
       unattached         → None  (already silent — unattached path is a no-op)
     """
-    if outcome == "spawned-curator":
-        return f"lore: capture queued · curator spawned (pending {pending_after})"
-    if outcome == "below-threshold":
-        return f"lore: capture queued · below threshold (pending {pending_after}/{threshold})"
     if outcome == "error":
         msg = error_message or "unknown error"
         return f"lore!: capture error — {msg}"
-    # no-new-turns / unattached / anything else → stay silent
     return None
 
 
@@ -207,41 +202,14 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
         return _prepend(session_end_line, banner)
 
     if mode == "quiet":
-        return None
+        return session_end_line
 
-    # Curator working → dedicated line.
-    if a and a.work_lock_held:
-        return _prepend(session_end_line, "lore: curator A running in background")
-
-    parts: list[str] = []
-    if state.pending_transcripts > 0:
-        parts.append(f"{state.pending_transcripts} pending")
-        if a and a.last_run_ts:
-            parts.append(f"last curator {relative_time(a.last_run_ts, now=ctx.now)}")
-        if state.last_briefing_ts:
-            parts.append(f"briefing {relative_day(state.last_briefing_ts, now=ctx.now)}")
-        banner = "lore: " + " · ".join(parts)
-    else:
-        if (
-            a
-            and a.last_run_notes_new == 0
-            and a.last_run_notes_merged == 0
-            and (a.last_run_skipped or 0) > 0
-            and (a.last_run_errors or 0) == 0
-        ):
-            banner = (
-                f"lore: last run filed 0 notes "
-                f"({a.last_run_skipped} skipped) · lore runs show latest"
-            )
-        else:
-            parts.append("up to date")
-            parts.append(f"{ctx.note_count} notes in {ctx.scope.wiki}/{ctx.scope.scope}")
-            banner = "lore: " + " · ".join(parts)
-
-    # Trailing hook-error segment — non-blocking.
+    # Hook errors are operational alerts — always surface.
     if state.hook_errors_24h > 0:
         suffix = "s" if state.hook_errors_24h > 1 else ""
-        banner += f" · {state.hook_errors_24h} hook error{suffix} today (lore doctor)"
-    return _prepend(session_end_line, banner)
+        banner = f"lore!: {state.hook_errors_24h} hook error{suffix} today (lore doctor)"
+        return _prepend(session_end_line, banner)
+
+    return session_end_line
 
 
