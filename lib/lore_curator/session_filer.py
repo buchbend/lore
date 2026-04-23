@@ -60,6 +60,7 @@ def file_session_note(
     work_time: datetime | None = None,
     logger: "RunLogger | None" = None,
     transcript_id: str | None = None,
+    scope_redirected_from: str | None = None,
 ) -> FiledNote:
     """Create or merge a session note from a classified Turn slice.
 
@@ -99,6 +100,7 @@ def file_session_note(
             turns=turns,
             now=now,
             work_time=work_time,
+            scope_redirected_from=scope_redirected_from,
         )
         wikilink = _wikilink_for(today_note)
         if logger is not None:
@@ -110,7 +112,7 @@ def file_session_note(
             )
         return FiledNote(path=today_note, wikilink=wikilink, was_merge=True)
 
-    recent_notes = _recent_session_notes(sessions_dir, scope=scope, within_days=7, limit=20)
+    recent_notes = _recent_session_notes(sessions_dir, scope=scope, within_days=7, limit=20, now=now)
     decision = _merge_judgment(
         new_summary=noteworthy,
         recent_notes=recent_notes,
@@ -140,6 +142,7 @@ def file_session_note(
             turns=turns,
             now=now,
             work_time=work_time,
+            scope_redirected_from=scope_redirected_from,
         )
         wikilink = _wikilink_for(target)
 
@@ -180,6 +183,7 @@ def file_session_note(
         turns=turns,
         now=now,
         work_time=work_time,
+        scope_redirected_from=scope_redirected_from,
     )
     wikilink = _wikilink_for(path)
 
@@ -258,6 +262,7 @@ def _recent_session_notes(
     scope: Scope,
     within_days: int,
     limit: int,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Return list of {path, frontmatter, preview} for recent notes in scope.
 
@@ -266,7 +271,7 @@ def _recent_session_notes(
     """
     if not sessions_dir.exists():
         return []
-    cutoff = datetime.now(UTC).timestamp() - within_days * 86400
+    cutoff = (now or datetime.now(UTC)).timestamp() - within_days * 86400
     results: list[tuple[float, Path, dict[str, Any], str]] = []
     for p in sessions_dir.rglob("*.md"):
         try:
@@ -386,13 +391,10 @@ def _write_new_note(
     turns: list[Turn],
     now: datetime,
     work_time: datetime,
+    scope_redirected_from: str | None = None,
 ) -> None:
     from_hash = turns[0].content_hash() if turns else None
     to_hash = turns[-1].content_hash() if turns else None
-    # P4b: ``transcripts`` is placed LAST in the frontmatter so machine-
-    # facing provenance stays visually out of the way of the human-facing
-    # description / scope / tags. See module docstring for the append-only
-    # invariant.
     fm = {
         "schema_version": 2,
         "type": "session",
@@ -414,6 +416,8 @@ def _write_new_note(
         "tags": [],
         "transcripts": [handle.id],
     }
+    if scope_redirected_from:
+        fm["scope_redirected_from"] = scope_redirected_from
     body = _render_body(noteworthy)
     text = _render_markdown(fm, body)
     atomic_write_text(path, text)
@@ -427,15 +431,9 @@ def _append_to_note(
     turns: list[Turn],
     now: datetime,
     work_time: datetime,
+    scope_redirected_from: str | None = None,
 ) -> None:
-    """Append a new section to an existing note; update frontmatter source_transcripts.
-
-    Frontmatter updates:
-      - last_reviewed → work_time (when the newly-added work happened)
-      - curator_a_run → now ISO (audit field: when WE looked)
-      - source_transcripts gets a new entry
-    Body: append a `## <noteworthy.title>` section with bullets + findings.
-    """
+    """Append a new section to an existing note; update frontmatter source_transcripts."""
     text = path.read_text()
     fm = parse_frontmatter(text)
     body = _strip_frontmatter(text)
@@ -452,6 +450,8 @@ def _append_to_note(
     fm["source_transcripts"] = src
     fm["last_reviewed"] = work_time.date().isoformat()
     fm["curator_a_run"] = now.isoformat()
+    if scope_redirected_from and "scope_redirected_from" not in fm:
+        fm["scope_redirected_from"] = scope_redirected_from
 
     # P4b: append to the transcripts UUID list, dedupe, cap at 20 most
     # recent. Order is insertion-order with the newest at the end; if a

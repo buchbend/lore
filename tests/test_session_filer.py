@@ -467,7 +467,7 @@ def test_recent_notes_filter_excludes_old(tmp_path):
     """Notes with created date older than 7 days are filtered out → no LLM call."""
     sessions_dir = tmp_path / "sessions"
     sessions_dir.mkdir(parents=True)
-    old_date = (datetime.now(UTC) - timedelta(days=10)).date().isoformat()
+    old_date = (_NOW - timedelta(days=10)).date().isoformat()
     _write_session_note(sessions_dir, "old-note.md", created=old_date)
 
     client = _make_new_client()

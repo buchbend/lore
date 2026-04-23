@@ -237,6 +237,25 @@ def _render_alerts(state: CaptureState, now: datetime) -> list[str]:
                 f"(try `lore doctor`)"
             )
 
+    proc_dir = lore_root / ".lore" / "proc"
+    if proc_dir.is_dir():
+        for role_log in sorted(proc_dir.glob("*.log")):
+            if role_log.name.endswith(".log.1"):
+                continue
+            try:
+                if role_log.stat().st_size == 0:
+                    continue
+                tail = role_log.read_bytes()[-2048:]
+                text = tail.decode("utf-8", errors="replace")
+                if any(m in text for m in ("Traceback", "Error:", "FATAL")):
+                    role = role_log.stem
+                    alerts.append(
+                        f"{_ERROR} subprocess {role} has errors "
+                        f"— lore proc show {role}"
+                    )
+            except OSError:
+                pass
+
     return alerts
 
 
@@ -345,6 +364,39 @@ def _render_verbose_recent_hooks(lore_root: Path, n: int = 5) -> list[str]:
         else:
             rel = "?"
         lines.append(f"    {rel:>5}  {event}  {outcome}")
+    return lines
+
+
+def _render_verbose_proc_logs(lore_root: Path, now: datetime) -> list[str]:
+    lines = ["  Subprocess Logs"]
+    proc_dir = lore_root / ".lore" / "proc"
+    if not proc_dir.is_dir():
+        lines.append("    no proc logs")
+        return lines
+
+    found = False
+    for role in ("a", "b", "c", "transcripts"):
+        log = proc_dir / f"{role}.log"
+        if not log.exists():
+            continue
+        found = True
+        try:
+            stat = log.stat()
+            size = stat.st_size
+            mtime = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
+            rel = relative_time(mtime, now=now, short=True)
+            if size == 0:
+                status = "empty"
+            else:
+                tail = log.read_bytes()[-2048:]
+                text = tail.decode("utf-8", errors="replace")
+                has_errors = any(m in text for m in ("Traceback", "Error:", "FATAL"))
+                status = "errors!" if has_errors else "ok"
+            lines.append(f"    {role:12s}  {rel:>5}  {size:>8} B  {status}")
+        except OSError:
+            lines.append(f"    {role:12s}  read error")
+    if not found:
+        lines.append("    no proc logs")
     return lines
 
 
@@ -511,6 +563,8 @@ def status(
         lines.extend(_render_verbose_curator_schedule(lore_root, now))
         lines.append("")
         lines.extend(_render_verbose_recent_hooks(lore_root))
+        lines.append("")
+        lines.extend(_render_verbose_proc_logs(lore_root, now))
         lines.append("")
         lines.extend(_render_verbose_pending(lore_root))
 

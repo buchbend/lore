@@ -7,6 +7,8 @@ Five commands exercise the state-machine:
 * ``lore attach manual``  — register an attachment without an offer
 * ``lore attach offer``   — write a `.lore.yml` declaring a shareable offer
 
+Running bare ``lore attach`` (no subcommand) starts an interactive wizard.
+
 The file also exposes :func:`remove_section` used by the migration tool
 and by ``lore detach`` to strip legacy ``## Lore`` CLAUDE.md sections.
 """
@@ -83,7 +85,7 @@ def _resolve_claude_md(path_arg: str) -> Path:
 app = typer.Typer(
     add_completion=False,
     help=__doc__,
-    no_args_is_help=True,
+    no_args_is_help=False,
     rich_markup_mode="rich",
 )
 
@@ -102,32 +104,15 @@ def _cwd_arg(cwd_opt: str | None) -> Path:
     return Path(cwd_opt).expanduser() if cwd_opt else Path.cwd()
 
 
-@app.command("accept")
-def cmd_accept(
-    cwd: str = typer.Option(None, "--cwd", help="Directory containing `.lore.yml` (default: current dir)."),
-) -> None:
-    """Accept the `.lore.yml` offer covering ``cwd``.
+# ---- Extracted helpers (shared by subcommands + wizard) ----
 
-    Walks up from ``cwd`` looking for ``.lore.yml``; on the happy path,
-    writes an attachment row (path = repo root, wiki/scope from the
-    offer) and ingests the scope chain into ``scopes.json``.
-
-    Exits 1 with a helpful message on any failure:
-      * no ``.lore.yml`` found
-      * scope root conflicts with an existing assignment (``lore scopes``
-        to resolve, or decline and re-offer with a different root)
-      * offer was previously declined (re-run after the `.lore.yml`
-        changes, or remove the decline manually)
-    """
+def _do_accept(lore_root: Path, cwd_path: Path) -> None:
     from datetime import UTC, datetime
 
     from lore_core.consent import ConsentState, classify_state
     from lore_core.offer import find_lore_yml, offer_fingerprint, parse_lore_yml
     from lore_core.state.attachments import Attachment, AttachmentsFile
     from lore_core.state.scopes import ScopeConflict, ScopesFile
-
-    lore_root = _lore_root_or_die()
-    cwd_path = _cwd_arg(cwd)
 
     offer_path = find_lore_yml(cwd_path)
     if offer_path is None:
@@ -161,7 +146,6 @@ def cmd_accept(
         )
         raise typer.Exit(1)
 
-    # Ingest scope chain (backfills parents). May conflict at root.
     try:
         scopes.ingest_chain(offer.scope, offer.wiki)
     except ScopeConflict as exc:
@@ -193,22 +177,9 @@ def cmd_accept(
     )
 
 
-@app.command("decline")
-def cmd_decline(
-    cwd: str = typer.Option(None, "--cwd", help="Directory containing `.lore.yml` (default: current dir)."),
-) -> None:
-    """Decline the `.lore.yml` offer covering ``cwd``.
-
-    Records a ``declined`` row keyed by (repo_root, offer_fingerprint).
-    The SessionStart prompt will not re-offer this fingerprint. If the
-    ``.lore.yml`` is later changed, the new fingerprint is not covered
-    by the decline and will re-prompt.
-    """
+def _do_decline(lore_root: Path, cwd_path: Path) -> None:
     from lore_core.offer import find_lore_yml, offer_fingerprint, parse_lore_yml
     from lore_core.state.attachments import AttachmentsFile
-
-    lore_root = _lore_root_or_die()
-    cwd_path = _cwd_arg(cwd)
 
     offer_path = find_lore_yml(cwd_path)
     if offer_path is None:
@@ -233,25 +204,11 @@ def cmd_decline(
     )
 
 
-@app.command("manual")
-def cmd_manual(
-    wiki: str = typer.Option(..., "--wiki", help="Wiki name."),
-    scope: str = typer.Option(..., "--scope", help="Scope ID (colon-separated)."),
-    cwd: str = typer.Option(None, "--cwd", help="Directory to attach (default: current dir)."),
-) -> None:
-    """Attach ``cwd`` manually with no ``.lore.yml`` required.
-
-    Writes an attachment row directly and ingests the scope chain. No
-    offer fingerprint; no consent flow. Use this for repos without a
-    checked-in offer.
-    """
+def _do_manual(lore_root: Path, cwd_path: Path, wiki: str, scope: str) -> None:
     from datetime import UTC, datetime
 
     from lore_core.state.attachments import Attachment, AttachmentsFile
     from lore_core.state.scopes import ScopeConflict, ScopesFile
-
-    lore_root = _lore_root_or_die()
-    cwd_path = _cwd_arg(cwd).resolve() if _cwd_arg(cwd).exists() else _cwd_arg(cwd).absolute()
 
     attachments = AttachmentsFile(lore_root)
     attachments.load()
@@ -282,6 +239,243 @@ def cmd_manual(
     )
 
 
+# ---- Interactive wizard ----
+
+def _is_interactive() -> bool:
+    return sys.stdin.isatty()
+
+def _pick_from_list(
+    label: str,
+    choices: list[str],
+    *,
+    default: str | None = None,
+    allow_custom: bool = False,
+) -> str:
+    console.print(f"\n[bold]{label}:[/bold]")
+    default_idx: int | None = None
+    for i, choice in enumerate(choices, 1):
+        marker = ""
+        if default and choice == default:
+            marker = "  [dim](default)[/dim]"
+            default_idx = i
+        console.print(f"  [cyan][{i}][/cyan] {choice}{marker}")
+    if allow_custom:
+        console.print("  [cyan][c][/cyan] custom name")
+
+    prompt_hint = f" [{default_idx}]" if default_idx else ""
+    while True:
+        raw = input(f"  Choice{prompt_hint}: ").strip()
+        if not raw and default_idx is not None:
+            return choices[default_idx - 1]
+        if raw.lower() == "c" and allow_custom:
+            while True:
+                custom = input("  Enter value: ").strip()
+                if custom:
+                    return custom
+                console.print("  [red]Value cannot be empty.[/red]")
+        try:
+            idx = int(raw)
+            if 1 <= idx <= len(choices):
+                return choices[idx - 1]
+        except ValueError:
+            pass
+        console.print(f"  [red]Invalid choice.[/red] Enter 1-{len(choices)}"
+                       + (" or 'c'" if allow_custom else "") + ".")
+
+
+def _config_detected_flow(
+    offer: object,  # lore_core.offer.Offer
+    offer_path: Path,
+    cwd_path: Path,
+    lore_root: Path,
+) -> None:
+    console.print(
+        f"\n[bold]This repo has a Lore config[/bold] ({offer_path.name}):"
+    )
+    console.print(
+        f"  wiki: [cyan]{offer.wiki}[/cyan]    "
+        f"scope: [magenta]{offer.scope}[/magenta]    "
+        f"backend: {offer.backend}"
+    )
+    console.print()
+    console.print("  [cyan][u][/cyan]se as-is   [cyan][c][/cyan]ustomize   [cyan][s][/cyan]kip")
+
+    while True:
+        raw = input("  Choice: ").strip().lower()
+        if raw == "u":
+            _do_accept(lore_root, cwd_path)
+            return
+        if raw == "c":
+            _config_wizard(cwd_path, lore_root, defaults=offer)
+            return
+        if raw == "s":
+            _do_decline(lore_root, cwd_path)
+            return
+        console.print("  [red]Invalid choice.[/red] Enter u, c, or s.")
+
+
+def _config_wizard(
+    cwd_path: Path,
+    lore_root: Path,
+    *,
+    defaults: object | None = None,  # lore_core.offer.Offer | None
+) -> None:
+    from lore_core.config import get_wiki_root
+    from lore_core.state.scopes import ScopesFile
+
+    wiki_root = get_wiki_root()
+    wikis = sorted(d.name for d in wiki_root.iterdir() if d.is_dir()) if wiki_root.exists() else []
+
+    # Step A: Wiki
+    default_wiki = defaults.wiki if defaults else None
+    if wikis:
+        wiki = _pick_from_list("Wiki", wikis, default=default_wiki, allow_custom=True)
+    elif default_wiki:
+        raw = input(f"\n  Wiki [{default_wiki}]: ").strip()
+        wiki = raw if raw else default_wiki
+    else:
+        while True:
+            wiki = input("\n  Wiki name: ").strip()
+            if wiki:
+                break
+            console.print("  [red]Wiki name cannot be empty.[/red]")
+
+    # Step B: Scope
+    scopes = ScopesFile(lore_root)
+    scopes.load()
+    all_ids = scopes.all_ids()
+    matching = [sid for sid in all_ids if scopes.resolve_wiki(sid) == wiki]
+    default_scope = defaults.scope if defaults else None
+
+    if matching:
+        scope = _pick_from_list(
+            f"Scope (wiki: {wiki})", matching,
+            default=default_scope, allow_custom=True,
+        )
+    elif default_scope:
+        raw = input(f"\n  Scope [{default_scope}]: ").strip()
+        scope = raw if raw else default_scope
+    else:
+        while True:
+            scope = input("\n  Scope (colon-separated, e.g. project:sub): ").strip()
+            if scope:
+                break
+            console.print("  [red]Scope cannot be empty.[/red]")
+
+    # Step C: Backend
+    default_backend = defaults.backend if defaults else "none"
+    raw = input(f"\n  Backend [github/none] ({default_backend}): ").strip().lower()
+    backend = raw if raw in ("github", "none") else default_backend
+
+    # Step D: Write .lore.yml for other contributors?
+    from lore_core.offer import FILENAME, find_lore_yml
+    write_offer = False
+    if find_lore_yml(cwd_path) is None:
+        raw = input("\n  Write .lore.yml so other contributors get this config? [y/N]: ").strip().lower()
+        write_offer = raw in ("y", "yes")
+
+    # Step E: Summary + confirm
+    resolved = cwd_path.resolve() if cwd_path.exists() else cwd_path.absolute()
+    console.print("\n[bold]─── Attach summary ───[/bold]")
+    console.print(f"  Directory:  {resolved}")
+    console.print(f"  Wiki:       [cyan]{wiki}[/cyan]")
+    console.print(f"  Scope:      [magenta]{scope}[/magenta]")
+    console.print(f"  Backend:    {backend}")
+    if write_offer:
+        console.print(f"  .lore.yml:  will be written")
+    console.print()
+
+    raw = input("  Proceed? [Y/n]: ").strip().lower()
+    if raw in ("n", "no"):
+        console.print("[yellow]Aborted.[/yellow]")
+        raise typer.Exit(0)
+
+    # Execute
+    _do_manual(lore_root, resolved, wiki, scope)
+
+    if write_offer:
+        import yaml
+        target = resolved / FILENAME
+        payload: dict = {"wiki": wiki, "scope": scope, "backend": backend}
+        target.write_text(yaml.safe_dump(payload, sort_keys=False))
+        console.print(f"[green]Wrote[/green] {target}")
+
+
+def _interactive_wizard(cwd_path: Path, lore_root: Path) -> None:
+    from lore_core.offer import find_lore_yml, parse_lore_yml
+    from lore_core.state.attachments import AttachmentsFile
+
+    attachments = AttachmentsFile(lore_root)
+    attachments.load()
+    existing = attachments.longest_prefix_match(cwd_path)
+
+    if existing:
+        console.print(
+            f"\n[yellow]Already attached:[/yellow] {existing.path} → "
+            f"wiki [cyan]{existing.wiki}[/cyan], "
+            f"scope [magenta]{existing.scope}[/magenta]"
+        )
+        raw = input("  Re-attach with new config? [y/N]: ").strip().lower()
+        if raw not in ("y", "yes"):
+            raise typer.Exit(0)
+
+    offer_path = find_lore_yml(cwd_path)
+    if offer_path:
+        offer = parse_lore_yml(offer_path)
+        if offer:
+            _config_detected_flow(offer, offer_path, cwd_path, lore_root)
+            return
+
+    _config_wizard(cwd_path, lore_root)
+
+
+# ---- Interactive callback ----
+
+@app.callback(invoke_without_command=True)
+def attach_interactive(
+    ctx: typer.Context,
+    cwd: str = typer.Option(None, "--cwd", help="Working directory (default: current dir)."),
+) -> None:
+    """Interactive Lore attachment wizard."""
+    if ctx.invoked_subcommand is not None:
+        return
+    if not _is_interactive():
+        err_console.print("[red]Interactive wizard requires a terminal.[/red]")
+        err_console.print("Use: lore attach manual --wiki ... --scope ...")
+        raise typer.Exit(1)
+    _interactive_wizard(_cwd_arg(cwd), _lore_root_or_die())
+
+
+# ---- Subcommands (thin wrappers over extracted helpers) ----
+
+@app.command("accept")
+def cmd_accept(
+    cwd: str = typer.Option(None, "--cwd", help="Directory containing `.lore.yml` (default: current dir)."),
+) -> None:
+    """Accept the `.lore.yml` offer covering ``cwd``."""
+    _do_accept(_lore_root_or_die(), _cwd_arg(cwd))
+
+
+@app.command("decline")
+def cmd_decline(
+    cwd: str = typer.Option(None, "--cwd", help="Directory containing `.lore.yml` (default: current dir)."),
+) -> None:
+    """Decline the `.lore.yml` offer covering ``cwd``."""
+    _do_decline(_lore_root_or_die(), _cwd_arg(cwd))
+
+
+@app.command("manual")
+def cmd_manual(
+    wiki: str = typer.Option(..., "--wiki", help="Wiki name."),
+    scope: str = typer.Option(..., "--scope", help="Scope ID (colon-separated)."),
+    cwd: str = typer.Option(None, "--cwd", help="Directory to attach (default: current dir)."),
+) -> None:
+    """Attach ``cwd`` manually with no ``.lore.yml`` required."""
+    cwd_path = _cwd_arg(cwd)
+    resolved = cwd_path.resolve() if cwd_path.exists() else cwd_path.absolute()
+    _do_manual(_lore_root_or_die(), resolved, wiki, scope)
+
+
 @app.command("offer")
 def cmd_offer(
     wiki: str = typer.Option(..., "--wiki", help="Wiki name for the offer."),
@@ -291,11 +485,7 @@ def cmd_offer(
     backend: str = typer.Option("none", "--backend", help="github|none."),
     force: bool = typer.Option(False, "--force", help="Overwrite an existing `.lore.yml`."),
 ) -> None:
-    """Write a ``.lore.yml`` at ``cwd`` declaring a shareable offer.
-
-    Does *not* attach this host — run ``lore attach accept`` after this
-    to accept the just-written offer on the author's own machine.
-    """
+    """Write a ``.lore.yml`` at ``cwd`` declaring a shareable offer."""
     import yaml
 
     from lore_core.offer import FILENAME
