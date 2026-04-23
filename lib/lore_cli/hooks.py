@@ -350,8 +350,8 @@ def _is_ephemeral(item: str) -> bool:
     return any(marker in lower for marker in EPHEMERAL_MARKERS)
 
 
-def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[str]:
-    """Return compact breadcrumbs for the most recent session notes.
+def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[tuple[str, str]]:
+    """Return (slug, summary) pairs for the most recent session notes.
 
     Reads only YAML frontmatter (first ~1KB). Does not filter by user —
     any user's sessions are shown for cross-user awareness.
@@ -362,9 +362,9 @@ def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[str]:
     if not sessions_dir.is_dir():
         return []
     candidates = sorted(sessions_dir.glob("*.md"), reverse=True)
-    lines: list[str] = []
+    results: list[tuple[str, str]] = []
     for path in candidates:
-        if len(lines) >= max_notes:
+        if len(results) >= max_notes:
             break
         try:
             head = path.read_text(errors="replace")[:1024]
@@ -374,9 +374,8 @@ def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[str]:
         desc = fm.get("summary") or fm.get("description")
         if not desc:
             continue
-        slug = path.stem
-        lines.append(f"Last: [[{slug}]] — {desc}")
-    return lines
+        results.append((path.stem, desc))
+    return results
 
 
 def _cross_scope_breadcrumbs(lore_root: Path, current_wiki: str) -> list[str]:
@@ -604,8 +603,9 @@ def _session_start_from_lore(
     if project_entry is not None:
         injected_bits.append(f"[[{project_entry['name']}]]")
     if session_hints:
-        n = len(session_hints)
-        injected_bits.append(f"{n} session{'s' if n != 1 else ''}")
+        _, first_summary = session_hints[0]
+        extra = f" +{len(session_hints) - 1}" if len(session_hints) > 1 else ""
+        injected_bits.append(f"last note: {first_summary}{extra}")
     if issues:
         injected_bits.append(f"{len(issues)} issue{'s' if len(issues) != 1 else ''}")
     if prs:
@@ -630,7 +630,8 @@ def _session_start_from_lore(
         out_parts.append("")
 
     if session_hints:
-        out_parts.extend(session_hints)
+        for slug, desc in session_hints:
+            out_parts.append(f"Last: [[{slug}]] — {desc}")
         out_parts.append("")
 
     if issues:
@@ -716,8 +717,9 @@ def _session_start(cwd: str | None) -> str:
     if project_entry is not None:
         injected_bits.append(f"[[{project_entry['name']}]]")
     if session_hints:
-        n = len(session_hints)
-        injected_bits.append(f"{n} session{'s' if n != 1 else ''}")
+        _, first_summary = session_hints[0]
+        extra = f" +{len(session_hints) - 1}" if len(session_hints) > 1 else ""
+        injected_bits.append(f"last note: {first_summary}{extra}")
     if items:
         injected_bits.append(f"{len(items)} open item{'s' if len(items) != 1 else ''}")
     status_line = "lore: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
@@ -741,7 +743,8 @@ def _session_start(cwd: str | None) -> str:
         parts.append("")
 
     if session_hints:
-        parts.extend(session_hints)
+        for slug, desc in session_hints:
+            parts.append(f"Last: [[{slug}]] — {desc}")
         parts.append("")
 
     if items:
@@ -1469,6 +1472,26 @@ def _migrate_legacy_spawn_stamp(lore_root: Path, role: str) -> None:
             pass
 
 
+def _open_proc_log(lore_root: Path, role: str) -> int | None:
+    """Open .lore/proc/<role>.log for subprocess output, rotating the previous."""
+    import contextlib
+
+    proc_dir = lore_root / ".lore" / "proc"
+    try:
+        proc_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    log_path = proc_dir / f"{role}.log"
+    prev = proc_dir / f"{role}.log.1"
+    if log_path.exists():
+        with contextlib.suppress(OSError):
+            os.replace(log_path, prev)
+    try:
+        return os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    except OSError:
+        return None
+
+
 def _spawn_detached(
     lore_root: Path,
     role: str,
@@ -1496,18 +1519,23 @@ def _spawn_detached(
         env = os.environ.copy()
         env["LORE_ROOT"] = str(lore_root)
         env["LORE_CURATOR_MODE"] = "1"
+        log_fd = _open_proc_log(lore_root, role)
         try:
             subprocess.Popen(
                 cmd,
                 cwd=str(lore_root),
                 start_new_session=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=log_fd if log_fd is not None else subprocess.DEVNULL,
+                stderr=log_fd if log_fd is not None else subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
                 env=env,
             )
         except (OSError, subprocess.SubprocessError):
+            if log_fd is not None:
+                os.close(log_fd)
             return False
+        if log_fd is not None:
+            os.close(log_fd)
         with contextlib.suppress(OSError):
             _write_stamp(stamp)
         return True
