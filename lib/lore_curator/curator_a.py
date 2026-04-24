@@ -20,6 +20,7 @@ from lore_core.scope_resolver import resolve_scope
 from lore_core.state.attachments import AttachmentsFile
 from lore_core.types import Scope, Turn, TranscriptHandle
 from lore_core.wiki_config import WikiConfig, load_wiki_config
+from lore_curator.llm_client import LlmClientError
 from lore_curator.noteworthy import classify_slice
 from lore_curator.session_filer import FiledNote, file_session_note
 
@@ -301,15 +302,32 @@ def _process_entry(
             logger.emit("skip", transcript_id=entry.transcript_id, reason="no-anthropic-client")
         return _Outcome(skip_reason="no_anthropic_client", wiki_name=attached.wiki)
 
-    noteworthy = classify_slice(
-        turns,
-        tier=tier,
-        model_resolver=model_resolver,
-        anthropic_client=anthropic_client,
-        lore_root=lore_root,
-        logger=logger,
-        transcript_id=entry.transcript_id,
-    )
+    try:
+        noteworthy = classify_slice(
+            turns,
+            tier=tier,
+            model_resolver=model_resolver,
+            anthropic_client=anthropic_client,
+            lore_root=lore_root,
+            logger=logger,
+            transcript_id=entry.transcript_id,
+        )
+    except LlmClientError as exc:
+        # Gateway errors (5xx, timeouts, oversize prompts rejected by OSS
+        # backends …) must not abort the whole curator run — each slice is
+        # independent. Log the skip, leave the ledger untouched so the slice
+        # is retried next time, and move on.
+        if logger is not None:
+            logger.emit(
+                "skip",
+                transcript_id=entry.transcript_id,
+                reason="classify-failed",
+                error=str(exc)[:300],
+            )
+        return _Outcome(
+            skip_reason=f"classify_failed:{type(exc).__name__}",
+            wiki_name=attached.wiki,
+        )
 
     last_hash = turns[-1].content_hash()
     last_hint = turns[-1].index

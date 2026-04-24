@@ -577,6 +577,48 @@ def test_curator_a_no_anthropic_client_records_skip(tmp_path):
     assert not sessions_dir.exists() or list(sessions_dir.rglob("*.md")) == []
 
 
+def test_curator_a_llm_client_error_skips_slice_without_aborting_run(tmp_path):
+    """Gateway failure (5xx, timeout, oversize prompt) on one slice must not
+    abort the whole curator run — the affected slice is skipped with a
+    ``classify_failed`` reason so the rest of the queue proceeds."""
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+    _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
+    _setup_wiki(tmp_path, "private")
+
+    turns = _make_turns(3)
+    adapter = FakeAdapter(turns)
+    transcript_path = project_dir / "transcript.jsonl"
+    transcript_path.write_text("{}")
+    _seed_ledger(tmp_path, project_dir, transcript_path)
+
+    from lore_curator.curator_a import run_curator_a
+    from lore_curator.llm_client import LlmClientError
+
+    class _RaisingMessagesAPI:
+        def create(self, **kwargs):
+            raise LlmClientError("openai-compatible call failed: 500")
+
+    class _RaisingClient:
+        messages = _RaisingMessagesAPI()
+
+    result = run_curator_a(
+        lore_root=tmp_path,
+        anthropic_client=_RaisingClient(),
+        adapter_lookup=_make_adapter_lookup(adapter),
+        now=_NOW,
+    )
+
+    assert result.transcripts_considered == 1
+    skipped_key = next(
+        (k for k in result.skipped_reasons if k.startswith("classify_failed")),
+        None,
+    )
+    assert skipped_key is not None, result.skipped_reasons
+    sessions_dir = tmp_path / "wiki" / "private" / "sessions"
+    assert not sessions_dir.exists() or list(sessions_dir.rglob("*.md")) == []
+
+
 def test_curator_a_duration_recorded(tmp_path):
     """result.duration_seconds is a non-negative float."""
     project_dir = tmp_path / "myproject"
