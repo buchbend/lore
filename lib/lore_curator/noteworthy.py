@@ -4,15 +4,35 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol
 
+from lore_core.noteworthy_features import CascadeVerdict, classify_cascade
 from lore_core.redaction import redact
 from lore_core.types import Turn
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
+
+
+NoteworthyMode = Literal["llm_only", "cascade"]
+# "offline" (Phase E) deliberately absent — no code path yet honours it,
+# so accepting it from the env var would silently misbehave.
+_VALID_MODES: frozenset[str] = frozenset({"llm_only", "cascade"})
+
+
+def _resolve_mode() -> NoteworthyMode:
+    """Pick the cascade mode: env var > default.
+
+    Default is ``"llm_only"`` — shadow-run the cascade for calibration,
+    but let the LLM decide. Opt-in to ``"cascade"`` via
+    ``LORE_NOTEWORTHY_MODE=cascade`` once thresholds are trusted.
+    """
+    raw = os.environ.get("LORE_NOTEWORTHY_MODE", "").strip().lower()
+    if raw in _VALID_MODES:
+        return raw  # type: ignore[return-value]
+    return "llm_only"
 
 
 _SIMPLE_TIER_WARNING_ID = "noteworthy-simple-tier-v1"
@@ -79,6 +99,33 @@ def classify_slice(
         _emit_simple_tier_warning_once(lore_root)
     elif tier != "middle":
         raise ValueError(f"noteworthy: unknown tier {tier!r} (expected 'middle' or 'simple')")
+
+    # Feature cascade always runs — its verdict is emitted for shadow-run
+    # calibration even in llm_only mode. Only in "cascade" mode does a
+    # trivial verdict actually skip the LLM call; substantive and uncertain
+    # still hit the LLM (substantive for summary quality, uncertain for the
+    # verdict itself). Thresholds live in lore_core.noteworthy_features.
+    mode = _resolve_mode()
+    verdict = classify_cascade(turns)
+    if logger is not None:
+        logger.emit(
+            "cascade-verdict",
+            transcript_id=transcript_id,
+            label=verdict.label,
+            reason=verdict.reason,
+            mode=mode,
+            features=asdict(verdict.features),
+        )
+
+    if mode == "cascade" and verdict.label == "trivial":
+        # Hard-skip: no LLM call, no summary. Ledger advances as not-noteworthy
+        # via the caller's noteworthy=False path.
+        return NoteworthyResult(
+            noteworthy=False,
+            reason=f"cascade_trivial:{verdict.reason}",
+            title="",
+            summary="",
+        )
 
     model = model_resolver(tier)
     redaction_log_path = (

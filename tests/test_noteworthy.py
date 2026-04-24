@@ -283,6 +283,159 @@ def test_build_prompt_text_under_budget_is_unchanged():
     assert all(f"turn {i}" in prompt for i in range(3))
 
 
+def test_resolve_mode_falls_through_to_llm_only_on_garbage(monkeypatch):
+    """Invalid env values must not crash or silently become cascade — fall
+    back to llm_only so misconfiguration never loses data."""
+    from lore_curator.noteworthy import _resolve_mode
+
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "total_nonsense")
+    assert _resolve_mode() == "llm_only"
+
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "")
+    assert _resolve_mode() == "llm_only"
+
+
+def test_cascade_verdict_event_carries_mode(monkeypatch):
+    """Shadow-run analysis needs to know which mode produced each verdict."""
+    from lore_core.run_log import RunLogger
+
+    monkeypatch.delenv("LORE_NOTEWORTHY_MODE", raising=False)
+
+    client = _make_client({
+        "noteworthy": True, "reason": "r", "title": "t", "summary": "s",
+    })
+
+    events: list[tuple[str, dict]] = []
+    def _capture(record_type, payload):
+        events.append((record_type, payload))
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        with RunLogger(Path(td), on_record=_capture) as logger:
+            classify_slice(
+                _simple_turns(),
+                model_resolver=_resolver,
+                anthropic_client=client,
+                logger=logger,
+            )
+
+    cascade_events = [p for (t, p) in events if t == "cascade-verdict"]
+    assert cascade_events
+    assert cascade_events[0]["mode"] == "llm_only"
+
+
+def test_classify_emits_cascade_verdict_shadow_run_llm_only_mode(monkeypatch):
+    """In the default ``llm_only`` mode the cascade runs passively: its
+    verdict + feature vector are emitted for shadow-run calibration but
+    the LLM is still the decider."""
+    from lore_core.run_log import RunLogger
+
+    monkeypatch.delenv("LORE_NOTEWORTHY_MODE", raising=False)
+
+    client = _make_client({
+        "noteworthy": True, "reason": "r", "title": "t", "summary": "s",
+    })
+
+    events: list[tuple[str, dict]] = []
+    def _capture(record_type, payload):
+        events.append((record_type, payload))
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        with RunLogger(Path(td), on_record=_capture) as logger:
+            classify_slice(
+                _simple_turns(),
+                model_resolver=_resolver,
+                anthropic_client=client,
+                logger=logger,
+            )
+
+    cascade_events = [p for (t, p) in events if t == "cascade-verdict"]
+    assert cascade_events, "cascade-verdict must fire even in llm_only mode"
+    assert cascade_events[0]["label"] in ("trivial", "uncertain", "substantive")
+    assert "features" in cascade_events[0]
+
+    # LLM was still called — llm_only mode does not short-circuit on cascade
+    assert len(client.messages.calls) == 1
+
+
+def test_classify_cascade_mode_skips_llm_on_trivial(monkeypatch):
+    """In cascade mode, a trivial verdict short-circuits: no LLM call,
+    return noteworthy=False with a cascade reason code."""
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "cascade")
+
+    client = _make_client({"noteworthy": True, "reason": "r", "title": "t"})
+    # 1 short turn, no tool calls → hits short_no_edits rule
+    result = classify_slice(
+        [_t(role="user", text="ls")],
+        model_resolver=_resolver,
+        anthropic_client=client,
+    )
+
+    assert result.noteworthy is False
+    assert "cascade" in result.reason.lower() or "trivial" in result.reason.lower()
+    assert len(client.messages.calls) == 0, "LLM must be skipped on trivial cascade verdict"
+
+
+def test_classify_cascade_mode_calls_llm_on_substantive(monkeypatch):
+    """On substantive verdict the LLM is still called — for summary quality,
+    not for the noteworthy decision."""
+    from lore_core.types import ToolCall as _TC
+
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "cascade")
+
+    client = _make_client({
+        "noteworthy": True, "reason": "substantive",
+        "title": "Plan executed", "summary": "s",
+    })
+    turns = [
+        _t(role="user", text="plan and execute"),
+        _t(role="assistant", tool_call=_TC(
+            name="ExitPlanMode", input={}, id="tc",
+            category="plan_exit",
+        )),
+    ]
+    result = classify_slice(
+        turns,
+        model_resolver=_resolver,
+        anthropic_client=client,
+    )
+
+    assert result.noteworthy is True
+    assert len(client.messages.calls) == 1, "LLM is called for substantive → summary"
+
+
+def test_classify_cascade_mode_calls_llm_on_uncertain(monkeypatch):
+    """Middle-band slices still go to the LLM — that's the whole point
+    of the uncertain bucket."""
+    from lore_core.types import ToolCall as _TC
+
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "cascade")
+
+    client = _make_client({
+        "noteworthy": False, "reason": "llm_said_no",
+        "title": "x", "summary": "",
+    })
+    # One edit, no plan_exit → uncertain middle band
+    turns = [
+        _t(role="user", text="fix the bug please, here's context and details"),
+        _t(role="assistant", text="Looking at it now." * 10),
+        _t(role="assistant", tool_call=_TC(
+            name="Edit", input={"file_path": "/a", "new_string": "x"},
+            id="tc", category="file_edit",
+        )),
+    ]
+    result = classify_slice(
+        turns,
+        model_resolver=_resolver,
+        anthropic_client=client,
+    )
+
+    assert len(client.messages.calls) == 1
+    assert result.noteworthy is False
+    assert result.reason == "llm_said_no"
+
+
 def test_classify_emits_prompt_chars_telemetry():
     """v0.5.8 replaced hardcoded token_count=0 with real prompt_chars.
 

@@ -174,7 +174,9 @@ def test_iter_turns_normalises_tool_use(fake_home, tmp_path):
     turns = list(adapter._iter_turns(handle))
     assert len(turns) == 1
     assert turns[0].role == "assistant"
-    assert turns[0].tool_call == ToolCall(name="Read", input={"x": 1}, id="t1")
+    assert turns[0].tool_call == ToolCall(
+        name="Read", input={"x": 1}, id="t1", category="file_read",
+    )
 
 
 def test_iter_turns_normalises_tool_result_list_content(fake_home, tmp_path):

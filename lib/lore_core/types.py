@@ -15,14 +15,33 @@ from typing import Any, Literal
 
 Role = Literal["user", "assistant", "system", "tool_result"]
 
+ToolCategory = Literal[
+    "file_edit",       # write/modify source — Edit, Write, NotebookEdit, Cursor-Edit, …
+    "file_read",       # read a file — Read, Cursor-Open, LSP definition, …
+    "search",          # structural/text search — Grep, Glob, Cursor-Find, LSP symbols, …
+    "shell_exec",      # command execution — Bash, Cursor terminal, …
+    "agent_spawn",     # delegate work — Task, MCP-agent-invoke, …
+    "plan_exit",       # explicit plan-approval transition — ExitPlanMode, …
+    "version_control", # commits/branches/PRs when surfaced as a dedicated tool
+    "other",           # unclassified — neutral signal
+]
+
 
 @dataclass(frozen=True)
 class ToolCall:
-    """A single tool invocation in an assistant turn."""
+    """A single tool invocation in an assistant turn.
+
+    ``category`` is a host-agnostic classification populated by the adapter
+    from ``name`` via :func:`lore_core.tool_categories.classify_tool_name`.
+    Downstream consumers (noteworthy cascade, surface gen, cross-host
+    knowledge graph) operate on ``category`` so they don't need to know
+    that Claude Code says ``Edit`` while Cursor says ``edit_file``.
+    """
 
     name: str
     input: dict[str, Any]
     id: str | None = None
+    category: ToolCategory = "other"
 
 
 @dataclass(frozen=True)

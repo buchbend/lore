@@ -33,6 +33,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
+from lore_core.tool_categories import classify_tool_name
 from lore_core.types import ToolCall, ToolResult, TranscriptHandle, Turn
 
 
@@ -239,14 +240,16 @@ class ClaudeCodeAdapter:
                             host_extras={},
                         )
                     elif bt == "tool_use":
+                        tool_name = block.get("name", "")
                         yield Turn(
                             index=index,
                             timestamp=ts,
                             role="assistant",
                             tool_call=ToolCall(
-                                name=block.get("name", ""),
+                                name=tool_name,
                                 input=block.get("input", {}),
                                 id=block.get("id"),
+                                category=classify_tool_name(self.host, tool_name),
                             ),
                             host_extras={},
                         )

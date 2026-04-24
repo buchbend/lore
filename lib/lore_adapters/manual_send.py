@@ -93,12 +93,24 @@ class ManualSendAdapter:
                 timestamp = datetime.fromisoformat(ts)
             except (TypeError, ValueError):
                 timestamp = None
+        tool_call_obj = None
+        if isinstance(tc, dict):
+            # Fill ToolCall.category from the declared host if the exporter
+            # didn't supply one — otherwise manual-send imports from other
+            # hosts would all land as "other" and skip the noteworthy
+            # cascade. An explicit category in the payload wins (the
+            # exporter knows something we don't).
+            if "category" not in tc:
+                from lore_core.tool_categories import classify_tool_name
+                name = tc.get("name", "")
+                tc = {**tc, "category": classify_tool_name(declared_host, name)}
+            tool_call_obj = ToolCall(**tc)
         return Turn(
             index=int(obj["index"]),
             timestamp=timestamp,
             role=obj["role"],
             text=obj.get("text"),
-            tool_call=ToolCall(**tc) if isinstance(tc, dict) else None,
+            tool_call=tool_call_obj,
             tool_result=ToolResult(**tr) if isinstance(tr, dict) else None,
             reasoning=obj.get("reasoning"),
             host_extras={"manual_send.declared_host": declared_host},
