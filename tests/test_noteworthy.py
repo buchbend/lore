@@ -226,3 +226,109 @@ def test_classify_result_is_frozen_dataclass():
     result = classify_slice(_simple_turns(), model_resolver=_resolver, anthropic_client=client)
     with pytest.raises(dataclasses.FrozenInstanceError):
         result.noteworthy = False  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Prompt construction: redaction + size cap
+# ---------------------------------------------------------------------------
+
+
+def test_build_prompt_text_redacts_secrets_in_text():
+    """Before v0.5.8 secrets in turn.text reached the LLM verbatim.
+
+    The prompt builder must now call redact() inline. API keys in user text
+    should be replaced with [REDACTED:*] markers in the built prompt.
+    """
+    from lore_curator.noteworthy import _build_prompt_text
+
+    turns = [_t(role="user", text="my key is sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+    prompt = _build_prompt_text(turns)
+    assert "sk-ant-api03-" not in prompt
+    assert "[REDACTED:" in prompt
+
+
+def test_build_prompt_text_caps_per_turn_content():
+    from lore_curator.noteworthy import _build_prompt_text
+
+    long = "x" * 50_000
+    turns = [_t(role="user", text=long)]
+    prompt = _build_prompt_text(turns, max_per_turn_chars=4_000)
+    assert "chars elided" in prompt
+    assert len(prompt) < 10_000
+
+
+def test_build_prompt_text_tail_biases_when_over_budget():
+    """With many small turns exceeding budget, keep most recent; marker for rest."""
+    from lore_curator.noteworthy import _build_prompt_text
+
+    turns = [_t(role="user", text=f"turn {i}") for i in range(200)]
+    prompt = _build_prompt_text(
+        turns,
+        max_prompt_chars=1_000,
+        max_per_turn_chars=100,
+    )
+    assert "earlier turns elided" in prompt
+    assert "turn 199" in prompt  # most recent kept
+    assert "turn 0" not in prompt  # earliest dropped
+    # Budget applies to the turn body; header adds a fixed ~300 chars overhead.
+    assert len(prompt) <= 1_500
+
+
+def test_build_prompt_text_under_budget_is_unchanged():
+    from lore_curator.noteworthy import _build_prompt_text
+
+    turns = [_t(role="user", text=f"turn {i}") for i in range(3)]
+    prompt = _build_prompt_text(turns, max_prompt_chars=10_000)
+    assert "elided" not in prompt
+    assert all(f"turn {i}" in prompt for i in range(3))
+
+
+def test_classify_emits_prompt_chars_telemetry():
+    """v0.5.8 replaced hardcoded token_count=0 with real prompt_chars.
+
+    The noteworthy run-log events must now carry prompt_chars + usage so
+    the operator can answer "which transcript ate my budget?"
+    """
+    from lore_core.run_log import RunLogger
+
+    class _UsageShape:
+        input_tokens = 100
+        output_tokens = 20
+        total_tokens = 120
+
+    class _ClientWithUsage:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                resp = _FakeResponse([_FakeContentBlock(
+                    type_="tool_use",
+                    input_={"noteworthy": False, "reason": "r", "title": "t", "summary": "s"},
+                )])
+                resp.usage = _UsageShape()
+                return resp
+
+    events: list[tuple[str, dict]] = []
+
+    def _capture(record_type, payload):
+        events.append((record_type, payload))
+
+    # Use RunLogger as a context manager in an isolated tmp dir
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        with RunLogger(Path(td), on_record=_capture) as logger:
+            classify_slice(
+                [_t(role="user", text="hi there")],
+                model_resolver=_resolver,
+                anthropic_client=_ClientWithUsage(),
+                logger=logger,
+            )
+
+    prompt_events = [p for (t, p) in events if t == "llm-prompt"]
+    response_events = [p for (t, p) in events if t == "llm-response"]
+    assert prompt_events, events
+    assert prompt_events[0]["prompt_chars"] > 0
+    assert prompt_events[0]["turns_in_slice"] == 1
+    assert response_events
+    assert response_events[0]["usage"] == {
+        "input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+    }

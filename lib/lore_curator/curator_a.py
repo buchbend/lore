@@ -14,7 +14,6 @@ from lore_core.ledger import (
     WikiLedger,
 )
 from lore_core.lockfile import curator_lock, LockContendedError, read_lock_holder
-from lore_core.redaction import redact
 from lore_core.run_log import RecordCallback, RunLogger
 from lore_core.scope_resolver import resolve_scope
 from lore_core.state.attachments import AttachmentsFile
@@ -285,11 +284,6 @@ def _process_entry(
             logger.emit("skip", transcript_id=entry.transcript_id, reason="no-new-turns")
         return _Outcome(skip_reason="no_new_turns", wiki_name=attached.wiki)
 
-    # Redact content before it ever sees the LLM.
-    log_path = lore_root / ".lore" / "redaction.log"
-    for t in turns:
-        _redact_turn_in_place_best_effort(t, log_path)
-
     wiki_dir = lore_root / "wiki" / attached.wiki
     cfg = load_wiki_config(wiki_dir)
     tier = cfg.curator.a_noteworthy_tier
@@ -528,22 +522,5 @@ def _detect_scope_override(
         if count / total >= _REDIRECT_THRESHOLD:
             return scope_for_wiki[wiki]
     return None
-
-
-def _redact_turn_in_place_best_effort(t: Turn, log_path: Path) -> None:
-    """Redact text + tool_result.output in-place via new Turn construction.
-
-    Frozen dataclass — can't mutate. Caller should reassign. For the
-    purposes of this pipeline we rebuild the list in the caller. Here
-    we simply check whether the turn's text/tool_result output contains
-    any secret patterns; the *classify_slice* prompt builder truncates
-    long tool results already. Full redact-and-reassign happens inside
-    classify_slice's prompt construction (frontier concern) — not here.
-    """
-    # Best-effort check to populate the redaction log.
-    if t.text:
-        redact(t.text, log_path=log_path)
-    if t.tool_result and t.tool_result.output:
-        redact(t.tool_result.output, log_path=log_path)
 
 

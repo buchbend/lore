@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol
 
+from lore_core.redaction import redact
 from lore_core.types import Turn
 
 if TYPE_CHECKING:
@@ -14,6 +16,24 @@ if TYPE_CHECKING:
 
 
 _SIMPLE_TIER_WARNING_ID = "noteworthy-simple-tier-v1"
+
+# Prompt-size budgets. Exceeding the total triggers tail-biased truncation
+# (older turns collapsed into an elision marker; most recent turns retained)
+# so that a single long transcript can't produce an impossible prompt.
+# Overridable via env for operator experimentation.
+_DEFAULT_MAX_PROMPT_CHARS = 80_000   # ~20k tokens at a ~4 chars/token ratio
+_DEFAULT_MAX_PER_TURN_CHARS = 4_000  # cap any single text/tool_result block
+
+
+def _resolve_budget(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 @dataclass(frozen=True)
@@ -61,7 +81,11 @@ def classify_slice(
         raise ValueError(f"noteworthy: unknown tier {tier!r} (expected 'middle' or 'simple')")
 
     model = model_resolver(tier)
-    prompt_text = _build_prompt_text(turns)
+    redaction_log_path = (
+        (lore_root / ".lore" / "redaction.log") if lore_root is not None else None
+    )
+    prompt_text = _build_prompt_text(turns, redaction_log_path=redaction_log_path)
+    prompt_chars = len(prompt_text)
     prompt_messages = [{"role": "user", "content": prompt_text}]
 
     # Request structured output via tool_use
@@ -72,7 +96,8 @@ def classify_slice(
             "llm-prompt",
             call="noteworthy",
             tier=tier,
-            token_count=0,
+            prompt_chars=prompt_chars,
+            turns_in_slice=len(turns),
             messages=prompt_messages,
         )
 
@@ -98,7 +123,9 @@ def classify_slice(
         logger.emit(
             "llm-response",
             call="noteworthy",
-            token_count=0,
+            prompt_chars=prompt_chars,
+            usage=_usage_to_dict(getattr(resp, "usage", None)),
+            cost_usd=getattr(resp, "total_cost_usd", None),
             body=body,
             result=data,
         )
@@ -111,17 +138,51 @@ def classify_slice(
             reason=result.reason,
             tier=tier,
             latency_ms=latency_ms,
+            prompt_chars=prompt_chars,
         )
 
     return result
 
 
-def _build_prompt_text(turns: list[Turn]) -> str:
+def _usage_to_dict(usage: Any) -> dict[str, int]:
+    """Coerce an Anthropic/OpenAI-style usage object into a plain dict."""
+    if usage is None:
+        return {}
+    if isinstance(usage, dict):
+        return {k: v for k, v in usage.items() if isinstance(v, int)}
+    out: dict[str, int] = {}
+    for attr in ("input_tokens", "output_tokens", "total_tokens",
+                 "prompt_tokens", "completion_tokens"):
+        value = getattr(usage, attr, None)
+        if isinstance(value, int):
+            out[attr] = value
+    return out
+
+
+def _build_prompt_text(
+    turns: list[Turn],
+    *,
+    redaction_log_path: Path | None = None,
+    max_prompt_chars: int | None = None,
+    max_per_turn_chars: int | None = None,
+) -> str:
     """Build a prompt summarising the slice — text, tool calls, tool results.
 
-    Drops thinking blocks. Truncates tool results to a line-count summary.
+    Drops thinking blocks, collapses tool results to line counts, runs
+    :func:`redact` over free-form text so secrets never reach the LLM, caps
+    individual turns at ``max_per_turn_chars``, and — when the total would
+    exceed ``max_prompt_chars`` — keeps the most recent turns that fit and
+    summarises the rest with a single elision marker. Tail-biased because
+    noteworthy classification leans on recency.
     """
-    lines: list[str] = [
+    total_budget = max_prompt_chars or _resolve_budget(
+        "LORE_NOTEWORTHY_MAX_PROMPT_CHARS", _DEFAULT_MAX_PROMPT_CHARS
+    )
+    per_turn_budget = max_per_turn_chars or _resolve_budget(
+        "LORE_NOTEWORTHY_MAX_PER_TURN_CHARS", _DEFAULT_MAX_PER_TURN_CHARS
+    )
+
+    header = [
         "Classify whether this conversation slice contains substantive "
         "work worth capturing as a session note. Return JSON via the "
         "`classify` tool. Be conservative about `noteworthy`: only false "
@@ -129,17 +190,79 @@ def _build_prompt_text(turns: list[Turn]) -> str:
         "",
         "--- transcript slice ---",
     ]
+
+    turn_lines: list[str] = []
     for t in turns:
-        if t.reasoning is not None:
-            continue  # drop thinking
-        if t.text is not None:
-            lines.append(f"[{t.role}] {t.text}")
-        elif t.tool_call is not None:
-            lines.append(f"[tool_call:{t.tool_call.name}] {json.dumps(t.tool_call.input)[:200]}")
-        elif t.tool_result is not None:
-            n = t.tool_result.output.count("\n") + 1
-            lines.append(f"[tool_result] <{n} lines>")
-    return "\n".join(lines)
+        line = _format_turn_line(t, redaction_log_path, per_turn_budget)
+        if line is not None:
+            turn_lines.append(line)
+
+    body = _tail_biased_truncate(turn_lines, total_budget)
+    return "\n".join(header + body)
+
+
+def _format_turn_line(
+    t: Turn,
+    redaction_log_path: Path | None,
+    per_turn_budget: int,
+) -> str | None:
+    """Render one Turn as a single prompt line, or None to skip it."""
+    if t.reasoning is not None:
+        return None  # drop thinking
+    if t.text is not None:
+        redacted, _ = redact(t.text, log_path=redaction_log_path)
+        return f"[{t.role}] {_cap(redacted, per_turn_budget)}"
+    if t.tool_call is not None:
+        return (
+            f"[tool_call:{t.tool_call.name}] "
+            f"{json.dumps(t.tool_call.input)[:200]}"
+        )
+    if t.tool_result is not None:
+        output = t.tool_result.output or ""
+        redact(output, log_path=redaction_log_path)  # log-only; output collapsed below
+        n = output.count("\n") + 1
+        return f"[tool_result] <{n} lines>"
+    return None
+
+
+def _cap(text: str, limit: int) -> str:
+    """Truncate text to ``limit`` chars, appending a marker when elided."""
+    if len(text) <= limit:
+        return text
+    keep = max(limit - 40, 0)
+    elided = len(text) - keep
+    return text[:keep] + f" ...<+{elided} chars elided>"
+
+
+def _tail_biased_truncate(turn_lines: list[str], budget: int) -> list[str]:
+    """Keep the most recent turns that fit in ``budget``; marker for the rest.
+
+    Returns ``turn_lines`` unchanged when already under budget. Otherwise
+    walks the list from the tail, accumulating lines until the next one
+    would overflow, then prepends a single ``[... N earlier turns elided ...]``
+    line so the model knows context was dropped.
+    """
+    total = sum(len(x) + 1 for x in turn_lines)  # +1 for join newline
+    if total <= budget:
+        return turn_lines
+
+    marker_template = "[... {n} earlier turns elided for prompt budget ...]"
+    marker_reserve = len(marker_template.format(n=len(turn_lines)))
+    effective = max(budget - marker_reserve, 0)
+
+    tail: list[str] = []
+    size = 0
+    for line in reversed(turn_lines):
+        line_cost = len(line) + 1
+        if size + line_cost > effective and tail:
+            break
+        tail.insert(0, line)
+        size += line_cost
+
+    elided = len(turn_lines) - len(tail)
+    if elided <= 0:
+        return turn_lines
+    return [marker_template.format(n=elided)] + tail
 
 
 def _classify_tool_schema() -> dict[str, Any]:
