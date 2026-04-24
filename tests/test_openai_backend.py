@@ -318,6 +318,144 @@ def test_parse_content_as_tool_args_handles_edge_cases():
     assert result == {"text": 'this has "quotes" and {braces}'}
 
 
+# ---------------------------------------------------------------------------
+# Prose → schema synthesis fallback
+# ---------------------------------------------------------------------------
+
+
+def test_synthesize_from_schema_classify_shape():
+    """The classify tool's schema should synthesize a noteworthy=False verdict
+    carrying the prose as reason/summary — OSS-model 'not noteworthy' refusal."""
+    from lore_curator.llm_client import _synthesize_from_schema
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "noteworthy": {"type": "boolean"},
+            "reason": {"type": "string"},
+            "title": {"type": "string"},
+            "summary": {"type": "string"},
+        },
+        "required": ["noteworthy", "reason", "title", "summary"],
+    }
+    out = _synthesize_from_schema(
+        "No substantive edits in this transcript slice — only tool usage.",
+        schema,
+    )
+    assert out["noteworthy"] is False
+    assert "No substantive edits" in out["reason"]
+    assert "No substantive edits" in out["summary"]
+    assert out["title"] == ""  # title isn't free-form-hinted
+
+
+def test_synthesize_from_schema_strips_markdown_fence():
+    """Markdown-fenced prose should have its fence stripped before landing in
+    free-form fields — otherwise downstream callers see leaked ``` markers."""
+    from lore_curator.llm_client import _synthesize_from_schema
+
+    schema = {
+        "type": "object",
+        "properties": {"noteworthy": {"type": "boolean"}, "reason": {"type": "string"}},
+        "required": ["noteworthy", "reason"],
+    }
+    out = _synthesize_from_schema(
+        "```markdown\nNo substantive edits.\n```",
+        schema,
+    )
+    assert out["noteworthy"] is False
+    assert out["reason"] == "No substantive edits."
+
+
+def test_synthesize_from_schema_default_types():
+    """All primitive JSON-schema types should get sensible neutral defaults."""
+    from lore_curator.llm_client import _synthesize_from_schema
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "flag": {"type": "boolean"},
+            "count": {"type": "integer"},
+            "score": {"type": "number"},
+            "items": {"type": "array"},
+            "nested": {"type": "object"},
+            "label": {"type": "string"},  # no hint → empty
+        },
+        "required": ["flag", "count", "score", "items", "nested", "label"],
+    }
+    out = _synthesize_from_schema("anything", schema)
+    assert out == {
+        "flag": False,
+        "count": 0,
+        "score": 0,
+        "items": [],
+        "nested": {},
+        "label": "",
+    }
+
+
+def test_synthesize_from_schema_empty_required_yields_empty():
+    """Without required fields we can't guarantee schema compliance — yield {}.
+    The create() caller treats {} as a synthesis failure and raises LlmClientError."""
+    from lore_curator.llm_client import _synthesize_from_schema
+
+    assert _synthesize_from_schema("hi", {"type": "object", "properties": {}}) == {}
+    assert _synthesize_from_schema("hi", {}) == {}
+    assert _synthesize_from_schema("hi", None) == {}
+
+
+def test_openai_client_synthesizes_not_noteworthy_from_prose(fake_openai):
+    """The exact failure case from the dry-run: Mistral via OSKI emits a
+    markdown-fenced prose refusal instead of a tool_call. Fallback should
+    deliver a clean noteworthy=False ToolUseBlock so the curator skips."""
+    from lore_curator.llm_client import OpenAICompatibleClient, ToolUseBlock
+
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={"simple": "m", "middle": "m", "high": "m"},
+    )
+    client._client._completions._response = _FakeCompletion(choices=[_FakeChoice(
+        message=_FakeMessage(
+            content=(
+                "```markdown\nNo substantive edits in this transcript slice "
+                "— only tool usage for setup and context display.\n```"
+            ),
+            tool_calls=[],
+        ),
+        finish_reason="stop",
+    )])
+
+    resp = client.messages.create(
+        model="middle",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{
+            "name": "classify",
+            "description": "",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "noteworthy": {"type": "boolean"},
+                    "reason": {"type": "string"},
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                },
+                "required": ["noteworthy", "reason", "title", "summary"],
+            },
+        }],
+        tool_choice={"type": "tool", "name": "classify"},
+    )
+
+    assert len(resp.content) == 1
+    block = resp.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.type == "tool_use"
+    assert block.name == "classify"
+    assert block.input["noteworthy"] is False
+    assert "No substantive edits" in block.input["reason"]
+    assert "No substantive edits" in block.input["summary"]
+    assert block.input["title"] == ""
+
+
 def test_openai_client_backend_name(fake_openai):
     from lore_curator.llm_client import OpenAICompatibleClient
 
