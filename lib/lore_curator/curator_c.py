@@ -1073,64 +1073,15 @@ def _discover_wikis(lore_root: Path) -> list[str]:
 
 
 def _make_live_renderer(con: Console):
-    """Return an on_record callback that prints human-readable progress."""
+    """Return an on_record callback that prints the same format as ``lore runs tail``."""
     from typing import Any
+    from lore_cli.run_render import pick_icon_set, render_flat_log, should_use_color
 
-    _SKIP_LABELS = {
-        "no-new-turns": "no new turns",
-        "unattached": "unattached",
-        "orphan-cwd": "orphan cwd",
-        "scope-mismatch": "scope mismatch",
-        "unknown-host": "unknown host",
-        "no-anthropic-client": "no LLM client",
-        "noteworthy-false": "not noteworthy",
-        "lock-held": "lock held",
-    }
-    _seen_transcript_start = False
+    icons = pick_icon_set()
+    use_color = should_use_color()
 
-    def _render(record_type: str, fields: dict[str, Any]) -> None:
-        nonlocal _seen_transcript_start
-        tid = fields.get("transcript_id", "")
-        short_id = tid[:12] if tid else ""
-
-        if record_type == "run-start":
-            count = fields.get("pending_count", 0)
-            con.print(f"[dim]{count} transcript(s) pending[/dim]")
-        elif record_type == "transcript-start":
-            _seen_transcript_start = True
-            con.print(f"  [dim]{short_id}[/dim] ", end="")
-        elif record_type == "skip":
-            reason = fields.get("reason", "?")
-            label = _SKIP_LABELS.get(reason, reason)
-            if not _seen_transcript_start and short_id:
-                con.print(f"  [dim]{short_id}[/dim] [yellow]skip[/yellow] ({label})")
-            else:
-                con.print(f"[yellow]skip[/yellow] ({label})")
-            _seen_transcript_start = False
-        elif record_type == "noteworthy":
-            verdict = fields.get("verdict", False)
-            if verdict:
-                con.print(f"[green]noteworthy[/green] ", end="")
-            else:
-                reason = fields.get("reason", "")
-                con.print(f"[yellow]skip[/yellow] (not noteworthy: {reason})")
-        elif record_type == "session-note":
-            action = fields.get("action", "filed")
-            wikilink = fields.get("wikilink", "")
-            if action == "merged":
-                con.print(f"→ [cyan]merged[/cyan] into {wikilink}")
-            else:
-                con.print(f"→ [green]filed[/green] {wikilink}")
-            _seen_transcript_start = False
-        elif record_type == "merge-check":
-            con.print(f"[dim]merge-check[/dim] ", end="")
-        elif record_type == "error":
-            msg = fields.get("message", "unknown")
-            con.print(f"  [red]error:[/red] {msg}")
-        elif record_type == "warning":
-            msg = fields.get("message", "")
-            if msg:
-                con.print(f"  [yellow]warn:[/yellow] {msg}")
+    def _render(_record_type: str, payload: dict[str, Any]) -> None:
+        con.print(render_flat_log([payload], icons=icons, use_color=use_color))
 
     return _render
 

@@ -15,7 +15,7 @@ from lore_core.ledger import (
 )
 from lore_core.lockfile import curator_lock, LockContendedError, read_lock_holder
 from lore_core.redaction import redact
-from lore_core.run_log import RunLogger
+from lore_core.run_log import RecordCallback, RunLogger
 from lore_core.scope_resolver import resolve_scope
 from lore_core.state.attachments import AttachmentsFile
 from lore_core.types import Scope, Turn, TranscriptHandle
@@ -65,6 +65,7 @@ def run_curator_a(
     lock_timeout: float = 0.0,             # interactive callers pass >0 to wait
     trigger: str = "hook",
     trace_llm: bool = False,
+    on_record: RecordCallback | None = None,
 ) -> CuratorAResult:
     """Run Curator A one pass.
 
@@ -111,6 +112,7 @@ def run_curator_a(
         dry_run=dry_run,
         trace_llm=trace_llm,
         ledger_snapshot_hash=ledger_snapshot_hash,
+        on_record=on_record,
     ) as logger:
         if dry_run:
             # Dry-run bypasses the lockfile — must not block on a real run,
@@ -367,8 +369,6 @@ def _process_entry(
         noteworthy=noteworthy,
         turns=turns,
         wiki_root=wiki_dir,
-        anthropic_client=anthropic_client,
-        model_resolver=model_resolver,
         now=now,
         work_time=work_time,
         logger=logger,

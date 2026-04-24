@@ -17,7 +17,7 @@ import string
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, Callable
 
 
 _ID_ALPHABET = string.ascii_lowercase + string.digits  # 36 chars
@@ -34,6 +34,9 @@ def generate_run_id(*, now: datetime | None = None) -> str:
     stamp = ts.strftime("%Y-%m-%dT%H-%M-%S")
     suffix = "".join(secrets.choice(_ID_ALPHABET) for _ in range(6))
     return f"{stamp}-{suffix}"
+
+
+RecordCallback = Callable[[str, dict[str, Any]], None]  # (record_type, full_payload)
 
 
 class RunLogger:
@@ -78,6 +81,7 @@ class RunLogger:
         trace_llm: bool = False,
         ledger_snapshot_hash: str | None = None,
         run_id: str | None = None,
+        on_record: RecordCallback | None = None,
     ):
         self._lore_root = lore_root
         self._dir = lore_root / ".lore"
@@ -99,6 +103,7 @@ class RunLogger:
             "clusters_formed": 0, "surfaces_emitted": 0,
             "actions_applied": 0, "actions_skipped": 0,
         }
+        self._on_record = on_record
         self._opened_at: datetime | None = None
 
     @property
@@ -206,6 +211,11 @@ class RunLogger:
             "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
         self._counters_bookkeeping(record_type, fields)
+        if self._on_record is not None:
+            try:
+                self._on_record(record_type, payload)
+            except Exception:
+                pass
         self._write(self._archival, payload, mode="a")
         self._write(self._live, {"run_id": self.run_id, **payload}, mode="a")
         if self._trace_llm and record_type in ("llm-prompt", "llm-response"):

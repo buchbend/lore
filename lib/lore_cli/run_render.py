@@ -83,7 +83,8 @@ def _render_record(r: dict, icons: IconSet, use_color: bool) -> str:
 def _icon_and_message(r: dict, icons: IconSet) -> tuple[str, str, str]:
     t = r.get("type")
     if t == "run-start":
-        return icons.low_signal, "start-run", f"trigger={r.get('trigger', '?')}"
+        pending = r.get("pending_count", "?")
+        return icons.low_signal, "start-run", f"trigger={r.get('trigger', '?')} pending={pending}"
     if t == "transcript-start":
         tid = r.get("transcript_id", "?")
         hb = r.get("hash_before") or "∅"
@@ -92,6 +93,21 @@ def _icon_and_message(r: dict, icons: IconSet) -> tuple[str, str, str]:
     if t == "redaction":
         kinds = ", ".join(r.get("kinds") or [])
         return icons.low_signal, "redacted", f"{r.get('hits', 0)} hits ({kinds})"
+    if t == "llm-prompt":
+        call = r.get("call", "?")
+        tier = r.get("tier", "?")
+        prompt_text = _extract_prompt_text(r)
+        return icons.low_signal, f"llm-prompt", f"call={call} tier={tier}\n{prompt_text}"
+    if t == "llm-response":
+        call = r.get("call", "?")
+        result = r.get("result")
+        if isinstance(result, dict):
+            lines = [f"call={call}"]
+            for k, v in result.items():
+                lines.append(f"  {k}: {v}")
+            return icons.low_signal, "llm-response", "\n".join(lines)
+        body = _truncate(r.get("body", ""), 200)
+        return icons.low_signal, "llm-response", f"call={call} {body}"
     if t == "noteworthy":
         verdict = r.get("verdict")
         icon = icons.kept if verdict else icons.skipped
@@ -132,6 +148,21 @@ def _icon_and_message(r: dict, icons: IconSet) -> tuple[str, str, str]:
     if t == "_malformed":
         return icons.error, "malformed", "<line unparseable>"
     return icons.unknown, "unknown", f"type={t!r}"
+
+
+def _extract_prompt_text(r: dict) -> str:
+    """Pull the prompt content from an llm-prompt record for display."""
+    messages = r.get("messages")
+    if not messages or not isinstance(messages, list):
+        return ""
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = [b.get("text", "") for b in content if isinstance(b, dict)]
+            return "\n".join(parts)
+    return ""
 
 
 def render_summary_panel(records: list[dict], *, term_width: int = 80) -> list[str]:

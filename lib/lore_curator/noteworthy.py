@@ -67,7 +67,7 @@ def classify_slice(
     # Request structured output via tool_use
     tool_schema = _classify_tool_schema()
 
-    if logger is not None and logger.trace_enabled:
+    if logger is not None:
         logger.emit(
             "llm-prompt",
             call="noteworthy",
@@ -90,7 +90,7 @@ def classify_slice(
     data = _extract_tool_input(resp)
     result = _data_to_result(data)
 
-    if logger is not None and logger.trace_enabled:
+    if logger is not None:
         try:
             body = resp.content[0].text if resp.content else ""
         except Exception:
@@ -98,8 +98,9 @@ def classify_slice(
         logger.emit(
             "llm-response",
             call="noteworthy",
-            token_count=len(body),
+            token_count=0,
             body=body,
+            result=data,
         )
 
     if logger is not None:
