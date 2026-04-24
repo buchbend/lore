@@ -240,6 +240,90 @@ def test_openai_client_backend_name(fake_openai):
 
 
 # ---------------------------------------------------------------------------
+# Claude-family → tier inverse heuristic
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("claude_model,expected_tier,expected_openai_model", [
+    ("claude-haiku-4-5", "simple", "oss-s"),
+    ("claude-sonnet-4-6", "middle", "oss-m"),
+    ("claude-opus-4-7", "high", "oss-h"),
+    # Version-agnostic: catch haiku/sonnet/opus regardless of minor version
+    ("claude-haiku-4-6", "simple", "oss-s"),
+    ("claude-sonnet-5-0", "middle", "oss-m"),
+])
+def test_openai_client_inverts_claude_family_name_to_tier(
+    fake_openai, claude_model, expected_tier, expected_openai_model,
+):
+    """Curators resolve tier→claude-ID before calling the client. OpenAI client
+    reverses that: if a Claude family name comes in, route via tier_to_model."""
+    from lore_curator.llm_client import OpenAICompatibleClient
+
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={"simple": "oss-s", "middle": "oss-m", "high": "oss-h"},
+    )
+
+    client.messages.create(
+        model=claude_model,
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{"name": "x", "description": "", "input_schema": {"type": "object"}}],
+        tool_choice={"type": "tool", "name": "x"},
+    )
+
+    assert client._client._completions.last_kwargs["model"] == expected_openai_model
+
+
+def test_openai_client_raises_when_claude_model_has_no_tier_mapping(fake_openai):
+    """Caller passed claude-sonnet-4-6 but no model_middle configured — error
+    early with a helpful message rather than 404-ing against the endpoint."""
+    from lore_curator.llm_client import LlmClientError, OpenAICompatibleClient
+
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={},  # nothing configured
+    )
+
+    with pytest.raises(LlmClientError, match="LORE_OPENAI_MODEL_MIDDLE"):
+        client.messages.create(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[{"name": "x", "description": "", "input_schema": {"type": "object"}}],
+            tool_choice={"type": "tool", "name": "x"},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Subprocess client timeout configurability
+# ---------------------------------------------------------------------------
+
+
+def test_subprocess_client_default_timeout_is_300s():
+    from lore_curator.llm_client import SubprocessClient
+
+    client = SubprocessClient()
+    assert client.messages._timeout_s == 300.0
+
+
+def test_subprocess_client_reads_timeout_env(monkeypatch):
+    from lore_curator.llm_client import SubprocessClient
+
+    monkeypatch.setenv("LORE_CLAUDE_TIMEOUT_S", "600")
+    client = SubprocessClient()
+    assert client.messages._timeout_s == 600.0
+
+
+def test_subprocess_client_ignores_bogus_timeout_env(monkeypatch):
+    from lore_curator.llm_client import SubprocessClient
+
+    monkeypatch.setenv("LORE_CLAUDE_TIMEOUT_S", "not-a-number")
+    client = SubprocessClient()
+    assert client.messages._timeout_s == 300.0  # falls back to default
+
+
+# ---------------------------------------------------------------------------
 # make_llm_client dispatch
 # ---------------------------------------------------------------------------
 

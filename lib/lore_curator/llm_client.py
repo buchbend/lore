@@ -228,20 +228,43 @@ def _resolve_tool_schema(
     raise LlmClientError(f"tool {want!r} not found in tools=[...]")
 
 
+_DEFAULT_CLAUDE_TIMEOUT_S = 300.0
+
+
+def _resolve_claude_timeout(explicit: float | None) -> float:
+    """Pick subprocess timeout: explicit arg > LORE_CLAUDE_TIMEOUT_S env > default."""
+    if explicit is not None:
+        return explicit
+    raw = os.environ.get("LORE_CLAUDE_TIMEOUT_S", "").strip()
+    if raw:
+        try:
+            parsed = float(raw)
+            if parsed > 0:
+                return parsed
+        except ValueError:
+            pass
+    return _DEFAULT_CLAUDE_TIMEOUT_S
+
+
 class SubprocessClient:
-    """LlmClient backend that shells out to `claude -p`."""
+    """LlmClient backend that shells out to `claude -p`.
+
+    Default timeout is 300s — large transcripts (100k+ chars) regularly push
+    past the old 120s limit. Override via ``timeout_s`` kwarg or the env var
+    ``LORE_CLAUDE_TIMEOUT_S``.
+    """
 
     def __init__(
         self,
         *,
         binary: str = "claude",
         runner: SubprocessRunner | None = None,
-        timeout_s: float = 120.0,
+        timeout_s: float | None = None,
     ):
         self.messages = _SubprocessMessagesAPI(
             binary=binary,
             runner=runner if runner is not None else subprocess.run,
-            timeout_s=timeout_s,
+            timeout_s=_resolve_claude_timeout(timeout_s),
         )
 
     @property
@@ -254,12 +277,48 @@ class SubprocessClient:
         return shutil.which(binary) is not None
 
 
+_CLAUDE_FAMILY_TIERS = (
+    ("haiku", "simple"),
+    ("sonnet", "middle"),
+    ("opus", "high"),
+)
+
+
+def _infer_tier(model: str) -> str | None:
+    """Best-effort reverse of wiki_config ModelsConfig.
+
+    Curators resolve tier→Claude model ID via wiki_config.yml before calling
+    the LLM client (e.g. tier "middle" → "claude-sonnet-4-6"). When routing
+    through an OpenAI-compatible backend, we invert: look for
+    haiku/sonnet/opus in the model string to find the tier, then apply
+    the user's OpenAI-side mapping.
+    """
+    if not isinstance(model, str):
+        return None
+    if model in ("simple", "middle", "high"):
+        return model
+    lower = model.lower()
+    if not lower.startswith("claude"):
+        return None
+    for needle, tier in _CLAUDE_FAMILY_TIERS:
+        if needle in lower:
+            return tier
+    return None
+
+
 class _OpenAIMessagesAPI:
     """Translates Anthropic-style messages.create(...) to OpenAI chat.completions.
 
     Curators send a single-tool tool_choice and expect a ToolUseBlock response.
     OpenAI function-calling returns tool_calls with a JSON-string arguments field,
     so we JSON-decode and wrap into a ToolUseBlock to satisfy the curator contract.
+
+    Model resolution order:
+      1. If ``model`` is a tier name or a Claude family name, map to tier via
+         :func:`_infer_tier`, then look up in ``tier_to_model``.
+      2. If ``model`` is a literal (non-Claude) ID, pass through.
+      3. If a tier is inferred but has no entry in ``tier_to_model``, raise
+         LlmClientError with a message pointing at LORE_OPENAI_MODEL_*.
     """
 
     def __init__(self, client: Any, tier_to_model: dict[str, str]):
@@ -276,7 +335,20 @@ class _OpenAIMessagesAPI:
         max_tokens: int | None = None,
         **_extra: Any,
     ) -> LlmResponse:
-        resolved_model = self._tier_to_model.get(model, model)
+        tier = _infer_tier(model)
+        if tier is not None:
+            configured = self._tier_to_model.get(tier)
+            if configured:
+                resolved_model = configured
+            else:
+                raise LlmClientError(
+                    f"openai backend: no model configured for tier {tier!r} "
+                    f"(received {model!r}). Set "
+                    f"LORE_OPENAI_MODEL_{tier.upper()} "
+                    f"or curator.openai.model_{tier} in .lore/config.yml."
+                )
+        else:
+            resolved_model = model
 
         openai_tools = None
         openai_tool_choice = None
