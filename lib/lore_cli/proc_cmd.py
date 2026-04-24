@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -52,6 +53,23 @@ def _has_errors(path: Path) -> bool:
         return False
 
 
+def _read_meta_summary(proc_dir: Path, role: str, gen: int = 0) -> tuple[str, str]:
+    suffix = f".{gen}" if gen > 0 else ""
+    meta_path = proc_dir / f"{role}.meta.json{suffix}"
+    if not meta_path.exists():
+        return ("—", "—")
+    try:
+        meta = json.loads(meta_path.read_text())
+        ec = meta.get("exit_code")
+        exit_str = str(ec) if ec is not None else "running"
+        start = meta.get("start_ts", 0)
+        end = meta.get("end_ts")
+        dur_str = f"{end - start:.1f}s" if end else "—"
+        return (exit_str, dur_str)
+    except (json.JSONDecodeError, OSError):
+        return ("?", "?")
+
+
 def _format_size(n: int) -> str:
     if n < 1024:
         return f"{n} B"
@@ -75,6 +93,8 @@ def list_logs() -> None:
     table.add_column("Role")
     table.add_column("Size")
     table.add_column("Modified")
+    table.add_column("Exit")
+    table.add_column("Duration")
     table.add_column("Status")
 
     found = False
@@ -94,9 +114,10 @@ def list_logs() -> None:
                 status = "[red]errors detected[/red]"
             else:
                 status = "ok"
-            table.add_row(role, _format_size(size), rel, status)
+            exit_str, dur_str = _read_meta_summary(pdir, role)
+            table.add_row(role, _format_size(size), rel, exit_str, dur_str, status)
         except OSError:
-            table.add_row(role, "?", "?", "[yellow]read error[/yellow]")
+            table.add_row(role, "?", "?", "?", "?", "[yellow]read error[/yellow]")
 
     if not found:
         console.print("[dim]No subprocess logs yet.[/dim]")
@@ -109,6 +130,7 @@ def list_logs() -> None:
 def show(
     role: str = typer.Argument(..., help="Subprocess role: a, b, c, or transcripts"),
     prev: bool = typer.Option(False, "--prev", help="Show the previous run's log (.log.1)."),
+    gen: int = typer.Option(0, "--gen", "-g", help="Generation (0=current, 1=previous, 2=...)."),
     lines: int = typer.Option(0, "--lines", "-n", help="Limit to last N lines (0 = all)."),
 ) -> None:
     """Print subprocess log content."""
@@ -116,14 +138,31 @@ def show(
         console.print(f"[red]Unknown role {role!r}. Choose from: {', '.join(_ROLES)}[/red]")
         raise typer.Exit(code=1)
 
+    effective_gen = 1 if prev else gen
     lore_root = _get_lore_root()
-    suffix = ".log.1" if prev else ".log"
-    path = _proc_dir(lore_root) / f"{role}{suffix}"
+    pdir = _proc_dir(lore_root)
+    suffix = f".log.{effective_gen}" if effective_gen > 0 else ".log"
+    path = pdir / f"{role}{suffix}"
 
     if not path.exists():
-        label = "previous " if prev else ""
+        label = f"gen {effective_gen} " if effective_gen > 0 else ""
         console.print(f"[dim]No {label}log for {role}.[/dim]")
         return
+
+    # Print metadata header if sidecar exists.
+    meta_suffix = f".{effective_gen}" if effective_gen > 0 else ""
+    meta_path = pdir / f"{role}.meta.json{meta_suffix}"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+            ec = meta.get("exit_code")
+            pid = meta.get("pid", "?")
+            start = meta.get("start_ts", 0)
+            end = meta.get("end_ts")
+            dur = f"{end - start:.1f}s" if end else "—"
+            console.print(f"[dim]pid={pid}  exit={ec}  duration={dur}[/dim]")
+        except (json.JSONDecodeError, OSError):
+            pass
 
     try:
         text = path.read_text(errors="replace")

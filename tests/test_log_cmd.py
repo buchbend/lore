@@ -166,3 +166,88 @@ def test_log_json(tmp_path: Path, monkeypatch) -> None:
     for line in out.strip().splitlines():
         parsed = json.loads(line)
         assert "ts" in parsed
+
+
+# ---------------------------------------------------------------------------
+# Curator B/C role detection
+# ---------------------------------------------------------------------------
+
+
+def _seed_run_with_role(
+    lore_root: Path, *, ago: timedelta, role: str, suffix: str = "xyz789",
+    **end_fields: object,
+) -> None:
+    run_ts = _NOW - ago
+    runs_dir = lore_root / ".lore" / "runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    stem = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{suffix}"
+    end_record = {
+        "type": "run-end", "ts": _iso(run_ts + timedelta(seconds=10)),
+        "schema_version": 1, "role": role, "duration_ms": 10000,
+        "notes_new": 0, "notes_merged": 0, "skipped": 0, "errors": 0,
+        **end_fields,
+    }
+    records = [
+        {"type": "run-start", "ts": _iso(run_ts), "schema_version": 1,
+         "run_id": stem, "role": role},
+        end_record,
+    ]
+    (runs_dir / f"{stem}.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in records) + "\n"
+    )
+
+
+def test_log_shows_curator_b_runs(tmp_path: Path, monkeypatch) -> None:
+    lore_root = _seed_vault(tmp_path)
+    _seed_run_with_role(lore_root, ago=timedelta(minutes=10), role="b",
+                        surfaces_emitted=2)
+    out = _invoke(lore_root, "--type", "run", monkeypatch=monkeypatch)
+    assert "curator-b" in out
+    assert "2 surface" in out
+
+
+def test_log_shows_curator_c_runs(tmp_path: Path, monkeypatch) -> None:
+    lore_root = _seed_vault(tmp_path)
+    _seed_run_with_role(lore_root, ago=timedelta(minutes=10), role="c",
+                        actions_applied=5)
+    out = _invoke(lore_root, "--type", "run", monkeypatch=monkeypatch)
+    assert "curator-c" in out
+    assert "5 action" in out
+
+
+def test_log_backward_compat_no_role_field(tmp_path: Path, monkeypatch) -> None:
+    """Old run files without a 'role' field should display as curator-a."""
+    lore_root = _seed_vault(tmp_path)
+    _seed_run(lore_root, ago=timedelta(minutes=10), notes_new=1)
+    out = _invoke(lore_root, "--type", "run", monkeypatch=monkeypatch)
+    assert "curator-a" in out
+
+
+def test_log_type_filter_run_b(tmp_path: Path, monkeypatch) -> None:
+    lore_root = _seed_vault(tmp_path)
+    _seed_run_with_role(lore_root, ago=timedelta(minutes=10), role="b",
+                        suffix="bbb111", surfaces_emitted=1)
+    _seed_run(lore_root, ago=timedelta(minutes=5), notes_new=2, suffix="aaa222")
+    out = _invoke(lore_root, "--type", "run-b", monkeypatch=monkeypatch)
+    assert "curator-b" in out
+    assert "curator-a" not in out
+
+
+# ---------------------------------------------------------------------------
+# Proc events in timeline
+# ---------------------------------------------------------------------------
+
+
+def test_log_proc_events(tmp_path: Path, monkeypatch) -> None:
+    lore_root = _seed_vault(tmp_path)
+    proc_dir = lore_root / ".lore" / "proc"
+    proc_dir.mkdir(parents=True)
+    end_ts = (_NOW - timedelta(minutes=5)).timestamp()
+    meta = {
+        "pid": 42, "start_ts": end_ts - 30.0, "end_ts": end_ts,
+        "exit_code": 0, "cmd": ["lore", "curator", "run"],
+    }
+    (proc_dir / "a.meta.json").write_text(json.dumps(meta))
+    out = _invoke(lore_root, monkeypatch=monkeypatch)
+    assert "proc-a" in out
+    assert "exit 0" in out

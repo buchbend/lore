@@ -108,3 +108,52 @@ def test_show_lines_limit(proc_dir: Path) -> None:
     assert "line 17" in result.output
     assert "line 19" in result.output
     assert "line 0" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Phase 2d: metadata sidecar + --gen flag
+# ---------------------------------------------------------------------------
+
+
+def test_list_shows_exit_code_and_duration(proc_dir: Path) -> None:
+    import json
+    (proc_dir / "a.log").write_text("some output\n")
+    (proc_dir / "a.meta.json").write_text(json.dumps({
+        "pid": 12345, "start_ts": 1000.0, "end_ts": 1042.5,
+        "exit_code": 0, "cmd": ["lore", "curator", "run"],
+    }))
+    result = runner.invoke(_get_app(), ["list"])
+    assert result.exit_code == 0
+    assert "0" in result.output  # exit code
+    assert "42" in result.output  # ~42s duration
+
+
+def test_show_prints_metadata_header(proc_dir: Path) -> None:
+    import json
+    (proc_dir / "a.log").write_text("curator output\n")
+    (proc_dir / "a.meta.json").write_text(json.dumps({
+        "pid": 99, "start_ts": 1000.0, "end_ts": 1010.0,
+        "exit_code": 1, "cmd": ["lore", "curator", "run"],
+    }))
+    result = runner.invoke(_get_app(), ["show", "a"])
+    assert result.exit_code == 0
+    assert "pid=99" in result.output
+    assert "exit=1" in result.output
+    assert "curator output" in result.output
+
+
+def test_show_gen_flag(proc_dir: Path) -> None:
+    (proc_dir / "a.log").write_text("current")
+    (proc_dir / "a.log.1").write_text("gen 1")
+    (proc_dir / "a.log.2").write_text("gen 2")
+    result = runner.invoke(_get_app(), ["show", "a", "--gen", "2"])
+    assert result.exit_code == 0
+    assert "gen 2" in result.output
+
+
+def test_show_prev_is_gen_1(proc_dir: Path) -> None:
+    (proc_dir / "a.log").write_text("current")
+    (proc_dir / "a.log.1").write_text("gen 1 content")
+    result = runner.invoke(_get_app(), ["show", "a", "--prev"])
+    assert result.exit_code == 0
+    assert "gen 1 content" in result.output

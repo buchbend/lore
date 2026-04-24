@@ -40,6 +40,7 @@ from lore_core.git import is_obsidian_holding
 from lore_core.identity import distinct_git_authors, team_mode_recommended
 from lore_core.io import atomic_write_text
 from lore_core.lint import STALENESS_DAYS, discover_notes, discover_wikis
+from lore_core.run_log import RunLogger
 from lore_core.schema import compute_lifecycle, parse_frontmatter
 from rich.console import Console
 
@@ -708,123 +709,150 @@ def run_curator_c(
     except Exception:
         lore_root = None
 
-    # Task 11: team-mode first-come-wins. Under defrag=True, re-read
-    # each wiki's last_curator_c at entry. If it matches the current ISO
-    # week we skip — another user already ran this cycle. Uses iso-week
-    # equivalence rather than timestamp comparison to survive clock skew
-    # across team members.
-    if defrag and lore_root is not None:
-        iso_now = now.isocalendar()[:2]
-        already_ran: set[str] = set()
-        for wiki_path in wikis:
-            entry = WikiLedger(lore_root, wiki_path.name).read()
-            last_c = entry.last_curator_c
-            if last_c is None:
-                continue
-            if last_c.tzinfo is None:
-                from datetime import UTC as _UTC
-                last_c = last_c.replace(tzinfo=_UTC)
-            if last_c.isocalendar()[:2] == iso_now:
-                already_ran.add(wiki_path.name)
-                console.print(
-                    f"[dim]Skipping wiki/{wiki_path.name}: already ran "
-                    f"this ISO week ({last_c.isoformat()}).[/dim]"
-                )
-        if already_ran:
-            wikis = [w for w in wikis if w.name not in already_ran]
-
-    for wiki_path in wikis:
-        if is_obsidian_holding(wiki_path) and not dry_run:
-            console.print(
-                f"[yellow]Warning:[/yellow] Obsidian appears active in "
-                f"{wiki_path}. Proceeding — but if you have mid-edit "
-                "buffers, close them first."
-            )
-
-        if defrag:
-            # Pre-flight: bail on mid-merge vault.
-            from lore_curator.c_passes import has_merge_conflicts
-            if has_merge_conflicts(wiki_path):
-                console.print(
-                    f"[yellow]Skipping wiki/{wiki_path.name}:[/yellow] "
-                    "merge conflicts detected. Resolve first."
-                )
-                continue
-
-        report = CuratorReport(wiki=wiki_path.name)
-        report.actions.extend(_pass_staleness(wiki_path, today, stale_threshold))
-        report.actions.extend(_pass_supersession(wiki_path))
-        report.actions.extend(_pass_implements(wiki_path))
-        report.actions.extend(_pass_git_backfill(wiki_path))
-        if defrag:
-            report.actions.extend(_pass_draft_promotion(wiki_path, today))
-        report.hints.extend(_pass_team_mode_hint(wiki_path))
-        reports.append(report)
-
-    for report in reports:
-        _print_report(report, dry_run)
-
-    defrag_summary_by_wiki: dict[str, dict[str, int]] = {}
-    wiki_snapshots_before: dict[str, dict] = {}
-
-    if defrag:
-        for wiki_path in wikis:
-            wiki_snapshots_before[wiki_path.name] = _snapshot_wiki(wiki_path)
-
-    if not dry_run:
-        for report in reports:
-            for action in report.actions:
-                ok, reason = _apply_safely(action)
-                if not ok:
-                    report.skipped.append((action.path, reason))
-                    console.print(
-                        f"  [red]skipped[/red] {action.path.name}: {reason}"
-                    )
-
-    if defrag:
-        for wiki_path in wikis:
-            summary = _run_defrag_passes(
-                wiki_path, anthropic_client=anthropic_client, dry_run=dry_run
-            )
-            defrag_summary_by_wiki[wiki_path.name] = summary
-
-    for report in reports:
-        wiki_path = next(w for w in wikis if w.name == report.wiki)
-        _write_review(wiki_path, report)
-
-    if defrag and lore_root is not None:
-        from lore_curator.curator_c_diff import (
-            prune_old_diff_logs,
-            write_diff_log_entry,
+    logger: RunLogger | None = None
+    if lore_root is not None:
+        logger = RunLogger(
+            lore_root,
+            trigger="hook",
+            role="c",
+            config_snapshot={
+                "wiki_filter": wiki_filter,
+                "defrag": defrag,
+                "dry_run": dry_run,
+                "stale_threshold": stale_threshold,
+            },
+            dry_run=dry_run,
+            run_id=rid,
         )
-        for wiki_path in wikis:
-            before = wiki_snapshots_before.get(wiki_path.name, {})
-            after = _snapshot_wiki(wiki_path)
-            summary = defrag_summary_by_wiki.get(wiki_path.name, {})
-            # Merge hygiene-pass action counts into the summary.
-            hygiene_report = next(
-                (r for r in reports if r.wiki == wiki_path.name), None
-            )
-            if hygiene_report:
-                for action in hygiene_report.actions:
-                    summary[action.kind] = summary.get(action.kind, 0) + 1
-            write_diff_log_entry(
-                lore_root,
-                run_id=rid,
-                snapshot_before=before,
-                snapshot_after=after,
-                dry_run=dry_run,
-                summary=summary,
-                now=now,
-            )
-        prune_old_diff_logs(lore_root)
 
-        # Atomic last_curator_c update — only reached on full-run success.
+    def _emit(record_type: str, **fields: object) -> None:
+        if logger is not None:
+            logger.emit(record_type, **fields)
+
+    # Use context manager if logger exists; otherwise a no-op.
+    import contextlib
+    ctx = logger if logger is not None else contextlib.nullcontext()
+
+    with ctx:
+        if defrag and lore_root is not None:
+            iso_now = now.isocalendar()[:2]
+            already_ran: set[str] = set()
+            for wiki_path in wikis:
+                entry = WikiLedger(lore_root, wiki_path.name).read()
+                last_c = entry.last_curator_c
+                if last_c is None:
+                    continue
+                if last_c.tzinfo is None:
+                    from datetime import UTC as _UTC
+                    last_c = last_c.replace(tzinfo=_UTC)
+                if last_c.isocalendar()[:2] == iso_now:
+                    already_ran.add(wiki_path.name)
+                    _emit("wiki-skip", wiki=wiki_path.name, reason="already_ran_this_iso_week")
+                    console.print(
+                        f"[dim]Skipping wiki/{wiki_path.name}: already ran "
+                        f"this ISO week ({last_c.isoformat()}).[/dim]"
+                    )
+            if already_ran:
+                wikis = [w for w in wikis if w.name not in already_ran]
+
         for wiki_path in wikis:
-            try:
-                WikiLedger(lore_root, wiki_path.name).update_last_curator("c", at=now)
-            except Exception:
-                pass
+            _emit("wiki-start", wiki=wiki_path.name)
+
+            if is_obsidian_holding(wiki_path) and not dry_run:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Obsidian appears active in "
+                    f"{wiki_path}. Proceeding — but if you have mid-edit "
+                    "buffers, close them first."
+                )
+
+            if defrag:
+                from lore_curator.c_passes import has_merge_conflicts
+                if has_merge_conflicts(wiki_path):
+                    _emit("wiki-skip", wiki=wiki_path.name, reason="merge_conflicts")
+                    console.print(
+                        f"[yellow]Skipping wiki/{wiki_path.name}:[/yellow] "
+                        "merge conflicts detected. Resolve first."
+                    )
+                    continue
+
+            report = CuratorReport(wiki=wiki_path.name)
+            report.actions.extend(_pass_staleness(wiki_path, today, stale_threshold))
+            report.actions.extend(_pass_supersession(wiki_path))
+            report.actions.extend(_pass_implements(wiki_path))
+            report.actions.extend(_pass_git_backfill(wiki_path))
+            if defrag:
+                report.actions.extend(_pass_draft_promotion(wiki_path, today))
+            report.hints.extend(_pass_team_mode_hint(wiki_path))
+            reports.append(report)
+
+        for report in reports:
+            _print_report(report, dry_run)
+
+        defrag_summary_by_wiki: dict[str, dict[str, int]] = {}
+        wiki_snapshots_before: dict[str, dict] = {}
+
+        if defrag:
+            for wiki_path in wikis:
+                wiki_snapshots_before[wiki_path.name] = _snapshot_wiki(wiki_path)
+
+        if not dry_run:
+            for report in reports:
+                for action in report.actions:
+                    ok, reason = _apply_safely(action)
+                    if ok:
+                        _emit("action-applied", wiki=report.wiki,
+                              kind=action.kind, path=str(action.path), reason=action.reason)
+                    else:
+                        report.skipped.append((action.path, reason))
+                        _emit("action-skipped", wiki=report.wiki,
+                              path=str(action.path), reason=reason)
+                        console.print(
+                            f"  [red]skipped[/red] {action.path.name}: {reason}"
+                        )
+
+        if defrag:
+            for wiki_path in wikis:
+                summary = _run_defrag_passes(
+                    wiki_path, anthropic_client=anthropic_client, dry_run=dry_run
+                )
+                defrag_summary_by_wiki[wiki_path.name] = summary
+                _emit("defrag-pass", wiki=wiki_path.name, summary=summary)
+
+        for report in reports:
+            wiki_path = next(w for w in wikis if w.name == report.wiki)
+            _write_review(wiki_path, report)
+
+        if defrag and lore_root is not None:
+            from lore_curator.curator_c_diff import (
+                prune_old_diff_logs,
+                write_diff_log_entry,
+            )
+            for wiki_path in wikis:
+                before = wiki_snapshots_before.get(wiki_path.name, {})
+                after = _snapshot_wiki(wiki_path)
+                summary = defrag_summary_by_wiki.get(wiki_path.name, {})
+                hygiene_report = next(
+                    (r for r in reports if r.wiki == wiki_path.name), None
+                )
+                if hygiene_report:
+                    for action in hygiene_report.actions:
+                        summary[action.kind] = summary.get(action.kind, 0) + 1
+                write_diff_log_entry(
+                    lore_root,
+                    run_id=rid,
+                    snapshot_before=before,
+                    snapshot_after=after,
+                    dry_run=dry_run,
+                    summary=summary,
+                    now=now,
+                )
+            prune_old_diff_logs(lore_root)
+
+            for wiki_path in wikis:
+                try:
+                    WikiLedger(lore_root, wiki_path.name).update_last_curator("c", at=now)
+                except Exception:
+                    pass
 
     return reports
 

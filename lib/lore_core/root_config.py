@@ -29,9 +29,15 @@ class RunsConfig:
 
 
 @dataclass
+class ProcConfig:
+    keep_generations: int = 3
+
+
+@dataclass
 class ObservabilityConfig:
     hook_events: HookEventsConfig = field(default_factory=HookEventsConfig)
     runs: RunsConfig = field(default_factory=RunsConfig)
+    proc: ProcConfig = field(default_factory=ProcConfig)
 
 
 @dataclass

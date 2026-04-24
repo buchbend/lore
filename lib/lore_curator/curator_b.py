@@ -12,6 +12,7 @@ from typing import Any, Callable
 from lore_core.io import atomic_write_text
 from lore_core.ledger import WikiLedger, WikiLedgerEntry
 from lore_core.lockfile import LockContendedError, curator_lock
+from lore_core.run_log import RunLogger
 from lore_core.schema import parse_frontmatter
 from lore_core.surfaces import SurfacesDoc, load_surfaces, load_surfaces_or_default
 from lore_core.wiki_config import WikiConfig, load_wiki_config
@@ -52,101 +53,123 @@ def run_curator_b(
     now = now or datetime.now(UTC)
     result = CuratorBResult()
 
-    wiki_root = lore_root / "wiki" / wiki
-    if not wiki_root.exists():
-        result.skipped_reasons["wiki_not_found"] = 1
-        result.duration_seconds = time.monotonic() - start
-        return result
+    logger = RunLogger(
+        lore_root,
+        trigger="hook",
+        role="b",
+        config_snapshot={"wiki": wiki, "dry_run": dry_run},
+        dry_run=dry_run,
+    )
 
-    sessions_dir = wiki_root / "sessions"
-    surfaces_doc = load_surfaces(wiki_root)
-    if surfaces_doc is None:
-        # Fall back to default standard (no SURFACES.md authored).
-        surfaces_doc = load_surfaces_or_default(wiki_root)
-    elif not surfaces_doc.surfaces:
-        # SURFACES.md exists but parsed to zero usable surfaces — broken.
-        result.skipped_reasons["surfaces_md_invalid"] = 1
-        result.duration_seconds = time.monotonic() - start
-        return result
+    with logger:
+        wiki_root = lore_root / "wiki" / wiki
+        if not wiki_root.exists():
+            result.skipped_reasons["wiki_not_found"] = 1
+            logger.emit("skip", reason="wiki_not_found", wiki=wiki)
+            result.duration_seconds = time.monotonic() - start
+            return result
 
-    if anthropic_client is None:
-        result.skipped_reasons["no_anthropic_client"] = 1
-        result.duration_seconds = time.monotonic() - start
-        return result
+        sessions_dir = wiki_root / "sessions"
+        surfaces_doc = load_surfaces(wiki_root)
+        if surfaces_doc is None:
+            surfaces_doc = load_surfaces_or_default(wiki_root)
+        elif not surfaces_doc.surfaces:
+            result.skipped_reasons["surfaces_md_invalid"] = 1
+            logger.emit("skip", reason="surfaces_md_invalid", wiki=wiki)
+            result.duration_seconds = time.monotonic() - start
+            return result
 
-    cfg = load_wiki_config(wiki_root)
+        if anthropic_client is None:
+            result.skipped_reasons["no_anthropic_client"] = 1
+            logger.emit("skip", reason="no_anthropic_client")
+            result.duration_seconds = time.monotonic() - start
+            return result
 
-    def model_resolver(tier: str) -> str:
-        return {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}[tier]
+        cfg = load_wiki_config(wiki_root)
 
-    high_tier_off = cfg.models.high == "off"
+        def model_resolver(tier: str) -> str:
+            return {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}[tier]
 
-    try:
-        with curator_lock(lore_root, timeout=lock_timeout):
-            # Determine "recent" cutoff.
-            wledger = WikiLedger(lore_root, wiki)
-            wentry = wledger.read()
-            cutoff = since or wentry.last_curator_b or (now - timedelta(days=3))
+        high_tier_off = cfg.models.high == "off"
 
-            notes = _load_recent_session_notes(sessions_dir, cutoff=cutoff)
-            result.notes_considered = len(notes)
-            if not notes:
-                if not dry_run:
-                    _advance_wiki_ledger(wledger, wentry, now=now)
-                result.duration_seconds = time.monotonic() - start
-                return result
+        try:
+            with curator_lock(lore_root, timeout=lock_timeout):
+                wledger = WikiLedger(lore_root, wiki)
+                wentry = wledger.read()
+                cutoff = since or wentry.last_curator_b or (now - timedelta(days=3))
 
-            # Cluster.
-            surface_names = [s.name for s in surfaces_doc.surfaces]
-            clusters = cluster_session_notes(
-                notes=notes,
-                surfaces=surface_names,
-                anthropic_client=anthropic_client,
-                model_resolver=model_resolver,
-            )
-            result.clusters_formed = len(clusters)
+                notes = _load_recent_session_notes(sessions_dir, cutoff=cutoff)
+                result.notes_considered = len(notes)
+                if not notes:
+                    logger.emit("skip", reason="no_recent_notes", wiki=wiki, cutoff=str(cutoff))
+                    if not dry_run:
+                        _advance_wiki_ledger(wledger, wentry, now=now)
+                    result.duration_seconds = time.monotonic() - start
+                    return result
 
-            # Build wikilink → body map for the abstract step.
-            sources_by_wl = _build_sources_map(notes)
-
-            # Abstract each cluster, file the surfaces.
-            for cluster in clusters:
-                abstracted = abstract_cluster(
-                    cluster=cluster,
-                    surfaces_doc=surfaces_doc,
-                    source_notes_by_wikilink=sources_by_wl,
+                surface_names = [s.name for s in surfaces_doc.surfaces]
+                clusters = cluster_session_notes(
+                    notes=notes,
+                    surfaces=surface_names,
                     anthropic_client=anthropic_client,
                     model_resolver=model_resolver,
-                    high_tier_off=high_tier_off,
-                    lore_root=lore_root,
                 )
-                for ab in abstracted:
-                    if dry_run:
-                        result.surfaces_emitted.append(
-                            wiki_root / f"{ab.surface_name}s" / f"<dry-run:{_short_slug(ab.title)}>.md"
-                        )
-                        continue
-                    try:
-                        filed = file_surface(
-                            surface_name=ab.surface_name,
-                            title=ab.title,
-                            body=ab.body,
-                            sources=cluster.session_notes,
-                            wiki_root=wiki_root,
-                            surfaces_doc=surfaces_doc,
-                            extra_frontmatter=ab.extra_frontmatter,
-                            now=now,
-                        )
-                        result.surfaces_emitted.append(filed.path)
-                    except ValueError as e:
-                        # Missing required field, etc. — log + skip this one.
-                        reason = "surface_filer_validation"
-                        result.skipped_reasons[reason] = result.skipped_reasons.get(reason, 0) + 1
+                result.clusters_formed = len(clusters)
+                for cluster in clusters:
+                    logger.emit(
+                        "cluster-formed",
+                        topic=cluster.topic,
+                        scope=cluster.scope,
+                        suggested_surface=cluster.suggested_surface,
+                        note_count=len(cluster.session_notes),
+                    )
 
-            if not dry_run:
-                _advance_wiki_ledger(wledger, wentry, now=now)
-    except LockContendedError:
-        result.skipped_reasons["lock_contended"] = result.skipped_reasons.get("lock_contended", 0) + 1
+                sources_by_wl = _build_sources_map(notes)
+
+                for cluster in clusters:
+                    abstracted = abstract_cluster(
+                        cluster=cluster,
+                        surfaces_doc=surfaces_doc,
+                        source_notes_by_wikilink=sources_by_wl,
+                        anthropic_client=anthropic_client,
+                        model_resolver=model_resolver,
+                        high_tier_off=high_tier_off,
+                        lore_root=lore_root,
+                    )
+                    for ab in abstracted:
+                        if dry_run:
+                            result.surfaces_emitted.append(
+                                wiki_root / f"{ab.surface_name}s" / f"<dry-run:{_short_slug(ab.title)}>.md"
+                            )
+                            continue
+                        try:
+                            filed = file_surface(
+                                surface_name=ab.surface_name,
+                                title=ab.title,
+                                body=ab.body,
+                                sources=cluster.session_notes,
+                                wiki_root=wiki_root,
+                                surfaces_doc=surfaces_doc,
+                                extra_frontmatter=ab.extra_frontmatter,
+                                now=now,
+                            )
+                            result.surfaces_emitted.append(filed.path)
+                            logger.emit(
+                                "surface-filed",
+                                surface_name=ab.surface_name,
+                                title=ab.title,
+                                path=str(filed.path),
+                            )
+                        except ValueError as e:
+                            reason = "surface_filer_validation"
+                            result.skipped_reasons[reason] = result.skipped_reasons.get(reason, 0) + 1
+                            logger.emit("skip", reason=reason, error=str(e))
+
+                if not dry_run:
+                    _advance_wiki_ledger(wledger, wentry, now=now)
+        except LockContendedError:
+            result.skipped_reasons["lock_contended"] = result.skipped_reasons.get("lock_contended", 0) + 1
+            logger.emit("skip", reason="lock_contended")
 
     # Post-lock: auto-briefing (never fails the pipeline).
     if not dry_run and result.surfaces_emitted:

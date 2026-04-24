@@ -1505,8 +1505,8 @@ def _migrate_legacy_spawn_stamp(lore_root: Path, role: str) -> None:
             pass
 
 
-def _open_proc_log(lore_root: Path, role: str) -> int | None:
-    """Open .lore/proc/<role>.log for subprocess output, rotating the previous."""
+def _open_proc_log(lore_root: Path, role: str, *, keep: int = 3) -> int | None:
+    """Open .lore/proc/<role>.log for subprocess output, rotating previous generations."""
     import contextlib
 
     proc_dir = lore_root / ".lore" / "proc"
@@ -1515,14 +1515,36 @@ def _open_proc_log(lore_root: Path, role: str) -> int | None:
     except OSError:
         return None
     log_path = proc_dir / f"{role}.log"
-    prev = proc_dir / f"{role}.log.1"
+    with contextlib.suppress(OSError):
+        (proc_dir / f"{role}.log.{keep}").unlink(missing_ok=True)
+    for i in range(keep, 1, -1):
+        src = proc_dir / f"{role}.log.{i - 1}"
+        dst = proc_dir / f"{role}.log.{i}"
+        with contextlib.suppress(OSError):
+            os.replace(str(src), str(dst))
     if log_path.exists():
         with contextlib.suppress(OSError):
-            os.replace(log_path, prev)
+            os.replace(str(log_path), str(proc_dir / f"{role}.log.1"))
     try:
         return os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
     except OSError:
         return None
+
+
+def _rotate_meta_sidecar(proc_dir: Path, role: str, *, keep: int = 3) -> None:
+    """Rotate <role>.meta.json alongside proc logs. Best-effort."""
+    import contextlib
+    with contextlib.suppress(OSError):
+        (proc_dir / f"{role}.meta.json.{keep}").unlink(missing_ok=True)
+    for i in range(keep, 1, -1):
+        src = proc_dir / f"{role}.meta.json.{i - 1}"
+        dst = proc_dir / f"{role}.meta.json.{i}"
+        with contextlib.suppress(OSError):
+            os.replace(str(src), str(dst))
+    current = proc_dir / f"{role}.meta.json"
+    if current.exists():
+        with contextlib.suppress(OSError):
+            os.replace(str(current), str(proc_dir / f"{role}.meta.json.1"))
 
 
 def _spawn_detached(
@@ -1553,9 +1575,16 @@ def _spawn_detached(
         env["LORE_ROOT"] = str(lore_root)
         env["LORE_CURATOR_MODE"] = "1"
         log_fd = _open_proc_log(lore_root, role)
+        proc_dir = lore_root / ".lore" / "proc"
+        meta_path = proc_dir / f"{role}.meta.json"
+        _rotate_meta_sidecar(proc_dir, role)
+        wrapped_cmd = [
+            sys.executable, "-m", "lore_cli._proc_wrapper",
+            str(meta_path), "--", *cmd,
+        ]
         try:
             subprocess.Popen(
-                cmd,
+                wrapped_cmd,
                 cwd=str(lore_root),
                 start_new_session=True,
                 stdout=log_fd if log_fd is not None else subprocess.DEVNULL,

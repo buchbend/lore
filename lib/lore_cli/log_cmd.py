@@ -88,7 +88,20 @@ def _read_hook_events(lore_root: Path, since: datetime) -> list[TimelineEntry]:
     return entries
 
 
-def _read_run_events(lore_root: Path, since: datetime) -> list[TimelineEntry]:
+def _run_end_label(role: str, rec: dict) -> str:
+    if role == "b":
+        n = rec.get("surfaces_emitted", 0)
+        return f"{n} surface{'s' if n != 1 else ''}"
+    if role == "c":
+        n = rec.get("actions_applied", 0)
+        return f"{n} action{'s' if n != 1 else ''}"
+    n = rec.get("notes_new", 0)
+    return f"{n} note{'s' if n != 1 else ''}"
+
+
+def _read_run_events(
+    lore_root: Path, since: datetime, *, role_filter: str | None = None,
+) -> list[TimelineEntry]:
     from lore_core.run_reader import iter_archival_runs, read_run
 
     entries: list[TimelineEntry] = []
@@ -105,22 +118,30 @@ def _read_run_events(lore_root: Path, since: datetime) -> list[TimelineEntry]:
                 break
 
             short_id = run_path.stem.split("-")[-1]
+            run_role: str | None = None
             for rec in records:
                 rtype = rec.get("type")
                 ts = _parse_ts(rec.get("ts"))
                 if ts is None or ts < since:
                     continue
                 if rtype == "run-start":
+                    run_role = rec.get("role", "a")
+                    if role_filter and run_role != role_filter:
+                        break
+                    event_name = f"curator-{run_role}"
                     entries.append(TimelineEntry(
-                        ts=ts, kind="run-start", event="curator-a",
+                        ts=ts, kind="run-start", event=event_name,
                         outcome="started", detail=short_id, raw=rec,
                     ))
                 elif rtype == "run-end":
-                    notes = rec.get("notes_new", 0)
+                    role = rec.get("role", run_role or "a")
+                    if role_filter and role != role_filter:
+                        continue
+                    event_name = f"curator-{role}"
                     duration = rec.get("duration_ms", 0)
                     entries.append(TimelineEntry(
-                        ts=ts, kind="run-end", event="curator-a",
-                        outcome=f"{notes} note{'s' if notes != 1 else ''}",
+                        ts=ts, kind="run-end", event=event_name,
+                        outcome=_run_end_label(role, rec),
                         detail=f"{duration / 1000:.1f}s",
                         raw=rec,
                     ))
@@ -140,7 +161,35 @@ def _resolve_now() -> datetime:
     return datetime.now(UTC)
 
 
-_ICONS = {"hook": "~", "run-start": ">", "run-end": "<"}
+def _read_proc_events(lore_root: Path, since: datetime) -> list[TimelineEntry]:
+    proc_dir = lore_root / ".lore" / "proc"
+    if not proc_dir.exists():
+        return []
+    entries: list[TimelineEntry] = []
+    for role in ("a", "b", "c", "transcripts"):
+        for meta_path in sorted(proc_dir.glob(f"{role}.meta.json*")):
+            try:
+                meta = json.loads(meta_path.read_text())
+                end_ts = meta.get("end_ts")
+                if not end_ts:
+                    continue
+                ts = datetime.fromtimestamp(end_ts, tz=UTC)
+                if ts < since:
+                    continue
+                exit_code = meta.get("exit_code", "?")
+                duration = end_ts - meta.get("start_ts", end_ts)
+                entries.append(TimelineEntry(
+                    ts=ts, kind="proc-end", event=f"proc-{role}",
+                    outcome=f"exit {exit_code}",
+                    detail=f"{duration:.1f}s",
+                    raw=meta,
+                ))
+            except (json.JSONDecodeError, OSError):
+                continue
+    return entries
+
+
+_ICONS = {"hook": "~", "run-start": ">", "run-end": "<", "proc-end": "#"}
 
 
 @app.callback(invoke_without_command=True)
@@ -167,6 +216,11 @@ def log(
         entries.extend(_read_hook_events(lore_root, cutoff))
     if type_filter in ("all", "run"):
         entries.extend(_read_run_events(lore_root, cutoff))
+    elif type_filter.startswith("run-"):
+        role_filter = type_filter[4:]
+        entries.extend(_read_run_events(lore_root, cutoff, role_filter=role_filter))
+    if type_filter in ("all", "proc"):
+        entries.extend(_read_proc_events(lore_root, cutoff))
 
     entries.sort(key=lambda e: e.ts)
     entries = entries[-limit:]

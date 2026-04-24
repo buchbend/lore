@@ -1,4 +1,4 @@
-"""Run-log writer for Curator A invocations.
+"""Run-log writer for curator invocations (A, B, C).
 
 Two output files per run:
   - runs/<id>.jsonl            archival
@@ -37,13 +37,12 @@ def generate_run_id(*, now: datetime | None = None) -> str:
 
 
 class RunLogger:
-    """Write a Curator A run's decision trace.
+    """Write a curator run's decision trace.
 
     Context-manager usage:
 
-        with RunLogger(lore_root, trigger="hook") as logger:
-            logger.emit("transcript-start", transcript_id=..., new_turns=...)
-            logger.emit("noteworthy", verdict=True, reason=..., tier=...)
+        with RunLogger(lore_root, trigger="hook", role="b") as logger:
+            logger.emit("cluster-formed", surface_names=[...], note_count=3)
             ...
 
     Opens `runs/<id>.jsonl` and truncates `runs-live.jsonl` at start;
@@ -55,9 +54,16 @@ class RunLogger:
     """
 
     RECORD_TYPES = frozenset({
-        "run-start", "transcript-start", "redaction", "noteworthy",
-        "merge-check", "session-note", "skip", "warning", "error",
-        "run-end", "llm-prompt", "llm-response",
+        "run-start", "run-end", "skip", "warning", "error",
+        "llm-prompt", "llm-response",
+        # Curator A
+        "transcript-start", "redaction", "noteworthy",
+        "merge-check", "session-note",
+        # Curator B
+        "cluster-formed", "surface-filed",
+        # Curator C
+        "action-applied", "action-skipped", "defrag-pass",
+        "wiki-start", "wiki-skip",
     })
 
     def __init__(
@@ -65,6 +71,7 @@ class RunLogger:
         lore_root: Path,
         *,
         trigger: str = "hook",
+        role: str = "a",
         pending_count: int = 0,
         config_snapshot: dict[str, Any] | None = None,
         dry_run: bool = False,
@@ -76,6 +83,7 @@ class RunLogger:
         self._dir = lore_root / ".lore"
         self._runs_dir = self._dir / "runs"
         self._trigger = trigger
+        self._role = role
         self._pending_count = pending_count
         self._config_snapshot = config_snapshot or {}
         self._dry_run = dry_run
@@ -86,7 +94,11 @@ class RunLogger:
         self._trace = self._runs_dir / f"{self.run_id}.trace.jsonl"
         self._live = self._dir / "runs-live.jsonl"
         self._write_failures = 0
-        self._counts = {"notes_new": 0, "notes_merged": 0, "skipped": 0, "errors": 0}
+        self._counts = {
+            "notes_new": 0, "notes_merged": 0, "skipped": 0, "errors": 0,
+            "clusters_formed": 0, "surfaces_emitted": 0,
+            "actions_applied": 0, "actions_skipped": 0,
+        }
         self._opened_at: datetime | None = None
 
     @property
@@ -132,6 +144,7 @@ class RunLogger:
         self.emit(
             "run-start",
             run_id=self.run_id,
+            role=self._role,
             trigger=self._trigger,
             pending_count=self._pending_count,
             config=self._config_snapshot,
@@ -162,10 +175,8 @@ class RunLogger:
         self.emit(
             "run-end",
             duration_ms=duration_ms,
-            notes_new=self._counts["notes_new"],
-            notes_merged=self._counts["notes_merged"],
-            skipped=self._counts["skipped"],
-            errors=self._counts["errors"],
+            role=self._role,
+            **self._counts,
             dry_run=self._dry_run,
             log_write_failures=self._write_failures,
         )
@@ -211,6 +222,14 @@ class RunLogger:
             self._counts["skipped"] += 1
         elif record_type == "error":
             self._counts["errors"] += 1
+        elif record_type == "cluster-formed":
+            self._counts["clusters_formed"] += 1
+        elif record_type == "surface-filed":
+            self._counts["surfaces_emitted"] += 1
+        elif record_type == "action-applied":
+            self._counts["actions_applied"] += 1
+        elif record_type == "action-skipped":
+            self._counts["actions_skipped"] += 1
 
     def _write(self, path: Path, payload: dict[str, Any], *, mode: str) -> None:
         try:
