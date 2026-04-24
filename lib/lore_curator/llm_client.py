@@ -284,6 +284,78 @@ _CLAUDE_FAMILY_TIERS = (
 )
 
 
+def _strip_code_fence(text: str) -> str:
+    """Strip a leading/trailing ``` or ```lang fence wrapper, if present.
+
+    Returns the unwrapped, stripped text. No-op if the input isn't fenced.
+    """
+    stripped = (text or "").strip()
+    if not stripped.startswith("```"):
+        return stripped
+    first_nl = stripped.find("\n")
+    if first_nl != -1:
+        stripped = stripped[first_nl + 1 :]
+    end_fence = stripped.rfind("```")
+    if end_fence != -1:
+        stripped = stripped[:end_fence]
+    return stripped.strip()
+
+
+_FREE_FORM_FIELD_HINTS = (
+    "reason", "summary", "text", "content", "description", "answer", "notes", "body",
+)
+
+
+def _synthesize_from_schema(text: str, input_schema: dict[str, Any]) -> dict[str, Any]:
+    """Produce a minimal schema-compliant dict from a prose response.
+
+    Used when an OSS model refuses to emit structured tool_calls and answers
+    in plain prose instead. Produces a best-effort dict that satisfies the
+    tool's required fields with neutral defaults:
+
+    - boolean → False  (the usual "refuse" signal: noteworthy=False, etc.)
+    - array → []
+    - integer / number → 0
+    - object → {}
+    - string → "" by default; the stripped prose if the field name hints
+      at free text (reason/summary/text/...)
+
+    Unknown or non-dict schemas yield {}. The curator side still does its
+    normal validation, so an unusable synthesis fails cleanly downstream.
+    """
+    if not isinstance(input_schema, dict):
+        return {}
+    props = input_schema.get("properties")
+    required = input_schema.get("required")
+    if not isinstance(props, dict) or not isinstance(required, list):
+        return {}
+
+    clean_text = _strip_code_fence(text)
+    out: dict[str, Any] = {}
+    for name in required:
+        if not isinstance(name, str):
+            continue
+        spec = props.get(name, {})
+        if not isinstance(spec, dict):
+            spec = {}
+        field_type = spec.get("type")
+        if field_type == "boolean":
+            out[name] = False
+        elif field_type == "array":
+            out[name] = []
+        elif field_type in ("integer", "number"):
+            out[name] = 0
+        elif field_type == "object":
+            out[name] = {}
+        else:
+            name_lower = name.lower()
+            if any(hint in name_lower for hint in _FREE_FORM_FIELD_HINTS):
+                out[name] = clean_text
+            else:
+                out[name] = ""
+    return out
+
+
 def _parse_content_as_tool_args(text: str) -> dict[str, Any] | None:
     """Extract a JSON object from OSS-model plain-text tool responses.
 
@@ -297,19 +369,9 @@ def _parse_content_as_tool_args(text: str) -> dict[str, Any] | None:
     """
     if not text:
         return None
-    stripped = text.strip()
+    stripped = _strip_code_fence(text)
     if not stripped:
         return None
-
-    # Strip ```json / ``` code fences.
-    if stripped.startswith("```"):
-        first_nl = stripped.find("\n")
-        if first_nl != -1:
-            stripped = stripped[first_nl + 1 :]
-        end_fence = stripped.rfind("```")
-        if end_fence != -1:
-            stripped = stripped[:end_fence]
-        stripped = stripped.strip()
 
     # Direct parse.
     try:
@@ -487,19 +549,40 @@ class _OpenAIMessagesAPI:
                 id=getattr(tc, "id", "") or "",
             )]
         elif tool_choice:
-            # Fallback: many OSS gateways (OSKI, vLLM, llama-cpp) emit the
-            # structured answer as plain text in ``content`` rather than as
-            # a proper tool_call, especially under tool_choice="required".
-            # Parse the content as JSON (tolerating a ```json code fence)
-            # so the curator gets its structured output anyway.
+            # Fallback ladder for OSS gateways (OSKI, vLLM, llama-cpp, …) that
+            # often refuse proper tool_calls even under tool_choice="required":
+            #   1. parse JSON from ``content`` (possibly ```json-fenced``)
+            #   2. if the content is plain prose, synthesize a schema-default
+            #      dict so downstream callers get a clean "no action" verdict
+            #      instead of an error (e.g. noteworthy=False with the prose
+            #      as the reason). Empty content is still a real failure.
             text = getattr(msg, "content", "") or ""
             parsed = _parse_content_as_tool_args(text)
             if parsed is None:
-                raise LlmClientError(
-                    "openai response has no tool_call and content is not parseable JSON — "
-                    f"finish_reason={getattr(choices[0], 'finish_reason', '?')}, "
-                    f"content_preview={text[:200]!r}"
+                if not text.strip():
+                    raise LlmClientError(
+                        "openai response has no tool_call and no content — "
+                        f"finish_reason={getattr(choices[0], 'finish_reason', '?')}"
+                    )
+                tool_name_hint = (
+                    tool_choice.get("name", "") if isinstance(tool_choice, dict) else ""
                 )
+                schema: dict[str, Any] = {}
+                if tools:
+                    match = next(
+                        (t for t in tools if t.get("name") == tool_name_hint),
+                        tools[0],
+                    )
+                    raw_schema = match.get("input_schema")
+                    if isinstance(raw_schema, dict):
+                        schema = raw_schema
+                parsed = _synthesize_from_schema(text, schema)
+                if not parsed:
+                    raise LlmClientError(
+                        "openai response has no tool_call and content is not parseable JSON — "
+                        f"finish_reason={getattr(choices[0], 'finish_reason', '?')}, "
+                        f"content_preview={text[:200]!r}"
+                    )
             tool_name = tool_choice.get("name", "") if isinstance(tool_choice, dict) else ""
             content = [ToolUseBlock(input=parsed, name=tool_name)]
         else:
