@@ -284,6 +284,77 @@ _CLAUDE_FAMILY_TIERS = (
 )
 
 
+def _parse_content_as_tool_args(text: str) -> dict[str, Any] | None:
+    """Extract a JSON object from OSS-model plain-text tool responses.
+
+    Handles:
+      - bare JSON objects  {"foo": "bar"}
+      - ```json ... ```    fenced blocks
+      - ``` ... ```        unlabeled fenced blocks
+      - trailing prose after the JSON
+
+    Returns the parsed dict, or None if no valid JSON object was found.
+    """
+    if not text:
+        return None
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    # Strip ```json / ``` code fences.
+    if stripped.startswith("```"):
+        first_nl = stripped.find("\n")
+        if first_nl != -1:
+            stripped = stripped[first_nl + 1 :]
+        end_fence = stripped.rfind("```")
+        if end_fence != -1:
+            stripped = stripped[:end_fence]
+        stripped = stripped.strip()
+
+    # Direct parse.
+    try:
+        parsed = json.loads(stripped)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # Find first {...} block — some models add explanatory prose before/after.
+    start = stripped.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(stripped)):
+        ch = stripped[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_str:
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = stripped[start : i + 1]
+                try:
+                    parsed = json.loads(candidate)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except json.JSONDecodeError:
+                    return None
+                return None
+    return None
+
+
 def _infer_tier(model: str) -> str | None:
     """Best-effort reverse of wiki_config ModelsConfig.
 
@@ -415,12 +486,23 @@ class _OpenAIMessagesAPI:
                 name=name,
                 id=getattr(tc, "id", "") or "",
             )]
-        else:
-            if tool_choice:
+        elif tool_choice:
+            # Fallback: many OSS gateways (OSKI, vLLM, llama-cpp) emit the
+            # structured answer as plain text in ``content`` rather than as
+            # a proper tool_call, especially under tool_choice="required".
+            # Parse the content as JSON (tolerating a ```json code fence)
+            # so the curator gets its structured output anyway.
+            text = getattr(msg, "content", "") or ""
+            parsed = _parse_content_as_tool_args(text)
+            if parsed is None:
                 raise LlmClientError(
-                    "openai response has no tool_call despite tool_choice — "
-                    f"finish_reason={getattr(choices[0], 'finish_reason', '?')}"
+                    "openai response has no tool_call and content is not parseable JSON — "
+                    f"finish_reason={getattr(choices[0], 'finish_reason', '?')}, "
+                    f"content_preview={text[:200]!r}"
                 )
+            tool_name = tool_choice.get("name", "") if isinstance(tool_choice, dict) else ""
+            content = [ToolUseBlock(input=parsed, name=tool_name)]
+        else:
             # Plain-text fallback (curators don't use this today).
             text = getattr(msg, "content", "") or ""
             content = [ToolUseBlock(input={"text": text}, type="text", name="")]

@@ -207,24 +207,92 @@ def test_openai_client_passes_through_literal_model_id(fake_openai):
 def test_openai_client_raises_on_missing_tool_call(fake_openai, monkeypatch):
     from lore_curator.llm_client import LlmClientError, OpenAICompatibleClient
 
-    # Monkeypatch the response to have no tool_calls
+    # Monkeypatch the response to have no tool_calls AND no parseable JSON
     client = OpenAICompatibleClient(
         base_url="https://example.local/v1",
         api_key="sk-test",
         tier_to_model={"simple": "m", "middle": "m", "high": "m"},
     )
     client._client._completions._response = _FakeCompletion(choices=[_FakeChoice(
-        message=_FakeMessage(content="just text, no tool call"),
+        message=_FakeMessage(content="just text, no tool call, no json"),
         finish_reason="stop",
     )])
 
-    with pytest.raises(LlmClientError, match="no tool_call"):
+    with pytest.raises(LlmClientError, match="not parseable JSON"):
         client.messages.create(
             model="middle",
             messages=[{"role": "user", "content": "hi"}],
             tools=[{"name": "x", "description": "", "input_schema": {"type": "object"}}],
             tool_choice={"type": "tool", "name": "x"},
         )
+
+
+# ---------------------------------------------------------------------------
+# OSS-model fallback: JSON in content instead of tool_calls
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("content", [
+    # Bare JSON
+    '{"noteworthy": true, "reason": "work", "title": "t", "summary": "s"}',
+    # ```json fenced
+    '```json\n{"noteworthy": true, "reason": "work", "title": "t", "summary": "s"}\n```',
+    # ``` unlabeled fenced
+    '```\n{"noteworthy": true, "reason": "work", "title": "t", "summary": "s"}\n```',
+    # With leading prose
+    'Here is my answer:\n{"noteworthy": true, "reason": "work", "title": "t", "summary": "s"}',
+    # With trailing prose
+    '{"noteworthy": true, "reason": "work", "title": "t", "summary": "s"}\nThat was my answer.',
+])
+def test_openai_client_parses_json_in_content_when_tool_calls_empty(fake_openai, content):
+    """OSKI / Mistral / OSS gateways often return the structured answer as
+    plain text under tool_choice="required" rather than proper tool_calls."""
+    from lore_curator.llm_client import OpenAICompatibleClient, ToolUseBlock
+
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={"simple": "m", "middle": "m", "high": "m"},
+    )
+    client._client._completions._response = _FakeCompletion(choices=[_FakeChoice(
+        message=_FakeMessage(content=content, tool_calls=[]),
+        finish_reason="stop",
+    )])
+
+    resp = client.messages.create(
+        model="middle",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{
+            "name": "classify",
+            "description": "",
+            "input_schema": {"type": "object", "properties": {}},
+        }],
+        tool_choice={"type": "tool", "name": "classify"},
+    )
+
+    assert len(resp.content) == 1
+    block = resp.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.type == "tool_use"
+    assert block.name == "classify"
+    assert block.input["noteworthy"] is True
+    assert block.input["reason"] == "work"
+    assert block.input["summary"] == "s"
+
+
+def test_parse_content_as_tool_args_handles_edge_cases():
+    from lore_curator.llm_client import _parse_content_as_tool_args
+
+    assert _parse_content_as_tool_args("") is None
+    assert _parse_content_as_tool_args("   ") is None
+    assert _parse_content_as_tool_args("no json here") is None
+    assert _parse_content_as_tool_args("{invalid json}") is None
+    # Nested objects
+    result = _parse_content_as_tool_args('{"a": {"b": "c"}, "d": [1, 2]}')
+    assert result == {"a": {"b": "c"}, "d": [1, 2]}
+    # JSON string with escaped braces inside
+    result = _parse_content_as_tool_args('{"text": "this has \\"quotes\\" and {braces}"}')
+    assert result == {"text": 'this has "quotes" and {braces}'}
 
 
 def test_openai_client_backend_name(fake_openai):
