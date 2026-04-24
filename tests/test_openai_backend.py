@@ -149,11 +149,10 @@ def test_openai_client_translates_tools_to_function_schema(fake_openai):
             "parameters": anthropic_tool["input_schema"],
         },
     }]
-    # tool_choice translated
-    assert kwargs["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "cluster"},
-    }
+    # tool_choice translated to "required" — works on the widest range of
+    # OpenAI-compatible endpoints (OSKI, vLLM, llama-cpp), which often
+    # ignore the strict named-tool form.
+    assert kwargs["tool_choice"] == "required"
 
 
 def test_openai_client_translates_response_to_tool_use_block(fake_openai):

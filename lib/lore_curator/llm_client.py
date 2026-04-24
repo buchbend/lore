@@ -365,10 +365,13 @@ class _OpenAIMessagesAPI:
                 for t in tools
             ]
         if tool_choice and tool_choice.get("type") == "tool":
-            openai_tool_choice = {
-                "type": "function",
-                "function": {"name": tool_choice.get("name", "")},
-            }
+            # Translate Anthropic's forced-tool form to OpenAI's "required".
+            # The strict named form ({"type":"function","function":{"name":...}})
+            # works on OpenAI proper but is rejected or silently ignored by
+            # many OSS-compatible gateways (OSKI, llama-cpp, vLLM, Ollama, ...).
+            # Since curators always send exactly one tool, "required" picks it
+            # and works across the widest range of backends.
+            openai_tool_choice = "required"
 
         kwargs: dict[str, Any] = {
             "model": resolved_model,
