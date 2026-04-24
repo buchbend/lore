@@ -1072,6 +1072,104 @@ def _discover_wikis(lore_root: Path) -> list[str]:
     return sorted([d.name for d in wiki_dir.iterdir() if d.is_dir()])
 
 
+def _make_live_renderer(con: Console):
+    """Return an on_record callback that prints human-readable progress."""
+    from typing import Any
+
+    _SKIP_LABELS = {
+        "no-new-turns": "no new turns",
+        "unattached": "unattached",
+        "orphan-cwd": "orphan cwd",
+        "scope-mismatch": "scope mismatch",
+        "unknown-host": "unknown host",
+        "no-anthropic-client": "no LLM client",
+        "noteworthy-false": "not noteworthy",
+        "lock-held": "lock held",
+    }
+    _seen_transcript_start = False
+
+    def _render(record_type: str, fields: dict[str, Any]) -> None:
+        nonlocal _seen_transcript_start
+        tid = fields.get("transcript_id", "")
+        short_id = tid[:12] if tid else ""
+
+        if record_type == "run-start":
+            count = fields.get("pending_count", 0)
+            con.print(f"[dim]{count} transcript(s) pending[/dim]")
+        elif record_type == "transcript-start":
+            _seen_transcript_start = True
+            con.print(f"  [dim]{short_id}[/dim] ", end="")
+        elif record_type == "skip":
+            reason = fields.get("reason", "?")
+            label = _SKIP_LABELS.get(reason, reason)
+            if not _seen_transcript_start and short_id:
+                con.print(f"  [dim]{short_id}[/dim] [yellow]skip[/yellow] ({label})")
+            else:
+                con.print(f"[yellow]skip[/yellow] ({label})")
+            _seen_transcript_start = False
+        elif record_type == "noteworthy":
+            verdict = fields.get("verdict", False)
+            if verdict:
+                con.print(f"[green]noteworthy[/green] ", end="")
+            else:
+                reason = fields.get("reason", "")
+                con.print(f"[yellow]skip[/yellow] (not noteworthy: {reason})")
+        elif record_type == "session-note":
+            action = fields.get("action", "filed")
+            wikilink = fields.get("wikilink", "")
+            if action == "merged":
+                con.print(f"→ [cyan]merged[/cyan] into {wikilink}")
+            else:
+                con.print(f"→ [green]filed[/green] {wikilink}")
+            _seen_transcript_start = False
+        elif record_type == "merge-check":
+            con.print(f"[dim]merge-check[/dim] ", end="")
+        elif record_type == "error":
+            msg = fields.get("message", "unknown")
+            con.print(f"  [red]error:[/red] {msg}")
+        elif record_type == "warning":
+            msg = fields.get("message", "")
+            if msg:
+                con.print(f"  [yellow]warn:[/yellow] {msg}")
+
+    return _render
+
+
+_BACKEND_LABELS = {
+    "subprocess": "Claude Code subscription (claude -p)",
+    "sdk": "Anthropic API (anthropic SDK)",
+    "openai": "OpenAI-compatible endpoint",
+}
+
+
+def _resolve_backend(cli_backend: str | None, lore_root: Path) -> str | None:
+    """Resolve curator backend from CLI flag → env var → root config → auto.
+
+    The returned value is what ``make_llm_client(backend=...)`` expects:
+    ``"subscription"`` | ``"api"`` | ``"openai"`` | ``"auto"`` | ``None``.
+    """
+    import os as _os
+    if cli_backend:
+        return cli_backend.strip()
+    env = _os.environ.get("LORE_LLM_BACKEND", "").strip().lower()
+    if env:
+        return env
+    try:
+        from lore_core.root_config import load_root_config
+        cfg_backend = load_root_config(lore_root).curator.backend.strip().lower()
+        if cfg_backend and cfg_backend != "auto":
+            return cfg_backend
+    except Exception:
+        pass
+    return None
+
+
+def _print_backend_label(con: Console, llm_client: object) -> None:
+    backend_name = getattr(llm_client, "backend_name", "") or ""
+    label = _BACKEND_LABELS.get(backend_name, backend_name or "unknown backend")
+    con.print(f"[dim]Curator backend: {label}[/dim]")
+
+
 @app.command("run")
 def run_command(
     scope: str = typer.Option(None, "--scope", help="Filter to one scope, e.g. 'mywiki:subproject'."),
@@ -1080,6 +1178,7 @@ def run_command(
     defrag: bool = typer.Option(False, "--defrag", help="Run Curator C weekly defragmentation (hygiene + LLM adjacent-merge / auto-supersede / orphan-repair / draft-promotion)."),
     wiki: str = typer.Option(None, "--wiki", help="Limit the surface-extraction / defrag pass to a single wiki."),
     trace_llm: bool = typer.Option(False, "--trace-llm", help="Capture LLM prompts/responses to runs/<id>.trace.jsonl (equivalent to LORE_TRACE_LLM=1)."),
+    backend: str = typer.Option(None, "--backend", help="LLM backend: subscription | api | openai | auto. Overrides LORE_LLM_BACKEND and curator.backend config."),
 ) -> None:
     """Run the curator.
 
@@ -1100,12 +1199,19 @@ def run_command(
             console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
             raise typer.Exit(1)
 
+        lore_root_defrag = _P(lore_root_str)
+        effective_backend = _resolve_backend(backend, lore_root_defrag)
+
         # LLM client resolution (same seam as Curator A).
         from lore_curator.llm_client import LlmClientError, make_llm_client
         err_console = Console(stderr=True)
         api_key = _os_check.environ.get("ANTHROPIC_API_KEY", "") or None
         try:
-            llm_client = make_llm_client(api_key=api_key)
+            llm_client = make_llm_client(
+                backend=effective_backend,
+                api_key=api_key,
+                lore_root=lore_root_defrag,
+            )
         except LlmClientError as exc:
             err_console.print(f"[yellow]Warning:[/yellow] {exc}")
             llm_client = None
@@ -1115,6 +1221,8 @@ def run_command(
                 "LLM passes (adjacent-merge, auto-supersede, orphan-repair) "
                 "will be skipped.[/yellow]"
             )
+        else:
+            _print_backend_label(console, llm_client)
 
         reports = run_curator_c(
             wiki_filter=wiki,
@@ -1152,11 +1260,17 @@ def run_command(
     # Resolve LLM backend via factory
     from lore_curator.llm_client import LlmClientError, make_llm_client
 
+    effective_backend = _resolve_backend(backend, lore_root)
+
     err_console = Console(stderr=True)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "") or None
     backend_error: LlmClientError | None = None
     try:
-        llm_client = make_llm_client(api_key=api_key)
+        llm_client = make_llm_client(
+            backend=effective_backend,
+            api_key=api_key,
+            lore_root=lore_root,
+        )
     except LlmClientError as exc:
         err_console.print(f"[yellow]Warning:[/yellow] {exc}")
         llm_client = None
@@ -1173,19 +1287,17 @@ def run_command(
             )
         # If backend_error was set, the specific warning was already printed.
     else:
-        backend = getattr(llm_client, "backend_name", "")
-        label = {
-            "subprocess": "Claude Code subscription (claude -p)",
-            "sdk": "Anthropic API (anthropic SDK)",
-        }.get(backend, backend or "unknown backend")
-        console.print(f"[dim]Curator backend: {label}[/dim]")
+        _print_backend_label(console, llm_client)
 
     # Interactive (TTY) runs wait up to 60s for the lock; detached hook spawns
     # keep timeout=0.0 (fire-and-forget, yield to any active curator).
-    lock_timeout = 60.0 if sys.stdout.isatty() else 0.0
+    is_tty = sys.stdout.isatty()
+    lock_timeout = 60.0 if is_tty else 0.0
 
     # Compute effective trace_llm from flag or environment variable
     effective_trace = trace_llm or os.environ.get("LORE_TRACE_LLM") == "1"
+
+    live_callback = _make_live_renderer(console) if is_tty else None
 
     result = run_curator_a(
         lore_root=lore_root,
@@ -1196,12 +1308,14 @@ def run_command(
         lock_timeout=lock_timeout,
         trigger="manual",
         trace_llm=effective_trace,
+        on_record=live_callback,
     )
 
     skipped_summary = ", ".join(
         f"{k}: {v}" for k, v in result.skipped_reasons.items()
     ) or "none"
 
+    console.print()
     console.print(
         f"[bold]Curator A[/bold] — {result.transcripts_considered} transcript(s) considered"
     )

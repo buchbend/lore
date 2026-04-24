@@ -1,0 +1,416 @@
+"""Tests for the OpenAI-compatible curator backend.
+
+Covers:
+- OpenAICompatibleClient request translation (tools, tool_choice, model)
+- OpenAICompatibleClient response translation (tool_calls → ToolUseBlock)
+- make_llm_client dispatch with backend="openai"
+- Env-var and root-config resolution
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import types
+from pathlib import Path
+
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# Fake openai SDK — minimal shape needed by OpenAICompatibleClient
+# ---------------------------------------------------------------------------
+
+
+class _FakeToolCall:
+    def __init__(self, name: str, arguments: str, call_id: str = "call_1"):
+        self.id = call_id
+        self.type = "function"
+
+        class _Fn:
+            def __init__(self, n, a):
+                self.name = n
+                self.arguments = a
+
+        self.function = _Fn(name, arguments)
+
+
+class _FakeMessage:
+    def __init__(self, content: str | None = None, tool_calls: list | None = None):
+        self.content = content
+        self.tool_calls = tool_calls
+        self.role = "assistant"
+
+
+class _FakeChoice:
+    def __init__(self, message: _FakeMessage, finish_reason: str = "tool_calls"):
+        self.message = message
+        self.finish_reason = finish_reason
+
+
+class _FakeUsage:
+    def __init__(self, prompt_tokens: int = 100, completion_tokens: int = 20):
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.total_tokens = prompt_tokens + completion_tokens
+
+
+class _FakeCompletion:
+    def __init__(self, choices: list[_FakeChoice], model: str = "test-model"):
+        self.choices = choices
+        self.model = model
+        self.usage = _FakeUsage()
+
+
+class _FakeChatCompletions:
+    """Records the most recent create() kwargs so tests can assert translation."""
+
+    def __init__(self, response: _FakeCompletion):
+        self._response = response
+        self.last_kwargs: dict | None = None
+
+    def create(self, **kwargs):
+        self.last_kwargs = kwargs
+        return self._response
+
+
+class _FakeChat:
+    def __init__(self, completions: _FakeChatCompletions):
+        self.completions = completions
+
+
+class _FakeOpenAI:
+    """Mimics openai.OpenAI(base_url=..., api_key=...)."""
+
+    def __init__(self, **kwargs):
+        self.init_kwargs = kwargs
+        # Default response: one tool_call matching "cluster" tool
+        default_resp = _FakeCompletion(choices=[_FakeChoice(
+            message=_FakeMessage(tool_calls=[_FakeToolCall(
+                name="cluster",
+                arguments=json.dumps({"clusters": [{"topic": "t", "scope": "s", "session_notes": []}]}),
+            )]),
+        )])
+        self._completions = _FakeChatCompletions(default_resp)
+        self.chat = _FakeChat(self._completions)
+
+
+@pytest.fixture()
+def fake_openai(monkeypatch: pytest.MonkeyPatch):
+    """Install a fake openai module with OpenAI class."""
+    fake_mod = types.ModuleType("openai")
+    fake_mod.OpenAI = _FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_mod)
+    return fake_mod
+
+
+# ---------------------------------------------------------------------------
+# OpenAICompatibleClient
+# ---------------------------------------------------------------------------
+
+
+def test_openai_client_translates_tools_to_function_schema(fake_openai):
+    from lore_curator.llm_client import OpenAICompatibleClient
+
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={"simple": "m-s", "middle": "m-m", "high": "m-h"},
+    )
+
+    anthropic_tool = {
+        "name": "cluster",
+        "description": "cluster session notes",
+        "input_schema": {
+            "type": "object",
+            "properties": {"clusters": {"type": "array"}},
+            "required": ["clusters"],
+        },
+    }
+
+    client.messages.create(
+        model="middle",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": "hello"}],
+        tools=[anthropic_tool],
+        tool_choice={"type": "tool", "name": "cluster"},
+    )
+
+    kwargs = client._client._completions.last_kwargs
+    assert kwargs is not None
+    # Tier resolved to actual model
+    assert kwargs["model"] == "m-m"
+    # Tool translated to OpenAI function-calling format
+    assert kwargs["tools"] == [{
+        "type": "function",
+        "function": {
+            "name": "cluster",
+            "description": "cluster session notes",
+            "parameters": anthropic_tool["input_schema"],
+        },
+    }]
+    # tool_choice translated
+    assert kwargs["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "cluster"},
+    }
+
+
+def test_openai_client_translates_response_to_tool_use_block(fake_openai):
+    from lore_curator.llm_client import OpenAICompatibleClient, ToolUseBlock
+
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={"simple": "m", "middle": "m", "high": "m"},
+    )
+
+    resp = client.messages.create(
+        model="middle",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{
+            "name": "cluster",
+            "description": "",
+            "input_schema": {"type": "object", "properties": {}},
+        }],
+        tool_choice={"type": "tool", "name": "cluster"},
+    )
+
+    # Response should be walkable like an Anthropic Message
+    assert len(resp.content) == 1
+    block = resp.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.type == "tool_use"
+    assert block.name == "cluster"
+    assert block.input == {"clusters": [{"topic": "t", "scope": "s", "session_notes": []}]}
+
+
+def test_openai_client_passes_through_literal_model_id(fake_openai):
+    """If model is not a tier name (simple/middle/high), it's passed as-is."""
+    from lore_curator.llm_client import OpenAICompatibleClient
+
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={"simple": "m-s", "middle": "m-m", "high": "m-h"},
+    )
+
+    client.messages.create(
+        model="Mistral Small 4 119B",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{"name": "x", "description": "", "input_schema": {"type": "object"}}],
+        tool_choice={"type": "tool", "name": "x"},
+    )
+
+    assert client._client._completions.last_kwargs["model"] == "Mistral Small 4 119B"
+
+
+def test_openai_client_raises_on_missing_tool_call(fake_openai, monkeypatch):
+    from lore_curator.llm_client import LlmClientError, OpenAICompatibleClient
+
+    # Monkeypatch the response to have no tool_calls
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={"simple": "m", "middle": "m", "high": "m"},
+    )
+    client._client._completions._response = _FakeCompletion(choices=[_FakeChoice(
+        message=_FakeMessage(content="just text, no tool call"),
+        finish_reason="stop",
+    )])
+
+    with pytest.raises(LlmClientError, match="no tool_call"):
+        client.messages.create(
+            model="middle",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[{"name": "x", "description": "", "input_schema": {"type": "object"}}],
+            tool_choice={"type": "tool", "name": "x"},
+        )
+
+
+def test_openai_client_backend_name(fake_openai):
+    from lore_curator.llm_client import OpenAICompatibleClient
+
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={"simple": "m", "middle": "m", "high": "m"},
+    )
+    assert client.backend_name == "openai"
+
+
+# ---------------------------------------------------------------------------
+# make_llm_client dispatch
+# ---------------------------------------------------------------------------
+
+
+def test_make_llm_client_openai_from_env(monkeypatch, fake_openai):
+    from lore_curator.llm_client import OpenAICompatibleClient, make_llm_client
+
+    monkeypatch.setenv("LORE_OPENAI_BASE_URL", "https://example.local/v1")
+    monkeypatch.setenv("LORE_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("LORE_OPENAI_MODEL_MIDDLE", "gpt-oss-120b")
+
+    client = make_llm_client(backend="openai")
+    assert isinstance(client, OpenAICompatibleClient)
+    assert client._tier_to_model["middle"] == "gpt-oss-120b"
+
+
+def test_make_llm_client_openai_missing_base_url_raises(monkeypatch):
+    from lore_curator.llm_client import LlmClientError, make_llm_client
+
+    monkeypatch.delenv("LORE_OPENAI_BASE_URL", raising=False)
+    monkeypatch.setenv("LORE_OPENAI_API_KEY", "sk-test")
+
+    with pytest.raises(LlmClientError, match="LORE_OPENAI_BASE_URL"):
+        make_llm_client(backend="openai")
+
+
+def test_make_llm_client_openai_missing_api_key_raises(monkeypatch):
+    from lore_curator.llm_client import LlmClientError, make_llm_client
+
+    monkeypatch.setenv("LORE_OPENAI_BASE_URL", "https://example.local/v1")
+    monkeypatch.delenv("LORE_OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(LlmClientError, match="LORE_OPENAI_API_KEY"):
+        make_llm_client(backend="openai")
+
+
+def test_make_llm_client_env_var_openai(monkeypatch, fake_openai):
+    """LORE_LLM_BACKEND=openai picks OpenAI backend without explicit argument."""
+    from lore_curator.llm_client import OpenAICompatibleClient, make_llm_client
+
+    monkeypatch.setenv("LORE_LLM_BACKEND", "openai")
+    monkeypatch.setenv("LORE_OPENAI_BASE_URL", "https://example.local/v1")
+    monkeypatch.setenv("LORE_OPENAI_API_KEY", "sk-test")
+    # Don't let claude binary on PATH win
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    client = make_llm_client()
+    assert isinstance(client, OpenAICompatibleClient)
+
+
+def test_make_llm_client_rejects_unknown_backend():
+    from lore_curator.llm_client import make_llm_client
+
+    with pytest.raises(ValueError, match="unknown backend"):
+        make_llm_client(backend="bogus")
+
+
+# ---------------------------------------------------------------------------
+# Root config integration
+# ---------------------------------------------------------------------------
+
+
+def test_root_config_curator_defaults(tmp_path: Path):
+    from lore_core.root_config import load_root_config
+
+    cfg = load_root_config(tmp_path)
+    assert cfg.curator.backend == "auto"
+    assert cfg.curator.openai.base_url == ""
+    assert cfg.curator.openai.api_key_env == "LORE_OPENAI_API_KEY"
+
+
+def test_root_config_curator_parses_yaml(tmp_path: Path):
+    from lore_core.root_config import load_root_config
+
+    cfg_dir = tmp_path / ".lore"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yml").write_text(
+        "curator:\n"
+        "  backend: openai\n"
+        "  openai:\n"
+        "    base_url: https://chat.kiconnect.nrw/api/v1\n"
+        "    api_key_env: OSKI_API_KEY\n"
+        "    model_middle: Mistral Small 4 119B 2603 KI:EZ\n"
+        "    model_high: Openai GPT OSS 120B\n"
+    )
+
+    cfg = load_root_config(tmp_path)
+    assert cfg.curator.backend == "openai"
+    assert cfg.curator.openai.base_url == "https://chat.kiconnect.nrw/api/v1"
+    assert cfg.curator.openai.api_key_env == "OSKI_API_KEY"
+    assert cfg.curator.openai.model_middle == "Mistral Small 4 119B 2603 KI:EZ"
+
+
+# ---------------------------------------------------------------------------
+# CLI backend resolution (cli flag > env > config > auto)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_backend_cli_flag_wins(tmp_path: Path, monkeypatch):
+    from lore_curator.curator_c import _resolve_backend
+
+    monkeypatch.setenv("LORE_LLM_BACKEND", "subscription")
+    # Config says "api" but CLI flag "openai" wins.
+    cfg_dir = tmp_path / ".lore"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yml").write_text("curator:\n  backend: api\n")
+
+    assert _resolve_backend("openai", tmp_path) == "openai"
+
+
+def test_resolve_backend_env_overrides_config(tmp_path: Path, monkeypatch):
+    from lore_curator.curator_c import _resolve_backend
+
+    monkeypatch.setenv("LORE_LLM_BACKEND", "subscription")
+    cfg_dir = tmp_path / ".lore"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yml").write_text("curator:\n  backend: openai\n")
+
+    assert _resolve_backend(None, tmp_path) == "subscription"
+
+
+def test_resolve_backend_config_used_when_no_env_or_cli(tmp_path: Path, monkeypatch):
+    from lore_curator.curator_c import _resolve_backend
+
+    monkeypatch.delenv("LORE_LLM_BACKEND", raising=False)
+    cfg_dir = tmp_path / ".lore"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yml").write_text("curator:\n  backend: openai\n")
+
+    assert _resolve_backend(None, tmp_path) == "openai"
+
+
+def test_resolve_backend_defaults_to_none(tmp_path: Path, monkeypatch):
+    """No CLI, no env, no config → None (i.e. auto-detect)."""
+    from lore_curator.curator_c import _resolve_backend
+
+    monkeypatch.delenv("LORE_LLM_BACKEND", raising=False)
+    assert _resolve_backend(None, tmp_path) is None
+
+
+def test_curator_run_cli_backend_flag_openai(tmp_path: Path, monkeypatch, fake_openai):
+    """`lore curator run --backend openai --dry-run` announces OpenAI backend."""
+    from typer.testing import CliRunner
+
+    from lore_cli.__main__ import app
+
+    lore_root = tmp_path / "lore_root"
+    lore_root.mkdir()
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    monkeypatch.delenv("LORE_LLM_BACKEND", raising=False)
+    monkeypatch.setenv("LORE_OPENAI_BASE_URL", "https://example.local/v1")
+    monkeypatch.setenv("LORE_OPENAI_API_KEY", "sk-test")
+
+    # Stub Curator A so we don't need a real pipeline.
+    from dataclasses import dataclass, field
+
+    @dataclass
+    class _FakeResult:
+        transcripts_considered: int = 0
+        noteworthy_count: int = 0
+        new_notes: list = field(default_factory=list)
+        merged_notes: list = field(default_factory=list)
+        skipped_reasons: dict = field(default_factory=dict)
+        duration_seconds: float = 0.0
+
+    monkeypatch.setattr(
+        "lore_curator.curator_a.run_curator_a",
+        lambda **kwargs: _FakeResult(),
+    )
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(app, ["curator", "run", "--dry-run", "--backend", "openai"])
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert "OpenAI-compatible endpoint" in result.output

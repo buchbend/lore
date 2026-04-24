@@ -41,8 +41,39 @@ class ObservabilityConfig:
 
 
 @dataclass
+class OpenAIBackendConfig:
+    """Settings for an OpenAI-compatible curator backend (e.g. local model gateways).
+
+    ``base_url`` is the OpenAI-compatible API root (e.g. ``https://chat.kiconnect.nrw/api/v1``).
+    ``api_key_env`` names the env var holding the API key — this stays out of config files.
+    ``model_{simple,middle,high}`` override the Anthropic tier names; leave empty to fall
+    back to the env var ``LORE_OPENAI_MODEL_{SIMPLE,MIDDLE,HIGH}`` or pass-through.
+    """
+
+    base_url: str = ""
+    api_key_env: str = "LORE_OPENAI_API_KEY"
+    model_simple: str = ""
+    model_middle: str = ""
+    model_high: str = ""
+
+
+@dataclass
+class CuratorBackendConfig:
+    """Curator LLM backend selection.
+
+    ``backend`` is one of: ``"auto"`` | ``"subscription"`` | ``"api"`` | ``"openai"``.
+    ``auto`` prefers claude-on-PATH → ANTHROPIC_API_KEY → OpenAI (if configured) → None.
+    Env var ``LORE_LLM_BACKEND`` and CLI ``--backend`` override this config value.
+    """
+
+    backend: str = "auto"
+    openai: OpenAIBackendConfig = field(default_factory=OpenAIBackendConfig)
+
+
+@dataclass
 class RootConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
+    curator: CuratorBackendConfig = field(default_factory=CuratorBackendConfig)
 
 
 def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:

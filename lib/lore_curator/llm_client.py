@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
 from dataclasses import dataclass, field
 
@@ -253,7 +254,153 @@ class SubprocessClient:
         return shutil.which(binary) is not None
 
 
-_ALLOWED_BACKEND_ARGS = frozenset({"subscription", "api", "auto"})
+class _OpenAIMessagesAPI:
+    """Translates Anthropic-style messages.create(...) to OpenAI chat.completions.
+
+    Curators send a single-tool tool_choice and expect a ToolUseBlock response.
+    OpenAI function-calling returns tool_calls with a JSON-string arguments field,
+    so we JSON-decode and wrap into a ToolUseBlock to satisfy the curator contract.
+    """
+
+    def __init__(self, client: Any, tier_to_model: dict[str, str]):
+        self._client = client
+        self._tier_to_model = tier_to_model
+
+    def create(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
+        **_extra: Any,
+    ) -> LlmResponse:
+        resolved_model = self._tier_to_model.get(model, model)
+
+        openai_tools = None
+        openai_tool_choice = None
+        if tools:
+            openai_tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t["name"],
+                        "description": t.get("description", ""),
+                        "parameters": t.get("input_schema", {"type": "object"}),
+                    },
+                }
+                for t in tools
+            ]
+        if tool_choice and tool_choice.get("type") == "tool":
+            openai_tool_choice = {
+                "type": "function",
+                "function": {"name": tool_choice.get("name", "")},
+            }
+
+        kwargs: dict[str, Any] = {
+            "model": resolved_model,
+            "messages": messages,
+        }
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if openai_tools is not None:
+            kwargs["tools"] = openai_tools
+        if openai_tool_choice is not None:
+            kwargs["tool_choice"] = openai_tool_choice
+
+        try:
+            completion = self._client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            raise LlmClientError(f"openai-compatible call failed: {exc}") from exc
+
+        choices = getattr(completion, "choices", None) or []
+        if not choices:
+            raise LlmClientError("openai-compatible response has no choices")
+        msg = choices[0].message
+        tool_calls = getattr(msg, "tool_calls", None) or []
+
+        content: list[ToolUseBlock]
+        if tool_calls:
+            tc = tool_calls[0]
+            name = getattr(tc.function, "name", "")
+            raw_args = getattr(tc.function, "arguments", "") or "{}"
+            try:
+                parsed = json.loads(raw_args)
+            except json.JSONDecodeError as exc:
+                raise LlmClientError(
+                    f"openai tool_call arguments not JSON: {raw_args[:200]!r}"
+                ) from exc
+            if not isinstance(parsed, dict):
+                raise LlmClientError(
+                    f"openai tool_call arguments not a JSON object: {type(parsed).__name__}"
+                )
+            content = [ToolUseBlock(
+                input=parsed,
+                name=name,
+                id=getattr(tc, "id", "") or "",
+            )]
+        else:
+            if tool_choice:
+                raise LlmClientError(
+                    "openai response has no tool_call despite tool_choice — "
+                    f"finish_reason={getattr(choices[0], 'finish_reason', '?')}"
+                )
+            # Plain-text fallback (curators don't use this today).
+            text = getattr(msg, "content", "") or ""
+            content = [ToolUseBlock(input={"text": text}, type="text", name="")]
+
+        usage_obj = getattr(completion, "usage", None)
+        usage_dict: dict[str, int] = {}
+        if usage_obj is not None:
+            for attr, key in (
+                ("prompt_tokens", "input_tokens"),
+                ("completion_tokens", "output_tokens"),
+                ("total_tokens", "total_tokens"),
+            ):
+                val = getattr(usage_obj, attr, None)
+                if isinstance(val, int):
+                    usage_dict[key] = val
+
+        return LlmResponse(
+            content=content,
+            model=getattr(completion, "model", resolved_model) or resolved_model,
+            stop_reason=getattr(choices[0], "finish_reason", "end_turn") or "end_turn",
+            usage=usage_dict,
+        )
+
+
+class OpenAICompatibleClient:
+    """LlmClient backend that wraps openai.OpenAI(base_url, api_key).
+
+    Works with any OpenAI-compatible endpoint (local model gateways, OSS
+    inference servers, OpenRouter, etc.). Translates the curator's
+    Anthropic-style ``messages.create(...)`` call into OpenAI chat
+    completions with function-calling and converts the tool_call response
+    back into a ToolUseBlock so downstream curator code is unchanged.
+
+    Tier names (``simple``/``middle``/``high``) are resolved via
+    ``tier_to_model``; literal model IDs are passed through unchanged.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        tier_to_model: dict[str, str] | None = None,
+    ) -> None:
+        import openai  # lazy — optional dep
+        self._client = openai.OpenAI(base_url=base_url, api_key=api_key)
+        self._tier_to_model = tier_to_model or {}
+        self.messages = _OpenAIMessagesAPI(self._client, self._tier_to_model)
+
+    @property
+    def backend_name(self) -> str:
+        return "openai"
+
+
+_ALLOWED_BACKEND_ARGS = frozenset({"subscription", "api", "openai", "auto"})
 
 
 def _normalize_backend_arg(backend: str | None) -> str | None:
@@ -292,11 +439,75 @@ def _make_sdk_client(api_key: str | None) -> "SDKClient":
     )
 
 
+def _resolve_openai_settings(
+    lore_root: "Path | None" = None,
+) -> tuple[str, str, dict[str, str]]:
+    """Resolve base_url, api_key, and tier→model map from env + root config.
+
+    Precedence per field: env var > root config > empty.
+    Raises LlmClientError if base_url or api_key can't be found.
+    """
+    base_url = os.environ.get("LORE_OPENAI_BASE_URL", "").strip()
+    api_key_env_name = "LORE_OPENAI_API_KEY"
+    tier_to_model: dict[str, str] = {}
+
+    if lore_root is not None:
+        try:
+            from lore_core.root_config import load_root_config
+            cfg = load_root_config(lore_root).curator.openai
+            if not base_url and cfg.base_url:
+                base_url = cfg.base_url.strip()
+            if cfg.api_key_env:
+                api_key_env_name = cfg.api_key_env
+            if cfg.model_simple:
+                tier_to_model["simple"] = cfg.model_simple
+            if cfg.model_middle:
+                tier_to_model["middle"] = cfg.model_middle
+            if cfg.model_high:
+                tier_to_model["high"] = cfg.model_high
+        except Exception:
+            pass
+
+    # Env-var model overrides always win over config.
+    for tier, env_name in (
+        ("simple", "LORE_OPENAI_MODEL_SIMPLE"),
+        ("middle", "LORE_OPENAI_MODEL_MIDDLE"),
+        ("high", "LORE_OPENAI_MODEL_HIGH"),
+    ):
+        val = os.environ.get(env_name, "").strip()
+        if val:
+            tier_to_model[tier] = val
+
+    if not base_url:
+        raise LlmClientError(
+            "openai backend requested but LORE_OPENAI_BASE_URL is not set "
+            "(and no curator.openai.base_url in .lore/config.yml)"
+        )
+
+    api_key = os.environ.get(api_key_env_name, "").strip()
+    if not api_key:
+        raise LlmClientError(
+            f"openai backend requested but {api_key_env_name} is not set"
+        )
+
+    return base_url, api_key, tier_to_model
+
+
+def _make_openai_client(lore_root: "Path | None" = None) -> "OpenAICompatibleClient":
+    base_url, api_key, tier_to_model = _resolve_openai_settings(lore_root)
+    return OpenAICompatibleClient(
+        base_url=base_url,
+        api_key=api_key,
+        tier_to_model=tier_to_model,
+    )
+
+
 def make_llm_client(
     *,
     backend: str | None = None,
     api_key: str | None = None,
     binary: str = "claude",
+    lore_root: "Path | None" = None,
 ) -> "LlmClient | None":
     """Select and return an LlmClient backend, or None if nothing is available.
 
@@ -308,40 +519,40 @@ def make_llm_client(
     2. ``backend == "api"``: return SDKClient if ``api_key`` is truthy,
        else raise LlmClientError.
 
-    3. ``backend`` is None or ``"auto"``: read ``LORE_LLM_BACKEND`` env var
-       and apply rule 1 or 2 if it is set to ``"subscription"`` or ``"api"``
-       (case-insensitive — shell-facing).
-       If the env var is unset or ``"auto"``, use auto-detection:
+    3. ``backend == "openai"``: return OpenAICompatibleClient resolved from
+       env vars (LORE_OPENAI_BASE_URL, LORE_OPENAI_API_KEY, LORE_OPENAI_MODEL_*)
+       and, if ``lore_root`` is given, ``.lore/config.yml`` curator.openai
+       settings. Raises LlmClientError on missing base_url or api key.
+
+    4. ``backend`` is None or ``"auto"``: read ``LORE_LLM_BACKEND`` env var
+       (case-insensitive — shell-facing) and dispatch if set to a known backend.
+       If unset or ``"auto"``, use auto-detection:
          - if SubprocessClient.is_available(binary=binary) → SubprocessClient
          - elif api_key → SDKClient
          - else → None   (caller should render "AI classification skipped")
 
-    4. Any other ``backend`` string → ValueError (programmer error, not a
-       runtime failure).
-
-    Returning None is deliberately allowed.  Callers that receive None should
-    reproduce the existing "AI classification skipped" warning with no
-    behaviour change from Plans 1/2.
+    5. Any other ``backend`` string → ValueError.
 
     Parameters
     ----------
     backend:
-        ``"subscription"``, ``"api"``, ``"auto"``, or None.  None and
-        ``"auto"`` are treated identically.  **Case-sensitive** — ``"AUTO"``
-        or ``"Subscription"`` will raise ValueError.  Use the env var
-        ``LORE_LLM_BACKEND`` instead if you need case-insensitive input
-        (e.g. from shell scripts).
+        ``"subscription"``, ``"api"``, ``"openai"``, ``"auto"``, or None.
+        None and ``"auto"`` are treated identically.  **Case-sensitive** —
+        use the env var ``LORE_LLM_BACKEND`` for case-insensitive shell input.
     api_key:
         Anthropic API key.  Both None and ``""`` are treated as absent.
     binary:
         Name or absolute path of the claude CLI binary (default ``"claude"``).
+    lore_root:
+        Optional Lore root for reading ``.lore/config.yml``. When absent,
+        only env vars are consulted for OpenAI settings.
     """
     effective = _normalize_backend_arg(backend)
 
-    # Rule 4 — early rejection of unknown values (programmer error)
     if effective is not None and effective not in _ALLOWED_BACKEND_ARGS:
         raise ValueError(
-            f"unknown backend {backend!r} (expected 'subscription', 'api', 'auto', or None)"
+            f"unknown backend {backend!r} "
+            "(expected 'subscription', 'api', 'openai', 'auto', or None)"
         )
 
     if effective == "subscription":
@@ -350,14 +561,18 @@ def make_llm_client(
     if effective == "api":
         return _make_sdk_client(api_key)
 
+    if effective == "openai":
+        return _make_openai_client(lore_root)
+
     if effective in (None, "auto"):
         env = os.environ.get("LORE_LLM_BACKEND", "").strip().lower()
 
         if env == "subscription":
             return _make_subprocess_client(binary)
-
         if env == "api":
             return _make_sdk_client(api_key)
+        if env == "openai":
+            return _make_openai_client(lore_root)
 
         # env unset / "auto" — probe
         if SubprocessClient.is_available(binary=binary):
@@ -366,7 +581,6 @@ def make_llm_client(
             return SDKClient(api_key=api_key)
         return None
 
-    # Unreachable — all allowed values handled above
     raise ValueError(  # pragma: no cover
-        f"unknown backend {backend!r} (expected 'subscription', 'api', 'auto', or None)"
+        f"unknown backend {backend!r}"
     )
