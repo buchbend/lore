@@ -204,10 +204,33 @@ def test_openai_client_passes_through_literal_model_id(fake_openai):
     assert client._client._completions.last_kwargs["model"] == "Mistral Small 4 119B"
 
 
-def test_openai_client_raises_on_missing_tool_call(fake_openai, monkeypatch):
+def test_openai_client_raises_on_empty_response(fake_openai, monkeypatch):
+    """Empty content + no tool_call is still a real error (not synthesizable)."""
     from lore_curator.llm_client import LlmClientError, OpenAICompatibleClient
 
-    # Monkeypatch the response to have no tool_calls AND no parseable JSON
+    client = OpenAICompatibleClient(
+        base_url="https://example.local/v1",
+        api_key="sk-test",
+        tier_to_model={"simple": "m", "middle": "m", "high": "m"},
+    )
+    client._client._completions._response = _FakeCompletion(choices=[_FakeChoice(
+        message=_FakeMessage(content=""),
+        finish_reason="stop",
+    )])
+
+    with pytest.raises(LlmClientError, match="no tool_call and no content"):
+        client.messages.create(
+            model="middle",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[{"name": "x", "description": "", "input_schema": {"type": "object"}}],
+            tool_choice={"type": "tool", "name": "x"},
+        )
+
+
+def test_openai_client_raises_on_empty_schema(fake_openai, monkeypatch):
+    """Prose content with a schema that declares no required fields — can't synthesize."""
+    from lore_curator.llm_client import LlmClientError, OpenAICompatibleClient
+
     client = OpenAICompatibleClient(
         base_url="https://example.local/v1",
         api_key="sk-test",
