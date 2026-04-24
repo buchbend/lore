@@ -42,7 +42,7 @@ TODAY = date.today()
 
 KNOWLEDGE_DIRS = ["projects", "concepts", "decisions", "papers"]
 SKIP_DIRS = {"templates", "inbox", ".processed", ".obsidian"}
-SKIP_FILES = {"CLAUDE.md", "README.md", "_index.md", "_catalog.json", "llms.txt"}
+SKIP_FILES = {"CLAUDE.md", "README.md", "_index.md", "_catalog.json", "llms.txt", "_recent.md"}
 
 console = Console()
 
@@ -477,6 +477,42 @@ def generate_index_md(wiki_name: str, notes: list[NoteInfo]) -> str:
     return "\n".join(lines)
 
 
+def generate_recent_md(wiki_path: Path, max_entries: int = 20) -> str | None:
+    """Generate a _recent.md listing the most recent session notes as wikilinks.
+
+    Returns the file content, or None if the wiki has no sessions/ directory.
+    """
+    sessions_dir = wiki_path / "sessions"
+    if not sessions_dir.is_dir():
+        return None
+
+    # Collect all .md files under sessions/, excluding generated indexes
+    session_files: list[Path] = []
+    for md in sessions_dir.rglob("*.md"):
+        if md.name in SKIP_FILES:
+            continue
+        session_files.append(md)
+
+    if not session_files:
+        return None
+
+    # Sort newest-first: parent dir gives YYYY/MM, filename starts with DD-
+    # Reverse-sorting the relative path (e.g. "2026/04/23-slug.md") yields
+    # newest first because YYYY/MM/DD are all zero-padded.
+    session_files.sort(
+        key=lambda p: str(p.relative_to(sessions_dir)),
+        reverse=True,
+    )
+
+    recent = session_files[:max_entries]
+
+    lines = ["# Recent Sessions", ""]
+    for sf in recent:
+        lines.append(f"- [[{sf.stem}]]")
+    lines.append("")  # trailing newline
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -586,6 +622,11 @@ def run_lint(
             # compatibility with the emerging llms.txt convention
             atomic_write_text(wiki_path / "llms.txt", index_md)
 
+            # _recent.md — last 20 session notes as wikilinks
+            recent_md = generate_recent_md(wiki_path)
+            if recent_md is not None:
+                atomic_write_text(wiki_path / "sessions" / "_recent.md", recent_md)
+
     # Phase 5: build report
     report = {
         "generated": datetime.now().isoformat(timespec="seconds"),
@@ -643,7 +684,8 @@ def _print_report(
                 continue
             console.print(f"  [{color}]{sev}[/{color}]")
             for i in sev_issues:
-                console.print(f"    {i['file']} — {i['message']}")
+                from rich.markup import escape as _esc
+                console.print(f"    {_esc(i['file'])} — {_esc(i['message'])}")
         console.print()
 
     s = report["by_severity"]

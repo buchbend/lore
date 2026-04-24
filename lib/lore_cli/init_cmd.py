@@ -70,8 +70,8 @@ def init_vault(root: Path, force: bool = False) -> None:
     console.print(f"[bold]Vault initialized at[/bold] {root}")
     console.print()
     console.print("Next steps:")
-    console.print("  1. Mount a wiki:  [cyan]ln -s <path> {root}/wiki/<name>[/cyan]")
-    console.print("     Or scaffold one: [cyan]/lore:new-wiki <name>[/cyan]")
+    console.print(f"  1. Scaffold a wiki: [cyan]lore new-wiki <name>[/cyan]")
+    console.print(f"     Or mount existing: [cyan]ln -s <path> {root}/wiki/<name>[/cyan]")
     console.print("  2. Run [cyan]lore lint[/cyan] to seed catalogs.")
 
 

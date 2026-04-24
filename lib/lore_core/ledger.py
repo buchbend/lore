@@ -144,6 +144,11 @@ class TranscriptLedger:
             orphan=raw.get("orphan", False),
         )
 
+    def all_entries(self) -> list[TranscriptLedgerEntry]:
+        """Return every ledger entry."""
+        raw = self._load()
+        return [self._entry_from_raw(v) for v in raw.values()]
+
     def get(self, host: str, transcript_id: str) -> TranscriptLedgerEntry | None:
         raw = self._load()
         key = self._key(host, transcript_id)

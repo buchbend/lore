@@ -1,4 +1,4 @@
-"""Tests for lore_curator.session_filer — session-note writer / merger."""
+"""Tests for lore_curator.session_filer — session-note writer."""
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -135,8 +135,10 @@ def _write_session_note(
     created: str | None = None,
     description: str = "Some existing session",
     body: str = "",
+    year: int = 2026,
+    month: int = 4,
 ) -> Path:
-    """Helper to plant a fake session note for merge tests."""
+    """Helper to plant a fake session note in the YYYY/MM/ hierarchy."""
     if created is None:
         created = datetime.now(UTC).date().isoformat()
     fm = {
@@ -155,22 +157,31 @@ def _write_session_note(
     }
     dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
     text = f"---\n{dumped}\n---\n\n{body}\n"
-    p = sessions_dir / filename
+    month_dir = sessions_dir / str(year) / f"{month:02d}"
+    month_dir.mkdir(parents=True, exist_ok=True)
+    p = month_dir / filename
     p.write_text(text)
     return p
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Tests — directory hierarchy (YYYY/MM/DD-slug.md)
 # ---------------------------------------------------------------------------
 
 
-def test_file_new_session_note_creates_file_with_frontmatter(tmp_path):
-    """New note is created at sessions/YYYY-MM-DD-<slug>.md with correct frontmatter."""
+def test_file_new_session_note_creates_in_year_month_dir(tmp_path):
+    """New note lands at sessions/YYYY/MM/DD-slug.md."""
     result = _file_note(tmp_path)
     assert result.path.exists()
-    assert result.path.parent.name == "sessions"
-    assert result.path.name.startswith("2026-04-19-")
+    assert result.path.parent.name == "04"
+    assert result.path.parent.parent.name == "2026"
+    assert result.path.parent.parent.parent.name == "sessions"
+    assert result.path.name.startswith("19-")
+
+
+def test_file_new_session_note_frontmatter(tmp_path):
+    """New note has correct frontmatter."""
+    result = _file_note(tmp_path)
     fm = parse_frontmatter(result.path.read_text())
     assert fm["type"] == "session"
     assert fm["scope"] == "proj:feature"
@@ -188,49 +199,13 @@ def test_file_draft_true_on_new_note(tmp_path):
     assert fm["draft"] is True
 
 
-def test_merge_judgment_returns_new_when_no_recent_notes(tmp_path):
-    """Empty sessions dir → no LLM call; new note created."""
+def test_no_llm_merge_call(tmp_path):
+    """No LLM merge judgment call — 1 transcript = 1 note."""
     client = _make_new_client()
     result = _file_note(tmp_path, client=client)
     assert client.messages.calls == []
     assert result.was_merge is False
     assert result.path.exists()
-
-
-def test_merge_judgment_merges_into_recent_continuation(tmp_path):
-    """Fake client returns merge decision → existing note has appended section; was_merge=True."""
-    sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
-    existing = _write_session_note(sessions_dir, "2026-04-19-old-session.md")
-
-    client = _make_client({"merge": str(existing)})
-    new_nw = _make_noteworthy("New Feature Addition")
-    result = _file_note(tmp_path, client=client, noteworthy=new_nw)
-
-    assert result.was_merge is True
-    assert result.path == existing
-    text = existing.read_text()
-    assert "## New Feature Addition" in text
-
-
-def test_merge_appends_section_and_bumps_mtime(tmp_path):
-    """Appended note has new ## section; last_reviewed updated to today."""
-    sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
-    existing = _write_session_note(
-        sessions_dir, "2026-04-18-old.md",
-        created="2026-04-18",
-        body="### Summary\n- old bullet",
-    )
-
-    client = _make_client({"merge": str(existing)})
-    new_nw = _make_noteworthy("Merged Session Title")
-    _file_note(tmp_path, client=client, noteworthy=new_nw, now=_NOW)
-
-    text = existing.read_text()
-    assert "## Merged Session Title" in text
-    fm = parse_frontmatter(text)
-    assert fm["last_reviewed"] == "2026-04-19"
 
 
 def test_source_transcripts_hashes_recorded(tmp_path):
@@ -245,29 +220,24 @@ def test_source_transcripts_hashes_recorded(tmp_path):
     assert src["to_hash"] == turns[-1].content_hash()
 
 
-def test_filed_note_wikilink(tmp_path):
-    """FiledNote.wikilink is [[<stem>]] of the created path."""
+def test_filed_note_wikilink_uses_stem_only(tmp_path):
+    """FiledNote.wikilink is [[DD-slug]] — bare stem, no path."""
     result = _file_note(tmp_path)
     expected = f"[[{result.path.stem}]]"
     assert result.wikilink == expected
+    assert "2026" not in result.wikilink
 
 
 def test_slug_sanitises_title():
     """Title with special chars produces clean hyphen-separated slug."""
     s = _slug("Add: Ledger! Now?")
     assert s == "add-ledger-now"
-    # No repeated hyphens, no special chars
     assert "--" not in s
     assert all(c.isalnum() or c == "-" for c in s)
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 — work-date propagation
-#
-# Symptom: if the ledger wasn't kept current and curator ran "catch-up",
-# every backlogged transcript was filed under today's date. The user's
-# session notes claimed all prior work happened today. Fix: each note
-# takes its date from the transcript it came from, not from curation time.
+# Work-date propagation
 # ---------------------------------------------------------------------------
 
 
@@ -281,9 +251,9 @@ def _make_handle_with_mtime(mtime: datetime) -> TranscriptHandle:
     )
 
 
-def test_work_time_drives_filename_date(tmp_path):
-    """Filename's YYYY-MM-DD comes from work_time, not curation `now`."""
-    work_time = datetime(2026, 4, 18, 22, 30, tzinfo=UTC)  # prior day
+def test_work_time_drives_directory_and_filename(tmp_path):
+    """Directory uses YYYY/MM from work_time; filename uses DD."""
+    work_time = datetime(2026, 4, 18, 22, 30, tzinfo=UTC)
     curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
 
     result = file_session_note(
@@ -297,14 +267,16 @@ def test_work_time_drives_filename_date(tmp_path):
         now=curation_time,
         work_time=work_time,
     )
-    assert result.path.name.startswith("2026-04-18-"), (
-        f"filename must use work date, got {result.path.name}"
+    assert result.path.parent.name == "04"
+    assert result.path.parent.parent.name == "2026"
+    assert result.path.name.startswith("18-"), (
+        f"filename must use work day, got {result.path.name}"
     )
 
 
 def test_work_time_drives_frontmatter_created_and_last_reviewed(tmp_path):
     """Frontmatter `created` and `last_reviewed` use work_time, not `now`."""
-    work_time = datetime(2026, 4, 15, 9, 0, tzinfo=UTC)  # 4 days ago
+    work_time = datetime(2026, 4, 15, 9, 0, tzinfo=UTC)
     curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
 
     result = file_session_note(
@@ -324,8 +296,7 @@ def test_work_time_drives_frontmatter_created_and_last_reviewed(tmp_path):
 
 
 def test_curator_a_run_stays_curation_time_even_when_work_time_older(tmp_path):
-    """`curator_a_run` is an audit field — records when we LOOKED, not
-    when the work happened. Keeps curation timestamp."""
+    """`curator_a_run` records when we LOOKED, not when the work happened."""
     work_time = datetime(2026, 4, 15, 9, 0, tzinfo=UTC)
     curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
 
@@ -341,67 +312,23 @@ def test_curator_a_run_stays_curation_time_even_when_work_time_older(tmp_path):
         work_time=work_time,
     )
     fm = parse_frontmatter(result.path.read_text())
-    assert fm["curator_a_run"].startswith("2026-04-19"), (
-        f"curator_a_run must record curation time, got {fm['curator_a_run']}"
-    )
+    assert fm["curator_a_run"].startswith("2026-04-19")
 
 
 def test_work_time_defaults_to_now_when_not_supplied(tmp_path):
-    """Backward compat: callers that don't pass work_time get today's date
-    (matches old behavior; preserves legacy tests)."""
+    """Backward compat: callers that don't pass work_time get today's date."""
     now = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
-    result = _file_note(tmp_path, now=now)  # no work_time passed
-    assert result.path.name.startswith("2026-04-19-")
+    result = _file_note(tmp_path, now=now)
+    assert result.path.name.startswith("19-")
     fm = parse_frontmatter(result.path.read_text())
     assert fm["created"] == "2026-04-19"
 
 
-def test_merge_last_reviewed_uses_newest_work_time(tmp_path):
-    """On merge, last_reviewed advances to the new slice's work_time —
-    which may be earlier or later than the existing created date.
-    Semantically: the note's "last touched" matches the newest work it
-    contains, not the curation run."""
-    sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
-    existing = _write_session_note(
-        sessions_dir, "2026-04-15-old.md",
-        created="2026-04-15",
-        body="### Summary\n- old bullet",
-    )
-
-    work_time = datetime(2026, 4, 17, 14, 0, tzinfo=UTC)  # between created and now
-    curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
-
-    client = _make_client({"merge": str(existing)})
-    file_session_note(
-        scope=_make_scope(),
-        handle=_make_handle_with_mtime(work_time),
-        noteworthy=_make_noteworthy("Merged Work"),
-        turns=_make_turns(),
-        wiki_root=tmp_path,
-        anthropic_client=client,
-        model_resolver=_resolver,
-        now=curation_time,
-        work_time=work_time,
-    )
-    fm = parse_frontmatter(existing.read_text())
-    assert fm["last_reviewed"] == "2026-04-17", fm
-    # `created` is never rewritten on merge.
-    assert fm["created"] == "2026-04-15"
-
-
 def test_collision_appends_counter(tmp_path):
-    """Second note with same day + slug gets a -2 suffix.
-
-    Post-P3', same-day same-scope slices append instead of colliding.
-    The collision-counter path now only fires when today's note is closed
-    (frontmatter ``closed: true``) and a new note must land on the same
-    filename.
-    """
-    sessions_dir = tmp_path / "sessions"
+    """Second note with same day + slug gets a -2 suffix."""
+    sessions_dir = tmp_path / "sessions" / "2026" / "04"
     sessions_dir.mkdir(parents=True)
-    # Plant a closed first note that shares the expected slug.
-    closed_first = sessions_dir / "2026-04-19-add-ledger-feature.md"
+    closed_first = sessions_dir / "19-add-ledger-feature.md"
     fm = {
         "schema_version": 2,
         "type": "session",
@@ -423,105 +350,20 @@ def test_collision_appends_counter(tmp_path):
     assert result.was_merge is False
 
 
-def test_recent_notes_filter_excludes_wrong_scope(tmp_path):
-    """Only notes with matching scope are passed to merge judgment.
-
-    Uses older notes (not today's) so P3''s append-to-today fast path
-    doesn't short-circuit the LLM merge judgment this test is about.
-    """
-    sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
-    # Yesterday — avoids P3' same-day append path.
-    right = _write_session_note(
-        sessions_dir, "2026-04-18-right.md",
-        scope_str="proj:feature", created="2026-04-18",
-    )
-    _write_session_note(
-        sessions_dir, "2026-04-18-wrong.md",
-        scope_str="other:scope", created="2026-04-18",
-    )
-
-    seen_prompts = []
-
-    class RecordingClient:
-        class messages:
-            calls = []
-
-            @staticmethod
-            def create(**kwargs):
-                seen_prompts.append(kwargs["messages"][0]["content"])
-                block = _FakeContentBlock(type_="tool_use", input_={"new": True})
-                RecordingClient.messages.calls.append(kwargs)
-                return _FakeResponse([block])
-
-    _file_note(tmp_path, client=RecordingClient(), scope=_make_scope("proj:feature"))
-
-    # One LLM call made (there was 1 recent matching note from yesterday).
-    assert len(RecordingClient.messages.calls) == 1
-    prompt = seen_prompts[0]
-    assert str(right) in prompt
-    assert "wrong.md" not in prompt
-
-
-def test_recent_notes_filter_excludes_old(tmp_path):
-    """Notes with created date older than 7 days are filtered out → no LLM call."""
-    sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
-    old_date = (_NOW - timedelta(days=10)).date().isoformat()
-    _write_session_note(sessions_dir, "old-note.md", created=old_date)
-
-    client = _make_new_client()
-    _file_note(tmp_path, client=client)
-    # Old note excluded → no recent notes → no LLM call
-    assert client.messages.calls == []
-
-
-def test_merge_into_existing_updates_source_transcripts_list(tmp_path):
-    """Merging into a note with [A] produces [A, B], not just [B]."""
-    sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
-    existing = _write_session_note(sessions_dir, "2026-04-19-existing.md")
-
-    # Verify initial state has exactly 1 source transcript
-    fm_before = parse_frontmatter(existing.read_text())
-    assert len(fm_before["source_transcripts"]) == 1
-
-    client = _make_client({"merge": str(existing)})
-    _file_note(tmp_path, client=client)
-
-    fm_after = parse_frontmatter(existing.read_text())
-    assert len(fm_after["source_transcripts"]) == 2
-    # Old entry still present
-    assert fm_after["source_transcripts"][0]["id"] == "old-id"
-    # New entry added
-    assert fm_after["source_transcripts"][1]["id"] == "transcript-abc123"
-
-
 # ---------------------------------------------------------------------------
 # P3' — append-to-today's-open-note rule
-#
-# Symptom: arbitrary pending-count thresholds made the curator fire at
-# points that rarely aligned with narrative boundaries, producing multiple
-# stranded same-day notes that each captured a fragment. Fix: if there's
-# already an open session note for the transcript's work date in this
-# scope, append to it — no LLM merge judgment required. Cross-day
-# continuations still go through the existing LLM path.
 # ---------------------------------------------------------------------------
 
 
 def test_filer_appends_to_todays_open_note_for_same_scope(tmp_path):
-    """Existing today + same-scope open note → append, no LLM call."""
+    """Existing today + same-scope open note -> append, no LLM call."""
     sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
     existing = _write_session_note(
-        sessions_dir, "2026-04-19-morning-work.md",
+        sessions_dir, "19-morning-work.md",
         scope_str="proj:feature", created="2026-04-19",
         body="### Summary\n- morning slice",
     )
 
-    # Client would never be called — but give it a clearly-wrong response
-    # so any regression that hits the LLM path fails loudly instead of
-    # silently going through.
     client = _make_client({"merge": "/nonexistent.md"})
     result = _file_note(
         tmp_path,
@@ -534,16 +376,15 @@ def test_filer_appends_to_todays_open_note_for_same_scope(tmp_path):
     assert result.path == existing
     text = existing.read_text()
     assert "## Afternoon Work" in text
-    assert "- morning slice" in text  # original body preserved
-    assert client.messages.calls == [], "P3' must not call the LLM when today's note exists"
+    assert "- morning slice" in text
+    assert client.messages.calls == []
 
 
 def test_filer_creates_new_note_when_todays_note_is_closed(tmp_path):
     """closed: in frontmatter opts a note out of P3' append."""
-    sessions_dir = tmp_path / "sessions"
+    sessions_dir = tmp_path / "sessions" / "2026" / "04"
     sessions_dir.mkdir(parents=True)
-    # Plant a closed today's note
-    closed_note = sessions_dir / "2026-04-19-finished.md"
+    closed_note = sessions_dir / "19-finished.md"
     fm = {
         "schema_version": 2,
         "type": "session",
@@ -557,22 +398,20 @@ def test_filer_creates_new_note_when_todays_note_is_closed(tmp_path):
         "tags": [],
     }
     dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
-    closed_body_before = "body"
-    closed_note.write_text(f"---\n{dumped}\n---\n\n{closed_body_before}\n")
+    closed_note.write_text(f"---\n{dumped}\n---\n\nbody\n")
     closed_before = closed_note.read_text()
 
     client = _make_new_client()
     result = _file_note(
         tmp_path, client=client, scope=_make_scope("proj:feature")
     )
-    # New note created — original closed note untouched.
     assert result.path != closed_note
     assert result.was_merge is False
     assert closed_note.read_text() == closed_before
 
 
 def test_filer_creates_new_note_when_no_todays_note_exists(tmp_path):
-    """Empty sessions dir → new note, same as legacy behavior."""
+    """Empty sessions dir -> new note."""
     client = _make_new_client()
     result = _file_note(tmp_path, client=client)
     assert result.was_merge is False
@@ -582,9 +421,8 @@ def test_filer_creates_new_note_when_no_todays_note_exists(tmp_path):
 def test_filer_creates_new_note_for_different_scope_same_day(tmp_path):
     """Same-day note for a DIFFERENT scope must not trigger append."""
     sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
     other_scope = _write_session_note(
-        sessions_dir, "2026-04-19-other.md",
+        sessions_dir, "19-other.md",
         scope_str="other:scope", created="2026-04-19",
     )
     other_before = other_scope.read_text()
@@ -593,7 +431,6 @@ def test_filer_creates_new_note_for_different_scope_same_day(tmp_path):
     result = _file_note(
         tmp_path, client=client, scope=_make_scope("proj:feature")
     )
-    # New note created for proj:feature; other-scope note untouched.
     assert result.was_merge is False
     assert result.path != other_scope
     assert other_scope.read_text() == other_before
@@ -602,42 +439,33 @@ def test_filer_creates_new_note_for_different_scope_same_day(tmp_path):
 def test_find_todays_open_note_ignores_notes_from_other_dates(tmp_path):
     """Yesterday's same-scope note should not be appended to by P3'."""
     sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
     yesterday = _write_session_note(
-        sessions_dir, "2026-04-18-yesterday.md",
+        sessions_dir, "18-yesterday.md",
         scope_str="proj:feature", created="2026-04-18",
     )
     yesterday_before = yesterday.read_text()
 
-    # LLM merge judgment says "new"
     client = _make_new_client()
     result = _file_note(
         tmp_path, client=client, scope=_make_scope("proj:feature")
     )
-    # New note for today; yesterday's note unchanged.
     assert result.path != yesterday
     assert result.was_merge is False
     assert yesterday.read_text() == yesterday_before
 
 
 def test_find_todays_open_note_respects_work_time_not_now(tmp_path):
-    """Work-date-backdated slice appends to that date's open note.
-
-    Preserves the Phase 1 work-date invariant: a backlogged transcript
-    from 2026-04-17 merges into 2026-04-17's open note, even if curation
-    is running on 2026-04-19.
-    """
+    """Work-date-backdated slice appends to that date's open note."""
     sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
     existing = _write_session_note(
-        sessions_dir, "2026-04-17-prior.md",
+        sessions_dir, "17-prior.md",
         scope_str="proj:feature", created="2026-04-17",
     )
 
     work_time = datetime(2026, 4, 17, 14, 0, tzinfo=UTC)
     curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
 
-    client = _make_client({"merge": "/wrong.md"})  # must NOT be called
+    client = _make_client({"merge": "/wrong.md"})
     result = file_session_note(
         scope=_make_scope("proj:feature"),
         handle=_make_handle_with_mtime(work_time),
@@ -657,11 +485,6 @@ def test_find_todays_open_note_respects_work_time_not_now(tmp_path):
 
 # ---------------------------------------------------------------------------
 # P4b — transcripts: frontmatter list
-#
-# `transcripts:` is append-only provenance: every UUID that contributed
-# to a note lives here. Capped at 20 most-recent so long-running daily
-# notes don't bloat; full history lives in `source_transcripts` (which
-# also carries hash watermarks and is not capped).
 # ---------------------------------------------------------------------------
 
 
@@ -680,10 +503,8 @@ def test_new_note_places_transcripts_last_in_frontmatter(tmp_path):
     """UI ordering: human-facing fields above the machine-facing UUID list."""
     result = _file_note(tmp_path)
     text = result.path.read_text()
-    # Raw frontmatter ordering check (yaml dump preserves insertion order)
     fm_text = text.split("---\n", 2)[1]
     keys_in_order = [line.split(":", 1)[0] for line in fm_text.splitlines() if line and not line.startswith(" ") and not line.startswith("-")]
-    # transcripts must be present and after tags / description / scope
     assert "transcripts" in keys_in_order
     assert keys_in_order.index("transcripts") > keys_in_order.index("description")
     assert keys_in_order.index("transcripts") > keys_in_order.index("scope")
@@ -692,12 +513,10 @@ def test_new_note_places_transcripts_last_in_frontmatter(tmp_path):
 def test_append_extends_transcripts_list(tmp_path):
     """Appending a slice from a different session adds its UUID to the list."""
     sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
     existing = _write_session_note(
-        sessions_dir, "2026-04-19-open.md",
+        sessions_dir, "19-open.md",
         scope_str="proj:feature", created="2026-04-19",
     )
-    # Seed the existing note with a transcripts list
     text = existing.read_text()
     fm = parse_frontmatter(text)
     fm["transcripts"] = ["uuid-prior"]
@@ -705,7 +524,6 @@ def test_append_extends_transcripts_list(tmp_path):
     body = text.split("---\n", 2)[2] if text.count("---\n") >= 2 else ""
     existing.write_text(f"---\n{dumped}\n---\n{body}")
 
-    # Use a handle whose UUID is different
     new_handle = TranscriptHandle(
         host="claude-code",
         id="uuid-new",
@@ -721,9 +539,8 @@ def test_append_extends_transcripts_list(tmp_path):
 def test_append_dedupes_repeated_uuid_moving_it_to_tail(tmp_path):
     """A repeated UUID moves to the list's tail — no duplicate entries."""
     sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
     existing = _write_session_note(
-        sessions_dir, "2026-04-19-open.md",
+        sessions_dir, "19-open.md",
         scope_str="proj:feature", created="2026-04-19",
     )
     text = existing.read_text()
@@ -733,7 +550,6 @@ def test_append_dedupes_repeated_uuid_moving_it_to_tail(tmp_path):
     body = text.split("---\n", 2)[2] if text.count("---\n") >= 2 else ""
     existing.write_text(f"---\n{dumped}\n---\n{body}")
 
-    # Re-add uuid-a — it should move to the end, not appear twice
     repeat_handle = TranscriptHandle(
         host="claude-code", id="uuid-a",
         path=Path("/tmp/x.jsonl"), cwd=Path("/tmp"),
@@ -745,14 +561,12 @@ def test_append_dedupes_repeated_uuid_moving_it_to_tail(tmp_path):
 
 
 def test_append_caps_transcripts_list_at_20_most_recent(tmp_path):
-    """25 unique UUIDs → list stays at 20 (oldest 5 dropped)."""
+    """25 unique UUIDs -> list stays at 20 (oldest 5 dropped)."""
     sessions_dir = tmp_path / "sessions"
-    sessions_dir.mkdir(parents=True)
     existing = _write_session_note(
-        sessions_dir, "2026-04-19-open.md",
+        sessions_dir, "19-open.md",
         scope_str="proj:feature", created="2026-04-19",
     )
-    # Seed 20 existing UUIDs
     text = existing.read_text()
     fm = parse_frontmatter(text)
     fm["transcripts"] = [f"u{i:02d}" for i in range(20)]
@@ -770,8 +584,5 @@ def test_append_caps_transcripts_list_at_20_most_recent(tmp_path):
     got = _transcripts_list(existing.read_text())
     assert len(got) == 20
     assert got[-1] == "u-fresh"
-    # Oldest (u00) dropped.
     assert "u00" not in got
-    # u01 remains (it was the second-oldest, now shifted up one).
     assert "u01" in got
-

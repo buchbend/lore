@@ -385,10 +385,11 @@ def _process_entry(
         curator_a_run=now,
     )
 
+    # Auto-commit if configured.
+    if not dry_run:
+        _maybe_auto_commit(wiki_dir, filed, logger)
+
     # P5a: emit to the session's drain so `lore news` can surface it.
-    # Curator A runs detached from the user's Claude session, so we
-    # resolve the session_id from the transcript's cwd — the same
-    # freshness heuristic the banner will use in P5b.
     try:
         from lore_core.drain import DrainStore, resolve_session_id
 
@@ -401,10 +402,38 @@ def _process_entry(
             transcript_id=entry.transcript_id,
         )
     except Exception:
-        # Drain is telemetry — never block a filed note.
         pass
 
     return _Outcome(filed=filed, was_noteworthy=True, wiki_name=attached.wiki)
+
+
+def _maybe_auto_commit(
+    wiki_dir: Path,
+    filed: "FiledNote",
+    logger: "RunLogger | None" = None,
+) -> None:
+    """Git-add + commit the filed note if wiki config says auto_commit."""
+    import subprocess
+    from lore_core.wiki_config import load_wiki_config
+
+    cfg = load_wiki_config(wiki_dir)
+    if not cfg.git.auto_commit:
+        return
+    if not (wiki_dir / ".git").exists():
+        return
+    try:
+        rel = filed.path.resolve().relative_to(wiki_dir.resolve())
+        subprocess.run(
+            ["git", "add", str(rel)],
+            cwd=str(wiki_dir), capture_output=True, timeout=10, check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", f"lore: {filed.path.stem}"],
+            cwd=str(wiki_dir), capture_output=True, timeout=10, check=False,
+        )
+    except Exception as exc:
+        if logger is not None:
+            logger.emit("warning", message=f"auto-commit failed: {exc}")
 
 
 def _record_outcome(result: CuratorAResult, outcome: _Outcome) -> None:

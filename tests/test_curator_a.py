@@ -224,7 +224,7 @@ def test_curator_a_end_to_end_noteworthy_produces_note(tmp_path):
     )
 
     sessions_dir = tmp_path / "wiki" / "private" / "sessions"
-    notes = list(sessions_dir.glob("*.md"))
+    notes = list(sessions_dir.rglob("*.md"))
     assert len(notes) == 1, f"Expected 1 session note, got {len(notes)}"
     assert len(result.new_notes) == 1
     assert result.noteworthy_count == 1
@@ -262,7 +262,7 @@ def test_curator_a_non_noteworthy_advances_ledger_no_file(tmp_path):
     )
 
     sessions_dir = tmp_path / "wiki" / "private" / "sessions"
-    notes = list(sessions_dir.glob("*.md"))
+    notes = list(sessions_dir.rglob("*.md"))
     assert len(notes) == 0
     assert result.noteworthy_count == 0
     assert "not_noteworthy" in result.skipped_reasons
@@ -305,7 +305,7 @@ def test_curator_a_dry_run_writes_nothing(tmp_path):
 
     # No file written
     sessions_dir = tmp_path / "wiki" / "private" / "sessions"
-    notes = list(sessions_dir.glob("*.md"))
+    notes = list(sessions_dir.rglob("*.md"))
     assert len(notes) == 0
 
     # Ledger unchanged
@@ -402,7 +402,7 @@ def test_curator_a_reuses_hash_watermark_across_runs(tmp_path):
     )
     # No new session notes in second run
     sessions_dir = tmp_path / "wiki" / "private" / "sessions"
-    notes_after = list(sessions_dir.glob("*.md"))
+    notes_after = list(sessions_dir.rglob("*.md"))
     assert len(notes_after) == 1  # Still only 1 from first run
 
 
@@ -445,7 +445,7 @@ def test_curator_a_skips_unattached_directory(tmp_path):
 
     assert result.skipped_reasons.get("unattached", 0) == 1
     sessions_dir = tmp_path / "wiki" / "private" / "sessions"
-    assert not sessions_dir.exists() or list(sessions_dir.glob("*.md")) == []
+    assert not sessions_dir.exists() or list(sessions_dir.rglob("*.md")) == []
 
 
 def test_curator_a_requested_scope_filters(tmp_path):
@@ -574,7 +574,7 @@ def test_curator_a_no_anthropic_client_records_skip(tmp_path):
 
     assert result.skipped_reasons.get("no_anthropic_client", 0) >= 1
     sessions_dir = tmp_path / "wiki" / "private" / "sessions"
-    assert not sessions_dir.exists() or list(sessions_dir.glob("*.md")) == []
+    assert not sessions_dir.exists() or list(sessions_dir.rglob("*.md")) == []
 
 
 def test_curator_a_duration_recorded(tmp_path):

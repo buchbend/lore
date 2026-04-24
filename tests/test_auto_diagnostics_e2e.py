@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -124,7 +124,7 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
     _af = AttachmentsFile(lore_root); _af.load()
     _af.add(Attachment(
         path=cwd, wiki=wiki_name, scope="proj:e2e",
-        attached_at=_dt.now(UTC), source="manual",
+        attached_at=_NOW - timedelta(days=1), source="manual",
     ))
     _af.save()
 
@@ -203,7 +203,7 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
         assert types[-1] == "run-end", f"Last record type: {types[-1]}"
 
         # Also assert that a session note was filed
-        session_notes = list((wiki_dir / "sessions").glob("*.md"))
+        session_notes = list((wiki_dir / "sessions").rglob("*.md"))
         assert len(session_notes) == 1, (
             f"Expected 1 session note, got {[p.name for p in session_notes]}"
         )

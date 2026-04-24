@@ -13,7 +13,7 @@ class TestWikiConfigDefaults:
         """No file → returns full default WikiConfig()."""
         cfg = load_wiki_config(tmp_path)
         assert isinstance(cfg, WikiConfig)
-        assert cfg.git.auto_commit is True
+        assert cfg.git.auto_commit is False
         assert cfg.git.auto_push is False
         assert cfg.git.auto_pull is True
         assert cfg.curator.threshold_pending == 10
@@ -38,7 +38,7 @@ class TestWikiConfigPartialMerge:
         config_file.write_text("git:\n  auto_push: true\n")
         cfg = load_wiki_config(tmp_path)
         assert cfg.git.auto_push is True
-        assert cfg.git.auto_commit is True  # default preserved
+        assert cfg.git.auto_commit is False  # default preserved
         assert cfg.git.auto_pull is True
         # All other sections fully default
         assert cfg.curator.threshold_pending == 10
@@ -92,7 +92,7 @@ class TestWikiConfigWarnings:
         config_file.write_text("nonsense: 42\n")
         with pytest.warns(UserWarning, match="unknown key 'nonsense'"):
             cfg = load_wiki_config(tmp_path)
-        assert cfg.git.auto_commit is True  # defaults returned
+        assert cfg.git.auto_commit is False  # defaults returned
 
     def test_load_unknown_nested_key_warns_and_continues(self, tmp_path: Path):
         """Unknown nested key → warns, other git defaults preserved."""
@@ -100,7 +100,7 @@ class TestWikiConfigWarnings:
         config_file.write_text("git:\n  fake_flag: true\n")
         with pytest.warns(UserWarning, match="unknown key 'fake_flag'"):
             cfg = load_wiki_config(tmp_path)
-        assert cfg.git.auto_commit is True  # other defaults preserved
+        assert cfg.git.auto_commit is False  # other defaults preserved
         assert cfg.git.auto_push is False
 
 

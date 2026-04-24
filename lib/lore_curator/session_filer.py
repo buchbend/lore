@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 @dataclass
 class FiledNote:
     path: Path
-    wikilink: str                   # e.g. "[[2026-04-19-add-ledger]]"
+    wikilink: str                   # e.g. "[[19-add-ledger]]"
     was_merge: bool                 # True if appended to an existing note
 
 
@@ -73,13 +73,13 @@ def file_session_note(
     now = now or datetime.now(UTC)
     work_time = work_time or now
     sessions_dir = wiki_root / "sessions"
-    sessions_dir.mkdir(parents=True, exist_ok=True)
+    month_dir = _month_dir(sessions_dir, work_time)
+    month_dir.mkdir(parents=True, exist_ok=True)
 
     # P3': when an open session note for this scope already exists on the
     # transcript's work date, append to it directly — no LLM merge judgment,
     # no new-note-per-slice proliferation. `closed:` frontmatter (set by
     # Curator B when a note is folded into a surface) opts the note out.
-    # Cross-day continuations still go through the LLM path below.
     today_note = _find_todays_open_note(
         sessions_dir, scope=scope, work_date=work_time.date()
     )
@@ -112,68 +112,14 @@ def file_session_note(
             )
         return FiledNote(path=today_note, wikilink=wikilink, was_merge=True)
 
-    recent_notes = _recent_session_notes(sessions_dir, scope=scope, within_days=7, limit=20, now=now)
-    decision = _merge_judgment(
-        new_summary=noteworthy,
-        recent_notes=recent_notes,
-        anthropic_client=anthropic_client,
-        model_resolver=model_resolver,
-    )
-
-    if decision.get("merge"):
-        target = Path(decision["merge"])
-        if not target.is_absolute():
-            target = sessions_dir / target
-        target_slug = target.stem
-
-        if logger is not None:
-            logger.emit(
-                "merge-check",
-                transcript_id=transcript_id,
-                target=f"[[{target_slug}]]",
-                similarity=None,
-                decision="merge",
-            )
-
-        _append_to_note(
-            target,
-            noteworthy=noteworthy,
-            handle=handle,
-            turns=turns,
-            now=now,
-            work_time=work_time,
-            scope_redirected_from=scope_redirected_from,
-        )
-        wikilink = _wikilink_for(target)
-
-        if logger is not None:
-            logger.emit(
-                "session-note",
-                transcript_id=transcript_id,
-                action="merged",
-                wikilink=wikilink,
-            )
-
-        return FiledNote(path=target, wikilink=wikilink, was_merge=True)
-
-    # New note
+    # New note — 1 transcript = 1 note (no cross-day LLM merge).
     slug = _slug(noteworthy.title)
-    date_str = work_time.date().isoformat()
-    path = sessions_dir / f"{date_str}-{slug}.md"
-    # Avoid collisions — append counter if needed
+    day_prefix = f"{work_time.day:02d}"
+    path = month_dir / f"{day_prefix}-{slug}.md"
     counter = 1
     while path.exists():
         counter += 1
-        path = sessions_dir / f"{date_str}-{slug}-{counter}.md"
-
-    if logger is not None and recent_notes:
-        logger.emit(
-            "merge-check",
-            transcript_id=transcript_id,
-            target=None,
-            similarity=None,
-            decision="new",
-        )
+        path = month_dir / f"{day_prefix}-{slug}-{counter}.md"
 
     _write_new_note(
         path,
@@ -210,6 +156,11 @@ def _slug(title: str) -> str:
     return s[:60] if s else "session"
 
 
+def _month_dir(sessions_dir: Path, work_time: datetime) -> Path:
+    """Return ``sessions/YYYY/MM/`` for the given work time."""
+    return sessions_dir / str(work_time.year) / f"{work_time.month:02d}"
+
+
 def _wikilink_for(path: Path) -> str:
     return f"[[{path.stem}]]"
 
@@ -223,7 +174,8 @@ def _find_todays_open_note(
     """Return today's open session note for ``scope``, or ``None``.
 
     A note is "today's open note" when all of:
-      - filename prefix matches ``work_date`` (e.g. ``2026-04-22-*.md``),
+      - lives in the correct ``YYYY/MM/`` subdirectory,
+      - filename prefix matches the day (e.g. ``22-*.md``),
       - frontmatter ``scope`` equals ``scope.scope``,
       - frontmatter ``closed`` is absent or falsy.
 
@@ -231,11 +183,12 @@ def _find_todays_open_note(
     most-recently-modified file wins — that is the note the previous
     slice appended to.
     """
-    if not sessions_dir.exists():
+    month = sessions_dir / str(work_date.year) / f"{work_date.month:02d}"
+    if not month.exists():
         return None
-    prefix = work_date.isoformat()
+    day_prefix = f"{work_date.day:02d}"
     candidates: list[tuple[float, Path]] = []
-    for p in sessions_dir.glob(f"{prefix}-*.md"):
+    for p in month.glob(f"{day_prefix}-*.md"):
         try:
             text = p.read_text()
         except OSError:

@@ -1019,6 +1019,9 @@ def cmd_session_start(
     scope = resolve_scope(cwd_resolved)
     lore_root = _infer_lore_root(scope.claude_md_path) if scope is not None else None
 
+    if scope is None and not probe:
+        _nudge_unattached(cwd_resolved, out)
+
     # Attempt to append capture-state breadcrumb banner
     try:
         from datetime import UTC, datetime as dt
@@ -1334,6 +1337,36 @@ def _resolve_cwd_capture() -> Path:
     """Resolve CWD for capture: $CLAUDE_PROJECT_DIR → os.getcwd()."""
     env = os.environ.get("CLAUDE_PROJECT_DIR")
     return Path(env) if env else Path(os.getcwd())
+
+
+def _nudge_unattached(cwd: Path, out: str) -> None:
+    """One-time nudge when session starts in an unattached directory."""
+    import hashlib
+    nudge_dir = _cache_dir() / "nudged"
+    cwd_hash = hashlib.sha256(str(cwd).encode()).hexdigest()[:16]
+    marker = nudge_dir / cwd_hash
+    if marker.exists():
+        return
+    try:
+        from lore_core.config import get_lore_root
+        lore_root = get_lore_root()
+        from lore_core.state.attachments import AttachmentsFile
+        af = AttachmentsFile(lore_root)
+        af.load()
+        if any(d.path == cwd for d in af._declined):
+            return
+    except Exception:
+        pass
+    try:
+        nudge_dir.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        pass
+    print(
+        "lore: this directory is not attached — sessions won't be captured. "
+        "Run /lore:attach to connect it.",
+        file=sys.stderr,
+    )
 
 
 def _infer_lore_root(claude_md_path: Path) -> Path:
@@ -1829,10 +1862,23 @@ def capture(
         # Collect new + mtime-changed entries into a single bulk_upsert so
         # the 180KB+ ledger is serialised once per hook, not once per
         # transcript. Keeps the capture path well under its <500ms budget.
+        #
+        # Attach-time watermark: transcripts older than the attachment's
+        # attached_at are pre-stamped as already seen so only future
+        # sessions are pending. Use `lore backfill` to opt in to history.
+        from lore_core.state.attachments import AttachmentsFile
+        af = AttachmentsFile(lore_root)
+        af.load()
+        attachment = af.longest_prefix_match(cwd)
+
         to_write: list[TranscriptLedgerEntry] = []
         for h in handles:
             entry = tledger.get(h.host, h.id)
             if entry is None:
+                is_historical = (
+                    attachment is not None
+                    and h.mtime < attachment.attached_at
+                )
                 to_write.append(
                     TranscriptLedgerEntry(
                         host=h.host,
@@ -1843,7 +1889,7 @@ def capture(
                         digested_index_hint=None,
                         synthesised_hash=None,
                         last_mtime=h.mtime,
-                        curator_a_run=None,
+                        curator_a_run=attachment.attached_at if is_historical else None,
                         noteworthy=None,
                         session_note=None,
                     )

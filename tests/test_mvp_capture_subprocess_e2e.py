@@ -248,7 +248,7 @@ def test_e2e_subprocess_backend_produces_session_note(
     )
 
     # (a) Session note was created.
-    notes = list(sessions_dir.glob("*.md"))
+    notes = list(sessions_dir.rglob("*.md"))
     # Filter out the pre-populated note; look for the new curator-created note.
     new_notes = [n for n in notes if n.name != "2026-04-17-prior-work.md"]
     assert len(new_notes) == 1, f"Expected 1 new session note, found: {new_notes}"
@@ -271,16 +271,13 @@ def test_e2e_subprocess_backend_produces_session_note(
     assert entry.digested_hash is not None, "Expected ledger to advance after curator run"
     assert entry.digested_hash == turns[-1].content_hash()
 
-    # (d) fake_runner was called at least twice — once for classify, once for merge_judgment.
-    assert len(seen_schemas) >= 2, (
-        f"Expected >= 2 fake_runner calls (classify + merge_judgment), got {len(seen_schemas)}: {seen_schemas}"
+    # (d) fake_runner was called for classify (merge_judgment removed).
+    assert len(seen_schemas) >= 1, (
+        f"Expected >= 1 fake_runner call (classify), got {len(seen_schemas)}: {seen_schemas}"
     )
     schema_key_sets = [frozenset(k) for k in seen_schemas]
     assert any("noteworthy" in s for s in schema_key_sets), (
         "Expected one call with 'noteworthy' key (classify)"
-    )
-    assert any(("merge" in s or "new" in s) for s in schema_key_sets), (
-        "Expected one call with 'merge'/'new' keys (merge_judgment)"
     )
 
 
@@ -323,7 +320,7 @@ def test_e2e_subprocess_backend_binary_missing_path(
 
     # No session note should have been created.
     sessions_dir = lore_root / "wiki" / "private" / "sessions"
-    notes = list(sessions_dir.glob("*.md"))
+    notes = list(sessions_dir.rglob("*.md"))
     assert len(notes) == 0, f"Expected no session notes when no backend, found: {notes}"
 
     # The transcript was considered but skipped due to missing client.

@@ -67,24 +67,75 @@ def _binary_for(host_name: str) -> str:
     return {"claude": "claude", "cursor": "cursor"}.get(host_name, host_name)
 
 
-def _select_hosts(arg: str | None) -> list[str]:
+def _select_hosts(arg: str | None, *, interactive: bool = False) -> list[str]:
     """Resolve --host into a concrete list of host names.
 
     None or "all" → every host whose binary is on PATH.
     A specific name → that host (no PATH check).
+
+    When *interactive* is True and no --host flag was given, present a
+    numbered list and let the user choose which hosts to install for.
     """
     all_hosts = known_hosts()
-    if arg is None or arg == "all":
-        present = [h for h in all_hosts if shutil.which(_binary_for(h))]
-        if not present:
-            return all_hosts  # fall back to all known if nothing detected
-        return present
-    if arg not in all_hosts:
-        raise SystemExit(
-            f"lore install: unknown host '{arg}' "
-            f"(known: {', '.join(all_hosts)})"
+    if arg is not None and arg != "all":
+        if arg not in all_hosts:
+            raise SystemExit(
+                f"lore install: unknown host '{arg}' "
+                f"(known: {', '.join(all_hosts)})"
+            )
+        return [arg]
+
+    detected = [h for h in all_hosts if shutil.which(_binary_for(h))]
+
+    if not interactive:
+        return detected if detected else all_hosts
+
+    # --- Interactive tool selection ---
+    if not detected:
+        console.print(
+            "\n[yellow]No supported tools detected on PATH.[/yellow]",
+            markup=True,
         )
-    return [arg]
+        console.print("  Supported hosts:", markup=False)
+        for i, h in enumerate(all_hosts, 1):
+            console.print(f"    [{i}] {h}", markup=False)
+        ans = input(
+            f"  Install for which? (comma-separated numbers, or 'all') [{', '.join(str(i) for i in range(1, len(all_hosts) + 1))}]: "
+        ).strip()
+        if not ans or ans.lower() == "all":
+            return all_hosts
+        chosen = _parse_host_selection(ans, all_hosts)
+        return chosen if chosen else all_hosts
+
+    if len(detected) == 1:
+        ans = input(f"\n  Install for {detected[0]}? [Y/n]: ").strip().lower()
+        if ans in ("n", "no"):
+            return []
+        return detected
+
+    # Multiple detected
+    console.print("\n[bold]Detected tools:[/bold]", markup=True)
+    for i, h in enumerate(detected, 1):
+        console.print(f"    [{i}] {h}", markup=False)
+    ans = input(
+        f"  Install for which? (comma-separated numbers, or 'all') [all]: "
+    ).strip()
+    if not ans or ans.lower() == "all":
+        return detected
+    chosen = _parse_host_selection(ans, detected)
+    return chosen if chosen else detected
+
+
+def _parse_host_selection(ans: str, hosts: list[str]) -> list[str]:
+    """Parse a comma-separated list of 1-based indices into host names."""
+    chosen: list[str] = []
+    for part in ans.split(","):
+        part = part.strip()
+        if part.isdigit():
+            idx = int(part) - 1
+            if 0 <= idx < len(hosts):
+                chosen.append(hosts[idx])
+    return chosen
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +358,115 @@ def _emit_json(envelope: dict) -> None:
     print(json.dumps(envelope, indent=2, default=str))
 
 
+def _is_interactive(args: SimpleNamespace) -> bool:
+    """True when the session is interactive (tty, no automation flags)."""
+    return sys.stdin.isatty() and not args.yes and not args.json and not args.quiet
+
+
+def _post_install_setup() -> None:
+    """Interactive vault + wiki scaffolding after a successful host install.
+
+    Only called in interactive mode for fresh installs. Skipped silently
+    if the vault already exists and has wikis.
+    """
+    from lore_core.config import get_lore_root
+
+    # --- Vault setup ---------------------------------------------------
+    try:
+        lore_root = get_lore_root()
+        has_vault = (lore_root / "wiki").is_dir()
+    except Exception:
+        has_vault = False
+
+    if has_vault:
+        wiki_root = lore_root / "wiki"
+        existing_wikis = [
+            d.name for d in wiki_root.iterdir() if d.is_dir()
+        ]
+        if existing_wikis:
+            # Vault exists and has wikis — nothing to do
+            return
+
+    console.print()
+    console.print("[bold]Vault setup[/bold]", markup=True)
+
+    default_root = Path.home() / "lore"
+    vault_input = input(
+        f"  Where to store your vault? [{default_root}]: "
+    ).strip()
+    vault_path = Path(vault_input).expanduser().resolve() if vault_input else default_root
+
+    from lore_cli.init_cmd import init_vault  # lazy to avoid circular imports
+
+    init_vault(vault_path, force=False)
+
+    # --- Wiki setup ----------------------------------------------------
+    wiki_root = vault_path / "wiki"
+    existing_wikis = (
+        [d.name for d in wiki_root.iterdir() if d.is_dir()]
+        if wiki_root.exists()
+        else []
+    )
+
+    if not existing_wikis:
+        console.print()
+        console.print("  Do you have a team wiki to connect?")
+        console.print("    [g] Clone from GitHub URL")
+        console.print("    [f] Link existing folder")
+        console.print("    [s] Skip — create a personal wiki only")
+        team_choice = input("  Choice [s]: ").strip().lower() or "s"
+
+        if team_choice == "g":
+            url = input("  GitHub URL: ").strip()
+            if url:
+                import subprocess as _sp
+
+                wiki_name = (
+                    url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+                )
+                target = wiki_root / wiki_name
+                _sp.run(["git", "clone", url, str(target)], check=True)
+                console.print(
+                    f"  [green]✓[/green] Team wiki '{rich_escape(wiki_name)}' cloned",
+                    markup=True,
+                )
+        elif team_choice == "f":
+            folder = input("  Folder path: ").strip()
+            if folder:
+                source = Path(folder).expanduser().resolve()
+                wiki_name = source.name
+                target = wiki_root / wiki_name
+                target.symlink_to(source)
+                console.print(
+                    f"  [green]✓[/green] Wiki '{rich_escape(wiki_name)}' linked",
+                    markup=True,
+                )
+
+        # Personal wiki
+        personal = input("  Create a personal wiki too? [Y/n]: ").strip().lower()
+        if personal != "n":
+            name = input("  Personal wiki name [personal]: ").strip() or "personal"
+            from lore_cli.new_wiki_cmd import scaffold_wiki  # lazy import
+
+            scaffold_wiki(name, mode="personal")
+            console.print(
+                f"  [green]✓[/green] Wiki '{rich_escape(name)}' created",
+                markup=True,
+            )
+
+    # --- Final handoff -------------------------------------------------
+    console.print()
+    console.print(
+        "  [bold]Next:[/bold] run [cyan]lore attach[/cyan] in any repo "
+        "to start capturing sessions.",
+        markup=True,
+    )
+    console.print(
+        "  [bold]Verify:[/bold] [cyan]lore doctor[/cyan]",
+        markup=True,
+    )
+
+
 def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
     """Shared install / upgrade / uninstall driver. `mode` selects:
         install   → host.plan(ctx)
@@ -324,7 +484,13 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
         )
         return 2
 
-    hosts = _select_hosts(args.host)
+    interactive = _is_interactive(args)
+    hosts = _select_hosts(
+        args.host, interactive=(interactive and mode == "install")
+    )
+    if not hosts:
+        console.print("  [yellow]No hosts selected.[/yellow]", markup=True)
+        return 0
     ctx = _build_ctx(args)
 
     # Legacy artifact detection — only for install / upgrade (and only
@@ -401,11 +567,21 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
 
     # Final handoff
     if mode == "install" and overall_failures == 0:
-        console.print(
-            "\n[bold]Next:[/bold] run [cyan]lore init[/cyan] to scaffold "
-            "your vault.",
-            markup=True,
-        )
+        if interactive:
+            try:
+                _post_install_setup()
+            except (KeyboardInterrupt, EOFError):
+                console.print(
+                    "\n\n  [yellow]Setup interrupted.[/yellow] "
+                    "Run [cyan]lore init[/cyan] later to finish vault setup.",
+                    markup=True,
+                )
+        else:
+            console.print(
+                "\n[bold]Next:[/bold] run [cyan]lore init[/cyan] to scaffold "
+                "your vault.",
+                markup=True,
+            )
     return 0 if overall_failures == 0 else 1
 
 

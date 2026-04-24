@@ -12,7 +12,7 @@ import yaml
 
 @dataclass
 class GitConfig:
-    auto_commit: bool = True
+    auto_commit: bool = False
     auto_push: bool = False
     auto_pull: bool = True
 

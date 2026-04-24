@@ -171,6 +171,22 @@ def test_already_attached_decline_reattach(lore_env: Path, tmp_path: Path) -> No
     assert "Already attached" in result.output
 
 
+def test_parent_attached_shows_info_but_continues(lore_env: Path, tmp_path: Path) -> None:
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    _write_offer(parent, wiki="ccat", scope="ccat")
+    runner.invoke(app, ["attach", "--cwd", str(parent)], input="u\n")
+
+    child = parent / "child"
+    child.mkdir()
+    _write_offer(child, wiki="ccat", scope="ccat:child")
+    # Should show parent info but proceed to the config flow, then use as-is
+    result = runner.invoke(app, ["attach", "--cwd", str(child)], input="u\n")
+    assert result.exit_code == 0, result.output
+    assert "parent attachment" in result.output.lower() or "Covered by" in result.output
+    assert "Attached" in result.output
+
+
 # ---- Subcommands still work ----
 
 def test_subcommand_accept_still_works(lore_env: Path, tmp_path: Path) -> None:

@@ -259,7 +259,7 @@ def test_mvp_e2e_session_end_produces_note(
 
     # Assert session note was created
     sessions_dir = lore_root / "wiki" / "private" / "sessions"
-    notes = list(sessions_dir.glob("*.md"))
+    notes = list(sessions_dir.rglob("*.md"))
     assert len(notes) == 1, f"Expected 1 session note, found {len(notes)}: {notes}"
 
     # Parse frontmatter
@@ -332,7 +332,7 @@ def test_mvp_e2e_non_noteworthy_slice_produces_no_note(
 
     # No session notes
     sessions_dir = lore_root / "wiki" / "private" / "sessions"
-    notes = list(sessions_dir.glob("*.md"))
+    notes = list(sessions_dir.rglob("*.md"))
     assert len(notes) == 0, f"Expected no session notes, found {len(notes)}: {notes}"
 
     # Ledger was advanced (digested_hash is now set)
@@ -379,7 +379,7 @@ def test_mvp_e2e_idempotent_on_rerun(
     )
 
     sessions_dir = lore_root / "wiki" / "private" / "sessions"
-    notes_after_first = list(sessions_dir.glob("*.md"))
+    notes_after_first = list(sessions_dir.rglob("*.md"))
     assert len(notes_after_first) == 1, f"Expected 1 note after first run, got {len(notes_after_first)}"
 
     # Second curator run — same ledger state; entry no longer pending because
@@ -392,7 +392,7 @@ def test_mvp_e2e_idempotent_on_rerun(
         now=_NOW,
     )
 
-    notes_after_second = list(sessions_dir.glob("*.md"))
+    notes_after_second = list(sessions_dir.rglob("*.md"))
     assert len(notes_after_second) == 1, (
         f"Expected exactly 1 note after second run, got {len(notes_after_second)}: {notes_after_second}"
     )
@@ -430,7 +430,7 @@ def test_mvp_e2e_unattached_cwd_produces_nothing(
 
     # No session notes
     sessions_dir = lore_root / "wiki" / "private" / "sessions"
-    notes = list(sessions_dir.glob("*.md"))
+    notes = list(sessions_dir.rglob("*.md"))
     assert len(notes) == 0, f"Expected no session notes for unattached cwd, found {notes}"
 
 
@@ -524,7 +524,7 @@ def test_mvp_e2e_second_slice_after_growth_is_processed(
     )
     assert r1.noteworthy_count == 1
     sessions_dir = lore_root / "wiki" / "private" / "sessions"
-    assert len(list(sessions_dir.glob("*.md"))) == 1
+    assert len(list(sessions_dir.rglob("*.md"))) == 1
 
     # Verify the ledger now records curator_a_run (the bug fix).
     tledger = TranscriptLedger(lore_root)

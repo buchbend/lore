@@ -175,6 +175,7 @@ def _do_accept(lore_root: Path, cwd_path: Path) -> None:
         f"[green]Attached[/green] {repo_root} → wiki [cyan]{offer.wiki}[/cyan], "
         f"scope [magenta]{offer.scope}[/magenta]"
     )
+    _print_post_attach_guidance(lore_root, offer.wiki)
 
 
 def _do_decline(lore_root: Path, cwd_path: Path) -> None:
@@ -237,6 +238,22 @@ def _do_manual(lore_root: Path, cwd_path: Path, wiki: str, scope: str) -> None:
         f"[green]Attached[/green] {cwd_path} → wiki [cyan]{wiki}[/cyan], "
         f"scope [magenta]{scope}[/magenta] (manual)"
     )
+    _print_post_attach_guidance(lore_root, wiki)
+
+
+def _print_post_attach_guidance(lore_root: Path, wiki: str) -> None:
+    from lore_core.config import get_wiki_root
+    try:
+        wiki_sessions = get_wiki_root() / wiki / "sessions"
+    except Exception:
+        wiki_sessions = lore_root / "wiki" / wiki / "sessions"
+    console.print()
+    console.print("  [dim]What happens now:[/dim]")
+    console.print("  [dim]* Future sessions here will be captured automatically[/dim]")
+    console.print(f"  [dim]* Notes will appear in[/dim] {wiki_sessions}/")
+    console.print("  [dim]* Historical sessions are not processed[/dim] (run [cyan]lore backfill[/cyan] to import past work)")
+    console.print()
+    console.print("  [dim]Verify: start a new Claude Code session, then[/dim] [cyan]lore status[/cyan]")
 
 
 # ---- Interactive wizard ----
@@ -258,9 +275,9 @@ def _pick_from_list(
         if default and choice == default:
             marker = "  [dim](default)[/dim]"
             default_idx = i
-        console.print(f"  [cyan][{i}][/cyan] {choice}{marker}")
+        console.print(f"  [cyan]\\[{i}][/cyan] {choice}{marker}")
     if allow_custom:
-        console.print("  [cyan][c][/cyan] custom name")
+        console.print("  [cyan]\\[c][/cyan] custom name")
 
     prompt_hint = f" [{default_idx}]" if default_idx else ""
     while True:
@@ -298,7 +315,7 @@ def _config_detected_flow(
         f"backend: {offer.backend}"
     )
     console.print()
-    console.print("  [cyan][u][/cyan]se as-is   [cyan][c][/cyan]ustomize   [cyan][s][/cyan]kip")
+    console.print("  [cyan]\\[u][/cyan]se as-is   [cyan]\\[c][/cyan]ustomize   [cyan]\\[s][/cyan]kip")
 
     while True:
         raw = input("  Choice: ").strip().lower()
@@ -405,11 +422,12 @@ def _interactive_wizard(cwd_path: Path, lore_root: Path) -> None:
     from lore_core.offer import find_lore_yml, parse_lore_yml
     from lore_core.state.attachments import AttachmentsFile
 
+    resolved = cwd_path.resolve() if cwd_path.exists() else cwd_path.absolute()
     attachments = AttachmentsFile(lore_root)
     attachments.load()
-    existing = attachments.longest_prefix_match(cwd_path)
+    existing = attachments.longest_prefix_match(resolved)
 
-    if existing:
+    if existing and existing.path == resolved:
         console.print(
             f"\n[yellow]Already attached:[/yellow] {existing.path} → "
             f"wiki [cyan]{existing.wiki}[/cyan], "
@@ -418,6 +436,12 @@ def _interactive_wizard(cwd_path: Path, lore_root: Path) -> None:
         raw = input("  Re-attach with new config? [y/N]: ").strip().lower()
         if raw not in ("y", "yes"):
             raise typer.Exit(0)
+    elif existing:
+        console.print(
+            f"\n[dim]Covered by parent attachment:[/dim] {existing.path} → "
+            f"wiki [cyan]{existing.wiki}[/cyan], "
+            f"scope [magenta]{existing.scope}[/magenta]"
+        )
 
     offer_path = find_lore_yml(cwd_path)
     if offer_path:

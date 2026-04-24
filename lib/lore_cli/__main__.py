@@ -19,8 +19,10 @@ import typer
 from lore_cli import (
     attach_cmd,
     attachments_cmd,
+    backfill_cmd,
     briefing_cmd,
     completions_cmd,
+    config_cmd,
     detach_cmd,
     doctor_cmd,
     hooks,
@@ -54,36 +56,44 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 
-# Mount every subcommand. Names match the legacy SUBCOMMANDS dict so
-# `lore <verb>` invocations stay backwards-compatible.
-app.add_typer(attach_cmd.app, name="attach")
-app.add_typer(attachments_cmd.app, name="attachments")
-app.add_typer(briefing_cmd.app, name="briefing")
-app.add_typer(completions_cmd.app, name="completions")
-app.add_typer(curator_cmd.app, name="curator")
-app.add_typer(detach_cmd.app, name="detach")
-app.add_typer(doctor_cmd.app, name="doctor")
-app.add_typer(hooks.hook_app, name="hook")
-app.add_typer(inbox_cmd.app, name="inbox")
-app.add_typer(ingest_cmd.app, name="ingest")
-app.add_typer(init_cmd.app, name="init")
-app.add_typer(install_cmd.app, name="install")
-app.add_typer(lint_cmd.app, name="lint")
-app.add_typer(log_cmd.app, name="log")
-app.add_typer(mcp_cmd.app, name="mcp")
-app.add_typer(migrate_cmd.app, name="migrate")
-app.add_typer(news_cmd.app, name="news")
-app.add_typer(new_wiki_cmd.app, name="new-wiki")
-app.add_typer(proc_cmd.app, name="proc")
-app.add_typer(registry_cmd.app, name="registry")
-app.add_typer(resume_cmd.app, name="resume")
-app.add_typer(runs_cmd.app, name="runs")
-app.add_typer(scopes_cmd.app, name="scopes")
-app.add_typer(search_cmd.app, name="search")
-app.add_typer(session_cmd.app, name="session")
-app.add_typer(status_cmd.app, name="status")
-app.add_typer(surface_cmd.app, name="surface")
-app.add_typer(transcripts_cmd.app, name="transcripts")
+# Mount subcommands grouped by audience. `rich_help_panel` controls the
+# section header in `lore --help`.
+_GS = "Getting Started"
+_KN = "Knowledge"
+_ADV = "Advanced"
+
+app.add_typer(install_cmd.app, name="install", rich_help_panel=_GS)
+app.add_typer(attach_cmd.app, name="attach", rich_help_panel=_GS)
+app.add_typer(status_cmd.app, name="status", rich_help_panel=_GS)
+app.add_typer(doctor_cmd.app, name="doctor", rich_help_panel=_GS)
+app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
+
+app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
+app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
+app.add_typer(surface_cmd.app, name="surface", rich_help_panel=_KN)
+app.add_typer(news_cmd.app, name="news", rich_help_panel=_KN)
+app.add_typer(resume_cmd.app, name="resume", rich_help_panel=_KN)
+
+app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
+app.add_typer(attachments_cmd.app, name="attachments", rich_help_panel=_ADV)
+app.add_typer(briefing_cmd.app, name="briefing", rich_help_panel=_ADV)
+app.add_typer(completions_cmd.app, name="completions", rich_help_panel=_ADV)
+app.add_typer(curator_cmd.app, name="curator", rich_help_panel=_ADV)
+app.add_typer(detach_cmd.app, name="detach", rich_help_panel=_ADV)
+app.add_typer(hooks.hook_app, name="hook", rich_help_panel=_ADV)
+app.add_typer(inbox_cmd.app, name="inbox", rich_help_panel=_ADV)
+app.add_typer(ingest_cmd.app, name="ingest", rich_help_panel=_ADV)
+app.add_typer(init_cmd.app, name="init", rich_help_panel=_ADV)
+app.add_typer(lint_cmd.app, name="lint", rich_help_panel=_ADV)
+app.add_typer(log_cmd.app, name="log", rich_help_panel=_ADV)
+app.add_typer(mcp_cmd.app, name="mcp", rich_help_panel=_ADV)
+app.add_typer(migrate_cmd.app, name="migrate", rich_help_panel=_ADV)
+app.add_typer(new_wiki_cmd.app, name="new-wiki", rich_help_panel=_ADV)
+app.add_typer(proc_cmd.app, name="proc", rich_help_panel=_ADV)
+app.add_typer(registry_cmd.app, name="registry", rich_help_panel=_ADV)
+app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
+app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
+app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
 
 
 @app.command(
