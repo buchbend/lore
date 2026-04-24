@@ -13,12 +13,21 @@ any mid-session heartbeat updates.
 
 ## Implementation
 
-```
-lore hook context-log
-```
+One Bash call, then one text message. Two requirements:
 
-One Bash call. Print the output verbatim. **Do not add a summary,
-restate the content, or interpret it** — the user can read.
+1. Run `lore hook context-log` with `dangerouslyDisableSandbox: true`.
+   The command walks `/proc` to find the Claude Code ancestor PID,
+   which the default sandbox blocks with a seccomp error on the first
+   try. Disabling upfront avoids a wasted retry.
+2. After the Bash call returns, output the captured stdout **verbatim
+   as your text reply** — inside a fenced code block so whitespace and
+   the `──` separators render cleanly. This is essential: Bash tool
+   output is collapsed in the UI by default, so echoing it as text is
+   what makes the timeline visible inline.
+
+**Do not add a summary, restate the content, or interpret it** — the
+user can read it themselves. No preamble, no trailing commentary.
+Just the fenced block.
 
 The output is a timeline:
 
