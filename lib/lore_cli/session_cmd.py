@@ -118,11 +118,7 @@ def cmd_new(
             print(f"would write: {note_path}", file=sys.stderr)
         return
 
-    written = write_note(
-        note_path=note_path,
-        frontmatter_yaml=result["frontmatter_yaml"],
-        body=body_to_write,
-    )
+    filed = write_note(scaffolded=result, body=body_to_write)
 
     if json_out:
         _emit_json(
@@ -130,12 +126,15 @@ def cmd_new(
                 "schema": "lore.session.new/1",
                 "data": {
                     **{k: v for k, v in result.items() if k != "body_template"},
+                    "note_path": str(filed.path),
+                    "wikilink": filed.wikilink,
+                    "was_merge": filed.was_merge,
                     "written": True,
                 },
             }
         )
     else:
-        print(str(written))
+        print(str(filed.path))
 
 
 # ---------------------------------------------------------------------------

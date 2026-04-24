@@ -14,54 +14,8 @@ from lore_curator.session_filer import FiledNote, _slug, file_session_note
 
 
 # ---------------------------------------------------------------------------
-# Fake Anthropic client (same pattern as test_noteworthy.py)
-# ---------------------------------------------------------------------------
-
-
-class _FakeContentBlock:
-    def __init__(self, type_, input_=None, text=None):
-        self.type = type_
-        self.input = input_
-        self.text = text
-
-
-class _FakeResponse:
-    def __init__(self, content):
-        self.content = content
-
-
-class _FakeMessagesAPI:
-    def __init__(self, response):
-        self._response = response
-        self.calls = []
-
-    def create(self, **kwargs):
-        self.calls.append(kwargs)
-        return self._response
-
-
-class _FakeAnthropicClient:
-    def __init__(self, response):
-        self.messages = _FakeMessagesAPI(response)
-
-
-def _make_client(data: dict) -> _FakeAnthropicClient:
-    block = _FakeContentBlock(type_="tool_use", input_=data)
-    return _FakeAnthropicClient(_FakeResponse([block]))
-
-
-def _make_new_client() -> _FakeAnthropicClient:
-    """Client that returns {'new': True} — no merge."""
-    return _make_client({"new": True})
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _resolver(tier: str) -> str:
-    return {"middle": "claude-sonnet-4-6", "simple": "claude-haiku-4-5"}[tier]
 
 
 def _make_scope(scope_str: str = "proj:feature") -> Scope:
@@ -112,7 +66,6 @@ def _file_note(
     noteworthy: NoteworthyResult | None = None,
     turns: list[Turn] | None = None,
     handle: TranscriptHandle | None = None,
-    client=None,
     now: datetime = _NOW,
 ) -> FiledNote:
     return file_session_note(
@@ -121,8 +74,6 @@ def _file_note(
         noteworthy=noteworthy or _make_noteworthy(),
         turns=turns or _make_turns(),
         wiki_root=wiki_root,
-        anthropic_client=client or _make_new_client(),
-        model_resolver=_resolver,
         now=now,
     )
 
@@ -201,9 +152,7 @@ def test_file_draft_true_on_new_note(tmp_path):
 
 def test_no_llm_merge_call(tmp_path):
     """No LLM merge judgment call — 1 transcript = 1 note."""
-    client = _make_new_client()
-    result = _file_note(tmp_path, client=client)
-    assert client.messages.calls == []
+    result = _file_note(tmp_path)
     assert result.was_merge is False
     assert result.path.exists()
 
@@ -262,8 +211,6 @@ def test_work_time_drives_directory_and_filename(tmp_path):
         noteworthy=_make_noteworthy(),
         turns=_make_turns(),
         wiki_root=tmp_path,
-        anthropic_client=_make_new_client(),
-        model_resolver=_resolver,
         now=curation_time,
         work_time=work_time,
     )
@@ -285,8 +232,6 @@ def test_work_time_drives_frontmatter_created_and_last_reviewed(tmp_path):
         noteworthy=_make_noteworthy(),
         turns=_make_turns(),
         wiki_root=tmp_path,
-        anthropic_client=_make_new_client(),
-        model_resolver=_resolver,
         now=curation_time,
         work_time=work_time,
     )
@@ -306,8 +251,6 @@ def test_curator_a_run_stays_curation_time_even_when_work_time_older(tmp_path):
         noteworthy=_make_noteworthy(),
         turns=_make_turns(),
         wiki_root=tmp_path,
-        anthropic_client=_make_new_client(),
-        model_resolver=_resolver,
         now=curation_time,
         work_time=work_time,
     )
@@ -344,7 +287,7 @@ def test_collision_appends_counter(tmp_path):
     dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
     closed_first.write_text(f"---\n{dumped}\n---\n\nfirst\n")
 
-    result = _file_note(tmp_path, client=_make_new_client())
+    result = _file_note(tmp_path)
     assert result.path != closed_first
     assert result.path.name.endswith("-2.md")
     assert result.was_merge is False
@@ -364,10 +307,8 @@ def test_filer_appends_to_todays_open_note_for_same_scope(tmp_path):
         body="### Summary\n- morning slice",
     )
 
-    client = _make_client({"merge": "/nonexistent.md"})
     result = _file_note(
         tmp_path,
-        client=client,
         noteworthy=_make_noteworthy("Afternoon Work"),
         scope=_make_scope("proj:feature"),
     )
@@ -377,7 +318,6 @@ def test_filer_appends_to_todays_open_note_for_same_scope(tmp_path):
     text = existing.read_text()
     assert "## Afternoon Work" in text
     assert "- morning slice" in text
-    assert client.messages.calls == []
 
 
 def test_filer_creates_new_note_when_todays_note_is_closed(tmp_path):
@@ -401,9 +341,8 @@ def test_filer_creates_new_note_when_todays_note_is_closed(tmp_path):
     closed_note.write_text(f"---\n{dumped}\n---\n\nbody\n")
     closed_before = closed_note.read_text()
 
-    client = _make_new_client()
     result = _file_note(
-        tmp_path, client=client, scope=_make_scope("proj:feature")
+        tmp_path, scope=_make_scope("proj:feature")
     )
     assert result.path != closed_note
     assert result.was_merge is False
@@ -412,8 +351,7 @@ def test_filer_creates_new_note_when_todays_note_is_closed(tmp_path):
 
 def test_filer_creates_new_note_when_no_todays_note_exists(tmp_path):
     """Empty sessions dir -> new note."""
-    client = _make_new_client()
-    result = _file_note(tmp_path, client=client)
+    result = _file_note(tmp_path)
     assert result.was_merge is False
     assert result.path.exists()
 
@@ -427,9 +365,8 @@ def test_filer_creates_new_note_for_different_scope_same_day(tmp_path):
     )
     other_before = other_scope.read_text()
 
-    client = _make_new_client()
     result = _file_note(
-        tmp_path, client=client, scope=_make_scope("proj:feature")
+        tmp_path, scope=_make_scope("proj:feature")
     )
     assert result.was_merge is False
     assert result.path != other_scope
@@ -445,9 +382,8 @@ def test_find_todays_open_note_ignores_notes_from_other_dates(tmp_path):
     )
     yesterday_before = yesterday.read_text()
 
-    client = _make_new_client()
     result = _file_note(
-        tmp_path, client=client, scope=_make_scope("proj:feature")
+        tmp_path, scope=_make_scope("proj:feature")
     )
     assert result.path != yesterday
     assert result.was_merge is False
@@ -465,22 +401,18 @@ def test_find_todays_open_note_respects_work_time_not_now(tmp_path):
     work_time = datetime(2026, 4, 17, 14, 0, tzinfo=UTC)
     curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
 
-    client = _make_client({"merge": "/wrong.md"})
     result = file_session_note(
         scope=_make_scope("proj:feature"),
         handle=_make_handle_with_mtime(work_time),
         noteworthy=_make_noteworthy("Back-dated Slice"),
         turns=_make_turns(),
         wiki_root=tmp_path,
-        anthropic_client=client,
-        model_resolver=_resolver,
         now=curation_time,
         work_time=work_time,
     )
 
     assert result.path == existing
     assert result.was_merge is True
-    assert client.messages.calls == []
 
 
 # ---------------------------------------------------------------------------

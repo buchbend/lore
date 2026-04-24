@@ -94,7 +94,7 @@ def test_scaffold_solo_no_attach(solo_vault, attached_project):
     assert result["wiki"] == "ccat"
     assert result["scope"] == "ccat"  # wiki-default
     assert result["team_mode"] is False
-    assert result["note_path"].endswith("/sessions/2026-04-17-fix-retry.md")
+    assert result["note_path"].endswith("/sessions/2026/04/17-fix-retry.md")
     assert result["frontmatter"]["schema_version"] == 2
     assert result["frontmatter"]["repos"] == ["ccatobs/data-transfer"]
     assert "schema_version: 2" in result["frontmatter_yaml"]
@@ -134,7 +134,7 @@ def test_scaffold_team_mode_shards_path(solo_vault, attached_project):
     )
     assert result["team_mode"] is True
     assert result["handle"] == "alice"
-    assert result["note_path"].endswith("/sessions/alice/2026-04-17-t.md")
+    assert result["note_path"].endswith("/sessions/alice/2026/04/17-t.md")
 
 
 def test_scaffold_explicit_overrides(solo_vault, attached_project):

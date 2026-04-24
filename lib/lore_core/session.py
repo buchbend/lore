@@ -12,13 +12,17 @@ body prose, concept extraction — stays in the subagent. Per the
 CLI-first / token-economy thesis the subagent's tool budget shrinks
 from ~6–8 calls to ~3 (1 MCP scaffold-read + 1 Bash write + 1 Bash
 commit).
+
+Writes funnel through `lore_core.session_writer.file_or_merge` — the
+same entry point curator-A uses — so path, append-to-today, and
+frontmatter invariants stay in one place.
 """
 
 from __future__ import annotations
 
 import re
 import subprocess
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +33,8 @@ from lore_core.identity import (
     session_note_dir,
     team_mode_active,
 )
+from lore_core.session_writer import FiledNote, SessionInput, file_or_merge
+from lore_core.types import Scope
 
 
 def _resolve_attach_block(cwd: Path) -> tuple[Path, dict] | None:
@@ -283,17 +289,20 @@ def scaffold(
     if not scope:
         scope = wiki_path.name  # zero-config fallback
 
-    # 2. Identity + path resolution (sharded in team mode, flat in solo).
+    # 2. Identity + path resolution. Layout matches the passive-capture
+    #    writer: <wiki>/sessions[/<handle>]/<YYYY>/<MM>/<DD>-<slug>.md.
     email = _git_user_email(cwd_path)
     handle = resolve_handle(wiki_path, email) if email else "unknown"
     team_mode = team_mode_active(wiki_path)
-    sessions_dir = session_note_dir(wiki_path, handle)
+    sessions_base = session_note_dir(wiki_path, handle)
+    month_dir = sessions_base / f"{when.year}" / f"{when.month:02d}"
 
     safe_slug = slugify(slug)
     if not safe_slug:
         return {"error": f"Slug `{slug}` slugified to empty — pick a different slug."}
-    note_filename = f"{today_iso}-{safe_slug}.md"
-    note_path = sessions_dir / note_filename
+    day_prefix = f"{when.day:02d}"
+    note_filename = f"{day_prefix}-{safe_slug}.md"
+    note_path = month_dir / note_filename
     relative_path = note_path.relative_to(wiki_path)
     existing = note_path.exists()
 
@@ -353,6 +362,8 @@ def scaffold(
         "body_template": body,
         "handle": handle,
         "scope": scope,
+        "slug": safe_slug,
+        "work_date": today_iso,
         "team_mode": team_mode,
         "commit_log": commit_log,
         "existing": existing,
@@ -366,19 +377,47 @@ def scaffold(
 
 def write_note(
     *,
-    note_path: Path,
-    frontmatter_yaml: str,
+    scaffolded: dict[str, Any],
     body: str,
-) -> Path:
-    """Materialise a session note. Creates parent dirs as needed.
+) -> FiledNote:
+    """Materialise a session note via the shared writer.
 
-    No safety net — caller must have run scaffold() first to know the
-    intended path. Used by `lore session new`.
+    Takes the dict returned by ``scaffold()`` plus a subagent-authored
+    body. Routes through ``file_or_merge`` so the append-to-today merge
+    rule and layout match the passive-capture path. Used by
+    `lore session new`.
     """
-    note_path.parent.mkdir(parents=True, exist_ok=True)
-    text = frontmatter_yaml.rstrip() + "\n\n" + body.strip() + "\n"
-    note_path.write_text(text)
-    return note_path
+    work_date = date.fromisoformat(scaffolded["work_date"])
+    work_time = datetime(work_date.year, work_date.month, work_date.day, tzinfo=UTC)
+
+    fm = scaffolded["frontmatter"]
+    wiki_path = Path(scaffolded["wiki_path"])
+
+    extras: dict[str, Any] = {}
+    for key in ("repos", "implements", "loose_ends", "project"):
+        if fm.get(key):
+            extras[key] = fm[key]
+
+    scope = Scope(
+        wiki=scaffolded["wiki"],
+        scope=scaffolded["scope"],
+        backend="",
+        claude_md_path=wiki_path,
+    )
+
+    si = SessionInput(
+        scope=scope,
+        wiki_root=wiki_path,
+        work_time=work_time,
+        now=datetime.now(UTC),
+        handle=scaffolded.get("handle") or "",
+        slug=scaffolded["slug"],
+        description=fm.get("description", ""),
+        body_markdown=body.strip() + "\n",
+        tags=list(fm.get("tags") or []),
+        extra_frontmatter=extras,
+    )
+    return file_or_merge(si)
 
 
 def commit_note(

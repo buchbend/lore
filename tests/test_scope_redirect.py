@@ -206,13 +206,11 @@ class TestScopeRedirectFrontmatter:
     def test_new_note_has_scope_redirected_from(self, tmp_path):
         from lore_core.schema import parse_frontmatter
         from lore_curator.noteworthy import NoteworthyResult
-        from lore_curator.session_filer import _write_new_note
+        from lore_curator.session_filer import file_session_note
+        from lore_core.types import TranscriptHandle
 
         wiki_dir = tmp_path / "wiki" / "ccat"
-        sessions_dir = wiki_dir / "sessions"
-        sessions_dir.mkdir(parents=True)
-
-        from lore_core.types import TranscriptHandle
+        (wiki_dir / "sessions").mkdir(parents=True)
 
         handle = TranscriptHandle(
             host="fake", id="txn-001",
@@ -228,27 +226,24 @@ class TestScopeRedirectFrontmatter:
                        claude_md_path=tmp_path / "CLAUDE.md")
         turns = [Turn(index=0, timestamp=_NOW, role="user", text="hi")]
 
-        path = sessions_dir / "2026-04-23-test-note.md"
-        _write_new_note(
-            path, scope=scope, handle=handle, noteworthy=noteworthy,
-            turns=turns, now=_NOW, work_time=_NOW,
+        filed = file_session_note(
+            scope=scope, handle=handle, noteworthy=noteworthy, turns=turns,
+            wiki_root=wiki_dir, now=_NOW, work_time=_NOW,
             scope_redirected_from="lore",
         )
 
-        text = path.read_text()
-        fm = parse_frontmatter(text)
+        fm = parse_frontmatter(filed.path.read_text())
         assert fm["scope"] == "ccat:data"
         assert fm["scope_redirected_from"] == "lore"
 
     def test_new_note_without_redirect_has_no_field(self, tmp_path):
         from lore_core.schema import parse_frontmatter
         from lore_curator.noteworthy import NoteworthyResult
-        from lore_curator.session_filer import _write_new_note
+        from lore_curator.session_filer import file_session_note
         from lore_core.types import TranscriptHandle
 
         wiki_dir = tmp_path / "wiki" / "private"
-        sessions_dir = wiki_dir / "sessions"
-        sessions_dir.mkdir(parents=True)
+        (wiki_dir / "sessions").mkdir(parents=True)
 
         handle = TranscriptHandle(
             host="fake", id="txn-002",
@@ -264,11 +259,10 @@ class TestScopeRedirectFrontmatter:
                        claude_md_path=tmp_path / "CLAUDE.md")
         turns = [Turn(index=0, timestamp=_NOW, role="user", text="hi")]
 
-        path = sessions_dir / "2026-04-23-normal-note.md"
-        _write_new_note(
-            path, scope=scope, handle=handle, noteworthy=noteworthy,
-            turns=turns, now=_NOW, work_time=_NOW,
+        filed = file_session_note(
+            scope=scope, handle=handle, noteworthy=noteworthy, turns=turns,
+            wiki_root=wiki_dir, now=_NOW, work_time=_NOW,
         )
 
-        fm = parse_frontmatter(path.read_text())
+        fm = parse_frontmatter(filed.path.read_text())
         assert "scope_redirected_from" not in fm
