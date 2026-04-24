@@ -36,6 +36,24 @@ def test_malformed_yaml_warns(tmp_path: Path, recwarn):
     assert any("malformed YAML" in str(w.message) for w in recwarn)
 
 
+def test_curator_noteworthy_mode_defaults_to_cascade(tmp_path: Path):
+    """v0.6.0 promoted the feature-based cascade from opt-in to default.
+    Absent explicit override, every wiki runs cascade mode."""
+    cfg = load_root_config(tmp_path)
+    assert cfg.curator.noteworthy_mode == "cascade"
+
+
+def test_curator_noteworthy_mode_can_be_overridden_in_config(tmp_path: Path):
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    (lore_dir / "config.yml").write_text(
+        "curator:\n"
+        "  noteworthy_mode: llm_only\n"
+    )
+    cfg = load_root_config(tmp_path)
+    assert cfg.curator.noteworthy_mode == "llm_only"
+
+
 def test_unknown_key_warns(tmp_path: Path, recwarn):
     warnings.simplefilter("always")
     lore_dir = tmp_path / ".lore"

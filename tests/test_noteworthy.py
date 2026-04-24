@@ -73,6 +73,7 @@ def _simple_turns() -> list[Turn]:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_classify_returns_noteworthy_true_for_substantive_slice():
     data = {
         "noteworthy": True,
@@ -283,23 +284,68 @@ def test_build_prompt_text_under_budget_is_unchanged():
     assert all(f"turn {i}" in prompt for i in range(3))
 
 
-def test_resolve_mode_falls_through_to_llm_only_on_garbage(monkeypatch):
-    """Invalid env values must not crash or silently become cascade — fall
-    back to llm_only so misconfiguration never loses data."""
+def test_resolve_mode_default_is_cascade(monkeypatch):
+    """v0.6.0 promoted cascade to default once real-traffic agreement showed
+    it safe. Absent env + absent config file, cascade wins."""
+    from lore_curator.noteworthy import _resolve_mode
+
+    monkeypatch.delenv("LORE_NOTEWORTHY_MODE", raising=False)
+    assert _resolve_mode() == "cascade"
+
+
+def test_resolve_mode_env_overrides_default(monkeypatch):
+    from lore_curator.noteworthy import _resolve_mode
+
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
+    assert _resolve_mode() == "llm_only"
+
+
+def test_resolve_mode_config_used_when_env_unset(monkeypatch, tmp_path):
+    """Precedence: env > config > default. Here env is absent, config
+    says llm_only, and we verify the config wins over the 'cascade'
+    default."""
+    from lore_curator.noteworthy import _resolve_mode
+
+    monkeypatch.delenv("LORE_NOTEWORTHY_MODE", raising=False)
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    (lore_dir / "config.yml").write_text(
+        "curator:\n  noteworthy_mode: llm_only\n"
+    )
+    assert _resolve_mode(lore_root=tmp_path) == "llm_only"
+
+
+def test_resolve_mode_env_beats_config(monkeypatch, tmp_path):
+    """Env always wins so operators can flip a single process without
+    editing the config file."""
+    from lore_curator.noteworthy import _resolve_mode
+
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "cascade")
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    (lore_dir / "config.yml").write_text(
+        "curator:\n  noteworthy_mode: llm_only\n"
+    )
+    assert _resolve_mode(lore_root=tmp_path) == "cascade"
+
+
+def test_resolve_mode_falls_through_to_default_on_garbage(monkeypatch):
+    """Invalid env values must not crash or silently become something
+    unexpected — fall back to the default."""
     from lore_curator.noteworthy import _resolve_mode
 
     monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "total_nonsense")
-    assert _resolve_mode() == "llm_only"
+    assert _resolve_mode() == "cascade"
 
     monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "")
-    assert _resolve_mode() == "llm_only"
+    assert _resolve_mode() == "cascade"
 
 
 def test_cascade_verdict_event_carries_mode(monkeypatch):
     """Shadow-run analysis needs to know which mode produced each verdict."""
     from lore_core.run_log import RunLogger
 
-    monkeypatch.delenv("LORE_NOTEWORTHY_MODE", raising=False)
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
 
     client = _make_client({
         "noteworthy": True, "reason": "r", "title": "t", "summary": "s",
@@ -325,12 +371,12 @@ def test_cascade_verdict_event_carries_mode(monkeypatch):
 
 
 def test_classify_emits_cascade_verdict_shadow_run_llm_only_mode(monkeypatch):
-    """In the default ``llm_only`` mode the cascade runs passively: its
-    verdict + feature vector are emitted for shadow-run calibration but
-    the LLM is still the decider."""
+    """Shadow-run mode: cascade runs and emits its verdict for calibration
+    but the LLM is still the decider. Useful when operators want to A/B
+    compare past LLM verdicts against the cascade before trusting it."""
     from lore_core.run_log import RunLogger
 
-    monkeypatch.delenv("LORE_NOTEWORTHY_MODE", raising=False)
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
 
     client = _make_client({
         "noteworthy": True, "reason": "r", "title": "t", "summary": "s",
