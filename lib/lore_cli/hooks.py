@@ -23,6 +23,14 @@ from pathlib import Path
 
 from lore_core import gh as _gh_mod
 from lore_core.config import get_wiki_root
+
+
+def _lore_version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("lore")
+    except Exception:
+        return "?"
 from lore_core.git import current_repo
 from lore_core.io import atomic_write_text
 from lore_core.schema import parse_frontmatter
@@ -610,7 +618,7 @@ def _session_start_from_lore(
         injected_bits.append(f"{len(issues)} issue{'s' if len(issues) != 1 else ''}")
     if prs:
         injected_bits.append(f"{len(prs)} PR{'s' if len(prs) != 1 else ''}")
-    status_line = "lore: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
+    status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     out_parts: list[str] = [status_line, ""]
     out_parts.extend(_load_directive_lines())
@@ -722,7 +730,7 @@ def _session_start(cwd: str | None) -> str:
         injected_bits.append(f"last note: {first_summary}{extra}")
     if items:
         injected_bits.append(f"{len(items)} open item{'s' if len(items) != 1 else ''}")
-    status_line = "lore: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
+    status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     parts: list[str] = [status_line, ""]
     parts.extend(_load_directive_lines())
