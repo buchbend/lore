@@ -44,6 +44,37 @@ def _build_resolver(lore_root: Path) -> Resolver:
     return _resolver
 
 
+def _refresh_ledger_mtimes(
+    tledger: TranscriptLedger,
+    lore_root: Path,
+    lookup: Callable[[str], Adapter],
+) -> None:
+    """Stat transcript files and update stale last_mtime entries.
+
+    The hook normally keeps mtimes current, but during a long session
+    no hooks fire, so manual runs would see stale mtimes and 0 pending.
+    """
+    raw = tledger._load()
+    to_write: list[TranscriptLedgerEntry] = []
+    for key, raw_entry in raw.items():
+        entry = tledger._entry_from_raw(raw_entry)
+        if entry.orphan:
+            continue
+        p = entry.path
+        if not p.exists():
+            continue
+        try:
+            from datetime import UTC
+            file_mtime = datetime.fromtimestamp(p.stat().st_mtime, tz=UTC)
+        except OSError:
+            continue
+        if file_mtime != entry.last_mtime:
+            entry.last_mtime = file_mtime
+            to_write.append(entry)
+    if to_write:
+        tledger.bulk_upsert(to_write)
+
+
 @dataclass
 class CuratorAResult:
     """Summary of one Curator A pass.
@@ -98,6 +129,10 @@ def run_curator_a(
     lookup = adapter_lookup or get_adapter
     tledger = TranscriptLedger(lore_root)
     resolver = _build_resolver(lore_root)
+
+    if trigger == "manual":
+        _refresh_ledger_mtimes(tledger, lore_root, lookup)
+
     pending_snapshot = tledger.pending(resolver=resolver)
 
     config_snapshot = {"noteworthy_tier": "middle"}
