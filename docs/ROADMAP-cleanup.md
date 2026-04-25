@@ -15,7 +15,7 @@
 
 - ☑ **Phase 0** — Stop the bleeding *(2026-04-25)*
 - ☑ **Phase 1** — Layering fence (`lore_cli` decomposition) *(2026-04-25)*
-- ☐ **Phase 2** — Config consolidation
+- ☑ **Phase 2** — Config map + state map + `require_lore_root()` *(2026-04-25)*
 - ☐ **Phase 3** — `hooks.py` decomposition
 - ☐ **Phase 4** — Naming + concept consolidation
 - ☐ **Phase 5** — UX polish
@@ -231,21 +231,108 @@ the multi-host or library-mode use case ever materializes.
 
 ---
 
-## Phase 2 — Config consolidation *(sketch — refine when next)*
+## Phase 2 — Config map + state map + `require_lore_root()`
 
-**Status:** ☐ pending — **not yet planned in detail.**
+**Status:** ☑ completed 2026-04-25
+**Estimated session length:** 1 sitting
 
-### Sketch
-Consolidate the 9 sources of config truth into a documented precedence chain. Either adopt `dynaconf` (per project guidance) or document the existing layering explicitly with a precedence test. Unify the three "scope" stores (`_scopes.yml`, `scopes.json`, `attachments.json`) behind one resolver. Fix `LORE_ROOT` import-time resolution footgun. Pick one user-facing name from {wiki, scope, vault} and migrate help/error copy.
+### Refined scope (made during the planning sub-step)
 
-### Refine before starting
-- Decide: `dynaconf` adoption vs. documented status quo. (`dynaconf` is in the global guidance but adds a dep — weigh.)
-- Decide: which of the three scope stores wins, or do they collapse into one shape?
-- Decide: do we deprecate `WIKI_ROOT` or keep it as a derived value?
-- Sketch a migration plan for existing vaults (don't break installed users).
+The "9 sources of config truth" enumerated by the review turned out to
+be more disciplined than the review implied: `root_config.py` is
+already a centralized layer with documented env precedence, and the
+"three scope stores" have **genuinely distinct roles**, not duplicated
+ones. The fix is therefore *legibility* — making the existing
+discipline visible — plus the small amount of consolidation that's
+actually duplicated.
 
-### Session log
-*(empty)*
+Decisions made up front:
+- **No dynaconf.** Overkill for the existing layered configs that
+  don't actually conflict. The shared resolution pattern
+  (`_resolve_mode`, `_resolve_openai_settings`, `_resolve_backend`)
+  is already idiomatic and well-tested.
+- **Keep the three scope/state files.** They have distinct roles:
+  wiki-internal catalog (`_scopes.yml`), vault-wide derived registry
+  (`scopes.json`), per-host consent record (`attachments.json`).
+  Documenting the collaboration is more useful than collapsing them.
+- **`LORE_ROOT`/`WIKI_ROOT` import-time footgun**: already removed in
+  Phase 0 (module-level constants deleted). No further work needed.
+- **User-facing naming**: vault / wiki / scope are *already* used
+  consistently in user-facing copy. The deeper identifier rename
+  (curator A/B/C → role names, etc.) is Phase 4 territory.
+
+### Landed
+
+- **`docs/architecture/config.md`** — canonical config map: every
+  env var, every config file, full precedence chain, "adding a new
+  setting" checklist. ~150 lines, table-driven.
+- **`docs/architecture/state.md`** — canonical state map: the three
+  `_scopes.yml` / `scopes.json` / `attachments.json` files, their
+  distinct roles, regenerability table, collaboration diagram, and
+  failure-mode descriptions. Includes a "Vocabulary" section
+  codifying vault / wiki / scope.
+- **`require_lore_root()` + typed exceptions** — added to
+  `lore_core.config` alongside existing `get_lore_root()`. Two-layer
+  resolver: `LoreRootError` base + `LoreRootNotSet` /
+  `LoreRootMissing` specifics. CLI side now goes through
+  `lore_cli/_cli_helpers.lore_root_or_die(err_console)`, replacing
+  five 6-9 line per-file `_lore_root_or_die()` definitions with
+  2-line delegating wrappers. Exit code standardized to 2
+  ("incorrect usage / configuration error"). One pre-existing test
+  asserting exit-code 1 was updated with a comment explaining the
+  change.
+- **`tests/test_config_resolvers.py`** (9 tests) — covers
+  `get_lore_root` default-vs-env-set, `require_lore_root` happy
+  path, `LoreRootNotSet` on unset/empty, `LoreRootMissing` on
+  missing path, `~` expansion, common-base inheritance.
+- **`tests/test_openai_precedence.py`** (5 tests) — pins down the
+  env > config precedence chain for `LORE_OPENAI_BASE_URL`,
+  `LORE_OPENAI_MODEL_{SIMPLE,MIDDLE,HIGH}`, including a
+  partial-override test that proves env-set tiers don't blank out
+  unset tiers (a regression risk in any future refactor).
+
+**Tests:** 1466 → 1480 passing (+14).
+
+### Already covered by existing tests (verified, no new tests needed)
+
+- `LORE_NOTEWORTHY_MODE` env > config > default, plus
+  garbage-fallback (`tests/test_noteworthy.py:287-341`).
+- `LORE_LLM_BACKEND` cli > env > config > default
+  (`tests/test_openai_backend.py:653-688`).
+- `LORE_LLM_BACKEND=openai` env-only path
+  (`tests/test_openai_backend.py:591-602`).
+- `pyproject.toml` / `plugin.json` / `CHANGELOG.md` version triple
+  (`tests/test_version_sync.py`, from Phase 0).
+
+### Surprised
+
+- The "9 sources of truth" framing was misleading. Each source has a
+  legitimate distinct role (env vars, root config, wiki config,
+  plugin manifest, install templates, frontmatter, etc.). The fix
+  is documentation, not consolidation.
+- The "three scope stores" framing was also misleading — they
+  collaborate. The architect's "five files implementing one
+  mapping" was wrong. The actual model is: catalog +
+  derived-registry + consent-record. State map doc spells it out.
+- The `_lore_root_or_die()` duplication was real and worth fixing,
+  even though it's small (5 files × ~6 lines). The exit-code drift
+  (some used 1, some used 2, with the 2-using ones doing the
+  fuller existence check) was a subtle inconsistency that the
+  consolidation surfaced.
+- One pre-existing test failure surfaced and was fixed inline
+  (`tests/test_cli_attachments.py:126` — exit-code drift from 1 to
+  2 after standardization).
+
+### Scope refinements for Phase 3
+
+- Phase 3 is `hooks.py` decomposition (still a sketch). The
+  layering fence (Phase 1) means `hooks.py` can now be split
+  without lower layers needing to follow.
+- Pre-existing `test_hooks_v2` rot was already fixed in Phase 1.
+  Phase 3 inherits a hook surface area in working order.
+- The `_resolve_*` pattern (env > config > default) documented in
+  `docs/architecture/config.md:"Adding a new setting"` should be
+  the template if Phase 3 adds new env-overridable hook settings.
 
 ---
 

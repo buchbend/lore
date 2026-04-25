@@ -123,7 +123,10 @@ def test_rm_missing_exits_1(lore_root: Path, tmp_path: Path) -> None:
 def test_ls_without_lore_root_env_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LORE_ROOT", raising=False)
     result = runner.invoke(app, ["attachments", "ls"])
-    assert result.exit_code == 1
+    # Exit 2 = "incorrect usage / configuration error" (argparse convention).
+    # Standardised in Phase 2 when the per-command _lore_root_or_die helpers
+    # were consolidated into lore_cli._cli_helpers.lore_root_or_die.
+    assert result.exit_code == 2
 
 
 # ---- purge-unattached ----

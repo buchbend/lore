@@ -36,11 +36,8 @@ app = typer.Typer(
 
 
 def _lore_root_or_die() -> Path:
-    env = os.environ.get("LORE_ROOT")
-    if not env:
-        err_console.print("[red]LORE_ROOT is not set.[/red]")
-        raise typer.Exit(1)
-    return Path(env)
+    from lore_cli._cli_helpers import lore_root_or_die
+    return lore_root_or_die(err_console)
 
 
 def _load() -> AttachmentsFile:

@@ -39,15 +39,8 @@ app = typer.Typer(
 
 
 def _lore_root_or_die() -> Path:
-    env = os.environ.get("LORE_ROOT")
-    if not env:
-        err_console.print("[red]LORE_ROOT is not set[/red]")
-        raise typer.Exit(code=2)
-    root = Path(env)
-    if not root.exists():
-        err_console.print(f"[red]LORE_ROOT does not exist: {root}[/red]")
-        raise typer.Exit(code=2)
-    return root
+    from lore_cli._cli_helpers import lore_root_or_die
+    return lore_root_or_die(err_console)
 
 
 @app.command("sync", help="Mirror every attached transcript into its wiki's .transcripts/.")
