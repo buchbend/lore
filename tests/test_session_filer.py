@@ -587,6 +587,34 @@ def test_phase_c_overlapping_files_merge_same_day(tmp_path):
     assert afternoon.was_merge is True
 
 
+@pytest.mark.parametrize("boilerplate_file", [
+    "poetry.lock", "uv.lock", "Pipfile.lock", "yarn.lock", "pnpm-lock.yaml",
+    "Cargo.lock", "package-lock.json",
+    "Makefile", "Dockerfile", ".dockerignore", "tsconfig.json",
+    ".python-version",
+])
+def test_phase_c_extended_boilerplate_does_not_force_merge(tmp_path, boilerplate_file):
+    """M2: lockfiles, build configs, and CI-adjacent files are touched
+    by almost every session in projects that use them. Their overlap
+    must not bridge unrelated topics."""
+    morning = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("Auth Refactor"),
+        turns=_make_turns_with_files("auth.py", boilerplate_file),
+    )
+
+    afternoon = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("Schema Migration"),
+        turns=_make_turns_with_files("schema.sql", boilerplate_file),
+    )
+
+    assert morning.path != afternoon.path, (
+        f"Overlap on {boilerplate_file!r} alone should not bridge "
+        "unrelated topics"
+    )
+
+
 def test_phase_c_boilerplate_only_overlap_does_not_force_merge(tmp_path):
     """Boilerplate files like CLAUDE.md, pyproject.toml, README.md are
     touched by almost every session. Their overlap alone must not be

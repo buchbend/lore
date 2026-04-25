@@ -46,7 +46,17 @@ def _build_resolver(lore_root: Path) -> Resolver:
 
 @dataclass
 class CuratorAResult:
+    """Summary of one Curator A pass.
+
+    Phase B distinguishes transcripts (one per ledger entry the curator
+    considered) from chunks (one per local-day-bucket within each
+    transcript — a 3-day transcript yields 3 chunks). The per-decision
+    counters (``noteworthy_count``, ``skipped_reasons``, ``new_notes``,
+    ``merged_notes``) increment per chunk, not per transcript.
+    """
+
     transcripts_considered: int = 0
+    chunks_considered: int = 0
     noteworthy_count: int = 0
     new_notes: list[Path] = field(default_factory=list)
     merged_notes: list[Path] = field(default_factory=list)
@@ -540,6 +550,11 @@ def _maybe_auto_commit(
 
 
 def _record_outcome(result: CuratorAResult, outcome: _Outcome) -> None:
+    # Every outcome corresponds to one decision unit (one chunk).
+    # `transcripts_considered` is incremented at the entry level by the
+    # caller; here we count chunks so the two telemetry axes stay
+    # independent.
+    result.chunks_considered += 1
     if outcome.filed is not None:
         result.noteworthy_count += 1
         if outcome.filed.was_merge:

@@ -619,6 +619,50 @@ def test_curator_a_llm_client_error_skips_slice_without_aborting_run(tmp_path):
     assert not sessions_dir.exists() or list(sessions_dir.rglob("*.md")) == []
 
 
+def test_curator_a_result_counts_chunks_separately_from_transcripts(tmp_path):
+    """M1: a 3-day transcript counts ONCE in transcripts_considered but
+    THREE times in the per-chunk counters (chunks_considered,
+    noteworthy_count). Telemetry consumers can now distinguish
+    "how many transcripts did we touch" from "how many decisions did
+    we make"."""
+    from datetime import timedelta
+
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+    _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
+    _setup_wiki(tmp_path, "private")
+
+    day1 = datetime(2026, 4, 23, 9, 0, 0, tzinfo=UTC)
+    day2 = datetime(2026, 4, 24, 9, 0, 0, tzinfo=UTC)
+    day3 = datetime(2026, 4, 25, 9, 0, 0, tzinfo=UTC)
+    turns = [
+        Turn(index=0, timestamp=day1, role="user", text="d1"),
+        Turn(index=1, timestamp=day1 + timedelta(minutes=5), role="assistant", text="ok"),
+        Turn(index=2, timestamp=day2, role="user", text="d2"),
+        Turn(index=3, timestamp=day2 + timedelta(minutes=5), role="assistant", text="ok"),
+        Turn(index=4, timestamp=day3, role="user", text="d3"),
+        Turn(index=5, timestamp=day3 + timedelta(minutes=5), role="assistant", text="ok"),
+    ]
+    adapter = FakeAdapter(turns)
+    transcript_path = project_dir / "transcript.jsonl"
+    transcript_path.write_text("{}")
+    _seed_ledger(tmp_path, project_dir, transcript_path)
+
+    client = _make_noteworthy_client(noteworthy=True)
+
+    from lore_curator.curator_a import run_curator_a
+    result = run_curator_a(
+        lore_root=tmp_path,
+        anthropic_client=client,
+        adapter_lookup=_make_adapter_lookup(adapter),
+        now=_NOW,
+    )
+
+    assert result.transcripts_considered == 1
+    assert result.chunks_considered == 3
+    assert result.noteworthy_count == 3
+
+
 def test_curator_a_chunk_failure_does_not_advance_past_failed_chunk(tmp_path):
     """C1 regression: if chunk 0 raises, chunk 1's ledger advance must
     NOT overwrite the ledger past chunk 0 — that would silently lose

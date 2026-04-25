@@ -57,11 +57,20 @@ _TRANSCRIPTS_CAP = 20
 # eventually replace this hand-list with a proper IDF-weighted scheme
 # computed across the wiki's note corpus.
 _TOPIC_BOILERPLATE_FILES: frozenset[str] = frozenset({
-    "CLAUDE.md", "README.md", "README.rst",
+    # Documentation / project root
+    "CLAUDE.md", "AGENTS.md", "README.md", "README.rst", "LICENSE",
+    # Python build / packaging
     "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt",
-    "package.json", "package-lock.json",
+    "Pipfile", "Pipfile.lock", "poetry.lock", "uv.lock", ".python-version",
+    # JavaScript / TypeScript build / packaging
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "tsconfig.json",
+    # Rust
     "Cargo.toml", "Cargo.lock",
-    ".gitignore", ".env",
+    # Build / container / CI
+    "Makefile", "Dockerfile", ".dockerignore",
+    # Repo-level config
+    ".gitignore", ".gitattributes", ".env", ".editorconfig",
 })
 
 # Jaccard threshold above which two file-sets are "the same topic" and
@@ -95,6 +104,23 @@ def _strip_boilerplate(files: list[str] | None) -> set[str]:
         base = _basename(f)
         if base and base not in _TOPIC_BOILERPLATE_FILES:
             out.add(f)
+    return out
+
+
+def _dedup_preserving_order(items: list[str] | None) -> list[str]:
+    """First-seen order; truthy strings only, non-string entries dropped.
+
+    Used by frontmatter writers so ``files_touched`` / ``transcripts``
+    style fields produce stable, readable diffs across appends.
+    """
+    if not items:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if isinstance(item, str) and item and item not in seen:
+            seen.add(item)
+            out.append(item)
     return out
 
 
@@ -332,15 +358,7 @@ def _build_frontmatter(si: SessionInput) -> dict[str, Any]:
     if si.tags:
         fm["tags"] = si.tags
     if si.files_touched:
-        # De-dup while preserving first-seen order so frontmatter diffs
-        # stay legible across appends.
-        seen: set[str] = set()
-        ordered: list[str] = []
-        for f in si.files_touched:
-            if f and f not in seen:
-                seen.add(f)
-                ordered.append(f)
-        fm["files_touched"] = ordered
+        fm["files_touched"] = _dedup_preserving_order(si.files_touched)
     for k, v in si.extra_frontmatter.items():
         fm.setdefault(k, v)
     if si.scope_redirected_from:
@@ -395,13 +413,9 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
         existing_files = fm.get("files_touched") or []
         if not isinstance(existing_files, list):
             existing_files = []
-        seen: set[str] = set()
-        merged: list[str] = []
-        for f in list(existing_files) + list(si.files_touched):
-            if isinstance(f, str) and f and f not in seen:
-                seen.add(f)
-                merged.append(f)
-        fm["files_touched"] = merged
+        fm["files_touched"] = _dedup_preserving_order(
+            list(existing_files) + list(si.files_touched)
+        )
 
     new_section = f"\n\n## {si.description}\n\n{si.body_markdown.rstrip()}\n"
     text_new = _render_markdown(fm, body.rstrip() + new_section)
