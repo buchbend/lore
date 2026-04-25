@@ -14,7 +14,7 @@ from lore_core.config import get_wiki_root
 from lore_core.io import atomic_write_text
 from rich.console import Console
 
-from lore_cli._compat import argv_main
+from lore_runtime.argv import argv_main
 
 console = Console()
 err_console = Console(stderr=True)

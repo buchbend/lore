@@ -10,7 +10,7 @@ import typer
 from lore_core.config import get_lore_root
 from rich.console import Console
 
-from lore_cli._compat import argv_main
+from lore_runtime.argv import argv_main
 
 console = Console()
 

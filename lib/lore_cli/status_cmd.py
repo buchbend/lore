@@ -572,6 +572,6 @@ def status(
 
 
 # argv_main shim for the main CLI dispatcher (lore_cli.__main__).
-from lore_cli._compat import argv_main  # noqa: E402
+from lore_runtime.argv import argv_main  # noqa: E402
 
 main = argv_main(app)

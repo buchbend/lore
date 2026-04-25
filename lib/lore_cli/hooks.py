@@ -974,7 +974,7 @@ from lore_adapters import get_adapter  # noqa: E402
 from lore_core.hook_log import HookEventLogger  # noqa: E402
 from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry, WikiLedger  # noqa: E402
 from lore_core.scope_resolver import resolve_scope  # noqa: E402
-from lore_cli._compat import argv_main  # noqa: E402
+from lore_runtime.argv import argv_main  # noqa: E402
 
 hook_app = typer.Typer(
     add_completion=False,

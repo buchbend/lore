@@ -1,7 +1,7 @@
 import os
 from unittest.mock import patch
 
-from lore_cli.run_render import (
+from lore_runtime.run_render import (
     IconSet, pick_icon_set, render_flat_log, render_summary_panel, should_use_color,
 )
 

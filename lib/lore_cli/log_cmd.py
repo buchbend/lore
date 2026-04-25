@@ -12,7 +12,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from lore_cli._compat import argv_main
+from lore_runtime.argv import argv_main
 from lore_core.timefmt import relative_time
 
 console = Console()

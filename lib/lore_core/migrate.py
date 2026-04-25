@@ -12,7 +12,7 @@ import sys
 import typer
 from rich.console import Console
 
-from lore_cli._compat import argv_main
+from lore_runtime.argv import argv_main
 
 from lore_core.io import atomic_write_text
 from lore_core.lint import SKIP_DIRS, SKIP_FILES, discover_notes, discover_wikis

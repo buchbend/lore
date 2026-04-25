@@ -11,7 +11,7 @@ import sys
 import typer
 from rich.console import Console
 
-from lore_cli._compat import argv_main
+from lore_runtime.argv import argv_main
 from lore_cli.attach_cmd import _resolve_claude_md, remove_section
 
 console = Console()

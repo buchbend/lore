@@ -16,7 +16,7 @@ from lore_core.run_reader import (
     RunIdAmbiguous, RunIdNotFound, SchemaVersionTooNew,
     read_run, resolve_run_id,
 )
-from lore_cli.run_render import (
+from lore_runtime.run_render import (
     pick_icon_set, render_flat_log, render_summary_panel, should_use_color,
 )
 

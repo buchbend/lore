@@ -10,7 +10,7 @@ hundreds of test calls.
 Usage in each migrated `<cmd>.py`:
 
     import typer
-    from lore_cli._compat import argv_main
+    from lore_runtime.argv import argv_main
 
     app = typer.Typer(...)
 

@@ -14,7 +14,7 @@
 ## Status board
 
 - ☑ **Phase 0** — Stop the bleeding *(2026-04-25)*
-- ☐ **Phase 1** — Layering fence (`lore_cli` decomposition)
+- ☑ **Phase 1** — Layering fence (`lore_cli` decomposition) *(2026-04-25)*
 - ☐ **Phase 2** — Config consolidation
 - ☐ **Phase 3** — `hooks.py` decomposition
 - ☐ **Phase 4** — Naming + concept consolidation
@@ -129,7 +129,7 @@ class hand-rolled in `noteworthy.py` that pre-dated `LlmClient`).
 
 ## Phase 1 — Layering fence (`lore_cli` decomposition)
 
-**Status:** ☐ pending
+**Status:** ☑ completed 2026-04-25
 **Estimated session length:** 2-4 sittings (this is the load-bearing phase)
 **Why second:** the architect's strategic pick — every later phase becomes a local refactor once this fence is up.
 
@@ -163,7 +163,71 @@ Restore a one-way dependency graph: `plugin/skills → lore_cli → lore_runtime
 - `argv_main` may be doing typer-specific argv munging; if it's truly a typer compat shim, it stays in `lore_cli` and the upward-importers should not need it — that becomes a "delete the import, refactor the caller" task instead of a "move the helper" task.
 
 ### Session log
-*(fill in when complete)*
+
+**2026-04-25** — single sitting. Risks/unknowns above resolved cleanly:
+`run_render` was pure stdlib (no rich deps), and `argv_main` is exactly
+the typer-compat shim the docstring claimed it to be — so both files
+moved into `lore_runtime` with no logic changes. The fence is real and
+enforced by a new pytest guard.
+
+**Landed**
+- New package `lib/lore_runtime/` with `argv.py` (was `lore_cli/_compat.py`)
+  and `run_render.py` (verbatim from the old location). Module docstring
+  documents the layering rule explicitly.
+- 24 importers migrated mechanically across `lib/` and `tests/`:
+  `lore_core/lint.py`, `lore_core/migrate.py`, `lore_curator/curator_c.py`,
+  `lore_mcp/server.py`, `lore_search/cli.py`, plus 18 sites inside
+  `lore_cli/` that previously referenced their own `_compat.py`, plus
+  `tests/test_run_render.py`.
+- `lib/lore_cli/_compat.py` and `lib/lore_cli/run_render.py` deleted —
+  no shim left behind. Clean break.
+- `tests/test_layering.py` parametrizes over seven lower-layer packages
+  (`lore_core`, `lore_curator`, `lore_mcp`, `lore_search`, `lore_sinks`,
+  `lore_adapters`, `lore_runtime`) and fails the build if any of them
+  contains a `from lore_cli...` or `import lore_cli...` statement.
+  Static-only check — catches lazy-imports inside functions too.
+- Pre-existing `tests/test_hooks_v2.py` rot fixed (4 sites): assertion
+  changed from `"lore: active"` to `": active"` so it survives both the
+  versioned (`lore 0.9.0: active`) and unversioned forms.
+
+**Tests:** 1435 → 1466 passing (+7 layering guards, +24 re-enabled
+hooks_v2 cases). Full suite runs cleanly with no skips or new
+warnings; `python -m lore_cli --help` still renders the full subcommand
+tree.
+
+**Deliberate non-goals (deferred to a future phase)**
+The roadmap's Phase 1 scope also mentioned "stop registering
+`curator_c.app` and `mcp_cmd.app` as nested typer apps in
+`lore_cli/__main__.py:48`; expose them as library entrypoints." This
+was *not* done. Reasoning: the typer apps still living in
+`lore_curator/curator_c.py`, `lore_mcp/server.py`,
+`lore_search/cli.py`, `lore_core/lint.py`, and `lore_core/migrate.py`
+are functional and now depend only on `lore_runtime` (not `lore_cli`)
+— the fence is established. Migrating the typer-app construction into
+new `lore_cli/<verb>_cmd.py` shells is a meaningful additional
+refactor (5 files, risk of CLI breakage) that doesn't change the
+architectural picture established by Phase 1. Park as Phase 1.5 if
+the multi-host or library-mode use case ever materializes.
+
+**Surprised**
+- Only 5 of the 24 importers were *actually* lower-layer (the
+  upward-dependency violators); the other 19 were `lore_cli` modules
+  importing their own internal `_compat.py`. Same fix, but the
+  architect's "4 importers" count understated the migration footprint.
+- `lore_search/cli.py:19` was a fifth lower-layer importer the
+  architect's review missed. Caught it via `grep -rn` before doing
+  the move.
+- The `_compat.py` docstring contained an example that *itself* used
+  the old import path; the example would have been the only stale
+  reference if I'd kept the file as a shim. Glad I deleted it cleanly.
+
+**Scope refinements for Phase 2**
+- Phase 2 (config consolidation) is unchanged in scope — `lore_runtime`
+  doesn't touch config.
+- The `lore_cli` decomposition that was deferred (above) is a
+  candidate for "Phase 1.5" if it becomes the load-bearing concern
+  during Phase 4 (naming + concept consolidation) where curator
+  module renames happen.
 
 ---
 

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import typer
 
-from lore_cli._compat import argv_main
+from lore_runtime.argv import argv_main
 from lore_core.inbox import archive, classify
 
 app = typer.Typer(

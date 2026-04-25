@@ -38,7 +38,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape as rich_escape
 
-from lore_cli._compat import argv_main
+from lore_runtime.argv import argv_main
 from lore_core.install import REGISTRY, known_hosts
 from lore_core.install._helpers import (
     detect_install_sh_artifacts,

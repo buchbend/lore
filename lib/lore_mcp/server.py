@@ -823,7 +823,7 @@ def _run_minimal_server() -> int:
 
 import typer  # noqa: E402
 
-from lore_cli._compat import argv_main  # noqa: E402
+from lore_runtime.argv import argv_main  # noqa: E402
 
 app = typer.Typer(
     add_completion=False,

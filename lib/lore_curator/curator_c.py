@@ -985,7 +985,7 @@ def run_open_items_migration(
 
 import typer  # noqa: E402
 
-from lore_cli._compat import argv_main  # noqa: E402
+from lore_runtime.argv import argv_main  # noqa: E402
 
 app = typer.Typer(
     add_completion=False,
@@ -1075,7 +1075,7 @@ def _discover_wikis(lore_root: Path) -> list[str]:
 def _make_live_renderer(con: Console):
     """Return an on_record callback that prints the same format as ``lore runs tail``."""
     from typing import Any
-    from lore_cli.run_render import pick_icon_set, render_flat_log, should_use_color
+    from lore_runtime.run_render import pick_icon_set, render_flat_log, should_use_color
 
     icons = pick_icon_set()
     use_color = should_use_color()
