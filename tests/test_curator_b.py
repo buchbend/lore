@@ -599,3 +599,160 @@ def test_curator_b_wiki_not_found_records_skip(tmp_path):
     )
 
     assert result.skipped_reasons.get("wiki_not_found", 0) == 1
+
+
+# ---------------------------------------------------------------------------
+# Existing-surface awareness — Curator B reads the inventory + handles merge_into
+# ---------------------------------------------------------------------------
+
+
+def _write_existing_concept(wiki_dir: Path, slug: str, description: str) -> Path:
+    """Helper to drop an existing concept note into wiki/concepts/."""
+    concepts_dir = wiki_dir / "concepts"
+    concepts_dir.mkdir(exist_ok=True)
+    text = f"""\
+---
+schema_version: 2
+type: concept
+created: '2026-04-10'
+last_reviewed: '2026-04-10'
+description: {description}
+tags: []
+---
+
+Existing concept body.
+"""
+    p = concepts_dir / f"{slug}.md"
+    p.write_text(text)
+    return p
+
+
+def test_load_existing_surfaces_returns_inventory_per_surface(tmp_path):
+    """_load_existing_surfaces walks <wiki>/<plural>/ and returns wikilink+description per note."""
+    from lore_core.surfaces import load_surfaces_or_default
+    from lore_curator.curator_b import _load_existing_surfaces
+
+    wiki_dir = _setup_wiki(tmp_path)
+    _write_existing_concept(wiki_dir, "host-adapter-layer",
+                            "Per-host adapter normalising tool-call shape.")
+    _write_existing_concept(wiki_dir, "curator-spawn-backpressure",
+                            "Three layers preventing curator spawn storms.")
+
+    surfaces_doc = load_surfaces_or_default(wiki_dir)
+    inventory = _load_existing_surfaces(wiki_dir, surfaces_doc)
+
+    concept_entries = inventory.get("concept", [])
+    wikilinks = sorted(item["wikilink"] for item in concept_entries)
+    assert wikilinks == ["[[curator-spawn-backpressure]]", "[[host-adapter-layer]]"]
+    descriptions = {item["wikilink"]: item["description"] for item in concept_entries}
+    assert "Per-host adapter" in descriptions["[[host-adapter-layer]]"]
+
+
+def test_load_existing_surfaces_skips_session_surface(tmp_path):
+    """The session surface lives in sessions/ and is curator-A territory; skip it."""
+    from lore_core.surfaces import load_surfaces_or_default
+    from lore_curator.curator_b import _load_existing_surfaces
+
+    wiki_dir = _setup_wiki(tmp_path)
+    _write_session_note(wiki_dir / "sessions", "2026-04-15-some-work")
+    surfaces_doc = load_surfaces_or_default(wiki_dir)
+
+    inventory = _load_existing_surfaces(wiki_dir, surfaces_doc)
+    # 'session' surface should not appear (sessions are Curator A's job;
+    # listing them as merge candidates for Curator B is a category error).
+    assert "session" not in inventory
+
+
+def test_curator_b_skips_filing_when_llm_suggests_merge(tmp_path):
+    """When the abstract LLM returns merge_into, no new note is written; merge-suggested logged."""
+    wiki_dir = _setup_wiki(tmp_path)
+    sessions_dir = wiki_dir / "sessions"
+    _write_session_note(sessions_dir, "2026-04-17-some-work")
+    _write_existing_concept(wiki_dir, "existing-thing",
+                            "Some pre-existing concept to merge into.")
+
+    note_wiki = "[[2026-04-17-some-work]]"
+    cluster_data = {
+        "clusters": [{
+            "topic": "merge candidate",
+            "scope": "proj:test",
+            "session_notes": [note_wiki],
+            "suggested_surface": "concept",
+        }]
+    }
+    abstract_data = {
+        "surfaces": [{
+            "surface_name": "concept",
+            "title": "extended thing",
+            "body": "would-merge body",
+            "merge_into": "[[existing-thing]]",
+        }]
+    }
+    client = FakeAnthropicClient(cluster_data=cluster_data, abstract_data=abstract_data)
+
+    from lore_curator.curator_b import run_curator_b
+
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=client,
+        now=_NOW,
+        since=_NOW - timedelta(days=30),
+    )
+
+    # No new concept written.
+    new_concepts = list((wiki_dir / "concepts").glob("*.md"))
+    assert len(new_concepts) == 1, \
+        f"expected only the pre-existing concept, found: {[p.name for p in new_concepts]}"
+    assert new_concepts[0].name == "existing-thing.md"
+    # Result tracks no surfaces emitted.
+    assert result.surfaces_emitted == []
+
+    # The run-log must record a typed `merge-suggested` event (NOT a
+    # downgraded `warning` — that would mean RECORD_TYPES is missing the
+    # entry and downstream tooling can't filter on it).
+    import json
+    run_files = sorted((tmp_path / ".lore" / "runs").glob("*.jsonl"))
+    assert run_files, "expected a run-log file"
+    records = [json.loads(line) for line in run_files[-1].read_text().splitlines()]
+    merge_events = [r for r in records if r.get("type") == "merge-suggested"]
+    assert len(merge_events) == 1, \
+        f"expected exactly one merge-suggested event, got types: {[r.get('type') for r in records]}"
+    event = merge_events[0]
+    assert event["merge_into"] == "[[existing-thing]]"
+    assert event["surface_name"] == "concept"
+
+
+def test_curator_b_passes_existing_surfaces_to_abstract_call(tmp_path):
+    """Curator B must inject the existing-surfaces inventory into the abstract LLM call."""
+    wiki_dir = _setup_wiki(tmp_path)
+    sessions_dir = wiki_dir / "sessions"
+    _write_session_note(sessions_dir, "2026-04-17-some-work")
+    _write_existing_concept(wiki_dir, "preexisting-anchor",
+                            "Anchor concept for the test.")
+
+    client = _make_client(
+        note_wikilinks=["[[2026-04-17-some-work]]"],
+        surface_name="concept",
+        title="new thing",
+        body="x",
+    )
+
+    from lore_curator.curator_b import run_curator_b
+    run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=client,
+        now=_NOW,
+        since=_NOW - timedelta(days=30),
+    )
+
+    # Find the abstract call (tool_choice.name == 'abstract') and confirm
+    # the inventory wikilink reaches the LLM prompt.
+    abstract_calls = [
+        c for c in client.messages.calls
+        if c.get("tool_choice", {}).get("name") == "abstract"
+    ]
+    assert abstract_calls, "expected an abstract call"
+    prompt = abstract_calls[0]["messages"][0]["content"]
+    assert "[[preexisting-anchor]]" in prompt

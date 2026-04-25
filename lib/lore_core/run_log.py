@@ -65,6 +65,7 @@ class RunLogger:
         "merge-check", "session-note",
         # Curator B
         "cluster-formed", "surface-filed", "threads-regenerated",
+        "merge-suggested",
         # Curator C
         "action-applied", "action-skipped", "defrag-pass",
         "wiki-start", "wiki-skip",

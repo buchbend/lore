@@ -243,3 +243,66 @@ def test_merge_pass_registered_in_defrag_passes() -> None:
     """Confirms the pass is picked up by the integration skeleton."""
     from lore_curator import c_adjacent_merge, curator_c  # noqa: F401
     assert c_adjacent_merge.adjacent_merge_pass in curator_c._DEFRAG_PASSES
+
+
+# ---------------------------------------------------------------------------
+# Empty-tag relaxation — Curator-B-authored notes ship with tags: [] and
+# would otherwise never reach the slug-similarity check. Allow pairs where
+# both sides have empty tags through.
+# ---------------------------------------------------------------------------
+
+
+def test_generate_merge_candidates_pairs_both_empty_tags_with_fuzzy_slug(tmp_path: Path) -> None:
+    """Two empty-tag notes with similar slugs SHOULD pair (post-relax).
+
+    Reason: Curator B authors notes with `tags: []` by default. Under the
+    pre-relax behavior, the shared-tag pre-filter blocked these pairs
+    even when slugs were near-identical, so the defragger was structurally
+    blind to the most common fragmentation source.
+    """
+    from lore_curator.c_adjacent_merge import generate_merge_candidates
+
+    lore_root = _seed_vault(tmp_path)
+    wiki = lore_root / "wiki" / "testwiki"
+    _write_note(wiki / "sessions" / "zarr-chunking.md",
+                type_="concept", title="Zarr Chunking", tags=[])
+    _write_note(wiki / "sessions" / "zarr-chunking-strategy.md",
+                type_="concept", title="Zarr Chunking Strategy", tags=[])
+
+    pairs = generate_merge_candidates(wiki)
+    assert len(pairs) == 1, "two empty-tag notes with similar slugs must pair"
+
+
+def test_generate_merge_candidates_skips_both_empty_tags_with_distant_slugs(tmp_path: Path) -> None:
+    """Empty-tag pairs still need slug similarity to make the cut."""
+    from lore_curator.c_adjacent_merge import generate_merge_candidates
+
+    lore_root = _seed_vault(tmp_path)
+    wiki = lore_root / "wiki" / "testwiki"
+    _write_note(wiki / "sessions" / "zarr-chunking.md",
+                type_="concept", title="Zarr Chunking", tags=[])
+    _write_note(wiki / "sessions" / "matrix-multiplication.md",
+                type_="concept", title="Matrix Multiplication", tags=[])
+
+    pairs = generate_merge_candidates(wiki)
+    assert pairs == [], "no slug overlap → no pair even when both tags empty"
+
+
+def test_generate_merge_candidates_skips_asymmetric_tags(tmp_path: Path) -> None:
+    """One note tagged, the other empty → still blocked.
+
+    Asymmetric emptiness is a signal of intent (one was hand-tagged, the
+    other wasn't). Don't auto-pair across that boundary; force a tagged
+    overlap instead.
+    """
+    from lore_curator.c_adjacent_merge import generate_merge_candidates
+
+    lore_root = _seed_vault(tmp_path)
+    wiki = lore_root / "wiki" / "testwiki"
+    _write_note(wiki / "sessions" / "zarr-chunking.md",
+                type_="concept", title="Zarr Chunking", tags=["storage"])
+    _write_note(wiki / "sessions" / "zarr-chunking-strategy.md",
+                type_="concept", title="Zarr Chunking Strategy", tags=[])
+
+    pairs = generate_merge_candidates(wiki)
+    assert pairs == [], "asymmetric tag emptiness → no pair"

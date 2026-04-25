@@ -272,9 +272,10 @@ def test_abstract_includes_source_note_bodies_in_prompt():
     assert "session body content here" in prompt
 
 
-def test_abstract_truncates_long_source_bodies_in_prompt():
-    """Bodies longer than 1000 chars are truncated with ellipsis in prompt."""
-    long_body = "x" * 2000
+def test_abstract_truncates_very_long_source_bodies_in_prompt():
+    """Bodies longer than the per-note cap are truncated with ellipsis in prompt."""
+    from lore_curator.abstract import _ABSTRACT_BODY_PER_NOTE_CHARS
+    long_body = "x" * (_ABSTRACT_BODY_PER_NOTE_CHARS + 1000)
     client = _make_client({"surfaces": []})
     abstract_cluster(
         cluster=_simple_cluster(),
@@ -287,6 +288,27 @@ def test_abstract_truncates_long_source_bodies_in_prompt():
     prompt = messages[0]["content"]
     assert "…" in prompt
     assert long_body not in prompt
+
+
+def test_abstract_keeps_full_body_when_under_cap():
+    """A body under the per-note cap is included in full (no ellipsis truncation)."""
+    from lore_curator.abstract import _ABSTRACT_BODY_PER_NOTE_CHARS
+    # 2000 chars is under the new 4000 cap — should round-trip in full.
+    medium_body = "y" * 2000
+    client = _make_client({"surfaces": []})
+    abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={"[[note1]]": medium_body},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    prompt = client.messages.calls[0]["messages"][0]["content"]
+    assert medium_body in prompt
+    # No ellipsis injected for this note (other notes had no body so
+    # they're empty strings — also no ellipsis).
+    assert "yyyyy…" not in prompt
+    assert _ABSTRACT_BODY_PER_NOTE_CHARS >= 4000  # guard against accidental shrink
 
 
 def test_abstract_empty_surfaces_doc_returns_empty():
@@ -343,3 +365,208 @@ def test_abstract_prompt_omits_extract_prompt_when_absent():
     )
     prompt = client.messages.calls[0]["messages"][0]["content"]
     assert "guidance:" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Defensive: strip leading frontmatter from LLM body output
+# ---------------------------------------------------------------------------
+
+def test_abstract_strips_leading_frontmatter_from_body():
+    """LLM returns body with a leading `---\\n…\\n---\\n` block → that block is stripped.
+
+    Real-world bug: the abstraction LLM sometimes emits body content that
+    already starts with a YAML frontmatter prelude. surface_filer then
+    wraps it in *another* frontmatter, producing notes with two stacked
+    `---` blocks at the top. Strip defensively in _parse_surfaces.
+    """
+    body_with_fm = (
+        "---\n"
+        "schema_version: 2\n"
+        "type: concept\n"
+        "description: bogus duplicate\n"
+        "---\n"
+        "\n"
+        "The real body content here."
+    )
+    data = {"surfaces": [{"surface_name": "concept", "title": "T", "body": body_with_fm}]}
+    client = _make_client(data)
+    result = abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    assert len(result) == 1
+    assert result[0].body == "The real body content here."
+
+
+def test_abstract_leaves_clean_body_unchanged():
+    """Body that does not start with `---` is preserved verbatim."""
+    body = "Just some normal markdown content.\n\nWith a paragraph break."
+    data = {"surfaces": [{"surface_name": "concept", "title": "T", "body": body}]}
+    client = _make_client(data)
+    result = abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    assert result[0].body == body
+
+
+def test_abstract_preserves_body_when_frontmatter_unclosed():
+    """If the leading `---` has no closing fence, leave the body alone (don't risk dropping content)."""
+    body = "---\nthis: looks: like yaml\nbut never closes\nmore content"
+    data = {"surfaces": [{"surface_name": "concept", "title": "T", "body": body}]}
+    client = _make_client(data)
+    result = abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    assert result[0].body == body
+
+
+def test_abstract_preserves_body_with_horizontal_rule_sections():
+    """Markdown body using `---` as a horizontal rule between sections must NOT be split.
+
+    Pre-yaml-validation, the strip would have eaten 'Section 1' here.
+    """
+    body = "---\n\nSection 1 content here.\n\n---\n\nSection 2 content here."
+    data = {"surfaces": [{"surface_name": "concept", "title": "T", "body": body}]}
+    client = _make_client(data)
+    result = abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    # The candidate "Section 1 content here." parses as a YAML string, not
+    # a dict — so we must NOT strip it.
+    assert result[0].body == body
+
+
+def test_abstract_drops_surface_when_body_is_only_frontmatter():
+    """If the LLM emits a body that is JUST a frontmatter block, drop the surface entirely.
+
+    Otherwise we'd produce a frontmatter-only note (writer's wrap +
+    nothing) that's worse than no surface at all.
+    """
+    body = "---\nschema_version: 2\ntype: concept\n---\n"
+    data = {"surfaces": [{"surface_name": "concept", "title": "T", "body": body}]}
+    client = _make_client(data)
+    result = abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    assert result == []
+
+
+def test_abstract_prompt_instructs_no_frontmatter_in_body():
+    """Prompt explicitly tells the LLM the body field must not contain YAML frontmatter."""
+    client = _make_client({"surfaces": []})
+    abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    prompt = client.messages.calls[0]["messages"][0]["content"]
+    assert "frontmatter" in prompt.lower()
+
+
+# ---------------------------------------------------------------------------
+# Existing-surface awareness — prevents Curator B from re-creating concepts
+# ---------------------------------------------------------------------------
+
+def test_abstract_prompt_includes_existing_surfaces_inventory():
+    """When existing_surfaces is supplied, prompt lists them with wikilink + description."""
+    existing = {
+        "concept": [
+            {"wikilink": "[[host-adapter-layer]]",
+             "description": "Per-host adapter that normalises tool-call shape."},
+            {"wikilink": "[[curator-spawn-backpressure]]",
+             "description": "Three orthogonal layers preventing curator spawn storms."},
+        ],
+        "decision": [
+            {"wikilink": "[[threads-md-as-derived-surface]]",
+             "description": "Threads.md is regenerated, not back-patched."},
+        ],
+    }
+    client = _make_client({"surfaces": []})
+    abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={"[[note1]]": "body"},
+        anthropic_client=client,
+        model_resolver=_resolver,
+        existing_surfaces=existing,
+    )
+    prompt = client.messages.calls[0]["messages"][0]["content"]
+    assert "EXISTING SURFACES" in prompt
+    assert "[[host-adapter-layer]]" in prompt
+    assert "[[curator-spawn-backpressure]]" in prompt
+    assert "[[threads-md-as-derived-surface]]" in prompt
+    assert "Per-host adapter" in prompt
+
+
+def test_abstract_prompt_omits_existing_section_when_inventory_empty():
+    """No existing surfaces → no EXISTING SURFACES heading in prompt."""
+    client = _make_client({"surfaces": []})
+    abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={"[[note1]]": "body"},
+        anthropic_client=client,
+        model_resolver=_resolver,
+        existing_surfaces={},
+    )
+    prompt = client.messages.calls[0]["messages"][0]["content"]
+    assert "EXISTING SURFACES" not in prompt
+
+
+def test_abstract_returns_merge_into_when_llm_suggests_merge():
+    """When LLM returns merge_into pointing at an existing surface, that field round-trips."""
+    data = {
+        "surfaces": [
+            {
+                "surface_name": "concept",
+                "title": "Curator backpressure",
+                "body": "Body",
+                "merge_into": "[[curator-spawn-backpressure]]",
+            }
+        ]
+    }
+    client = _make_client(data)
+    result = abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    assert len(result) == 1
+    assert result[0].merge_into == "[[curator-spawn-backpressure]]"
+
+
+def test_abstract_merge_into_defaults_to_none_when_absent():
+    """Without merge_into, AbstractedSurface.merge_into is None (current creation behavior)."""
+    data = {"surfaces": [{"surface_name": "concept", "title": "T", "body": "B"}]}
+    client = _make_client(data)
+    result = abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_simple_surfaces_doc(),
+        source_notes_by_wikilink={},
+        anthropic_client=client,
+        model_resolver=_resolver,
+    )
+    assert result[0].merge_into is None

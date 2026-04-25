@@ -92,7 +92,21 @@ def generate_merge_candidates(wiki_path: Path) -> list[tuple[Path, Path]]:
         for j in range(i + 1, len(notes)):
             pj, fmj, _ = notes[j]
             tags_j = set(fmj.get("tags") or [])
-            if not (tags_i & tags_j):
+            # Tag-pre-filter rules:
+            #   both empty → skip the tag check, rely on slug similarity
+            #     (Curator B authors notes with tags: [] by default, so
+            #     requiring shared tags would block the most common
+            #     fragmentation source from ever reaching the LLM)
+            #   one empty, one not → still skip. A hand-tagged canonical
+            #     concept must not be auto-merged into a Curator-B-authored
+            #     draft (always tags: []) without human review — the
+            #     canonical note acts as a shield against drift. Some
+            #     legitimate refinements get blocked here; those land on
+            #     the user's manual triage path anyway.
+            #   both tagged → require non-empty intersection (existing)
+            if not tags_i and not tags_j:
+                pass
+            elif not (tags_i & tags_j):
                 continue
             slug_j = _slug(str(fmj.get("title") or pj.stem))
             ratio = difflib.SequenceMatcher(None, slug_i, slug_j).ratio()

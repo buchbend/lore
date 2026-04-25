@@ -144,6 +144,7 @@ def run_curator_b(
                     )
 
                 sources_by_wl = _build_sources_map(notes)
+                existing_surfaces = _load_existing_surfaces(wiki_root, surfaces_doc)
 
                 for cluster in clusters:
                     abstracted = abstract_cluster(
@@ -154,11 +155,32 @@ def run_curator_b(
                         model_resolver=model_resolver,
                         high_tier_off=high_tier_off,
                         lore_root=lore_root,
+                        existing_surfaces=existing_surfaces,
                     )
                     for ab in abstracted:
+                        if ab.merge_into:
+                            # The LLM judged this cluster extends an existing
+                            # surface — log it and skip filing. Curator C's
+                            # defrag passes can act on the merge proposal.
+                            logger.emit(
+                                "merge-suggested",
+                                surface_name=ab.surface_name,
+                                title=ab.title,
+                                merge_into=ab.merge_into,
+                                source_notes=list(cluster.session_notes),
+                            )
+                            continue
                         if dry_run:
+                            plural_dir = next(
+                                (
+                                    s.plural or (s.name if s.name.endswith("s") else f"{s.name}s")
+                                    for s in surfaces_doc.surfaces
+                                    if s.name == ab.surface_name
+                                ),
+                                f"{ab.surface_name}s",
+                            )
                             result.surfaces_emitted.append(
-                                wiki_root / f"{ab.surface_name}s" / f"<dry-run:{_short_slug(ab.title)}>.md"
+                                wiki_root / plural_dir / f"<dry-run:{_short_slug(ab.title)}>.md"
                             )
                             continue
                         try:
@@ -258,6 +280,63 @@ def _load_recent_session_notes(sessions_dir: Path, *, cutoff: datetime) -> list[
 def _build_sources_map(notes: list[dict]) -> dict[str, str]:
     """wikilink → full body text, used by abstract step to inline source content."""
     return {n["wikilink"]: n.get("body", "") for n in notes}
+
+
+def _load_existing_surfaces(
+    wiki_root: Path, surfaces_doc: SurfacesDoc
+) -> dict[str, list[dict]]:
+    """Inventory existing surfaces per type so the abstract step can suggest merges.
+
+    For each non-session surface declared in SURFACES.md, scan
+    `<wiki_root>/<plural>/*.md` and collect `{wikilink, description}`
+    pairs. Bodies are deliberately omitted — only titles + descriptions
+    fit the LLM's judgement budget for "is this cluster already
+    represented?". The session surface is skipped: sessions are
+    Curator A's territory and listing them as merge candidates is a
+    category error.
+
+    Notes whose `type:` frontmatter doesn't match the surface name are
+    skipped (defends against stray files dropped under e.g. concepts/).
+    Standard skip-files (README.md, CLAUDE.md, _index.md, llms.txt, etc.)
+    are excluded for consistency with the linter.
+
+    Note: the inventory is captured ONCE at the start of run_curator_b.
+    Surfaces filed during the same run are not added back to the
+    inventory mid-loop, so a near-duplicate produced in cluster N+1 can't
+    spot the surface produced in cluster N. The adjacent-merge defrag
+    pass catches that case later. Keeping the cache outside the loop is
+    intentional — re-walking the wiki per cluster would be quadratic.
+    """
+    from lore_core.lint import SKIP_FILES
+
+    out: dict[str, list[dict]] = {}
+    for surface_def in surfaces_doc.surfaces:
+        if surface_def.name == "session":
+            continue
+        plural = surface_def.plural or (
+            surface_def.name if surface_def.name.endswith("s") else f"{surface_def.name}s"
+        )
+        surface_dir = wiki_root / plural
+        if not surface_dir.exists():
+            continue
+        items: list[dict] = []
+        for p in sorted(surface_dir.rglob("*.md")):
+            if p.name.startswith("_") or p.name in SKIP_FILES:
+                continue
+            try:
+                fm = parse_frontmatter(p.read_text()) or {}
+            except OSError:
+                continue
+            if fm.get("type") and fm.get("type") != surface_def.name:
+                continue
+            description = str(fm.get("description") or "").strip()
+            items.append({
+                "wikilink": f"[[{p.stem}]]",
+                "description": description,
+            })
+        if items:
+            out[surface_def.name] = items
+    return out
 
 
 def _strip_frontmatter(text: str) -> str:
