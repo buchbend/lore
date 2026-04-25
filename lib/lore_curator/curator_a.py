@@ -120,7 +120,7 @@ def run_curator_a(
             pending = tledger.pending(resolver=resolver)
             for entry in pending:
                 result.transcripts_considered += 1
-                outcome = _process_entry(
+                outcomes = _process_entry(
                     entry,
                     tledger=tledger,
                     requested_scope=scope,
@@ -130,19 +130,19 @@ def run_curator_a(
                     dry_run=True,
                     now=now,
                     logger=logger,
-
                     resolver=resolver,
                 )
-                _record_outcome(result, outcome)
-                if outcome.wiki_name is not None:
-                    touched_wikis.add(outcome.wiki_name)
+                for outcome in outcomes:
+                    _record_outcome(result, outcome)
+                    if outcome.wiki_name is not None:
+                        touched_wikis.add(outcome.wiki_name)
         else:
             try:
                 with curator_lock(lore_root, timeout=lock_timeout, run_id=logger.run_id):
                     pending = tledger.pending(resolver=resolver)
                     for entry in pending:
                         result.transcripts_considered += 1
-                        outcome = _process_entry(
+                        outcomes = _process_entry(
                             entry,
                             tledger=tledger,
                             requested_scope=scope,
@@ -152,12 +152,12 @@ def run_curator_a(
                             dry_run=False,
                             now=now,
                             logger=logger,
-        
                             resolver=resolver,
                         )
-                        _record_outcome(result, outcome)
-                        if outcome.wiki_name is not None:
-                            touched_wikis.add(outcome.wiki_name)
+                        for outcome in outcomes:
+                            _record_outcome(result, outcome)
+                            if outcome.wiki_name is not None:
+                                touched_wikis.add(outcome.wiki_name)
                 # Only update last_curator_a on successful run completion.
                 # On dry-run: skip (telemetry is only for real runs).
                 # On mid-run exception: this line is unreachable, prior value
@@ -201,6 +201,46 @@ class _Outcome:
     wiki_name: str | None = None            # wiki the entry resolved into (None if unattached)
 
 
+def _split_turns_by_local_date(turns: list[Turn]) -> list[list[Turn]]:
+    """Partition turns into contiguous runs sharing the same local date.
+
+    "Local" — not UTC — because "what did I work on yesterday" is anchored
+    to the user's wall clock. Turns are processed in order; when the local
+    date of a timestamped turn changes, a new chunk starts. Turns without
+    timestamps stick to the chunk currently being built (so a malformed
+    transcript missing one timestamp doesn't fragment the slice). When all
+    turns lack timestamps the whole slice is one chunk — preserving
+    pre-Phase-B behaviour for tests / fixtures / older transcripts.
+    """
+    if not turns:
+        return []
+    if all(t.timestamp is None for t in turns):
+        return [list(turns)]
+
+    chunks: list[list[Turn]] = []
+    current: list[Turn] = []
+    current_date = None
+    for t in turns:
+        if t.timestamp is None:
+            current.append(t)
+            continue
+        # Naive timestamps could come from a future host that forgot to
+        # set tzinfo — treat them as UTC so .astimezone() has a defined
+        # behaviour regardless of platform / Python version.
+        ts = t.timestamp if t.timestamp.tzinfo is not None else t.timestamp.replace(tzinfo=UTC)
+        local = ts.astimezone().date()
+        if current_date is None or local == current_date:
+            current_date = local
+            current.append(t)
+        else:
+            chunks.append(current)
+            current = [t]
+            current_date = local
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 
 def _process_entry(
     entry: TranscriptLedgerEntry,
@@ -214,7 +254,14 @@ def _process_entry(
     now: datetime,
     logger: RunLogger | None = None,
     resolver: Resolver | None = None,
-) -> _Outcome:
+) -> list[_Outcome]:
+    """Return one or more outcomes per transcript.
+
+    Phase B: a single transcript whose new turns span multiple local
+    days produces one outcome per day. The ledger advances per chunk so
+    a mid-run failure leaves earlier chunks safely committed and the
+    rest pending for the next heartbeat.
+    """
     # Orphan cwd: the directory the transcript was captured in no longer
     # exists. Mark the entry as orphan and stamp curator_a_run so it
     # never resurfaces in pending().
@@ -228,7 +275,7 @@ def _process_entry(
             )
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="orphan-cwd")
-        return _Outcome(skip_reason="orphan_cwd")
+        return [_Outcome(skip_reason="orphan_cwd")]
 
     # Resolve scope from the transcript's directory; must be attached.
     # Uses the injected resolver (registry-backed longest-prefix match).
@@ -237,12 +284,12 @@ def _process_entry(
     if attached is None:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="unattached")
-        return _Outcome(skip_reason="unattached")
+        return [_Outcome(skip_reason="unattached")]
 
     if requested_scope is not None and attached.scope != requested_scope.scope:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="scope-mismatch")
-        return _Outcome(skip_reason="scope_mismatch", wiki_name=attached.wiki)
+        return [_Outcome(skip_reason="scope_mismatch", wiki_name=attached.wiki)]
 
     # Adapter lookup
     try:
@@ -250,7 +297,7 @@ def _process_entry(
     except Exception:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="unknown-host")
-        return _Outcome(skip_reason="unknown_host", wiki_name=attached.wiki)
+        return [_Outcome(skip_reason="unknown_host", wiki_name=attached.wiki)]
 
     if logger is not None:
         logger.emit(
@@ -282,53 +329,19 @@ def _process_entry(
             )
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="no-new-turns")
-        return _Outcome(skip_reason="no_new_turns", wiki_name=attached.wiki)
+        return [_Outcome(skip_reason="no_new_turns", wiki_name=attached.wiki)]
 
     wiki_dir = lore_root / "wiki" / attached.wiki
     cfg = load_wiki_config(wiki_dir)
-    tier = cfg.curator.a_noteworthy_tier
-
-    def model_resolver(t: str) -> str:
-        return {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}[t]
 
     if anthropic_client is None:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="no-anthropic-client")
-        return _Outcome(skip_reason="no_anthropic_client", wiki_name=attached.wiki)
+        return [_Outcome(skip_reason="no_anthropic_client", wiki_name=attached.wiki)]
 
-    try:
-        noteworthy = classify_slice(
-            turns,
-            tier=tier,
-            model_resolver=model_resolver,
-            anthropic_client=anthropic_client,
-            lore_root=lore_root,
-            logger=logger,
-            transcript_id=entry.transcript_id,
-        )
-    except LlmClientError as exc:
-        # Gateway errors (5xx, timeouts, oversize prompts rejected by OSS
-        # backends …) must not abort the whole curator run — each slice is
-        # independent. Log the skip, leave the ledger untouched so the slice
-        # is retried next time, and move on.
-        if logger is not None:
-            logger.emit(
-                "skip",
-                transcript_id=entry.transcript_id,
-                reason="classify-failed",
-                error=str(exc)[:300],
-            )
-        return _Outcome(
-            skip_reason=f"classify_failed:{type(exc).__name__}",
-            wiki_name=attached.wiki,
-        )
-
-    last_hash = turns[-1].content_hash()
-    last_hint = turns[-1].index
-
-    # Cross-scope bleed guard: redirect to the wiki where the actual
-    # work happened when it differs from the launch directory's wiki.
-    _resolve = resolver if resolver is not None else resolve_scope
+    # Cross-scope bleed guard runs over the full slice (not per chunk) —
+    # the work happened in whatever wiki the file paths point at, regardless
+    # of how the slice gets split across days.
     file_paths = _extract_tool_file_paths(turns)
     override = _detect_scope_override(file_paths, attached, _resolve)
     scope_redirected_from: str | None = None
@@ -345,6 +358,91 @@ def _process_entry(
         attached = override
         wiki_dir = lore_root / "wiki" / attached.wiki
         cfg = load_wiki_config(wiki_dir)
+
+    chunks = _split_turns_by_local_date(turns)
+    outcomes: list[_Outcome] = []
+    for chunk_turns in chunks:
+        outcome = _process_chunk(
+            chunk_turns,
+            entry=entry,
+            tledger=tledger,
+            attached=attached,
+            wiki_dir=wiki_dir,
+            cfg=cfg,
+            anthropic_client=anthropic_client,
+            handle=handle,
+            now=now,
+            dry_run=dry_run,
+            logger=logger,
+            lore_root=lore_root,
+            scope_redirected_from=scope_redirected_from,
+        )
+        outcomes.append(outcome)
+        # Per-chunk failure isolation: if classify_slice failed for THIS
+        # chunk we must not process later chunks. A later chunk that
+        # succeeds would advance the ledger past this chunk's last hash
+        # and the failed content would be lost forever. Subsequent
+        # chunks stay pending; next heartbeat retries from this chunk.
+        if outcome.skip_reason and outcome.skip_reason.startswith("classify_failed"):
+            break
+    return outcomes
+
+
+def _process_chunk(
+    chunk_turns: list[Turn],
+    *,
+    entry: TranscriptLedgerEntry,
+    tledger: TranscriptLedger,
+    attached: Scope,
+    wiki_dir: Path,
+    cfg: WikiConfig,
+    anthropic_client: Any,
+    handle: TranscriptHandle,
+    now: datetime,
+    dry_run: bool,
+    logger: RunLogger | None,
+    lore_root: Path,
+    scope_redirected_from: str | None,
+) -> _Outcome:
+    """Classify + file one chunk (post Phase-B day split).
+
+    Each chunk is a contiguous run of turns in the same local date. The
+    ledger advances to this chunk's last hash on completion so the next
+    chunk (or run) picks up cleanly.
+    """
+    tier = cfg.curator.a_noteworthy_tier
+
+    def model_resolver(t: str) -> str:
+        return {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}[t]
+
+    try:
+        noteworthy = classify_slice(
+            chunk_turns,
+            tier=tier,
+            model_resolver=model_resolver,
+            anthropic_client=anthropic_client,
+            lore_root=lore_root,
+            logger=logger,
+            transcript_id=entry.transcript_id,
+        )
+    except LlmClientError as exc:
+        # Per-chunk isolation: a 5xx / timeout / oversize-prompt failure
+        # on one chunk must not block the rest of the slice. Ledger stays
+        # un-advanced for THIS chunk so it's retried next run.
+        if logger is not None:
+            logger.emit(
+                "skip",
+                transcript_id=entry.transcript_id,
+                reason="classify-failed",
+                error=str(exc)[:300],
+            )
+        return _Outcome(
+            skip_reason=f"classify_failed:{type(exc).__name__}",
+            wiki_name=attached.wiki,
+        )
+
+    last_hash = chunk_turns[-1].content_hash()
+    last_hint = chunk_turns[-1].index
 
     if not noteworthy.noteworthy:
         if not dry_run:
@@ -365,21 +463,16 @@ def _process_entry(
             wiki_name=attached.wiki,
         )
 
-    # File it.
     if dry_run:
         return _Outcome(was_noteworthy=True, wiki_name=attached.wiki)
 
-    # Work time is when the turns were actually written, not when we're
-    # curating them. Prefer the newest turn's timestamp (end of the work
-    # slice); fall back to the transcript file's mtime. Only reach `now`
-    # if both are missing — which should never happen for real data.
-    work_time = turns[-1].timestamp or handle.mtime or now
+    work_time = chunk_turns[-1].timestamp or handle.mtime or now
 
     filed = file_session_note(
         scope=attached,
         handle=handle,
         noteworthy=noteworthy,
-        turns=turns,
+        turns=chunk_turns,
         wiki_root=wiki_dir,
         now=now,
         work_time=work_time,
@@ -397,11 +490,9 @@ def _process_entry(
         curator_a_run=now,
     )
 
-    # Auto-commit if configured.
     if not dry_run:
         _maybe_auto_commit(wiki_dir, filed, logger)
 
-    # P5a: emit to the session's drain so `lore news` can surface it.
     try:
         from lore_core.drain import DrainStore, resolve_session_id
 

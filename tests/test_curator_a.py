@@ -619,6 +619,161 @@ def test_curator_a_llm_client_error_skips_slice_without_aborting_run(tmp_path):
     assert not sessions_dir.exists() or list(sessions_dir.rglob("*.md")) == []
 
 
+def test_curator_a_chunk_failure_does_not_advance_past_failed_chunk(tmp_path):
+    """C1 regression: if chunk 0 raises, chunk 1's ledger advance must
+    NOT overwrite the ledger past chunk 0 — that would silently lose
+    chunk 0 forever on the next run.
+
+    Behaviour: on chunk failure, abort the per-chunk loop. Subsequent
+    chunks stay pending; next heartbeat retries the failing chunk."""
+    from datetime import timedelta
+
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+    _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
+    _setup_wiki(tmp_path, "private")
+
+    day1 = datetime(2026, 4, 23, 9, 0, 0, tzinfo=UTC)
+    day2 = datetime(2026, 4, 24, 9, 0, 0, tzinfo=UTC)
+    turns = [
+        Turn(index=0, timestamp=day1, role="user", text="day1 a"),
+        Turn(index=1, timestamp=day1 + timedelta(minutes=5), role="assistant", text="reply"),
+        Turn(index=2, timestamp=day2, role="user", text="day2 a"),
+        Turn(index=3, timestamp=day2 + timedelta(minutes=5), role="assistant", text="reply"),
+    ]
+    adapter = FakeAdapter(turns)
+    transcript_path = project_dir / "transcript.jsonl"
+    transcript_path.write_text("{}")
+    _seed_ledger(tmp_path, project_dir, transcript_path)
+
+    # The bug: chunk 0 fails (no ledger advance), chunk 1 SUCCEEDS and
+    # then advances the ledger to chunk 1's last hash — silently jumping
+    # past chunk 0's content. Simulate this exactly: first call raises,
+    # second call returns a valid noteworthy=True payload.
+    from lore_curator.llm_client import LlmClientError
+
+    class _MixedMessages:
+        def __init__(self):
+            self.calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise LlmClientError("simulated 500 on chunk 0")
+            # Chunk 1: succeed with noteworthy=True
+            block = _FakeContentBlock(type_="tool_use", input_={
+                "noteworthy": True, "reason": "r", "title": "chunk1",
+                "summary": "s",
+            })
+            return _FakeResponse([block])
+
+    class _FailingClient:
+        messages = _MixedMessages()
+
+    from lore_curator.curator_a import run_curator_a
+    run_curator_a(
+        lore_root=tmp_path,
+        anthropic_client=_FailingClient(),
+        adapter_lookup=_make_adapter_lookup(adapter),
+        now=_NOW,
+    )
+
+    # Ledger digested_hash MUST remain whatever the seed set it to (None);
+    # crucially it must not advance to turns[1] or beyond, which would
+    # imply chunk 0 was processed and skipped.
+    ledger = TranscriptLedger(tmp_path)
+    entry = ledger.get("fake", "txn-001")
+    assert entry is not None
+    assert entry.digested_hash is None, (
+        f"Ledger advanced past failed chunk to {entry.digested_hash!r} — "
+        "this loses the failed chunk's content forever"
+    )
+
+
+def test_curator_a_day_split_produces_one_note_per_local_date(tmp_path):
+    """Phase B: a slice spanning two local dates produces two session
+    notes, one per day. Each chunk goes through cascade + classify
+    independently; ledger advances after each so a mid-run failure
+    doesn't lose committed work."""
+    from datetime import timedelta
+
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+    _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
+    _setup_wiki(tmp_path, "private")
+
+    # Five turns: three on day 1 (early morning local time), two on day 2.
+    day1 = datetime(2026, 4, 23, 9, 0, 0, tzinfo=UTC)
+    day2 = datetime(2026, 4, 24, 9, 0, 0, tzinfo=UTC)
+    turns = [
+        Turn(index=0, timestamp=day1,                  role="user",      text="day1 a"),
+        Turn(index=1, timestamp=day1 + timedelta(minutes=5), role="assistant", text="reply"),
+        Turn(index=2, timestamp=day1 + timedelta(minutes=10), role="user",      text="day1 b"),
+        Turn(index=3, timestamp=day2,                  role="user",      text="day2 a"),
+        Turn(index=4, timestamp=day2 + timedelta(minutes=5), role="assistant", text="reply"),
+    ]
+    adapter = FakeAdapter(turns)
+    transcript_path = project_dir / "transcript.jsonl"
+    transcript_path.write_text("{}")
+    _seed_ledger(tmp_path, project_dir, transcript_path)
+
+    client = _make_noteworthy_client(noteworthy=True)
+
+    from lore_curator.curator_a import run_curator_a
+
+    result = run_curator_a(
+        lore_root=tmp_path,
+        anthropic_client=client,
+        adapter_lookup=_make_adapter_lookup(adapter),
+        now=_NOW,
+    )
+
+    sessions_dir = tmp_path / "wiki" / "private" / "sessions"
+    notes = list(sessions_dir.rglob("*.md"))
+    assert len(notes) == 2, f"Expected 2 session notes (one per day), got {len(notes)}"
+
+    # Two LLM classify calls — one per day chunk.
+    assert len(client.messages.calls) == 2
+
+    # Ledger advances to the absolute-last turn's hash so the next run
+    # picks up correctly from where we stopped.
+    ledger = TranscriptLedger(tmp_path)
+    entry = ledger.get("fake", "txn-001")
+    assert entry is not None
+    assert entry.digested_hash == turns[-1].content_hash()
+
+
+def test_curator_a_single_day_slice_produces_one_note(tmp_path):
+    """Phase B regression guard: when all turns fall on one local date,
+    behaviour is identical to pre-Phase-B (one chunk, one note)."""
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+    _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
+    _setup_wiki(tmp_path, "private")
+
+    turns = _make_turns(5)  # timestamps=None → all in one chunk
+    adapter = FakeAdapter(turns)
+    transcript_path = project_dir / "transcript.jsonl"
+    transcript_path.write_text("{}")
+    _seed_ledger(tmp_path, project_dir, transcript_path)
+
+    client = _make_noteworthy_client(noteworthy=True)
+
+    from lore_curator.curator_a import run_curator_a
+
+    result = run_curator_a(
+        lore_root=tmp_path,
+        anthropic_client=client,
+        adapter_lookup=_make_adapter_lookup(adapter),
+        now=_NOW,
+    )
+
+    sessions_dir = tmp_path / "wiki" / "private" / "sessions"
+    notes = list(sessions_dir.rglob("*.md"))
+    assert len(notes) == 1
+    assert len(client.messages.calls) == 1
+
+
 def test_curator_a_duration_recorded(tmp_path):
     """result.duration_seconds is a non-negative float."""
     project_dir = tmp_path / "myproject"

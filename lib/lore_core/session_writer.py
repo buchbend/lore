@@ -49,6 +49,70 @@ if TYPE_CHECKING:
 _TRANSCRIPTS_CAP = 20
 
 
+# Files touched by almost every session — using their overlap as a
+# topic-similarity signal would link unrelated work together. We strip
+# them on both sides before computing the Jaccard similarity that
+# decides "merge into today's open note vs open a new one." Phase D
+# (continuation linking) and Curator B's surface generation will
+# eventually replace this hand-list with a proper IDF-weighted scheme
+# computed across the wiki's note corpus.
+_TOPIC_BOILERPLATE_FILES: frozenset[str] = frozenset({
+    "CLAUDE.md", "README.md", "README.rst",
+    "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt",
+    "package.json", "package-lock.json",
+    "Cargo.toml", "Cargo.lock",
+    ".gitignore", ".env",
+})
+
+# Jaccard threshold above which two file-sets are "the same topic" and
+# the new chunk merges into the open note. Hand-picked: 0.3 means the
+# overlap covers about a third of the union — enough to indicate
+# continuation, low enough to avoid spurious links from e.g. one shared
+# helper module. Tunable later via root config if calibration shows
+# false-positives or false-negatives.
+_TOPIC_OVERLAP_MIN_JACCARD = 0.3
+
+
+def _basename(path: str) -> str:
+    """Last segment of a path-like string. Cross-platform — splits on /
+    and \\ so adapter output from any host normalises."""
+    if not isinstance(path, str) or not path:
+        return ""
+    norm = path.replace("\\", "/")
+    return norm.rsplit("/", 1)[-1]
+
+
+def _strip_boilerplate(files: list[str] | None) -> set[str]:
+    """Return the file set with boilerplate filenames removed.
+
+    Compares basenames so ``/some/repo/pyproject.toml`` and
+    ``./pyproject.toml`` both filter out.
+    """
+    if not files:
+        return set()
+    out: set[str] = set()
+    for f in files:
+        base = _basename(f)
+        if base and base not in _TOPIC_BOILERPLATE_FILES:
+            out.add(f)
+    return out
+
+
+def _topic_jaccard(a: list[str] | None, b: list[str] | None) -> float:
+    """Jaccard similarity between two file-set lists, ignoring boilerplate.
+
+    Returns 0.0 for either side empty (no signal). Returns 1.0 if both
+    sides are equal non-empty sets.
+    """
+    sa = _strip_boilerplate(a)
+    sb = _strip_boilerplate(b)
+    if not sa or not sb:
+        return 0.0
+    inter = len(sa & sb)
+    union = len(sa | sb)
+    return inter / union if union else 0.0
+
+
 @dataclass
 class SessionInput:
     """Inputs common to both the explicit and passive session flows.
@@ -80,6 +144,12 @@ class SessionInput:
     turn_hashes: tuple[str | None, str | None] | None = None
     scope_redirected_from: str | None = None
 
+    # Phase C: file paths actually touched by this chunk's tool calls.
+    # Persisted in frontmatter so future chunks can decide topic-merge
+    # via file-set overlap. Already-stripped of boilerplate before being
+    # handed in is fine but not required — the merge logic strips again.
+    files_touched: list[str] = field(default_factory=list)
+
 
 @dataclass
 class FiledNote:
@@ -104,7 +174,8 @@ def file_or_merge(
     month_dir.mkdir(parents=True, exist_ok=True)
 
     today_note = _find_todays_open_note(
-        sessions_base, scope=si.scope, work_date=si.work_time.date()
+        sessions_base, scope=si.scope, work_date=si.work_time.date(),
+        new_files_touched=si.files_touched,
     )
     if today_note is not None:
         if logger is not None:
@@ -158,12 +229,31 @@ def _find_todays_open_note(
     *,
     scope: Scope,
     work_date: _date,
+    new_files_touched: list[str] | None = None,
 ) -> Path | None:
+    """Find a same-day same-scope open note that the new chunk should
+    merge into.
+
+    Phase C: when ``new_files_touched`` is given AND any candidate has
+    its own ``files_touched`` frontmatter, require a Jaccard overlap of
+    at least :data:`_TOPIC_OVERLAP_MIN_JACCARD` (boilerplate-stripped)
+    so disjoint topics on the same day end up in different notes.
+
+    Backward compat: if either side has no ``files_touched`` info
+    (legacy notes pre-Phase-C, or talk-only chunks with no tool calls),
+    fall through to the pre-Phase-C "most recent same-day same-scope
+    note" rule. This preserves existing behaviour for anything filed
+    before the upgrade.
+    """
     month = sessions_base / str(work_date.year) / f"{work_date.month:02d}"
     if not month.exists():
         return None
     day_prefix = f"{work_date.day:02d}"
-    candidates: list[tuple[float, Path]] = []
+    new_set = _strip_boilerplate(new_files_touched)
+
+    # (-jaccard, -mtime, path) — best topic match first; ties break on
+    # most-recent. Negative values let us sort ascending.
+    candidates: list[tuple[float, float, Path]] = []
     for p in month.glob(f"{day_prefix}-*.md"):
         try:
             text = p.read_text()
@@ -178,11 +268,37 @@ def _find_todays_open_note(
             mtime = p.stat().st_mtime
         except OSError:
             continue
-        candidates.append((mtime, p))
+
+        candidate_files = fm.get("files_touched") or []
+        candidate_set = _strip_boilerplate(
+            candidate_files if isinstance(candidate_files, list) else []
+        )
+
+        # Decision rules:
+        # - Both sides have non-empty file sets → require Jaccard ≥ threshold.
+        # - New chunk has files but candidate has none (legacy / talk-only):
+        #   refuse to merge. On the upgrade day, a single legacy note
+        #   would otherwise become an attractor for every new file-bearing
+        #   chunk regardless of topic — exactly the Frankenstein note we
+        #   want to avoid.
+        # - New chunk is talk-only: no signal to discriminate topics, so
+        #   fall back to pre-Phase-C "most-recent same-day same-scope"
+        #   matching. Continuing-the-conversation case.
+        if new_set and candidate_set:
+            jac = len(new_set & candidate_set) / len(new_set | candidate_set)
+            if jac < _TOPIC_OVERLAP_MIN_JACCARD:
+                continue
+            candidates.append((-jac, -mtime, p))
+        elif new_set and not candidate_set:
+            # Skip — don't attract file-bearing chunks into ambiguous legacy.
+            continue
+        else:
+            candidates.append((0.0, -mtime, p))
+
     if not candidates:
         return None
-    candidates.sort(reverse=True)
-    return candidates[0][1]
+    candidates.sort()
+    return candidates[0][2]
 
 
 def _build_frontmatter(si: SessionInput) -> dict[str, Any]:
@@ -215,6 +331,16 @@ def _build_frontmatter(si: SessionInput) -> dict[str, Any]:
         fm["transcripts"] = [si.transcript.id]
     if si.tags:
         fm["tags"] = si.tags
+    if si.files_touched:
+        # De-dup while preserving first-seen order so frontmatter diffs
+        # stay legible across appends.
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for f in si.files_touched:
+            if f and f not in seen:
+                seen.add(f)
+                ordered.append(f)
+        fm["files_touched"] = ordered
     for k, v in si.extra_frontmatter.items():
         fm.setdefault(k, v)
     if si.scope_redirected_from:
@@ -262,6 +388,20 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
 
     if si.scope_redirected_from and "scope_redirected_from" not in fm:
         fm["scope_redirected_from"] = si.scope_redirected_from
+
+    # Phase C: union files_touched across appends so the next chunk's
+    # merge decision compares against the full topic history.
+    if si.files_touched:
+        existing_files = fm.get("files_touched") or []
+        if not isinstance(existing_files, list):
+            existing_files = []
+        seen: set[str] = set()
+        merged: list[str] = []
+        for f in list(existing_files) + list(si.files_touched):
+            if isinstance(f, str) and f and f not in seen:
+                seen.add(f)
+                merged.append(f)
+        fm["files_touched"] = merged
 
     new_section = f"\n\n## {si.description}\n\n{si.body_markdown.rstrip()}\n"
     text_new = _render_markdown(fm, body.rstrip() + new_section)

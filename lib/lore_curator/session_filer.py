@@ -134,5 +134,57 @@ def file_session_note(
         transcript=handle,
         turn_hashes=(from_hash, to_hash),
         scope_redirected_from=scope_redirected_from,
+        # Phase C: structural file paths from this chunk's tool calls
+        # (host-agnostic via ToolCall.category) drive topic-aware merge
+        # decisions in session_writer. We trust the structural extraction
+        # over noteworthy.files_touched (which the LLM can hallucinate).
+        files_touched=_files_touched_from_turns(turns),
     )
     return file_or_merge(si, logger=logger, transcript_id=transcript_id)
+
+
+# Each host names the file argument differently:
+# - Claude Code:  Edit/Read/Write → ``file_path``
+# - Cursor:       edit_file       → ``target_file``;  read_file → ``target_file``
+# - VSCode/MCP:   applyEdit       → ``uri``;  many use generic ``path``
+# - Older shapes: ``filename`` is occasionally seen in MCP server tools.
+# Order matters — we return the first matching key — so prefer the most
+# specific names first.
+_FILE_PATH_INPUT_KEYS: tuple[str, ...] = (
+    "file_path", "target_file", "path", "uri", "filename",
+)
+
+
+def _file_path_from_tool_input(inp: object) -> str | None:
+    """Return the first non-empty string under any known file-path key."""
+    if not isinstance(inp, dict):
+        return None
+    for key in _FILE_PATH_INPUT_KEYS:
+        value = inp.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _files_touched_from_turns(turns: list[Turn]) -> list[str]:
+    """Extract de-duplicated, ordered file paths from ``file_edit`` and
+    ``file_read`` tool calls in the slice.
+
+    Order is first-seen so frontmatter diffs stay readable; we don't sort.
+    Uses canonical ToolCall.category so this works for any host whose
+    adapter populates the field — Claude Code's Edit, Cursor's edit_file,
+    Copilot's applyEdit all surface here uniformly. Each host names the
+    path argument differently; :func:`_file_path_from_tool_input` walks
+    a small list of known keys.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in turns:
+        tc = t.tool_call
+        if tc is None or tc.category not in ("file_edit", "file_read"):
+            continue
+        path = _file_path_from_tool_input(tc.input)
+        if path and path not in seen:
+            seen.add(path)
+            out.append(path)
+    return out

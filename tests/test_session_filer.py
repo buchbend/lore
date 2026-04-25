@@ -518,3 +518,237 @@ def test_append_caps_transcripts_list_at_20_most_recent(tmp_path):
     assert got[-1] == "u-fresh"
     assert "u00" not in got
     assert "u01" in got
+
+
+# ---------------------------------------------------------------------------
+# Phase C — topic-aware merge in session_writer
+# ---------------------------------------------------------------------------
+
+
+def _make_turns_with_files(*paths: str) -> list[Turn]:
+    """Build a Turn slice whose tool_calls touch the given file paths."""
+    from lore_core.types import ToolCall
+
+    turns: list[Turn] = [Turn(index=0, timestamp=None, role="user", text="do work")]
+    for i, path in enumerate(paths):
+        turns.append(Turn(
+            index=1 + i, timestamp=None, role="assistant",
+            tool_call=ToolCall(
+                name="Edit", input={"file_path": path, "new_string": "x"},
+                id=f"tc-{i}", category="file_edit",
+            ),
+        ))
+    turns.append(Turn(index=1 + len(paths), timestamp=None,
+                      role="assistant", text="done"))
+    return turns
+
+
+def test_phase_c_disjoint_files_create_new_note_same_day(tmp_path):
+    """Same-day, same-scope, but DIFFERENT files → new note, not merge.
+
+    Morning: auth refactor. Afternoon: schema migration. Should be two
+    notes, not one Frankenstein note covering both topics."""
+    morning = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("Auth Refactor"),
+        turns=_make_turns_with_files("auth.py", "auth_test.py"),
+    )
+
+    afternoon = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("Schema Migration"),
+        turns=_make_turns_with_files("schema.sql", "models.py"),
+    )
+
+    assert morning.path != afternoon.path, \
+        "Disjoint file sets should not merge into the same note"
+    assert afternoon.was_merge is False
+
+
+def test_phase_c_overlapping_files_merge_same_day(tmp_path):
+    """Same-day, same-scope, OVERLAPPING files → merge (continuation of work).
+
+    Morning: started auth refactor on auth.py + auth_test.py.
+    Afternoon: continued auth.py + helpers.py. Overlap on auth.py
+    triggers merge — same topic continuing."""
+    morning = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("Auth Refactor"),
+        turns=_make_turns_with_files("auth.py", "auth_test.py"),
+    )
+
+    afternoon = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("Auth Refactor — More"),
+        turns=_make_turns_with_files("auth.py", "helpers.py"),
+    )
+
+    assert morning.path == afternoon.path
+    assert afternoon.was_merge is True
+
+
+def test_phase_c_boilerplate_only_overlap_does_not_force_merge(tmp_path):
+    """Boilerplate files like CLAUDE.md, pyproject.toml, README.md are
+    touched by almost every session. Their overlap alone must not be
+    enough to merge — otherwise everything links to everything."""
+    morning = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("Auth Refactor"),
+        turns=_make_turns_with_files("auth.py", "CLAUDE.md", "pyproject.toml"),
+    )
+
+    afternoon = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("Schema Migration"),
+        turns=_make_turns_with_files("schema.sql", "CLAUDE.md", "pyproject.toml"),
+    )
+
+    assert morning.path != afternoon.path, \
+        "Boilerplate-only overlap should not bridge unrelated topics"
+
+
+def test_phase_c_files_touched_persisted_in_frontmatter(tmp_path):
+    """Future merge decisions need to know what files an open note covers,
+    so each note records its files_touched in the frontmatter."""
+    result = _file_note(
+        tmp_path,
+        turns=_make_turns_with_files("auth.py", "auth_test.py"),
+    )
+    fm = parse_frontmatter(result.path.read_text())
+    assert "files_touched" in fm
+    assert set(fm["files_touched"]) == {"auth.py", "auth_test.py"}
+
+
+def test_phase_c_merge_unions_files_touched(tmp_path):
+    """When chunks merge into one note, the note's files_touched grows
+    to be the union — so subsequent chunks compare against the full
+    history, not just the latest append."""
+    _file_note(
+        tmp_path,
+        turns=_make_turns_with_files("auth.py"),
+    )
+    second = _file_note(
+        tmp_path,
+        turns=_make_turns_with_files("auth.py", "helpers.py"),
+    )
+    fm = parse_frontmatter(second.path.read_text())
+    assert set(fm["files_touched"]) == {"auth.py", "helpers.py"}
+
+
+def test_phase_c_extracts_file_path_from_cursor_argument_shape(tmp_path):
+    """H1 regression: Cursor's edit_file uses ``target_file`` for the
+    path argument, not Claude Code's ``file_path``. Without checking
+    multiple key names the cross-host promise breaks — Cursor users get
+    files_touched=[] silently and degrade to legacy fallthrough."""
+    from lore_curator.session_filer import _files_touched_from_turns
+    from lore_core.types import ToolCall
+
+    turns = [
+        Turn(index=0, timestamp=None, role="user", text="edit"),
+        Turn(index=1, timestamp=None, role="assistant", tool_call=ToolCall(
+            name="edit_file",
+            input={"target_file": "auth.py", "code_edit": "x"},
+            id="tc",
+            category="file_edit",
+        )),
+    ]
+    assert _files_touched_from_turns(turns) == ["auth.py"]
+
+
+def test_phase_c_extracts_file_path_from_uri_argument_shape(tmp_path):
+    """Copilot-style ``uri`` argument also surfaces."""
+    from lore_curator.session_filer import _files_touched_from_turns
+    from lore_core.types import ToolCall
+
+    turns = [
+        Turn(index=0, timestamp=None, role="assistant", tool_call=ToolCall(
+            name="applyEdit",
+            input={"uri": "file:///work/a.py", "newText": "x"},
+            id="tc",
+            category="file_edit",
+        )),
+    ]
+    paths = _files_touched_from_turns(turns)
+    assert paths == ["file:///work/a.py"]
+
+
+def test_phase_c_file_bearing_chunk_does_not_merge_into_legacy_note(tmp_path):
+    """H2 regression: a Phase-C-aware chunk (with files_touched) must
+    NOT merge into a legacy note (no files_touched). Otherwise on the
+    upgrade day, every new chunk gets attracted to the most recent
+    legacy note for that day, producing the cross-topic Frankenstein
+    notes Phase C was designed to prevent.
+
+    Talk-only chunks (no files_touched) can still merge into legacy —
+    see the next test."""
+    sessions_dir = tmp_path / "wiki" / "mywiki" / "sessions"
+    sessions_dir.parent.mkdir(parents=True, exist_ok=True)
+    legacy = _write_session_note(
+        sessions_dir, "19-legacy.md",
+        scope_str="proj:feature", created="2026-04-19",
+    )
+    legacy_before = legacy.read_text()
+    assert "files_touched" not in legacy_before  # sanity
+
+    result = _file_note(
+        tmp_path / "wiki" / "mywiki",
+        turns=_make_turns_with_files("anything.py"),
+    )
+    assert result.path != legacy, \
+        "File-bearing chunk should open a new note rather than merge into ambiguous legacy"
+    assert result.was_merge is False
+    assert legacy.read_text() == legacy_before
+
+
+def test_phase_c_talk_only_chunk_merges_into_legacy_note(tmp_path):
+    """A chunk with no tool calls has no signal to differentiate topics
+    — fall through to the pre-Phase-C "most recent same-day same-scope"
+    rule and merge into the legacy note."""
+    sessions_dir = tmp_path / "wiki" / "mywiki" / "sessions"
+    sessions_dir.parent.mkdir(parents=True, exist_ok=True)
+    legacy = _write_session_note(
+        sessions_dir, "19-legacy.md",
+        scope_str="proj:feature", created="2026-04-19",
+    )
+
+    talk_only_turns = [
+        Turn(index=0, timestamp=None, role="user", text="just talking"),
+        Turn(index=1, timestamp=None, role="assistant", text="ok"),
+    ]
+    result = _file_note(
+        tmp_path / "wiki" / "mywiki",
+        turns=talk_only_turns,
+    )
+    assert result.path == legacy
+    assert result.was_merge is True
+
+
+def test_phase_c_disjoint_legacy_notes_do_not_attract_new_file_chunks(tmp_path):
+    """H2 regression: two legacy notes from earlier the same day, both
+    without files_touched, must not become attractors for a new
+    file-bearing chunk. The fix is that file-bearing chunks open a new
+    note rather than merging into ambiguous legacy candidates (proven
+    by the previous test); this verifies it holds with multiple
+    candidates."""
+    sessions_dir = tmp_path / "wiki" / "mywiki" / "sessions"
+    sessions_dir.parent.mkdir(parents=True, exist_ok=True)
+    a = _write_session_note(
+        sessions_dir, "19-topic-a.md",
+        scope_str="proj:feature", created="2026-04-19",
+    )
+    b = _write_session_note(
+        sessions_dir, "19-topic-b.md",
+        scope_str="proj:feature", created="2026-04-19",
+    )
+    a_before = a.read_text()
+    b_before = b.read_text()
+
+    result = _file_note(
+        tmp_path / "wiki" / "mywiki",
+        turns=_make_turns_with_files("new_topic.py"),
+    )
+    assert result.path != a
+    assert result.path != b
+    assert result.was_merge is False
+    assert a.read_text() == a_before
+    assert b.read_text() == b_before
