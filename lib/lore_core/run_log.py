@@ -64,7 +64,7 @@ class RunLogger:
         "cascade-verdict",  # shadow-run feature-based classifier
         "merge-check", "session-note",
         # Curator B
-        "cluster-formed", "surface-filed",
+        "cluster-formed", "surface-filed", "threads-regenerated",
         # Curator C
         "action-applied", "action-skipped", "defrag-pass",
         "wiki-start", "wiki-skip",

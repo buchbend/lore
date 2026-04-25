@@ -192,6 +192,116 @@ def test_curator_b_no_recent_notes_short_circuits(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def test_curator_b_regenerates_threads_md_even_with_no_recent_notes(tmp_path):
+    """H1 regression: ``threads.md`` must regenerate on every successful
+    Curator B run, including the no-recent-notes short-circuit. First-
+    install or post-idle users would otherwise never see threads.md
+    materialise until the curator successfully clusters."""
+    import yaml
+
+    wiki_dir = _setup_wiki(tmp_path)
+    sessions_dir = wiki_dir / "sessions" / "2026" / "04"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    # Two old notes (well past any plausible cutoff) sharing a file →
+    # they SHOULD surface as a thread even though Curator B's cluster
+    # phase finds nothing recent.
+    def _write(name, *, files, created):
+        fm = {
+            "schema_version": 2, "type": "session",
+            "created": created, "last_reviewed": created,
+            "description": name, "scope": "proj:test",
+            "draft": True, "files_touched": files,
+        }
+        dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+        p = sessions_dir / f"{name}.md"
+        p.write_text(f"---\n{dumped}\n---\n\nbody\n")
+        # Also force the mtime so _load_recent_session_notes definitely
+        # treats them as outside the cutoff.
+        import os
+        old_ts = (datetime(2026, 1, 1, tzinfo=UTC)).timestamp()
+        os.utime(p, (old_ts, old_ts))
+
+    _write("01-auth-day1", files=["auth.py"], created="2026-01-01")
+    _write("02-auth-day2", files=["auth.py"], created="2026-01-02")
+
+    # Cluster client returns nothing — irrelevant since notes_considered
+    # will be 0 anyway, but we still need to provide one.
+    client = _make_client(note_wikilinks=[], surface_name="concept",
+                          title="x", body="y")
+
+    from lore_curator.curator_b import run_curator_b
+    result = run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=client,
+        now=_NOW,
+        since=_NOW - timedelta(hours=1),  # narrow window: nothing recent
+    )
+
+    assert result.notes_considered == 0  # confirm we hit the early-return path
+    threads_md = wiki_dir / "threads.md"
+    assert threads_md.exists(), \
+        "threads.md must regenerate even when no recent notes triggered clustering"
+    text = threads_md.read_text()
+    assert "[[01-auth-day1]]" in text
+    assert "[[02-auth-day2]]" in text
+
+
+def test_curator_b_writes_threads_md_at_wiki_root(tmp_path):
+    """Phase D: each Curator B run regenerates ``threads.md`` at the
+    wiki root from session-note ``files_touched`` frontmatter. Pure
+    algorithm — no LLM call, no back-patching of the source notes."""
+    import yaml
+
+    wiki_dir = _setup_wiki(tmp_path)
+    sessions_dir = wiki_dir / "sessions" / "2026" / "04"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    # Two notes share auth.py → one thread. A solo schema.sql note has
+    # no peer and is not a thread.
+    def _write(name, *, files, created):
+        fm = {
+            "schema_version": 2, "type": "session",
+            "created": created, "last_reviewed": created,
+            "description": name, "scope": "proj:test",
+            "draft": True, "files_touched": files,
+        }
+        dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+        (sessions_dir / f"{name}.md").write_text(f"---\n{dumped}\n---\n\nbody\n")
+
+    _write("23-auth-day1", files=["auth.py"], created="2026-04-23")
+    _write("24-auth-day2", files=["auth.py", "helpers.py"], created="2026-04-24")
+    _write("24-schema",   files=["schema.sql"],          created="2026-04-24")
+
+    note_stems = [p.stem for p in sessions_dir.glob("*.md")]
+    note_wikilinks = [f"[[{s}]]" for s in note_stems]
+    client = _make_client(
+        note_wikilinks=note_wikilinks,
+        surface_name="concept",
+        title="Test Concept",
+        body="x",
+    )
+
+    from lore_curator.curator_b import run_curator_b
+    run_curator_b(
+        lore_root=tmp_path,
+        wiki="private",
+        anthropic_client=client,
+        now=_NOW,
+        since=_NOW - timedelta(days=30),
+    )
+
+    threads_md = wiki_dir / "threads.md"
+    assert threads_md.exists(), "Curator B must regenerate threads.md"
+    text = threads_md.read_text()
+    # Both auth-day notes appear (the thread); the schema solo note
+    # does NOT appear because it has no peer to thread with.
+    assert "[[23-auth-day1]]" in text
+    assert "[[24-auth-day2]]" in text
+    assert "[[24-schema]]" not in text
+
+
 def test_curator_b_clusters_then_abstracts_then_files(tmp_path):
     wiki_dir = _setup_wiki(tmp_path)
     sessions_dir = wiki_dir / "sessions"

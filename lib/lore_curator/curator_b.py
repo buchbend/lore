@@ -98,6 +98,16 @@ def run_curator_b(
                 wentry = wledger.read()
                 cutoff = since or wentry.last_curator_b or (now - timedelta(days=3))
 
+                # Phase D: threads.md is a derived view over ALL session
+                # notes (not just the recent slice), so we regenerate
+                # before any short-circuit. This way a fresh install
+                # with only old notes — or a wiki that just had no work
+                # since last cutoff — still gets a current threads.md.
+                # The cluster/abstract/file work below is independent
+                # and only acts on recent notes.
+                if not dry_run:
+                    _regenerate_threads_md(wiki_root, now=now, logger=logger)
+
                 notes = _load_recent_session_notes(sessions_dir, cutoff=cutoff)
                 result.notes_considered = len(notes)
                 if not notes:
@@ -364,3 +374,38 @@ def _maybe_publish_briefing(
     except Exception as exc:
         _curator_log(lore_root, f"briefing auto-publish failed for wiki={wiki!r}: {exc}")
         return None
+
+
+def _regenerate_threads_md(
+    wiki_root: Path,
+    *,
+    now: datetime,
+    logger: RunLogger | None = None,
+) -> None:
+    """Rebuild ``<wiki>/threads.md`` from session-note frontmatter.
+
+    Best-effort: any failure (parse error, OSError, surprise input
+    shape) is swallowed and logged so a malformed note doesn't abort
+    Curator B. The file is overwritten atomically; concurrent reads see
+    either the old or the new full content, never a partial.
+    """
+    try:
+        from lore_core.threads import (
+            compute_threads,
+            render_threads_markdown,
+            scan_session_notes,
+        )
+
+        notes = scan_session_notes(wiki_root)
+        threads = compute_threads(notes)
+        text = render_threads_markdown(threads, generated_at=now)
+        atomic_write_text(wiki_root / "threads.md", text)
+        if logger is not None:
+            logger.emit(
+                "threads-regenerated",
+                thread_count=len(threads),
+                note_count=len(notes),
+            )
+    except Exception as exc:
+        if logger is not None:
+            logger.emit("warning", reason="threads_regen_failed", error=str(exc)[:300])
