@@ -31,7 +31,25 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.schema import parse_frontmatter
-from lore_core.session_writer import _basename, _strip_boilerplate
+from lore_core.topic_files import basename as _basename, strip_boilerplate as _strip_boilerplate
+
+
+@dataclass(frozen=True)
+class NoteRef:
+    """Frontmatter-derived view of a session note used for thread linking.
+
+    All fields default to empty so partial frontmatter doesn't trip the
+    constructor. ``files_touched`` is a list (mutable) only so that
+    test fixtures stay readable; production code never mutates it.
+    """
+
+    wikilink: str
+    title: str = ""
+    summary: str = ""
+    files_touched: list[str] = field(default_factory=list)
+    created: str = ""
+    scope: str = ""
+    path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -52,17 +70,16 @@ class Thread:
     """
 
     label: str
-    members: list[dict[str, Any]] = field(default_factory=list)
+    members: list[NoteRef] = field(default_factory=list)
     shared_files: list[str] = field(default_factory=list)
     llm_label: str = ""
 
 
-def compute_threads(notes: list[dict[str, Any]]) -> list[Thread]:
+def compute_threads(notes: list[NoteRef]) -> list[Thread]:
     """Group notes into threads by shared (non-boilerplate) files.
 
-    Each input dict must carry at least ``wikilink``, ``files_touched``,
-    and ``created``. Notes whose boilerplate-stripped file set is empty
-    are ignored — they have no signal to participate in linking.
+    Notes whose boilerplate-stripped file set is empty are ignored —
+    they have no signal to participate in linking.
 
     Singleton components (notes connected to nothing) are dropped: a
     thread is a *connection*, not a list of unrelated solo notes. The
@@ -74,10 +91,9 @@ def compute_threads(notes: list[dict[str, Any]]) -> list[Thread]:
         return []
 
     # Build the working set: notes with a non-empty file set.
-    indexed: list[tuple[int, dict[str, Any], set[str]]] = []
+    indexed: list[tuple[int, NoteRef, set[str]]] = []
     for i, note in enumerate(notes):
-        files = note.get("files_touched") or []
-        stripped = _strip_boilerplate(files if isinstance(files, list) else [])
+        stripped = _strip_boilerplate(list(note.files_touched))
         if stripped:
             indexed.append((i, note, stripped))
 
@@ -117,7 +133,7 @@ def compute_threads(notes: list[dict[str, Any]]) -> list[Thread]:
         member_filesets = [indexed[i][2] for i in member_idxs]
 
         # Sort temporally; ties break on wikilink for determinism.
-        member_notes.sort(key=lambda n: (str(n.get("created", "")), str(n.get("wikilink", ""))))
+        member_notes.sort(key=lambda n: (n.created, n.wikilink))
 
         # Label = basename of the file appearing in the most members.
         # Counted by basename so /path/a/auth.py and ./auth.py vote
@@ -194,8 +210,8 @@ def _build_label_prompt(thread: Thread) -> str:
         "--- thread members (oldest → newest) ---",
     ]
     for m in members:
-        title = (str(m.get("title") or m.get("wikilink") or ""))[:_LABEL_MAX_TITLE_CHARS]
-        summary = (str(m.get("summary") or ""))[:_LABEL_MAX_SUMMARY_CHARS]
+        title = (m.title or m.wikilink)[:_LABEL_MAX_TITLE_CHARS]
+        summary = m.summary[:_LABEL_MAX_SUMMARY_CHARS]
         lines.append(f"- {title}")
         if summary:
             lines.append(f"    {summary}")
@@ -265,12 +281,17 @@ def render_threads_markdown(
     threads: list[Thread],
     *,
     generated_at: datetime,
+    notes_scanned: int | None = None,
 ) -> str:
     """Render a single Markdown index of all threads.
 
     The file is fully regenerated on each run — no stable IDs, no
     handwritten content preserved. Treat ``threads.md`` as a derived
     view, like ``_recent.md``.
+
+    ``notes_scanned`` is optional; when given, the empty-state copy
+    surfaces it so the user can tell "no notes yet" apart from
+    "notes exist but none share files yet".
     """
     lines: list[str] = [
         "# Threads",
@@ -279,7 +300,17 @@ def render_threads_markdown(
         "",
     ]
     if not threads:
-        lines.append("_No threads yet — multi-day work that touches the same files will surface here._")
+        if notes_scanned and notes_scanned > 0:
+            lines.append(
+                f"_{notes_scanned} session note(s) scanned; none share "
+                "non-boilerplate files yet — multi-day work on overlapping "
+                "files will surface here as it accumulates._"
+            )
+        else:
+            lines.append(
+                "_No threads yet — multi-day work that touches the same "
+                "files will surface here._"
+            )
         lines.append("")
         return "\n".join(lines)
 
@@ -294,18 +325,16 @@ def render_threads_markdown(
             lines.append(f"_files: {thread.label} · {len(thread.members)} notes_")
         lines.append("")
         for member in thread.members:
-            wl = member.get("wikilink", "")
-            created = member.get("created", "")
-            if created:
-                lines.append(f"- {wl}  _{created}_")
+            if member.created:
+                lines.append(f"- {member.wikilink}  _{member.created}_")
             else:
-                lines.append(f"- {wl}")
+                lines.append(f"- {member.wikilink}")
         lines.append("")
     return "\n".join(lines)
 
 
-def scan_session_notes(wiki_root: Path) -> list[dict[str, Any]]:
-    """Walk a wiki's session notes and produce NoteRef-shaped dicts.
+def scan_session_notes(wiki_root: Path) -> list[NoteRef]:
+    """Walk a wiki's session notes and produce :class:`NoteRef` objects.
 
     Reads frontmatter only — the body is irrelevant to thread linking.
     Notes without parseable frontmatter or without a ``created`` field
@@ -315,7 +344,7 @@ def scan_session_notes(wiki_root: Path) -> list[dict[str, Any]]:
     if not sessions_dir.exists():
         return []
 
-    out: list[dict[str, Any]] = []
+    out: list[NoteRef] = []
     for md_path in sessions_dir.rglob("*.md"):
         if md_path.name.startswith("_"):
             continue  # skip _recent.md and the like
@@ -339,12 +368,13 @@ def scan_session_notes(wiki_root: Path) -> list[dict[str, Any]]:
         files = fm.get("files_touched") or []
         if not isinstance(files, list):
             files = []
-        out.append({
-            "wikilink": f"[[{md_path.stem}]]",
-            "title": fm.get("description") or md_path.stem,
-            "files_touched": [f for f in files if isinstance(f, str)],
-            "created": str(created),
-            "scope": fm.get("scope") or "",
-            "path": md_path,
-        })
+        out.append(NoteRef(
+            wikilink=f"[[{md_path.stem}]]",
+            title=str(fm.get("description") or md_path.stem),
+            summary=str(fm.get("summary") or ""),
+            files_touched=[f for f in files if isinstance(f, str)],
+            created=str(created),
+            scope=str(fm.get("scope") or ""),
+            path=md_path,
+        ))
     return out

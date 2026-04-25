@@ -424,7 +424,9 @@ def _regenerate_threads_md(
                 anthropic_client=anthropic_client,
                 model_resolver=model_resolver,
             )
-        text = render_threads_markdown(threads, generated_at=now)
+        text = render_threads_markdown(
+            threads, generated_at=now, notes_scanned=len(notes),
+        )
         atomic_write_text(wiki_root / "threads.md", text)
         if logger is not None:
             logger.emit(
@@ -435,4 +437,11 @@ def _regenerate_threads_md(
             )
     except Exception as exc:
         if logger is not None:
-            logger.emit("warning", reason="threads_regen_failed", error=str(exc)[:300])
+            import traceback
+            tb = traceback.format_exc()[:1000]
+            logger.emit(
+                "warning",
+                reason="threads_regen_failed",
+                error=str(exc)[:300],
+                traceback=tb,
+            )

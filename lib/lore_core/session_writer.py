@@ -49,29 +49,14 @@ if TYPE_CHECKING:
 _TRANSCRIPTS_CAP = 20
 
 
-# Files touched by almost every session — using their overlap as a
-# topic-similarity signal would link unrelated work together. We strip
-# them on both sides before computing the Jaccard similarity that
-# decides "merge into today's open note vs open a new one." Phase D
-# (continuation linking) and Curator B's surface generation will
-# eventually replace this hand-list with a proper IDF-weighted scheme
-# computed across the wiki's note corpus.
-_TOPIC_BOILERPLATE_FILES: frozenset[str] = frozenset({
-    # Documentation / project root
-    "CLAUDE.md", "AGENTS.md", "README.md", "README.rst", "LICENSE",
-    # Python build / packaging
-    "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt",
-    "Pipfile", "Pipfile.lock", "poetry.lock", "uv.lock", ".python-version",
-    # JavaScript / TypeScript build / packaging
-    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "tsconfig.json",
-    # Rust
-    "Cargo.toml", "Cargo.lock",
-    # Build / container / CI
-    "Makefile", "Dockerfile", ".dockerignore",
-    # Repo-level config
-    ".gitignore", ".gitattributes", ".env", ".editorconfig",
-})
+# Topic-signal-vs-boilerplate classification moved to lore_core.topic_files
+# in v0.8.2 once two consumers needed it. Re-exported here under the
+# previous private names for backward compat with any external callers.
+from lore_core.topic_files import (
+    BOILERPLATE_FILES as _TOPIC_BOILERPLATE_FILES,  # noqa: F401
+    basename as _basename,
+    strip_boilerplate as _strip_boilerplate,
+)
 
 # Jaccard threshold above which two file-sets are "the same topic" and
 # the new chunk merges into the open note. Hand-picked: 0.3 means the
@@ -80,31 +65,6 @@ _TOPIC_BOILERPLATE_FILES: frozenset[str] = frozenset({
 # helper module. Tunable later via root config if calibration shows
 # false-positives or false-negatives.
 _TOPIC_OVERLAP_MIN_JACCARD = 0.3
-
-
-def _basename(path: str) -> str:
-    """Last segment of a path-like string. Cross-platform — splits on /
-    and \\ so adapter output from any host normalises."""
-    if not isinstance(path, str) or not path:
-        return ""
-    norm = path.replace("\\", "/")
-    return norm.rsplit("/", 1)[-1]
-
-
-def _strip_boilerplate(files: list[str] | None) -> set[str]:
-    """Return the file set with boilerplate filenames removed.
-
-    Compares basenames so ``/some/repo/pyproject.toml`` and
-    ``./pyproject.toml`` both filter out.
-    """
-    if not files:
-        return set()
-    out: set[str] = set()
-    for f in files:
-        base = _basename(f)
-        if base and base not in _TOPIC_BOILERPLATE_FILES:
-            out.add(f)
-    return out
 
 
 def _dedup_preserving_order(items: list[str] | None) -> list[str]:

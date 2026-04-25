@@ -24,17 +24,21 @@ def _make_note(
     *,
     files: list[str],
     title: str | None = None,
+    summary: str = "",
     created: str = "2026-04-24",
     scope: str = "proj:test",
-) -> dict[str, Any]:
-    """Minimal NoteRef-shaped dict for the threads computation."""
-    return {
-        "wikilink": wikilink,
-        "title": title or wikilink.strip("[]").split("-", 1)[-1],
-        "files_touched": list(files),
-        "created": created,
-        "scope": scope,
-    }
+):
+    """Build a NoteRef for thread tests."""
+    from lore_core.threads import NoteRef
+
+    return NoteRef(
+        wikilink=wikilink,
+        title=title or wikilink.strip("[]").split("-", 1)[-1],
+        summary=summary,
+        files_touched=list(files),
+        created=created,
+        scope=scope,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +61,7 @@ def test_compute_threads_two_notes_sharing_file_form_one_thread():
     ]
     threads = compute_threads(notes)
     assert len(threads) == 1
-    members = [m["wikilink"] for m in threads[0].members]
+    members = [m.wikilink for m in threads[0].members]
     assert set(members) == {"[[24-auth-day1]]", "[[24-auth-day2]]"}
 
 
@@ -133,7 +137,7 @@ def test_compute_threads_notes_lacking_files_touched_dont_form_threads():
     ]
     threads = compute_threads(notes)
     assert len(threads) == 1
-    members = [m["wikilink"] for m in threads[0].members]
+    members = [m.wikilink for m in threads[0].members]
     assert "[[24-legacy]]" not in members
 
 
@@ -149,7 +153,7 @@ def test_compute_threads_members_sorted_by_created_then_wikilink():
     ]
     threads = compute_threads(notes)
     assert len(threads) == 1
-    members = [m["wikilink"] for m in threads[0].members]
+    members = [m.wikilink for m in threads[0].members]
     assert members == ["[[24-auth-day1]]", "[[24-auth-day2]]", "[[24-auth-day3]]"]
 
 
@@ -175,17 +179,17 @@ def test_compute_threads_thread_label_from_most_common_file():
 def test_label_threads_with_llm_populates_llm_label_field():
     """One simple-tier LLM call per thread produces a concise title.
     Input is small (titles + summaries of members), no full-note bodies."""
-    from lore_core.threads import Thread, label_threads_with_llm
+    from lore_core.threads import NoteRef, Thread, label_threads_with_llm
 
     base = Thread(
         label="curator_a.py",
         members=[
-            {"wikilink": "[[24-a]]", "title": "Phase B day-split",
-             "summary": "Day-boundary outer split in Curator A.",
-             "files_touched": ["curator_a.py"], "created": "2026-04-24"},
-            {"wikilink": "[[25-b]]", "title": "Phase C topic-aware merge",
-             "summary": "File-set Jaccard merge gate.",
-             "files_touched": ["session_writer.py"], "created": "2026-04-25"},
+            NoteRef(wikilink="[[24-a]]", title="Phase B day-split",
+                    summary="Day-boundary outer split in Curator A.",
+                    files_touched=["curator_a.py"], created="2026-04-24"),
+            NoteRef(wikilink="[[25-b]]", title="Phase C topic-aware merge",
+                    summary="File-set Jaccard merge gate.",
+                    files_touched=["session_writer.py"], created="2026-04-25"),
         ],
         shared_files=[],
     )
@@ -254,10 +258,11 @@ def test_label_threads_with_llm_skips_when_no_client():
 def test_render_uses_llm_label_when_present():
     from lore_core.threads import Thread, render_threads_markdown
 
+    from lore_core.threads import NoteRef as _NR
     threads = [Thread(
         label="curator_a.py",
         llm_label="Curator A chunking + topic-aware merge",
-        members=[{"wikilink": "[[24-a]]", "created": "2026-04-24"}],
+        members=[_NR(wikilink="[[24-a]]", created="2026-04-24")],
         shared_files=[],
     )]
     md = render_threads_markdown(threads, generated_at=datetime(2026, 4, 25, tzinfo=UTC))
@@ -294,6 +299,20 @@ def test_render_threads_markdown_empty_threads_renders_placeholder():
     md = render_threads_markdown([], generated_at=datetime(2026, 4, 25, tzinfo=UTC))
     assert "Threads" in md
     assert "no threads" in md.lower() or "No threads" in md
+
+
+def test_render_empty_with_note_count_explains_why():
+    """M1 discoverability: when notes were scanned but none formed a thread,
+    say so — otherwise the user wonders if Curator B is broken."""
+    from lore_core.threads import render_threads_markdown
+
+    md = render_threads_markdown(
+        [],
+        generated_at=datetime(2026, 4, 25, tzinfo=UTC),
+        notes_scanned=42,
+    )
+    assert "42" in md
+    assert "share" in md.lower() or "files" in md.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +356,7 @@ def test_scan_session_notes_skips_malformed_frontmatter(tmp_path):
     (sessions / "23-empty.md").write_text("not a session note at all")
 
     notes = scan_session_notes(tmp_path / "wiki" / "private")
-    wikilinks = [n["wikilink"] for n in notes]
+    wikilinks = [n.wikilink for n in notes]
     assert "[[23-good]]" in wikilinks
     # malformed/empty notes silently dropped
     assert "[[23-broken]]" not in wikilinks
@@ -354,7 +373,7 @@ def test_scan_session_notes_reads_files_touched_from_frontmatter(tmp_path):
                 files=["auth.py", "helpers.py"])
 
     notes = scan_session_notes(tmp_path / "wiki" / "private")
-    wikilinks = sorted(n["wikilink"] for n in notes)
+    wikilinks = sorted(n.wikilink for n in notes)
     assert wikilinks == ["[[23-auth]]", "[[24-auth]]"]
-    by_wl = {n["wikilink"]: n for n in notes}
-    assert by_wl["[[24-auth]]"]["files_touched"] == ["auth.py", "helpers.py"]
+    by_wl = {n.wikilink: n for n in notes}
+    assert by_wl["[[24-auth]]"].files_touched == ["auth.py", "helpers.py"]
