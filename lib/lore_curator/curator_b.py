@@ -105,8 +105,17 @@ def run_curator_b(
                 # since last cutoff — still gets a current threads.md.
                 # The cluster/abstract/file work below is independent
                 # and only acts on recent notes.
+                #
+                # We pass the client + simple-tier resolver so each
+                # thread gets one cheap LLM call to produce a topical
+                # heading. Falls back to file-basename labels if the
+                # call fails or no model is configured.
                 if not dry_run:
-                    _regenerate_threads_md(wiki_root, now=now, logger=logger)
+                    _regenerate_threads_md(
+                        wiki_root, now=now, logger=logger,
+                        anthropic_client=anthropic_client,
+                        model_resolver=model_resolver,
+                    )
 
                 notes = _load_recent_session_notes(sessions_dir, cutoff=cutoff)
                 result.notes_considered = len(notes)
@@ -381,23 +390,40 @@ def _regenerate_threads_md(
     *,
     now: datetime,
     logger: RunLogger | None = None,
+    anthropic_client: Any = None,
+    model_resolver: Any = None,
 ) -> None:
     """Rebuild ``<wiki>/threads.md`` from session-note frontmatter.
 
-    Best-effort: any failure (parse error, OSError, surprise input
-    shape) is swallowed and logged so a malformed note doesn't abort
-    Curator B. The file is overwritten atomically; concurrent reads see
-    either the old or the new full content, never a partial.
+    Two-stage:
+      1. Algorithmic — scan notes, group via union-find on shared files,
+         render with a file-basename label as the section heading.
+      2. Optional LLM enrichment — when an Anthropic-shaped client and
+         a simple-tier model resolver are supplied, one cheap call per
+         thread upgrades the heading to a topical label. Best-effort:
+         a label-call failure preserves the algorithmic heading.
+
+    Best-effort overall: any failure (parse error, OSError, surprise
+    input shape) is swallowed and logged so a malformed note can't
+    abort Curator B. The file is overwritten atomically; concurrent
+    reads see either the old or the new full content, never a partial.
     """
     try:
         from lore_core.threads import (
             compute_threads,
+            label_threads_with_llm,
             render_threads_markdown,
             scan_session_notes,
         )
 
         notes = scan_session_notes(wiki_root)
         threads = compute_threads(notes)
+        if anthropic_client is not None and model_resolver is not None:
+            threads = label_threads_with_llm(
+                threads,
+                anthropic_client=anthropic_client,
+                model_resolver=model_resolver,
+            )
         text = render_threads_markdown(threads, generated_at=now)
         atomic_write_text(wiki_root / "threads.md", text)
         if logger is not None:
@@ -405,6 +431,7 @@ def _regenerate_threads_md(
                 "threads-regenerated",
                 thread_count=len(threads),
                 note_count=len(notes),
+                llm_labels=sum(1 for t in threads if t.llm_label),
             )
     except Exception as exc:
         if logger is not None:

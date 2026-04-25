@@ -31,16 +31,30 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.schema import parse_frontmatter
-from lore_core.session_writer import _strip_boilerplate
+from lore_core.session_writer import _basename, _strip_boilerplate
 
 
 @dataclass(frozen=True)
 class Thread:
-    """A connected-component group of related session notes."""
+    """A connected-component group of related session notes.
 
-    label: str                          # short, deterministic — e.g. "auth.py"
+    Two label slots:
+    - ``label``: deterministic algorithmic fallback (most-shared file
+      basename across members). Always populated.
+    - ``llm_label``: optional concise topical title produced by a
+      simple-tier LLM call over members' titles + summaries. When
+      empty, render falls back to ``label``.
+
+    Splitting them this way means the rendered heading degrades
+    gracefully: zero LLM budget → file-basename headings; LLM
+    available → coherent topic titles like "Curator A day-split +
+    topic-aware merge" instead of "curator_a.py".
+    """
+
+    label: str
     members: list[dict[str, Any]] = field(default_factory=list)
     shared_files: list[str] = field(default_factory=list)
+    llm_label: str = ""
 
 
 def compute_threads(notes: list[dict[str, Any]]) -> list[Thread]:
@@ -105,12 +119,15 @@ def compute_threads(notes: list[dict[str, Any]]) -> list[Thread]:
         # Sort temporally; ties break on wikilink for determinism.
         member_notes.sort(key=lambda n: (str(n.get("created", "")), str(n.get("wikilink", ""))))
 
-        # Label = file appearing in the most members; ties break on name.
+        # Label = basename of the file appearing in the most members.
+        # Counted by basename so /path/a/auth.py and ./auth.py vote
+        # together; that also makes the label readable. Ties break on
+        # name for determinism.
         counter: Counter[str] = Counter()
         for files in member_filesets:
             for f in files:
-                counter[f] += 1
-        # Counter.most_common is unstable on ties → enforce alphabetical tie-break.
+                base = _basename(f) or f
+                counter[base] += 1
         label_candidates = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
         label = label_candidates[0][0] if label_candidates else ""
 
@@ -126,6 +143,122 @@ def compute_threads(notes: list[dict[str, Any]]) -> list[Thread]:
     # Stable order across runs: by label.
     threads.sort(key=lambda t: t.label)
     return threads
+
+
+# ---------------------------------------------------------------------------
+# Optional LLM-derived thread labels
+# ---------------------------------------------------------------------------
+
+# Hard cap so a 50-note thread can't blow up the prompt. Truncation here
+# is fine — the LLM only needs a few representative notes to produce a
+# topical label.
+_LABEL_MAX_MEMBERS_PER_PROMPT = 12
+_LABEL_MAX_TITLE_CHARS = 120
+_LABEL_MAX_SUMMARY_CHARS = 300
+
+_LABEL_TOOL_SCHEMA: dict[str, Any] = {
+    "name": "label",
+    "description": "Emit a concise topical label for a thread of related session notes.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "label": {
+                "type": "string",
+                "description": (
+                    "5-10 word topical title for the thread. Be specific — "
+                    "'Curator A day-split + topic-aware merge' beats 'code work'. "
+                    "Use the language and vocabulary of the source notes."
+                ),
+            },
+        },
+        "required": ["label"],
+    },
+}
+
+
+def _build_label_prompt(thread: Thread) -> str:
+    """Compose a tiny structured prompt from a thread's members.
+
+    The prompt is deterministic and small (a few hundred chars per
+    member, capped at 12 members) so even the simple tier handles it
+    in under a second.
+    """
+    members = thread.members[:_LABEL_MAX_MEMBERS_PER_PROMPT]
+    lines = [
+        "Produce a concise topical label (5-10 words) for the thread of",
+        "session notes below. They are connected via shared file edits and",
+        "represent continuing work on the same topic.",
+        "",
+        "Return JSON via the `label` tool. Use the language of the notes.",
+        "",
+        "--- thread members (oldest → newest) ---",
+    ]
+    for m in members:
+        title = (str(m.get("title") or m.get("wikilink") or ""))[:_LABEL_MAX_TITLE_CHARS]
+        summary = (str(m.get("summary") or ""))[:_LABEL_MAX_SUMMARY_CHARS]
+        lines.append(f"- {title}")
+        if summary:
+            lines.append(f"    {summary}")
+    if thread.shared_files:
+        lines.append("")
+        lines.append(f"Files commonly touched: {', '.join(thread.shared_files[:8])}")
+    return "\n".join(lines)
+
+
+def label_threads_with_llm(
+    threads: list[Thread],
+    *,
+    anthropic_client: Any,
+    model_resolver: Any,
+) -> list[Thread]:
+    """Enrich each thread with a simple-tier LLM-derived ``llm_label``.
+
+    Best-effort: any failure (no client, missing simple-tier model,
+    rate-limit, bad gateway) preserves the algorithmic ``label`` and
+    leaves ``llm_label=""``. Threads.md regen must never fail because
+    a label call did. One LLM call per thread, simple tier.
+    """
+    if anthropic_client is None or not threads:
+        return threads
+
+    try:
+        model = model_resolver("simple")
+    except Exception:
+        return threads
+    if not model:
+        return threads
+
+    enriched: list[Thread] = []
+    for thread in threads:
+        label = ""
+        try:
+            prompt = _build_label_prompt(thread)
+            resp = anthropic_client.messages.create(
+                model=model,
+                max_tokens=64,
+                tools=[_LABEL_TOOL_SCHEMA],
+                tool_choice={"type": "tool", "name": "label"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+            for block in getattr(resp, "content", []):
+                btype = getattr(block, "type", None)
+                if btype == "tool_use":
+                    inp = getattr(block, "input", None)
+                    if isinstance(inp, dict):
+                        candidate = inp.get("label")
+                        if isinstance(candidate, str) and candidate.strip():
+                            label = candidate.strip()
+                            break
+        except Exception:
+            label = ""
+        # Frozen dataclass — rebuild with the new field.
+        enriched.append(Thread(
+            label=thread.label,
+            members=thread.members,
+            shared_files=thread.shared_files,
+            llm_label=label,
+        ))
+    return enriched
 
 
 def render_threads_markdown(
@@ -151,7 +284,14 @@ def render_threads_markdown(
         return "\n".join(lines)
 
     for thread in threads:
-        lines.append(f"## {thread.label}")
+        heading = thread.llm_label.strip() or thread.label
+        lines.append(f"## {heading}")
+        # When the LLM-derived heading shadows the algorithmic label,
+        # surface the file-basename label as a small annotation so the
+        # reader still knows the structural grouping signal.
+        if thread.llm_label.strip() and thread.label and thread.llm_label.strip() != thread.label:
+            lines.append("")
+            lines.append(f"_files: {thread.label} · {len(thread.members)} notes_")
         lines.append("")
         for member in thread.members:
             wl = member.get("wikilink", "")

@@ -172,6 +172,100 @@ def test_compute_threads_thread_label_from_most_common_file():
 # ---------------------------------------------------------------------------
 
 
+def test_label_threads_with_llm_populates_llm_label_field():
+    """One simple-tier LLM call per thread produces a concise title.
+    Input is small (titles + summaries of members), no full-note bodies."""
+    from lore_core.threads import Thread, label_threads_with_llm
+
+    base = Thread(
+        label="curator_a.py",
+        members=[
+            {"wikilink": "[[24-a]]", "title": "Phase B day-split",
+             "summary": "Day-boundary outer split in Curator A.",
+             "files_touched": ["curator_a.py"], "created": "2026-04-24"},
+            {"wikilink": "[[25-b]]", "title": "Phase C topic-aware merge",
+             "summary": "File-set Jaccard merge gate.",
+             "files_touched": ["session_writer.py"], "created": "2026-04-25"},
+        ],
+        shared_files=[],
+    )
+
+    captured: dict = {}
+
+    class _FakeClient:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                captured.update(kwargs)
+                class _Block:
+                    type = "tool_use"
+                    input = {"label": "Curator A chunking + topic-aware merge"}
+                class _Resp:
+                    content = [_Block()]
+                return _Resp()
+
+    def resolver(tier: str) -> str:
+        assert tier == "simple", "thread labelling must use the cheapest tier"
+        return "claude-haiku-4-5"
+
+    out = label_threads_with_llm([base], anthropic_client=_FakeClient(),
+                                  model_resolver=resolver)
+    assert len(out) == 1
+    assert out[0].llm_label == "Curator A chunking + topic-aware merge"
+    # Original algorithmic label preserved as fallback
+    assert out[0].label == "curator_a.py"
+    # Confirm the prompt actually went out at simple tier with one tool
+    assert captured["model"] == "claude-haiku-4-5"
+    assert captured["tool_choice"] == {"type": "tool", "name": "label"}
+
+
+def test_label_threads_with_llm_falls_back_silently_on_failure():
+    """If the LLM call raises (rate-limit, bad gateway, missing model
+    config), we keep the algorithmic label and move on. Threads.md
+    must never fail because a label call did."""
+    from lore_core.threads import Thread, label_threads_with_llm
+
+    base = Thread(label="curator_a.py", members=[], shared_files=[])
+
+    class _RaisingClient:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                raise RuntimeError("simulated 429")
+
+    out = label_threads_with_llm([base], anthropic_client=_RaisingClient(),
+                                  model_resolver=lambda t: "x")
+    assert len(out) == 1
+    assert out[0].llm_label == ""
+    assert out[0].label == "curator_a.py"  # fallback
+
+
+def test_label_threads_with_llm_skips_when_no_client():
+    """Passing client=None is a no-op — same shape, no llm_label.
+    Render falls back to algorithmic label."""
+    from lore_core.threads import Thread, label_threads_with_llm
+
+    base = Thread(label="auth.py", members=[], shared_files=[])
+    out = label_threads_with_llm([base], anthropic_client=None,
+                                  model_resolver=lambda t: "x")
+    assert out[0].llm_label == ""
+
+
+def test_render_uses_llm_label_when_present():
+    from lore_core.threads import Thread, render_threads_markdown
+
+    threads = [Thread(
+        label="curator_a.py",
+        llm_label="Curator A chunking + topic-aware merge",
+        members=[{"wikilink": "[[24-a]]", "created": "2026-04-24"}],
+        shared_files=[],
+    )]
+    md = render_threads_markdown(threads, generated_at=datetime(2026, 4, 25, tzinfo=UTC))
+    assert "## Curator A chunking + topic-aware merge" in md
+    # Algorithmic label visible as a small annotation, not the heading
+    assert "## curator_a.py" not in md
+
+
 def test_render_threads_markdown_lists_threads_with_member_wikilinks():
     from lore_core.threads import compute_threads, render_threads_markdown
 
