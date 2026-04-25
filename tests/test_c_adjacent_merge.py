@@ -116,7 +116,7 @@ def test_merge_proposes_new_note_on_0_9_confidence(tmp_path: Path, monkeypatch) 
          "merged_title": "Zarr Chunking", "merged_description": "merged"}
     )
 
-    summary = adjacent_merge_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = adjacent_merge_pass(wiki, llm_client=client, dry_run=False)
 
     assert summary.get("adjacent_merge_proposed") == 1
     proposals = list((wiki / "sessions").glob("*-merge*.md"))
@@ -139,7 +139,7 @@ def test_merge_at_exact_0_8_is_included(tmp_path: Path, monkeypatch) -> None:
     client = FakeLlmClient(
         {"should_merge": True, "confidence": 0.8, "reason": "at threshold"}
     )
-    summary = adjacent_merge_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = adjacent_merge_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("adjacent_merge_proposed") == 1
 
 
@@ -155,7 +155,7 @@ def test_merge_at_0_79_skips(tmp_path: Path, monkeypatch) -> None:
     client = FakeLlmClient(
         {"should_merge": True, "confidence": 0.79, "reason": "just below"}
     )
-    summary = adjacent_merge_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = adjacent_merge_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("adjacent_merge_proposed", 0) == 0
     assert summary.get("adjacent_merge_skipped_low_confidence") == 1
 
@@ -171,7 +171,7 @@ def test_merge_skips_malformed_llm_response(tmp_path: Path, monkeypatch) -> None
 
     # Missing `reason` field.
     client = FakeLlmClient({"should_merge": True, "confidence": 0.9})
-    summary = adjacent_merge_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = adjacent_merge_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("adjacent_merge_skipped_malformed") == 1
     assert not list((wiki / "sessions").glob("*-merge*.md"))
 
@@ -188,7 +188,7 @@ def test_merge_never_edits_originals(tmp_path: Path, monkeypatch) -> None:
     before_b = b.read_bytes()
 
     client = FakeLlmClient({"should_merge": True, "confidence": 0.9, "reason": "x"})
-    adjacent_merge_pass(wiki, anthropic_client=client, dry_run=False)
+    adjacent_merge_pass(wiki, llm_client=client, dry_run=False)
 
     assert a.read_bytes() == before_a
     assert b.read_bytes() == before_b
@@ -204,9 +204,9 @@ def test_merge_idempotent_same_sources(tmp_path: Path, monkeypatch) -> None:
     _write_note(wiki / "sessions" / "ab.md", type_="concept", title="Cached", tags=["t"])
 
     client = FakeLlmClient({"should_merge": True, "confidence": 0.9, "reason": "x"})
-    adjacent_merge_pass(wiki, anthropic_client=client, dry_run=False)
+    adjacent_merge_pass(wiki, llm_client=client, dry_run=False)
     first_drafts = sorted((wiki / "sessions").glob("*-merge*.md"))
-    adjacent_merge_pass(wiki, anthropic_client=client, dry_run=False)
+    adjacent_merge_pass(wiki, llm_client=client, dry_run=False)
     second_drafts = sorted((wiki / "sessions").glob("*-merge*.md"))
 
     assert first_drafts == second_drafts, "second run must not create duplicate drafts"
@@ -222,7 +222,7 @@ def test_merge_dry_run_writes_no_notes(tmp_path: Path, monkeypatch) -> None:
     _write_note(wiki / "sessions" / "ab.md", type_="concept", title="Cached", tags=["t"])
 
     client = FakeLlmClient({"should_merge": True, "confidence": 0.9, "reason": "x"})
-    summary = adjacent_merge_pass(wiki, anthropic_client=client, dry_run=True)
+    summary = adjacent_merge_pass(wiki, llm_client=client, dry_run=True)
     assert summary.get("adjacent_merge_proposed") == 1  # counted
     assert not list((wiki / "sessions").glob("*-merge*.md")), "dry-run writes no file"
 
@@ -235,7 +235,7 @@ def test_merge_skipped_without_llm(tmp_path: Path) -> None:
     _write_note(wiki / "sessions" / "a.md", type_="concept", title="Cache", tags=["t"])
     _write_note(wiki / "sessions" / "ab.md", type_="concept", title="Cached", tags=["t"])
 
-    summary = adjacent_merge_pass(wiki, anthropic_client=None, dry_run=False)
+    summary = adjacent_merge_pass(wiki, llm_client=None, dry_run=False)
     assert summary == {"adjacent_merge_skipped_no_llm": 1}
 
 

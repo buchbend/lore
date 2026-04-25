@@ -108,7 +108,7 @@ def test_orphan_sub_flag_off_no_body_mutation(tmp_path: Path, monkeypatch) -> No
 
     before = a.read_bytes()
     client = FakeLlmClient({"is_rename": True, "confidence": 0.95})
-    summary = orphan_links_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = orphan_links_pass(wiki, llm_client=client, dry_run=False)
 
     assert a.read_bytes() == before, "body must not mutate with sub-flag off"
     assert summary.get("orphan_flagged", 0) >= 1
@@ -138,7 +138,7 @@ def test_orphan_sub_flag_on_rewrites_in_place(tmp_path: Path, monkeypatch) -> No
     _write_note(wiki / "sessions" / "foo-bar-typo.md", "present\n")
 
     client = FakeLlmClient({"is_rename": True, "confidence": 0.95})
-    summary = orphan_links_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = orphan_links_pass(wiki, llm_client=client, dry_run=False)
 
     text = a.read_text()
     assert "[[foo-bar-typoo]]" not in text, "old link must be rewritten"
@@ -156,7 +156,7 @@ def test_orphan_preserves_display_text(tmp_path: Path, monkeypatch) -> None:
     _write_note(wiki / "sessions" / "foo-bar-typo.md", "present\n")
 
     client = FakeLlmClient({"is_rename": True, "confidence": 0.95})
-    orphan_links_pass(wiki, anthropic_client=client, dry_run=False)
+    orphan_links_pass(wiki, llm_client=client, dry_run=False)
 
     text = a.read_text()
     assert "[[foo-bar-typo|the Thing]]" in text
@@ -186,7 +186,7 @@ def test_orphan_preserves_crlf_and_trailing_newline(tmp_path: Path, monkeypatch)
     _write_note(wiki / "sessions" / "foo-bar-typo.md", "present\n")
 
     client = FakeLlmClient({"is_rename": True, "confidence": 0.95})
-    orphan_links_pass(wiki, anthropic_client=client, dry_run=False)
+    orphan_links_pass(wiki, llm_client=client, dry_run=False)
 
     raw = path.read_bytes()
     # CRLF preserved, trailing newline preserved.
@@ -213,7 +213,7 @@ def test_orphan_ambiguous_candidates_no_rewrite(tmp_path: Path, monkeypatch) -> 
 
     before = a.read_bytes()
     client = FakeLlmClient({"is_rename": True, "confidence": 0.95})
-    summary = orphan_links_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = orphan_links_pass(wiki, llm_client=client, dry_run=False)
     assert a.read_bytes() == before, "ambiguous → no rewrite"
     assert summary.get("orphan_ambiguous", 0) >= 1
 
@@ -228,7 +228,7 @@ def test_orphan_truly_deleted_is_flagged(tmp_path: Path, monkeypatch) -> None:
     _write_note(wiki / "sessions" / "something-else.md", "present\n")
 
     client = FakeLlmClient({"is_rename": True, "confidence": 0.95})
-    summary = orphan_links_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = orphan_links_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("orphan_skipped_no_candidate", 0) >= 1
 
 
@@ -242,7 +242,7 @@ def test_orphan_skips_malformed(tmp_path: Path, monkeypatch) -> None:
     _write_note(wiki / "sessions" / "foo-bar-typo.md", "present\n")
 
     client = FakeLlmClient({"is_rename": True})  # missing confidence
-    summary = orphan_links_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = orphan_links_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("orphan_skipped_malformed") == 1
 
 
@@ -251,7 +251,7 @@ def test_orphan_skipped_without_llm(tmp_path: Path) -> None:
 
     lore_root = _seed_vault(tmp_path)
     wiki = lore_root / "wiki" / "w"
-    summary = orphan_links_pass(wiki, anthropic_client=None, dry_run=False)
+    summary = orphan_links_pass(wiki, llm_client=None, dry_run=False)
     assert summary == {"orphan_skipped_no_llm": 1}
 
 

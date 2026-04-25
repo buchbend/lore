@@ -94,7 +94,7 @@ def test_abstract_empty_cluster_short_circuits():
         cluster=cluster,
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result == []
@@ -109,7 +109,7 @@ def test_abstract_emits_surface_for_clear_pattern():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert len(result) == 1
@@ -127,7 +127,7 @@ def test_abstract_emits_zero_surfaces_when_pattern_unclear():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result == []
@@ -140,7 +140,7 @@ def test_abstract_uses_high_tier_by_default():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert client.messages.calls[0]["model"] == "model-high"
@@ -153,7 +153,7 @@ def test_abstract_falls_back_to_middle_when_high_off():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
         high_tier_off=True,
     )
@@ -168,7 +168,7 @@ def test_abstract_warning_logged_once_when_high_off(tmp_path):
             cluster=_simple_cluster(),
             surfaces_doc=_simple_surfaces_doc(),
             source_notes_by_wikilink={},
-            anthropic_client=client,
+            llm_client=client,
             model_resolver=_resolver,
             high_tier_off=True,
             lore_root=tmp_path,
@@ -186,7 +186,7 @@ def test_abstract_no_warning_when_high_tier_on(tmp_path):
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
         high_tier_off=False,
         lore_root=tmp_path,
@@ -203,7 +203,7 @@ def test_abstract_no_warning_when_lore_root_none_even_if_high_off():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
         high_tier_off=True,
         lore_root=None,
@@ -219,7 +219,7 @@ def test_abstract_drops_surface_with_invalid_name():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result == []
@@ -238,7 +238,7 @@ def test_abstract_drops_surface_missing_title_or_body():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result == []
@@ -251,7 +251,7 @@ def test_abstract_forces_tool_choice():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert client.messages.calls[0]["tool_choice"] == {"type": "tool", "name": "abstract"}
@@ -264,7 +264,7 @@ def test_abstract_includes_source_note_bodies_in_prompt():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={"[[note1]]": "session body content here"},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     messages = client.messages.calls[0]["messages"]
@@ -281,7 +281,7 @@ def test_abstract_truncates_very_long_source_bodies_in_prompt():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={"[[note1]]": long_body},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     messages = client.messages.calls[0]["messages"]
@@ -300,7 +300,7 @@ def test_abstract_keeps_full_body_when_under_cap():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={"[[note1]]": medium_body},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     prompt = client.messages.calls[0]["messages"][0]["content"]
@@ -319,7 +319,7 @@ def test_abstract_empty_surfaces_doc_returns_empty():
         cluster=_simple_cluster(),
         surfaces_doc=empty_doc,
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result == []
@@ -346,7 +346,7 @@ def test_abstract_prompt_includes_extract_prompt_when_set():
         cluster=_simple_cluster(),
         surfaces_doc=doc,
         source_notes_by_wikilink={"[[note1]]": "body"},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     prompt = client.messages.calls[0]["messages"][0]["content"]
@@ -360,7 +360,7 @@ def test_abstract_prompt_omits_extract_prompt_when_absent():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),  # no extract_prompt on any surface
         source_notes_by_wikilink={"[[note1]]": "body"},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     prompt = client.messages.calls[0]["messages"][0]["content"]
@@ -394,7 +394,7 @@ def test_abstract_strips_leading_frontmatter_from_body():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert len(result) == 1
@@ -410,7 +410,7 @@ def test_abstract_leaves_clean_body_unchanged():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result[0].body == body
@@ -425,7 +425,7 @@ def test_abstract_preserves_body_when_frontmatter_unclosed():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result[0].body == body
@@ -443,7 +443,7 @@ def test_abstract_preserves_body_with_horizontal_rule_sections():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     # The candidate "Section 1 content here." parses as a YAML string, not
@@ -464,7 +464,7 @@ def test_abstract_drops_surface_when_body_is_only_frontmatter():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result == []
@@ -477,7 +477,7 @@ def test_abstract_prompt_instructs_no_frontmatter_in_body():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     prompt = client.messages.calls[0]["messages"][0]["content"]
@@ -507,7 +507,7 @@ def test_abstract_prompt_includes_existing_surfaces_inventory():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={"[[note1]]": "body"},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
         existing_surfaces=existing,
     )
@@ -526,7 +526,7 @@ def test_abstract_prompt_omits_existing_section_when_inventory_empty():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={"[[note1]]": "body"},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
         existing_surfaces={},
     )
@@ -551,7 +551,7 @@ def test_abstract_returns_merge_into_when_llm_suggests_merge():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert len(result) == 1
@@ -566,7 +566,7 @@ def test_abstract_merge_into_defaults_to_none_when_absent():
         cluster=_simple_cluster(),
         surfaces_doc=_simple_surfaces_doc(),
         source_notes_by_wikilink={},
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result[0].merge_into is None

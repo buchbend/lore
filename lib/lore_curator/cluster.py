@@ -18,7 +18,7 @@ def cluster_session_notes(
     *,
     notes: list[dict],                  # each: {"path": str, "frontmatter": dict, "summary": str}
     surfaces: list[str],                # surface names from SURFACES.md (e.g., ["concept", "decision", "result"])
-    anthropic_client: Any,
+    llm_client: Any,
     model_resolver: Callable[[str], str],
 ) -> list[Cluster]:
     """Cluster recent session notes by scope+topic via middle-tier LLM.
@@ -35,7 +35,7 @@ def cluster_session_notes(
         return []
     prompt_text = _build_prompt(notes, surfaces)
     tool = _cluster_tool_schema(surfaces)
-    resp = anthropic_client.messages.create(
+    resp = llm_client.messages.create(
         model=model_resolver("middle"),
         max_tokens=2048,
         tools=[tool],

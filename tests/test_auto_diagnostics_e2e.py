@@ -181,7 +181,7 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
 
         run_curator_a(
             lore_root=lore_root,
-            anthropic_client=FakeAnthropicNoteworthyTrue(),
+            llm_client=FakeAnthropicNoteworthyTrue(),
             adapter_lookup=_adapter_lookup,
             trigger="manual",
             now=_NOW,

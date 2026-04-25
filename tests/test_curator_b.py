@@ -174,7 +174,7 @@ def test_curator_b_no_recent_notes_short_circuits(tmp_path):
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(days=3),
     )
@@ -234,7 +234,7 @@ def test_curator_b_regenerates_threads_md_even_with_no_recent_notes(tmp_path):
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(hours=1),  # narrow window: nothing recent
     )
@@ -287,7 +287,7 @@ def test_curator_b_writes_threads_md_at_wiki_root(tmp_path):
     run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(days=30),
     )
@@ -323,7 +323,7 @@ def test_curator_b_clusters_then_abstracts_then_files(tmp_path):
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(days=7),
     )
@@ -363,7 +363,7 @@ def test_curator_b_files_surfaces_with_draft_true(tmp_path):
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(days=7),
     )
@@ -396,7 +396,7 @@ def test_curator_b_advances_last_curator_b_on_wiki_ledger(tmp_path):
     run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=_make_client(),
+        llm_client=_make_client(),
         now=_NOW,
         since=_NOW - timedelta(days=3),
     )
@@ -429,7 +429,7 @@ def test_curator_b_dry_run_writes_nothing(tmp_path):
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         dry_run=True,
         now=_NOW,
         since=_NOW - timedelta(days=7),
@@ -468,7 +468,7 @@ def test_curator_b_lock_contention_records_skip(tmp_path):
         result = run_curator_b(
             lore_root=tmp_path,
             wiki="private",
-            anthropic_client=_make_client(),
+            llm_client=_make_client(),
             now=_NOW,
         )
 
@@ -493,7 +493,7 @@ def test_curator_b_no_anthropic_client_records_skip(tmp_path):
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=None,
+        llm_client=None,
         now=_NOW,
     )
 
@@ -528,7 +528,7 @@ This file has no surface sections defined.
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=_make_client(),
+        llm_client=_make_client(),
         now=_NOW,
     )
 
@@ -568,7 +568,7 @@ models:
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(days=7),
     )
@@ -594,7 +594,7 @@ def test_curator_b_wiki_not_found_records_skip(tmp_path):
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="nonexistent",
-        anthropic_client=_make_client(),
+        llm_client=_make_client(),
         now=_NOW,
     )
 
@@ -695,7 +695,7 @@ def test_curator_b_skips_filing_when_llm_suggests_merge(tmp_path):
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(days=30),
     )
@@ -742,7 +742,7 @@ def test_curator_b_passes_existing_surfaces_to_abstract_call(tmp_path):
     run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(days=30),
     )

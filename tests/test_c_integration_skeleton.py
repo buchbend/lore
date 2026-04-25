@@ -3,7 +3,7 @@
 Lands the skeleton BEFORE the LLM passes (architect must-fix): each
 pass in Phase B slots into a working pipeline. Tests here cover:
 
-- run_curator_c(defrag, anthropic_client) signature and wiring
+- run_curator_c(defrag, llm_client) signature and wiring
 - Diff-log wrapping of the whole run
 - last_curator_c atomic-on-success update
 - Mid-merge vault pre-flight abort
@@ -162,7 +162,7 @@ def test_skeleton_runs_with_zero_passes(tmp_path: Path, monkeypatch) -> None:
         wiki_filter="testwiki",
         dry_run=False,
         defrag=True,
-        anthropic_client=None,
+        llm_client=None,
     )
 
     # last_curator_c updated.
@@ -213,7 +213,7 @@ def test_skeleton_atomic_on_failure(tmp_path: Path, monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="simulated"):
         cc_mod.run_curator_c(
-            wiki_filter="testwiki", dry_run=False, defrag=True, anthropic_client=None
+            wiki_filter="testwiki", dry_run=False, defrag=True, llm_client=None
         )
 
     entry = WikiLedger(lore_root, "testwiki").read()

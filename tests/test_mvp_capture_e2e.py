@@ -252,7 +252,7 @@ def test_mvp_e2e_session_end_produces_note(
 
     curator_result = run_curator_a(
         lore_root=lore_root,
-        anthropic_client=fake_anthropic,
+        llm_client=fake_anthropic,
         dry_run=False,
         now=_NOW,
     )
@@ -325,7 +325,7 @@ def test_mvp_e2e_non_noteworthy_slice_produces_no_note(
 
     curator_result = run_curator_a(
         lore_root=lore_root,
-        anthropic_client=fake_anthropic,
+        llm_client=fake_anthropic,
         dry_run=False,
         now=_NOW,
     )
@@ -373,7 +373,7 @@ def test_mvp_e2e_idempotent_on_rerun(
     # First curator run — creates note
     result1 = run_curator_a(
         lore_root=lore_root,
-        anthropic_client=fake_anthropic,
+        llm_client=fake_anthropic,
         dry_run=False,
         now=_NOW,
     )
@@ -387,7 +387,7 @@ def test_mvp_e2e_idempotent_on_rerun(
     # curator_a_run is not None). So transcripts_considered == 0.
     result2 = run_curator_a(
         lore_root=lore_root,
-        anthropic_client=fake_anthropic,
+        llm_client=fake_anthropic,
         dry_run=False,
         now=_NOW,
     )
@@ -520,7 +520,7 @@ def test_mvp_e2e_second_slice_after_growth_is_processed(
     })
     first_run_ts = datetime(2026, 4, 18, 11, 0, 0, tzinfo=UTC)
     r1 = run_curator_a(
-        lore_root=lore_root, anthropic_client=fake_anthropic, dry_run=False, now=first_run_ts,
+        lore_root=lore_root, llm_client=fake_anthropic, dry_run=False, now=first_run_ts,
     )
     assert r1.noteworthy_count == 1
     sessions_dir = lore_root / "wiki" / "private" / "sessions"
@@ -574,7 +574,7 @@ def test_mvp_e2e_second_slice_after_growth_is_processed(
     # Run curator again. The fake_anthropic is reused (still returns noteworthy=True).
     second_run_ts = datetime(2026, 4, 18, 13, 0, 0, tzinfo=UTC)
     r2 = run_curator_a(
-        lore_root=lore_root, anthropic_client=fake_anthropic, dry_run=False, now=second_run_ts,
+        lore_root=lore_root, llm_client=fake_anthropic, dry_run=False, now=second_run_ts,
     )
     # Either a new note is filed OR the existing one is merged into — both are acceptable
     # for this regression. The key assertion is that *some* curator action occurred for the

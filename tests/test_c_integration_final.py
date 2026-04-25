@@ -91,7 +91,7 @@ def test_full_defrag_run_writes_diff_log_and_advances_ledger(tmp_path, monkeypat
     })
 
     reports = run_curator_c(
-        wiki_filter="w", dry_run=False, defrag=True, anthropic_client=client
+        wiki_filter="w", dry_run=False, defrag=True, llm_client=client
     )
 
     # Ledger advanced.
@@ -126,7 +126,7 @@ def test_defrag_run_does_not_crash_without_llm(tmp_path, monkeypatch) -> None:
     )
 
     reports = run_curator_c(
-        wiki_filter="w", dry_run=False, defrag=True, anthropic_client=None
+        wiki_filter="w", dry_run=False, defrag=True, llm_client=None
     )
     # No crash.
     entry = WikiLedger(lore_root, "w").read()

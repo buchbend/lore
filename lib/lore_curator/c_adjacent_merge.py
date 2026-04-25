@@ -116,7 +116,7 @@ def generate_merge_candidates(wiki_path: Path) -> list[tuple[Path, Path]]:
 
 
 def _propose_merge(
-    note_a: Path, note_b: Path, *, anthropic_client: Any, lore_root: Path
+    note_a: Path, note_b: Path, *, llm_client: Any, lore_root: Path
 ) -> dict | None:
     """Call LLM and return a validated proposal dict, or None on any issue."""
     parsed_a = _parse_note(note_a)
@@ -145,7 +145,7 @@ def _propose_merge(
     )
 
     try:
-        resp = anthropic_client.messages.create(
+        resp = llm_client.messages.create(
             model=model,
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
@@ -176,10 +176,10 @@ def _propose_merge(
 
 
 def adjacent_merge_pass(
-    wiki_path: Path, *, anthropic_client: Any, dry_run: bool
+    wiki_path: Path, *, llm_client: Any, dry_run: bool
 ) -> dict[str, int]:
     """Registered in _DEFRAG_PASSES. Returns summary counts."""
-    if anthropic_client is None:
+    if llm_client is None:
         return {"adjacent_merge_skipped_no_llm": 1}
 
     from lore_core.config import get_lore_root
@@ -198,7 +198,7 @@ def adjacent_merge_pass(
 
     for note_a, note_b in pairs:
         proposal = _propose_merge(
-            note_a, note_b, anthropic_client=anthropic_client, lore_root=lore_root
+            note_a, note_b, llm_client=llm_client, lore_root=lore_root
         )
         if proposal is None:
             skipped_malformed += 1

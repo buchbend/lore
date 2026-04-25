@@ -625,7 +625,7 @@ def _apply_safely(action: CuratorAction) -> tuple[bool, str]:
 
 # Registry for LLM-driven Curator C defrag passes. Phase B of Plan 5
 # appends callables here; each callable has signature
-# ``(wiki_path, *, anthropic_client, dry_run) -> dict[str, int]`` (summary counts).
+# ``(wiki_path, *, llm_client, dry_run) -> dict[str, int]`` (summary counts).
 _DEFRAG_PASSES: list = []
 
 
@@ -644,7 +644,7 @@ def _ensure_passes_registered() -> None:
 def _run_defrag_passes(
     wiki_path,
     *,
-    anthropic_client,
+    llm_client,
     dry_run: bool,
 ) -> dict[str, int]:
     """Run every registered LLM pass for one wiki; return merged summary."""
@@ -652,7 +652,7 @@ def _run_defrag_passes(
     summary: dict[str, int] = {}
     for pass_fn in _DEFRAG_PASSES:
         counts = pass_fn(
-            wiki_path, anthropic_client=anthropic_client, dry_run=dry_run
+            wiki_path, llm_client=llm_client, dry_run=dry_run
         ) or {}
         for k, v in counts.items():
             summary[k] = summary.get(k, 0) + v
@@ -679,7 +679,7 @@ def run_curator_c(
     stale_threshold: int = STALENESS_DAYS,
     *,
     defrag: bool = False,
-    anthropic_client=None,
+    llm_client=None,
     run_id: str | None = None,
 ) -> list[CuratorReport]:
     """Run Curator C — hygiene by default; with ``defrag=True`` also runs
@@ -813,7 +813,7 @@ def run_curator_c(
         if defrag:
             for wiki_path in wikis:
                 summary = _run_defrag_passes(
-                    wiki_path, anthropic_client=anthropic_client, dry_run=dry_run
+                    wiki_path, llm_client=llm_client, dry_run=dry_run
                 )
                 defrag_summary_by_wiki[wiki_path.name] = summary
                 _emit("defrag-pass", wiki=wiki_path.name, summary=summary)
@@ -1179,7 +1179,7 @@ def run_command(
             wiki_filter=wiki,
             dry_run=dry_run,
             defrag=True,
-            anthropic_client=llm_client,
+            llm_client=llm_client,
         )
         # Exit success — report already printed by run_curator_c.
         return
@@ -1253,7 +1253,7 @@ def run_command(
     result = run_curator_a(
         lore_root=lore_root,
         scope=scope_obj,
-        anthropic_client=llm_client,
+        llm_client=llm_client,
         dry_run=dry_run,
         now=datetime.now(UTC),
         lock_timeout=lock_timeout,
@@ -1287,7 +1287,7 @@ def run_command(
             b_result = run_curator_b(
                 lore_root=lore_root,
                 wiki=wiki_name,
-                anthropic_client=llm_client,
+                llm_client=llm_client,
                 dry_run=dry_run,
                 now=datetime.now(UTC),
                 lock_timeout=lock_timeout,

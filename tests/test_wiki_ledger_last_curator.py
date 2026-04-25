@@ -201,7 +201,7 @@ def test_curator_a_run_updates_last_curator_a(tmp_path: Path) -> None:
 
     run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_noteworthy_false_client(),
+        llm_client=_noteworthy_false_client(),
         adapter_lookup=lambda host: adapter if host == "fake" else None,
         now=_NOW,
     )
@@ -226,7 +226,7 @@ def test_curator_a_does_not_update_untouched_wikis(tmp_path: Path) -> None:
 
     run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_noteworthy_false_client(),
+        llm_client=_noteworthy_false_client(),
         adapter_lookup=lambda host: adapter if host == "fake" else None,
         now=_NOW,
     )
@@ -268,7 +268,7 @@ def test_partial_failure_does_not_clobber_prior_last_curator_a(tmp_path: Path) -
         with pytest.raises(RuntimeError, match="simulated mid-run failure"):
             run_curator_a(
                 lore_root=tmp_path,
-                anthropic_client=_noteworthy_false_client(),
+                llm_client=_noteworthy_false_client(),
                 adapter_lookup=lambda host: adapter if host == "fake" else None,
                 now=_NOW,
             )

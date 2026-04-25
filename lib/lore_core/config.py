@@ -23,9 +23,3 @@ def get_lore_root() -> Path:
 def get_wiki_root() -> Path:
     """Return the wiki mount directory under the Lore root."""
     return get_lore_root() / "wiki"
-
-
-# Module-level convenience (resolved at import time). Tests that need to
-# override should patch via the getter functions above, not these.
-LORE_ROOT = get_lore_root()
-WIKI_ROOT = get_wiki_root()

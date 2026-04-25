@@ -142,6 +142,10 @@ plan() dispatch — copy that pattern.
 3. **Add a `## [X.Y.Z] — YYYY-MM-DD` section** in `CHANGELOG.md`
    under `[Unreleased]`. Follow Keep a Changelog headings
    (Added / Changed / Fixed / Deprecated / Removed / Security).
+
+   `tests/test_version_sync.py` enforces all three in pytest — if any
+   one is missing or disagrees, the test suite fails. Run
+   `pytest tests/test_version_sync.py` after bumping.
 4. **Commit + tag**: `git commit -m "release: vX.Y.Z" && git tag vX.Y.Z`.
 5. **Push with tags**: `git push && git push --tags`.
 

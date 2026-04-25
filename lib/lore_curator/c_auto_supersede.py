@@ -201,9 +201,9 @@ def _append_marker(path: Path, key: str, target_stem: str) -> None:
 
 
 def auto_supersede_pass(
-    wiki_path: Path, *, anthropic_client: Any, dry_run: bool
+    wiki_path: Path, *, llm_client: Any, dry_run: bool
 ) -> dict[str, int]:
-    if anthropic_client is None:
+    if llm_client is None:
         return {"auto_supersede_skipped_no_llm": 1}
 
     from lore_core.config import get_lore_root
@@ -251,7 +251,7 @@ def auto_supersede_pass(
             lore_root=lore_root,
         )
         try:
-            resp = anthropic_client.messages.create(
+            resp = llm_client.messages.create(
                 model=model,
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],

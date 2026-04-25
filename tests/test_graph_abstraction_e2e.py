@@ -231,7 +231,7 @@ def test_graph_e2e_session_notes_become_surfaces(tmp_path):
     result = run_curator_b(
         lore_root=lore_root,
         wiki="private",
-        anthropic_client=fake,
+        llm_client=fake,
         dry_run=False,
         now=_NOW,
     )
@@ -304,7 +304,7 @@ def test_graph_e2e_briefing_auto_publishes_after_curator_b(tmp_path):
     result = run_curator_b(
         lore_root=lore_root,
         wiki="private",
-        anthropic_client=fake,
+        llm_client=fake,
         dry_run=False,
         now=_NOW,
     )
@@ -339,7 +339,7 @@ def test_graph_e2e_no_recent_notes_no_writes(tmp_path):
     result = run_curator_b(
         lore_root=lore_root,
         wiki="private",
-        anthropic_client=fake,
+        llm_client=fake,
         dry_run=False,
         now=_NOW,
     )
@@ -411,7 +411,7 @@ def test_graph_e2e_high_tier_off_still_emits_surfaces(tmp_path):
     result = run_curator_b(
         lore_root=lore_root,
         wiki="private",
-        anthropic_client=fake,
+        llm_client=fake,
         dry_run=False,
         now=_NOW,
     )
@@ -485,7 +485,7 @@ def test_graph_e2e_broken_surfaces_md_refuses(tmp_path):
     result = run_curator_b(
         lore_root=lore_root,
         wiki="private",
-        anthropic_client=fake,
+        llm_client=fake,
         dry_run=False,
         now=_NOW,
     )

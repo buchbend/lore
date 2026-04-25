@@ -218,7 +218,7 @@ def test_curator_a_end_to_end_noteworthy_produces_note(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=client,
+        llm_client=client,
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -256,7 +256,7 @@ def test_curator_a_non_noteworthy_advances_ledger_no_file(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=client,
+        llm_client=client,
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -297,7 +297,7 @@ def test_curator_a_dry_run_writes_nothing(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=client,
+        llm_client=client,
         adapter_lookup=_make_adapter_lookup(adapter),
         dry_run=True,
         now=_NOW,
@@ -335,7 +335,7 @@ def test_curator_a_lock_contention_records_skip(tmp_path):
 
         result = run_curator_a(
             lore_root=tmp_path,
-            anthropic_client=_make_noteworthy_client(),
+            llm_client=_make_noteworthy_client(),
             adapter_lookup=_make_adapter_lookup(FakeAdapter([])),
             now=_NOW,
         )
@@ -369,7 +369,7 @@ def test_curator_a_reuses_hash_watermark_across_runs(tmp_path):
     # First run
     run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=client,
+        llm_client=client,
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -384,7 +384,7 @@ def test_curator_a_reuses_hash_watermark_across_runs(tmp_path):
 
     result2 = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_make_noteworthy_client(noteworthy=True),
+        llm_client=_make_noteworthy_client(noteworthy=True),
         adapter_lookup=_make_adapter_lookup(adapter2),
         now=_NOW,
     )
@@ -438,7 +438,7 @@ def test_curator_a_skips_unattached_directory(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_make_noteworthy_client(),
+        llm_client=_make_noteworthy_client(),
         adapter_lookup=_make_adapter_lookup(FakeAdapter([])),
         now=_NOW,
     )
@@ -496,7 +496,7 @@ def test_curator_a_requested_scope_filters(tmp_path):
     result = run_curator_a(
         lore_root=tmp_path,
         scope=scope_a,
-        anthropic_client=_make_noteworthy_client(noteworthy=True),
+        llm_client=_make_noteworthy_client(noteworthy=True),
         adapter_lookup=_make_adapter_lookup(FakeAdapter(turns)),
         now=_NOW,
     )
@@ -542,7 +542,7 @@ def test_curator_a_unknown_host_recorded(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_make_noteworthy_client(),
+        llm_client=_make_noteworthy_client(),
         adapter_lookup=raising_lookup,
         now=_NOW,
     )
@@ -551,7 +551,7 @@ def test_curator_a_unknown_host_recorded(tmp_path):
 
 
 def test_curator_a_no_anthropic_client_records_skip(tmp_path):
-    """anthropic_client=None; transcripts exist but LLM is not called; no_anthropic_client skip."""
+    """llm_client=None; transcripts exist but LLM is not called; no_anthropic_client skip."""
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
     _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
@@ -567,7 +567,7 @@ def test_curator_a_no_anthropic_client_records_skip(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=None,
+        llm_client=None,
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -604,7 +604,7 @@ def test_curator_a_llm_client_error_skips_slice_without_aborting_run(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_RaisingClient(),
+        llm_client=_RaisingClient(),
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -653,7 +653,7 @@ def test_curator_a_result_counts_chunks_separately_from_transcripts(tmp_path):
     from lore_curator.curator_a import run_curator_a
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=client,
+        llm_client=client,
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -717,7 +717,7 @@ def test_curator_a_chunk_failure_does_not_advance_past_failed_chunk(tmp_path):
     from lore_curator.curator_a import run_curator_a
     run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_FailingClient(),
+        llm_client=_FailingClient(),
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -767,7 +767,7 @@ def test_curator_a_day_split_produces_one_note_per_local_date(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=client,
+        llm_client=client,
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -807,7 +807,7 @@ def test_curator_a_single_day_slice_produces_one_note(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=client,
+        llm_client=client,
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -829,7 +829,7 @@ def test_curator_a_duration_recorded(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_make_noteworthy_client(),
+        llm_client=_make_noteworthy_client(),
         adapter_lookup=_make_adapter_lookup(FakeAdapter([])),
         now=_NOW,
     )
@@ -859,7 +859,7 @@ def test_run_curator_a_creates_run_log(tmp_path):
 
     run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=client,
+        llm_client=client,
         adapter_lookup=_make_adapter_lookup(adapter),
         now=_NOW,
     )
@@ -903,7 +903,7 @@ def test_curator_a_processes_entry_regardless_of_wiki_count(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_make_noteworthy_client(),
+        llm_client=_make_noteworthy_client(),
         adapter_lookup=_make_adapter_lookup(FakeAdapter(_make_turns(3))),
         now=_NOW,
     )
@@ -939,7 +939,7 @@ def test_curator_a_orphan_directory_marks_entry_orphan(tmp_path):
 
     result = run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_make_noteworthy_client(),
+        llm_client=_make_noteworthy_client(),
         adapter_lookup=_make_adapter_lookup(FakeAdapter([])),
         now=_NOW,
     )
@@ -973,7 +973,7 @@ def test_curator_a_processed_entry_not_re_tripped(tmp_path):
 
     run_curator_a(
         lore_root=tmp_path,
-        anthropic_client=_make_noteworthy_client(),
+        llm_client=_make_noteworthy_client(),
         adapter_lookup=_make_adapter_lookup(FakeAdapter(_make_turns(3))),
         now=_NOW,
     )

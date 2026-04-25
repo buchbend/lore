@@ -38,7 +38,7 @@ def abstract_cluster(
     cluster: Cluster,
     surfaces_doc: SurfacesDoc,
     source_notes_by_wikilink: dict[str, str],   # wikilink → note body for context
-    anthropic_client: Any,
+    llm_client: Any,
     model_resolver: Callable[[str], str],
     high_tier_off: bool = False,
     lore_root: Path | None = None,
@@ -82,7 +82,7 @@ def abstract_cluster(
     )
     tool = _abstract_tool_schema(surfaces_vocab)
 
-    resp = anthropic_client.messages.create(
+    resp = llm_client.messages.create(
         model=model,
         max_tokens=2048,
         tools=[tool],

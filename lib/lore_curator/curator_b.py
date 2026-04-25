@@ -34,7 +34,7 @@ def run_curator_b(
     *,
     lore_root: Path,
     wiki: str,                                      # required — Curator B is per-wiki
-    anthropic_client: Any = None,
+    llm_client: Any = None,
     dry_run: bool = False,
     now: datetime | None = None,
     since: datetime | None = None,                  # default = wiki_ledger.last_curator_b or now-3d
@@ -79,7 +79,7 @@ def run_curator_b(
             result.duration_seconds = time.monotonic() - start
             return result
 
-        if anthropic_client is None:
+        if llm_client is None:
             result.skipped_reasons["no_anthropic_client"] = 1
             logger.emit("skip", reason="no_anthropic_client")
             result.duration_seconds = time.monotonic() - start
@@ -113,7 +113,7 @@ def run_curator_b(
                 if not dry_run:
                     _regenerate_threads_md(
                         wiki_root, now=now, logger=logger,
-                        anthropic_client=anthropic_client,
+                        llm_client=llm_client,
                         model_resolver=model_resolver,
                     )
 
@@ -130,7 +130,7 @@ def run_curator_b(
                 clusters = cluster_session_notes(
                     notes=notes,
                     surfaces=surface_names,
-                    anthropic_client=anthropic_client,
+                    llm_client=llm_client,
                     model_resolver=model_resolver,
                 )
                 result.clusters_formed = len(clusters)
@@ -151,7 +151,7 @@ def run_curator_b(
                         cluster=cluster,
                         surfaces_doc=surfaces_doc,
                         source_notes_by_wikilink=sources_by_wl,
-                        anthropic_client=anthropic_client,
+                        llm_client=llm_client,
                         model_resolver=model_resolver,
                         high_tier_off=high_tier_off,
                         lore_root=lore_root,
@@ -469,7 +469,7 @@ def _regenerate_threads_md(
     *,
     now: datetime,
     logger: RunLogger | None = None,
-    anthropic_client: Any = None,
+    llm_client: Any = None,
     model_resolver: Any = None,
 ) -> None:
     """Rebuild ``<wiki>/threads.md`` from session-note frontmatter.
@@ -497,10 +497,10 @@ def _regenerate_threads_md(
 
         notes = scan_session_notes(wiki_root)
         threads = compute_threads(notes)
-        if anthropic_client is not None and model_resolver is not None:
+        if llm_client is not None and model_resolver is not None:
             threads = label_threads_with_llm(
                 threads,
-                anthropic_client=anthropic_client,
+                llm_client=llm_client,
                 model_resolver=model_resolver,
             )
         text = render_threads_markdown(

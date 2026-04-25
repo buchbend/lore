@@ -242,7 +242,7 @@ def test_e2e_subprocess_backend_produces_session_note(
 
     curator_result = run_curator_a(
         lore_root=lore_root,
-        anthropic_client=fake_client,
+        llm_client=fake_client,
         dry_run=False,
         now=_NOW,
     )
@@ -313,7 +313,7 @@ def test_e2e_subprocess_backend_binary_missing_path(
 
     curator_result = run_curator_a(
         lore_root=lore_root,
-        anthropic_client=None,   # no backend
+        llm_client=None,   # no backend
         dry_run=False,
         now=_NOW,
     )

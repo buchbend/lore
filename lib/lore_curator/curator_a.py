@@ -99,7 +99,7 @@ def run_curator_a(
     *,
     lore_root: Path,
     scope: Scope | None = None,            # None = all attached scopes
-    anthropic_client: Any = None,
+    llm_client: Any = None,
     adapter_lookup: Callable[[str], Adapter] | None = None,
     dry_run: bool = False,
     now: datetime | None = None,
@@ -120,7 +120,7 @@ def run_curator_a(
       or not) so we don't re-process.
     - `dry_run=True` skips all writes (including ledger advance and
       session-note file creation) but still runs the classification
-      (unless anthropic_client is None). Dry-run bypasses the lockfile.
+      (unless llm_client is None). Dry-run bypasses the lockfile.
     """
     start = time.monotonic()
     now = now or datetime.now(UTC)
@@ -171,7 +171,7 @@ def run_curator_a(
                     requested_scope=scope,
                     lore_root=lore_root,
                     lookup=lookup,
-                    anthropic_client=anthropic_client,
+                    llm_client=llm_client,
                     dry_run=True,
                     now=now,
                     logger=logger,
@@ -193,7 +193,7 @@ def run_curator_a(
                             requested_scope=scope,
                             lore_root=lore_root,
                             lookup=lookup,
-                            anthropic_client=anthropic_client,
+                            llm_client=llm_client,
                             dry_run=False,
                             now=now,
                             logger=logger,
@@ -294,7 +294,7 @@ def _process_entry(
     requested_scope: Scope | None,
     lore_root: Path,
     lookup: Callable[[str], Adapter],
-    anthropic_client: Any,
+    llm_client: Any,
     dry_run: bool,
     now: datetime,
     logger: RunLogger | None = None,
@@ -379,7 +379,7 @@ def _process_entry(
     wiki_dir = lore_root / "wiki" / attached.wiki
     cfg = load_wiki_config(wiki_dir)
 
-    if anthropic_client is None:
+    if llm_client is None:
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="no-anthropic-client")
         return [_Outcome(skip_reason="no_anthropic_client", wiki_name=attached.wiki)]
@@ -414,7 +414,7 @@ def _process_entry(
             attached=attached,
             wiki_dir=wiki_dir,
             cfg=cfg,
-            anthropic_client=anthropic_client,
+            llm_client=llm_client,
             handle=handle,
             now=now,
             dry_run=dry_run,
@@ -441,7 +441,7 @@ def _process_chunk(
     attached: Scope,
     wiki_dir: Path,
     cfg: WikiConfig,
-    anthropic_client: Any,
+    llm_client: Any,
     handle: TranscriptHandle,
     now: datetime,
     dry_run: bool,
@@ -465,7 +465,7 @@ def _process_chunk(
             chunk_turns,
             tier=tier,
             model_resolver=model_resolver,
-            anthropic_client=anthropic_client,
+            llm_client=llm_client,
             lore_root=lore_root,
             logger=logger,
             transcript_id=entry.transcript_id,

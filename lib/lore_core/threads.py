@@ -224,7 +224,7 @@ def _build_label_prompt(thread: Thread) -> str:
 def label_threads_with_llm(
     threads: list[Thread],
     *,
-    anthropic_client: Any,
+    llm_client: Any,
     model_resolver: Any,
 ) -> list[Thread]:
     """Enrich each thread with a simple-tier LLM-derived ``llm_label``.
@@ -234,7 +234,7 @@ def label_threads_with_llm(
     leaves ``llm_label=""``. Threads.md regen must never fail because
     a label call did. One LLM call per thread, simple tier.
     """
-    if anthropic_client is None or not threads:
+    if llm_client is None or not threads:
         return threads
 
     try:
@@ -249,7 +249,7 @@ def label_threads_with_llm(
         label = ""
         try:
             prompt = _build_label_prompt(thread)
-            resp = anthropic_client.messages.create(
+            resp = llm_client.messages.create(
                 model=model,
                 max_tokens=64,
                 tools=[_LABEL_TOOL_SCHEMA],

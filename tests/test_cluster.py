@@ -84,7 +84,7 @@ def test_cluster_empty_notes_short_circuits_no_llm_call():
     result = cluster_session_notes(
         notes=[],
         surfaces=_SURFACES,
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result == []
@@ -107,7 +107,7 @@ def test_cluster_returns_clusters_from_llm_response():
     result = cluster_session_notes(
         notes=_sample_notes(),
         surfaces=_SURFACES,
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert len(result) == 1
@@ -134,7 +134,7 @@ def test_cluster_each_cluster_has_topic_scope_notes():
     result = cluster_session_notes(
         notes=_sample_notes(),
         surfaces=_SURFACES,
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert len(result) == 1
@@ -163,7 +163,7 @@ def test_cluster_suggested_surface_matches_wiki_vocabulary_or_none():
     result = cluster_session_notes(
         notes=_sample_notes(),
         surfaces=surfaces,
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert len(result) == 1
@@ -177,7 +177,7 @@ def test_cluster_uses_middle_tier_model():
     cluster_session_notes(
         notes=_sample_notes(),
         surfaces=_SURFACES,
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=lambda t: f"model-{t}",
     )
     assert client.messages.calls[0]["model"] == "model-middle"
@@ -189,7 +189,7 @@ def test_cluster_handles_malformed_llm_response_gracefully():
     result = cluster_session_notes(
         notes=_sample_notes(),
         surfaces=_SURFACES,
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert result == []
@@ -211,7 +211,7 @@ def test_cluster_drops_clusters_missing_topic_or_notes():
     result = cluster_session_notes(
         notes=_sample_notes(),
         surfaces=_SURFACES,
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert len(result) == 1
@@ -225,7 +225,7 @@ def test_cluster_forces_tool_choice():
     cluster_session_notes(
         notes=_sample_notes(),
         surfaces=_SURFACES,
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     assert client.messages.calls[0]["tool_choice"] == {"type": "tool", "name": "cluster"}
@@ -246,7 +246,7 @@ def test_cluster_truncates_long_summaries_in_prompt():
     cluster_session_notes(
         notes=notes,
         surfaces=_SURFACES,
-        anthropic_client=client,
+        llm_client=client,
         model_resolver=_resolver,
     )
     sent_prompt = client.messages.calls[0]["messages"][0]["content"]

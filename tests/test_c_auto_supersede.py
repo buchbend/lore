@@ -114,7 +114,7 @@ def test_supersede_proposes_markers_on_0_9_confidence(tmp_path, monkeypatch) -> 
     newer = _write_decision(wiki / "sessions" / "b.md", title="B", created="2026-04-21", tags=["x"])
 
     client = FakeLlmClient({"contradicts": True, "confidence": 0.9, "reason": "flipped"})
-    summary = auto_supersede_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = auto_supersede_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("auto_supersede_proposed") == 1
 
     older_text = older.read_text()
@@ -137,7 +137,7 @@ def test_supersede_at_exact_0_85(tmp_path, monkeypatch) -> None:
     _write_decision(wiki / "sessions" / "b.md", title="B", created="2026-04-21", tags=["x"])
 
     client = FakeLlmClient({"contradicts": True, "confidence": 0.85, "reason": "boundary"})
-    summary = auto_supersede_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = auto_supersede_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("auto_supersede_proposed") == 1
 
 
@@ -151,7 +151,7 @@ def test_supersede_at_0_84_skips(tmp_path, monkeypatch) -> None:
     _write_decision(wiki / "sessions" / "b.md", title="B", created="2026-04-21", tags=["x"])
 
     client = FakeLlmClient({"contradicts": True, "confidence": 0.84, "reason": "just below"})
-    summary = auto_supersede_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = auto_supersede_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("auto_supersede_proposed", 0) == 0
     assert summary.get("auto_supersede_skipped_low_confidence") == 1
 
@@ -166,7 +166,7 @@ def test_supersede_respects_canonical_true(tmp_path, monkeypatch) -> None:
     _write_decision(wiki / "sessions" / "b.md", title="B", created="2026-04-21", tags=["x"])
 
     client = FakeLlmClient({"contradicts": True, "confidence": 0.99, "reason": "x"})
-    summary = auto_supersede_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = auto_supersede_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("auto_supersede_skipped_canonical") == 1
     assert summary.get("auto_supersede_proposed", 0) == 0
 
@@ -181,9 +181,9 @@ def test_supersede_idempotent(tmp_path, monkeypatch) -> None:
     _write_decision(wiki / "sessions" / "b.md", title="B", created="2026-04-21", tags=["x"])
 
     client = FakeLlmClient({"contradicts": True, "confidence": 0.9, "reason": "x"})
-    auto_supersede_pass(wiki, anthropic_client=client, dry_run=False)
+    auto_supersede_pass(wiki, llm_client=client, dry_run=False)
     first_text = (wiki / "sessions" / "a.md").read_text()
-    auto_supersede_pass(wiki, anthropic_client=client, dry_run=False)
+    auto_supersede_pass(wiki, llm_client=client, dry_run=False)
     second_text = (wiki / "sessions" / "a.md").read_text()
 
     # Marker should not be duplicated on second run.
@@ -200,7 +200,7 @@ def test_supersede_skips_malformed(tmp_path, monkeypatch) -> None:
     _write_decision(wiki / "sessions" / "b.md", title="B", created="2026-04-21", tags=["x"])
 
     client = FakeLlmClient({"contradicts": True})  # missing confidence + reason
-    summary = auto_supersede_pass(wiki, anthropic_client=client, dry_run=False)
+    summary = auto_supersede_pass(wiki, llm_client=client, dry_run=False)
     assert summary.get("auto_supersede_skipped_malformed") == 1
 
 
@@ -209,7 +209,7 @@ def test_supersede_skipped_without_llm(tmp_path) -> None:
 
     lore_root = _seed(tmp_path)
     wiki = lore_root / "wiki" / "w"
-    summary = auto_supersede_pass(wiki, anthropic_client=None, dry_run=False)
+    summary = auto_supersede_pass(wiki, llm_client=None, dry_run=False)
     assert summary == {"auto_supersede_skipped_no_llm": 1}
 
 

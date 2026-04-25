@@ -212,7 +212,7 @@ def test_label_threads_with_llm_populates_llm_label_field():
         assert tier == "simple", "thread labelling must use the cheapest tier"
         return "claude-haiku-4-5"
 
-    out = label_threads_with_llm([base], anthropic_client=_FakeClient(),
+    out = label_threads_with_llm([base], llm_client=_FakeClient(),
                                   model_resolver=resolver)
     assert len(out) == 1
     assert out[0].llm_label == "Curator A chunking + topic-aware merge"
@@ -237,7 +237,7 @@ def test_label_threads_with_llm_falls_back_silently_on_failure():
             def create(**kwargs):
                 raise RuntimeError("simulated 429")
 
-    out = label_threads_with_llm([base], anthropic_client=_RaisingClient(),
+    out = label_threads_with_llm([base], llm_client=_RaisingClient(),
                                   model_resolver=lambda t: "x")
     assert len(out) == 1
     assert out[0].llm_label == ""
@@ -250,7 +250,7 @@ def test_label_threads_with_llm_skips_when_no_client():
     from lore_core.threads import Thread, label_threads_with_llm
 
     base = Thread(label="auth.py", members=[], shared_files=[])
-    out = label_threads_with_llm([base], anthropic_client=None,
+    out = label_threads_with_llm([base], llm_client=None,
                                   model_resolver=lambda t: "x")
     assert out[0].llm_label == ""
 

@@ -166,7 +166,7 @@ def _run_with_one_cluster(lore_root: Path, wiki: str = "private", **kwargs):
     return run_curator_b(
         lore_root=lore_root,
         wiki=wiki,
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(days=7),
         **kwargs,
@@ -354,7 +354,7 @@ briefing:
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
-        anthropic_client=client,
+        llm_client=client,
         now=_NOW,
         since=_NOW - timedelta(days=7),
     )

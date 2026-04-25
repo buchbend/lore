@@ -154,9 +154,9 @@ def _rewrite_orphan_in_file(path: Path, orphan: str, canonical: str) -> int:
 
 
 def orphan_links_pass(
-    wiki_path: Path, *, anthropic_client: Any, dry_run: bool
+    wiki_path: Path, *, llm_client: Any, dry_run: bool
 ) -> dict[str, int]:
-    if anthropic_client is None:
+    if llm_client is None:
         return {"orphan_skipped_no_llm": 1}
 
     from lore_core.config import get_lore_root
@@ -209,7 +209,7 @@ def orphan_links_pass(
             f"Is this a rename (same concept, slug drifted)?\n"
         )
         try:
-            resp = anthropic_client.messages.create(
+            resp = llm_client.messages.create(
                 model="middle",
                 max_tokens=512,
                 messages=[{"role": "user", "content": prompt}],

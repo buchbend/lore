@@ -175,7 +175,7 @@ def test_skip_lock_held_includes_holder(tmp_path):
     with curator_lock(tmp_path, timeout=0.0, run_id="first-run"):
         run_curator_a(
             lore_root=tmp_path,
-            anthropic_client=None,
+            llm_client=None,
             adapter_lookup=lambda h: None,
         )
 

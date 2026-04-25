@@ -6,11 +6,12 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from lore_core.noteworthy_features import CascadeVerdict, classify_cascade
 from lore_core.redaction import redact
 from lore_core.types import Turn
+from lore_curator.llm_client import LlmClient
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
@@ -86,21 +87,12 @@ class NoteworthyResult:
     decisions: list[str] = field(default_factory=list) # one-liners; empty list if none
 
 
-class AnthropicClientProtocol(Protocol):
-    """Minimal shape needed; real anthropic.Anthropic satisfies it.
-
-    Only the `messages.create(...)` method is used, with `tools` for
-    structured output via tool_use.
-    """
-    messages: Any
-
-
 def classify_slice(
     turns: list[Turn],
     *,
     tier: str = "middle",                         # "middle" | "simple"
     model_resolver: Callable[[str], str],         # e.g. lambda t: cfg.models.middle
-    anthropic_client: AnthropicClientProtocol,
+    llm_client: LlmClient,
     lore_root: Path | None = None,
     logger: "RunLogger | None" = None,
     transcript_id: str | None = None,
@@ -167,7 +159,7 @@ def classify_slice(
         )
 
     t_before = time.monotonic()
-    resp = anthropic_client.messages.create(
+    resp = llm_client.messages.create(
         model=model,
         max_tokens=1024,
         tools=[tool_schema],

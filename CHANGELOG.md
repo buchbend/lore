@@ -10,6 +10,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-04-25
+
+Surface-extraction quality push (full notes in
+`docs/superpowers/HANDOVER-2026-04-19.md` and the v0.9.0 commit). This
+entry also closes a long version-sync drift: `.claude-plugin/plugin.json`
+was stuck at 0.5.0 while `pyproject.toml` advanced to 0.9.0, meaning
+`claude plugin update lore@lore` silently reused cached code. A pytest
+guard (`tests/test_version_sync.py`) now fails CI if the two sources
+disagree.
+
+> **Note on the gap.** Versions 0.4.0 through 0.8.2 shipped without
+> changelog entries; their notes live in commit messages
+> (`git log --grep="Lore v0\."`). They will be backfilled in a future
+> docs pass.
+
 ## [0.3.0] — 2026-04-22
 
 Local-Lore-state release. Replaces the distributed `## Lore` CLAUDE.md
