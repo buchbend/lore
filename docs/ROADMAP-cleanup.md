@@ -16,7 +16,7 @@
 - ☑ **Phase 0** — Stop the bleeding *(2026-04-25)*
 - ☑ **Phase 1** — Layering fence (`lore_cli` decomposition) *(2026-04-25)*
 - ☑ **Phase 2** — Config map + state map + `require_lore_root()` *(2026-04-25)*
-- ☐ **Phase 3** — `hooks.py` decomposition
+- ☑ **Phase 3** — Hook hygiene (pid_alive, except audit, lockfile docs) *(2026-04-26)*
 - ☐ **Phase 4** — Naming + concept consolidation
 - ☐ **Phase 5** — UX polish
 - ☐ **Phase 6** — Test hygiene + curator decomposition
@@ -336,20 +336,104 @@ Decisions made up front:
 
 ---
 
-## Phase 3 — `hooks.py` decomposition *(sketch)*
+## Phase 3 — Hook hygiene (pid_alive, except audit, lockfile docs)
 
-**Status:** ☐ pending — **not yet planned in detail.**
+**Status:** ☑ completed 2026-04-26
+**Estimated session length:** 1 sitting
 
-### Sketch
-Split the 2023-line `lib/lore_cli/hooks.py` into `hooks/{cache,proc,render,dispatch,gh}.py`. Replace ~25 `except Exception: pass` with specific exception types (mostly `OSError` and `KeyError` based on the surrounding code). Make `_pid_alive` cross-platform (macOS via `kill(pid, 0)` instead of `/proc`). Verify lockfile usage on `hook-events.jsonl`. Collapse the two parallel SessionStart hook pipelines (legacy + capture) into one.
+### Refined scope (made during the planning sub-step)
 
-### Refine before starting
-- Decide the module boundaries — what does each new file own, exactly?
-- Decide the deprecation cutoff for `_legacy_cache_path` and `migrate_legacy_pending_breadcrumb`.
-- Audit which `except Exception` blocks are actually defensive vs. accidental — there may be 2-3 that *should* stay broad.
+The original sketch proposed splitting `hooks.py` into 5 modules
+(`cache/proc/render/dispatch/gh`). After auditing the file, the split
+was **deferred**:
 
-### Session log
-*(empty)*
+- The 2023 lines have clean section dividers; readability isn't the
+  load-bearing problem.
+- ~30 internal cross-references and an externally-consumed public API
+  (the typer commands + module-level helpers tests mock by name) make
+  splits high-risk for pure cosmetic gain.
+- The layering fence from Phase 1 already broke the *architectural*
+  problem (lower layers no longer reach into hooks).
+- Two of the original "concerns" turned out to be misreads: the
+  parallel SessionStart hooks aren't duplicates (different
+  responsibilities — context injection vs. capture telemetry), and
+  the `hook-events.jsonl` "interleave-corruption risk" is already
+  addressed by `O_APPEND` atomic writes + flock-guarded rotation.
+
+So Phase 3 was redirected to the genuine bugs and visibility gaps.
+
+### Landed
+
+- **`_pid_alive` cross-platform fix.** Replaced the `/proc`-walk
+  (which returned `True` conservatively on macOS, meaning per-PID
+  caches never GC'd) with `os.kill(pid, 0)`. Documents POSIX
+  semantics (ESRCH → False, EPERM → True, other OSError →
+  conservative True). 6 new tests in `tests/test_hooks_pid_alive.py`
+  cover self-pid, zero/negative guards, all three errno paths, and a
+  real dead-PID end-to-end check.
+- **Broad-except audit.** Touched 9 sites in `hooks.py`:
+  - `_lore_version` → `PackageNotFoundError`
+  - `_wiki_hints` yaml load → `(OSError, yaml.YAMLError)`
+  - `_nudge_unattached` attachments load → `(OSError, json.JSONDecodeError)`
+  - vault-equality check → `OSError`
+  - banner catalog `.get()` chain → `(KeyError, TypeError, AttributeError)`
+  - drain-lines + cross-scope-breadcrumbs → `(OSError, json.JSONDecodeError)`
+  - offer-notice + outer banner: kept broad with explicit
+    `# noqa: BLE001 - hook must never crash SessionStart` comments
+    because they are presentation-layer wraps where defensive
+    behaviour is the contract.
+- **Lockfile discipline made visible.** The grumpy-dev concern about
+  hook-events.jsonl interleave-corruption was *already addressed* —
+  documented now in the `hook_log.py` module docstring (POSIX
+  `O_APPEND` atomicity + `fcntl.LOCK_EX | LOCK_NB` rotation lock)
+  and surfaced in `docs/architecture/state.md` as the canonical
+  lockfile pattern used across the codebase.
+
+**Tests:** 1480 → 1486 passing (+6 from `test_hooks_pid_alive.py`).
+No regressions.
+
+### Deliberate non-goals (not deferred — actively decided not to do)
+
+- **File splitting** — clean section dividers + tests that mock
+  module-level helpers by name make this a high-risk cosmetic move.
+  If a future phase has a structural reason to split (e.g. Phase 4's
+  curator rename brings related changes), bundle it then.
+- **"Collapse the two parallel SessionStart hook pipelines"** —
+  reading the code, they have different responsibilities (one
+  injects context, the other records hook firings for telemetry).
+  Coupling them would lose the separation. Left independent by
+  design.
+
+### Surprised
+
+- The grumpy-dev review said "concurrent multi-process writes will
+  eventually interleave-corrupt without a lockfile" for
+  `hook-events.jsonl`. They were *wrong*: the existing
+  implementation uses POSIX-atomic `O_APPEND` + flock-guarded
+  rotation. The audit flagged a fix that wasn't needed; the *fix*
+  ended up being making the existing discipline visible in docs.
+  Good lesson: code reviews benefit from reading the implementation
+  before flagging a "missing" defensive measure.
+- The `_pid_alive` bug was real and load-bearing on macOS — not
+  just "conservative-true" but *systematically*-true. Stale caches
+  would build up indefinitely. The 14-day max-age fallback in
+  `_gc_sessions_cache` is what kept this from being catastrophic;
+  worth knowing that fallback exists.
+- 9 broad-except sites felt like a lot until the audit; only ~5 of
+  them were actually accidental. The rest are legitimate
+  presentation-layer "must never crash hook" wraps. Adding `# noqa`
+  comments turned the silent broad-catch into an *intentional*
+  broad-catch, which is the right outcome.
+
+### Scope refinements for Phase 4
+
+- Phase 4 is naming + concept consolidation. With the hook surface
+  now hygienic, the curator A/B/C → role-name rename can land
+  without touching hook plumbing.
+- The deferred file-split for `hooks.py` should be revisited only
+  if Phase 4 or Phase 5 produces an organic reason to touch the
+  file's structure (e.g. role-renamed curator spawn helpers want
+  to live next to capture).
 
 ---
 

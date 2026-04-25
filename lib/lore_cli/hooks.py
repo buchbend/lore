@@ -26,10 +26,11 @@ from lore_core.config import get_wiki_root
 
 
 def _lore_version() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+
     try:
-        from importlib.metadata import version
         return version("lore")
-    except Exception:
+    except PackageNotFoundError:
         return "?"
 from lore_core.git import current_repo
 from lore_core.io import atomic_write_text
@@ -66,10 +67,29 @@ def _legacy_cache_path() -> Path:
 
 
 def _pid_alive(pid: int) -> bool:
-    """True if /proc/<pid> exists. Linux-only; returns True elsewhere to be conservative."""
-    if not Path("/proc").is_dir():
+    """True if a process with this PID exists on the current host.
+
+    Cross-platform via ``os.kill(pid, 0)`` — the kernel performs the
+    existence check without delivering a signal.
+
+    POSIX semantics:
+      - ``ProcessLookupError`` (ESRCH) → no such process → False
+      - ``PermissionError`` (EPERM)    → process exists but owned by
+        another user; we still know it's alive → True
+      - any other ``OSError`` → conservative True (don't GC a cache
+        we can't probe)
+    """
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
         return True
-    return Path(f"/proc/{pid}").exists()
+    except OSError:
+        return True
+    return True
 
 
 def _proc_cmdline(pid: int) -> str:
@@ -258,7 +278,7 @@ def _wiki_hints(wiki: Path) -> dict:
         import yaml
 
         return yaml.safe_load(hints_path.read_text()) or {}
-    except Exception:
+    except (OSError, yaml.YAMLError):
         return {}
 
 
@@ -1015,11 +1035,13 @@ def cmd_session_start(
     out = _session_start(str(cwd_resolved))
 
     # Surface pending `.lore.yml` offers at the top of the banner.
+    # Defensive: offer rendering reads multiple files and classifies state;
+    # we explicitly never let any failure here crash the SessionStart hook.
     try:
         notice = _offer_notice_line(cwd_resolved)
         if notice:
             out = notice + "\n\n" + out
-    except Exception:
+    except Exception:  # noqa: BLE001 - hook must never crash SessionStart
         pass
 
     # Resolve scope once — reused by the banner, curator spawns, and
@@ -1049,7 +1071,8 @@ def cmd_session_start(
                     catalog = _wiki_catalog(wiki_path)
                     if catalog:
                         note_count = catalog.get("stats", {}).get("total_notes", 0)
-                except Exception:
+                except (KeyError, TypeError, AttributeError):
+                    # Catalog shape is best-effort — never block banner on it.
                     pass
 
                 ctx = BannerContext(
@@ -1070,17 +1093,16 @@ def cmd_session_start(
                     drain_lines = _render_drain_lines(lore_root, cwd_resolved)
                     if drain_lines:
                         out = out + "\n" + "\n".join(drain_lines)
-                except Exception:
+                except (OSError, json.JSONDecodeError):
                     pass
 
                 try:
                     cross = _cross_scope_breadcrumbs(lore_root, scope.wiki)
                     if cross:
                         out = out + "\n" + "\n".join(cross)
-                except Exception:
+                except (OSError, json.JSONDecodeError):
                     pass
-    except Exception:
-        # Banner generation failure is non-fatal — proceed without it.
+    except Exception:  # noqa: BLE001 - banner is presentation; never block SessionStart on it
         pass
 
     # Side-effect spawns — suppressed under --probe.
@@ -1363,7 +1385,8 @@ def _nudge_unattached(cwd: Path, out: str) -> None:
         af.load()
         if any(d.path == cwd for d in af._declined):
             return
-    except Exception:
+    except (OSError, json.JSONDecodeError):
+        # Couldn't read the declined list — fall through and consider nudging.
         pass
     try:
         nudge_dir.mkdir(parents=True, exist_ok=True)
@@ -1843,7 +1866,9 @@ def capture(
         _vault = _glr().resolve()
         if Path(cwd).resolve() == _vault and resolve_scope(cwd) is None:
             return
-    except Exception:
+    except OSError:
+        # Path resolution failed (broken symlink, permission, etc.); fall
+        # through so the calling capture path still runs.
         pass
 
     scope = resolve_scope(cwd)

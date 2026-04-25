@@ -1,9 +1,25 @@
 """Append-only hook-event log at $LORE_ROOT/.lore/hook-events.jsonl.
 
-One record per hook invocation. Hot-path; must not raise. Rotation
-is guarded by a non-blocking flock on a sibling lock file — two
-concurrent hooks both seeing size > threshold would otherwise race
-on rename() and lose a rotation window.
+One record per hook invocation. Hot-path; must not raise.
+
+Concurrency design (audited 2026-04-26 in Phase 3):
+
+* **Appends are POSIX-atomic.** ``emit()`` opens the log with
+  ``O_APPEND | O_CREAT`` and writes the JSONL record in a single
+  ``os.write()`` call. POSIX guarantees that writes ≤ ``PIPE_BUF``
+  (4096 bytes on Linux) to an O_APPEND file don't interleave between
+  concurrent writers. Hook records are well under that limit, so
+  N concurrent Claude sessions on the same vault append safely
+  without a lock.
+* **Rotation is flock-guarded.** Two concurrent hooks both seeing
+  ``size > max_size`` would otherwise race on ``os.replace()`` and
+  lose a rotation window. ``_maybe_rotate()`` takes a non-blocking
+  ``fcntl.LOCK_EX`` on a sibling ``hook-events.rotate.lock`` file;
+  losers skip the rotation this cycle (the next emit will retry).
+* **Failures are observable.** Any ``OSError`` in ``emit()`` touches
+  ``$LORE_ROOT/.lore/hook-log-failed.marker`` so ``lore doctor`` and
+  ``lore status`` can surface "your hook log writes are failing"
+  without crashing the hook itself.
 """
 
 from __future__ import annotations
