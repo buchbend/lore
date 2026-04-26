@@ -180,7 +180,7 @@ BODY_TEMPLATE = """\
 
 ## What we worked on
 
-- TODO
+- _Fill in_
 
 ## Decisions made
 

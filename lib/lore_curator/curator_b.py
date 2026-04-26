@@ -401,7 +401,7 @@ def _curator_log(lore_root: Path, message: str) -> None:
         ts = datetime.now(UTC).isoformat()
         with log_path.open("a", encoding="utf-8") as fh:
             fh.write(f"{ts}  {message}\n")
-    except Exception:
+    except OSError:
         pass  # logging failure must never propagate
 
 
@@ -459,7 +459,7 @@ def _maybe_publish_briefing(
 
         return {"sinks_written": sinks_written}
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - briefing publish wraps network/render/IO; failure must not break run
         _curator_log(lore_root, f"briefing auto-publish failed for wiki={wiki!r}: {exc}")
         return None
 
@@ -514,7 +514,7 @@ def _regenerate_threads_md(
                 note_count=len(notes),
                 llm_labels=sum(1 for t in threads if t.llm_label),
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - threads regen wraps file I/O + LLM labelling; never abort the curator pass
         if logger is not None:
             import traceback
             tb = traceback.format_exc()[:1000]

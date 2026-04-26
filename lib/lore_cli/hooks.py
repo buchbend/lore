@@ -22,7 +22,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from lore_core import gh as _gh_mod
-from lore_core.config import get_wiki_root
+from lore_core.config import get_lore_root, get_wiki_root
 
 
 def _lore_version() -> str:
@@ -62,7 +62,18 @@ def _cache_path_for_pid(pid: int) -> Path:
 
 
 def _legacy_cache_path() -> Path:
-    """Pre-PID-keying cache path; kept as a last-resort fallback."""
+    """Pre-PID-keying cache path; kept as a last-resort fallback.
+
+    .. deprecated:: 0.9.0
+       Schedule for removal in 1.0. The PID-keyed cache (introduced
+       2026-04 alongside per-Claude-session isolation) is the only path
+       new sessions write to. This fallback is read-only and exists so
+       a fresh ``/lore:context`` invocation in an upgraded environment
+       still returns *something* if the previous session was on the old
+       layout. Once 1.0 ships, delete this helper, the read-fallback in
+       ``_context_log()`` (~line 861), and the legacy write at
+       ``_append_context_log`` (~line 960).
+    """
     return _cache_dir() / "last-session-start.md"
 
 
@@ -865,7 +876,11 @@ def _context_log() -> str:
         except OSError:
             body = ""
         if body:
-            return "_(legacy cache — may be from another session)_\n\n" + body
+            return (
+                "_(showing the most recent context log — your current "
+                "Claude Code session may not have written one yet)_\n\n"
+                + body
+            )
     return "lore: no context log found. SessionStart may not have fired. Run `lore doctor`.\n"
 
 
@@ -1062,7 +1077,6 @@ def cmd_session_start(
     try:
         from datetime import UTC, datetime as dt
         from lore_cli.breadcrumb import BannerContext, render_banner
-        from lore_core.config import get_wiki_root
 
         if scope is not None and lore_root is not None:
             wiki_root = get_wiki_root()
@@ -1384,7 +1398,6 @@ def _nudge_unattached(cwd: Path, out: str) -> None:
     if marker.exists():
         return
     try:
-        from lore_core.config import get_lore_root
         lore_root = get_lore_root()
         from lore_core.state.attachments import AttachmentsFile
         af = AttachmentsFile(lore_root)
@@ -1868,8 +1881,7 @@ def capture(
     # AND has no explicit scope attachment (a real project attached at the
     # vault root would still be captured).
     try:
-        from lore_core.config import get_lore_root as _glr
-        _vault = _glr().resolve()
+        _vault = get_lore_root().resolve()
         if Path(cwd).resolve() == _vault and resolve_scope(cwd) is None:
             return
     except OSError:
@@ -1882,7 +1894,6 @@ def capture(
         # Unattached cwd — no ledger work to do, but we still emit a hook
         # event so "hook fired but declined" is distinguishable from "hook
         # never fired" in `lore status` / `lore runs list --hooks`.
-        from lore_core.config import get_lore_root
         try:
             HookEventLogger(get_lore_root()).emit(
                 event=event, host=host, scope=None,

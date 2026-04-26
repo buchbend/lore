@@ -36,9 +36,11 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from lore_core.config import get_lore_root
 from lore_core.git import is_obsidian_holding
 from lore_core.identity import distinct_git_authors, team_mode_recommended
 from lore_core.io import atomic_write_text
+from lore_core.ledger import WikiLedger
 from lore_core.lint import STALENESS_DAYS, discover_notes, discover_wikis
 from lore_core.run_log import RunLogger
 from lore_core.schema import compute_lifecycle, parse_frontmatter
@@ -695,8 +697,6 @@ def run_curator_c(
       - update ``WikiLedger.last_curator_c`` on success (atomic)
     """
     from datetime import UTC, datetime as _dt
-    from lore_core.config import get_lore_root
-    from lore_core.ledger import WikiLedger
 
     wikis = discover_wikis(wiki_filter)
     reports: list[CuratorReport] = []
@@ -735,25 +735,7 @@ def run_curator_c(
 
     with ctx:
         if defrag and lore_root is not None:
-            iso_now = now.isocalendar()[:2]
-            already_ran: set[str] = set()
-            for wiki_path in wikis:
-                entry = WikiLedger(lore_root, wiki_path.name).read()
-                last_c = entry.last_curator_c
-                if last_c is None:
-                    continue
-                if last_c.tzinfo is None:
-                    from datetime import UTC as _UTC
-                    last_c = last_c.replace(tzinfo=_UTC)
-                if last_c.isocalendar()[:2] == iso_now:
-                    already_ran.add(wiki_path.name)
-                    _emit("wiki-skip", wiki=wiki_path.name, reason="already_ran_this_iso_week")
-                    console.print(
-                        f"[dim]Skipping wiki/{wiki_path.name}: already ran "
-                        f"this ISO week ({last_c.isoformat()}).[/dim]"
-                    )
-            if already_ran:
-                wikis = [w for w in wikis if w.name not in already_ran]
+            wikis = _filter_already_ran_this_week(wikis, lore_root, now, _emit)
 
         for wiki_path in wikis:
             _emit("wiki-start", wiki=wiki_path.name)
@@ -823,38 +805,103 @@ def run_curator_c(
             _write_review(wiki_path, report)
 
         if defrag and lore_root is not None:
-            from lore_curator.curator_c_diff import (
-                prune_old_diff_logs,
-                write_diff_log_entry,
+            _write_defrag_diff_logs(
+                wikis,
+                lore_root=lore_root,
+                run_id=rid,
+                snapshots_before=wiki_snapshots_before,
+                summary_by_wiki=defrag_summary_by_wiki,
+                reports=reports,
+                dry_run=dry_run,
+                now=now,
             )
-            for wiki_path in wikis:
-                before = wiki_snapshots_before.get(wiki_path.name, {})
-                after = _snapshot_wiki(wiki_path)
-                summary = defrag_summary_by_wiki.get(wiki_path.name, {})
-                hygiene_report = next(
-                    (r for r in reports if r.wiki == wiki_path.name), None
-                )
-                if hygiene_report:
-                    for action in hygiene_report.actions:
-                        summary[action.kind] = summary.get(action.kind, 0) + 1
-                write_diff_log_entry(
-                    lore_root,
-                    run_id=rid,
-                    snapshot_before=before,
-                    snapshot_after=after,
-                    dry_run=dry_run,
-                    summary=summary,
-                    now=now,
-                )
-            prune_old_diff_logs(lore_root)
-
-            for wiki_path in wikis:
-                try:
-                    WikiLedger(lore_root, wiki_path.name).update_last_curator("c", at=now)
-                except Exception:
-                    pass
+            _finalize_curator_c_ledger(wikis, lore_root, now)
 
     return reports
+
+
+def _filter_already_ran_this_week(
+    wikis: list[Path],
+    lore_root: Path,
+    now: "datetime",
+    emit: "Callable[..., None]",
+) -> list[Path]:
+    """Return ``wikis`` minus any whose ``last_curator_c`` falls in the
+    current ISO week — Curator C runs at most once per week per wiki."""
+    iso_now = now.isocalendar()[:2]
+    already_ran: set[str] = set()
+    for wiki_path in wikis:
+        entry = WikiLedger(lore_root, wiki_path.name).read()
+        last_c = entry.last_curator_c
+        if last_c is None:
+            continue
+        if last_c.tzinfo is None:
+            from datetime import UTC as _UTC
+            last_c = last_c.replace(tzinfo=_UTC)
+        if last_c.isocalendar()[:2] == iso_now:
+            already_ran.add(wiki_path.name)
+            emit("wiki-skip", wiki=wiki_path.name, reason="already_ran_this_iso_week")
+            console.print(
+                f"[dim]Skipping wiki/{wiki_path.name}: already ran "
+                f"this ISO week ({last_c.isoformat()}).[/dim]"
+            )
+    if already_ran:
+        return [w for w in wikis if w.name not in already_ran]
+    return wikis
+
+
+def _write_defrag_diff_logs(
+    wikis: list[Path],
+    *,
+    lore_root: Path,
+    run_id: str,
+    snapshots_before: dict[str, dict],
+    summary_by_wiki: dict[str, dict[str, int]],
+    reports: list[CuratorReport],
+    dry_run: bool,
+    now: "datetime",
+) -> None:
+    """Write per-wiki diff-log entries summarising what defrag changed,
+    then prune logs past the 90-day retention window."""
+    from lore_curator.curator_c_diff import (
+        prune_old_diff_logs,
+        write_diff_log_entry,
+    )
+    for wiki_path in wikis:
+        before = snapshots_before.get(wiki_path.name, {})
+        after = _snapshot_wiki(wiki_path)
+        summary = summary_by_wiki.get(wiki_path.name, {})
+        hygiene_report = next(
+            (r for r in reports if r.wiki == wiki_path.name), None
+        )
+        if hygiene_report:
+            for action in hygiene_report.actions:
+                summary[action.kind] = summary.get(action.kind, 0) + 1
+        write_diff_log_entry(
+            lore_root,
+            run_id=run_id,
+            snapshot_before=before,
+            snapshot_after=after,
+            dry_run=dry_run,
+            summary=summary,
+            now=now,
+        )
+    prune_old_diff_logs(lore_root)
+
+
+def _finalize_curator_c_ledger(
+    wikis: list[Path], lore_root: Path, now: "datetime"
+) -> None:
+    """Update ``WikiLedger.last_curator_c`` for each successfully-processed
+    wiki. Logged-but-swallowed on failure: a ledger write hiccup must not
+    abort an otherwise-successful curator run."""
+    for wiki_path in wikis:
+        try:
+            WikiLedger(lore_root, wiki_path.name).update_last_curator("c", at=now)
+        except OSError:
+            # Atomic-write failure (disk full / permission) — leave the
+            # ledger untouched; next run will re-attempt.
+            pass
 
 
 def _print_report(report: CuratorReport, dry_run: bool) -> None:

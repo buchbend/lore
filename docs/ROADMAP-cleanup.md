@@ -19,7 +19,7 @@
 - ☑ **Phase 3** — Hook hygiene (pid_alive, except audit, lockfile docs) *(2026-04-26)*
 - ☑ **Phase 4** — Skill ↔ CLI drift fix + surface-add slash rename *(2026-04-26)*
 - ☑ **Phase 5** — UX polish (SessionStart reorder, --help groups, MCP envelope) *(2026-04-26)*
-- ☐ **Phase 6** — Test hygiene + curator decomposition
+- ☑ **Phase 6** — Test hygiene + curator decomposition + lazy-import lifts *(2026-04-26)*
 - ☐ **Phase 7** — Performance + scaling prep *(optional)*
 
 **Milestone 1** = Phase 0 + Phase 1 (stop bleeding + erect the fence). Re-evaluate phasing of 2-7 after Milestone 1 — the fence will likely re-shape them.
@@ -658,19 +658,104 @@ The original sketch packaged six concerns. After verifying claims:
 
 ---
 
-## Phase 6 — Test hygiene + curator decomposition *(sketch)*
+## Phase 6 — Test hygiene + curator decomposition + lazy-import lifts
 
-**Status:** ☐ pending — **not yet planned in detail.**
+**Status:** ☑ completed 2026-04-26
+**Estimated session length:** 1 sitting (with audit doc + Phase 7 follow-up)
 
-### Sketch
-Delete `conftest.py:18-20` autouse-legacy-mode fixture; fix the tests that actually need `llm_only`. Add integration test for cascade default. Decompose `run_curator_c` (180-line god-function) into `_filter_already_ran`, `_apply_actions`, `_run_defrag_phase`, `_finalize_diff_logs` with one test per piece. Replace `try/except: pass` at ledger-update with explicit error path.
+### Refined scope (made during the planning sub-step)
 
-### Refine before starting
-- Audit which tests legitimately need `llm_only` after the fixture is removed.
-- Decide the granularity of the curator_c decomposition — could go further (per defrag pass) or stop at the four chunks.
+The session opened with a comprehensive claim-by-claim audit
+(`docs/REVIEW-2026-04-26-claim-audit.md`). Of the 38 claims in the
+original review, 24 were already DONE in Phases 0-5, 3 were DEBUNKED
+by source-reading, and 6 remained as TODO for Phase 6/7. The Phase 6
+scope was the safe + useful subset:
 
-### Session log
-*(empty)*
+1. `BODY_TEMPLATE` TODO leak (claim 2.4)
+2. Conftest autouse `llm_only` (claim 2.2)
+3. `run_curator_c` decomposition (claim 2.3 — actually 237 lines, worse than reviewed 180)
+4. Broad-except audit round 2 (claim 2.5)
+5. Deprecation markers + copy fixes (claims 2.7, 2.8, 4.7)
+6. Lazy local imports (claim 2.9)
+
+### Landed
+
+- **`BODY_TEMPLATE` TODO leak fixed.** `lore_core/session.py:183`
+  no longer writes `- TODO\n` into every freshly-scaffolded session
+  note; replaced with `_Fill in_` (italics signal "user intent
+  here", not a placeholder Claude should leave).
+- **Conftest discipline made explicit.** Autouse `llm_only` fixture
+  kept (existing tests need it for stability), but the docstring
+  now records the v0.6.0-onward migration policy: new tests should
+  not depend on the autouse override; the cascade default is the
+  production contract. Added `tests/test_curator_a_cascade_default.py`
+  (3 tests) that opts out of the autouse and exercises the cascade
+  path end-to-end: trivial slice → no LLM call; substantive slice
+  → LLM call for summary; resolver returns "cascade" with env
+  unset.
+- **`run_curator_c` decomposition.** 237 → 145 lines (40% smaller).
+  Three cohesive helpers extracted with clear inputs/outputs:
+  `_filter_already_ran_this_week`, `_write_defrag_diff_logs`,
+  `_finalize_curator_c_ledger`. Conservative — didn't try to chase
+  zero-god-function. Also tightened the swallowed ledger-write
+  failure (was `except Exception: pass`) to `except OSError: pass`
+  with an explicit comment about disk-full / permission cases.
+- **Broad-except audit round 2.** Six sites in
+  `lore_curator/curator_a.py` and `curator_b.py` touched: 3
+  narrowed (subprocess errors → `(SubprocessError, OSError)`,
+  curator_log → `OSError`), 3 kept broad with explicit
+  `# noqa: BLE001` + comments documenting the defensive contract
+  (logger emit, briefing publish wrap, threads-regen wrap).
+- **Deprecation markers.** `_legacy_cache_path()` and
+  `migrate_legacy_pending_breadcrumb()` got `.. deprecated:: 0.9.0`
+  blocks naming the 1.0 removal target and pointing at the call
+  sites that need to be cleaned up alongside.
+- **`hooks.py` "legacy cache" copy fix.** Replaced
+  `_(legacy cache — may be from another session)_` (internal
+  implementation language) with
+  `_(showing the most recent context log — your current Claude Code
+  session may not have written one yet)_`. User reads "you might be
+  looking at stale context" instead of "the system is in legacy
+  mode." (Claim 4.7.)
+- **Lazy local imports lifted.** Five `from lore_core.config
+  import get_lore_root` lazy imports across `hooks.py` and
+  `curator_c.py` lifted to module level. Verified no test depends
+  on the lazy form for monkeypatch propagation (the test grep for
+  patches against the consuming module's binding came up empty).
+  curator_c.py also picks up `WikiLedger` at module level.
+
+**Tests:** 1488 (Phase 5) → 1499 (+3 cascade-default, +8
+mcp-error-envelope from Phase 5). No regressions.
+
+### Surprised
+
+- The conftest issue was thornier than the review framed it. The
+  autouse was real, but the conftest docstring had been honest
+  about the rationale all along. The fix wasn't "delete the
+  autouse" — it was making the migration policy explicit and
+  adding the missing cascade-default integration test to close the
+  coverage gap.
+- The `run_curator_c` decomposition was the biggest visual win
+  but the smallest behavioural diff. The function got 40% shorter
+  without changing what it does — pure readability gain. Three
+  helpers also gain individual testability (currently exercised
+  via the `run_curator_c` integration tests; could get unit tests
+  in a future phase if the helpers prove load-bearing).
+- The lazy-import lifts had a subtle risk I had to verify: tests
+  that monkeypatch the *consuming* module's binding rely on the
+  lazy import to re-bind at call time. None of our tests use that
+  pattern (they either patch the source or use `setattr` on a
+  specific module's local helper that's already module-level), so
+  the lift was safe. Documented this in the session log so future
+  contributors know to check before lifting more.
+
+### Phase 7 trigger
+
+Phase 7 (perf) is the next session-pace unit; the audit doc
+(`docs/REVIEW-2026-04-26-claim-audit.md`) lists two safe wins:
+MCP reindex short-circuit (claim 3.7, confirmed at
+`lore_mcp/server.py:87`) and a SessionStart eager-import latency
+investigation (claim 3.6).
 
 ---
 

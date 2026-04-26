@@ -339,7 +339,7 @@ def _process_entry(
     # Adapter lookup
     try:
         adapter = lookup(entry.host)
-    except Exception:
+    except Exception:  # noqa: BLE001 - lookup is pluggable; treat any failure as unknown-host
         if logger is not None:
             logger.emit("skip", transcript_id=entry.transcript_id, reason="unknown-host")
         return [_Outcome(skip_reason="unknown_host", wiki_name=attached.wiki)]
@@ -549,7 +549,7 @@ def _process_chunk(
             path=str(filed.path),
             transcript_id=entry.transcript_id,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - logger emit must never abort a successful file
         pass
 
     return _Outcome(filed=filed, was_noteworthy=True, wiki_name=attached.wiki)
@@ -579,7 +579,7 @@ def _maybe_auto_commit(
             ["git", "commit", "-m", f"lore: {filed.path.stem}"],
             cwd=str(wiki_dir), capture_output=True, timeout=10, check=False,
         )
-    except Exception as exc:
+    except (subprocess.SubprocessError, OSError) as exc:
         if logger is not None:
             logger.emit("warning", message=f"auto-commit failed: {exc}")
 
