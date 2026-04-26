@@ -1,4 +1,4 @@
-"""Tests for lore_curator.curator_b — Curator B pipeline."""
+"""Tests for lore_curator.daily_curator — Curator B pipeline."""
 from __future__ import annotations
 
 import os
@@ -169,7 +169,7 @@ def test_curator_b_no_recent_notes_short_circuits(tmp_path):
     wiki_dir = _setup_wiki(tmp_path)
     client = _make_client()
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     result = run_curator_b(
         lore_root=tmp_path,
@@ -230,7 +230,7 @@ def test_curator_b_regenerates_threads_md_even_with_no_recent_notes(tmp_path):
     client = _make_client(note_wikilinks=[], surface_name="concept",
                           title="x", body="y")
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
     result = run_curator_b(
         lore_root=tmp_path,
         wiki="private",
@@ -283,7 +283,7 @@ def test_curator_b_writes_threads_md_at_wiki_root(tmp_path):
         body="x",
     )
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
     run_curator_b(
         lore_root=tmp_path,
         wiki="private",
@@ -318,7 +318,7 @@ def test_curator_b_clusters_then_abstracts_then_files(tmp_path):
         body="A cross-cutting concept.",
     )
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     result = run_curator_b(
         lore_root=tmp_path,
@@ -358,7 +358,7 @@ def test_curator_b_files_surfaces_with_draft_true(tmp_path):
         body="Should be filed as draft.",
     )
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     result = run_curator_b(
         lore_root=tmp_path,
@@ -391,7 +391,7 @@ def test_curator_b_files_surfaces_with_draft_true(tmp_path):
 def test_curator_b_advances_last_curator_b_on_wiki_ledger(tmp_path):
     _setup_wiki(tmp_path)
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     run_curator_b(
         lore_root=tmp_path,
@@ -424,7 +424,7 @@ def test_curator_b_dry_run_writes_nothing(tmp_path):
         body="Should not be written.",
     )
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     result = run_curator_b(
         lore_root=tmp_path,
@@ -463,7 +463,7 @@ def test_curator_b_lock_contention_records_skip(tmp_path):
     lock_dir.mkdir(parents=True)
 
     try:
-        from lore_curator.curator_b import run_curator_b
+        from lore_curator.daily_curator import run_curator_b
 
         result = run_curator_b(
             lore_root=tmp_path,
@@ -488,7 +488,7 @@ def test_curator_b_lock_contention_records_skip(tmp_path):
 def test_curator_b_no_anthropic_client_records_skip(tmp_path):
     _setup_wiki(tmp_path)
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     result = run_curator_b(
         lore_root=tmp_path,
@@ -523,7 +523,7 @@ This file has no surface sections defined.
 """
     (wiki_dir / "SURFACES.md").write_text(broken_surfaces)
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     result = run_curator_b(
         lore_root=tmp_path,
@@ -563,7 +563,7 @@ models:
         body="Uses middle tier.",
     )
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     result = run_curator_b(
         lore_root=tmp_path,
@@ -589,7 +589,7 @@ models:
 
 
 def test_curator_b_wiki_not_found_records_skip(tmp_path):
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     result = run_curator_b(
         lore_root=tmp_path,
@@ -630,7 +630,7 @@ Existing concept body.
 def test_load_existing_surfaces_returns_inventory_per_surface(tmp_path):
     """_load_existing_surfaces walks <wiki>/<plural>/ and returns wikilink+description per note."""
     from lore_core.surfaces import load_surfaces_or_default
-    from lore_curator.curator_b import _load_existing_surfaces
+    from lore_curator.daily_curator import _load_existing_surfaces
 
     wiki_dir = _setup_wiki(tmp_path)
     _write_existing_concept(wiki_dir, "host-adapter-layer",
@@ -651,7 +651,7 @@ def test_load_existing_surfaces_returns_inventory_per_surface(tmp_path):
 def test_load_existing_surfaces_skips_session_surface(tmp_path):
     """The session surface lives in sessions/ and is curator-A territory; skip it."""
     from lore_core.surfaces import load_surfaces_or_default
-    from lore_curator.curator_b import _load_existing_surfaces
+    from lore_curator.daily_curator import _load_existing_surfaces
 
     wiki_dir = _setup_wiki(tmp_path)
     _write_session_note(wiki_dir / "sessions", "2026-04-15-some-work")
@@ -690,7 +690,7 @@ def test_curator_b_skips_filing_when_llm_suggests_merge(tmp_path):
     }
     client = FakeAnthropicClient(cluster_data=cluster_data, abstract_data=abstract_data)
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     result = run_curator_b(
         lore_root=tmp_path,
@@ -738,7 +738,7 @@ def test_curator_b_passes_existing_surfaces_to_abstract_call(tmp_path):
         body="x",
     )
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
     run_curator_b(
         lore_root=tmp_path,
         wiki="private",

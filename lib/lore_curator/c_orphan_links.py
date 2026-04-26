@@ -277,9 +277,9 @@ def orphan_links_pass(
 
 
 def _register() -> None:
-    from lore_curator import curator_c
-    if orphan_links_pass not in curator_c._DEFRAG_PASSES:
-        curator_c._DEFRAG_PASSES.append(orphan_links_pass)
+    from lore_curator import defrag_curator
+    if orphan_links_pass not in defrag_curator._DEFRAG_PASSES:
+        defrag_curator._DEFRAG_PASSES.append(orphan_links_pass)
 
 
 _register()

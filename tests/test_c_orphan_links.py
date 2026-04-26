@@ -1,7 +1,7 @@
 """Task 8: orphan wikilink repair pass.
 
 Highest-blast-radius pass in Plan 5 — can rewrite link syntax in note
-bodies. Gated behind curator.curator_c.defrag_body_writes sub-flag
+bodies. Gated behind curator.defrag_curator.defrag_body_writes sub-flag
 (default false). Default: proposes via body-proposals log, no mutation.
 """
 
@@ -256,5 +256,5 @@ def test_orphan_skipped_without_llm(tmp_path: Path) -> None:
 
 
 def test_orphan_registered_in_defrag_passes() -> None:
-    from lore_curator import c_orphan_links, curator_c  # noqa: F401
-    assert c_orphan_links.orphan_links_pass in curator_c._DEFRAG_PASSES
+    from lore_curator import c_orphan_links, defrag_curator  # noqa: F401
+    assert c_orphan_links.orphan_links_pass in defrag_curator._DEFRAG_PASSES

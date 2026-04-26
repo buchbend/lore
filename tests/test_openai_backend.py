@@ -651,7 +651,7 @@ def test_root_config_curator_parses_yaml(tmp_path: Path):
 
 
 def test_resolve_backend_cli_flag_wins(tmp_path: Path, monkeypatch):
-    from lore_curator.curator_c import _resolve_backend
+    from lore_curator.defrag_curator import _resolve_backend
 
     monkeypatch.setenv("LORE_LLM_BACKEND", "subscription")
     # Config says "api" but CLI flag "openai" wins.
@@ -663,7 +663,7 @@ def test_resolve_backend_cli_flag_wins(tmp_path: Path, monkeypatch):
 
 
 def test_resolve_backend_env_overrides_config(tmp_path: Path, monkeypatch):
-    from lore_curator.curator_c import _resolve_backend
+    from lore_curator.defrag_curator import _resolve_backend
 
     monkeypatch.setenv("LORE_LLM_BACKEND", "subscription")
     cfg_dir = tmp_path / ".lore"
@@ -674,7 +674,7 @@ def test_resolve_backend_env_overrides_config(tmp_path: Path, monkeypatch):
 
 
 def test_resolve_backend_config_used_when_no_env_or_cli(tmp_path: Path, monkeypatch):
-    from lore_curator.curator_c import _resolve_backend
+    from lore_curator.defrag_curator import _resolve_backend
 
     monkeypatch.delenv("LORE_LLM_BACKEND", raising=False)
     cfg_dir = tmp_path / ".lore"
@@ -686,7 +686,7 @@ def test_resolve_backend_config_used_when_no_env_or_cli(tmp_path: Path, monkeypa
 
 def test_resolve_backend_defaults_to_none(tmp_path: Path, monkeypatch):
     """No CLI, no env, no config → None (i.e. auto-detect)."""
-    from lore_curator.curator_c import _resolve_backend
+    from lore_curator.defrag_curator import _resolve_backend
 
     monkeypatch.delenv("LORE_LLM_BACKEND", raising=False)
     assert _resolve_backend(None, tmp_path) is None
@@ -718,7 +718,7 @@ def test_curator_run_cli_backend_flag_openai(tmp_path: Path, monkeypatch, fake_o
         duration_seconds: float = 0.0
 
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         lambda **kwargs: _FakeResult(),
     )
 

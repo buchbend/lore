@@ -524,3 +524,8 @@ def _regenerate_threads_md(
                 error=str(exc)[:300],
                 traceback=tb,
             )
+
+
+# Role-name alias: ``run_daily_curator`` matches the module name;
+# legacy ``run_curator_b`` kept as alias for existing call sites.
+run_daily_curator = run_curator_b

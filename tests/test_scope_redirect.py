@@ -8,7 +8,7 @@ import pytest
 
 from lore_core.types import Scope, ToolCall, Turn
 
-from lore_curator.curator_a import (
+from lore_curator.session_curator import (
     _detect_scope_override,
     _extract_tool_file_paths,
 )

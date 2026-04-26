@@ -44,7 +44,7 @@ def test_ledger_write_is_fsynced(tmp_path: Path, monkeypatch) -> None:
 def test_second_user_skips_after_first_iso_week_match(tmp_path: Path, monkeypatch) -> None:
     """Pre-populate last_curator_c as now → run_curator_c(defrag=True) skips."""
     from lore_core.ledger import WikiLedger
-    from lore_curator.curator_c import run_curator_c
+    from lore_curator.defrag_curator import run_curator_c
 
     lore_root = _seed_vault(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
@@ -74,7 +74,7 @@ def test_second_user_skips_after_first_iso_week_match(tmp_path: Path, monkeypatc
 def test_coordination_fresh_cycle_proceeds(tmp_path: Path, monkeypatch) -> None:
     """last_curator_c from prior ISO week → run proceeds normally."""
     from lore_core.ledger import WikiLedger
-    from lore_curator.curator_c import run_curator_c
+    from lore_curator.defrag_curator import run_curator_c
 
     lore_root = _seed_vault(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
@@ -95,7 +95,7 @@ def test_coordination_fresh_cycle_proceeds(tmp_path: Path, monkeypatch) -> None:
 def test_coordination_never_run_proceeds(tmp_path: Path, monkeypatch) -> None:
     """No prior run (last_curator_c=None) → proceed; first run records."""
     from lore_core.ledger import WikiLedger
-    from lore_curator.curator_c import run_curator_c
+    from lore_curator.defrag_curator import run_curator_c
 
     lore_root = _seed_vault(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
@@ -113,7 +113,7 @@ def test_coordination_clock_skew_immune(tmp_path: Path, monkeypatch) -> None:
     which one wrote first. Skew doesn't cause a double-run.
     """
     from lore_core.ledger import WikiLedger
-    from lore_curator.curator_c import run_curator_c
+    from lore_curator.defrag_curator import run_curator_c
 
     lore_root = _seed_vault(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))

@@ -1,4 +1,4 @@
-"""Tests for lore_curator.curator_a — Curator A pipeline."""
+"""Tests for lore_curator.session_curator — Curator A pipeline."""
 from __future__ import annotations
 
 import os
@@ -214,7 +214,7 @@ def test_curator_a_end_to_end_noteworthy_produces_note(tmp_path):
 
     client = _make_noteworthy_client(noteworthy=True)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -252,7 +252,7 @@ def test_curator_a_non_noteworthy_advances_ledger_no_file(tmp_path):
 
     client = _make_noteworthy_client(noteworthy=False)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -293,7 +293,7 @@ def test_curator_a_dry_run_writes_nothing(tmp_path):
 
     client = _make_noteworthy_client(noteworthy=True)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -331,7 +331,7 @@ def test_curator_a_lock_contention_records_skip(tmp_path):
     lock_dir.mkdir(parents=True)
 
     try:
-        from lore_curator.curator_a import run_curator_a
+        from lore_curator.session_curator import run_curator_a
 
         result = run_curator_a(
             lore_root=tmp_path,
@@ -364,7 +364,7 @@ def test_curator_a_reuses_hash_watermark_across_runs(tmp_path):
 
     client = _make_noteworthy_client(noteworthy=True)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     # First run
     run_curator_a(
@@ -434,7 +434,7 @@ def test_curator_a_skips_unattached_directory(tmp_path):
     )
     ledger.upsert(entry)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -491,7 +491,7 @@ def test_curator_a_requested_scope_filters(tmp_path):
         claude_md_path=project_a / "CLAUDE.md",
     )
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -538,7 +538,7 @@ def test_curator_a_unknown_host_recorded(tmp_path):
     def raising_lookup(host):
         raise KeyError(f"unknown host: {host!r}")
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -563,7 +563,7 @@ def test_curator_a_no_anthropic_client_records_skip(tmp_path):
     transcript_path.write_text("{}")
     _seed_ledger(tmp_path, project_dir, transcript_path)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -592,7 +592,7 @@ def test_curator_a_llm_client_error_skips_slice_without_aborting_run(tmp_path):
     transcript_path.write_text("{}")
     _seed_ledger(tmp_path, project_dir, transcript_path)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
     from lore_curator.llm_client import LlmClientError
 
     class _RaisingMessagesAPI:
@@ -650,7 +650,7 @@ def test_curator_a_result_counts_chunks_separately_from_transcripts(tmp_path):
 
     client = _make_noteworthy_client(noteworthy=True)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
     result = run_curator_a(
         lore_root=tmp_path,
         llm_client=client,
@@ -714,7 +714,7 @@ def test_curator_a_chunk_failure_does_not_advance_past_failed_chunk(tmp_path):
     class _FailingClient:
         messages = _MixedMessages()
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
     run_curator_a(
         lore_root=tmp_path,
         llm_client=_FailingClient(),
@@ -763,7 +763,7 @@ def test_curator_a_day_split_produces_one_note_per_local_date(tmp_path):
 
     client = _make_noteworthy_client(noteworthy=True)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -803,7 +803,7 @@ def test_curator_a_single_day_slice_produces_one_note(tmp_path):
 
     client = _make_noteworthy_client(noteworthy=True)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -825,7 +825,7 @@ def test_curator_a_duration_recorded(tmp_path):
     _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
     _setup_wiki(tmp_path, "private")
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     result = run_curator_a(
         lore_root=tmp_path,
@@ -842,7 +842,7 @@ def test_run_curator_a_creates_run_log(tmp_path):
     """After run_curator_a finishes, a runs/<id>.jsonl file exists with run-start/run-end."""
     import json
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
@@ -890,7 +890,7 @@ def _write_wiki_cfg(wiki_dir: Path, *, threshold: int) -> None:
 def test_curator_a_processes_entry_regardless_of_wiki_count(tmp_path):
     """Every pending entry is processed — no per-wiki session-count gate.
     The noteworthy classifier is the quality gate, not batch size."""
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
@@ -915,7 +915,7 @@ def test_curator_a_processes_entry_regardless_of_wiki_count(tmp_path):
 def test_curator_a_orphan_directory_marks_entry_orphan(tmp_path):
     """Entry whose directory no longer exists → orphan=True, curator_a_run stamped.
     The entry is then excluded from future pending() calls."""
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     # Gone directory: never created.
     gone_dir = tmp_path / "ghost-project"
@@ -959,7 +959,7 @@ def test_curator_a_orphan_directory_marks_entry_orphan(tmp_path):
 
 def test_curator_a_processed_entry_not_re_tripped(tmp_path):
     """After processing, pending() no longer returns the entry."""
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     project_dir = tmp_path / "proj"
     project_dir.mkdir()

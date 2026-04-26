@@ -21,6 +21,7 @@
 - ☑ **Phase 5** — UX polish (SessionStart reorder, --help groups, MCP envelope) *(2026-04-26)*
 - ☑ **Phase 6** — Test hygiene + curator decomposition + lazy-import lifts *(2026-04-26)*
 - ☑ **Phase 7** — MCP reindex throttle + SessionStart cost audit *(2026-04-26)*
+- ☑ **Phase 8** — Deferral closeout (CLI alias, curator role-rename, skill copy) *(2026-04-26, v0.10.0)*
 
 **Milestone 1** = Phase 0 + Phase 1 (stop bleeding + erect the fence). Re-evaluate phasing of 2-7 after Milestone 1 — the fence will likely re-shape them.
 
@@ -842,27 +843,136 @@ The other perf items (curator_c O(N²), concurrent-write safety on
   telemetry). Both contribute to the 2.3s end-to-end cost; neither
   is redundant. Documented this conclusion in Phase 3.
 
-### What's done
+### Phase 7 conclusion
 
-This is the last phase of the cleanup roadmap. The `1.0
-release-prep` candidates listed across phases (curator A/B/C
-rename, `new-wiki` → `wiki new`, `/lore:context` → `/lore:loaded`,
-SKILL.md description normalisation, deterministic inline citations,
-typer lazy-mount, file split for `hooks.py`) are honest deferrals
-— each is achievable, none is load-bearing, all involve user-facing
-or structural churn that's better packaged with a 1.0 release.
+Phase 7 closed the original roadmap's "perf + scaling prep"
+sketch. The list of "1.0 release-prep" candidates parked across
+phases (curator A/B/C rename, `new-wiki` → `wiki new`,
+`/lore:context` → `/lore:loaded`, SKILL.md description
+normalisation, deterministic inline citations, typer lazy-mount,
+file split for `hooks.py`) was deliberately deferred at that
+point — each was achievable but not load-bearing.
+
+Phase 8 then revisited those deferrals (see below).
+
+---
+
+## Phase 8 — Deferral closeout (CLI alias, curator role-rename, skill copy)
+
+**Status:** ☑ completed 2026-04-26
+**Released as:** v0.10.0
+**Estimated session length:** 1 sitting
+
+### Context for this phase
+
+User decision after Phase 7: "/lore:context should stay — that word
+describes it better for the user." Of the remaining parked items,
+three were endorsed for cleanup; two are still genuinely deferred
+because they're features (citation determinism) or structural
+refactors with poor ROI (typer lazy-mount + hooks.py split).
+
+User also explicitly capped versioning: no 1.0 bump without consent;
+0.x ladder only. Updated all `removal in 1.0` deprecation language to
+`safe to delete in a future 0.x release`.
+
+### Landed (in v0.10.0)
+
+- **`lore wiki new` as canonical, `lore new-wiki` as soft alias.**
+  New `lore_cli/wiki_cmd.py` mounts a `lore wiki` typer group with a
+  `new` subcommand. Both forms call `scaffold_wiki()`. The legacy
+  alias prints a one-line stderr hint pointing at the new form.
+  Tests: `tests/test_cli_wiki.py` (4 tests) — canonical-path,
+  legacy-alias-still-works, alias-emits-hint, canonical-doesn't-nag.
+- **Curator A/B/C → role-name modules**:
+  - `curator_a.py` → `session_curator.py` (per-session note filing)
+  - `curator_b.py` → `daily_curator.py` (per-day surface extraction)
+  - `curator_c.py` → `defrag_curator.py` (weekly defrag)
+  Renamed via `git mv` (history preserved). Updated 25 import sites
+  with two regex passes (whole-token `lore_curator.curator_X` and
+  `from lore_curator import curator_X`). The `_DEFRAG_PASSES`
+  module references in `c_orphan_links.py`, `c_adjacent_merge.py`,
+  `c_auto_supersede.py` were also rewritten — but their *config-field*
+  references (`cfg.curator.curator_c.defrag_body_writes`) were
+  preserved because that's a stable user-facing schema in
+  `.lore-wiki.yml`. Function aliases (`run_session_curator`,
+  `run_daily_curator`, `run_defrag_curator`) added alongside the
+  legacy `run_curator_a/b/c` so the ~188 existing call sites stay
+  unchanged. The `c_*.py` and `curator_c_diff.py` policy files
+  intentionally kept their prefix — they're internal to the defrag
+  pipeline and the prefix is an effective grouping marker.
+- **SKILL.md description sharpening.** `/lore:lint` and `/lore:curator`
+  rewritten to make their distinct roles obvious to Claude — lint is
+  *mechanical* (validate + regenerate catalogs), curator is
+  *judgment* (mark stale, propagate `supersedes:` flips). The
+  picker-overlap concern from the grumpy review is closed at the
+  description level. Other 17 SKILL.md descriptions left as-is —
+  they were already in the 21-38 word range and lead-with-action.
+- **Deprecation language softened.** All "removal in 1.0" / "Once
+  1.0 ships" comments rewritten to "safe to delete in a future
+  0.x release" so nothing pre-commits Lore to 1.0.
+- **Version bump 0.9.0 → 0.10.0.** All three sources (pyproject,
+  plugin.json, CHANGELOG) bumped. CLI/slash changes warrant a
+  user-visible minor; no breaking changes (every legacy form still
+  works via aliases).
+
+**Tests:** 1505 → 1509 passing (+4 wiki cmd). No regressions.
+
+### Deliberately still deferred (not done in Phase 8)
+
+- **`/lore:context` → `/lore:loaded` rename.** User decision: "context"
+  is a better mental-model fit than "loaded" for what the skill
+  shows. **Removed from the parking lot.**
+- **Deterministic inline `› consulted [[X]]` citations.** Not a
+  refactor; it's a *feature* (the agent currently emits these
+  by convention; making them deterministic requires a new hook or
+  tool-postprocess mechanism). Better as its own design session
+  with a clear UX spec — not Phase 8 cleanup work.
+- **Typer lazy-mount + `hooks.py` file split.** Phase 7 measured:
+  the eager-import surface costs ~600ms but file I/O dominates
+  the SessionStart 2.3s end-to-end cost. Even a perfect lazy-mount
+  refactor leaves us at ~1.8s — chasing imports without
+  addressing I/O has poor ROI. Park until there's a structural
+  reason (e.g. multi-host CLI work) to touch the dispatcher shape.
+
+### Surprised
+
+- The curator file-rename was technically clean but caught two
+  regex hazards. The first was `cfg.curator.curator_c.X` (config
+  dataclass field — must NOT rename) vs `from lore_curator import
+  curator_c` + `curator_c._DEFRAG_PASSES` (module reference —
+  SHOULD rename). Required two surgical passes plus a
+  `git checkout` of overzealous tests. Lesson reinforced: don't
+  global-replace token names in a codebase that uses the same
+  token at multiple semantic layers.
+- Function aliasing (`run_defrag_curator = run_curator_c`) was the
+  right call. Renaming all 188 callers would have been pure
+  churn for marginal aesthetic gain; the alias gives new code a
+  cleaner name without breaking old code or tests.
+- Three Edit calls didn't take in the same session (something
+  about file-state staleness across `git checkout` operations).
+  Re-reading + re-editing fixed them. Worth noting in case future
+  cleanup phases hit the same pattern.
+
+### Final tally (across phases 0-8)
+
+- **8 commits** on the cleanup arc
+- **~170 individual changes** touching **~110 files**
+- **Tests: 1434 → 1509 passing** (+75 net)
+- **8 new pytest guards** prevent regression on structural invariants:
+  version-sync, layering, drift, envelope shape, SessionStart
+  ordering, MCP throttle, cascade default, wiki-cmd alias
+- **Three architecture docs** make the existing discipline visible:
+  `config.md`, `state.md`, `REVIEW-2026-04-26-claim-audit.md`
+- **Soft user-facing changes** (each with backward-compat alias):
+  - `/lore:surface-new` → `/lore:surface-add`
+  - `lore new-wiki` → `lore wiki new`
+  - `lore_curator.curator_a/b/c` → `session/daily/defrag_curator`
+  - `run_curator_a/b/c` → `run_session/daily/defrag_curator`
 
 The codebase is in materially better shape than at the start of
-the audit:
-
-- 7 commits across phases 0-7
-- ~150 individual changes touching ~100 files
-- Tests went from 1434 → 1505 passing (+71)
-- Six new pytest guards prevent regression on the structural
-  invariants established (version-sync, layering, drift,
-  envelope shape, ordering)
-- Two architecture docs (`config.md`, `state.md`) make the
-  existing discipline visible
+the audit. Remaining genuine deferrals are documented above and
+explicitly *not* contingent on a 1.0 bump — each can land
+independently in a future 0.x release when its time comes.
 
 ---
 

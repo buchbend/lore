@@ -277,10 +277,10 @@ def _existing_proposal_has_sources(sessions_dir: Path, a: Path, b: Path) -> bool
 
 
 def _register() -> None:
-    """Append to curator_c._DEFRAG_PASSES."""
-    from lore_curator import curator_c
-    if adjacent_merge_pass not in curator_c._DEFRAG_PASSES:
-        curator_c._DEFRAG_PASSES.append(adjacent_merge_pass)
+    """Append to defrag_curator._DEFRAG_PASSES."""
+    from lore_curator import defrag_curator
+    if adjacent_merge_pass not in defrag_curator._DEFRAG_PASSES:
+        defrag_curator._DEFRAG_PASSES.append(adjacent_merge_pass)
 
 
 _register()

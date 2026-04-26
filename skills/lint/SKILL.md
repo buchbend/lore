@@ -1,8 +1,10 @@
 ---
 name: lore:lint
-description: Health-check the knowledge vault and regenerate
-  _catalog.json / _index.md / llms.txt. Runs the lore_core linter,
-  interprets results, offers safe auto-fixes. Run with "/lore:lint".
+description: Validate vault structure and regenerate the derived
+  catalogs (_catalog.json, _index.md, llms.txt). Mechanical — no
+  judgment calls, no frontmatter rewrites. Use when the index feels
+  stale, links are broken, or after manual note edits. Pairs with
+  /lore:curator (which makes judgment calls). Run with "/lore:lint".
 user_invocable: true
 ---
 

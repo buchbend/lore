@@ -13,7 +13,7 @@ import inspect
 
 def test_curator_c_module_docstring_mentions_defrag_and_weekly() -> None:
     """Module docstring must identify the role (weekly defrag / converge)."""
-    import lore_curator.curator_c as cc
+    import lore_curator.defrag_curator as cc
 
     doc = inspect.getdoc(cc) or ""
     assert "Curator C" in doc, "module docstring must name the role explicitly"
@@ -26,7 +26,7 @@ def test_curator_c_module_docstring_mentions_defrag_and_weekly() -> None:
 
 def test_curator_c_exports_run_curator_c() -> None:
     """Public function renamed to run_curator_c for triad clarity."""
-    from lore_curator.curator_c import run_curator_c  # noqa: F401
+    from lore_curator.defrag_curator import run_curator_c  # noqa: F401
     from lore_curator import run_curator_c as reexport  # noqa: F401
 
 

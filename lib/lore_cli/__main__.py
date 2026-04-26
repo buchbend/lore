@@ -42,10 +42,11 @@ from lore_cli import (
     status_cmd,
     surface_cmd,
     transcripts_cmd,
+    wiki_cmd,
 )
 from lore_core import lint as lint_cmd
 from lore_core import migrate as migrate_cmd
-from lore_curator import curator_c as curator_cmd
+from lore_curator import defrag_curator as curator_cmd
 from lore_mcp import server as mcp_cmd
 from lore_search import cli as search_cmd
 
@@ -72,11 +73,15 @@ app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
 app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
 app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
 app.add_typer(surface_cmd.app, name="surface", rich_help_panel=_KN)
+app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
 app.add_typer(news_cmd.app, name="news", rich_help_panel=_KN)
 app.add_typer(resume_cmd.app, name="resume", rich_help_panel=_KN)
 app.add_typer(lint_cmd.app, name="lint", rich_help_panel=_KN)
-app.add_typer(new_wiki_cmd.app, name="new-wiki", rich_help_panel=_KN)
 app.add_typer(curator_cmd.app, name="curator", rich_help_panel=_KN)
+# Legacy alias: `lore new-wiki <name>` forwards to the same scaffolder
+# as `lore wiki new <name>`. Kept for backward compat with users who
+# typed the old form during 0.x; the canonical path is `lore wiki new`.
+app.add_typer(new_wiki_cmd.app, name="new-wiki", rich_help_panel=_ADV)
 
 app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
 app.add_typer(attachments_cmd.app, name="attachments", rich_help_panel=_ADV)

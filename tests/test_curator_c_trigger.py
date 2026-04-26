@@ -2,7 +2,7 @@
 
 - UTC-pinned ISO-week check
 - Per-user 48h jitter via SHA-256 of git user.email (hostname fallback)
-- Feature-flag gated (curator.curator_c.enabled, mode=local)
+- Feature-flag gated (curator.defrag_curator.enabled, mode=local)
 - Reuses Plan A's try_acquire_spawn_lock("c")
 """
 

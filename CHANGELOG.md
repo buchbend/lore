@@ -10,20 +10,52 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-04-26
+
+Cleanup-roadmap closeout (Phases 0-8). User-visible CLI/slash changes
+warrant a minor bump; no breaking changes — every legacy form keeps
+working via aliases.
+
+### Added
+
+- **`lore wiki new <name>`** — canonical home for wiki-lifecycle
+  verbs going forward; matches `lore surface init/add/commit`. The
+  legacy `lore new-wiki <name>` keeps working as an alias and prints
+  a one-line stderr hint pointing at the new form.
+- **Role-named curator modules**:
+  - `lore_curator/session_curator.py` (was `curator_a.py`) — files
+    session notes from completed transcripts.
+  - `lore_curator/daily_curator.py` (was `curator_b.py`) — extracts
+    surfaces and regenerates `threads.md`.
+  - `lore_curator/defrag_curator.py` (was `curator_c.py`) — weekly
+    defrag/stale-flag/supersession.
+  Function aliases `run_session_curator` / `run_daily_curator` /
+  `run_defrag_curator` are added alongside the legacy `run_curator_a/b/c`
+  names; all old import sites continue to work.
+
 ### Changed
 
 - **Slash command renamed**: `/lore:surface-new` → `/lore:surface-add`
-  for symmetry with the CLI verb (`lore surface add`). The skill
-  directory `skills/surface-new/` was renamed to `skills/surface-add/`
-  and `lore surface add` now exec's the new slash. Users with muscle
-  memory for the old name will see autocomplete suggest `surface-add`
-  instead.
-- **Skill cleanup** (Phase 4): `skills/lint/SKILL.md` and
-  `skills/curator/SKILL.md` now invoke the `lore` CLI directly
-  (`lore lint`, `lore curator`, `lore migrate`) instead of leaking the
-  internal `python -m lore_core.lint` / `python -m lore_cli curator`
-  package paths. A new pytest guard
-  (`tests/test_skill_cli_drift.py`) prevents future drift.
+  for symmetry with `lore surface add`. The skill directory was
+  renamed via `git mv` (history preserved); autocomplete now shows
+  the new name.
+- **Skill cleanup**: `skills/lint/SKILL.md` and `skills/curator/SKILL.md`
+  now call the `lore` CLI directly (`lore lint`, `lore curator`,
+  `lore migrate`) instead of leaking internal package paths
+  (`python -m lore_core.lint` etc.).
+- **SKILL.md description sharpening**: `/lore:lint` and `/lore:curator`
+  descriptions revised to make their distinct roles obvious to Claude
+  (mechanical-vs-judgment) so picker reliability improves.
+
+### Notes
+
+- `tests/test_skill_cli_drift.py` is the static guard against future
+  `python -m lore_*` regression in skills.
+- `tests/test_cli_wiki.py` pins both the canonical `lore wiki new`
+  path and the legacy `lore new-wiki` alias.
+- Curator module renames are mechanical: ~25 import sites migrated;
+  function aliases mean ~188 callers of `run_curator_a/b/c` keep
+  working unchanged.
 
 ## [0.9.0] — 2026-04-25
 

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from lore_curator.curator_c import app
+from lore_curator.defrag_curator import app
 
 
 runner = CliRunner()
@@ -31,7 +31,7 @@ def test_defrag_flag_invokes_run_curator_c_with_defrag_true(tmp_path, monkeypatc
         captured_kwargs.append(kwargs)
         return []
 
-    with patch("lore_curator.curator_c.run_curator_c", side_effect=mock_run):
+    with patch("lore_curator.defrag_curator.run_curator_c", side_effect=mock_run):
         result = runner.invoke(app, ["run", "--defrag"], catch_exceptions=False)
 
     assert result.exit_code == 0
@@ -45,7 +45,7 @@ def test_defrag_dry_run_passes_through(tmp_path, monkeypatch) -> None:
 
     captured_kwargs = []
     with patch(
-        "lore_curator.curator_c.run_curator_c",
+        "lore_curator.defrag_curator.run_curator_c",
         side_effect=lambda *a, **kw: captured_kwargs.append(kw) or [],
     ):
         runner.invoke(app, ["run", "--defrag", "--dry-run"], catch_exceptions=False)
@@ -64,7 +64,7 @@ def test_no_defrag_flag_uses_curator_a_path(tmp_path, monkeypatch) -> None:
         defrag_called.append(kw)
         return []
 
-    with patch("lore_curator.curator_c.run_curator_c", side_effect=mock_c):
+    with patch("lore_curator.defrag_curator.run_curator_c", side_effect=mock_c):
         # Without --defrag, run_curator_c should NOT be called via the --defrag
         # short-circuit. The command proceeds to Curator A.
         result = runner.invoke(app, ["run"], catch_exceptions=False)

@@ -85,14 +85,16 @@ def _legacy_cache_path() -> Path:
     """Pre-PID-keying cache path; kept as a last-resort fallback.
 
     .. deprecated:: 0.9.0
-       Schedule for removal in 1.0. The PID-keyed cache (introduced
-       2026-04 alongside per-Claude-session isolation) is the only path
-       new sessions write to. This fallback is read-only and exists so
-       a fresh ``/lore:context`` invocation in an upgraded environment
-       still returns *something* if the previous session was on the old
-       layout. Once 1.0 ships, delete this helper, the read-fallback in
-       ``_context_log()`` (~line 861), and the legacy write at
-       ``_append_context_log`` (~line 960).
+       The PID-keyed cache (introduced 2026-04 alongside
+       per-Claude-session isolation) is the only path new sessions
+       write to. This fallback is read-only and exists so a fresh
+       ``/lore:context`` invocation in an upgraded environment still
+       returns *something* if the previous session was on the old
+       layout. Safe to delete in a future 0.x release after enough
+       time has passed for every active environment to have produced
+       at least one PID-keyed cache; at that point also drop the
+       read-fallback in ``_context_log()`` (~line 861) and the legacy
+       write at ``_append_context_log`` (~line 960).
     """
     return _cache_dir() / "last-session-start.md"
 

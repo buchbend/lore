@@ -1,4 +1,11 @@
-"""`lore new-wiki <name>` — scaffold a new wiki under $LORE_ROOT/wiki/."""
+"""`lore new-wiki <name>` — scaffold a new wiki under $LORE_ROOT/wiki/.
+
+Legacy alias for `lore wiki new <name>` (the canonical form). Both
+invocations call the same ``scaffold_wiki()`` implementation; emitting
+a one-line stderr nudge from the alias so users gradually migrate to
+the namespaced form without breaking scripts that still call
+``lore new-wiki``.
+"""
 
 from __future__ import annotations
 
@@ -139,6 +146,10 @@ def new_wiki(
     ),
 ) -> None:
     """Scaffold a new wiki under $LORE_ROOT/wiki/."""
+    err_console.print(
+        "[dim]hint: `lore new-wiki` will keep working, but the canonical "
+        "form is now `lore wiki new` (matches `lore surface ...`).[/dim]"
+    )
     scaffold_wiki(name, mode=mode.value, remote=remote, force=force, surfaces=surfaces)
 
 

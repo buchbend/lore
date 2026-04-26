@@ -26,7 +26,7 @@ from lore_core.schema import (
     compute_lifecycle,
     parse_frontmatter,
 )
-from lore_curator.curator_c import _pass_staleness, _pass_supersession
+from lore_curator.defrag_curator import _pass_staleness, _pass_supersession
 
 # ---------- schema ----------
 

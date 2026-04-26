@@ -241,8 +241,8 @@ def test_merge_skipped_without_llm(tmp_path: Path) -> None:
 
 def test_merge_pass_registered_in_defrag_passes() -> None:
     """Confirms the pass is picked up by the integration skeleton."""
-    from lore_curator import c_adjacent_merge, curator_c  # noqa: F401
-    assert c_adjacent_merge.adjacent_merge_pass in curator_c._DEFRAG_PASSES
+    from lore_curator import c_adjacent_merge, defrag_curator  # noqa: F401
+    assert c_adjacent_merge.adjacent_merge_pass in defrag_curator._DEFRAG_PASSES
 
 
 # ---------------------------------------------------------------------------

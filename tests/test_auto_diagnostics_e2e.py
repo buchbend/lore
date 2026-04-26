@@ -172,7 +172,7 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
         # ------------------------------------------------------------------
         # Step 5 — synchronously run curator_a with fake LLM
         # ------------------------------------------------------------------
-        from lore_curator.curator_a import run_curator_a
+        from lore_curator.session_curator import run_curator_a
 
         def _adapter_lookup(host: str):
             if host == "fake":

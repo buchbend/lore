@@ -1234,7 +1234,7 @@ def run_command(
     from datetime import UTC, datetime
     from pathlib import Path
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     lore_root_str = os.environ.get("LORE_ROOT", "")
     if not lore_root_str:
@@ -1326,7 +1326,7 @@ def run_command(
 
     # Run Curator B if --abstract is specified
     if abstract:
-        from lore_curator.curator_b import run_curator_b
+        from lore_curator.daily_curator import run_curator_b
 
         wikis_to_process = [wiki] if wiki else _discover_wikis(lore_root)
 
@@ -1354,6 +1354,11 @@ def run_command(
 
 
 main = argv_main(app)
+
+
+# Role-name alias: ``run_defrag_curator`` matches the module name;
+# legacy ``run_curator_c`` kept as alias for existing call sites.
+run_defrag_curator = run_curator_c
 
 
 if __name__ == "__main__":

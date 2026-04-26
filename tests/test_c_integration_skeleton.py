@@ -156,7 +156,7 @@ def test_skeleton_runs_with_zero_passes(tmp_path: Path, monkeypatch) -> None:
     lore_root = _seed_minimal_vault(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
 
-    from lore_curator.curator_c import run_curator_c
+    from lore_curator.defrag_curator import run_curator_c
 
     reports = run_curator_c(
         wiki_filter="testwiki",
@@ -183,7 +183,7 @@ def test_skeleton_defrag_false_does_not_update_ledger(tmp_path: Path, monkeypatc
     lore_root = _seed_minimal_vault(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
 
-    from lore_curator.curator_c import run_curator_c
+    from lore_curator.defrag_curator import run_curator_c
 
     run_curator_c(wiki_filter="testwiki", dry_run=False, defrag=False)
 
@@ -203,7 +203,7 @@ def test_skeleton_atomic_on_failure(tmp_path: Path, monkeypatch) -> None:
     prior = datetime(2026, 4, 14, tzinfo=UTC)
     WikiLedger(lore_root, "testwiki").update_last_curator("c", at=prior)
 
-    from lore_curator import curator_c as cc_mod
+    from lore_curator import defrag_curator as cc_mod
 
     def boom(*_args, **_kwargs):
         raise RuntimeError("simulated mid-run failure")

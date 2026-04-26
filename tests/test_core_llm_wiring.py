@@ -63,7 +63,7 @@ def test_core_wires_subprocess_backend_when_claude_on_path(tmp_path, monkeypatch
     # Make shutil.which("claude") return a plausible path
     monkeypatch.setattr("shutil.which", lambda name: "/usr/local/bin/claude" if name == "claude" else None)
 
-    monkeypatch.setattr("lore_curator.curator_a.run_curator_a", _fake_run_a)
+    monkeypatch.setattr("lore_curator.session_curator.run_curator_a", _fake_run_a)
 
     result = runner.invoke(app, ["curator", "run", "--dry-run"])
     assert result.exit_code == 0, result.output + (result.stderr or "")
@@ -98,7 +98,7 @@ def test_core_wires_sdk_backend_when_only_api_key_set(tmp_path, monkeypatch):
     fake_anthropic_mod.Anthropic = _FakeAnthropic
     monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic_mod)
 
-    monkeypatch.setattr("lore_curator.curator_a.run_curator_a", _fake_run_a)
+    monkeypatch.setattr("lore_curator.session_curator.run_curator_a", _fake_run_a)
 
     result = runner.invoke(app, ["curator", "run", "--dry-run"])
     assert result.exit_code == 0, result.output + (result.stderr or "")
@@ -116,7 +116,7 @@ def test_core_prints_skip_warning_when_nothing_available(tmp_path, monkeypatch):
     # No claude binary on PATH
     monkeypatch.setattr("shutil.which", lambda name: None)
 
-    monkeypatch.setattr("lore_curator.curator_a.run_curator_a", _fake_run_a)
+    monkeypatch.setattr("lore_curator.session_curator.run_curator_a", _fake_run_a)
 
     result = runner.invoke(app, ["curator", "run", "--dry-run"])
     assert result.exit_code == 0, result.output + (result.stderr or "")
@@ -138,7 +138,7 @@ def test_core_skip_warning_NOT_doubled_on_backend_error(tmp_path, monkeypatch):
     import shutil as _shutil
     monkeypatch.setattr(_shutil, "which", lambda name: None)
 
-    monkeypatch.setattr("lore_curator.curator_a.run_curator_a", _fake_run_a)
+    monkeypatch.setattr("lore_curator.session_curator.run_curator_a", _fake_run_a)
 
     local_runner = CliRunner(mix_stderr=False)
     result = local_runner.invoke(app, ["curator", "run", "--dry-run"])

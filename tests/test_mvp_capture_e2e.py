@@ -232,7 +232,7 @@ def test_mvp_e2e_session_end_produces_note(
     assert entry.digested_hash is None  # not yet processed by curator
 
     # Step 2: Run curator
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     fake_anthropic = FakeAnthropic({
         # tool_choice name used by classify_slice is "classify"
@@ -306,7 +306,7 @@ def test_mvp_e2e_non_noteworthy_slice_produces_no_note(
         catch_exceptions=False,
     )
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     # Return noteworthy=False from the classify call (tool_choice name is "classify")
     fake_anthropic = FakeAnthropic({
@@ -358,7 +358,7 @@ def test_mvp_e2e_idempotent_on_rerun(
 
     from lore_cli.hooks import hook_app
     from lore_core.ledger import TranscriptLedger
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     runner = CliRunner()
     runner.invoke(
@@ -483,7 +483,7 @@ def test_mvp_e2e_second_slice_after_growth_is_processed(
     """
     from lore_cli.hooks import hook_app
     from lore_core.ledger import TranscriptLedger
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     lore_root, work = lore_root_with_attached_wiki
 

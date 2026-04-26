@@ -75,7 +75,7 @@ def test_fresh_vault_no_llm_calls(tmp_path: Path, monkeypatch) -> None:
 
     def blow_up_on_llm(*_args, **_kwargs):
         raise AssertionError(
-            "make_llm_client must NOT be called when curator_c.enabled is default-false"
+            "make_llm_client must NOT be called when defrag_curator.enabled is default-false"
         )
 
     monkeypatch.setattr("lore_curator.llm_client.make_llm_client", blow_up_on_llm)

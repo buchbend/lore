@@ -170,7 +170,7 @@ def test_skip_lock_held_includes_holder(tmp_path):
     """run_curator_a skip records contain holder_pid/run_id/age when lock is held."""
     import json
     from lore_core.lockfile import curator_lock
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     with curator_lock(tmp_path, timeout=0.0, run_id="first-run"):
         run_curator_a(

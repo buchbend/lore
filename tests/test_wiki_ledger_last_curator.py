@@ -194,7 +194,7 @@ def test_curator_a_run_updates_last_curator_a(tmp_path: Path) -> None:
     project_dir, turns = _minimal_curator_a_setup(tmp_path)
     adapter = _fake_adapter(turns)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     wledger = WikiLedger(tmp_path, "private")
     assert wledger.read().last_curator_a is None, "precondition"
@@ -222,7 +222,7 @@ def test_curator_a_does_not_update_untouched_wikis(tmp_path: Path) -> None:
     assert wledger_untouched.read().last_curator_a is None
 
     adapter = _fake_adapter(turns)
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     run_curator_a(
         lore_root=tmp_path,
@@ -258,13 +258,13 @@ def test_partial_failure_does_not_clobber_prior_last_curator_a(tmp_path: Path) -
     adapter = _fake_adapter(turns)
 
     # Mock classify_slice to raise — mid-run failure.
-    from lore_curator import curator_a as curator_a_mod
+    from lore_curator import session_curator as curator_a_mod
 
     def boom(*_args, **_kwargs):
         raise RuntimeError("simulated mid-run failure")
 
     with patch.object(curator_a_mod, "classify_slice", boom):
-        from lore_curator.curator_a import run_curator_a
+        from lore_curator.session_curator import run_curator_a
         with pytest.raises(RuntimeError, match="simulated mid-run failure"):
             run_curator_a(
                 lore_root=tmp_path,

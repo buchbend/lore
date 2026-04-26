@@ -214,5 +214,5 @@ def test_supersede_skipped_without_llm(tmp_path) -> None:
 
 
 def test_supersede_registered_in_defrag_passes() -> None:
-    from lore_curator import c_auto_supersede, curator_c  # noqa: F401
-    assert c_auto_supersede.auto_supersede_pass in curator_c._DEFRAG_PASSES
+    from lore_curator import c_auto_supersede, defrag_curator  # noqa: F401
+    assert c_auto_supersede.auto_supersede_pass in defrag_curator._DEFRAG_PASSES

@@ -1,9 +1,10 @@
 ---
 name: lore:curator
-description: Per-wiki maintenance — flag stale notes, detect superseded
-  decisions, backfill created / last_reviewed from git log, write a
-  review summary the next SessionStart can surface. Frontmatter-only
-  edits. Run with "/lore:curator <wiki>".
+description: Mark notes stale by mtime, propagate `supersedes:` and
+  `implements:` status flips, backfill missing dates. Judgment calls
+  on metadata only — never edits note bodies. Use for routine vault
+  hygiene; pair with /lore:lint when indexes are also stale. Run
+  with "/lore:curator <wiki>".
 user_invocable: true
 ---
 

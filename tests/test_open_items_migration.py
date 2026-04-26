@@ -6,7 +6,7 @@ functions and covered separately by manual runs.
 
 from __future__ import annotations
 
-from lore_curator.curator_c import (
+from lore_curator.defrag_curator import (
     extract_open_items,
     migrate_open_items,
 )

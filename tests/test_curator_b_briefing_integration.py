@@ -152,7 +152,7 @@ tags: []
 
 def _run_with_one_cluster(lore_root: Path, wiki: str = "private", **kwargs):
     """Run curator_b with 3 session notes and one fake cluster/abstract."""
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     wiki_dir = lore_root / "wiki" / wiki
     sessions_dir = wiki_dir / "sessions"
@@ -260,7 +260,7 @@ briefing:
 """
     _setup_wiki(tmp_path, briefing_yml=yml)
 
-    import lore_curator.curator_b as _cb
+    import lore_curator.daily_curator as _cb
 
     def _raising_publish(**kw):
         raise RuntimeError("simulated briefing failure")
@@ -347,7 +347,7 @@ briefing:
 
     monkeypatch.setattr(_b, "gather", lambda **kw: _CANNED_GATHER)
 
-    from lore_curator.curator_b import run_curator_b
+    from lore_curator.daily_curator import run_curator_b
 
     # No session notes → zero surfaces emitted.
     client = _make_client()

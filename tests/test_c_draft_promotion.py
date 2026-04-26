@@ -44,7 +44,7 @@ def _seed(tmp_path: Path) -> Path:
 
 
 def test_promotion_proposes_on_15d_old_draft(tmp_path: Path) -> None:
-    from lore_curator.curator_c import _pass_draft_promotion
+    from lore_curator.defrag_curator import _pass_draft_promotion
 
     wiki = _seed(tmp_path)
     today = date(2026, 4, 21)
@@ -58,7 +58,7 @@ def test_promotion_proposes_on_15d_old_draft(tmp_path: Path) -> None:
 
 def test_promotion_skips_at_exact_14d(tmp_path: Path) -> None:
     """Boundary: created EXACTLY 14d ago → NOT a candidate (exclusive)."""
-    from lore_curator.curator_c import _pass_draft_promotion
+    from lore_curator.defrag_curator import _pass_draft_promotion
 
     wiki = _seed(tmp_path)
     today = date(2026, 4, 21)
@@ -69,7 +69,7 @@ def test_promotion_skips_at_exact_14d(tmp_path: Path) -> None:
 
 
 def test_promotion_skips_recent_drafts(tmp_path: Path) -> None:
-    from lore_curator.curator_c import _pass_draft_promotion
+    from lore_curator.defrag_curator import _pass_draft_promotion
 
     wiki = _seed(tmp_path)
     today = date(2026, 4, 21)
@@ -80,7 +80,7 @@ def test_promotion_skips_recent_drafts(tmp_path: Path) -> None:
 
 def test_promotion_never_flips_draft_false(tmp_path: Path) -> None:
     """The action patch writes promotion_candidate only; draft stays true."""
-    from lore_curator.curator_c import _pass_draft_promotion, _apply_patch
+    from lore_curator.defrag_curator import _pass_draft_promotion, _apply_patch
 
     wiki = _seed(tmp_path)
     today = date(2026, 4, 21)
@@ -97,7 +97,7 @@ def test_promotion_never_flips_draft_false(tmp_path: Path) -> None:
 
 
 def test_promotion_skips_non_drafts(tmp_path: Path) -> None:
-    from lore_curator.curator_c import _pass_draft_promotion
+    from lore_curator.defrag_curator import _pass_draft_promotion
 
     wiki = _seed(tmp_path)
     today = date(2026, 4, 21)
@@ -110,7 +110,7 @@ def test_promotion_skips_non_drafts(tmp_path: Path) -> None:
 
 def test_promotion_idempotent(tmp_path: Path) -> None:
     """Once promotion_candidate is set, don't propose again."""
-    from lore_curator.curator_c import _pass_draft_promotion
+    from lore_curator.defrag_curator import _pass_draft_promotion
 
     wiki = _seed(tmp_path)
     today = date(2026, 4, 21)

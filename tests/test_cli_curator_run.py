@@ -45,7 +45,7 @@ def test_curator_run_invokes_pipeline(tmp_path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls),
     )
 
@@ -63,7 +63,7 @@ def test_curator_run_dry_run_flag_propagates(tmp_path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls),
     )
 
@@ -89,7 +89,7 @@ def test_curator_run_reports_summary_to_stdout(tmp_path, monkeypatch):
     )
     calls = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls, canned_result),
     )
 
@@ -111,7 +111,7 @@ def test_curator_run_missing_anthropic_key_warns(tmp_path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls),
     )
 
@@ -163,11 +163,11 @@ def test_curator_run_default_does_not_invoke_curator_b(tmp_path, monkeypatch):
     calls_a = []
     calls_b = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls_a),
     )
     monkeypatch.setattr(
-        "lore_curator.curator_b.run_curator_b",
+        "lore_curator.daily_curator.run_curator_b",
         _make_fake_run_b(calls_b),
     )
 
@@ -189,11 +189,11 @@ def test_curator_run_abstract_invokes_curator_b(tmp_path, monkeypatch):
     calls_a = []
     calls_b = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls_a),
     )
     monkeypatch.setattr(
-        "lore_curator.curator_b.run_curator_b",
+        "lore_curator.daily_curator.run_curator_b",
         _make_fake_run_b(calls_b),
     )
 
@@ -217,11 +217,11 @@ def test_curator_run_abstract_with_wiki_flag_filters_to_one_wiki(tmp_path, monke
     calls_a = []
     calls_b = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls_a),
     )
     monkeypatch.setattr(
-        "lore_curator.curator_b.run_curator_b",
+        "lore_curator.daily_curator.run_curator_b",
         _make_fake_run_b(calls_b),
     )
 
@@ -244,11 +244,11 @@ def test_curator_run_abstract_dry_run_propagates(tmp_path, monkeypatch):
     calls_a = []
     calls_b = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls_a),
     )
     monkeypatch.setattr(
-        "lore_curator.curator_b.run_curator_b",
+        "lore_curator.daily_curator.run_curator_b",
         _make_fake_run_b(calls_b),
     )
 
@@ -272,11 +272,11 @@ def test_curator_run_abstract_iterates_all_wikis_when_no_wiki_flag(tmp_path, mon
     calls_a = []
     calls_b = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls_a),
     )
     monkeypatch.setattr(
-        "lore_curator.curator_b.run_curator_b",
+        "lore_curator.daily_curator.run_curator_b",
         _make_fake_run_b(calls_b),
     )
 
@@ -303,7 +303,7 @@ def test_curator_run_trace_llm_flag_propagates(tmp_path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls),
     )
 
@@ -322,7 +322,7 @@ def test_curator_run_env_var_enables_trace(tmp_path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls),
     )
 
@@ -340,7 +340,7 @@ def test_curator_run_trace_llm_and_dry_run_combine(tmp_path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(
-        "lore_curator.curator_a.run_curator_a",
+        "lore_curator.session_curator.run_curator_a",
         _make_fake_run(calls),
     )
 

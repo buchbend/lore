@@ -75,7 +75,7 @@ def _write_concept(path: Path, *, title: str, tags: list[str]) -> None:
 
 def test_full_defrag_run_writes_diff_log_and_advances_ledger(tmp_path, monkeypatch) -> None:
     from lore_core.ledger import WikiLedger
-    from lore_curator.curator_c import run_curator_c
+    from lore_curator.defrag_curator import run_curator_c
 
     lore_root = _seed_vault(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
@@ -116,7 +116,7 @@ def test_defrag_run_does_not_crash_without_llm(tmp_path, monkeypatch) -> None:
     hygiene still runs; ledger still advances; diff log still written.
     """
     from lore_core.ledger import WikiLedger
-    from lore_curator.curator_c import run_curator_c
+    from lore_curator.defrag_curator import run_curator_c
 
     lore_root = _seed_vault(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
@@ -136,7 +136,7 @@ def test_defrag_run_does_not_crash_without_llm(tmp_path, monkeypatch) -> None:
 def test_hygiene_only_path_still_works(tmp_path, monkeypatch) -> None:
     """Bare `lore curator` path (defrag=False) behaves as pre-Plan-5."""
     from lore_core.ledger import WikiLedger
-    from lore_curator.curator_c import run_curator_c
+    from lore_curator.defrag_curator import run_curator_c
 
     lore_root = _seed_vault(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))

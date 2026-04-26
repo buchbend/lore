@@ -665,3 +665,9 @@ def _detect_scope_override(
     return None
 
 
+# Role-name alias: ``run_session_curator`` matches the module name;
+# ``run_curator_a`` is kept as an alias because ~80 call sites across
+# lib/+tests/ still import the legacy name.
+run_session_curator = run_curator_a
+
+

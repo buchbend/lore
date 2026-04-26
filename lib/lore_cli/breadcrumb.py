@@ -127,14 +127,14 @@ def migrate_legacy_pending_breadcrumb(lore_root: Path) -> None:
     after upgrading.
 
     .. deprecated:: 0.9.0
-       Schedule for removal in 1.0. The legacy ``.txt`` breadcrumb
-       format predates the JSONL hook-events log; this migration helper
-       runs once per vault on the next SessionStart after upgrade,
-       converts the file to a hook-event record, and unlinks the
-       original. Once we ship 1.0 — by which time every active vault
-       has been opened at least once on a post-migration build — this
-       function and its unconditional call site at line 75 of
-       ``consume_pending_breadcrumb`` can be deleted.
+       The legacy ``.txt`` breadcrumb format predates the JSONL
+       hook-events log; this migration helper runs once per vault on
+       the next SessionStart after upgrade, converts the file to a
+       hook-event record, and unlinks the original. Safe to delete in
+       a future 0.x release once enough time has passed that every
+       active vault has been opened at least once on a post-migration
+       build — at that point this function and its unconditional call
+       site at line 75 of ``consume_pending_breadcrumb`` can both go.
     """
     from datetime import UTC, datetime as _dt
     from lore_core.hook_log import HookEventLogger

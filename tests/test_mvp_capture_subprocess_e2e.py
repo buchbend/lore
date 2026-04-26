@@ -238,7 +238,7 @@ def test_e2e_subprocess_backend_produces_session_note(
     from lore_curator.llm_client import SubprocessClient
     fake_client = SubprocessClient(runner=fake_runner)
 
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     curator_result = run_curator_a(
         lore_root=lore_root,
@@ -309,7 +309,7 @@ def test_e2e_subprocess_backend_binary_missing_path(
     assert result.exit_code == 0, f"capture failed: {result.output}"
 
     # Run curator with no LLM client (mirrors the no-backend situation).
-    from lore_curator.curator_a import run_curator_a
+    from lore_curator.session_curator import run_curator_a
 
     curator_result = run_curator_a(
         lore_root=lore_root,
