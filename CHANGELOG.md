@@ -10,6 +10,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-04-26
+
+### Fixed
+
+- **`lore install` and `lore doctor` now detect Python-package version
+  drift** (issue #28). The Claude Code plugin and the Python CLI binary
+  update via separate channels (`claude plugin update` vs `pipx
+  install`); when they drift, SessionStart's status line silently
+  shows the binary's old version even after a successful plugin
+  update. Both commands now compare `importlib.metadata.version("lore")`
+  against the on-disk `pyproject.toml` and surface a copy-pasteable
+  fix command (`pipx install --force --editable <repo>`) when they
+  disagree. Advisory check (does not block installs) — the CLI still
+  functions at the older version, just visibly.
+
 ## [0.10.0] — 2026-04-26
 
 Cleanup-roadmap closeout (Phases 0-8). User-visible CLI/slash changes

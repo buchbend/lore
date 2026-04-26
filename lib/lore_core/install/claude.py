@@ -143,6 +143,26 @@ def plan(ctx: InstallContext) -> list[Action]:
         )
     )
 
+    # 4. Detect Python-package version drift. The Claude plugin update
+    #    above refreshes the plugin (skills/hooks/MCP), but the Python
+    #    CLI binary is on a separate channel (pipx/uv/pip). When they
+    #    drift the user sees the *plugin's* new version in autocomplete
+    #    but the *binary's* old version in SessionStart's status line.
+    #    See issue #28.
+    actions.append(
+        Action(
+            kind=KIND_CHECK,
+            description="Verify lore CLI version matches the source tree",
+            target="lore CLI",
+            summary="importlib.metadata.version('lore') == pyproject.toml:version",
+            payload={
+                "check": "lore_version_match",
+                "lore_repo": str(ctx.lore_repo) if ctx.lore_repo else None,
+            },
+            on_failure="continue",  # advisory: report drift but don't abort the install
+        )
+    )
+
     return actions
 
 

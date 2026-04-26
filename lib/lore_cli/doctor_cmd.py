@@ -89,6 +89,31 @@ def _check_cache_writable(cwd: str) -> Check:
     return True, f"cache {cache} writable"
 
 
+def _check_lore_version_drift(cwd: str) -> Check:
+    """Compare the installed `lore` Python package version against the
+    on-disk source tree (auto-detected by walking up from this file).
+
+    See issue #28 — the Claude Code plugin and the Python CLI binary
+    are on separate update channels (`claude plugin update` vs
+    `pipx install`); drift between them causes SessionStart's status
+    line to silently show the *binary's* old version even after a
+    successful plugin update.
+    """
+    from lore_core.install._helpers import check_lore_version_match
+
+    # Find the source repo root by walking up from this file looking
+    # for a pyproject.toml. Returns None gracefully if running from a
+    # PyPI install (no source tree adjacent).
+    here = Path(__file__).resolve()
+    repo: Path | None = None
+    for ancestor in [here, *here.parents]:
+        if (ancestor / "pyproject.toml").is_file() and (ancestor / "lib").is_dir():
+            repo = ancestor
+            break
+
+    return check_lore_version_match(repo)
+
+
 def _check_hook_runnable(cwd: str) -> Check:
     """Run `lore hook session-start --plain --probe` and confirm it produces output.
 
@@ -267,6 +292,9 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     ("scope tree", _check_scope_tree, True),
     ("ledger buckets", _check_ledger_buckets, True),
     ("SessionStart hook", _check_hook_runnable, True),
+    # Advisory: version drift is informational. The CLI still functions
+    # at the older version; the user just sees a stale SessionStart line.
+    ("CLI version", _check_lore_version_drift, False),
     ("attach", _check_attach, False),
 ]
 

@@ -316,6 +316,66 @@ def check_lore_on_path() -> tuple[bool, str]:
     )
 
 
+def check_lore_version_match(
+    lore_repo: "Path | str | None" = None,
+) -> tuple[bool, str]:
+    """Compare the installed Python package version against the on-disk source.
+
+    Closes the install-side counterpart to ``tests/test_version_sync.py``:
+    that pytest guard catches drift between ``pyproject.toml``,
+    ``plugin.json``, and ``CHANGELOG.md`` *in the source tree*; this check
+    catches drift between the installed pipx/pip/uv binary and that
+    source tree on the user's machine.
+
+    The hook footgun: ``claude plugin update lore@lore`` refreshes the
+    Claude Code plugin (skills/hooks/MCP wiring) but does not reinstall
+    the Python ``lore`` CLI. SessionStart's status line reads via
+    ``importlib.metadata.version(\"lore\")`` — i.e. the installed binary
+    — so a stale binary silently shows the old version forever.
+
+    Returns (ok, message). The message includes a copy-pasteable fix
+    command tailored to the install method (editable vs. non-editable).
+    Returns (True, "...skipped...") when no on-disk source is available
+    to compare against (e.g. user installed from PyPI without a clone).
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        installed = version("lore")
+    except PackageNotFoundError:
+        return False, (
+            "lore Python package not installed in this environment. "
+            "Run: pipx install --force --editable <path-to-lore-repo>"
+        )
+
+    repo_path = Path(lore_repo).expanduser() if lore_repo else None
+    if repo_path is None or not (repo_path / "pyproject.toml").is_file():
+        return True, f"lore CLI version {installed} (no source tree to compare against)"
+
+    pyproject = repo_path / "pyproject.toml"
+    try:
+        import tomllib
+
+        on_disk = tomllib.loads(pyproject.read_text())["project"]["version"]
+    except (OSError, KeyError, tomllib.TOMLDecodeError) as exc:
+        return True, (
+            f"lore CLI version {installed} "
+            f"(could not read on-disk pyproject.toml: {exc})"
+        )
+
+    if installed == on_disk:
+        return True, f"lore CLI version {installed} (matches source)"
+
+    # The installed and on-disk versions disagree. Pick the right fix
+    # command based on whether the install looks editable or not.
+    fix_cmd = f"pipx install --force --editable {repo_path}"
+    return False, (
+        f"lore CLI version drift: installed {installed}, source at {repo_path} "
+        f"is {on_disk}. The Claude Code plugin will silently use the older "
+        f"installed binary for `lore hook session-start` etc. Run: {fix_cmd}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Canonical Lore MCP server entry — one source of truth for both hosts.
 # ---------------------------------------------------------------------------
@@ -569,6 +629,16 @@ def execute_action(action: Action, *, schema_version: str = "1") -> ApplyResult:
             if check == "lore_on_path":
                 ok, msg = check_lore_on_path()
                 return ApplyResult(ok=ok, error=None if ok else msg)
+            if check == "lore_version_match":
+                lore_repo = action.payload.get("lore_repo")
+                ok, msg = check_lore_version_match(lore_repo)
+                # Surface the message even when ok so the user sees
+                # the version they're running.
+                return ApplyResult(
+                    ok=ok,
+                    error=None if ok else msg,
+                    diff=msg if ok else None,
+                )
             if check == "binary_on_path":
                 bin_name = action.payload["args"]["binary"]
                 if shutil.which(bin_name):
