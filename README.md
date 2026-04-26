@@ -50,14 +50,20 @@ stay at the repo boundary; Obsidian sees one unified graph via symlinks.
 
 ## Install
 
-Three commands. Works on Linux + macOS in v1 (Windows tracked as a
-known gap).
+**This is the canonical install path. Everything below is for special cases
+(uninstall, marketplace, dev checkout, migration).** Three commands. Works on
+Linux + macOS in v1 (Windows tracked as a known gap).
 
 ```bash
-pipx install git+https://github.com/buchbend/lore.git   # the Python CLI
+pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"  # CLI + passive-capture extras
 lore install                                            # detect installed integrations, wire each
 lore init                                               # scaffold a vault + set $LORE_ROOT
 ```
+
+The `[capture]` extra adds the `claude-agent-sdk` + `anthropic` packages used
+by the curator to summarise transcripts. Drop it (`#egg=lore`) to install
+without LLM-driven capture; you'll still get retrieval, sessions, and
+briefings, just not auto-extraction.
 
 > **Note:** the bare `pipx install lore` form will *not* work — the
 > name `lore` is squatted on PyPI by an unrelated package. Use the
@@ -95,7 +101,7 @@ git clone https://github.com/buchbend/lore.git    # if you don't have a checkout
 cd lore
 python3 tools/undo_install_sh.py --dry-run        # preview what would change
 python3 tools/undo_install_sh.py                  # apply
-pipx install git+https://github.com/buchbend/lore.git   # install the new CLI
+pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"   # install the new CLI
 lore install                                      # then proceed cleanly
 ```
 
@@ -113,9 +119,9 @@ The repo is a self-describing marketplace:
 
 That alone gives you the plugin (hooks, skills, subagents, MCP) — it
 does not install the `lore` CLI itself. Run
-`pipx install git+https://github.com/buchbend/lore.git` separately,
-or use `lore install --integration claude` once `lore` is on your PATH
-(it'll subprocess `claude plugin install lore@lore` for you).
+`pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"`
+separately, or use `lore install --integration claude` once `lore` is on
+your PATH (it'll subprocess `claude plugin install lore@lore` for you).
 
 ### Dev install (editable, also the offline / air-gapped path)
 
@@ -134,25 +140,21 @@ abstracted daily by Curator B.
 ### Update from an older install
 
 ```bash
-cd /path/to/your/lore-checkout
-git pull origin main                         # or pull the branch with the passive-capture work
-pip install -e ".[capture]"                  # capture extras: claude-agent-sdk + anthropic
+pipx install --force "git+https://github.com/buchbend/lore.git#egg=lore[capture]"
 lore install                                 # re-wire hooks + skills (picks up new SessionEnd wiring)
 ```
 
-If you installed via `pipx`:
+For an editable dev checkout:
 
 ```bash
-pipx reinstall lore --force                  # rebuilds the editable install from your checkout
+cd /path/to/your/lore-checkout
+git pull origin main
+pip install -e ".[capture]"
+lore install
 ```
 
-### Fresh install
-
-```bash
-pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"
-lore init                                    # scaffold $LORE_ROOT
-lore install                                 # wire Claude Code hooks + skills
-```
+(Fresh installs follow [§ Install](#install) above — the `[capture]` extras
+are already part of the canonical command.)
 
 ### Attach a repo — one step per repo you work in
 
@@ -280,13 +282,20 @@ and add knobs only as you need them.
 ## Observability
 
 The capture pipeline writes structured logs so you can inspect what it did — and
-why. Three commands cover the common scenarios:
+why. Four commands cover the common scenarios:
 
 | Scenario | Command |
 |---|---|
+| **"Is Lore doing anything for me right now?"** | **`lore status`** |
 | "I had a session and no note appeared" | `lore runs show latest` |
 | "Hook plumbing feels off" | `lore doctor` |
 | "I'm tuning noteworthy/merge config" | `lore curator run --dry-run --trace-llm` |
+
+`lore status` is the first thing to run when you're wondering whether Lore is
+alive. It prints a 7-line activity-first dashboard: pending transcripts, last
+hook event time, last curator run, hook backlog age. Decay-ordered, loud-on-
+earning — silent lines mean nothing wrong, prominent lines mean attention
+warranted.
 
 `lore runs list` prints a table of recent curator runs. `lore runs show <id>`
 accepts the alias `latest`, carets `^1`..`^N`, the 6-char random suffix

@@ -550,8 +550,8 @@ def test_curator_a_unknown_integration_recorded(tmp_path):
     assert result.skipped_reasons.get("unknown_integration", 0) == 1
 
 
-def test_curator_a_no_anthropic_client_records_skip(tmp_path):
-    """llm_client=None; transcripts exist but LLM is not called; no_anthropic_client skip."""
+def test_curator_a_no_llm_client_records_skip(tmp_path):
+    """llm_client=None; transcripts exist but LLM is not called; no_llm_client skip."""
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
     _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
@@ -572,7 +572,7 @@ def test_curator_a_no_anthropic_client_records_skip(tmp_path):
         now=_NOW,
     )
 
-    assert result.skipped_reasons.get("no_anthropic_client", 0) >= 1
+    assert result.skipped_reasons.get("no_llm_client", 0) >= 1
     sessions_dir = tmp_path / "wiki" / "private" / "sessions"
     assert not sessions_dir.exists() or list(sessions_dir.rglob("*.md")) == []
 

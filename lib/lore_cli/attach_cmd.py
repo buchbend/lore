@@ -15,7 +15,6 @@ and by ``lore detach`` to strip legacy ``## Lore`` CLAUDE.md sections.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 

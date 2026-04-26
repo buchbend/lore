@@ -10,6 +10,63 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.10.5] — 2026-04-26
+
+Phase 9b — P1 quick wins from the multi-agent review synthesis. No new
+features; cleanup the Phases 0–8 sweep missed plus README polish.
+
+### Fixed
+
+- **Telemetry leaked vendor naming** — `skip_reason="no_anthropic_client"`
+  (and the matching log event `reason="no-anthropic-client"`) survived
+  Phase 0's `anthropic_client → llm_client` rename in two places
+  (`lib/lore_curator/session_curator.py:385`, `lib/lore_curator/daily_curator.py:83`).
+  Renamed to `no_llm_client` / `no-llm-client`. The whole point of
+  Phase 0 was to stop spelling "anthropic" in user-facing telemetry.
+
+- **Legacy SessionStart cache writer was perpetually populated.** The
+  pre-PID-keying cache file `last-session-start.md` was documented as
+  "deprecated, read-only fallback" since 0.9.0, but `hooks.py:996-999`
+  kept overwriting it on every SessionStart. Its mtime never aged out,
+  so the deprecation could never fire. Removed the writer; the read-
+  fallback in `_context_log` stays for one release and drops in 0.11.0.
+
+### Removed
+
+- **`lore_search/backend.py`** (-57 LOC). The `LoreBackend` Protocol had
+  one implementer (`FtsBackend`) and zero typed consumers — every
+  caller imported `FtsBackend` directly. Moved `SearchHit` next to
+  `FtsBackend` in `fts.py`. When a second backend lands (Qdrant, Chroma,
+  …), reintroduce the Protocol *with* the second implementer in the same
+  patch, not before.
+
+### Internal
+
+- **`ruff --select F401` sweep** removed 35 unused imports across `lib/`
+  (`lore_adapters/cursor_agent.py`, `lore_curator/session_curator.py`,
+  `lore_curator/daily_curator.py`, etc.). No behaviour change.
+
+### Documentation
+
+- **README install path unified.** The canonical install used to live in
+  `## Install`, but `## Bootstrap > Fresh install` re-instructed with a
+  different ordering and `[capture]` extras, and `## As a Claude Code
+  plugin (via marketplace)` added a third path. New: `## Install` is
+  the single canonical block (with `[capture]` extras as default);
+  `Fresh install` was removed in favour of a back-link; `Update from
+  an older install` now mirrors the canonical command.
+
+- **README Observability now leads with `lore status`.** The previous
+  three-row table mentioned `lore runs show latest` but not the
+  exemplary 7-line activity-first dashboard `lore status` — promoted
+  to the first row with the framing "Is Lore doing anything for me
+  right now?" plus a one-paragraph explainer.
+
+- **CONTRIBUTING broken link removed.** Internal artifact (a
+  `~/.claude/plans/give-these-considerations-to-melodic-castle.md`
+  reference) leaked into the public file in a prior commit. Replaced
+  with a generic "PR description / docs/REVIEW-*.md" pointer.
+
 ## [0.10.4] — 2026-04-26
 
 Phase 9c — second half of the host → integration rename. 0.10.3 covered

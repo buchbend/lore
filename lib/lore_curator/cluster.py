@@ -1,8 +1,7 @@
 """Cluster step — group recent session notes by scope+topic via middle-tier LLM."""
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 

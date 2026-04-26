@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -381,8 +380,8 @@ def _process_entry(
 
     if llm_client is None:
         if logger is not None:
-            logger.emit("skip", transcript_id=entry.transcript_id, reason="no-anthropic-client")
-        return [_Outcome(skip_reason="no_anthropic_client", wiki_name=attached.wiki)]
+            logger.emit("skip", transcript_id=entry.transcript_id, reason="no-llm-client")
+        return [_Outcome(skip_reason="no_llm_client", wiki_name=attached.wiki)]
 
     # Cross-scope bleed guard runs over the full slice (not per chunk) —
     # the work happened in whatever wiki the file paths point at, regardless

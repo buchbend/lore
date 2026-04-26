@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.table import Table
 
 app = typer.Typer(
     add_completion=False,

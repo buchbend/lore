@@ -20,7 +20,7 @@ Conservative:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, date as _date
+from datetime import datetime, date as _date
 from pathlib import Path
 from typing import Any
 

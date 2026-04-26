@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
 
 from lore_core.io import atomic_write_text
-from lore_core.surfaces import load_surfaces, SurfaceDef
+from lore_core.surfaces import load_surfaces
 
 console = Console()
 err_console = Console(stderr=True)

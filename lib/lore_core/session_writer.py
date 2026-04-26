@@ -54,7 +54,6 @@ _TRANSCRIPTS_CAP = 20
 # previous private names for backward compat with any external callers.
 from lore_core.topic_files import (
     BOILERPLATE_FILES as _TOPIC_BOILERPLATE_FILES,  # noqa: F401
-    basename as _basename,
     strip_boilerplate as _strip_boilerplate,
 )
 

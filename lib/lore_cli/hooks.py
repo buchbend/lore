@@ -82,19 +82,13 @@ def _cache_path_for_pid(pid: int) -> Path:
 
 
 def _legacy_cache_path() -> Path:
-    """Pre-PID-keying cache path; kept as a last-resort fallback.
+    """Pre-PID-keying cache path; read-only fallback.
 
-    .. deprecated:: 0.9.0
-       The PID-keyed cache (introduced 2026-04 alongside
-       per-Claude-session isolation) is the only path new sessions
-       write to. This fallback is read-only and exists so a fresh
-       ``/lore:context`` invocation in an upgraded environment still
-       returns *something* if the previous session was on the old
-       layout. Safe to delete in a future 0.x release after enough
-       time has passed for every active environment to have produced
-       at least one PID-keyed cache; at that point also drop the
-       read-fallback in ``_context_log()`` (~line 861) and the legacy
-       write at ``_append_context_log`` (~line 960).
+    .. deprecated:: 0.10.5
+       0.10.5 removed the writer. The reader fallback in ``_context_log``
+       remains for one release so an upgraded environment can still
+       surface a stale legacy cache instead of an empty page; that
+       fallback is scheduled for removal in 0.11.0.
     """
     return _cache_dir() / "last-session-start.md"
 
@@ -991,10 +985,6 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
         cc_pid = _claude_code_pid() or os.getppid()
         try:
             atomic_write_text(_cache_path_for_pid(cc_pid), log_text)
-        except OSError:
-            pass
-        try:
-            atomic_write_text(_legacy_cache_path(), log_text)
         except OSError:
             pass
         try:

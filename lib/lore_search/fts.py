@@ -26,7 +26,19 @@ from lore_core.lint import (
 )
 from lore_core.schema import parse_frontmatter
 
-from lore_search.backend import SearchHit
+
+@dataclass
+class SearchHit:
+    """One ranked result from a backend query."""
+
+    path: str  # relative to wiki root
+    wiki: str
+    filename: str
+    score: float
+    description: str | None = None
+    tags: list[str] | None = None
+    snippet: str | None = None
+
 
 DEFAULT_CACHE = Path.home() / ".cache" / "lore"
 RRF_K = 60
@@ -197,7 +209,7 @@ def _note_record(wiki: str, wiki_root: Path, path: Path) -> NoteRecord | None:
 
 
 class FtsBackend:
-    """SQLite FTS5 implementation of LoreBackend."""
+    """SQLite FTS5 search backend."""
 
     name = "fts5"
 

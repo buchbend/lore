@@ -13,7 +13,6 @@ vocabulary stays stable; user-visible labels can evolve freely.
 """
 from __future__ import annotations
 
-import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

@@ -171,11 +171,11 @@ python -m pytest          # full suite
 python -m pytest tests/test_install_*.py -v   # installer-only
 ```
 
-The plan covers 13 verification cases for end-to-end testing on a
-clean container — see the project's
-[`/home/<you>/.claude/plans/give-these-considerations-to-melodic-castle.md`](https://github.com/buchbend/lore)
-(or any branch's PR description if it lands as a doc) for the full
-checklist.
+For end-to-end testing on a clean container, the canonical checklist
+lives in the PR description that lands a release (or in
+`docs/REVIEW-*.md` when one is written). If you're cutting a release,
+spin up a fresh container, run the canonical install path from the
+README, and verify hooks fire on a real Claude Code session.
 
 ## Things to avoid
 

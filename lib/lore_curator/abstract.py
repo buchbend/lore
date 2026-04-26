@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from lore_curator.cluster import Cluster
-from lore_core.surfaces import SurfacesDoc, SurfaceDef
+from lore_core.surfaces import SurfacesDoc
 
 
 _HIGH_OFF_WARNING_ID = "abstract-high-tier-off-v1"

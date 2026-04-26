@@ -17,7 +17,6 @@ from __future__ import annotations
 from lore_core.install import _helpers
 from lore_core.install.base import (
     KIND_CHECK,
-    KIND_MERGE,
     KIND_RUN,
     Action,
     InstallContext,

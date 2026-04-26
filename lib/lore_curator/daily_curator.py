@@ -1,13 +1,12 @@
 """Curator B pipeline — cluster → abstract → file surfaces per wiki."""
 from __future__ import annotations
 
-import logging
 import os
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from lore_core.io import atomic_write_text
 from lore_core.ledger import WikiLedger, WikiLedgerEntry
@@ -16,9 +15,9 @@ from lore_core.run_log import RunLogger
 from lore_core.schema import parse_frontmatter
 from lore_core.surfaces import SurfacesDoc, load_surfaces, load_surfaces_or_default
 from lore_core.wiki_config import WikiConfig, load_wiki_config
-from lore_curator.abstract import AbstractedSurface, abstract_cluster
-from lore_curator.cluster import Cluster, cluster_session_notes
-from lore_curator.surface_filer import FiledSurface, file_surface
+from lore_curator.abstract import abstract_cluster
+from lore_curator.cluster import cluster_session_notes
+from lore_curator.surface_filer import file_surface
 
 
 @dataclass
@@ -80,8 +79,8 @@ def run_curator_b(
             return result
 
         if llm_client is None:
-            result.skipped_reasons["no_anthropic_client"] = 1
-            logger.emit("skip", reason="no_anthropic_client")
+            result.skipped_reasons["no_llm_client"] = 1
+            logger.emit("skip", reason="no_llm_client")
             result.duration_seconds = time.monotonic() - start
             return result
 

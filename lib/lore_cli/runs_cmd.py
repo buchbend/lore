@@ -67,7 +67,6 @@ def list_runs(
     json_out: bool = typer.Option(False, "--json", help="Print raw JSONL."),
 ) -> None:
     """List recent runs (most recent first)."""
-    from datetime import UTC, datetime
     from rich.table import Table
 
     lore_root = _get_lore_root()

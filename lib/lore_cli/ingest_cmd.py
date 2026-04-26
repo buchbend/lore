@@ -39,7 +39,6 @@ def ingest(
     """Read a JSONL transcript and upsert a sidecar ledger entry."""
     from lore_adapters import get_adapter
     from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
-    from lore_core.types import TranscriptHandle
 
     lore_root_str = os.environ.get("LORE_ROOT", "")
     if not lore_root_str:

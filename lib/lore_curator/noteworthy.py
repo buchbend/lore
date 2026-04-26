@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
-from lore_core.noteworthy_features import CascadeVerdict, classify_cascade
+from lore_core.noteworthy_features import classify_cascade
 from lore_core.redaction import redact
 from lore_core.types import Turn
 from lore_curator.llm_client import LlmClient

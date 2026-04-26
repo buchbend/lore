@@ -485,7 +485,7 @@ def test_curator_b_lock_contention_records_skip(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_curator_b_no_anthropic_client_records_skip(tmp_path):
+def test_curator_b_no_llm_client_records_skip(tmp_path):
     _setup_wiki(tmp_path)
 
     from lore_curator.daily_curator import run_curator_b
@@ -497,7 +497,7 @@ def test_curator_b_no_anthropic_client_records_skip(tmp_path):
         now=_NOW,
     )
 
-    assert result.skipped_reasons.get("no_anthropic_client", 0) >= 1
+    assert result.skipped_reasons.get("no_llm_client", 0) >= 1
     # No surfaces written
     concepts_dir = tmp_path / "wiki" / "private" / "concepts"
     assert not concepts_dir.exists() or list(concepts_dir.glob("*.md")) == []

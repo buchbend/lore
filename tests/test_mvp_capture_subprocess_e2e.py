@@ -325,6 +325,6 @@ def test_e2e_subprocess_backend_binary_missing_path(
 
     # The transcript was considered but skipped due to missing client.
     assert curator_result.transcripts_considered >= 1
-    assert "no_anthropic_client" in curator_result.skipped_reasons, (
-        f"Expected 'no_anthropic_client' skip reason, got {curator_result.skipped_reasons}"
+    assert "no_llm_client" in curator_result.skipped_reasons, (
+        f"Expected 'no_llm_client' skip reason, got {curator_result.skipped_reasons}"
     )
