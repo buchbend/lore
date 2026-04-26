@@ -10,6 +10,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Changed
+
+- **Slash command renamed**: `/lore:surface-new` → `/lore:surface-add`
+  for symmetry with the CLI verb (`lore surface add`). The skill
+  directory `skills/surface-new/` was renamed to `skills/surface-add/`
+  and `lore surface add` now exec's the new slash. Users with muscle
+  memory for the old name will see autocomplete suggest `surface-add`
+  instead.
+- **Skill cleanup** (Phase 4): `skills/lint/SKILL.md` and
+  `skills/curator/SKILL.md` now invoke the `lore` CLI directly
+  (`lore lint`, `lore curator`, `lore migrate`) instead of leaking the
+  internal `python -m lore_core.lint` / `python -m lore_cli curator`
+  package paths. A new pytest guard
+  (`tests/test_skill_cli_drift.py`) prevents future drift.
+
 ## [0.9.0] — 2026-04-25
 
 Surface-extraction quality push (full notes in

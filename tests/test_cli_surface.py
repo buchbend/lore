@@ -26,7 +26,7 @@ def _make_surfaces_md(wiki_dir: Path, content: str) -> Path:
 
 
 def test_surface_add_launcher_execs_claude_with_skill_and_wiki(tmp_path, monkeypatch):
-    """`lore surface add --wiki X` exec's `claude "/lore:surface-new X"`."""
+    """`lore surface add --wiki X` exec's `claude "/lore:surface-add X"`."""
     import os
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     (tmp_path / "wiki" / "science").mkdir(parents=True)
@@ -42,7 +42,7 @@ def test_surface_add_launcher_execs_claude_with_skill_and_wiki(tmp_path, monkeyp
     monkeypatch.setenv("PATH", f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
     result = runner.invoke(app, ["add", "--wiki", "science"])
     assert result.exit_code == 0, result.output + result.stderr
-    assert record_file.read_text().strip() == "/lore:surface-new science"
+    assert record_file.read_text().strip() == "/lore:surface-add science"
 
 
 def test_surface_add_launcher_missing_claude_prints_helpful_error(tmp_path, monkeypatch):

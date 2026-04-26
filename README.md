@@ -193,7 +193,7 @@ to author and maintain it:
   skill in Claude Code. Guided holistic design — one open question,
   full synthesis, per-surface refinement, hybrid commit.
 - **Add one new surface (interactive, LLM-guided):**
-  `lore surface add --wiki <name>` drops into `/lore:surface-new`.
+  `lore surface add --wiki <name>` drops into `/lore:surface-add`.
   Proposes a full draft from one open question with semantic-overlap
   detection against existing surfaces.
 - **Scripted / automation / no-LLM:** write a `draft.json`

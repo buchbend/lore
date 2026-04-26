@@ -72,11 +72,11 @@ def cmd_add(
     ctx: typer.Context,
     wiki: str | None = typer.Option(None, "--wiki", help="Wiki name. Overrides group-level --wiki."),
 ) -> None:
-    """Drop into the /lore:surface-new skill to author a new surface interactively."""
+    """Drop into the /lore:surface-add skill to author a new surface interactively."""
     wiki = wiki or (ctx.obj or {}).get("wiki")
     wiki_dir = _resolve_wiki_dir(wiki)
     wiki_name = wiki_dir.name
-    _launch_claude_skill(f"/lore:surface-new {wiki_name}")
+    _launch_claude_skill(f"/lore:surface-add {wiki_name}")
 
 
 def _launch_claude_skill(slash_command: str) -> None:

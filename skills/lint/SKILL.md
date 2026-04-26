@@ -10,7 +10,7 @@ user_invocable: true
 
 ## What this skill does
 
-1. Runs `lore_core.lint` to scan all wikis, check health, regenerate
+1. Runs `lore lint` to scan all wikis, check health, regenerate
    catalogs + indexes (including `llms.txt` for forward compatibility
    with the emerging convention).
 2. Interprets the report and offers auto-fixes for safe issues.
@@ -18,7 +18,7 @@ user_invocable: true
 ## Step 1 — Run the linter
 
 ```bash
-python -m lore_core.lint --json
+lore lint --json
 ```
 
 Outputs a JSON report with all issues. Also writes per-wiki (atomic):
@@ -29,10 +29,10 @@ Outputs a JSON report with all issues. Also writes per-wiki (atomic):
 ### CLI options
 
 ```bash
-python -m lore_core.lint                  # full lint + regenerate outputs
-python -m lore_core.lint --check-only     # lint only, no writes
-python -m lore_core.lint --wiki <name>    # scope to one wiki
-python -m lore_core.lint --json           # output report as JSON
+lore lint                  # full lint + regenerate outputs
+lore lint --check-only     # lint only, no writes
+lore lint --wiki <name>    # scope to one wiki
+lore lint --json           # output report as JSON
 ```
 
 ## Step 2 — Interpret and fix
@@ -42,7 +42,7 @@ Read the JSON output. Summarize findings by wiki and severity.
 ### Auto-fixable (offer to the user)
 
 - **Missing `schema_version`**: run
-  `python -m lore_core.migrate --add-schema-version --apply` to backfill
+  `lore migrate --add-schema-version --apply` to backfill
   all notes at once
 - **Missing `last_reviewed`** / **`created`**: infer from
   `git log --follow`
@@ -66,13 +66,13 @@ Read the JSON output. Summarize findings by wiki and severity.
 ## Migrations
 
 When the plugin introduces a new schema field (like `schema_version` in
-v1 or `repos:` later), a migration script in `lore_core.migrate`
+v1 or `repos:` later), a migration script invoked via `lore migrate`
 backfills existing notes. All migrations are idempotent and dry-run by
 default; require `--apply` to write.
 
 ```bash
-python -m lore_core.migrate --add-schema-version            # dry-run
-python -m lore_core.migrate --add-schema-version --apply    # write
+lore migrate --add-schema-version            # dry-run
+lore migrate --add-schema-version --apply    # write
 ```
 
 ## What the catalogs enable

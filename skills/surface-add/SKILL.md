@@ -1,9 +1,9 @@
 ---
-name: lore:surface-new
+name: lore:surface-add
 description: Add a new surface to a wiki's SURFACES.md via an LLM-guided
   conversation. Proposes a full draft from one open question, allows
   per-field deepening, commits via `lore surface commit <draft.json>`.
-  Run with "/lore:surface-new <wiki>".
+  Run with "/lore:surface-add <wiki>".
 user_invocable: true
 ---
 
@@ -13,7 +13,7 @@ Guide the user through adding a new surface to `$LORE_ROOT/wiki/<wiki>/SURFACES.
 
 ## Arguments
 
-`/lore:surface-new <wiki>` — the positional is the wiki name (e.g. `science`).
+`/lore:surface-add <wiki>` — the positional is the wiki name (e.g. `science`).
 
 If the wiki name is missing, ask the user once before starting.
 

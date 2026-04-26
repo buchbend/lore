@@ -73,7 +73,7 @@ Ask:
 
 **Refine one surface:**
 1. Ask which surface.
-2. Run a mini-loop like `/lore:surface-new` for that one surface only (open question → synthesize → validate → present just that section → accept or deepen).
+2. Run a mini-loop like `/lore:surface-add` for that one surface only (open question → synthesize → validate → present just that section → accept or deepen).
 3. Update the surface inside the init draft; preserve all others unchanged.
 4. Return to Step 4.
 
@@ -84,7 +84,7 @@ Ask:
 
 ## Error handling, rules
 
-Same as `/lore:surface-new`:
+Same as `/lore:surface-add`:
 
 - Never edit SURFACES.md directly.
 - Never say "Curator B"; say "Curator".

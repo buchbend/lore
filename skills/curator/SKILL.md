@@ -45,10 +45,10 @@ without user approval):
 git -C $LORE_ROOT/wiki/<wiki> pull --ff-only
 
 # 1. Dry run — review what would change
-python -m lore_cli curator --wiki <wiki>
+lore curator --wiki <wiki>
 
 # 2. Apply
-python -m lore_cli curator --wiki <wiki> --apply
+lore curator --wiki <wiki> --apply
 
 # 3. Commit
 git -C $LORE_ROOT/wiki/<wiki> add -A

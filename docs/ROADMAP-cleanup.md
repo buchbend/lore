@@ -17,7 +17,7 @@
 - ☑ **Phase 1** — Layering fence (`lore_cli` decomposition) *(2026-04-25)*
 - ☑ **Phase 2** — Config map + state map + `require_lore_root()` *(2026-04-25)*
 - ☑ **Phase 3** — Hook hygiene (pid_alive, except audit, lockfile docs) *(2026-04-26)*
-- ☐ **Phase 4** — Naming + concept consolidation
+- ☑ **Phase 4** — Skill ↔ CLI drift fix + surface-add slash rename *(2026-04-26)*
 - ☐ **Phase 5** — UX polish
 - ☐ **Phase 6** — Test hygiene + curator decomposition
 - ☐ **Phase 7** — Performance + scaling prep *(optional)*
@@ -437,20 +437,102 @@ No regressions.
 
 ---
 
-## Phase 4 — Naming + concept consolidation *(sketch)*
+## Phase 4 — Skill ↔ CLI drift fix + surface-add slash rename
 
-**Status:** ☐ pending — **not yet planned in detail.**
+**Status:** ☑ completed 2026-04-26
+**Estimated session length:** 1 sitting
 
-### Sketch
-Curator A/B/C → role-named modules (e.g. `session_curator.py` / `daily_curator.py` / `defrag_curator.py`) so code matches user-facing copy. Decide the surface taxonomy: are `concept`/`decision`/`result` deprecated by surfaces? Document the cut and update README. CLI verb consistency: `lore surface add` ↔ `/lore:surface-add` (drop `-new`). Reconsider `new-wiki` → `wiki new`. Skills cite `lore lint` not `python -m lore_core.lint`.
+### Refined scope (made during the planning sub-step)
 
-### Refine before starting
-- Decide naming for the three curators (role names that survive future surfaces).
-- Decide the surfaces-vs-concept/decision/result cut — is it a rename, a deprecation, or a parallel taxonomy?
-- Plan migration for existing notes that have the old types in frontmatter.
+The original sketch packaged five concerns: curator A/B/C rename,
+surface-vs-concept/decision/result deprecation, `new-wiki` →
+`wiki new`, surface-new → surface-add slash, skill ↔ CLI drift.
+After verifying each claim against the actual code:
 
-### Session log
-*(empty)*
+- **Curator A/B/C rename**: cosmetic — the role mapping is *already*
+  documented in `lore_curator/__init__.py`'s docstring. Renaming
+  modules would touch ~200 import sites for zero behavioural gain
+  and high risk of breaking tests that mock helpers by name.
+  **Deferred** — the docstring serves the user-mental-model purpose.
+- **`concept`/`decision`/`result` deprecated by surfaces**: claim was
+  **wrong**. Verified by grepping the live vault: 30+ active notes
+  with `type: concept`. Surfaces and the older types coexist —
+  surfaces are template-driven extraction; concept/decision/result
+  are direct hand-written types. Both are valid and there's nothing
+  to deprecate.
+- **`new-wiki` → `wiki new`**: cosmetic. Real users have muscle
+  memory for `lore new-wiki` and external scripts; renaming requires
+  a deprecation cycle (alias both, warn, eventually remove). High
+  friction for low payoff. **Deferred**.
+- **Skill drift** (`python -m lore_core.lint` etc.): real, small,
+  load-bearing for skill UX (skills currently leak internal package
+  paths). **Done.**
+- **`/lore:surface-new` → `/lore:surface-add`**: real CLI/slash
+  asymmetry. Small fix. **Done.**
+
+### Landed
+
+- **Skill drift cleared.** `skills/lint/SKILL.md` (5 sites) now uses
+  `lore lint` instead of `python -m lore_core.lint`; 3 sites use
+  `lore migrate` instead of `python -m lore_core.migrate`.
+  `skills/curator/SKILL.md` (2 sites) uses `lore curator` instead of
+  `python -m lore_cli curator`. Both verified via `lore <verb>
+  --help` to confirm flags match.
+- **Slash rename: `/lore:surface-new` → `/lore:surface-add`.**
+  Renamed `skills/surface-new/` → `skills/surface-add/` with `git
+  mv` (history preserved). Updated SKILL.md `name:` frontmatter,
+  body references, cross-references in `surface-init/SKILL.md` and
+  `README.md`, and the launcher in `lib/lore_cli/surface_cmd.py:79`
+  (which exec's `claude "/lore:surface-add <wiki>"` now). Existing
+  test in `tests/test_cli_surface.py` updated to assert the new
+  invocation. CHANGELOG entry added (user-visible slash-autocomplete
+  change).
+- **Drift guard test** (`tests/test_skill_cli_drift.py`, 2 tests):
+  static check that no SKILL.md re-introduces `python -m lore_<x>`,
+  plus a heuristic scanner that flags possible CLI verb drift
+  against the live `lore --help` output. Catches future drift
+  without manual maintenance.
+
+**Tests:** 1486 → 1488 passing (+2 drift guard). No regressions.
+
+### Deliberate deferrals (recorded for future)
+
+- **Curator A/B/C module rename.** ~200 import sites; the role
+  mapping is already documented in `__init__.py`. Revisit only if
+  a refactor in another phase produces an organic reason to touch
+  those modules en masse.
+- **`new-wiki` → `wiki new` CLI rename.** Needs a deprecation cycle
+  (alias both for ≥1 release, warn-on-old, eventually remove).
+  Plan that once 1.0 is on the horizon — pre-1.0 these renames are
+  legitimate but post-1.0 they need user comms.
+
+### Surprised
+
+- The "concept/decision/result vs surfaces" claim was inverted —
+  the review framed them as duplicating each other; reading the
+  vault showed they're a parallel taxonomy. Direct types
+  (concept/decision/result) are hand-written or extracted-without-
+  template; surfaces are template-driven. Neither replaces the
+  other. Recording this so future reviewers don't re-flag it.
+- `lore_curator/__init__.py` already had a clean docstring mapping
+  Curator A → session notes, B → surface extraction, C → weekly
+  defrag/converge. The "code identifiers don't match user copy"
+  concern was addressed by docs *before* I got there — typical for
+  a project that writes its own dogfood.
+- Slash command rename was small (4 files + 1 changelog) but the
+  cross-references took some chasing. Glad I checked
+  `surface_cmd.py:79` and the existing test before declaring done
+  — the launcher would have shipped pointing at a non-existent
+  slash otherwise.
+
+### Scope refinements for Phase 5
+
+- Phase 5 is UX polish (SessionStart reorder, MCP error envelopes,
+  help-grouping). Phase 4's slash-rename is a precedent for the
+  kind of small user-visible churn Phase 5 will involve.
+- The drift guard added in Phase 4 is the test pattern for Phase 5
+  too — when reordering SessionStart or standardising MCP errors,
+  add static tests that pin down the new shape.
 
 ---
 
