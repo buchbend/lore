@@ -151,7 +151,7 @@ def _minimal_curator_a_setup(tmp_path: Path):
     tledger = TranscriptLedger(tmp_path)
     tledger.upsert(
         TranscriptLedgerEntry(
-            host="fake",
+            integration="fake",
             transcript_id="txn-001",
             path=transcript_path,
             directory=project_dir,
@@ -344,7 +344,7 @@ def test_banner_renders_real_last_curator_time(tmp_path: Path) -> None:
     tledger = TranscriptLedger(tmp_path)
     tledger.upsert(
         TranscriptLedgerEntry(
-            host="fake",
+            integration="fake",
             transcript_id="t1",
             path=project / "t.jsonl",
             directory=project,

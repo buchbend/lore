@@ -17,7 +17,7 @@ from lore_core.types import Scope, Turn
 
 
 class FakeAdapter:
-    host = "fake"
+    integration = "fake"
 
     def __init__(self, turns):
         self._turns = turns
@@ -147,14 +147,14 @@ def _seed_ledger(
     project_dir: Path,
     transcript_path: Path,
     *,
-    host: str = "fake",
+    integration: str = "fake",
     transcript_id: str = "txn-001",
     digested_hash: str | None = None,
 ) -> TranscriptLedger:
     """Seed the ledger with one pending entry."""
     ledger = TranscriptLedger(lore_root)
     entry = TranscriptLedgerEntry(
-        host=host,
+        integration=integration,
         transcript_id=transcript_id,
         path=transcript_path,
         directory=project_dir,
@@ -188,7 +188,7 @@ def _setup_wiki(lore_root: Path, wiki_name: str = "private", *, threshold: int =
 
 def _make_adapter_lookup(adapter: FakeAdapter):
     def lookup(host: str):
-        if host == adapter.host:
+        if host == adapter.integration:
             return adapter
         raise KeyError(f"unknown host: {host!r}")
     return lookup
@@ -420,7 +420,7 @@ def test_curator_a_skips_unattached_directory(tmp_path):
     from lore_core.ledger import TranscriptLedgerEntry
 
     entry = TranscriptLedgerEntry(
-        host="fake",
+        integration="fake",
         transcript_id="txn-unattached",
         path=transcript_path,
         directory=project_dir,
@@ -470,7 +470,7 @@ def test_curator_a_requested_scope_filters(tmp_path):
         from lore_core.ledger import TranscriptLedgerEntry
 
         e = TranscriptLedgerEntry(
-            host="fake",
+            integration="fake",
             transcript_id=tid,
             path=tp,
             directory=proj_dir,
@@ -507,8 +507,8 @@ def test_curator_a_requested_scope_filters(tmp_path):
     assert result.noteworthy_count == 1
 
 
-def test_curator_a_unknown_host_recorded(tmp_path):
-    """Entry with unknown host → adapter_lookup raises → skipped_reasons['unknown_host'] == 1."""
+def test_curator_a_unknown_integration_recorded(tmp_path):
+    """Entry with unknown host → adapter_lookup raises → skipped_reasons['unknown_integration'] == 1."""
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
     _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
@@ -521,7 +521,7 @@ def test_curator_a_unknown_host_recorded(tmp_path):
     from lore_core.ledger import TranscriptLedgerEntry
 
     entry = TranscriptLedgerEntry(
-        host="nonexistent",
+        integration="nonexistent",
         transcript_id="txn-bad-host",
         path=transcript_path,
         directory=project_dir,
@@ -547,7 +547,7 @@ def test_curator_a_unknown_host_recorded(tmp_path):
         now=_NOW,
     )
 
-    assert result.skipped_reasons.get("unknown_host", 0) == 1
+    assert result.skipped_reasons.get("unknown_integration", 0) == 1
 
 
 def test_curator_a_no_anthropic_client_records_skip(tmp_path):
@@ -923,7 +923,7 @@ def test_curator_a_orphan_directory_marks_entry_orphan(tmp_path):
 
     ledger = TranscriptLedger(tmp_path)
     entry = TranscriptLedgerEntry(
-        host="fake",
+        integration="fake",
         transcript_id="orph-1",
         path=gone_dir / "transcript.jsonl",
         directory=gone_dir,

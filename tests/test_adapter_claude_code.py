@@ -62,7 +62,7 @@ def _msg_event(role: str, content, *, session_id: str = "s1", ts: str | None = N
 
 def _make_handle(session_id: str, path: Path, cwd: Path) -> TranscriptHandle:
     return TranscriptHandle(
-        host="claude-code",
+        integration="claude-code",
         id=session_id,
         path=path,
         cwd=cwd,
@@ -78,7 +78,7 @@ def _make_handle(session_id: str, path: Path, cwd: Path) -> TranscriptHandle:
 def test_host_attribute_is_claude_code():
     from lore_adapters.claude_code import ClaudeCodeAdapter
 
-    assert ClaudeCodeAdapter.host == "claude-code"
+    assert ClaudeCodeAdapter.integration == "claude-code"
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ def test_list_transcripts_returns_handles_from_disk(fake_home, tmp_path):
     ids = sorted(h.id for h in handles)
     assert ids == ["abc", "def"]
     for h in handles:
-        assert h.host == "claude-code"
+        assert h.integration == "claude-code"
         assert h.cwd == cwd
         assert h.path.exists()
         assert h.path.suffix == ".jsonl"
@@ -265,7 +265,7 @@ def test_iter_turns_unknown_block_goes_to_host_extras(fake_home, tmp_path):
     )
     turns = list(adapter._iter_turns(handle))
     assert len(turns) == 1
-    assert turns[0].host_extras.get("claude_code.unknown_block") == block
+    assert turns[0].integration_extras.get("claude_code.unknown_block") == block
 
 
 def test_iter_turns_skips_non_user_assistant_event_types(fake_home, tmp_path):

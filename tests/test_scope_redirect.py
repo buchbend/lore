@@ -213,7 +213,7 @@ class TestScopeRedirectFrontmatter:
         (wiki_dir / "sessions").mkdir(parents=True)
 
         handle = TranscriptHandle(
-            host="fake", id="txn-001",
+            integration="fake", id="txn-001",
             path=tmp_path / "t.jsonl", cwd=tmp_path,
             mtime=_NOW,
         )
@@ -246,7 +246,7 @@ class TestScopeRedirectFrontmatter:
         (wiki_dir / "sessions").mkdir(parents=True)
 
         handle = TranscriptHandle(
-            host="fake", id="txn-002",
+            integration="fake", id="txn-002",
             path=tmp_path / "t.jsonl", cwd=tmp_path,
             mtime=_NOW,
         )

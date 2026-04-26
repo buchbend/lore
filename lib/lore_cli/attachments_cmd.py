@@ -183,7 +183,7 @@ def cmd_purge_unattached(
     for entry in unattached:
         try:
             ledger.stamp_scan(
-                host=entry.host,
+                integration=entry.integration,
                 transcript_id=entry.transcript_id,
                 curator_a_run=now,
                 orphan=True,

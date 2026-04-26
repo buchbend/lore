@@ -69,7 +69,7 @@ class CursorAgentAdapter:
     convention.
     """
 
-    host = "cursor"
+    integration = "cursor"
 
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         slug = _slug_for_cwd(Path(directory))
@@ -89,7 +89,7 @@ class CursorAgentAdapter:
                     continue
                 out.append(
                     TranscriptHandle(
-                        host=self.host,
+                        integration=self.integration,
                         id=agent_dir.name,
                         path=jsonl,
                         cwd=Path(directory),
@@ -159,7 +159,7 @@ class CursorAgentAdapter:
             if isinstance(content, str):
                 yield Turn(
                     index=index, timestamp=ts, role=role, text=content,
-                    host_extras={},
+                    integration_extras={},
                 )
                 index += 1
                 continue
@@ -167,7 +167,7 @@ class CursorAgentAdapter:
             if not isinstance(content, list):
                 yield Turn(
                     index=index, timestamp=ts, role=role,
-                    host_extras={"cursor.raw_content": content},
+                    integration_extras={"cursor.raw_content": content},
                 )
                 index += 1
                 continue
@@ -176,7 +176,7 @@ class CursorAgentAdapter:
                 if not isinstance(block, dict):
                     yield Turn(
                         index=index, timestamp=ts, role=role,
-                        host_extras={"cursor.raw_block": block},
+                        integration_extras={"cursor.raw_block": block},
                     )
                     index += 1
                     continue
@@ -185,7 +185,7 @@ class CursorAgentAdapter:
                     yield Turn(
                         index=index, timestamp=ts, role=role,
                         text=block.get("text"),
-                        host_extras={},
+                        integration_extras={},
                     )
                 elif btype in ("tool-call", "tool_use"):
                     tool_name = block.get("toolName") or block.get("name", "")
@@ -195,9 +195,9 @@ class CursorAgentAdapter:
                             name=tool_name,
                             input=block.get("args") or block.get("input", {}),
                             id=block.get("toolCallId") or block.get("id"),
-                            category=classify_tool_name(self.host, tool_name),
+                            category=classify_tool_name(self.integration, tool_name),
                         ),
-                        host_extras={},
+                        integration_extras={},
                     )
                 elif btype in ("tool-result", "tool_result"):
                     yield Turn(
@@ -207,18 +207,18 @@ class CursorAgentAdapter:
                             output=_stringify(block.get("result") or block.get("content")),
                             is_error=bool(block.get("isError") or block.get("is_error", False)),
                         ),
-                        host_extras={},
+                        integration_extras={},
                     )
                 elif btype in ("thinking", "reasoning"):
                     yield Turn(
                         index=index, timestamp=ts, role="assistant",
                         reasoning=block.get("text") or block.get("thinking"),
-                        host_extras={},
+                        integration_extras={},
                     )
                 else:
                     yield Turn(
                         index=index, timestamp=ts, role=role,
-                        host_extras={"cursor.unknown_block": block},
+                        integration_extras={"cursor.unknown_block": block},
                     )
                 index += 1
 

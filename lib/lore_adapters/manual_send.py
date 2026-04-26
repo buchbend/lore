@@ -1,7 +1,7 @@
-"""Adapter for transcripts dumped from hosts without a native adapter.
+"""Adapter for transcripts dumped from integrations without a native adapter.
 
 Covers Cursor (when schema-unstable), Copilot-VSC, or any future
-host. The user invokes `lore ingest --from <file> --host <declared>`
+integration. The user invokes `lore ingest --from <file> --integration <declared>`
 which calls `read_from(...)` below.
 
 `list_transcripts` intentionally returns `[]` — manual-send is never
@@ -15,7 +15,7 @@ Input JSONL shape (one turn per line):
     {"index": 4, "role": "tool_result", "tool_result": {"tool_call_id": "t1", "output": "text", "is_error": false}}
 
 Optional first-line metadata (ignored for Turn building):
-    {"_meta": {"schema_version": 1, "source_host": "cursor", "session_id": "abc"}}
+    {"_meta": {"schema_version": 1, "source_integration": "cursor", "session_id": "abc"}}
 
 Required fields per turn line: `index` (int), `role` (one of user/assistant/system/tool_result).
 Other fields optional. Reject lines missing required fields with a clear `ValueError`.
@@ -33,24 +33,25 @@ from lore_core.types import ToolCall, ToolResult, TranscriptHandle, Turn
 
 
 class ManualSendAdapter:
-    """Adapter for transcripts dumped from hosts without a native adapter.
+    """Adapter for transcripts dumped from integrations without a native adapter.
 
     Covers Cursor (when schema-unstable), Copilot-VSC, or any future
-    host. The user invokes `lore ingest --from <file> --host <declared>`
+    integration. The user invokes
+    `lore ingest --from <file> --integration <declared>`
     which calls `read_from(...)` below.
 
     `list_transcripts` intentionally returns `[]` — manual-send is never
     auto-discovered.
     """
 
-    host = "manual-send"
+    integration = "manual-send"
 
     def read_from(
         self,
         source: Path | IO[str],
         cwd: Path,
         *,
-        declared_host: str = "unknown",
+        declared_integration: str = "unknown",
         transcript_id: str | None = None,
     ) -> Iterator[Turn]:
         """Parse JSONL from a file path or text stream into a Turn stream.
@@ -61,11 +62,11 @@ class ManualSendAdapter:
         """
         if isinstance(source, Path):
             with source.open() as fh:
-                yield from self._parse(fh, declared_host)
+                yield from self._parse(fh, declared_integration)
         else:
-            yield from self._parse(source, declared_host)
+            yield from self._parse(source, declared_integration)
 
-    def _parse(self, fh: IO[str], declared_host: str) -> Iterator[Turn]:
+    def _parse(self, fh: IO[str], declared_integration: str) -> Iterator[Turn]:
         for lineno, line in enumerate(fh, start=1):
             line = line.strip()
             if not line:
@@ -77,9 +78,9 @@ class ManualSendAdapter:
             if "_meta" in obj:
                 # metadata preamble — skip
                 continue
-            yield self._line_to_turn(obj, declared_host, lineno)
+            yield self._line_to_turn(obj, declared_integration, lineno)
 
-    def _line_to_turn(self, obj: dict[str, Any], declared_host: str, lineno: int) -> Turn:
+    def _line_to_turn(self, obj: dict[str, Any], declared_integration: str, lineno: int) -> Turn:
         if "index" not in obj or "role" not in obj:
             raise ValueError(
                 f"manual-send: line {lineno} missing required field (index or role)"
@@ -95,15 +96,15 @@ class ManualSendAdapter:
                 timestamp = None
         tool_call_obj = None
         if isinstance(tc, dict):
-            # Fill ToolCall.category from the declared host if the exporter
-            # didn't supply one — otherwise manual-send imports from other
-            # hosts would all land as "other" and skip the noteworthy
-            # cascade. An explicit category in the payload wins (the
-            # exporter knows something we don't).
+            # Fill ToolCall.category from the declared integration if the
+            # exporter didn't supply one — otherwise manual-send imports
+            # from other integrations would all land as "other" and skip
+            # the noteworthy cascade. An explicit category in the payload
+            # wins (the exporter knows something we don't).
             if "category" not in tc:
                 from lore_core.tool_categories import classify_tool_name
                 name = tc.get("name", "")
-                tc = {**tc, "category": classify_tool_name(declared_host, name)}
+                tc = {**tc, "category": classify_tool_name(declared_integration, name)}
             tool_call_obj = ToolCall(**tc)
         return Turn(
             index=int(obj["index"]),
@@ -113,7 +114,7 @@ class ManualSendAdapter:
             tool_call=tool_call_obj,
             tool_result=ToolResult(**tr) if isinstance(tr, dict) else None,
             reasoning=obj.get("reasoning"),
-            host_extras={"manual_send.declared_host": declared_host},
+            integration_extras={"manual_send.declared_integration": declared_integration},
         )
 
     # Protocol methods:
@@ -123,7 +124,7 @@ class ManualSendAdapter:
 
     def read_slice(self, handle: TranscriptHandle, from_index: int = 0) -> Iterator[Turn]:
         """Read from the path encoded in `handle.path`. Same parser as read_from."""
-        for t in self.read_from(handle.path, handle.cwd, declared_host=handle.host):
+        for t in self.read_from(handle.path, handle.cwd, declared_integration=handle.integration):
             if t.index >= from_index:
                 yield t
 
@@ -133,7 +134,9 @@ class ManualSendAdapter:
         after_hash: str | None,
         index_hint: int | None = None,
     ) -> Iterator[Turn]:
-        all_turns = list(self.read_from(handle.path, handle.cwd, declared_host=handle.host))
+        all_turns = list(
+            self.read_from(handle.path, handle.cwd, declared_integration=handle.integration)
+        )
         if after_hash is None:
             yield from all_turns
             return

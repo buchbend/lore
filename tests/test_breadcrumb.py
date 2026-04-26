@@ -63,7 +63,7 @@ def _make_transcript_entry(
 ) -> TranscriptLedgerEntry:
     """Create a transcript ledger entry."""
     return TranscriptLedgerEntry(
-        host="claude-code",
+        integration="claude-code",
         transcript_id=transcript_id,
         path=lore_root / "transcripts" / f"{transcript_id}.json",
         directory=lore_root / "transcripts",

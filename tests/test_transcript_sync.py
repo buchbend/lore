@@ -41,13 +41,13 @@ def _seed_ledger_entry(
     transcript_id: str,
     src_path: Path,
     directory: Path,
-    host: str = "claude-code",
+    integration: str = "claude-code",
     orphan: bool = False,
 ) -> None:
     ledger = TranscriptLedger(lore_root)
     ledger.upsert(
         TranscriptLedgerEntry(
-            host=host,
+            integration=integration,
             transcript_id=transcript_id,
             path=src_path,
             directory=directory,

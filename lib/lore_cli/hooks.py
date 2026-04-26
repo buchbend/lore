@@ -1878,7 +1878,7 @@ def capture(
     ),
     transcript: Path | None = typer.Option(None, help="Explicit transcript path; else autodetect via adapter."),
     cwd_override: Path | None = typer.Option(None, "--cwd", help="Explicit cwd; else CLAUDE_PROJECT_DIR or os.getcwd()."),
-    host: str = typer.Option("claude-code", help="Adapter host name."),
+    integration: str = typer.Option("claude-code", help="Adapter integration name."),
 ) -> None:
     """Hot-path capture hook — called by Claude Code on SessionEnd / PreCompact / SessionStart.
 
@@ -1889,7 +1889,7 @@ def capture(
     if _in_curator_mode():
         return
     import time as _time
-    from lore_adapters import UnknownHostError
+    from lore_adapters import UnknownIntegrationError
     from lore_core.hook_log import _ppid_cmd
 
     start = _time.monotonic()
@@ -1918,7 +1918,7 @@ def capture(
         # never fired" in `lore status` / `lore runs list --hooks`.
         try:
             HookEventLogger(get_lore_root()).emit(
-                event=event, host=host, scope=None,
+                event=event, integration=integration, scope=None,
                 duration_ms=int((_time.monotonic() - start) * 1000),
                 outcome="no-scope",
                 cwd=str(cwd),
@@ -1941,14 +1941,14 @@ def capture(
         tledger = TranscriptLedger(lore_root)
 
         try:
-            adapter = get_adapter(host)
-        except UnknownHostError:
+            adapter = get_adapter(integration)
+        except UnknownIntegrationError:
             logger.emit(
-                event=event, host=host, scope=scope_payload,
+                event=event, integration=integration, scope=scope_payload,
                 duration_ms=int((_time.monotonic() - start) * 1000),
                 outcome="error",
                 pending_after=0,
-                error={"type": "UnknownHostError", "message": host},
+                error={"type": "UnknownIntegrationError", "message": integration},
                 cwd=str(cwd),
                 pid=_capture_pid,
                 ppid_cmd=_capture_ppid_cmd,
@@ -1974,7 +1974,7 @@ def capture(
 
         to_write: list[TranscriptLedgerEntry] = []
         for h in handles:
-            entry = tledger.get(h.host, h.id)
+            entry = tledger.get(h.integration, h.id)
             if entry is None:
                 is_historical = (
                     attachment is not None
@@ -1982,7 +1982,7 @@ def capture(
                 )
                 to_write.append(
                     TranscriptLedgerEntry(
-                        host=h.host,
+                        integration=h.integration,
                         transcript_id=h.id,
                         path=h.path,
                         directory=h.cwd,
@@ -2036,7 +2036,7 @@ def capture(
         raise
     except Exception as exc:
         logger.emit(
-            event=event, host=host, scope=scope_payload,
+            event=event, integration=integration, scope=scope_payload,
             duration_ms=int((_time.monotonic() - start) * 1000),
             outcome="error",
             pending_after=pending_after,
@@ -2049,7 +2049,7 @@ def capture(
         raise
     else:
         logger.emit(
-            event=event, host=host, scope=scope_payload,
+            event=event, integration=integration, scope=scope_payload,
             duration_ms=int((_time.monotonic() - start) * 1000),
             outcome=outcome,
             pending_after=pending_after,

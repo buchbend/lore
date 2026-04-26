@@ -32,7 +32,7 @@ from lore_adapters.registry import _REGISTRY
 
 
 class FakeClaudeCodeAdapter:
-    host = "claude-code"
+    integration = "claude-code"
 
     def __init__(self, handles_by_dir=None, turns_by_id=None):
         self._handles = handles_by_dir or {}
@@ -150,7 +150,7 @@ def _setup_lore_root(tmp_path: Path, wiki_name: str = "private") -> tuple[Path, 
 
 def _make_handle(work: Path, transcript_id: str = "uuid-1") -> TranscriptHandle:
     return TranscriptHandle(
-        host="claude-code",
+        integration="claude-code",
         id=transcript_id,
         path=work / f"{transcript_id}.jsonl",
         cwd=work,
@@ -218,7 +218,7 @@ def test_mvp_e2e_session_end_produces_note(
     runner = CliRunner()
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(work), "--host", "claude-code"],
+        ["capture", "--event", "session-end", "--cwd", str(work), "--integration", "claude-code"],
         env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
         catch_exceptions=False,
     )
@@ -228,7 +228,7 @@ def test_mvp_e2e_session_end_produces_note(
     tledger = TranscriptLedger(lore_root)
     entry = tledger.get("claude-code", "uuid-1")
     assert entry is not None, "Expected ledger entry after capture"
-    assert entry.host == "claude-code"
+    assert entry.integration == "claude-code"
     assert entry.digested_hash is None  # not yet processed by curator
 
     # Step 2: Run curator
@@ -273,7 +273,9 @@ def test_mvp_e2e_session_end_produces_note(
     src_transcripts = fm.get("source_transcripts", [])
     assert len(src_transcripts) >= 1, "Expected at least one source_transcript"
     src = src_transcripts[0]
-    assert src.get("host") == "claude-code", f"Expected host=claude-code, got {src.get('host')}"
+    assert src.get("integration") == "claude-code", (
+        f"Expected integration=claude-code, got {src.get('integration')}"
+    )
     assert src.get("from_hash") == turns[0].content_hash(), (
         f"Expected from_hash={turns[0].content_hash()}, got {src.get('from_hash')}"
     )
@@ -301,7 +303,7 @@ def test_mvp_e2e_non_noteworthy_slice_produces_no_note(
     runner = CliRunner()
     runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(work), "--host", "claude-code"],
+        ["capture", "--event", "session-end", "--cwd", str(work), "--integration", "claude-code"],
         env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
         catch_exceptions=False,
     )
@@ -363,7 +365,7 @@ def test_mvp_e2e_idempotent_on_rerun(
     runner = CliRunner()
     runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(work), "--host", "claude-code"],
+        ["capture", "--event", "session-end", "--cwd", str(work), "--integration", "claude-code"],
         env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
         catch_exceptions=False,
     )
@@ -418,7 +420,7 @@ def test_mvp_e2e_unattached_cwd_produces_nothing(
     runner = CliRunner()
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(unattached), "--host", "claude-code"],
+        ["capture", "--event", "session-end", "--cwd", str(unattached), "--integration", "claude-code"],
         env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(unattached)},
         catch_exceptions=False,
     )
@@ -435,7 +437,7 @@ def test_mvp_e2e_unattached_cwd_produces_nothing(
 
 
 def test_mvp_e2e_manual_send_via_cli(tmp_path, monkeypatch):
-    """lore ingest writes a JSONL transcript; ledger has one entry with host=manual-send."""
+    """lore ingest writes a JSONL transcript; ledger has one entry with integration=manual-send."""
     lore_root, work = _setup_lore_root(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(work))
@@ -457,7 +459,7 @@ def test_mvp_e2e_manual_send_via_cli(tmp_path, monkeypatch):
         [
             "ingest",
             "--from", str(transcript_file),
-            "--host", "cursor",
+            "--integration", "cursor",
             "--directory", str(work),
         ],
         env={"LORE_ROOT": str(lore_root)},
@@ -465,12 +467,12 @@ def test_mvp_e2e_manual_send_via_cli(tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, f"ingest failed:\nstdout: {result.output}\nstderr: {getattr(result, 'stderr', '')}"
 
-    # Verify ledger has one entry with host=manual-send
+    # Verify ledger has one entry with integration=manual-send
     tledger = TranscriptLedger(lore_root)
     all_entries = list(tledger._load().values())
     assert len(all_entries) == 1, f"Expected 1 ledger entry, got {len(all_entries)}"
-    assert all_entries[0]["host"] == "manual-send", (
-        f"Expected host=manual-send, got {all_entries[0]['host']}"
+    assert all_entries[0]["integration"] == "manual-send", (
+        f"Expected integration=manual-send, got {all_entries[0]['integration']}"
     )
 
 
@@ -490,7 +492,7 @@ def test_mvp_e2e_second_slice_after_growth_is_processed(
     # First slice — 3 turns at t=10:00
     initial_turns = _make_turns(3)
     handle_v1 = TranscriptHandle(
-        host="claude-code",
+        integration="claude-code",
         id="uuid-grows",
         path=work / "uuid-grows.jsonl",
         cwd=work,
@@ -504,7 +506,7 @@ def test_mvp_e2e_second_slice_after_growth_is_processed(
     runner = CliRunner()
     res1 = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(work), "--host", "claude-code"],
+        ["capture", "--event", "session-end", "--cwd", str(work), "--integration", "claude-code"],
         env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
         catch_exceptions=False,
     )
@@ -542,7 +544,7 @@ def test_mvp_e2e_second_slice_after_growth_is_processed(
         Turn(index=4, timestamp=None, role="assistant", text="follow-up 1"),
     ]
     handle_v2 = TranscriptHandle(
-        host="claude-code",
+        integration="claude-code",
         id="uuid-grows",
         path=work / "uuid-grows.jsonl",
         cwd=work,
@@ -557,7 +559,7 @@ def test_mvp_e2e_second_slice_after_growth_is_processed(
     # Second capture: the hook should bump last_mtime in the ledger.
     res2 = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(work), "--host", "claude-code"],
+        ["capture", "--event", "session-end", "--cwd", str(work), "--integration", "claude-code"],
         env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
         catch_exceptions=False,
     )

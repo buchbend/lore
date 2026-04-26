@@ -11,7 +11,7 @@ from lore_core.types import TranscriptHandle
 class _FullStub:
     """Minimal stub implementing all Adapter requirements."""
 
-    host = "test"
+    integration = "test"
 
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         return []
@@ -38,7 +38,7 @@ class _FullStub:
 class _MissingReadSliceAfterHash:
     """Stub missing the `read_slice_after_hash` method."""
 
-    host = "test"
+    integration = "test"
 
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         return []

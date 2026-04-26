@@ -31,8 +31,9 @@ ToolCategory = Literal[
 class ToolCall:
     """A single tool invocation in an assistant turn.
 
-    ``category`` is a host-agnostic classification populated by the adapter
-    from ``name`` via :func:`lore_core.tool_categories.classify_tool_name`.
+    ``category`` is an integration-agnostic classification populated by the
+    adapter from ``name`` via
+    :func:`lore_core.tool_categories.classify_tool_name`.
     Downstream consumers (noteworthy cascade, surface gen, cross-host
     knowledge graph) operate on ``category`` so they don't need to know
     that Claude Code says ``Edit`` while Cursor says ``edit_file``.
@@ -64,13 +65,13 @@ class Turn:
     tool_call: ToolCall | None = None
     tool_result: ToolResult | None = None
     reasoning: str | None = None
-    host_extras: dict[str, Any] = field(default_factory=dict)
+    integration_extras: dict[str, Any] = field(default_factory=dict)
 
     def content_hash(self) -> str:
         """SHA256 of role + text + tool_call.input — deterministic across runs.
 
-        Used by the sidecar ledger as a watermark so host-side edits to
-        earlier turns don't silently desync the Kafka-style offset.
+        Used by the sidecar ledger as a watermark so integration-side edits
+        to earlier turns don't silently desync the Kafka-style offset.
         """
         parts: list[str] = [
             self.role,
@@ -91,9 +92,9 @@ class Turn:
 
 @dataclass(frozen=True)
 class TranscriptHandle:
-    """Metadata + location of a transcript file on the host."""
+    """Metadata + location of a transcript file on the host machine."""
 
-    host: str
+    integration: str
     id: str
     path: Path
     cwd: Path

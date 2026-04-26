@@ -94,7 +94,7 @@ def test_list_transcripts_finds_jsonl(tmp_home, tmp_path) -> None:
     handles = adapter.list_transcripts(project)
     assert len(handles) == 1
     h = handles[0]
-    assert h.host == "cursor"
+    assert h.integration == "cursor"
     assert h.id == uuid
     assert h.path.name == f"{uuid}.jsonl"
 
@@ -217,7 +217,7 @@ def test_read_slice_handles_unknown_block_type(tmp_home, tmp_path) -> None:
     handle = adapter.list_transcripts(project)[0]
     turns = list(adapter.read_slice(handle))
     assert len(turns) == 1
-    assert "cursor.unknown_block" in turns[0].host_extras
+    assert "cursor.unknown_block" in turns[0].integration_extras
 
 
 def test_read_slice_from_index(tmp_home, tmp_path) -> None:
@@ -293,7 +293,7 @@ def test_is_complete_false_on_empty(tmp_home, tmp_path) -> None:
     _seed_cursor_tree(tmp_home, project, "agent-001", [])
     adapter = CursorAgentAdapter()
     handle = TranscriptHandle(
-        host="cursor",
+        integration="cursor",
         id="agent-001",
         path=tmp_home / ".cursor" / "projects" / _slug_for_cwd(project)
              / "agent-transcripts" / "agent-001" / "agent-001.jsonl",

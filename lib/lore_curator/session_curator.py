@@ -143,8 +143,8 @@ def run_curator_a(
     if dry_run:
         import hashlib
         h = hashlib.sha256()
-        for e in sorted(pending_snapshot, key=lambda x: (x.host, x.transcript_id)):
-            h.update(f"{e.host}:{e.transcript_id}:{e.digested_hash or ''}\n".encode())
+        for e in sorted(pending_snapshot, key=lambda x: (x.integration, x.transcript_id)):
+            h.update(f"{e.integration}:{e.transcript_id}:{e.digested_hash or ''}\n".encode())
         ledger_snapshot_hash = h.hexdigest()[:16]
 
     touched_wikis: set[str] = set()
@@ -313,7 +313,7 @@ def _process_entry(
     if not entry.directory.exists():
         if not dry_run:
             tledger.stamp_scan(
-                host=entry.host,
+                integration=entry.integration,
                 transcript_id=entry.transcript_id,
                 curator_a_run=now,
                 orphan=True,
@@ -338,11 +338,11 @@ def _process_entry(
 
     # Adapter lookup
     try:
-        adapter = lookup(entry.host)
-    except Exception:  # noqa: BLE001 - lookup is pluggable; treat any failure as unknown-host
+        adapter = lookup(entry.integration)
+    except Exception:  # noqa: BLE001 - lookup is pluggable; treat any failure as unknown-integration
         if logger is not None:
-            logger.emit("skip", transcript_id=entry.transcript_id, reason="unknown-host")
-        return [_Outcome(skip_reason="unknown_host", wiki_name=attached.wiki)]
+            logger.emit("skip", transcript_id=entry.transcript_id, reason="unknown-integration")
+        return [_Outcome(skip_reason="unknown_integration", wiki_name=attached.wiki)]
 
     if logger is not None:
         logger.emit(
@@ -364,7 +364,7 @@ def _process_entry(
         # Nothing new since last digest — advance ledger's mtime-only state and move on.
         if not dry_run:
             tledger.advance(
-                host=entry.host,
+                integration=entry.integration,
                 transcript_id=entry.transcript_id,
                 digested_hash=entry.digested_hash or "",
                 digested_index_hint=entry.digested_index_hint or 0,
@@ -492,7 +492,7 @@ def _process_chunk(
     if not noteworthy.noteworthy:
         if not dry_run:
             tledger.advance(
-                host=entry.host,
+                integration=entry.integration,
                 transcript_id=entry.transcript_id,
                 digested_hash=last_hash,
                 digested_index_hint=last_hint,
@@ -526,7 +526,7 @@ def _process_chunk(
         scope_redirected_from=scope_redirected_from,
     )
     tledger.advance(
-        host=entry.host,
+        integration=entry.integration,
         transcript_id=entry.transcript_id,
         digested_hash=last_hash,
         digested_index_hint=last_hint,
@@ -606,7 +606,7 @@ def _record_outcome(result: CuratorAResult, outcome: _Outcome) -> None:
 
 def _handle_from_entry(e: TranscriptLedgerEntry) -> TranscriptHandle:
     return TranscriptHandle(
-        host=e.host,
+        integration=e.integration,
         id=e.transcript_id,
         path=e.path,
         cwd=e.directory,

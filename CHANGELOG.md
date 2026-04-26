@@ -10,6 +10,49 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.10.4] — 2026-04-26
+
+Phase 9c — second half of the host → integration rename. 0.10.3 covered
+the install/CLI surface; this release renames the **runtime data model**
+(adapters, ledger, frontmatter) so the codebase is fully consistent.
+
+### Changed (breaking — pre-1.0; one-release back-compat for ledger reads)
+
+- **Adapter Protocol** (`lore_adapters.Adapter`): `host: str` →
+  `integration: str`. All four built-in adapters (claude-code, cursor,
+  manual-send, vscode-copilot) renamed accordingly.
+- **Registry**: `UnknownHostError` → `UnknownIntegrationError`,
+  `registered_hosts()` → `registered_integrations()`. `get_adapter()`
+  parameter `host` → `integration`.
+- **Turn dataclass** (`lore_core.types.Turn`): `host_extras` →
+  `integration_extras`. In-memory only; no persistence impact.
+  Adapter-specific keys inside (`cursor.raw_content`, `claude_code.unknown_block`,
+  etc.) keep their integration-name namespacing.
+- **TranscriptHandle**: `host: str` → `integration: str`.
+- **TranscriptLedgerEntry**: `host: str` → `integration: str`. JSON
+  field key in `transcript-ledger.json` renamed `"host"` → `"integration"`.
+  **Reads accept either key for one release** (drop in 0.11.0); writes
+  always emit `"integration"`. Existing ledgers continue to work.
+- **session-note frontmatter**: `source_transcripts[].host` →
+  `source_transcripts[].integration`. Existing notes continue to read
+  via parse, but new notes are written with the new key. No reader inside
+  Lore programmatically depends on the field; it's display + drill-down.
+- **`classify_tool_name`** (`lore_core.tool_categories`): first parameter
+  renamed `host` → `integration`.
+- **Capture hook**: `lore hook capture --host <name>` →
+  `--integration <name>`. Hook event JSON envelope renames the same key.
+- **`lore ingest`**: `--host <name>` → `--integration <name>`. Internal
+  `manual_send.declared_host` extras key → `manual_send.declared_integration`.
+- **Adapter call signature**: `read_from(declared_host=...)` →
+  `read_from(declared_integration=...)`.
+
+### Why a hard cut
+
+Pre-1.0 cut-hard policy. The single carve-out is the ledger JSON read
+fallback — keeps existing user vaults' transcript-watermark history
+intact across the upgrade so the curator doesn't re-derive everything
+from scratch.
+
 ## [0.10.3] — 2026-04-26
 
 Vocabulary cleanup: **"host" now means *machine*, "integration" means

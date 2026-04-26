@@ -224,8 +224,8 @@ Once attached with a wiki present:
 
 ### Manual escape hatches
 
-- `lore ingest --from <file.jsonl> --host cursor --directory <cwd>` —
-  ingest a transcript from any host lore doesn't auto-capture.
+- `lore ingest --from <file.jsonl> --integration cursor --directory <cwd>` —
+  ingest a transcript from any integration lore doesn't auto-capture.
 - `lore curator run` — run Curator A now.
 - `lore curator run --abstract [--wiki <name>]` — run A then B.
 - `lore curator run --abstract --dry-run` — see what would happen.

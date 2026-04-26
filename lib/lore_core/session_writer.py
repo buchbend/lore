@@ -308,7 +308,7 @@ def _build_frontmatter(si: SessionInput) -> dict[str, Any]:
         fm["curator_a_run"] = si.now.isoformat()
         fm["source_transcripts"] = [
             {
-                "host": si.transcript.host,
+                "integration": si.transcript.integration,
                 "id": si.transcript.id,
                 "from_hash": from_hash,
                 "to_hash": to_hash,
@@ -347,7 +347,7 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
         src = fm.get("source_transcripts") or []
         src.append(
             {
-                "host": si.transcript.host,
+                "integration": si.transcript.integration,
                 "id": si.transcript.id,
                 "from_hash": from_hash,
                 "to_hash": to_hash,

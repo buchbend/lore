@@ -1,9 +1,8 @@
-"""Adapter registry: map host strings to Adapter instances."""
+"""Adapter registry: map integration strings to Adapter instances."""
 
 from __future__ import annotations
 
 from lore_adapters.protocol import Adapter
-
 
 # Module-level registry — declared FIRST so `register()` calls during
 # module-import (including any from third-party adapter modules that
@@ -11,30 +10,30 @@ from lore_adapters.protocol import Adapter
 _REGISTRY: dict[str, Adapter] = {}
 
 
-class UnknownHostError(KeyError):
-    """Raised when no adapter is registered for the requested host."""
+class UnknownIntegrationError(KeyError):
+    """Raised when no adapter is registered for the requested integration."""
 
 
-def get_adapter(host: str) -> Adapter:
-    """Return a registered adapter instance or raise UnknownHostError.
+def get_adapter(integration: str) -> Adapter:
+    """Return a registered adapter instance or raise UnknownIntegrationError.
 
-    Day-1 hosts: "claude-code", "manual-send".
+    Day-1 integrations: "claude-code", "manual-send".
     Future third-party adapters will plug in via entry-points (deferred);
     until then the registry is a private dict.
     """
-    if host in _REGISTRY:
-        return _REGISTRY[host]
-    raise UnknownHostError(host)
+    if integration in _REGISTRY:
+        return _REGISTRY[integration]
+    raise UnknownIntegrationError(integration)
 
 
-def registered_hosts() -> list[str]:
-    """List currently registered host names."""
+def registered_integrations() -> list[str]:
+    """List currently registered integration names."""
     return sorted(_REGISTRY.keys())
 
 
 def register(adapter: Adapter) -> None:
     """Register a new adapter instance. Overwrites any prior entry."""
-    _REGISTRY[adapter.host] = adapter
+    _REGISTRY[adapter.integration] = adapter
 
 
 # Built-in adapters — imported and registered after `_REGISTRY` is alive.

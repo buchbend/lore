@@ -94,7 +94,7 @@ def _stringify(content) -> str:
 class ClaudeCodeAdapter:
     """Filesystem adapter for Claude Code transcript JSONL files."""
 
-    host = "claude-code"
+    integration = "claude-code"
 
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         projects = _projects_dir_for(Path(directory))
@@ -108,7 +108,7 @@ class ClaudeCodeAdapter:
                 continue
             out.append(
                 TranscriptHandle(
-                    host=self.host,
+                    integration=self.integration,
                     id=p.stem,
                     path=p,
                     cwd=Path(directory),
@@ -199,7 +199,7 @@ class ClaudeCodeAdapter:
                         timestamp=ts,
                         role=role,
                         text=content,
-                        host_extras={},
+                        integration_extras={},
                     )
                     index += 1
                     continue
@@ -208,7 +208,7 @@ class ClaudeCodeAdapter:
                         index=index,
                         timestamp=ts,
                         role=role,
-                        host_extras={"raw": content},
+                        integration_extras={"raw": content},
                     )
                     index += 1
                     continue
@@ -218,7 +218,7 @@ class ClaudeCodeAdapter:
                             index=index,
                             timestamp=ts,
                             role=role,
-                            host_extras={"claude_code.unknown_block": block},
+                            integration_extras={"claude_code.unknown_block": block},
                         )
                         index += 1
                         continue
@@ -229,7 +229,7 @@ class ClaudeCodeAdapter:
                             timestamp=ts,
                             role=role,
                             text=block.get("text"),
-                            host_extras={},
+                            integration_extras={},
                         )
                     elif bt == "thinking":
                         yield Turn(
@@ -237,7 +237,7 @@ class ClaudeCodeAdapter:
                             timestamp=ts,
                             role="assistant",
                             reasoning=block.get("thinking"),
-                            host_extras={},
+                            integration_extras={},
                         )
                     elif bt == "tool_use":
                         tool_name = block.get("name", "")
@@ -249,9 +249,9 @@ class ClaudeCodeAdapter:
                                 name=tool_name,
                                 input=block.get("input", {}),
                                 id=block.get("id"),
-                                category=classify_tool_name(self.host, tool_name),
+                                category=classify_tool_name(self.integration, tool_name),
                             ),
-                            host_extras={},
+                            integration_extras={},
                         )
                     elif bt == "tool_result":
                         yield Turn(
@@ -263,13 +263,13 @@ class ClaudeCodeAdapter:
                                 output=_stringify(block.get("content")),
                                 is_error=bool(block.get("is_error", False)),
                             ),
-                            host_extras={},
+                            integration_extras={},
                         )
                     else:
                         yield Turn(
                             index=index,
                             timestamp=ts,
                             role=role,
-                            host_extras={"claude_code.unknown_block": block},
+                            integration_extras={"claude_code.unknown_block": block},
                         )
                     index += 1

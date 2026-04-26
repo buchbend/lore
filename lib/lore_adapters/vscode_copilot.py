@@ -28,7 +28,7 @@ then emits one Turn per request message and one per response.
 
 Version-pin: ``v.version`` is currently ``3``. Format broke once in
 Jan 2026 (JSON → JSONL + iterator protocol). Unknown versions are
-rendered with best-effort + host_extras.
+rendered with best-effort + integration_extras.
 """
 
 from __future__ import annotations
@@ -167,7 +167,7 @@ def _replay_jsonl(path: Path) -> dict | None:
 class VSCodeCopilotAdapter:
     """Adapter for GitHub Copilot Chat sessions (VSCode / Cursor / Insiders)."""
 
-    host = "copilot"
+    integration = "copilot"
 
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         cwd = Path(directory).resolve()
@@ -186,7 +186,7 @@ class VSCodeCopilotAdapter:
                     continue
                 out.append(
                     TranscriptHandle(
-                        host=self.host,
+                        integration=self.integration,
                         id=jsonl.stem,
                         path=jsonl,
                         cwd=cwd,
@@ -254,7 +254,7 @@ class VSCodeCopilotAdapter:
                 yield Turn(
                     index=index, timestamp=ts, role="user",
                     text=user_text,
-                    host_extras={**extras_common,
+                    integration_extras={**extras_common,
                                  "copilot.request_id": req.get("requestId"),
                                  "copilot.agent": req.get("agent")},
                 )
@@ -265,7 +265,7 @@ class VSCodeCopilotAdapter:
                 yield Turn(
                     index=index, timestamp=ts, role="assistant",
                     text=asst_text,
-                    host_extras={**extras_common,
+                    integration_extras={**extras_common,
                                  "copilot.response_id": req.get("responseId"),
                                  "copilot.model_id": req.get("modelId")},
                 )

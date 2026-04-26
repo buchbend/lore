@@ -29,7 +29,7 @@ def _make_scope(scope_str: str = "proj:feature") -> Scope:
 
 def _make_handle() -> TranscriptHandle:
     return TranscriptHandle(
-        host="claude-code",
+        integration="claude-code",
         id="transcript-abc123",
         path=Path("/tmp/transcript.jsonl"),
         cwd=Path("/tmp"),
@@ -102,7 +102,7 @@ def _write_session_note(
         "draft": True,
         "curator_a_run": datetime.now(UTC).isoformat(),
         "source_transcripts": [
-            {"host": "claude-code", "id": "old-id", "from_hash": "sha256:aaa", "to_hash": "sha256:bbb"}
+            {"integration": "claude-code", "id": "old-id", "from_hash": "sha256:aaa", "to_hash": "sha256:bbb"}
         ],
         "tags": [],
     }
@@ -163,7 +163,7 @@ def test_source_transcripts_hashes_recorded(tmp_path):
     result = _file_note(tmp_path, turns=turns)
     fm = parse_frontmatter(result.path.read_text())
     src = fm["source_transcripts"][0]
-    assert src["host"] == "claude-code"
+    assert src["integration"] == "claude-code"
     assert src["id"] == "transcript-abc123"
     assert src["from_hash"] == turns[0].content_hash()
     assert src["to_hash"] == turns[-1].content_hash()
@@ -192,7 +192,7 @@ def test_slug_sanitises_title():
 
 def _make_handle_with_mtime(mtime: datetime) -> TranscriptHandle:
     return TranscriptHandle(
-        host="claude-code",
+        integration="claude-code",
         id="transcript-abc123",
         path=Path("/tmp/transcript.jsonl"),
         cwd=Path("/tmp"),
@@ -457,7 +457,7 @@ def test_append_extends_transcripts_list(tmp_path):
     existing.write_text(f"---\n{dumped}\n---\n{body}")
 
     new_handle = TranscriptHandle(
-        host="claude-code",
+        integration="claude-code",
         id="uuid-new",
         path=Path("/tmp/x.jsonl"),
         cwd=Path("/tmp"),
@@ -483,7 +483,7 @@ def test_append_dedupes_repeated_uuid_moving_it_to_tail(tmp_path):
     existing.write_text(f"---\n{dumped}\n---\n{body}")
 
     repeat_handle = TranscriptHandle(
-        host="claude-code", id="uuid-a",
+        integration="claude-code", id="uuid-a",
         path=Path("/tmp/x.jsonl"), cwd=Path("/tmp"),
         mtime=datetime.now(UTC),
     )
@@ -507,7 +507,7 @@ def test_append_caps_transcripts_list_at_20_most_recent(tmp_path):
     existing.write_text(f"---\n{dumped}\n---\n{body}")
 
     new_handle = TranscriptHandle(
-        host="claude-code", id="u-fresh",
+        integration="claude-code", id="u-fresh",
         path=Path("/tmp/x.jsonl"), cwd=Path("/tmp"),
         mtime=datetime.now(UTC),
     )

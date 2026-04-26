@@ -69,11 +69,11 @@ def _now() -> datetime:
 def _make_handle(
     cwd: Path,
     transcript_id: str = "t1",
-    host: str = "fake",
+    integration: str = "fake",
     mtime: datetime | None = None,
 ) -> TranscriptHandle:
     return TranscriptHandle(
-        host=host,
+        integration=integration,
         id=transcript_id,
         path=cwd / f"{transcript_id}.jsonl",
         cwd=cwd,
@@ -87,7 +87,7 @@ def _make_handle(
 
 
 class _FakeAdapter:
-    host = "fake"
+    integration = "fake"
 
     def __init__(self, handles: list[TranscriptHandle]) -> None:
         self._handles = handles
@@ -114,7 +114,7 @@ def fake_adapter_factory():
     def make(handles: list[TranscriptHandle]) -> _FakeAdapter:
         adapter = _FakeAdapter(handles)
         register(adapter)
-        registered.append(adapter.host)
+        registered.append(adapter.integration)
         return adapter
 
     yield make
@@ -143,7 +143,7 @@ def test_capture_session_end_creates_ledger_entry(tmp_path: Path, fake_adapter_f
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -152,7 +152,7 @@ def test_capture_session_end_creates_ledger_entry(tmp_path: Path, fake_adapter_f
     ledger = TranscriptLedger(project)
     entry = ledger.get("fake", "t1")
     assert entry is not None
-    assert entry.host == "fake"
+    assert entry.integration == "fake"
     assert entry.transcript_id == "t1"
     assert entry.path == handle.path
     assert entry.directory == project
@@ -178,7 +178,7 @@ def test_capture_unattached_cwd_returns_without_ledger_write(tmp_path: Path) -> 
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(unattached), "--host", "claude-code"],
+        ["capture", "--event", "session-end", "--cwd", str(unattached), "--integration", "claude-code"],
         env={"LORE_ROOT": str(tmp_path)},
         catch_exceptions=False,
     )
@@ -211,7 +211,7 @@ def test_capture_under_100ms(tmp_path: Path, fake_adapter_factory, monkeypatch) 
     start = time.monotonic()
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -238,7 +238,7 @@ def test_capture_hook_under_500ms_with_50_transcripts(
     ledger = TranscriptLedger(project)
     pre_entries = [
         TranscriptLedgerEntry(
-            host="fake",
+            integration="fake",
             transcript_id=f"seed{i}",
             path=project / f"seed{i}.jsonl",
             directory=project,
@@ -263,7 +263,7 @@ def test_capture_hook_under_500ms_with_50_transcripts(
     start = time.monotonic()
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -293,7 +293,7 @@ def test_capture_issues_single_ledger_write_for_many_new_transcripts(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -303,7 +303,7 @@ def test_capture_issues_single_ledger_write_for_many_new_transcripts(
     # All 10 new entries landed in one write.
     ledger = TranscriptLedger(project)
     for h in handles:
-        assert ledger.get(h.host, h.id) is not None
+        assert ledger.get(h.integration, h.id) is not None
     # File was written exactly once (mtime advanced from zero/stale to a single new value).
     post_mtime = ledger_path.stat().st_mtime
     assert post_mtime != pre_mtime
@@ -320,7 +320,7 @@ def test_capture_spawns_when_threshold_exceeded(
     for i in range(9):
         ledger.upsert(
             TranscriptLedgerEntry(
-                host="fake",
+                integration="fake",
                 transcript_id=f"pre{i}",
                 path=project / f"pre{i}.jsonl",
                 directory=project,
@@ -346,7 +346,7 @@ def test_capture_spawns_when_threshold_exceeded(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -363,7 +363,7 @@ def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -407,7 +407,7 @@ def test_capture_does_not_spawn_when_under_threshold(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -423,7 +423,7 @@ def test_capture_session_start_same_behaviour(tmp_path: Path, fake_adapter_facto
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-start", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-start", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -451,7 +451,7 @@ def test_capture_explicit_transcript_path_filters_handles(
             "capture",
             "--event", "session-end",
             "--cwd", str(project),
-            "--host", "fake",
+            "--integration", "fake",
             "--transcript", str(h2.path),
         ],
         env={"LORE_ROOT": str(project)},
@@ -477,7 +477,7 @@ def test_capture_existing_entry_updates_mtime_when_changed(
     ledger = TranscriptLedger(project)
     ledger.upsert(
         TranscriptLedgerEntry(
-            host="fake",
+            integration="fake",
             transcript_id="t1",
             path=project / "t1.jsonl",
             directory=project,
@@ -497,7 +497,7 @@ def test_capture_existing_entry_updates_mtime_when_changed(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -539,7 +539,7 @@ def test_capture_respects_lore_root_env(tmp_path: Path, fake_adapter_factory) ->
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(custom_lore_root)},
         catch_exceptions=False,
     )
@@ -552,12 +552,12 @@ def test_capture_respects_lore_root_env(tmp_path: Path, fake_adapter_factory) ->
 
 
 def test_capture_handles_unknown_host_gracefully(tmp_path: Path) -> None:
-    """Unknown --host raises a typer Exit(1) or returns without crash."""
+    """Unknown --integration raises a typer Exit(1) or returns without crash."""
     project = _make_attached_project(tmp_path)
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "nonexistent"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "nonexistent"],
         env={"LORE_ROOT": str(project)},
     )
     # Either exit code 1 (explicit error) or 0 (silent no-op) is acceptable.
@@ -574,11 +574,11 @@ def test_capture_emits_hook_event_happy_path(tmp_path: Path, fake_adapter_factor
     from lore_cli.hooks import capture
 
     project = _make_attached_project(tmp_path)
-    handle = _make_handle(project, host="fake")
+    handle = _make_handle(project, integration="fake")
     fake_adapter_factory([handle])
 
     monkeypatch.setenv("LORE_ROOT", str(project))
-    capture(event="session-end", cwd_override=project, host="fake")
+    capture(event="session-end", cwd_override=project, integration="fake")
 
     log = project / ".lore" / "hook-events.jsonl"
     assert log.exists(), "hook-events.jsonl should be created"
@@ -597,7 +597,7 @@ def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_facto
     from lore_cli import hooks
 
     project = _make_attached_project(tmp_path)
-    handle = _make_handle(project, host="fake")
+    handle = _make_handle(project, integration="fake")
     fake_adapter_factory([handle])
 
     monkeypatch.setenv("LORE_ROOT", str(project))
@@ -608,7 +608,7 @@ def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_facto
     monkeypatch.setattr(hooks, "get_adapter", boom)
 
     with pytest.raises(RuntimeError, match="boom"):
-        hooks.capture(event="session-end", cwd_override=project, host="fake")
+        hooks.capture(event="session-end", cwd_override=project, integration="fake")
 
     log = project / ".lore" / "hook-events.jsonl"
     records = [json.loads(line) for line in log.read_text().splitlines()]
@@ -634,7 +634,7 @@ def test_capture_session_end_no_breadcrumb_when_below_threshold(
     for i in range(2):
         ledger.upsert(
             TranscriptLedgerEntry(
-                host="fake",
+                integration="fake",
                 transcript_id=f"pre{i}",
                 path=project / f"pre{i}.jsonl",
                 directory=project,
@@ -648,12 +648,12 @@ def test_capture_session_end_no_breadcrumb_when_below_threshold(
             )
         )
 
-    handle = _make_handle(project, host="fake")
+    handle = _make_handle(project, integration="fake")
     fake_adapter_factory([handle])
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -681,7 +681,7 @@ def test_capture_session_end_no_breadcrumb_when_no_new_turns(
     ledger = TranscriptLedger(project)
     ledger.upsert(
         TranscriptLedgerEntry(
-            host="fake",
+            integration="fake",
             transcript_id="t1",
             path=project / "t1.jsonl",
             directory=project,
@@ -695,12 +695,12 @@ def test_capture_session_end_no_breadcrumb_when_no_new_turns(
         )
     )
 
-    handle = _make_handle(project, host="fake", mtime=old_mtime)
+    handle = _make_handle(project, integration="fake", mtime=old_mtime)
     fake_adapter_factory([handle])
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -724,7 +724,7 @@ def test_capture_session_start_no_breadcrumb(
     for i in range(2):
         ledger.upsert(
             TranscriptLedgerEntry(
-                host="fake",
+                integration="fake",
                 transcript_id=f"pre{i}",
                 path=project / f"pre{i}.jsonl",
                 directory=project,
@@ -738,12 +738,12 @@ def test_capture_session_start_no_breadcrumb(
             )
         )
 
-    handle = _make_handle(project, host="fake", transcript_id="s1")
+    handle = _make_handle(project, integration="fake", transcript_id="s1")
     fake_adapter_factory([handle])
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-start", "--cwd", str(project), "--host", "fake"],
+        ["capture", "--event", "session-start", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -892,7 +892,7 @@ def test_capture_does_not_write_to_real_lore_root(tmp_path, monkeypatch) -> None
     # Isolated env
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     project = _make_attached_project(tmp_path)
-    handle = _make_handle(project, host="fake")
+    handle = _make_handle(project, integration="fake")
 
     # Register and clean up fake adapter
     from lore_adapters import register
@@ -900,7 +900,7 @@ def test_capture_does_not_write_to_real_lore_root(tmp_path, monkeypatch) -> None
     adapter = _FakeAdapter([handle])
     register(adapter)
     try:
-        capture(event="session-end", cwd_override=project, host="fake")
+        capture(event="session-end", cwd_override=project, integration="fake")
     finally:
         _REGISTRY.pop("fake", None)
 
@@ -1004,7 +1004,7 @@ def test_capture_spawns_when_any_wiki_crosses_threshold(
     for i in range(2):
         ledger.upsert(
             TranscriptLedgerEntry(
-                host="fake",
+                integration="fake",
                 transcript_id=f"a{i}",
                 path=proj_a / f"a{i}.jsonl",
                 directory=proj_a,
@@ -1030,7 +1030,7 @@ def test_capture_spawns_when_any_wiki_crosses_threshold(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(proj_b), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(proj_b), "--integration", "fake"],
         env={"LORE_ROOT": str(lore_root)},
         catch_exceptions=False,
     )
@@ -1054,7 +1054,7 @@ def test_capture_no_spawn_when_no_wiki_crosses_its_threshold(
     for i in range(3):
         ledger.upsert(
             TranscriptLedgerEntry(
-                host="fake",
+                integration="fake",
                 transcript_id=f"a{i}",
                 path=proj_a / f"a{i}.jsonl",
                 directory=proj_a,
@@ -1071,7 +1071,7 @@ def test_capture_no_spawn_when_no_wiki_crosses_its_threshold(
     for i in range(3):
         ledger.upsert(
             TranscriptLedgerEntry(
-                host="fake",
+                integration="fake",
                 transcript_id=f"b{i}",
                 path=proj_b / f"b{i}.jsonl",
                 directory=proj_b,
@@ -1096,7 +1096,7 @@ def test_capture_no_spawn_when_no_wiki_crosses_its_threshold(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(proj_a), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(proj_a), "--integration", "fake"],
         env={"LORE_ROOT": str(lore_root)},
         catch_exceptions=False,
     )
@@ -1127,7 +1127,7 @@ def test_capture_threshold_zero_empty_wiki_does_not_spawn(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(proj_a), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(proj_a), "--integration", "fake"],
         env={"LORE_ROOT": str(lore_root)},
         catch_exceptions=False,
     )
@@ -1150,7 +1150,7 @@ def test_capture_emits_pending_by_wiki_in_hook_event(
     for i in range(2):
         ledger.upsert(
             TranscriptLedgerEntry(
-                host="fake",
+                integration="fake",
                 transcript_id=f"a{i}",
                 path=proj_a / f"a{i}.jsonl",
                 directory=proj_a,
@@ -1173,7 +1173,7 @@ def test_capture_emits_pending_by_wiki_in_hook_event(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(proj_b), "--host", "fake"],
+        ["capture", "--event", "session-end", "--cwd", str(proj_b), "--integration", "fake"],
         env={"LORE_ROOT": str(lore_root)},
         catch_exceptions=False,
     )

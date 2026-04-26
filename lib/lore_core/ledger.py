@@ -1,9 +1,9 @@
 """Sidecar ledger with content-hash watermarks.
 
 Transcript-level and wiki-level sidecar JSON files.  Content-hash watermarks
-prevent host-side edits from silently desyncing the digested offset.  All
-writes go through ``lore_core.io.atomic_write_text`` so readers never see a
-partial file.
+prevent integration-side edits from silently desyncing the digested offset.
+All writes go through ``lore_core.io.atomic_write_text`` so readers never
+see a partial file.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ Resolver = Callable[[Path], "Scope | None"]
 
 @dataclass
 class TranscriptLedgerEntry:
-    host: str
+    integration: str
     transcript_id: str
     path: Path
     directory: Path
@@ -53,7 +53,7 @@ class TranscriptLedger:
     """Sidecar ledger at <lore_root>/.lore/transcript-ledger.json.
 
     Tracks per-transcript processing state with content-hash watermarks
-    rather than integer offsets — host-side edits to prior turns don't
+    rather than integer offsets — integration-side edits to prior turns don't
     silently desync the Kafka-style offset.
 
     The on-disk JSON is cached within a single ``TranscriptLedger``
@@ -104,14 +104,14 @@ class TranscriptLedger:
             self._cache_mtime = None
 
     @staticmethod
-    def _key(host: str, transcript_id: str) -> str:
-        return f"{host}::{transcript_id}"
+    def _key(integration: str, transcript_id: str) -> str:
+        return f"{integration}::{transcript_id}"
 
     @staticmethod
     def _entry_to_raw(e: TranscriptLedgerEntry) -> dict:
         """Convert to JSON-safe dict (datetime → ISO8601, Path → str)."""
         return {
-            "host": e.host,
+            "integration": e.integration,
             "transcript_id": e.transcript_id,
             "path": str(e.path),
             "directory": str(e.directory),
@@ -127,10 +127,15 @@ class TranscriptLedger:
 
     @staticmethod
     def _entry_from_raw(raw: dict) -> TranscriptLedgerEntry:
-        """Inverse of _entry_to_raw."""
+        """Inverse of _entry_to_raw.
+
+        One-release back-compat: ledgers written by Lore ≤ 0.10.3 use
+        the ``"host"`` JSON key. Read either; we always write
+        ``"integration"`` going forward. The fallback can drop in 0.11.0.
+        """
         curator_a_run_raw = raw.get("curator_a_run")
         return TranscriptLedgerEntry(
-            host=raw["host"],
+            integration=raw.get("integration") or raw["host"],
             transcript_id=raw["transcript_id"],
             path=Path(raw["path"]),
             directory=Path(raw["directory"]),
@@ -149,9 +154,9 @@ class TranscriptLedger:
         raw = self._load()
         return [self._entry_from_raw(v) for v in raw.values()]
 
-    def get(self, host: str, transcript_id: str) -> TranscriptLedgerEntry | None:
+    def get(self, integration: str, transcript_id: str) -> TranscriptLedgerEntry | None:
         raw = self._load()
-        key = self._key(host, transcript_id)
+        key = self._key(integration, transcript_id)
         if key not in raw:
             return None
         return self._entry_from_raw(raw[key])
@@ -159,7 +164,7 @@ class TranscriptLedger:
     def upsert(self, entry: TranscriptLedgerEntry) -> None:
         """Write the entry; atomic replace of the ledger file."""
         raw = self._load()
-        key = self._key(entry.host, entry.transcript_id)
+        key = self._key(entry.integration, entry.transcript_id)
         raw[key] = self._entry_to_raw(entry)
         self._write_raw(raw)
 
@@ -174,7 +179,7 @@ class TranscriptLedger:
             return
         raw = self._load()
         for entry in entries:
-            raw[self._key(entry.host, entry.transcript_id)] = self._entry_to_raw(entry)
+            raw[self._key(entry.integration, entry.transcript_id)] = self._entry_to_raw(entry)
         self._write_raw(raw)
 
     @staticmethod
@@ -293,7 +298,7 @@ class TranscriptLedger:
 
     def stamp_scan(
         self,
-        host: str,
+        integration: str,
         transcript_id: str,
         *,
         curator_a_run: datetime,
@@ -313,7 +318,7 @@ class TranscriptLedger:
         Raises ``KeyError`` if the entry is missing.
         """
         raw = self._load()
-        key = self._key(host, transcript_id)
+        key = self._key(integration, transcript_id)
         if key not in raw:
             raise KeyError(f"No ledger entry for {key!r}")
         entry = self._entry_from_raw(raw[key])
@@ -325,7 +330,7 @@ class TranscriptLedger:
 
     def advance(
         self,
-        host: str,
+        integration: str,
         transcript_id: str,
         *,
         digested_hash: str,
@@ -343,7 +348,7 @@ class TranscriptLedger:
         `datetime.now(UTC)` (or a frozen test value).
         """
         raw = self._load()
-        key = self._key(host, transcript_id)
+        key = self._key(integration, transcript_id)
         if key not in raw:
             raise KeyError(f"No ledger entry for {key!r}")
         entry = self._entry_from_raw(raw[key])

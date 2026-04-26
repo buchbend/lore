@@ -8,7 +8,7 @@ def test_emit_appends_one_line(tmp_path: Path):
     logger = HookEventLogger(tmp_path)
     logger.emit(
         event="session-end",
-        host="saiyajin",
+        integration="saiyajin",
         transcript_id="t-abc",
         scope={"wiki": "private", "scope": "lore"},
         duration_ms=47,

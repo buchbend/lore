@@ -23,7 +23,7 @@ from lore_core.types import ToolCall, ToolResult, TranscriptHandle
 def test_host_attribute_is_manual_send():
     from lore_adapters.manual_send import ManualSendAdapter
 
-    assert ManualSendAdapter.host == "manual-send"
+    assert ManualSendAdapter.integration == "manual-send"
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +135,7 @@ def test_read_from_skips_blank_lines(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 7. read_from preserves declared_host in host_extras
+# 7. read_from preserves declared_integration in host_extras
 # ---------------------------------------------------------------------------
 
 
@@ -147,10 +147,10 @@ def test_read_from_preserves_declared_host_in_host_extras(tmp_path):
         f.write('{"index": 0, "role": "user", "text": "hi"}\n')
 
     adapter = ManualSendAdapter()
-    turns = list(adapter.read_from(jsonl_file, tmp_path, declared_host="cursor"))
+    turns = list(adapter.read_from(jsonl_file, tmp_path, declared_integration="cursor"))
 
     assert len(turns) == 1
-    assert turns[0].host_extras["manual_send.declared_host"] == "cursor"
+    assert turns[0].integration_extras["manual_send.declared_integration"] == "cursor"
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +291,7 @@ def test_read_slice_from_index_filters(tmp_path):
 
     adapter = ManualSendAdapter()
     handle = TranscriptHandle(
-        host="manual-send",
+        integration="manual-send",
         id="test",
         path=jsonl_file,
         cwd=tmp_path,
@@ -320,7 +320,7 @@ def test_read_slice_after_hash_roundtrip(tmp_path):
 
     adapter = ManualSendAdapter()
     handle = TranscriptHandle(
-        host="manual-send",
+        integration="manual-send",
         id="test",
         path=jsonl_file,
         cwd=tmp_path,
@@ -353,7 +353,7 @@ def test_is_complete_always_true(tmp_path):
 
     adapter = ManualSendAdapter()
     handle = TranscriptHandle(
-        host="manual-send",
+        integration="manual-send",
         id="test",
         path=jsonl_file,
         cwd=tmp_path,

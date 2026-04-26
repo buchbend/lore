@@ -1,8 +1,8 @@
-"""Adapter protocol — how every host adapter speaks to lore.
+"""Adapter protocol — how every integration adapter speaks to lore.
 
 Downstream components (curator, ledger, CLI) speak only `Turn` +
-`TranscriptHandle` — never the host's native format. This seam makes
-lore host-agnostic and allows third-party adapters.
+`TranscriptHandle` — never the integration's native format. This seam makes
+lore integration-agnostic and allows third-party adapters.
 """
 
 from __future__ import annotations
@@ -11,27 +11,27 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from lore_core.types import Turn, TranscriptHandle
+from lore_core.types import TranscriptHandle, Turn
 
 
 @runtime_checkable
 class Adapter(Protocol):
-    """Protocol every host adapter implements.
+    """Protocol every integration adapter implements.
 
     Downstream components (curator, ledger, CLI) speak only `Turn` +
-    `TranscriptHandle` — never the host's native format. This is the
-    seam that makes lore host-agnostic.
+    `TranscriptHandle` — never the integration's native format. This is the
+    seam that makes lore integration-agnostic.
 
     Implementations: `claude-code` (Task 6), `manual-send` (Task 7).
-    Further hosts (codex, opencode, copilot-cli, gemini-cli) plug in
+    Further integrations (codex, opencode, copilot-cli, gemini-cli) plug in
     via the registry (Task 8) without changing downstream code.
 
-    Note on Turn.host_extras: currently debug-only; no registry of
+    Note on Turn.integration_extras: currently debug-only; no registry of
     recognised keys. When third-party adapters land, tighten this
     before allowing specialist passes to peek.
     """
 
-    host: str
+    integration: str
 
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         """Return transcripts whose session cwd equals `directory`."""
@@ -57,7 +57,7 @@ class Adapter(Protocol):
         position; falls back to content scan on mismatch. If
         `after_hash` is None, streams from the beginning.
 
-        Handles host-side mutation of prior turns (e.g., Cursor's
+        Handles integration-side mutation of prior turns (e.g., Cursor's
         SQLite store may rewrite earlier messages): the hint is
         advisory; the hash is the authoritative anchor.
         """

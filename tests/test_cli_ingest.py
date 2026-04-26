@@ -21,7 +21,7 @@ VALID_JSONL = "\n".join([
 
 
 def test_ingest_reads_from_file_and_advances_ledger(tmp_path, monkeypatch):
-    """File-based ingest: exit 0, ledger entry with host=manual-send."""
+    """File-based ingest: exit 0, ledger entry with integration=manual-send."""
     lore_root = tmp_path / "lore_root"
     lore_root.mkdir()
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
@@ -34,7 +34,7 @@ def test_ingest_reads_from_file_and_advances_ledger(tmp_path, monkeypatch):
         [
             "ingest",
             "--from", str(jsonl_file),
-            "--host", "cursor",
+            "--integration", "cursor",
             "--directory", str(tmp_path),
         ],
     )
@@ -43,7 +43,7 @@ def test_ingest_reads_from_file_and_advances_ledger(tmp_path, monkeypatch):
     ledger = TranscriptLedger(lore_root)
     entries = list(ledger._load().values())
     assert len(entries) == 1
-    assert entries[0]["host"] == "manual-send"
+    assert entries[0]["integration"] == "manual-send"
     assert entries[0]["transcript_id"]  # non-empty
 
 
@@ -58,7 +58,7 @@ def test_ingest_reads_from_stdin(tmp_path, monkeypatch):
         [
             "ingest",
             "--from", "-",
-            "--host", "cursor",
+            "--integration", "cursor",
             "--directory", str(tmp_path),
         ],
         input=VALID_JSONL,
@@ -82,7 +82,7 @@ def test_ingest_rejects_malformed_jsonl(tmp_path, monkeypatch):
         [
             "ingest",
             "--from", str(jsonl_file),
-            "--host", "cursor",
+            "--integration", "cursor",
             "--directory", str(tmp_path),
         ],
     )

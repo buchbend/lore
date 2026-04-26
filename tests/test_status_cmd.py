@@ -254,7 +254,7 @@ def test_status_hook_alert_when_pending_but_hook_stale(tmp_path: Path, monkeypat
     ledger = TranscriptLedger(lore_root)
     ledger.upsert(
         TranscriptLedgerEntry(
-            host="claude-code",
+            integration="claude-code",
             transcript_id="t1",
             path=project / "t1.jsonl",
             directory=project,
@@ -284,7 +284,7 @@ def test_status_hook_alert_when_pending_and_hook_events_all_old(tmp_path: Path, 
     ledger = TranscriptLedger(lore_root)
     ledger.upsert(
         TranscriptLedgerEntry(
-            host="claude-code", transcript_id="t2",
+            integration="claude-code", transcript_id="t2",
             path=project / "t2.jsonl", directory=project,
             digested_hash=None, digested_index_hint=None,
             synthesised_hash=None,
@@ -440,7 +440,7 @@ def test_verbose_shows_pending_by_wiki(tmp_path: Path, monkeypatch) -> None:
 
     ledger = TranscriptLedger(lore_root)
     ledger.upsert(TranscriptLedgerEntry(
-        host="claude-code", transcript_id="t1",
+        integration="claude-code", transcript_id="t1",
         path=project / "t1.jsonl", directory=project,
         digested_hash=None, digested_index_hint=None,
         synthesised_hash=None,

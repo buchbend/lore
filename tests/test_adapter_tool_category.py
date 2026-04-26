@@ -63,7 +63,7 @@ def _write_claude_transcript(tmp_path: Path, tool_name: str) -> TranscriptHandle
     }
     transcripts.write_text(json.dumps(line) + "\n")
     return TranscriptHandle(
-        host="claude-code", id="tmp", path=transcripts, cwd=cwd,
+        integration="claude-code", id="tmp", path=transcripts, cwd=cwd,
         mtime=datetime.now(UTC),
     )
 
@@ -124,7 +124,7 @@ def test_manual_send_adapter_classifies_declared_host_tools(tmp_path):
     )
 
     adapter = ManualSendAdapter()
-    turns = list(adapter.read_from(jsonl, tmp_path, declared_host="cursor"))
+    turns = list(adapter.read_from(jsonl, tmp_path, declared_integration="cursor"))
 
     assert len(turns) == 1
     assert turns[0].tool_call is not None
@@ -145,7 +145,7 @@ def test_manual_send_preserves_explicit_category(tmp_path):
         "\n"
     )
 
-    turns = list(ManualSendAdapter().read_from(jsonl, tmp_path, declared_host="future"))
+    turns = list(ManualSendAdapter().read_from(jsonl, tmp_path, declared_integration="future"))
     assert turns[0].tool_call.category == "agent_spawn"
 
 

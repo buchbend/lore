@@ -185,7 +185,7 @@ def test_list_transcripts_finds_session(tmp_home, tmp_path) -> None:
     })])
     handles = VSCodeCopilotAdapter().list_transcripts(project)
     assert len(handles) == 1
-    assert handles[0].host == "copilot"
+    assert handles[0].integration == "copilot"
     assert handles[0].path.name == "session-001.jsonl"
 
 
@@ -265,7 +265,7 @@ def test_unsupported_version_carries_in_host_extras(tmp_home, tmp_path) -> None:
     handle = adapter.list_transcripts(project)[0]
     turns = list(adapter.read_slice(handle))
     assert turns
-    assert turns[0].host_extras.get("copilot.unsupported_version") == 99
+    assert turns[0].integration_extras.get("copilot.unsupported_version") == 99
 
 
 @pytest.mark.skipif(

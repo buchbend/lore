@@ -6,10 +6,10 @@ import pytest
 
 from lore_adapters import (
     Adapter,
-    UnknownHostError,
+    UnknownIntegrationError,
     get_adapter,
     register,
-    registered_hosts,
+    registered_integrations,
 )
 from lore_adapters.protocol import Adapter as AdapterProtocol
 
@@ -17,13 +17,13 @@ from lore_adapters.protocol import Adapter as AdapterProtocol
 class StubAdapter(AdapterProtocol):
     """Minimal stub adapter for testing."""
 
-    def __init__(self, host: str) -> None:
-        self._host = host
+    def __init__(self, integration: str) -> None:
+        self._integration = integration
 
     @property
-    def host(self) -> str:
-        """Host name of this adapter."""
-        return self._host
+    def integration(self) -> str:
+        """Integration name of this adapter."""
+        return self._integration
 
     async def send(self, note_id: str, content: str) -> str:
         """Send a note somewhere."""
@@ -45,43 +45,43 @@ class StubAdapter(AdapterProtocol):
 def test_registry_returns_claude_code() -> None:
     """get_adapter("claude-code") returns the claude-code adapter."""
     adapter = get_adapter("claude-code")
-    assert adapter.host == "claude-code"
+    assert adapter.integration == "claude-code"
 
 
 def test_registry_returns_manual_send() -> None:
     """get_adapter("manual-send") returns the manual-send adapter."""
     adapter = get_adapter("manual-send")
-    assert adapter.host == "manual-send"
+    assert adapter.integration == "manual-send"
 
 
-def test_registry_unknown_host_raises() -> None:
-    """get_adapter with unknown host raises UnknownHostError."""
-    with pytest.raises(UnknownHostError):
+def test_registry_unknown_integration_raises() -> None:
+    """get_adapter with unknown integration raises UnknownIntegrationError."""
+    with pytest.raises(UnknownIntegrationError):
         get_adapter("unknown")
 
 
-def test_registered_hosts_lists_v1_set() -> None:
-    """registered_hosts() returns a sorted list including v1 adapters."""
-    hosts = registered_hosts()
-    assert isinstance(hosts, list)
-    assert "claude-code" in hosts
-    assert "manual-send" in hosts
+def test_registered_integrations_lists_v1_set() -> None:
+    """registered_integrations() returns a sorted list including v1 adapters."""
+    integrations = registered_integrations()
+    assert isinstance(integrations, list)
+    assert "claude-code" in integrations
+    assert "manual-send" in integrations
     # Should be sorted
-    assert hosts == sorted(hosts)
+    assert integrations == sorted(integrations)
 
 
 def test_register_adds_new_adapter() -> None:
     """register() adds a new adapter and get_adapter can retrieve it."""
-    stub = StubAdapter(host="x")
+    stub = StubAdapter(integration="x")
     register(stub)
 
     # Should be retrievable
     adapter = get_adapter("x")
-    assert adapter.host == "x"
+    assert adapter.integration == "x"
 
-    # Should appear in registered_hosts
-    hosts = registered_hosts()
-    assert "x" in hosts
+    # Should appear in registered_integrations
+    integrations = registered_integrations()
+    assert "x" in integrations
 
 
 def test_init_exports_public_api() -> None:
@@ -90,6 +90,6 @@ def test_init_exports_public_api() -> None:
     # If the imports fail, the test fails.
     assert callable(get_adapter)
     assert callable(register)
-    assert callable(registered_hosts)
-    assert UnknownHostError is not None
+    assert callable(registered_integrations)
+    assert UnknownIntegrationError is not None
     assert Adapter is not None

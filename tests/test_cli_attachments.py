@@ -137,7 +137,7 @@ def _seed_ledger_entry(lore_root: Path, directory: Path) -> None:
 
     ledger = TranscriptLedger(lore_root)
     entry = TranscriptLedgerEntry(
-        host="claude-code",
+        integration="claude-code",
         transcript_id=f"test-{directory.name}",
         path=directory / "transcript.jsonl",
         directory=directory,

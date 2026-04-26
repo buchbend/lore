@@ -28,7 +28,11 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 def ingest(
     from_path: str = typer.Option(..., "--from", help="Path to JSONL file, or '-' for stdin."),
-    host: str = typer.Option(..., "--host", help="Declared source host (e.g. cursor, copilot)."),
+    integration: str = typer.Option(
+        ...,
+        "--integration",
+        help="Declared source integration (e.g. cursor, copilot).",
+    ),
     directory: str = typer.Option(..., "--directory", help="Working directory of the transcript session."),
     transcript_id: str = typer.Option(None, "--transcript-id", help="Override transcript ID (defaults to filename+mtime)."),
 ) -> None:
@@ -65,7 +69,7 @@ def ingest(
 
     # Parse turns
     try:
-        turns = list(adapter.read_from(source, cwd, declared_host=host))
+        turns = list(adapter.read_from(source, cwd, declared_integration=integration))
     except ValueError as exc:
         err_console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
@@ -77,7 +81,7 @@ def ingest(
     # Upsert ledger entry
     ledger = TranscriptLedger(lore_root)
     entry = TranscriptLedgerEntry(
-        host="manual-send",
+        integration="manual-send",
         transcript_id=tid,
         path=source_path,
         directory=cwd,
@@ -93,5 +97,5 @@ def ingest(
 
     console.print(
         f"[green]Ingested[/green] {len(turns)} turn(s) → ledger entry "
-        f"[bold]{entry.host}::{tid}[/bold]"
+        f"[bold]{entry.integration}::{tid}[/bold]"
     )

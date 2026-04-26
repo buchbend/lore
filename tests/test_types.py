@@ -89,14 +89,14 @@ def test_types_are_frozen():
 
     # TranscriptHandle
     th = TranscriptHandle(
-        host="localhost",
+        integration="localhost",
         id="1",
         path=Path("/tmp"),
         cwd=Path("/tmp"),
         mtime=datetime.now(),
     )
     with pytest.raises(dataclasses.FrozenInstanceError):
-        th.host = "modified"
+        th.integration = "modified"
 
     # Scope
     s = Scope(

@@ -30,7 +30,7 @@ FAKE_TURNS = [
 
 
 class _FakeE2EAdapter:
-    host = "fake"
+    integration = "fake"
 
     def __init__(self, handle: TranscriptHandle) -> None:
         self._handle = handle
@@ -135,7 +135,7 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
     transcript_path.write_text("{}")
 
     handle = TranscriptHandle(
-        host="fake",
+        integration="fake",
         id="t-e2e-001",
         path=transcript_path,
         cwd=cwd,
@@ -157,7 +157,7 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
         # defaults are OptionInfo objects, not plain Python None. Omitting
         # `transcript` causes the filter `h.path == <OptionInfo>` to drop
         # every handle, resulting in an empty ledger write.
-        hooks_mod.capture(event="session-end", cwd_override=cwd, host="fake", transcript=None)
+        hooks_mod.capture(event="session-end", cwd_override=cwd, integration="fake", transcript=None)
 
         # ------------------------------------------------------------------
         # Step 4 — assert hook-events.jsonl contains the session-end record

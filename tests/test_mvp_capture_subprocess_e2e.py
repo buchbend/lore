@@ -26,7 +26,7 @@ from lore_adapters.registry import _REGISTRY
 
 
 class FakeClaudeCodeAdapter:
-    host = "claude-code"
+    integration = "claude-code"
 
     def __init__(self, handles_by_dir=None, turns_by_id=None):
         self._handles = handles_by_dir or {}
@@ -91,7 +91,7 @@ def _setup_lore_root(tmp_path: Path, wiki_name: str = "private") -> tuple[Path, 
 
 def _make_handle(work: Path, transcript_id: str = "uuid-1") -> TranscriptHandle:
     return TranscriptHandle(
-        host="claude-code",
+        integration="claude-code",
         id=transcript_id,
         path=work / f"{transcript_id}.jsonl",
         cwd=work,
@@ -195,7 +195,7 @@ def test_e2e_subprocess_backend_produces_session_note(
     cli_runner = TyperCliRunner()
     result = cli_runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(work), "--host", "claude-code"],
+        ["capture", "--event", "session-end", "--cwd", str(work), "--integration", "claude-code"],
         env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
         catch_exceptions=False,
     )
@@ -302,7 +302,7 @@ def test_e2e_subprocess_backend_binary_missing_path(
     cli_runner = TyperCliRunner()
     result = cli_runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(work), "--host", "claude-code"],
+        ["capture", "--event", "session-end", "--cwd", str(work), "--integration", "claude-code"],
         env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
         catch_exceptions=False,
     )

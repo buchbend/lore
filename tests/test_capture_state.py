@@ -300,7 +300,7 @@ def test_capture_state_pending_transcripts_count(tmp_path: Path) -> None:
     for i in range(3):
         tledger.upsert(
             TranscriptLedgerEntry(
-                host="fake",
+                integration="fake",
                 transcript_id=f"t{i}",
                 path=lore_root / f"t{i}.jsonl",
                 directory=lore_root,

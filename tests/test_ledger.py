@@ -19,7 +19,7 @@ from lore_core.ledger import (
 def _make_entry(
     lore_root: Path,
     *,
-    host: str = "claude",
+    integration: str = "claude",
     transcript_id: str = "abc123",
     digested_hash: str | None = None,
     digested_index_hint: int | None = None,
@@ -32,7 +32,7 @@ def _make_entry(
     if last_mtime is None:
         last_mtime = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
     return TranscriptLedgerEntry(
-        host=host,
+        integration=integration,
         transcript_id=transcript_id,
         path=lore_root / "transcripts" / f"{transcript_id}.json",
         directory=lore_root / "transcripts",
@@ -66,7 +66,7 @@ def test_transcript_ledger_upsert_then_get_roundtrip(tmp_path: Path) -> None:
     ledger = TranscriptLedger(tmp_path)
     entry = _make_entry(
         tmp_path,
-        host="claude",
+        integration="claude",
         transcript_id="t1",
         digested_hash="abc",
         digested_index_hint=5,
@@ -79,7 +79,7 @@ def test_transcript_ledger_upsert_then_get_roundtrip(tmp_path: Path) -> None:
     ledger.upsert(entry)
     result = ledger.get("claude", "t1")
     assert result is not None
-    assert result.host == "claude"
+    assert result.integration == "claude"
     assert result.transcript_id == "t1"
     assert result.path == entry.path
     assert result.directory == entry.directory
@@ -352,7 +352,7 @@ def _make_pending_entry(
 ) -> TranscriptLedgerEntry:
     """Build a never-digested (pending) entry rooted in `directory`."""
     return TranscriptLedgerEntry(
-        host="claude",
+        integration="claude",
         transcript_id=transcript_id,
         path=directory / f"{transcript_id}.jsonl",
         directory=directory,
