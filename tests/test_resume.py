@@ -191,3 +191,49 @@ def test_resume_wiki_scoped_no_keyword(vault, monkeypatch, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "Resume: ccat" in out
+
+
+@pytest.fixture
+def sharded_vault(tmp_path, monkeypatch):
+    """Vault using the canonical sharded layout: sessions/YYYY/MM/DD-slug.md.
+
+    This is the layout `lore session new` actually writes (see
+    `lore_core.session.scaffold` — `<wiki>/sessions/<YYYY>/<MM>/<DD>-<slug>.md`).
+    The flat-layout fixture above predates sharding and only exercises the
+    legacy form; without a sharded fixture the date-prefix bug in
+    `_iter_session_notes` (parsed only the first 10 chars of the filename
+    stem, which for sharded files is "DD-foo-bar") went unnoticed.
+    """
+    from datetime import date
+
+    vault_root = tmp_path / "vault"
+    wiki = vault_root / "wiki" / "private"
+    today = date.today()
+    shard = wiki / "sessions" / f"{today.year}" / f"{today.month:02d}"
+    shard.mkdir(parents=True)
+    (shard / f"{today.day:02d}-sharded-fix.md").write_text(
+        dedent(
+            f"""\
+            ---
+            schema_version: 2
+            type: session
+            created: {today.isoformat()}
+            last_reviewed: {today.isoformat()}
+            status: stable
+            description: "sharded layout session"
+            scope: private
+            ---
+            # s
+            """
+        )
+    )
+    monkeypatch.setenv("LORE_ROOT", str(vault_root))
+    return vault_root, wiki
+
+
+def test_resume_recent_finds_sharded_sessions(sharded_vault, capsys):
+    """Recent-mode must walk the YYYY/MM/DD-slug.md sharded layout."""
+    rc = resume_cmd.main([])  # default 3-day window covers today
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "sharded-fix" in out, f"sharded session missing from output:\n{out}"

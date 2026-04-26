@@ -51,6 +51,36 @@ def _resolve_wiki(wiki_root: Path, name: str) -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def _session_date_from_path(md: Path, sessions_dir: Path) -> date | None:
+    """Extract the session date from either layout.
+
+    Canonical sharded form (what `lore session new` writes):
+        sessions[/handle]/YYYY/MM/DD-slug.md  → date from path parts.
+    Legacy flat form (older notes, test fixtures):
+        sessions/YYYY-MM-DD-slug.md           → date from stem[:10].
+
+    Returns None when neither parse succeeds (file is not a session note).
+    """
+    try:
+        rel_parts = md.relative_to(sessions_dir).parts
+    except ValueError:
+        return None
+    # Sharded layout: trailing parts are .../YYYY/MM/DD-slug.md
+    if len(rel_parts) >= 3:
+        year_s, month_s = rel_parts[-3], rel_parts[-2]
+        day_s = md.stem[:2]
+        if year_s.isdigit() and month_s.isdigit() and day_s.isdigit():
+            try:
+                return date(int(year_s), int(month_s), int(day_s))
+            except ValueError:
+                pass
+    # Flat layout fallback
+    try:
+        return date.fromisoformat(md.stem[:10])
+    except (ValueError, IndexError):
+        return None
+
+
 def _iter_session_notes(wiki_path: Path, days: int) -> list[tuple[date, Path]]:
     """Return (date, path) for session notes newer than cutoff (sharded-aware)."""
     sessions_dir = wiki_path / "sessions"
@@ -59,11 +89,8 @@ def _iter_session_notes(wiki_path: Path, days: int) -> list[tuple[date, Path]]:
     cutoff = date.today() - timedelta(days=days)
     out: list[tuple[date, Path]] = []
     for md in sessions_dir.rglob("*.md"):
-        try:
-            d = date.fromisoformat(md.stem[:10])
-        except (ValueError, IndexError):
-            continue
-        if d < cutoff:
+        d = _session_date_from_path(md, sessions_dir)
+        if d is None or d < cutoff:
             continue
         out.append((d, md))
     out.sort(reverse=True, key=lambda t: t[0])
@@ -231,11 +258,8 @@ def _gather_scope(
     if sessions_dir.is_dir():
         cutoff = date.today() - timedelta(days=days)
         for md in sorted(sessions_dir.rglob("*.md"), reverse=True):
-            try:
-                d = date.fromisoformat(md.stem[:10])
-            except (ValueError, IndexError):
-                continue
-            if d < cutoff:
+            d = _session_date_from_path(md, sessions_dir)
+            if d is None or d < cutoff:
                 continue
             fm = parse_frontmatter(md.read_text(errors="replace"))
             note_scope = str(fm.get("scope") or "")
@@ -248,10 +272,14 @@ def _gather_scope(
                 )
             )
             if matches_scope or (note_repos & member_repos):
+                # In flat layout the slug starts at byte 11 ("YYYY-MM-DD-").
+                # In sharded layout the filename is "DD-slug.md" — the slug
+                # starts at byte 3.
+                slug_start = 11 if md.parent == sessions_dir else 3
                 sessions.append(
                     {
                         "date": d.isoformat(),
-                        "slug": md.stem[11:] or md.stem,
+                        "slug": md.stem[slug_start:] or md.stem,
                         "scope": note_scope or "—",
                         "path": str(md.relative_to(wiki_path)),
                     }
