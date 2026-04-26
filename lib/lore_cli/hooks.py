@@ -641,7 +641,6 @@ def _session_start_from_lore(
     status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     out_parts: list[str] = [status_line, ""]
-    out_parts.extend(_load_directive_lines())
     if project_entry is not None:
         out_parts.append(f"## Focus: [[{project_entry['name']}]]")
         desc = project_entry.get("description")
@@ -687,6 +686,11 @@ def _session_start_from_lore(
         if len(prs) > MAX_PRS_INLINE:
             out_parts.append(f"- … +{len(prs) - MAX_PRS_INLINE} more")
         out_parts.append("")
+
+    # Directive last: status + focus + open items show what Lore did for
+    # the user *first*; the rule postscript reasserts the contract without
+    # competing for the most-attention slot at the top of the banner.
+    out_parts.extend(_load_directive_lines())
 
     return "\n".join(out_parts)
 
@@ -753,7 +757,6 @@ def _session_start(cwd: str | None) -> str:
     status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     parts: list[str] = [status_line, ""]
-    parts.extend(_load_directive_lines())
 
     if project_entry is not None:
         parts.append(f"## Focus: [[{project_entry['name']}]]")
@@ -793,6 +796,9 @@ def _session_start(cwd: str | None) -> str:
             f"{elsewhere} open items elsewhere in {wiki.name} — `/lore:resume` to see."
         )
         parts.append("")
+
+    # Directive last: see _session_start_from_lore for rationale.
+    parts.extend(_load_directive_lines())
 
     return "\n".join(parts)
 

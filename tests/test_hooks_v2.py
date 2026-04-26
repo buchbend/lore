@@ -273,6 +273,18 @@ def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
     assert "+1 from `ccat:data-center` subtree" in out
     assert "/lore:resume ccat:data-center" in out
 
+    # Phase 5 ordering: status line first, directive postscript last.
+    # Status appears before issues; the "## Directives" header appears
+    # AFTER the issue/PR content so the user sees what Lore loaded
+    # before the rule reasserts itself.
+    status_pos = out.find(": active")
+    issues_pos = out.find("#47 retry cap missing")
+    directives_pos = out.find("## Directives")
+    assert status_pos < issues_pos, "status line should precede issues"
+    assert issues_pos < directives_pos, (
+        "directive should be a postscript, after the user-context payload"
+    )
+
 
 def test_session_start_from_lore_falls_back_when_gh_fails(fake_vault, tmp_path, monkeypatch):
     vault, wiki = fake_vault

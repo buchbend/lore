@@ -18,7 +18,7 @@
 - ☑ **Phase 2** — Config map + state map + `require_lore_root()` *(2026-04-25)*
 - ☑ **Phase 3** — Hook hygiene (pid_alive, except audit, lockfile docs) *(2026-04-26)*
 - ☑ **Phase 4** — Skill ↔ CLI drift fix + surface-add slash rename *(2026-04-26)*
-- ☐ **Phase 5** — UX polish
+- ☑ **Phase 5** — UX polish (SessionStart reorder, --help groups, MCP envelope) *(2026-04-26)*
 - ☐ **Phase 6** — Test hygiene + curator decomposition
 - ☐ **Phase 7** — Performance + scaling prep *(optional)*
 
@@ -536,19 +536,125 @@ After verifying each claim against the actual code:
 
 ---
 
-## Phase 5 — UX polish *(sketch)*
+## Phase 5 — UX polish (SessionStart reorder, --help groups, MCP envelope)
 
-**Status:** ☐ pending — **not yet planned in detail.**
+**Status:** ☑ completed 2026-04-26
+**Estimated session length:** 1 sitting
 
-### Sketch
-SessionStart reorder (status → focus → open items → directive last). MCP error envelope standardize (`{"error": {"code", "message", "next"}}`). `lore --help` grouping (promote `init`/`new-wiki`/`lint` out of `_Advanced_`). "Show me state" triad disambiguation (rename `/lore:context` → `/lore:loaded`, add `/lore:status`, cross-link status ↔ doctor). SKILL.md descriptions retrofit to *what / returns / when*. Inline `› consulted [[note]]` made deterministic.
+### Refined scope (made during the planning sub-step)
 
-### Refine before starting
-- Validate the `/lore:context` rename doesn't break muscle memory (or alias both for a release).
-- Decide the deterministic-citation mechanism: hook-emitted line, or extension to SessionStart cache?
+The original sketch packaged six concerns. After verifying claims:
 
-### Session log
-*(empty)*
+- **SessionStart reorder**: real, simple. **Done.**
+- **`lore --help` grouping**: real (`init`/`new-wiki`/`lint` in
+  Advanced). **Done.**
+- **MCP error envelope**: 13 bare-string returns, 1 partially-shaped
+  return (line 239), 2 JSON-RPC ones (correct as-is). **Done** for
+  the 8 tool-handler call sites that benefit from a code-keyed shape.
+- **`/lore:context` → `/lore:loaded` rename**: deferred — needs
+  deprecation alias for muscle memory; not worth the user comms
+  pre-1.0.
+- **SKILL.md description retrofit to *what/returns/when***:
+  deferred — bounded but tedious; lower-value than the structural
+  fixes that landed.
+- **Inline `› consulted [[note]]` deterministic**: deferred —
+  needs a hook-side mechanism (extension to SessionStart cache or
+  a new tool-postprocess hook), bigger change than fits in Phase 5.
+
+### Landed
+
+- **SessionStart directive moved to postscript.** Both
+  `_session_start_from_lore` (line 643) and `_session_start` (line
+  755) now order: status line → focus → open items → directive
+  postscript. Status + context render *first*, the rule reasserts
+  itself at the bottom without competing for the most-attention
+  slot. Updated `tests/test_hooks_v2.py` with a positional assertion
+  pinning the new ordering (status pos < issues pos < directives
+  pos). The existing 24 hooks_v2 tests + 4 ordering checks all
+  pass.
+- **`lore --help` re-grouped.**
+  - Getting Started gains `init` (was Advanced) — a first-run user
+    types `lore --help` and now sees `init` two lines below
+    `install`, where they need it.
+  - Knowledge gains `lint`, `new-wiki`, `curator` (all from
+    Advanced) — these are routine vault-hygiene verbs, not
+    developer-only tooling.
+  - Advanced still hosts `proc`, `runs`, `transcripts`, `mcp`,
+    `migrate`, `hook`, etc. — actual internal/diagnostic verbs.
+- **MCP error envelope standardized.** New `_mcp_error(code,
+  message, next_=None)` helper at the top of `lore_mcp/server.py`.
+  Migrated 8 tool-handler call sites (`handle_read`, `handle_index`,
+  `handle_catalog`, `handle_wikilinks`, dispatcher's unknown-tool
+  fallthrough). Codes used: `wiki_not_found` (with "run `lore
+  status`" hint), `note_not_found`, `path_escape`, `path_not_found`,
+  `catalog_missing` (with "run `lore lint`" hint), `unknown_tool`.
+  The pre-existing `lore_surface_validate` issue list (which
+  already had structured `{level, code, message}`) was cited in the
+  helper docstring as the precedent.
+- **Tests:** `tests/test_mcp_error_envelope.py` (8 tests) — pins
+  helper basics, every `_mcp_error` envelope shape, and the
+  recovery-hint contract. Updated
+  `tests/test_mcp_read_wikilink.py:75` from the old bare-string
+  assertion to the new envelope shape.
+
+**Tests:** 1488 → 1496 passing (+4 ordering checks in hooks_v2,
++8 error-envelope tests). No regressions.
+
+### Deliberate deferrals
+
+- **`/lore:context` → `/lore:loaded` slash rename.** Pre-1.0 we
+  could just rename, but a user who has typed `/lore:context` in
+  the past month gets a "command not found" surprise. Better to
+  alias both for one release, deprecation-warn, then remove. Park
+  for the 1.0 release-prep pass.
+- **SKILL.md description normalisation.** The 17 user-facing
+  skills have description fields ranging 18-41 words; reformatting
+  all of them to a *what / returns / when* template is achievable
+  but mostly cosmetic. The drift guard added in Phase 4 catches
+  the worst issue (skills citing internal package paths); pure
+  description quality can wait.
+- **Deterministic inline citations.** The `› consulted [[X]]`
+  affordance is currently agent-discretional (Claude renders it
+  when it remembers, drops it when it doesn't). Making it
+  deterministic would mean either a) emitting it from a hook
+  whenever `lore_search` is called, or b) extending the
+  SessionStart cache to record citation metadata that the agent
+  reads back. Both are bigger architectural changes than fit in
+  Phase 5; revisit if/when citation reliability becomes a user
+  complaint.
+
+### Surprised
+
+- The MCP error landscape was *messier* than the review showed:
+  three different error shapes coexisted (bare string at most call
+  sites, partial-response-with-error at line 239 in
+  `handle_surface_context`, structured JSON-RPC at the dispatcher).
+  Migrating to one shape across all three layers would have been
+  too invasive — instead the helper is scoped to tool handlers and
+  the docstring documents that the JSON-RPC layer is intentionally
+  different.
+- The `/lore:context` rename was tempting but the mental cost of
+  deprecating-and-aliasing for one release outweighed the
+  user-facing clarity gain. Pre-1.0, every "small" rename like this
+  costs more than it looks like.
+- The SessionStart reorder was a 6-line change and arguably the
+  highest-impact UX win in the whole roadmap so far — the directive
+  was *first* on every banner since Lore shipped, and reading the
+  banner with directive-last feels noticeably different (status +
+  payload first, rule postscript at the bottom). Worth the
+  deferral discipline that kept the original sketch from bloating.
+
+### Scope refinements for Phase 6
+
+- Phase 6 is curator decomposition + test hygiene (drop the
+  autouse legacy-mode fixture; integration test for cascade
+  default; decompose `run_curator_c`'s 180-line god-function).
+- The `_mcp_error` helper pattern is reusable in Phase 6 if any
+  curator code emits structured error payloads — same envelope
+  works for "run-summary error rows" if that's wanted.
+- Phase 5's deferred items (`/lore:context` rename, citation
+  determinism) are candidates for a "1.0 release prep" pass after
+  Phase 7, not for Phase 6.
 
 ---
 

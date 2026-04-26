@@ -71,8 +71,11 @@ def test_unknown_slug_returns_error(tmp_path: Path, monkeypatch) -> None:
     wiki = _setup_wiki(tmp_path, monkeypatch)
     _setup_catalog(wiki)
     result = handle_read("[[nonexistent-note]]", wiki="private")
+    # Phase 5: structured error envelope. {"error": {"code", "message", "next"?}}
     assert "error" in result
-    assert "not found" in result["error"]
+    assert isinstance(result["error"], dict)
+    assert result["error"]["code"] == "note_not_found"
+    assert "not found" in result["error"]["message"]
 
 
 def test_team_mode_sharded_resolves(tmp_path: Path, monkeypatch) -> None:

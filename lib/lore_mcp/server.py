@@ -44,6 +44,26 @@ from lore_search.fts import FtsBackend
 # ---------------------------------------------------------------------------
 
 
+def _mcp_error(code: str, message: str, *, next_: str | None = None) -> dict[str, Any]:
+    """Standard structured error envelope for MCP tool responses.
+
+    Tool handlers return ``{"error": {"code", "message", "next"}}`` so
+    Claude (or any MCP client) can branch on ``code`` for retry logic
+    instead of pattern-matching English strings. ``next`` is an
+    optional recovery hint shown verbatim to the user.
+
+    Phase 5 of the cleanup roadmap introduced this. Pre-existing
+    bare-string ``{"error": "..."}`` returns are migrated incrementally.
+    The JSON-RPC protocol-level error responses (``-32xxx`` codes) at
+    the dispatcher use the JSON-RPC standard shape and are *not* this
+    envelope — different layer, different contract.
+    """
+    payload: dict[str, Any] = {"code": code, "message": message}
+    if next_:
+        payload["next"] = next_
+    return {"error": payload}
+
+
 def _resolve_wiki(wiki: str | None) -> Path | None:
     """Resolve a wiki name to its on-disk path."""
     wiki_root = get_wiki_root()
@@ -100,7 +120,11 @@ def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
 def handle_read(path: str, wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
-        return {"error": f"wiki not found: {wiki}"}
+        return _mcp_error(
+            "wiki_not_found",
+            f"wiki not found: {wiki}",
+            next_="run `lore status` to list configured wikis",
+        )
 
     # Resolve wikilink syntax or bare slug.
     slug = None
@@ -111,16 +135,16 @@ def handle_read(path: str, wiki: str | None = None) -> dict[str, Any]:
     if slug:
         resolved = _resolve_slug(wiki_path, slug)
         if resolved is None:
-            return {"error": f"note not found: {slug}"}
+            return _mcp_error("note_not_found", f"note not found: {slug}")
         path = resolved
 
     target = (wiki_path / path).resolve()
     try:
         target.relative_to(wiki_path.resolve())
     except ValueError:
-        return {"error": "path escapes wiki root"}
+        return _mcp_error("path_escape", "path escapes wiki root")
     if not target.exists():
-        return {"error": f"not found: {path}"}
+        return _mcp_error("path_not_found", f"not found: {path}")
     text = target.read_text(errors="replace")
     return {
         "wiki": wiki_path.name,
@@ -132,20 +156,36 @@ def handle_read(path: str, wiki: str | None = None) -> dict[str, Any]:
 def handle_index(wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
-        return {"error": f"wiki not found: {wiki}"}
+        return _mcp_error(
+            "wiki_not_found",
+            f"wiki not found: {wiki}",
+            next_="run `lore status` to list configured wikis",
+        )
     index = wiki_path / "_index.md"
     if not index.exists():
-        return {"error": "no _index.md — run `lore lint` first"}
+        return _mcp_error(
+            "catalog_missing",
+            "no _index.md",
+            next_="run `lore lint` to regenerate the index",
+        )
     return {"wiki": wiki_path.name, "content": index.read_text(errors="replace")}
 
 
 def handle_catalog(wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
-        return {"error": f"wiki not found: {wiki}"}
+        return _mcp_error(
+            "wiki_not_found",
+            f"wiki not found: {wiki}",
+            next_="run `lore status` to list configured wikis",
+        )
     cat = wiki_path / "_catalog.json"
     if not cat.exists():
-        return {"error": "no _catalog.json — run `lore lint` first"}
+        return _mcp_error(
+            "catalog_missing",
+            "no _catalog.json",
+            next_="run `lore lint` to regenerate the catalog",
+        )
     return json.loads(cat.read_text())
 
 
@@ -414,10 +454,18 @@ def handle_surface_validate(wiki: str, draft: dict) -> dict[str, Any]:
 def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
-        return {"error": f"wiki not found: {wiki}"}
+        return _mcp_error(
+            "wiki_not_found",
+            f"wiki not found: {wiki}",
+            next_="run `lore status` to list configured wikis",
+        )
     cat_path = wiki_path / "_catalog.json"
     if not cat_path.exists():
-        return {"error": "no _catalog.json — run `lore lint` first"}
+        return _mcp_error(
+            "catalog_missing",
+            "no _catalog.json",
+            next_="run `lore lint` to regenerate the catalog",
+        )
     catalog = json.loads(cat_path.read_text())
     for entries in catalog.get("sections", {}).values():
         for entry in entries:
@@ -439,7 +487,7 @@ def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
             "links_in": [],
             "note_missing_from_catalog": True,
         }
-    return {"error": f"note not found: {note}"}
+    return _mcp_error("note_not_found", f"note not found: {note}")
 
 
 # ---------------------------------------------------------------------------
@@ -694,7 +742,7 @@ def _dispatch(tool_name: str, args: dict) -> Any:
         case "lore_surface_validate":
             return handle_surface_validate(**args)
         case _:
-            return {"error": f"unknown tool: {tool_name}"}
+            return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 
 
 def _start_server() -> int:
