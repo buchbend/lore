@@ -1,13 +1,13 @@
-"""`lore install` — multi-host installer dispatcher.
+"""`lore install` — multi-integration installer dispatcher.
 
 Subcommands:
-  lore install                    interactive — install for every detected host
-  lore install --host claude      one host
-  lore install --host all         every host where the binary is on PATH
-  lore install check [--host …]   plan-only, never writes
-  lore install upgrade [--host …] re-install: no-op if matching schema
-  lore install uninstall [--host …]  symmetric semantic remove
-  lore uninstall                  alias for `lore install uninstall`
+  lore install                              interactive — install for every detected integration
+  lore install --integration claude         one integration
+  lore install --integration all            every integration where the binary is on PATH
+  lore install check [--integration …]      plan-only, never writes
+  lore install upgrade [--integration …]    re-install: no-op if matching schema
+  lore install uninstall [--integration …]  symmetric semantic remove
+  lore uninstall                            alias for `lore install uninstall`
 
 Flags:
   --yes      non-interactive (kind=replace still prompts)
@@ -16,7 +16,7 @@ Flags:
   --force    proceed despite legacy install.sh artifacts (rejected with --yes)
 
 UX contract (per the four-pass plan review):
-  • One prompt per host with inline action list (apt-style, not npm-style)
+  • One prompt per integration with inline action list (apt-style, not npm-style)
   • [d] keypress expands the diffs
   • kind=replace always prompts even with --yes
   • Pre-pipx latency hint before subprocess'ing installers
@@ -28,18 +28,13 @@ UX contract (per the four-pass plan review):
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import typer
-from rich.console import Console
-from rich.markup import escape as rich_escape
-
-from lore_runtime.argv import argv_main
-from lore_core.install import REGISTRY, known_hosts
+from lore_core.install import REGISTRY, known_integrations
 from lore_core.install._helpers import (
     detect_install_sh_artifacts,
     execute_action,
@@ -53,42 +48,45 @@ from lore_core.install.base import (
     InstallContext,
     LegacyArtifact,
 )
+from lore_runtime.argv import argv_main
+from rich.console import Console
+from rich.markup import escape as rich_escape
 
 console = Console()
 
 
 # ---------------------------------------------------------------------------
-# Host filtering
+# Integration filtering
 # ---------------------------------------------------------------------------
 
 
-def _binary_for(host_name: str) -> str:
-    """Map host name → expected binary on PATH."""
-    return {"claude": "claude", "cursor": "cursor"}.get(host_name, host_name)
+def _binary_for(integration_name: str) -> str:
+    """Map integration name → expected binary on PATH."""
+    return {"claude": "claude", "cursor": "cursor"}.get(integration_name, integration_name)
 
 
-def _select_hosts(arg: str | None, *, interactive: bool = False) -> list[str]:
-    """Resolve --host into a concrete list of host names.
+def _select_integrations(arg: str | None, *, interactive: bool = False) -> list[str]:
+    """Resolve --integration into a concrete list of integration names.
 
-    None or "all" → every host whose binary is on PATH.
-    A specific name → that host (no PATH check).
+    None or "all" → every integration whose binary is on PATH.
+    A specific name → that integration (no PATH check).
 
-    When *interactive* is True and no --host flag was given, present a
-    numbered list and let the user choose which hosts to install for.
+    When *interactive* is True and no --integration flag was given, present a
+    numbered list and let the user choose which integrations to install for.
     """
-    all_hosts = known_hosts()
+    all_integrations = known_integrations()
     if arg is not None and arg != "all":
-        if arg not in all_hosts:
+        if arg not in all_integrations:
             raise SystemExit(
-                f"lore install: unknown host '{arg}' "
-                f"(known: {', '.join(all_hosts)})"
+                f"lore install: unknown integration '{arg}' "
+                f"(known: {', '.join(all_integrations)})"
             )
         return [arg]
 
-    detected = [h for h in all_hosts if shutil.which(_binary_for(h))]
+    detected = [h for h in all_integrations if shutil.which(_binary_for(h))]
 
     if not interactive:
-        return detected if detected else all_hosts
+        return detected if detected else all_integrations
 
     # --- Interactive tool selection ---
     if not detected:
@@ -96,16 +94,17 @@ def _select_hosts(arg: str | None, *, interactive: bool = False) -> list[str]:
             "\n[yellow]No supported tools detected on PATH.[/yellow]",
             markup=True,
         )
-        console.print("  Supported hosts:", markup=False)
-        for i, h in enumerate(all_hosts, 1):
+        console.print("  Supported integrations:", markup=False)
+        for i, h in enumerate(all_integrations, 1):
             console.print(f"    [{i}] {h}", markup=False)
         ans = input(
-            f"  Install for which? (comma-separated numbers, or 'all') [{', '.join(str(i) for i in range(1, len(all_hosts) + 1))}]: "
+            f"  Install for which? (comma-separated numbers, or 'all') "
+            f"[{', '.join(str(i) for i in range(1, len(all_integrations) + 1))}]: "
         ).strip()
         if not ans or ans.lower() == "all":
-            return all_hosts
-        chosen = _parse_host_selection(ans, all_hosts)
-        return chosen if chosen else all_hosts
+            return all_integrations
+        chosen = _parse_integration_selection(ans, all_integrations)
+        return chosen if chosen else all_integrations
 
     if len(detected) == 1:
         ans = input(f"\n  Install for {detected[0]}? [Y/n]: ").strip().lower()
@@ -118,23 +117,23 @@ def _select_hosts(arg: str | None, *, interactive: bool = False) -> list[str]:
     for i, h in enumerate(detected, 1):
         console.print(f"    [{i}] {h}", markup=False)
     ans = input(
-        f"  Install for which? (comma-separated numbers, or 'all') [all]: "
+        "  Install for which? (comma-separated numbers, or 'all') [all]: "
     ).strip()
     if not ans or ans.lower() == "all":
         return detected
-    chosen = _parse_host_selection(ans, detected)
+    chosen = _parse_integration_selection(ans, detected)
     return chosen if chosen else detected
 
 
-def _parse_host_selection(ans: str, hosts: list[str]) -> list[str]:
-    """Parse a comma-separated list of 1-based indices into host names."""
+def _parse_integration_selection(ans: str, integrations: list[str]) -> list[str]:
+    """Parse a comma-separated list of 1-based indices into integration names."""
     chosen: list[str] = []
     for part in ans.split(","):
         part = part.strip()
         if part.isdigit():
             idx = int(part) - 1
-            if 0 <= idx < len(hosts):
-                chosen.append(hosts[idx])
+            if 0 <= idx < len(integrations):
+                chosen.append(integrations[idx])
     return chosen
 
 
@@ -176,7 +175,7 @@ def _print_legacy_warning(artifacts: list[LegacyArtifact]) -> None:
     for a in artifacts:
         grouped.setdefault(a.kind, []).append(a.detail)
     console.print(
-        "[yellow]\u26a0 Detected legacy install.sh artifacts:[/yellow]",
+        "[yellow]⚠ Detected legacy install.sh artifacts:[/yellow]",
         markup=True,
     )
     for kind, items in grouped.items():
@@ -196,16 +195,16 @@ def _print_legacy_warning(artifacts: list[LegacyArtifact]) -> None:
     )
 
 
-def _print_host_plan(host_name: str, actions: list[Action]) -> None:
+def _print_integration_plan(integration_name: str, actions: list[Action]) -> None:
     if not actions:
         console.print(
-            f"\n[bold]Lore for {host_name}:[/bold] nothing to do — already current.",
+            f"\n[bold]Lore for {integration_name}:[/bold] nothing to do — already current.",
             markup=True,
         )
         return
     targets = sorted({a.target for a in actions})
     console.print(
-        f"\n[bold]About to install Lore for {host_name}[/bold] — touching "
+        f"\n[bold]About to install Lore for {integration_name}[/bold] — touching "
         f"{', '.join(targets)}",
         markup=True,
     )
@@ -219,7 +218,7 @@ def _print_host_plan(host_name: str, actions: list[Action]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _prompt_host(host_name: str, actions: list[Action], yes: bool) -> str:
+def _prompt_integration(integration_name: str, actions: list[Action], yes: bool) -> str:
     """Return 'y' (proceed), 'n' (skip), or 'd' (diff and re-prompt).
 
     With --yes: returns 'y' immediately UNLESS any action is kind=replace,
@@ -247,7 +246,7 @@ def _prompt_host(host_name: str, actions: list[Action], yes: bool) -> str:
 def _prompt_replace(action: Action) -> bool:
     """Per-action confirm for kind=replace. Returns True to proceed."""
     console.print(
-        f"\n  [yellow]\u26a0 replace[/yellow] {action.target} — "
+        f"\n  [yellow]⚠ replace[/yellow] {action.target} — "
         f"{action.summary}",
         markup=True,
     )
@@ -281,7 +280,7 @@ def _execute_actions(
                 ApplyResult(ok=False, error="declined by user")
             )
             fail_count += 1
-            if a.on_failure == "abort_host":
+            if a.on_failure == "abort_integration":
                 break
             continue
         # Pre-pipx latency hint for subprocess kinds
@@ -295,7 +294,7 @@ def _execute_actions(
         result = execute_action(a)
         results.append(result)
         if not quiet:
-            mark = "[green]\u2713[/green]" if result.ok else "[red]\u2717[/red]"
+            mark = "[green]✓[/green]" if result.ok else "[red]✗[/red]"
             # Escape user-derived strings (paths) but keep wrapper markup.
             console.print(
                 f"  {mark} {a.kind:7} {rich_escape(a.target)}",
@@ -310,12 +309,12 @@ def _execute_actions(
                 )
         if not result.ok:
             fail_count += 1
-            if a.on_failure == "abort_host":
+            if a.on_failure == "abort_integration":
                 break
     return results, fail_count
 
 
-_SUCCESS_HOST_SENTENCE = {
+_SUCCESS_INTEGRATION_SENTENCE = {
     "claude": (
         "Done. Open a Claude Code session and run /lore:context to verify."
     ),
@@ -326,15 +325,17 @@ _SUCCESS_HOST_SENTENCE = {
 }
 
 
-def _print_host_summary(host_name: str, fail_count: int, mode: str) -> None:
+def _print_integration_summary(integration_name: str, fail_count: int, mode: str) -> None:
     if fail_count == 0:
-        msg = _SUCCESS_HOST_SENTENCE.get(host_name, "Done.")
+        msg = _SUCCESS_INTEGRATION_SENTENCE.get(integration_name, "Done.")
         if mode == "uninstall":
             msg = "Uninstalled."
-        console.print(f"\n  [green]\u2713[/green] {host_name}: {msg}", markup=True)
+        console.print(
+            f"\n  [green]✓[/green] {integration_name}: {msg}", markup=True
+        )
     else:
         console.print(
-            f"\n  [red]\u2717[/red] {host_name}: {fail_count} action(s) "
+            f"\n  [red]✗[/red] {integration_name}: {fail_count} action(s) "
             "failed. Run [cyan]lore doctor[/cyan] to diagnose. Capture "
             "state with: [cyan]lore doctor --json > lore-debug.json[/cyan]",
             markup=True,
@@ -364,7 +365,7 @@ def _is_interactive(args: SimpleNamespace) -> bool:
 
 
 def _post_install_setup() -> None:
-    """Interactive vault + wiki scaffolding after a successful host install.
+    """Interactive vault + wiki scaffolding after a successful integration install.
 
     Only called in interactive mode for fresh installs. Skipped silently
     if the vault already exists and has wikis.
@@ -469,10 +470,10 @@ def _post_install_setup() -> None:
 
 def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
     """Shared install / upgrade / uninstall driver. `mode` selects:
-        install   → host.plan(ctx)
-        upgrade   → host.plan(ctx) (same; the dispatcher reports no-op
+        install   → integration.plan(ctx)
+        upgrade   → integration.plan(ctx) (same; the dispatcher reports no-op
                     when all actions are no-op kind=check)
-        uninstall → host.uninstall_plan(ctx)
+        uninstall → integration.uninstall_plan(ctx)
     """
     if args.force and args.yes:
         console.print(
@@ -485,11 +486,11 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
         return 2
 
     interactive = _is_interactive(args)
-    hosts = _select_hosts(
-        args.host, interactive=(interactive and mode == "install")
+    integrations = _select_integrations(
+        args.integration, interactive=(interactive and mode == "install")
     )
-    if not hosts:
-        console.print("  [yellow]No hosts selected.[/yellow]", markup=True)
+    if not integrations:
+        console.print("  [yellow]No integrations selected.[/yellow]", markup=True)
         return 0
     ctx = _build_ctx(args)
 
@@ -517,24 +518,24 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
                     )
                 return 1
 
-    # Build per-host plan
+    # Build per-integration plan
     plans: list[tuple[str, list[Action]]] = []
-    for host_name in hosts:
-        host = REGISTRY[host_name]
+    for integration_name in integrations:
+        integration_module = REGISTRY[integration_name]
         if mode == "uninstall":
-            actions = host.uninstall_plan(ctx)
+            actions = integration_module.uninstall_plan(ctx)
         else:
-            actions = host.plan(ctx)
-        plans.append((host_name, actions))
+            actions = integration_module.plan(ctx)
+        plans.append((integration_name, actions))
 
     # JSON output mode — emit the plan envelope and exit
     if args.json or args.cmd == "check":
         envelope = {
             "mode": mode,
             "legacy_artifacts": [a.__dict__ for a in legacy_artifacts],
-            "hosts": [
+            "integrations": [
                 {
-                    "host": name,
+                    "integration": name,
                     "actions": [a.to_dict() for a in actions],
                 }
                 for name, actions in plans
@@ -544,16 +545,16 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
             _emit_json(envelope)
         else:
             for name, actions in plans:
-                _print_host_plan(name, actions)
+                _print_integration_plan(name, actions)
         return 0
 
     # Interactive / --yes path
     overall_failures = 0
     for name, actions in plans:
-        _print_host_plan(name, actions)
+        _print_integration_plan(name, actions)
         if not actions:
             continue
-        choice = _prompt_host(name, actions, args.yes)
+        choice = _prompt_integration(name, actions, args.yes)
         if choice == "n":
             console.print(f"\n  [yellow]skipped {name}[/yellow]", markup=True)
             continue
@@ -563,7 +564,7 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
             actions, yes=args.yes, quiet=args.quiet
         )
         overall_failures += fail_count
-        _print_host_summary(name, fail_count, mode)
+        _print_integration_summary(name, fail_count, mode)
 
     # Final handoff
     if mode == "install" and overall_failures == 0:
@@ -596,7 +597,7 @@ app = typer.Typer(
 def _make_args(
     cmd: str,
     *,
-    host: str | None,
+    integration: str | None,
     yes: bool,
     quiet: bool,
     json_out: bool,
@@ -606,7 +607,7 @@ def _make_args(
     """Adapt typer kwargs into the argparse-Namespace shape `_cmd_install` reads."""
     return SimpleNamespace(
         cmd=cmd,
-        host=host,
+        integration=integration,
         yes=yes,
         quiet=quiet,
         json=json_out,
@@ -624,8 +625,10 @@ def _exit_with(rc: int) -> None:
 # options between root + subcommands cleanly (Click constraint), so
 # we declare them on each function. ~6 lines × 4 commands.
 
-_HOST = typer.Option(
-    None, "--host", help="Host to install for (claude|cursor|all). Default: all detected."
+_INTEGRATION = typer.Option(
+    None,
+    "--integration",
+    help="Integration to install for (claude|cursor|all). Default: all detected.",
 )
 _YES = typer.Option(
     False, "--yes", "-y", help="Non-interactive; assume Y to all non-replace prompts."
@@ -649,19 +652,19 @@ _LORE_REPO = typer.Option(
 @app.callback(invoke_without_command=True)
 def root(
     ctx: typer.Context,
-    host: str = _HOST,
+    integration: str = _INTEGRATION,
     yes: bool = _YES,
     quiet: bool = _QUIET,
     json_out: bool = _JSON,
     force: bool = _FORCE,
     lore_repo: str = _LORE_REPO,
 ) -> None:
-    """Default action — install Lore for one or more hosts."""
+    """Default action — install Lore for one or more integrations."""
     if ctx.invoked_subcommand is not None:
         return  # the subcommand handles its own work
     args = _make_args(
         "install",
-        host=host,
+        integration=integration,
         yes=yes,
         quiet=quiet,
         json_out=json_out,
@@ -673,7 +676,7 @@ def root(
 
 @app.command("check")
 def cmd_check(
-    host: str = _HOST,
+    integration: str = _INTEGRATION,
     yes: bool = _YES,
     quiet: bool = _QUIET,
     json_out: bool = _JSON,
@@ -683,7 +686,7 @@ def cmd_check(
     """Plan-only — never writes."""
     args = _make_args(
         "check",
-        host=host,
+        integration=integration,
         yes=yes,
         quiet=quiet,
         json_out=json_out,
@@ -695,7 +698,7 @@ def cmd_check(
 
 @app.command("upgrade")
 def cmd_upgrade(
-    host: str = _HOST,
+    integration: str = _INTEGRATION,
     yes: bool = _YES,
     quiet: bool = _QUIET,
     json_out: bool = _JSON,
@@ -705,7 +708,7 @@ def cmd_upgrade(
     """Re-install — no-op if managed schema is current."""
     args = _make_args(
         "upgrade",
-        host=host,
+        integration=integration,
         yes=yes,
         quiet=quiet,
         json_out=json_out,
@@ -717,7 +720,7 @@ def cmd_upgrade(
 
 @app.command("uninstall")
 def cmd_uninstall(
-    host: str = _HOST,
+    integration: str = _INTEGRATION,
     yes: bool = _YES,
     quiet: bool = _QUIET,
     json_out: bool = _JSON,
@@ -727,7 +730,7 @@ def cmd_uninstall(
     """Symmetric semantic remove."""
     args = _make_args(
         "uninstall",
-        host=host,
+        integration=integration,
         yes=yes,
         quiet=quiet,
         json_out=json_out,
@@ -739,7 +742,7 @@ def cmd_uninstall(
 
 @app.command("reinstall")
 def cmd_reinstall(
-    host: str = _HOST,
+    integration: str = _INTEGRATION,
     yes: bool = _YES,
     quiet: bool = _QUIET,
     json_out: bool = _JSON,
@@ -759,7 +762,7 @@ def cmd_reinstall(
     """
     uninstall_args = _make_args(
         "reinstall",
-        host=host,
+        integration=integration,
         yes=yes,
         quiet=quiet,
         json_out=json_out,
@@ -772,7 +775,7 @@ def cmd_reinstall(
 
     install_args = _make_args(
         "reinstall",
-        host=host,
+        integration=integration,
         yes=yes,
         quiet=quiet,
         json_out=json_out,

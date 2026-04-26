@@ -30,10 +30,10 @@ VALID_KINDS = frozenset(
 )
 
 # Action.on_failure values
-ON_FAILURE_ABORT_HOST = "abort_host"
+ON_FAILURE_ABORT_INTEGRATION = "abort_integration"
 ON_FAILURE_CONTINUE = "continue"
 
-VALID_ON_FAILURE = frozenset({ON_FAILURE_ABORT_HOST, ON_FAILURE_CONTINUE})
+VALID_ON_FAILURE = frozenset({ON_FAILURE_ABORT_INTEGRATION, ON_FAILURE_CONTINUE})
 
 
 @dataclass
@@ -65,7 +65,7 @@ class Action:
     target: str
     summary: str
     payload: dict[str, Any] = field(default_factory=dict)
-    on_failure: str = ON_FAILURE_ABORT_HOST
+    on_failure: str = ON_FAILURE_ABORT_INTEGRATION
 
     def __post_init__(self) -> None:
         if self.kind not in VALID_KINDS:
@@ -111,7 +111,7 @@ class ApplyResult:
 
 @dataclass
 class LegacyArtifact:
-    """An install.sh-era artifact a host module's `detect_legacy` found."""
+    """An install.sh-era artifact an integration module's `detect_legacy` found."""
 
     kind: str          # "skill_symlink" | "agent_symlink" | "hook_entry" |
                        # "permission_rule" | "env_entry"
@@ -121,7 +121,7 @@ class LegacyArtifact:
 
 @dataclass
 class InstallContext:
-    """Per-run inputs passed to every host module's plan/detect_legacy."""
+    """Per-run inputs passed to every integration module's plan/detect_legacy."""
 
     lore_repo: Path | None = None       # for editable / dev installs
     force: bool = False                  # override legacy-artifact refusal

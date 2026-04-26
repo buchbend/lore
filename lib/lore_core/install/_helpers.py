@@ -1,8 +1,8 @@
-"""Shared helpers for the per-host install modules.
+"""Shared helpers for the per-integration install modules.
 
 Three groups of utilities:
 
-  Path resolution         per-platform config paths for each host
+  Path resolution         per-platform config paths for each integration
   File primitives         atomic JSON merge with flock + retry,
                           markdown-with-managed-markers writer,
                           content-hash for change detection
@@ -312,7 +312,7 @@ def check_lore_on_path() -> tuple[bool, str]:
     return False, (
         "lore not on PATH. Run: pipx ensurepath; then reopen your shell "
         "and re-run lore install. (If pipx isn't installed, the "
-        "claude-host self-install bootstrap will offer to add it.)"
+        "claude integration self-install bootstrap will offer to add it.)"
     )
 
 
@@ -377,7 +377,7 @@ def check_lore_version_match(
 
 
 # ---------------------------------------------------------------------------
-# Canonical Lore MCP server entry — one source of truth for both hosts.
+# Canonical Lore MCP server entry — one source of truth for both integrations.
 # ---------------------------------------------------------------------------
 
 
@@ -724,7 +724,7 @@ def undo_action(action: Action) -> ApplyResult:
                 json_merge_atomic(real, _mutator)
             return ApplyResult(ok=True)
         if action.kind in (KIND_RUN, KIND_CHECK):
-            # Undoing a run/check is a no-op (the host's own undo
+            # Undoing a run/check is a no-op (the integration's own undo
             # handles the side effect — e.g. `claude plugin uninstall`
             # is its own action, not a reverse of `claude plugin
             # install`).

@@ -1,11 +1,11 @@
-# Lore host config — Claude Code
+# Lore integration config — Claude Code
 #
 # Used by `lore resume <topic> --launch claude` to start a fresh
 # Claude Code session pre-warmed with the gathered context.
 #
-# Schema (lore.host/1):
+# Schema (lore.integration/1):
 #   binary          executable to exec
-#   context_format  how the gathered context reaches the host:
+#   context_format  how the gathered context reaches the integration:
 #                     "flag"   — pass as `<context_flag> <value>` argv
 #                     "stdin"  — pipe to the binary's stdin
 #                     "append" — append to the user-provided initial prompt

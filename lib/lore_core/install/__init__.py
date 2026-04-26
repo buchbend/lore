@@ -1,21 +1,21 @@
-"""Per-host installer modules + shared helpers.
+"""Per-integration installer modules + shared helpers.
 
-Each `<host>` Python module in this package exposes:
+Each `<integration>` Python module in this package exposes:
 
     SCHEMA_VERSION: str           # bump when the managed-block shape changes
-    plan(ctx) -> list[Action]     # actions to install/upgrade Lore for this host
-    detect_legacy(ctx)            # install.sh-era artifacts this host left behind
+    plan(ctx) -> list[Action]     # actions to install/upgrade Lore for this integration
+    detect_legacy(ctx)            # install.sh-era artifacts this integration left behind
                                   #   (typed as list[LegacyArtifact])
 
 The dispatcher (`lib/lore_cli/install_cmd.py`) imports REGISTRY here
-to discover available hosts, then calls per-host `plan()` and
+to discover available integrations, then calls per-integration `plan()` and
 `detect_legacy()` and renders the actions through the print-and-confirm
 UI.
 
-No abstraction layer — adding a new host means dropping a single
+No abstraction layer — adding a new integration means dropping a single
 Python module here and wiring its name into REGISTRY. Composition
 patterns ("strategy" registries, plugin protocols) get added the
-day a third host needs them.
+day a third integration needs them.
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ REGISTRY: dict[str, object] = {
 }
 
 
-def known_hosts() -> list[str]:
+def known_integrations() -> list[str]:
     return sorted(REGISTRY)
 
 
-def get_host(name: str) -> object | None:
+def get_integration(name: str) -> object | None:
     return REGISTRY.get(name)

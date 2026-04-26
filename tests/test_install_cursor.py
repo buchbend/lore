@@ -55,7 +55,7 @@ def test_plan_present_same_schema_emits_only_check(cursor_home):
     body = (
         Path(__file__).resolve().parent.parent
         / "templates"
-        / "host-rules"
+        / "integration-rules"
         / "default.md"
     ).read_text().rstrip("\n")
     _helpers.write_managed_markdown(rules_path, body)

@@ -55,7 +55,7 @@ known gap).
 
 ```bash
 pipx install git+https://github.com/buchbend/lore.git   # the Python CLI
-lore install                                            # detect installed hosts, wire each
+lore install                                            # detect installed integrations, wire each
 lore init                                               # scaffold a vault + set $LORE_ROOT
 ```
 
@@ -64,9 +64,9 @@ lore init                                               # scaffold a vault + set
 > `git+https://...` form above. We'll switch to a clean PyPI name
 > once one is picked (tracked in an issue).
 
-`lore install` walks every detected host (Claude Code, Cursor in v1)
+`lore install` walks every detected integration (Claude Code, Cursor in v1)
 and shows what it'll change before doing anything. One prompt per
-host; `--yes` for non-interactive use. The hooks, MCP server, skills,
+integration; `--yes` for non-interactive use. The hooks, MCP server, skills,
 and subagents come from `.claude-plugin/plugin.json` — Claude Code's
 plugin system does the wiring; Lore stays out of `~/.claude/settings.json`.
 
@@ -114,7 +114,7 @@ The repo is a self-describing marketplace:
 That alone gives you the plugin (hooks, skills, subagents, MCP) — it
 does not install the `lore` CLI itself. Run
 `pipx install git+https://github.com/buchbend/lore.git` separately,
-or use `lore install --host claude` once `lore` is on your PATH
+or use `lore install --integration claude` once `lore` is on your PATH
 (it'll subprocess `claude plugin install lore@lore` for you).
 
 ### Dev install (editable, also the offline / air-gapped path)

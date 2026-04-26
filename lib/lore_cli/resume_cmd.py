@@ -20,7 +20,7 @@ import sys
 import typer
 
 from lore_runtime.argv import argv_main
-from lore_cli.launcher import launch, list_hosts
+from lore_cli.launcher import launch, list_integrations
 from lore_core.resume import (
     DEFAULT_DAYS,
     DEFAULT_ISSUES_FILTER,
@@ -77,13 +77,13 @@ def resume(
         "--json",
         help="Emit JSON envelope on stdout instead of markdown.",
     ),
-    launch_host: str = typer.Option(
+    launch_integration: str = typer.Option(
         None,
         "--launch",
-        metavar="HOST",
+        metavar="INTEGRATION",
         help=(
-            "Gather context, then exec the named agent host pre-warmed "
-            f"(known: {', '.join(list_hosts()) or 'none'})."
+            "Gather context, then exec the named integration pre-warmed "
+            f"(known: {', '.join(list_integrations()) or 'none'})."
         ),
     ),
     launch_dry_run: bool = typer.Option(
@@ -94,7 +94,7 @@ def resume(
     launch_message: str = typer.Option(
         None,
         "--launch-message",
-        help="Initial user message to pass to the launched host (optional).",
+        help="Initial user message to pass to the launched integration (optional).",
     ),
 ) -> None:
     """Load working context from the vault."""
@@ -108,13 +108,13 @@ def resume(
         prs_filter=prs_filter,
     )
 
-    if launch_host:
+    if launch_integration:
         if "error" in result and not result.get("mode"):
             print(f"lore: {result['error']}", file=sys.stderr)
             raise typer.Exit(code=1)
         context_text = format_markdown(result)
         rc = launch(
-            launch_host,
+            launch_integration,
             context_text=context_text,
             user_message=launch_message,
             dry_run=launch_dry_run,

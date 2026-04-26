@@ -22,6 +22,7 @@ htmlcov/
 
 # Claude Code local state
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Git worktrees (local workspaces, never committed)
 .worktrees/

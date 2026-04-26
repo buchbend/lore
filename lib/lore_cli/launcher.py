@@ -1,11 +1,11 @@
-"""Cross-host launcher — read TOML host registry, exec configured agent.
+"""Cross-integration launcher — read TOML integration registry, exec configured agent.
 
-Reads `lib/lore_cli/hosts.d/<host>.toml` (or any file dropped under
-`$LORE_HOSTS_DIR`) to learn how to invoke each agent host. The launcher
-itself never touches Lore-internal state — it just turns a gathered
-context block into the right argv/stdin shape for the chosen host.
+Reads `lib/lore_cli/integrations.d/<integration>.toml` (or any file dropped under
+`$LORE_INTEGRATIONS_DIR`) to learn how to invoke each AI agent integration.
+The launcher itself never touches Lore-internal state — it just turns a gathered
+context block into the right argv/stdin shape for the chosen integration.
 
-Used by `lore resume <topic> --launch <host>` per the CLI-first thesis:
+Used by `lore resume <topic> --launch <integration>` per the CLI-first thesis:
 the CLI gathers, then *becomes* the agent process so cold-start is
 warm-start without any in-session token spend on retrieval.
 """
@@ -20,11 +20,11 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_HOSTS_DIR = Path(__file__).parent / "hosts.d"
+DEFAULT_INTEGRATIONS_DIR = Path(__file__).parent / "integrations.d"
 
 
 @dataclass(frozen=True)
-class HostConfig:
+class IntegrationConfig:
     name: str
     binary: str
     context_format: str  # flag | stdin | append | prepend
@@ -42,32 +42,32 @@ class HostConfig:
         return True, ""
 
 
-def _hosts_dirs() -> list[Path]:
-    """Search order: $LORE_HOSTS_DIR (user override), then bundled hosts.d/."""
+def _integrations_dirs() -> list[Path]:
+    """Search order: $LORE_INTEGRATIONS_DIR (user override), then bundled integrations.d/."""
     dirs: list[Path] = []
-    env = os.environ.get("LORE_HOSTS_DIR")
+    env = os.environ.get("LORE_INTEGRATIONS_DIR")
     if env:
         dirs.append(Path(env).expanduser())
-    dirs.append(DEFAULT_HOSTS_DIR)
+    dirs.append(DEFAULT_INTEGRATIONS_DIR)
     return [d for d in dirs if d.is_dir()]
 
 
-def list_hosts() -> list[str]:
-    """Return all host names known across the search dirs (deduplicated)."""
+def list_integrations() -> list[str]:
+    """Return all integration names known across the search dirs (deduplicated)."""
     seen: set[str] = set()
-    for d in _hosts_dirs():
+    for d in _integrations_dirs():
         for f in sorted(d.glob("*.toml")):
             seen.add(f.stem)
     return sorted(seen)
 
 
-def load_host(name: str) -> HostConfig | None:
-    """Load `<name>.toml` from the first hosts dir that contains it."""
-    for d in _hosts_dirs():
+def load_integration(name: str) -> IntegrationConfig | None:
+    """Load `<name>.toml` from the first integrations dir that contains it."""
+    for d in _integrations_dirs():
         path = d / f"{name}.toml"
         if path.is_file():
             data = tomllib.loads(path.read_text())
-            return HostConfig(
+            return IntegrationConfig(
                 name=name,
                 binary=str(data.get("binary", "")),
                 context_format=str(data.get("context_format", "stdin")),
@@ -79,32 +79,32 @@ def load_host(name: str) -> HostConfig | None:
 
 
 def build_invocation(
-    host: HostConfig,
+    integration: IntegrationConfig,
     context_text: str,
     user_message: str | None = None,
 ) -> tuple[list[str], str | None]:
-    """Compute the (argv, stdin_text) for invoking the host.
+    """Compute the (argv, stdin_text) for invoking the integration.
 
     Returns argv as a list and the text to pipe via stdin (or None when
     nothing should be piped).
     """
-    argv: list[str] = [host.binary, *host.extra_args]
+    argv: list[str] = [integration.binary, *integration.extra_args]
     stdin_text: str | None = None
 
-    if host.context_format == "flag":
-        argv.extend([host.context_flag, context_text])
+    if integration.context_format == "flag":
+        argv.extend([integration.context_flag, context_text])
         if user_message:
             argv.append(user_message)
-    elif host.context_format == "stdin":
+    elif integration.context_format == "stdin":
         stdin_text = context_text
         if user_message:
             argv.append(user_message)
-    elif host.context_format in ("prepend", "append"):
+    elif integration.context_format in ("prepend", "append"):
         # Combine into the initial user message
         if user_message:
             combined = (
                 f"{context_text}\n\n{user_message}"
-                if host.context_format == "prepend"
+                if integration.context_format == "prepend"
                 else f"{user_message}\n\n{context_text}"
             )
         else:
@@ -115,43 +115,48 @@ def build_invocation(
 
 
 def launch(
-    host_name: str,
+    integration_name: str,
     context_text: str,
     user_message: str | None = None,
     *,
     dry_run: bool = False,
 ) -> int:
-    """Resolve host, build invocation, exec.
+    """Resolve integration, build invocation, exec.
 
     Returns the exit status. On `dry_run`, prints the would-be argv +
     stdin shape to stderr and returns 0 without executing.
     """
-    host = load_host(host_name)
-    if host is None:
+    integration = load_integration(integration_name)
+    if integration is None:
         print(
-            f"lore: no host '{host_name}' (known: {', '.join(list_hosts()) or 'none'})",
+            f"lore: no integration '{integration_name}' "
+            f"(known: {', '.join(list_integrations()) or 'none'})",
             file=sys.stderr,
         )
         return 2
-    ok, msg = host.is_valid()
+    ok, msg = integration.is_valid()
     if not ok:
-        print(f"lore: host '{host_name}' invalid ({host.source_path}): {msg}", file=sys.stderr)
+        print(
+            f"lore: integration '{integration_name}' invalid "
+            f"({integration.source_path}): {msg}",
+            file=sys.stderr,
+        )
         return 2
 
-    argv, stdin_text = build_invocation(host, context_text, user_message)
+    argv, stdin_text = build_invocation(integration, context_text, user_message)
 
     if dry_run:
         print(f"would exec: {argv[0]} (+{len(argv) - 1} args)", file=sys.stderr)
-        print(f"  source: {host.source_path}", file=sys.stderr)
-        print(f"  format: {host.context_format}", file=sys.stderr)
+        print(f"  source: {integration.source_path}", file=sys.stderr)
+        print(f"  format: {integration.context_format}", file=sys.stderr)
         if stdin_text is not None:
             print(f"  stdin:  {len(stdin_text)} chars", file=sys.stderr)
         return 0
 
     if shutil.which(argv[0]) is None:
         print(
-            f"lore: binary '{argv[0]}' not on PATH — install the host or "
-            f"override $LORE_HOSTS_DIR/{host_name}.toml",
+            f"lore: binary '{argv[0]}' not on PATH — install the integration or "
+            f"override $LORE_INTEGRATIONS_DIR/{integration_name}.toml",
             file=sys.stderr,
         )
         return 127

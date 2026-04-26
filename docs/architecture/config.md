@@ -92,7 +92,7 @@ Implemented in `lore_curator/llm_client.py:_resolve_openai_settings`.
 | `LORE_LOG_NOW`, `LORE_STATUS_NOW` | Inject a fake "now" timestamp for log/status formatting tests |
 | `LORE_ASCII` | `1` forces ASCII icon set in `run_render.py` (override TTY autodetect) |
 | `NO_COLOR` | Standard convention; `run_render.should_use_color()` honours it |
-| `LORE_HOSTS_DIR` | Override the per-host install templates dir (default: `lib/lore_cli/hosts.d/`) |
+| `LORE_INTEGRATIONS_DIR` | Override the per-integration install templates dir (default: `lib/lore_cli/integrations.d/`) |
 | `LORE_CACHE` | Override the search-index cache dir (default: `~/.cache/lore/`) |
 
 #### Sinks (briefing publishing)
@@ -148,11 +148,11 @@ Claude Code plugin manifest. Hook command registration, MCP server
 declaration, plugin version. Edited only as part of the release
 process (see version triple above).
 
-### 7. `lib/lore_cli/hosts.d/*.toml` — install templates
+### 7. `lib/lore_cli/integrations.d/*.toml` — install templates
 
-Per-host install scaffolding (Claude Code, Cursor, etc.). Read by
-`lore install` to know what files to write into each host's config
-location. Override the dir via `LORE_HOSTS_DIR` for testing.
+Per-integration install scaffolding (Claude Code, Cursor, etc.). Read by
+`lore install` to know what files to write into each integration's config
+location. Override the dir via `LORE_INTEGRATIONS_DIR` for testing.
 
 ### 8. Note frontmatter
 
@@ -174,7 +174,7 @@ Each source has a justified role:
   uses these models, this curator schedule, this briefing audience.
 - **Plugin manifest** — Claude Code's contract; we don't own the
   schema.
-- **Install templates** — host-specific shapes; not a "setting" but
+- **Install templates** — integration-specific shapes; not a "setting" but
   an installer artifact.
 
 The config layer that *should* be unified is "env override → file

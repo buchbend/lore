@@ -106,7 +106,7 @@ app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
     help="Symmetric semantic remove (alias for `install uninstall`).",
 )
 def cmd_uninstall_alias(
-    host: str = install_cmd._HOST,
+    integration: str = install_cmd._INTEGRATION,
     yes: bool = install_cmd._YES,
     quiet: bool = install_cmd._QUIET,
     json_out: bool = install_cmd._JSON,
@@ -116,7 +116,7 @@ def cmd_uninstall_alias(
     """Top-level `lore uninstall` — same flags as `lore install uninstall`."""
     args = install_cmd._make_args(
         "uninstall",
-        host=host,
+        integration=integration,
         yes=yes,
         quiet=quiet,
         json_out=json_out,

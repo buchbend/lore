@@ -35,11 +35,11 @@ SCHEMA_VERSION = "1"
 
 
 def _read_directive_body() -> str:
-    """Pull the canonical vault-first directive out of templates/host-rules/default.md."""
+    """Pull the canonical vault-first directive out of templates/integration-rules/default.md."""
     # Resolve the template at call time, not import time, so tests
     # can monkeypatch the directive path.
     base = Path(__file__).resolve().parent.parent.parent.parent
-    return (base / "templates" / "host-rules" / "default.md").read_text().rstrip("\n")
+    return (base / "templates" / "integration-rules" / "default.md").read_text().rstrip("\n")
 
 
 def plan(ctx: InstallContext) -> list[Action]:

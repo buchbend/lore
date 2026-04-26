@@ -10,6 +10,46 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.10.3] — 2026-04-26
+
+Vocabulary cleanup: **"host" now means *machine*, "integration" means
+*AI tool*** (Claude Code, Cursor, OpenCode). Two reviewers (architect +
+UX) flagged the overload — `attachments.json` calls itself "host-local"
+to mean "this machine," while `lore_cli/hosts.d/*.toml` used "host" for
+"AI integration target." The same word for two unrelated concepts was
+making cross-host sync discussions ambiguous.
+
+### Changed (breaking — pre-1.0; no compat alias)
+
+- **Directory rename**: `lib/lore_cli/hosts.d/` → `lib/lore_cli/integrations.d/`
+- **Directory rename**: `templates/host-rules/` → `templates/integration-rules/`
+- **Env var**: `LORE_HOSTS_DIR` → `LORE_INTEGRATIONS_DIR`
+- **CLI flag**: `lore install --host <name>` → `lore install --integration <name>`
+  (also affects `check`, `upgrade`, `uninstall`, `reinstall` subcommands and
+  `lore uninstall`).
+- **JSON envelope**: `lore install --json` now emits `"integrations": [{"integration": ...}]`
+  in place of `"hosts": [{"host": ...}]`.
+- **Public API** (`lore_core.install`): `known_hosts()` → `known_integrations()`,
+  `get_host()` → `get_integration()`. `Action.on_failure` constant
+  renamed `ON_FAILURE_ABORT_HOST` → `ON_FAILURE_ABORT_INTEGRATION`
+  (string value also: `"abort_host"` → `"abort_integration"`).
+- **Launcher API** (`lore_cli.launcher`): `HostConfig` → `IntegrationConfig`,
+  `list_hosts` → `list_integrations`, `load_host` → `load_integration`.
+  `lore resume --launch HOST` → `--launch INTEGRATION` (metavar only;
+  flag name unchanged).
+- **TOML schema**: `hosts.d/*.toml`'s `lore.host/1` schema label →
+  `lore.integration/1`. (Comment-only — nothing parses the label.)
+- Internal data-model field renames (`Adapter.host`, `Turn.host_extras`,
+  `LedgerEntry.host`, etc.) ship in **0.10.4** — the second half of the
+  rename.
+
+### Why a hard cut
+
+Pre-1.0 policy is "nothing is sacred yet." The compat-alias path for
+`LORE_HOSTS_DIR` and `--host` would carry deprecation comments without
+removal targets — the simplifier review specifically flagged that
+pattern as anti-discipline.
+
 ## [0.10.2] — 2026-04-26
 
 ### Fixed

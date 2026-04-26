@@ -1,5 +1,5 @@
 """Phase B byte-equivalence: hoisting LORE_DIRECTIVE_LINES from a
-module-level constant in hooks.py to templates/host-rules/default.md
+module-level constant in hooks.py to templates/integration-rules/default.md
 must not change a single byte the agent sees.
 
 This test snapshots the pre-hoist constant (frozen here in the test)

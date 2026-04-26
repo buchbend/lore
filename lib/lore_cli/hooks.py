@@ -230,7 +230,7 @@ MAX_OPEN_ITEMS_INLINE = 5
 # the rule survives compaction. Bullet form, negatively framed — both
 # stick harder in long sessions than passive permission.
 #
-# The canonical content lives in `templates/host-rules/default.md` so
+# The canonical content lives in `templates/integration-rules/default.md` so
 # the same source feeds both this hook (Claude Code) and the Cursor
 # installer's `~/.cursor/rules/lore.md`. Module-level `__getattr__`
 # below preserves the historical `LORE_DIRECTIVE_LINES` name without
@@ -239,7 +239,7 @@ MAX_OPEN_ITEMS_INLINE = 5
 _DIRECTIVE_PATH = (
     Path(__file__).resolve().parent.parent.parent
     / "templates"
-    / "host-rules"
+    / "integration-rules"
     / "default.md"
 )
 
