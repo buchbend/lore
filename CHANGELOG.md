@@ -10,6 +10,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-04-26
+
+### Fixed
+
+- **`threads.md` headline counts full paths, not basenames.** Real-world
+  bug: a thread of 6 notes about curator development was labelled
+  `SKILL.md` because one note touched 4 different `SKILL.md` paths
+  (`skills/quiet/SKILL.md`, `skills/off/SKILL.md`, …) and the
+  label-counter aggregated by basename — so one note's 4 different
+  paths beat `curator_b.py`'s 3 cross-note votes. Union-find was
+  already correct (it used full paths to *group* notes); only the
+  display-label aggregation was wrong. Now each `(note, path)` pair
+  contributes one vote, and the chosen full path's basename is used
+  purely for display. Two new tests lock the behaviour in.
+
 ## [0.10.1] — 2026-04-26
 
 ### Fixed
