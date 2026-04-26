@@ -135,17 +135,20 @@ def compute_threads(notes: list[NoteRef]) -> list[Thread]:
         # Sort temporally; ties break on wikilink for determinism.
         member_notes.sort(key=lambda n: (n.created, n.wikilink))
 
-        # Label = basename of the file appearing in the most members.
-        # Counted by basename so /path/a/auth.py and ./auth.py vote
-        # together; that also makes the label readable. Ties break on
-        # name for determinism.
+        # Label = basename of the FULL PATH appearing in the most members.
+        # We count paths (not basenames) so a single note touching N
+        # different files that happen to share a basename (e.g. multiple
+        # `skills/<name>/SKILL.md` paths) doesn't outvote a real
+        # cross-note file. Each (note, path) pair contributes one vote
+        # because member_filesets entries are sets. The basename is
+        # derived from the winning path purely for display.
         counter: Counter[str] = Counter()
         for files in member_filesets:
             for f in files:
-                base = _basename(f) or f
-                counter[base] += 1
+                counter[f] += 1
         label_candidates = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
-        label = label_candidates[0][0] if label_candidates else ""
+        label_path = label_candidates[0][0] if label_candidates else ""
+        label = _basename(label_path) or label_path
 
         # shared_files: appear in every member.
         shared = set.intersection(*member_filesets) if member_filesets else set()

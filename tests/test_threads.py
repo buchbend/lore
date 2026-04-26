@@ -171,6 +171,67 @@ def test_compute_threads_thread_label_from_most_common_file():
     assert threads[0].label == "auth.py"  # touched by all members
 
 
+def test_compute_threads_label_ranks_paths_not_basenames():
+    """Label-counter must rank by full path, not basename.
+
+    Real-world bug: one note touched 4 different `SKILL.md` files in
+    different skill directories (`skills/quiet/SKILL.md`,
+    `skills/off/SKILL.md`, ...). Counting by basename gave SKILL.md 4
+    votes from a single note, outweighing the actual cross-note signal
+    (e.g. `curator_b.py`, which appeared in 3 separate notes). The
+    thread heading then read 'SKILL.md' even though SKILL.md was a
+    single-note artifact.
+
+    Correct behavior: count *paths* across notes (one vote per
+    note-path pair), then derive the basename of the winning path for
+    display.
+    """
+    from lore_core.threads import compute_threads
+
+    notes = [
+        # Note A touches 4 different SKILL.md paths AND curator_b.py.
+        _make_note("[[a]]", files=[
+            "skills/quiet/SKILL.md",
+            "skills/off/SKILL.md",
+            "skills/on/SKILL.md",
+            "skills/loud/SKILL.md",
+            "lib/lore_curator/curator_b.py",
+        ]),
+        # Notes B and C share curator_b.py with A — that's the real
+        # cross-note signal worth labelling on.
+        _make_note("[[b]]", files=["lib/lore_curator/curator_b.py", "x.py"]),
+        _make_note("[[c]]", files=["lib/lore_curator/curator_b.py", "y.py"]),
+    ]
+    threads = compute_threads(notes)
+    assert len(threads) == 1
+    # Label should be the basename of curator_b.py (3 cross-note votes),
+    # NOT 'SKILL.md' (4 votes from a single note).
+    assert threads[0].label == "curator_b.py"
+
+
+def test_compute_threads_label_distinguishes_same_basename_different_paths():
+    """Two paths with the same basename in different directories must NOT
+    aggregate as the same vote. Each path votes independently; the
+    basename is only derived for display.
+
+    If both ``a/foo.py`` and ``b/foo.py`` happened to be the most-shared
+    single path, the label would still render as 'foo.py' — but the
+    *count* must reflect path-level distinctness so a real cross-note
+    file beats a within-note collection of same-basename paths.
+    """
+    from lore_core.threads import compute_threads
+
+    notes = [
+        _make_note("[[a]]", files=["repo1/foo.py", "repo2/foo.py", "shared.py"]),
+        _make_note("[[b]]", files=["shared.py", "other.py"]),
+    ]
+    threads = compute_threads(notes)
+    assert len(threads) == 1
+    # shared.py appears in both notes (2 votes); each foo.py path appears
+    # in only one note (1 vote each). shared.py wins.
+    assert threads[0].label == "shared.py"
+
+
 # ---------------------------------------------------------------------------
 # render_threads_markdown — single index file
 # ---------------------------------------------------------------------------
