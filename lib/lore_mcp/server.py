@@ -77,6 +77,34 @@ def _resolve_wiki(wiki: str | None) -> Path | None:
     return wikis[0] if len(wikis) == 1 else None
 
 
+# Time-based throttle for FTS reindexing in the long-lived MCP server.
+# Reindex is already incremental (sha-compare per file) but still walks
+# every note in the wiki on each call. Bursty agent traffic (Claude
+# firing 5-10 lore_search calls in quick succession during a context
+# gather) re-walks the same N notes each time. Skipping reindex when
+# we've already reindexed this wiki within the throttle window
+# ammortizes the cost across the burst.
+#
+# 5s is conservative — fresh edits made by the user mid-conversation
+# show up on the next search after the throttle expires. For
+# explicit re-index, use ``lore lint`` (which writes the catalog
+# that ``reindex_one`` is based on).
+_REINDEX_THROTTLE_S = 5.0
+_reindex_last_seen: dict[str | None, float] = {}
+
+
+def _maybe_reindex(backend: FtsBackend, wiki: str | None) -> None:
+    """Throttled wrapper around ``backend.reindex``. Skips when this
+    wiki was already reindexed within ``_REINDEX_THROTTLE_S`` seconds."""
+    import time as _time
+    now = _time.monotonic()
+    last = _reindex_last_seen.get(wiki)
+    if last is not None and now - last < _REINDEX_THROTTLE_S:
+        return
+    backend.reindex(wiki=wiki)
+    _reindex_last_seen[wiki] = now
+
+
 def handle_search(
     query: str,
     wiki: str | None = None,
@@ -84,7 +112,7 @@ def handle_search(
     k: int = 5,
 ) -> list[dict[str, Any]]:
     backend = FtsBackend()
-    backend.reindex(wiki=wiki)
+    _maybe_reindex(backend, wiki)
     hits = backend.search(query, wiki=wiki, for_repo=for_repo, k=k)
     return [
         {

@@ -2,8 +2,28 @@
 
 These commands read cached files the linter regenerates (_index.md,
 _catalog.json) and emit bounded context blobs for the hook stream.
-No LLM invocation. Each command is designed to be fast (<100ms) and
-safe to run on every session.
+No LLM invocation, no network — the design goal is "as fast as the
+filesystem allows after Python startup."
+
+Measured cost on a populated single-wiki vault (Phase 7 audit
+2026-04-26):
+
+  - ``lore --help``                — ~600ms (Python startup + typer
+                                    dispatch + eager import of ~30
+                                    cmd modules in `__main__.py`)
+  - ``lore hook session-start --probe``
+                                    — ~2.3s end-to-end (the 600ms
+                                    startup + ~1.7s of file I/O:
+                                    catalog/index reads, scope
+                                    resolution, GH calls when
+                                    available)
+
+The work *inside* the hook handlers is fast (~50-200ms); Python
+startup + the eager-import surface dominate. Lazy-mounting subcommand
+typer apps in ``__main__.py`` would cut ~300-500ms but is a
+structural refactor (deferred from Phase 7's safe-and-useful scope).
+A sub-100ms budget is not realistic with the current dispatcher
+shape and was an aspirational target, not a contract.
 
     lore hook session-start [--cwd PATH]
     lore hook pre-compact  [--cwd PATH]

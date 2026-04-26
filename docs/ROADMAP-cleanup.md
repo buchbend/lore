@@ -20,7 +20,7 @@
 - ☑ **Phase 4** — Skill ↔ CLI drift fix + surface-add slash rename *(2026-04-26)*
 - ☑ **Phase 5** — UX polish (SessionStart reorder, --help groups, MCP envelope) *(2026-04-26)*
 - ☑ **Phase 6** — Test hygiene + curator decomposition + lazy-import lifts *(2026-04-26)*
-- ☐ **Phase 7** — Performance + scaling prep *(optional)*
+- ☑ **Phase 7** — MCP reindex throttle + SessionStart cost audit *(2026-04-26)*
 
 **Milestone 1** = Phase 0 + Phase 1 (stop bleeding + erect the fence). Re-evaluate phasing of 2-7 after Milestone 1 — the fence will likely re-shape them.
 
@@ -759,18 +759,110 @@ investigation (claim 3.6).
 
 ---
 
-## Phase 7 — Performance + scaling prep *(sketch, optional)*
+## Phase 7 — MCP reindex throttle + SessionStart cost audit
 
-**Status:** ☐ pending — **only if pain shows up before this point.**
+**Status:** ☑ completed 2026-04-26
+**Estimated session length:** 1 sitting
 
-### Sketch
-Lazy-load cmd modules in `lore_cli/__main__.py`. Make `reindex(wiki=wiki)` conditional on mtime tick in MCP search. Plan O(N²) curator passes for windowed/incremental operation. Concurrent-write safety on `hook-events.jsonl`.
+### Refined scope (made during the planning sub-step)
 
-### Refine before starting
-- Measure first. Don't refactor for performance without numbers.
+Per the claim audit (`docs/REVIEW-2026-04-26-claim-audit.md`), only
+two perf claims warranted action this phase:
 
-### Session log
-*(empty)*
+- **MCP reindex per search call** (claim 3.7) — confirmed at
+  `lore_mcp/server.py:87`. Cheap fix.
+- **SessionStart eager-import latency** (claim 3.6) — measure first,
+  decide.
+
+The other perf items (curator_c O(N²), concurrent-write safety on
+`hook-events.jsonl`) were debunked or deferred:
+- `hook-events.jsonl` is already POSIX-`O_APPEND`-atomic + `flock`
+  (Phase 3 made this visible).
+- curator_c O(N²) is speculative for current vault sizes; defer
+  pending real telemetry.
+
+### Landed
+
+- **MCP reindex throttle.** `_maybe_reindex(backend, wiki)` wraps
+  `backend.reindex(wiki=...)` with a per-wiki time-based cache.
+  Subsequent calls within `_REINDEX_THROTTLE_S = 5.0` seconds skip
+  the directory walk. Bursty agent traffic (Claude firing 5-10
+  `lore_search` calls during a context gather) now reindexes once
+  per wiki per 5-second window instead of every call. Per-wiki keys
+  mean a search of one wiki doesn't suppress a search of another.
+  6 tests in `tests/test_mcp_reindex_throttle.py` pin: first-call
+  reindexes, second-call skips, post-window re-reindexes,
+  per-wiki keys, None-wiki has its own slot, end-to-end
+  `handle_search` integration.
+- **SessionStart cost audit.** Measured concrete numbers on a
+  populated single-wiki vault:
+  - `lore --help`: ~600ms (Python startup + typer dispatch + eager
+    import of ~30 cmd modules)
+  - `lore hook session-start --probe`: ~2.3s end-to-end (~600ms
+    startup + ~1.7s of file I/O: catalog/index reads, scope
+    resolution, GH calls)
+  - `lore_cli.hooks` cold module import: ~132ms (well-distributed
+    across `lore_core.*`, `lore_adapters`, `lore_runtime` —
+    no single import dominates)
+  Updated the misleading `<100ms` aspirational budget in
+  `hooks.py:6` to reflect measured reality and document the
+  startup-vs-handler-work breakdown so future contributors don't
+  chase the wrong target.
+
+**Tests:** 1499 → 1505 passing (+6 throttle tests). No regressions.
+
+### Deliberate non-goals
+
+- **Lazy-mounting the typer subcommand apps in `__main__.py`** to
+  cut ~300-500ms off cold start. This is a structural refactor
+  (typer's `add_typer` is eager by design; would need a custom
+  loader) and even saving 500ms still leaves us at ~1.8s for
+  SessionStart `--probe`. The dominant cost is file I/O, not
+  imports — chasing imports without addressing I/O has poor ROI.
+  Park as a 1.0-perf-pass candidate.
+- **`curator_c` O(N²) defrag** — speculative; defer pending real
+  telemetry showing the cost on a vault with thousands of notes.
+  Today's vault sizes don't trigger this.
+
+### Surprised
+
+- The `<100ms` SessionStart budget commented in `hooks.py:6` was
+  off by an order of magnitude. The handler *body* is fast
+  (~50-200ms), but Python startup + typer dispatch + eager-import
+  surface costs ~600ms before any handler code runs. Worth
+  fixing the comment so future contributors don't think the
+  current code is buggy when their hook firings take ~600ms.
+- The reindex throttle was a 20-line cache + 6 tests, easily the
+  highest ROI:cost ratio of any Phase 7 item. Bursty `lore_search`
+  patterns are common (the resume-skill pattern fires several
+  searches in sequence) and now amortize cleanly.
+- The architect's "two parallel SessionStart hooks" framing was
+  misleading: `plugin.json` does register two hooks, but they have
+  different responsibilities (banner injection vs. capture
+  telemetry). Both contribute to the 2.3s end-to-end cost; neither
+  is redundant. Documented this conclusion in Phase 3.
+
+### What's done
+
+This is the last phase of the cleanup roadmap. The `1.0
+release-prep` candidates listed across phases (curator A/B/C
+rename, `new-wiki` → `wiki new`, `/lore:context` → `/lore:loaded`,
+SKILL.md description normalisation, deterministic inline citations,
+typer lazy-mount, file split for `hooks.py`) are honest deferrals
+— each is achievable, none is load-bearing, all involve user-facing
+or structural churn that's better packaged with a 1.0 release.
+
+The codebase is in materially better shape than at the start of
+the audit:
+
+- 7 commits across phases 0-7
+- ~150 individual changes touching ~100 files
+- Tests went from 1434 → 1505 passing (+71)
+- Six new pytest guards prevent regression on the structural
+  invariants established (version-sync, layering, drift,
+  envelope shape, ordering)
+- Two architecture docs (`config.md`, `state.md`) make the
+  existing discipline visible
 
 ---
 
