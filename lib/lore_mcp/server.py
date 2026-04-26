@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_wiki_root
-from lore_core.schema import extract_wikilinks
+from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
 # ---------------------------------------------------------------------------
@@ -335,14 +335,8 @@ def handle_surface_context(wiki: str) -> dict[str, Any]:
                     txt = md.read_text()
                 except OSError:
                     continue
-                if not txt.startswith("---\n"):
-                    continue
-                end = txt.find("\n---\n", 4)
-                if end == -1:
-                    continue
-                try:
-                    fm = yaml.safe_load(txt[4:end]) or {}
-                except yaml.YAMLError:
+                fm = parse_frontmatter(txt)
+                if not fm:
                     continue
                 created = str(fm.get("created", ""))
                 samples.append((created, md.stem))

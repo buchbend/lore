@@ -381,13 +381,7 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
     atomic_write_text(path, text_new)
 
 
-def _strip_frontmatter(text: str) -> str:
-    if not text.startswith("---"):
-        return text
-    end = text.find("\n---", 3)
-    if end == -1:
-        return text
-    return text[end + 4 :].lstrip("\n")
+from lore_core.schema import strip_frontmatter as _strip_frontmatter  # noqa: E402, F401
 
 
 def _render_markdown(fm: dict[str, Any], body: str) -> str:

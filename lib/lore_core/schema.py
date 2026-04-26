@@ -104,15 +104,42 @@ def compute_lifecycle(fm: dict) -> str:
 WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 
 
-def parse_frontmatter(text: str) -> dict:
-    """Extract YAML frontmatter from markdown text. Empty dict if absent or malformed."""
+def split_frontmatter(text: str) -> tuple[str, str] | None:
+    """Split a markdown text into (yaml_frontmatter_text, body).
+
+    Returns the inner YAML (no `---` delimiters) and the body that
+    follows the closing `---`, with the body's leading newlines stripped.
+    Returns ``None`` if the text has no frontmatter.
+
+    This is the canonical splitter — every site that picks frontmatter
+    apart goes through this so the shape ("opens with `---`, closes with
+    `\\n---`, body follows after the closing fence") lives in one place.
+    """
     if not text.startswith("---"):
-        return {}
+        return None
     end = text.find("\n---", 3)
     if end == -1:
+        return None
+    return text[4:end], text[end + 4 :].lstrip("\n")
+
+
+def strip_frontmatter(text: str) -> str:
+    """Return ``text`` with any leading YAML frontmatter removed.
+
+    Pass-through if there is no frontmatter (or the closing fence is
+    missing) — never silently drops content.
+    """
+    split = split_frontmatter(text)
+    return split[1] if split is not None else text
+
+
+def parse_frontmatter(text: str) -> dict:
+    """Extract YAML frontmatter from markdown text. Empty dict if absent or malformed."""
+    split = split_frontmatter(text)
+    if split is None:
         return {}
     try:
-        return yaml.safe_load(text[3:end]) or {}
+        return yaml.safe_load(split[0]) or {}
     except yaml.YAMLError:
         return {}
 

@@ -16,21 +16,12 @@ from lore_runtime.argv import argv_main
 
 from lore_core.io import atomic_write_text
 from lore_core.lint import SKIP_DIRS, SKIP_FILES, discover_notes, discover_wikis
-from lore_core.schema import SCHEMA_VERSION, parse_frontmatter
+from lore_core.schema import SCHEMA_VERSION, parse_frontmatter, split_frontmatter
 
 console = Console()
 
 
-def _split_frontmatter(text: str) -> tuple[str, str] | None:
-    """Return (frontmatter_block_without_delimiters, body) or None if absent."""
-    if not text.startswith("---"):
-        return None
-    end = text.find("\n---", 3)
-    if end == -1:
-        return None
-    fm = text[4:end]
-    body = text[end + 4 :].lstrip("\n")
-    return fm, body
+_split_frontmatter = split_frontmatter
 
 
 def add_schema_version(

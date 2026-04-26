@@ -291,13 +291,7 @@ def _git_last_commit_date(repo: Path, rel_path: str) -> str | None:
     return result.stdout.strip() or None if result.returncode == 0 else None
 
 
-def _split_frontmatter(text: str) -> tuple[str, str] | None:
-    if not text.startswith("---"):
-        return None
-    end = text.find("\n---", 3)
-    if end == -1:
-        return None
-    return text[4:end], text[end + 4 :].lstrip("\n")
+from lore_core.schema import split_frontmatter as _split_frontmatter  # noqa: E402, F401
 
 
 def _apply_patch(text: str, patch: dict) -> str:

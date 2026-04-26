@@ -338,13 +338,7 @@ def _load_existing_surfaces(
     return out
 
 
-def _strip_frontmatter(text: str) -> str:
-    if not text.startswith("---"):
-        return text
-    end = text.find("\n---", 3)
-    if end == -1:
-        return text
-    return text[end + 4 :].lstrip("\n")
+from lore_core.schema import strip_frontmatter as _strip_frontmatter  # noqa: E402, F401
 
 
 def _advance_wiki_ledger(wledger: WikiLedger, entry: WikiLedgerEntry, *, now: datetime) -> None:

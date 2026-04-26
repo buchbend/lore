@@ -174,11 +174,7 @@ class NoteRecord:
     mtime: float
 
 
-def _strip_frontmatter(text: str) -> str:
-    if not text.startswith("---"):
-        return text
-    end = text.find("\n---", 3)
-    return text[end + 4 :].lstrip("\n") if end != -1 else text
+from lore_core.schema import strip_frontmatter as _strip_frontmatter  # noqa: E402, F401
 
 
 def _note_record(wiki: str, wiki_root: Path, path: Path) -> NoteRecord | None:

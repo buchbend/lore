@@ -10,6 +10,38 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.10.6] — 2026-04-26
+
+Phase 9d — frontmatter splitter consolidation. Six sites collapsed to
+one canonical implementation in `lore_core/schema.py`.
+
+### Changed
+
+- **`lore_core.schema` adds `split_frontmatter()` and `strip_frontmatter()`**
+  as the canonical YAML-frontmatter splitter. `parse_frontmatter()` now
+  delegates to `split_frontmatter()` rather than repeating the
+  start-fence/closing-fence logic inline.
+
+- **Six call sites consolidated** — `lore_core/migrate.py`,
+  `lore_curator/defrag_curator.py`, `lore_curator/daily_curator.py`,
+  `lore_core/session_writer.py`, `lore_search/fts.py`, and
+  `lore_mcp/server.py` (which had its own inline `txt.startswith("---\\n")`
+  parser) now all share the canonical implementation. The local helpers
+  (`_split_frontmatter`, `_strip_frontmatter`) remain as one-line
+  re-export aliases so call sites don't need rewriting.
+
+- **`lore_curator/abstract._strip_leading_frontmatter`** — kept as a
+  specialised variant (it `lstrip("\\n")`s first and requires the
+  candidate to yaml-parse-to-dict, both LLM-output safety nets the
+  canonical doesn't need) but rebuilt on top of the shared splitter
+  rather than reimplementing the fence search.
+
+### Why
+
+Five different bespoke implementations of "find `---` … `\\n---`" was
+a low-stakes invitation for divergence. The simplifier review flagged
+this; consolidation costs nothing and makes the next bug-fix obvious.
+
 ## [0.10.5] — 2026-04-26
 
 Phase 9b — P1 quick wins from the multi-agent review synthesis. No new

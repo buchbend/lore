@@ -261,31 +261,31 @@ def _strip_leading_frontmatter(text: str) -> str:
     wraps the body in a *second* frontmatter block, producing notes with
     two stacked `---` headers.
 
-    Two cases left intact (return text unchanged):
-      - No closing fence — never risk dropping legitimate content.
-      - The candidate block doesn't yaml-parse to a dict. Markdown bodies
-        that legitimately use `---` as a horizontal rule between sections
-        would otherwise lose content; only strip when we can prove the
-        leading block is actual frontmatter.
+    Differs from the canonical `lore_core.schema.strip_frontmatter` in two
+    safety checks aimed at LLM output:
+
+      - lstrip leading `\\n` first (LLMs often prepend whitespace).
+      - Only strip when the candidate block yaml-parses to a *dict*.
+        Markdown bodies that legitimately use `---` as a horizontal rule
+        between sections would otherwise lose content; without the
+        dict-validates check we'd silently drop body content.
     """
     import yaml
 
+    from lore_core.schema import split_frontmatter
+
     stripped = text.lstrip("\n")
-    if not stripped.startswith("---"):
+    split = split_frontmatter(stripped)
+    if split is None:
         return text
-    after_open = stripped[3:]
-    close_idx = after_open.find("\n---")
-    if close_idx == -1:
-        return text
-    candidate = after_open[:close_idx]
+    fm_yaml, body = split
     try:
-        parsed = yaml.safe_load(candidate)
+        parsed = yaml.safe_load(fm_yaml)
     except yaml.YAMLError:
         return text
     if not isinstance(parsed, dict):
         return text
-    rest = after_open[close_idx + 4:]
-    return rest.lstrip("\n")
+    return body
 
 
 def _emit_high_off_warning_once(lore_root: Path | None) -> None:
