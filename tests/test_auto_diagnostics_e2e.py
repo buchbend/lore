@@ -174,10 +174,10 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
         # ------------------------------------------------------------------
         from lore_curator.session_curator import run_curator_a
 
-        def _adapter_lookup(host: str):
-            if host == "fake":
+        def _adapter_lookup(integration: str):
+            if integration == "fake":
                 return fake_adapter
-            raise KeyError(f"unknown host: {host!r}")
+            raise KeyError(f"unknown integration: {integration!r}")
 
         run_curator_a(
             lore_root=lore_root,

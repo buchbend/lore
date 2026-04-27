@@ -256,7 +256,35 @@ def _render_alerts(state: CaptureState, now: datetime) -> list[str]:
             except OSError:
                 pass
 
+    # Cross-host divergence — local has commits remote doesn't AND vice
+    # versa. auto_pull (Phase 10) skips diverged trees silently, so the
+    # status command is the canonical "you have unfinished work" surface.
+    for wiki in _diverged_wikis(lore_root):
+        alerts.append(
+            f"{_WARN} wiki [[{wiki}]] diverged from origin — `git pull` manually"
+        )
+
     return alerts
+
+
+def _diverged_wikis(lore_root: Path) -> list[str]:
+    """Walk attached wikis; return names whose local branch has diverged
+    from origin. Cheap local-only check; never fetches."""
+    from lore_core.git_sync import is_diverged
+
+    wiki_root = lore_root / "wiki"
+    if not wiki_root.is_dir():
+        return []
+    diverged: list[str] = []
+    for wiki_dir in sorted(wiki_root.iterdir()):
+        if not wiki_dir.is_dir():
+            continue
+        try:
+            if is_diverged(wiki_dir):
+                diverged.append(wiki_dir.name)
+        except Exception:  # noqa: BLE001 — never fail status on git probe
+            continue
+    return diverged
 
 
 def _render_unattached(lore_root: Path, cwd: Path) -> str:

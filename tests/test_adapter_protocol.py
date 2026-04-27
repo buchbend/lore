@@ -54,8 +54,8 @@ class _MissingReadSliceAfterHash:
         return True
 
 
-class _MissingHostAttr:
-    """Stub missing the `host` class attribute."""
+class _MissingIntegrationAttr:
+    """Stub missing the `integration` class attribute."""
 
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         return []
@@ -80,7 +80,7 @@ class _MissingHostAttr:
 
 
 def test_protocol_has_runtime_check():
-    """A class with all four methods + `host` attribute passes isinstance(instance, Adapter)."""
+    """A class with all four methods + `integration` attribute passes isinstance(instance, Adapter)."""
     stub = _FullStub()
     assert isinstance(stub, Adapter)
 
@@ -91,7 +91,7 @@ def test_protocol_rejects_missing_method():
     assert not isinstance(stub, Adapter)
 
 
-def test_protocol_rejects_missing_host_attr():
-    """A class missing the `host` class attribute fails isinstance(instance, Adapter)."""
-    stub = _MissingHostAttr()
+def test_protocol_rejects_missing_integration_attr():
+    """A class missing the `integration` class attribute fails isinstance(instance, Adapter)."""
+    stub = _MissingIntegrationAttr()
     assert not isinstance(stub, Adapter)

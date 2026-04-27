@@ -270,6 +270,50 @@ def test_auto_push_blocks_unknown_conflict_path(two_hosts) -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# is_diverged — public probe for `lore status`
+# ---------------------------------------------------------------------------
+
+
+def test_is_diverged_false_when_in_sync(two_hosts) -> None:
+    from lore_core.git_sync import is_diverged
+
+    _, host_a, _ = two_hosts
+    assert is_diverged(host_a) is False
+
+
+def test_is_diverged_false_when_only_local_ahead(two_hosts) -> None:
+    """Local-only commits (clean push path) are not "diverged"."""
+    from lore_core.git_sync import is_diverged
+
+    _, host_a, _ = two_hosts
+    _commit_file(host_a, "a.md", "a\n", "from a")
+    assert is_diverged(host_a) is False
+
+
+def test_is_diverged_true_when_both_sides_have_unique_commits(two_hosts) -> None:
+    from lore_core.git_sync import is_diverged
+
+    _, host_a, host_b = two_hosts
+    _commit_file(host_a, "a.md", "a\n", "from a")
+    _git(host_a, "push")
+    _commit_file(host_b, "b.md", "b\n", "from b")
+    # Host B fetches but doesn't pull — both sides ahead.
+    _git(host_b, "fetch")
+    assert is_diverged(host_b) is True
+
+
+def test_is_diverged_false_for_non_repo(tmp_path: Path) -> None:
+    from lore_core.git_sync import is_diverged
+
+    assert is_diverged(tmp_path / "not-a-repo") is False
+
+
+# ---------------------------------------------------------------------------
+# Classifier
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.parametrize(
     "path,expected",
     [

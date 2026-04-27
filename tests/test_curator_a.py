@@ -187,10 +187,10 @@ def _setup_wiki(lore_root: Path, wiki_name: str = "private", *, threshold: int =
 
 
 def _make_adapter_lookup(adapter: FakeAdapter):
-    def lookup(host: str):
-        if host == adapter.integration:
+    def lookup(integration: str):
+        if integration == adapter.integration:
             return adapter
-        raise KeyError(f"unknown host: {host!r}")
+        raise KeyError(f"unknown integration: {integration!r}")
     return lookup
 
 
@@ -508,7 +508,7 @@ def test_curator_a_requested_scope_filters(tmp_path):
 
 
 def test_curator_a_unknown_integration_recorded(tmp_path):
-    """Entry with unknown host → adapter_lookup raises → skipped_reasons['unknown_integration'] == 1."""
+    """Entry with unknown integration → adapter_lookup raises → skipped_reasons['unknown_integration'] == 1."""
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
     _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
@@ -522,7 +522,7 @@ def test_curator_a_unknown_integration_recorded(tmp_path):
 
     entry = TranscriptLedgerEntry(
         integration="nonexistent",
-        transcript_id="txn-bad-host",
+        transcript_id="txn-bad-integration",
         path=transcript_path,
         directory=project_dir,
         digested_hash=None,
@@ -535,8 +535,8 @@ def test_curator_a_unknown_integration_recorded(tmp_path):
     )
     ledger.upsert(entry)
 
-    def raising_lookup(host):
-        raise KeyError(f"unknown host: {host!r}")
+    def raising_lookup(integration):
+        raise KeyError(f"unknown integration: {integration!r}")
 
     from lore_curator.session_curator import run_curator_a
 

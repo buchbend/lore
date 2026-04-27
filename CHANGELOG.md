@@ -10,6 +10,45 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-04-27
+
+Phase 10 follow-ups: surface diverged wikis in `lore status`; clean up
+the cosmetic "host" debt in test files that the Phase 9c rename pass
+left behind.
+
+### Added
+
+- **`lore status` divergence indicator.** Walks attached wikis and
+  reports any whose local branch has commits the remote doesn't AND
+  vice versa. `auto_pull` (Phase 10) skips diverged trees silently —
+  `lore status` is now the canonical "you have unfinished sync work"
+  surface. New public helper `lore_core.git_sync.is_diverged(wiki_dir)`
+  — cheap local check, never fetches.
+
+### Internal
+
+- Test-file cosmetic cleanup: `def lookup(host: str)` → `(integration: str)`
+  in `test_curator_a.py`, `test_auto_diagnostics_e2e.py`,
+  `test_adapter_protocol.py`. Stub class `_MissingHostAttr` →
+  `_MissingIntegrationAttr`. Bodies were already correct from Phase 9c;
+  these were the names/strings that Phase 9c's mechanical sweep
+  intentionally left for a follow-up. Caught by the Phase 9c review.
+
+- Reviewer-flagged Phase 10 corrections (already shipped in 0.11.0;
+  noted here for completeness):
+  - `git_sync.auto_push` step 3 now calls `git merge --abort` on
+    commit-failure, mirroring step 4.
+  - LLM-merge result validation requires `parse_frontmatter` to return
+    a dict containing a `type` key — malformed responses can no longer
+    clobber a real surface.
+  - Push-after-merge failure messages now say "merge committed locally,
+    push failed" so the user knows the next auto_push retries via the
+    fast path.
+
+### Tests
+
+- 4 new `is_diverged` tests in `test_git_sync.py`. Total: 1555/1555.
+
 ## [0.11.0] — 2026-04-27
 
 **Cross-host sync.** This is the release that turns Lore from "a

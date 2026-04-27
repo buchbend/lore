@@ -100,6 +100,28 @@ def _upstream_for(wiki_dir: Path, branch: str) -> str | None:
     return r.stdout.strip() if r.returncode == 0 else None
 
 
+def is_diverged(wiki_dir: Path) -> bool:
+    """True iff the wiki has local commits the remote doesn't AND vice versa.
+
+    Cheap local-only check — never fetches. Useful for ``lore status``
+    to surface "wiki diverged" without paying the network cost. Returns
+    False (the safe default) for wikis without a remote, without an
+    upstream, outside a git repo, or in detached-HEAD state.
+    """
+    if not (wiki_dir / ".git").exists():
+        return False
+    if not _has_remote(wiki_dir):
+        return False
+    branch = _current_branch(wiki_dir)
+    if branch is None:
+        return False
+    upstream = _upstream_for(wiki_dir, branch)
+    if upstream is None:
+        return False
+    ahead, behind = _ahead_behind(wiki_dir, branch, upstream)
+    return ahead > 0 and behind > 0
+
+
 def _ahead_behind(wiki_dir: Path, branch: str, upstream: str) -> tuple[int, int]:
     """Returns (ahead, behind) — local commits not in upstream, and vice versa."""
     r = _git(wiki_dir, "rev-list", "--left-right", "--count", f"{branch}...{upstream}")
