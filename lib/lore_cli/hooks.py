@@ -1036,6 +1036,55 @@ def _in_curator_mode() -> bool:
     return os.environ.get("LORE_CURATOR_MODE") == "1"
 
 
+def _read_hook_payload() -> dict:
+    """Consume the JSON payload Claude Code passes on stdin for every hook fire.
+
+    The payload carries the canonical ``session_id`` (and ``cwd``,
+    ``transcript_path``, ``hook_event_name``). Until v0.12.1 lore never
+    read it, so :func:`lore_core.drain.resolve_session_id` had to fall
+    back to a transcript-freshness heuristic — fine for a single
+    session, but with multiple concurrent Claude sessions the freshest
+    transcript at curator-write time and at heartbeat-read time can
+    disagree, leaving curator-filed notes stranded in the wrong drain
+    file (issue #29).
+
+    Side effect: when the payload provides ``session_id`` we publish it
+    as ``CLAUDE_SESSION_ID`` so :func:`resolve_session_id`'s priority-2
+    branch (and any spawned curator subprocess inheriting the env)
+    pick it up without further plumbing. We never overwrite an
+    explicit ``CLAUDE_SESSION_ID`` already in the env — a host that
+    sets it directly stays authoritative.
+
+    No-ops on a TTY (manual ``lore hook ... --plain`` runs) and on any
+    parse error; hooks must never abort because of payload trouble.
+    """
+    try:
+        if sys.stdin.isatty():
+            return {}
+    except (OSError, ValueError):
+        return {}
+    try:
+        raw = sys.stdin.read()
+    except OSError:
+        return {}
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    sid = payload.get("session_id")
+    if (
+        isinstance(sid, str)
+        and sid
+        and not os.environ.get("CLAUDE_SESSION_ID")
+    ):
+        os.environ["CLAUDE_SESSION_ID"] = sid
+    return payload
+
+
 @hook_app.command("session-start")
 def cmd_session_start(
     cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
@@ -1054,6 +1103,7 @@ def cmd_session_start(
     """Inject vault context at session start."""
     if _in_curator_mode():
         return
+    _read_hook_payload()
     cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(str(cwd_resolved))
 
@@ -1220,6 +1270,7 @@ def cmd_pre_compact(
     """Inject open items before compaction."""
     if _in_curator_mode():
         return
+    _read_hook_payload()
     out = _pre_compact(_resolve_cwd(cwd))
     _emit("PreCompact", out, plain=plain)
 
@@ -1235,6 +1286,7 @@ def cmd_stop(
     """Hint to capture a session note."""
     if _in_curator_mode():
         return
+    _read_hook_payload()
     out = _stop()
     _emit("Stop", out, plain=plain)
 
@@ -1363,6 +1415,7 @@ def cmd_user_prompt_submit(
     """Lightweight heartbeat — check drain for new events."""
     if _in_curator_mode():
         return
+    _read_hook_payload()
     cwd_resolved = Path(_resolve_cwd(cwd))
     scope = resolve_scope(cwd_resolved)
     if scope is None:
@@ -1894,6 +1947,7 @@ def capture(
     """
     if _in_curator_mode():
         return
+    _read_hook_payload()
     import time as _time
     from lore_adapters import UnknownIntegrationError
     from lore_core.hook_log import _ppid_cmd

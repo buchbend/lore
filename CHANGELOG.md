@@ -10,6 +10,33 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-04-28
+
+Fix #29 — mid-stream session notes now surface in the active session.
+
+### Fixed
+
+- **Hooks read the JSON payload Claude Code passes on stdin** and
+  republish ``session_id`` as ``CLAUDE_SESSION_ID`` for the duration of
+  the hook process. ``cmd_session_start``, ``cmd_pre_compact``,
+  ``cmd_user_prompt_submit``, ``cmd_capture``, and ``cmd_stop`` all go
+  through the new ``_read_hook_payload`` helper. Until now lore never
+  read the payload, so :func:`lore_core.drain.resolve_session_id` had
+  to guess — and with multiple concurrent Claude sessions the
+  transcript-freshness heuristic could pick a *different* session at
+  curator-write time vs. heartbeat-read time, leaving curator-filed
+  ``note-filed`` events in the wrong drain file. The published
+  ``CLAUDE_SESSION_ID`` is automatically inherited by detached curator
+  subprocesses (``_spawn_detached`` already does
+  ``env = os.environ.copy()``), so writer and reader now agree on the
+  same drain file.
+
+### Added
+
+- **``Stop`` hook is now declared in ``.claude-plugin/plugin.json``.**
+  Previously only ``examples/settings.json`` listed it, so users on
+  the plugin path never got the post-turn capture hint.
+
 ## [0.13.0] — 2026-04-27
 
 Phase 12 — P3.1 + P3.4 from the multi-agent synthesis review:
