@@ -10,6 +10,58 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-04-27
+
+Phase 12 — P3.1 + P3.4 from the multi-agent synthesis review:
+**typer-app lift + CLI contract layering test**. The `lore_runtime`
+package — a 301-LOC workaround that existed solely so lower layers
+could host typer apps without inverting the dependency graph — is gone.
+
+### Changed
+
+- **Typer apps lifted into `lore_cli/<verb>_cmd.py`.** Previously
+  `lore_core.lint`, `lore_core.migrate`, `lore_curator.defrag_curator`,
+  `lore_mcp.server`, and `lore_search.cli` each ended with a typer
+  block that the dispatcher mounted via cross-package import
+  (`from lore_core import lint as lint_cmd`). Now every verb lives in
+  its own `lore_cli/<verb>_cmd.py` file and the lower layers contain
+  only business logic. The dispatcher in `lore_cli/__main__.py`
+  imports siblings via a single `from lore_cli import (...)` block.
+
+- **`lore_runtime` package deleted.** Its two helpers moved to where
+  they're used: `argv_main` → `lore_cli/_argv_compat.py` (internal
+  compat shim wrapping typer apps in the legacy `main(argv) -> int`
+  contract) and `run_render` (pure-Python run-log renderers, no I/O)
+  → `lore_core/run_render.py`.
+
+- **`lore_mcp.server._start_server` renamed to `start_server`.** The
+  function now crosses a package boundary (it's imported by
+  `lore_cli/mcp_cmd.py`), so the leading-underscore "private to the
+  module" convention no longer applies.
+
+- **`lore_curator.__init__` and `lore_mcp.__init__`** dropped their
+  `main` re-exports — those re-exports surfaced typer entry points as
+  package public API, which they aren't. (Pre-1.0 cut-hard policy.)
+
+### Added
+
+- **`tests/test_cli_contract.py`** — CLI contract layering test
+  (P3.4): asserts every `lore_cli/<verb>_cmd.py` defines a module-level
+  `app: typer.Typer` and that `lore_cli/__main__.py` only mounts
+  subapps via `add_typer()` (the documented `cmd_uninstall_alias` is
+  the single grandfathered exception). Catches accidentally-hidden
+  verbs and inline command drift in the dispatcher.
+
+- **`docs/architecture/cli-contract.md`** — the seam doc the
+  synthesis flagged as P5.2: shape of a verb file, the four rules
+  (enforced by the layering tests), where helpers live, and how to
+  break the rules cleanly.
+
+### Tests
+
+1554 → **1585 pass** (+31 from the new contract file). All five
+lifted verbs render `--help` correctly under `lore <verb> --help`.
+
 ## [0.12.0] — 2026-04-27
 
 Phase 11 — eight P2 structural cleanups from the multi-agent review.

@@ -24,8 +24,6 @@ Exposed tools:
 
 Start:
     lore mcp
-(or)
-    python -m lore_mcp.server
 """
 
 from __future__ import annotations
@@ -807,7 +805,7 @@ def _start_reindex_watcher() -> None:
     start_watcher(lore_root, _reindex_dirty)
 
 
-def _start_server() -> int:
+def start_server() -> int:
     """Start the MCP STDIO server.
 
     Uses the official `mcp` Python SDK if installed; otherwise falls back
@@ -931,35 +929,3 @@ def _run_minimal_server() -> int:
                 }
             )
     return 0
-
-
-import typer  # noqa: E402
-
-from lore_runtime.argv import argv_main  # noqa: E402
-
-app = typer.Typer(
-    add_completion=False,
-    help=__doc__,
-    no_args_is_help=False,
-    rich_markup_mode="rich",
-)
-
-
-@app.callback(invoke_without_command=True)
-def mcp() -> None:
-    """Start the Lore MCP STDIO server.
-
-    Communicates over stdin/stdout. Intended for invocation by an MCP
-    client (Claude Code, Cursor, etc.) — running interactively will
-    just wait for JSON-RPC messages.
-    """
-    rc = _start_server()
-    if rc:
-        raise typer.Exit(code=rc)
-
-
-main = argv_main(app)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -7,13 +7,12 @@ Generates per-wiki:
                     the emerging llms.txt convention)
 
 Invoke programmatically via `run_lint()` or from the CLI:
-    python -m lore_core.lint [--wiki NAME] [--check-only] [--json]
+    lore lint [--wiki NAME] [--check-only] [--json]
 """
 
 from __future__ import annotations
 
 import json
-import sys
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
@@ -701,38 +700,3 @@ def _print_report(
         console.print("[dim]Catalogs written: _catalog.json + _index.md + llms.txt per wiki[/dim]")
 
 
-import typer  # noqa: E402
-
-from lore_runtime.argv import argv_main  # noqa: E402
-
-app = typer.Typer(
-    add_completion=False,
-    help=__doc__.splitlines()[0] if __doc__ else None,
-    no_args_is_help=False,
-    rich_markup_mode="rich",
-)
-
-
-@app.callback(invoke_without_command=True)
-def lint(
-    wiki: str = typer.Option(None, "--wiki", "-w", help="Scope to a single wiki."),
-    check_only: bool = typer.Option(
-        False, "--check-only", help="Lint only, skip catalog writes."
-    ),
-    json_out: bool = typer.Option(False, "--json", help="Output report as JSON."),
-) -> None:
-    """Lint the vault and (re)generate catalogs."""
-    report = run_lint(
-        wiki_filter=wiki,
-        check_only=check_only,
-        json_output=json_out,
-    )
-    if report.get("by_severity", {}).get("errors", 0) > 0:
-        raise typer.Exit(code=1)
-
-
-main = argv_main(app)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

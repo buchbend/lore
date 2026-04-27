@@ -1,18 +1,13 @@
 """One-shot frontmatter migrations for Lore's schema evolution.
 
 Migrations are idempotent (re-running is a no-op). Each is driven by a
-CLI flag on `python -m lore_core.migrate`. Most users only need
-`--add-schema-version` once after upgrading to this version.
+CLI flag on `lore migrate`. Most users only need `--add-schema-version`
+once after upgrading to this version.
 """
 
 from __future__ import annotations
 
-import sys
-
-import typer
 from rich.console import Console
-
-from lore_runtime.argv import argv_main
 
 from lore_core.io import atomic_write_text
 from lore_core.lint import SKIP_DIRS, SKIP_FILES, discover_notes, discover_wikis
@@ -181,52 +176,3 @@ def migrate_minimal_status(
     return touched
 
 
-app = typer.Typer(
-    add_completion=False,
-    help="Frontmatter migrations for Lore schema evolution.",
-    no_args_is_help=True,
-    rich_markup_mode="rich",
-)
-
-
-@app.callback(invoke_without_command=True)
-def migrate(
-    ctx: typer.Context,
-    wiki: str = typer.Option(None, "--wiki", "-w", help="Scope to a single wiki."),
-    add_schema_version_: bool = typer.Option(
-        False,
-        "--add-schema-version",
-        help=f"Add `schema_version: {SCHEMA_VERSION}` to notes missing it.",
-    ),
-    minimal_status: bool = typer.Option(
-        False,
-        "--minimal-status",
-        help="Drop `status:` field per status-vocabulary-minimalism "
-        "(proposed → draft: true, others dropped).",
-    ),
-    apply: bool = typer.Option(
-        False,
-        "--apply",
-        help="Actually write changes. Without this, runs dry.",
-    ),
-) -> None:
-    """Run a frontmatter migration. Pick exactly one with a flag."""
-    # A subcommand will handle its own invocation; do nothing here.
-    if ctx.invoked_subcommand is not None:
-        return
-    if add_schema_version_:
-        add_schema_version(wiki_filter=wiki, dry_run=not apply)
-        return
-    if minimal_status:
-        migrate_minimal_status(wiki_filter=wiki, dry_run=not apply)
-        return
-    # No migration flag and no subcommand → show help
-    print(ctx.get_help())
-    raise typer.Exit(code=2)
-
-
-main = argv_main(app)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -21,7 +21,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from lore_runtime.argv import argv_main
+from lore_cli._argv_compat import argv_main
 
 console = Console()
 err_console = Console(stderr=True)

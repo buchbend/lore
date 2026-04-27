@@ -23,6 +23,7 @@ from lore_cli import (
     briefing_cmd,
     completions_cmd,
     config_cmd,
+    curator_cmd,
     detach_cmd,
     doctor_cmd,
     hooks,
@@ -30,25 +31,24 @@ from lore_cli import (
     ingest_cmd,
     init_cmd,
     install_cmd,
+    lint_cmd,
     log_cmd,
-    news_cmd,
+    mcp_cmd,
+    migrate_cmd,
     new_wiki_cmd,
+    news_cmd,
     proc_cmd,
     registry_cmd,
     resume_cmd,
     runs_cmd,
     scopes_cmd,
+    search_cmd,
     session_cmd,
     status_cmd,
     surface_cmd,
     transcripts_cmd,
     wiki_cmd,
 )
-from lore_core import lint as lint_cmd
-from lore_core import migrate as migrate_cmd
-from lore_curator import defrag_curator as curator_cmd
-from lore_mcp import server as mcp_cmd
-from lore_search import cli as search_cmd
 
 app = typer.Typer(
     add_completion=False,

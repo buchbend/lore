@@ -14,10 +14,10 @@ import json
 import sys
 
 import typer
+from lore_search.fts import FtsBackend
 from rich.console import Console
 
-from lore_runtime.argv import argv_main
-from lore_search.fts import FtsBackend
+from lore_cli._argv_compat import argv_main
 
 console = Console()
 

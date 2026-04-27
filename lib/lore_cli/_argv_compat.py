@@ -1,16 +1,16 @@
-"""Backwards-compat shim for the typer migration.
+"""Internal compat shim — wraps a `typer.Typer` app into the legacy
+`main(argv: list[str] | None) -> int` contract.
 
-Existing tests and the `__main__.py` dispatcher both call
+Tests and the `__main__.py` dispatcher both call
 `<cmd>.main(argv: list[str] | None) -> int`. Typer apps don't have
 that signature natively — they expose a `__call__` that exits the
-process. This helper wraps a Typer app into the legacy `main(argv)`
-contract so the migration can land file-by-file without rewriting
-hundreds of test calls.
+process. This helper translates exceptions back to int exit codes so
+existing call sites don't have to know a typer app is underneath.
 
-Usage in each migrated `<cmd>.py`:
+Usage in each `lore_cli/<verb>_cmd.py`:
 
     import typer
-    from lore_runtime.argv import argv_main
+    from lore_cli._argv_compat import argv_main
 
     app = typer.Typer(...)
 
@@ -18,9 +18,6 @@ Usage in each migrated `<cmd>.py`:
     def something(...): ...
 
     main = argv_main(app)   # legacy entry point for tests + dispatcher
-
-Tests keep calling `cmd.main(["sub", "--flag"])`; typer handles the
-parsing, the wrapper translates exceptions back to int exit codes.
 """
 
 from __future__ import annotations
@@ -36,8 +33,7 @@ def argv_main(app: typer.Typer) -> Callable[[list[str] | None], int]:
 
     Catches the SystemExit / typer.Exit raised by typer when
     `standalone_mode=True` (the default) and translates back to an
-    int exit code. argparse compatibility — tests don't have to know
-    a typer app is underneath.
+    int exit code.
     """
 
     def _main(argv: list[str] | None = None) -> int:

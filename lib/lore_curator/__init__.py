@@ -24,6 +24,6 @@ happen. See ``docs/superpowers/specs/2026-04-19-passive-capture-v1-design.md``
 for the pipeline design.
 """
 
-from lore_curator.defrag_curator import main, run_curator_c
+from lore_curator.defrag_curator import run_curator_c
 
-__all__ = ["main", "run_curator_c"]
+__all__ = ["run_curator_c"]

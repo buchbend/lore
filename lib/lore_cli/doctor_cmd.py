@@ -10,7 +10,7 @@ Checks:
   2. wiki/ subdir exists with at least one wiki
   3. cache dir is writable (~/.cache/lore/ or $LORE_CACHE)
   4. SessionStart hook is reachable (`lore hook session-start --plain`)
-  5. MCP server module imports (`python -m lore_mcp.server` would start)
+  5. MCP server module imports (`lore mcp` would start it)
   6. lore_search index responds (FtsBackend.stats() succeeds)
   7. Current cwd's `## Lore` block parses (if attached; else skipped)
 """
@@ -27,7 +27,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from lore_runtime.argv import argv_main
+from lore_cli._argv_compat import argv_main
 
 console = Console()
 

@@ -20,7 +20,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from lore_runtime.argv import argv_main
+from lore_cli._argv_compat import argv_main
 from lore_core.state.attachments import Attachment, AttachmentsFile
 
 console = Console()

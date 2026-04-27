@@ -19,7 +19,7 @@ import sys
 
 import typer
 
-from lore_runtime.argv import argv_main
+from lore_cli._argv_compat import argv_main
 from lore_cli.launcher import launch, list_integrations
 from lore_core.resume import (
     DEFAULT_DAYS,

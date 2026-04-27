@@ -48,7 +48,7 @@ from lore_core.install.base import (
     InstallContext,
     LegacyArtifact,
 )
-from lore_runtime.argv import argv_main
+from lore_cli._argv_compat import argv_main
 from rich.console import Console
 from rich.markup import escape as rich_escape
 
