@@ -31,40 +31,37 @@ class LockContendedError(Exception):
 
 
 @contextmanager
-def try_acquire_spawn_lock(lore_root: Path, role: str):
-    """Non-blocking per-role spawn lock; yields (held: bool, stamp_path: Path).
+def flocked(path: Path, *, blocking: bool = True):
+    """``fcntl.flock`` context manager — single source of truth.
 
-    Uses ``fcntl.flock(LOCK_EX | LOCK_NB)`` on
-    ``$LORE_ROOT/.lore/curator-<role>.spawn.lock``. If another process holds
-    the lock, yields (False, stamp_path) immediately — caller should give up.
-    If acquired, yields (True, stamp_path) and releases on context exit.
+    Locks ``path`` with ``LOCK_EX``. Yields ``True`` once acquired
+    (``blocking=True``, default) or yields ``True``/``False`` immediately
+    based on whether ``LOCK_NB`` succeeded (``blocking=False``).
 
-    Kernel semantics: flock is released when the holding process exits
-    (normal or abnormal), so a crashed spawner never leaves the lock held.
-    No stale-lock recovery is needed.
+    Always closes the file descriptor on exit; releases the lock if
+    held. Kernel semantics: flock is released when the holding process
+    exits (normal or abnormal), so a crashed holder never leaves the
+    lock held — no stale-lock recovery is needed.
 
-    The stamp_path is used by callers for cooldown bookkeeping (read at
-    lock-acquire, written after a successful Popen). It is NOT touched by
-    this function.
+    Replaces three near-identical call sites (this module's spawn lock,
+    ``hook_log`` rotation, ``install/_helpers._flocked``).
     """
-    lock_path = lore_root / ".lore" / f"curator-{role}.spawn.lock"
-    stamp_path = lore_root / ".lore" / f"curator-{role}.spawn.stamp"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd: int | None = None
     held = False
     try:
         try:
-            fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+            fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o644)
         except OSError:
-            yield (False, stamp_path)
+            yield False
             return
+        flags = fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, flags)
             held = True
         except BlockingIOError:
             held = False
-        yield (held, stamp_path)
+        yield held
     finally:
         if fd is not None:
             if held:
@@ -76,6 +73,20 @@ def try_acquire_spawn_lock(lore_root: Path, role: str):
                 os.close(fd)
             except OSError:
                 pass
+
+
+@contextmanager
+def try_acquire_spawn_lock(lore_root: Path, role: str):
+    """Non-blocking per-role spawn lock; yields (held: bool, stamp_path: Path).
+
+    Wraps :func:`flocked` with the spawn-lock-specific path convention
+    and the (held, stamp_path) tuple shape that callers depend on for
+    cooldown bookkeeping.
+    """
+    lock_path = lore_root / ".lore" / f"curator-{role}.spawn.lock"
+    stamp_path = lore_root / ".lore" / f"curator-{role}.spawn.stamp"
+    with flocked(lock_path, blocking=False) as held:
+        yield (held, stamp_path)
 
 
 def read_lock_holder(lore_root: Path) -> dict | None:

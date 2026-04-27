@@ -53,20 +53,9 @@ def _resolve_handle_for(wiki_root: Path, handle: TranscriptHandle) -> str:
     """
     from lore_core.identity import resolve_handle
 
-    try:
-        import subprocess
+    from lore_core.git import git_user_email
 
-        r = subprocess.run(
-            ["git", "config", "user.email"],
-            cwd=str(handle.cwd),
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    email = r.stdout.strip() if r.returncode == 0 else ""
+    email = git_user_email(handle.cwd, env_override=None)
     return resolve_handle(wiki_root, email) if email else ""
 
 

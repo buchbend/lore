@@ -33,7 +33,7 @@ SCOPES_YML_SAMPLE = {
 }
 
 
-# ---------- _split_filter ----------
+# ---------- gh.split_filter (was hooks._split_filter pre-0.12.0) ----------
 
 
 @pytest.mark.parametrize("raw,expected", [
@@ -44,12 +44,14 @@ SCOPES_YML_SAMPLE = {
     (None, []),
 ])
 def test_split_filter(raw, expected):
-    assert hooks._split_filter(raw) == expected
+    from lore_core import gh
+    assert gh.split_filter(raw) == expected
 
 
 def test_split_filter_malformed_falls_back_to_whitespace():
     # Unterminated quote — shlex raises, fallback kicks in
-    assert hooks._split_filter('--label "oops') == ["--label", '"oops']
+    from lore_core import gh
+    assert gh.split_filter('--label "oops') == ["--label", '"oops']
 
 
 # ---------- scope tree walk ----------
@@ -169,17 +171,20 @@ def test_resolve_attach_block_missing_file(tmp_path, monkeypatch):
 
 
 def test_format_issue_line():
-    assert hooks._format_issue_line({"number": 47, "title": "retry cap"}) == "- #47 retry cap"
+    from lore_core import gh
+    assert gh.format_issue_line({"number": 47, "title": "retry cap"}) == "- #47 retry cap"
 
 
 def test_format_pr_line_draft():
-    assert hooks._format_pr_line(
+    from lore_core import gh
+    assert gh.format_pr_line(
         {"number": 31, "title": "atm-table v2", "isDraft": True}
     ) == "- #31 [draft] atm-table v2"
 
 
 def test_format_pr_line_ready():
-    assert hooks._format_pr_line(
+    from lore_core import gh
+    assert gh.format_pr_line(
         {"number": 32, "title": "bugfix", "isDraft": False}
     ) == "- #32 bugfix"
 

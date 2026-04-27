@@ -80,18 +80,13 @@ def _resolve_attach_block(cwd: Path) -> tuple[Path, dict] | None:
 
 
 def _git_user_email(cwd: Path) -> str:
-    try:
-        result = subprocess.run(
-            ["git", "config", "user.email"],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    return result.stdout.strip() if result.returncode == 0 else ""
+    """Backward-compat shim — defers to ``lore_core.git.git_user_email``.
+
+    Kept private so existing call sites within ``lore_core.session`` don't
+    need rewriting; new code should import the canonical helper directly.
+    """
+    from lore_core.git import git_user_email
+    return git_user_email(cwd, env_override=None)
 
 
 def _recent_commits(repo_root: Path, since: str = "24 hours ago") -> list[dict]:

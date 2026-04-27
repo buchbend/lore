@@ -9,7 +9,7 @@ Pre-filter: notes with shared tag(s) AND title-slug fuzzy ratio >= 0.6
 (rapidfuzz if available, else stdlib difflib.SequenceMatcher).
 Threshold: confidence >= 0.8 (inclusive) — below → skip.
 
-Registers into ``curator_c._DEFRAG_PASSES`` so the integration skeleton
+Registered via ``defrag_curator._all_defrag_passes`` so the integration skeleton
 picks it up automatically.
 """
 
@@ -178,7 +178,7 @@ def _propose_merge(
 def adjacent_merge_pass(
     wiki_path: Path, *, llm_client: Any, dry_run: bool
 ) -> dict[str, int]:
-    """Registered in _DEFRAG_PASSES. Returns summary counts."""
+    """One Curator C defrag pass — registered in ``_all_defrag_passes``. Returns summary counts."""
     if llm_client is None:
         return {"adjacent_merge_skipped_no_llm": 1}
 
@@ -276,11 +276,3 @@ def _existing_proposal_has_sources(sessions_dir: Path, a: Path, b: Path) -> bool
     return False
 
 
-def _register() -> None:
-    """Append to defrag_curator._DEFRAG_PASSES."""
-    from lore_curator import defrag_curator
-    if adjacent_merge_pass not in defrag_curator._DEFRAG_PASSES:
-        defrag_curator._DEFRAG_PASSES.append(adjacent_merge_pass)
-
-
-_register()

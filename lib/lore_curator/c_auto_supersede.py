@@ -312,10 +312,3 @@ def auto_supersede_pass(
     }
 
 
-def _register() -> None:
-    from lore_curator import defrag_curator
-    if auto_supersede_pass not in defrag_curator._DEFRAG_PASSES:
-        defrag_curator._DEFRAG_PASSES.append(auto_supersede_pass)
-
-
-_register()

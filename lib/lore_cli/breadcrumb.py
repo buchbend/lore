@@ -63,15 +63,17 @@ def consume_pending_breadcrumb(lore_root: Path) -> str | None:
     a ``pending-breadcrumb-consumed`` event so the line is shown at most
     once.
 
-    Also runs the one-shot legacy-file migration: a legacy
-    ``.lore/pending-breadcrumb.txt`` is read, converted to a written
-    event preserving its mtime, and unlinked.
+    The 0.9.0-era legacy ``.lore/pending-breadcrumb.txt`` migration
+    helper (``migrate_legacy_pending_breadcrumb``) is no longer called
+    from this hot path. It still exists for hand-rolled migrations on
+    vaults that were dormant through the 0.9–0.11 series; anyone with
+    a stale ``.lore/pending-breadcrumb.txt`` can either delete it or
+    run ``lore_cli.breadcrumb.migrate_legacy_pending_breadcrumb``
+    manually. Stat-skipping the migration on every SessionStart
+    removes ~10μs of idempotent FS overhead per session.
     """
     from datetime import UTC, datetime as _dt
     from lore_core.hook_log import HookEventLogger
-
-    # Migration: convert legacy file to event before scanning.
-    migrate_legacy_pending_breadcrumb(lore_root)
 
     events_path = lore_root / ".lore" / "hook-events.jsonl"
     if not events_path.exists():

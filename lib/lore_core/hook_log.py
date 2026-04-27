@@ -24,7 +24,6 @@ Concurrency design (audited 2026-04-26 in Phase 3):
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 from datetime import UTC, datetime
@@ -89,11 +88,10 @@ class HookEventLogger:
         if size < self._max_size:
             return
         # Non-blocking flock — loser skips rotation this cycle.
+        from lore_core.lockfile import flocked
         try:
-            with self._rotate_lock.open("a") as lock_f:
-                try:
-                    fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except OSError:
+            with flocked(self._rotate_lock, blocking=False) as held:
+                if not held:
                     return  # another process is rotating; skip
                 # Re-check under lock.
                 try:

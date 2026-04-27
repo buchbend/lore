@@ -10,6 +10,81 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-04-27
+
+Phase 11 — eight P2 structural cleanups from the multi-agent review.
+No new features; all internal. The codebase is materially smaller and
+more uniform; no behaviour change.
+
+### Changed
+
+- **`lore_core.git.git_user_email`** is now the single source of truth
+  for resolving git's configured author email. Three sites that each
+  reimplemented the same `subprocess git config user.email` shape
+  (`lore_core/session.py`, `lore_curator/session_filer.py`,
+  `lore_cli/hooks.py`) collapse to one helper with a documented
+  resolution order (env override → git config → optional hostname
+  fallback → empty).
+
+- **`lore_core.lockfile.flocked`** is now the single source of truth
+  for `fcntl.flock` context managers. Three sites that each spelled
+  the same `os.open` + `fcntl.flock(LOCK_EX[|LOCK_NB])` + cleanup
+  pattern (`lockfile.try_acquire_spawn_lock`,
+  `hook_log.MaintenancePolicy._maybe_rotate`,
+  `install/_helpers._flocked`) now go through the helper. Yields a
+  ``bool`` so callers branch on acquired-or-not for non-blocking
+  cases.
+
+- **`session_curator.run_curator_a`** dry-run vs locked branches
+  deduplicated via a closure (`_iterate_pending`). Pre-Phase-11 this
+  was ~22 lines of nearly-identical code that drifted the moment a
+  fix touched only one branch — exactly the failure mode Phase 6's
+  `run_curator_c` decomposition targeted, missed in this function.
+
+- **Curator C defrag passes register at call time, not import time.**
+  Replaced the `_DEFRAG_PASSES` global + import-side-effect
+  ``_register()`` calls in `c_*.py` modules with a single
+  `_all_defrag_passes()` function that lazy-imports the three pass
+  callables. Order is now deterministic; `importlib.reload` doesn't
+  lose passes; debugging "where did this pass come from?" is one
+  grep instead of a registry walk.
+
+- **`hooks._gh_*` wrappers inlined** where they were one-line
+  passthroughs to `lore_core.gh.*`. `_run_gh` stays — it's
+  monkeypatched by `tests/test_hooks_v2.py` to feed deterministic
+  JSON. `_split_filter`, `_format_issue_line`, `_format_pr_line`
+  are gone; tests now call `gh.*` directly.
+
+### Removed
+
+- **Curator role-name aliases** (`run_session_curator`,
+  `run_daily_curator`, `run_defrag_curator`). The 0.10.x rename never
+  stuck — usage skewed 195:11 toward A/B/C across `lib/` and
+  `tests/`, and the aliases existed only to soften a transition that
+  didn't happen. Per-wiki memory and `feedback_curator_naming` agree:
+  user-facing copy says "Curator"; A/B/C live in code only. Public
+  exports from `lore_curator/__init__.py` now name the canonical
+  A/B/C entry points.
+
+- **Legacy `pending-breadcrumb.txt` migration call** removed from the
+  hot SessionStart path (`lore_cli/breadcrumb.consume_pending_breadcrumb`).
+  The migration helper itself stays for hand-rolled use on long-dormant
+  vaults; the unconditional call was 0.9.0-era, ran on every
+  SessionStart, and was paying ~10μs of idempotent FS overhead on
+  every Claude session start.
+
+### Internal
+
+- Pinned removal target on the two ``# legacy — retained during
+  deprecation`` comments in `lore_core/lint.py` (NoteInfo.status,
+  serialiser): scheduled for 1.0 removal once vaults converge to
+  the `lifecycle` field.
+
+### Tests
+
+- Test count unchanged (1555/1555). All P2 work was structurally
+  invariant — same behaviour, smaller surface.
+
 ## [0.11.1] — 2026-04-27
 
 Phase 10 follow-ups: surface diverged wikis in `lore status`; clean up

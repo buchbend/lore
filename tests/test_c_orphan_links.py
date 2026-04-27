@@ -256,5 +256,5 @@ def test_orphan_skipped_without_llm(tmp_path: Path) -> None:
 
 
 def test_orphan_registered_in_defrag_passes() -> None:
-    from lore_curator import c_orphan_links, defrag_curator  # noqa: F401
-    assert c_orphan_links.orphan_links_pass in defrag_curator._DEFRAG_PASSES
+    from lore_curator import c_orphan_links, defrag_curator
+    assert c_orphan_links.orphan_links_pass in defrag_curator._all_defrag_passes()

@@ -619,22 +619,23 @@ def _apply_safely(action: CuratorAction) -> tuple[bool, str]:
     return (True, "applied")
 
 
-# Registry for LLM-driven Curator C defrag passes. Phase B of Plan 5
-# appends callables here; each callable has signature
-# ``(wiki_path, *, llm_client, dry_run) -> dict[str, int]`` (summary counts).
-_DEFRAG_PASSES: list = []
+def _all_defrag_passes() -> list:
+    """Return the canonical list of LLM-driven Curator C defrag passes.
 
+    Each pass has signature
+    ``(wiki_path, *, llm_client, dry_run) -> dict[str, int]``.
 
-def _ensure_passes_registered() -> None:
-    """Lazy-import pass modules so their _register() side effects fire.
-
-    The pass modules each register themselves into _DEFRAG_PASSES on
-    import. Importing them eagerly from this module would circular-
-    import. Instead, we trigger them here the first time defrag runs.
+    Populated at call time from explicit imports rather than via
+    import-side-effect ``_register()`` calls (the prior design): order
+    is deterministic, ``importlib.reload`` doesn't lose passes, and
+    debugging "where did this pass come from?" is one grep instead of
+    a registry walk. The lazy-import shape avoids the circular
+    ``c_*.py → defrag_curator`` dependency.
     """
-    import lore_curator.c_adjacent_merge  # noqa: F401
-    import lore_curator.c_auto_supersede  # noqa: F401
-    import lore_curator.c_orphan_links   # noqa: F401
+    from lore_curator.c_adjacent_merge import adjacent_merge_pass
+    from lore_curator.c_auto_supersede import auto_supersede_pass
+    from lore_curator.c_orphan_links import orphan_links_pass
+    return [adjacent_merge_pass, auto_supersede_pass, orphan_links_pass]
 
 
 def _run_defrag_passes(
@@ -644,9 +645,8 @@ def _run_defrag_passes(
     dry_run: bool,
 ) -> dict[str, int]:
     """Run every registered LLM pass for one wiki; return merged summary."""
-    _ensure_passes_registered()
     summary: dict[str, int] = {}
-    for pass_fn in _DEFRAG_PASSES:
+    for pass_fn in _all_defrag_passes():
         counts = pass_fn(
             wiki_path, llm_client=llm_client, dry_run=dry_run
         ) or {}
@@ -679,8 +679,8 @@ def run_curator_c(
     run_id: str | None = None,
 ) -> list[CuratorReport]:
     """Run Curator C — hygiene by default; with ``defrag=True`` also runs
-    LLM passes (adjacent-merge, auto-supersede, orphan-repair) registered
-    in ``_DEFRAG_PASSES``.
+    LLM passes (adjacent-merge, auto-supersede, orphan-repair) returned
+    by :func:`_all_defrag_passes`.
 
     When ``defrag=True``:
       - pre-flight: abort if wiki repo has merge conflicts
@@ -1348,11 +1348,6 @@ def run_command(
 
 
 main = argv_main(app)
-
-
-# Role-name alias: ``run_defrag_curator`` matches the module name;
-# legacy ``run_curator_c`` kept as alias for existing call sites.
-run_defrag_curator = run_curator_c
 
 
 if __name__ == "__main__":

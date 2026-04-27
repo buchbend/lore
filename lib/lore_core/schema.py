@@ -21,7 +21,8 @@ SCHEMA_VERSIONS_SUPPORTED: tuple[int, ...] = (1, 2)
 # `status` was removed from REQUIRED_FIELDS by the status-vocabulary-
 # minimalism decision: notes are implicitly canonical unless they carry
 # `draft: true` or `superseded_by: [[...]]`. Legacy `status:` values are
-# still accepted by the parser during the deprecation window.
+# still accepted by the parser; scheduled to be ignored entirely in
+# 1.0 once vaults have had time to converge to the new convention.
 REQUIRED_FIELDS: dict[str, list[str]] = {
     "project": [
         "schema_version",

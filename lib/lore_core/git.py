@@ -11,6 +11,55 @@ import subprocess
 from pathlib import Path
 
 
+def git_user_email(
+    cwd: Path | str | None = None,
+    *,
+    env_override: str | None = "GIT_AUTHOR_EMAIL",
+    fallback_hostname: bool = False,
+) -> str:
+    """Resolve the configured git ``user.email`` for ``cwd``.
+
+    Resolution order:
+      1. ``$GIT_AUTHOR_EMAIL`` (when ``env_override`` is set; this is git's
+         own override and lets tests fix the value without touching repo
+         config). Pass ``env_override=None`` to ignore.
+      2. ``git config user.email`` in ``cwd``.
+      3. ``socket.gethostname()`` (when ``fallback_hostname=True``).
+         Some callers want a non-empty deterministic identifier even
+         when no email is configured (curator-C jitter offset).
+      4. Empty string.
+
+    Single source of truth — replaces three near-identical
+    reimplementations across ``lore_core.session``,
+    ``lore_curator.session_filer``, and ``lore_cli.hooks``.
+    """
+    import os
+    if env_override:
+        env_value = os.environ.get(env_override)
+        if env_value:
+            return env_value
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.email"],
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired, subprocess.SubprocessError):
+        pass
+    if fallback_hostname:
+        import socket
+        try:
+            return socket.gethostname()
+        except OSError:
+            return ""
+    return ""
+
+
 def git_repo_root(cwd: Path | str | None = None) -> Path | None:
     """Return the git repo root containing `cwd`, or None if not in a repo."""
     try:

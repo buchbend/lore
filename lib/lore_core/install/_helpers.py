@@ -16,7 +16,6 @@ the other way).
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import hashlib
 import json
 import os
@@ -126,18 +125,18 @@ def content_hash(text: str) -> str:
 def _flocked(path: Path) -> Iterator[None]:
     """fcntl.flock context manager on a sibling lock file.
 
-    We lock a sibling `.lock` file so the lock survives `os.replace`
-    (which atomic_write_text does) — locking the target path itself
+    We lock a sibling ``.lock`` file so the lock survives ``os.replace``
+    (which ``atomic_write_text`` does) — locking the target path itself
     would lose the lock when the file is replaced.
+
+    Thin wrapper over ``lore_core.lockfile.flocked``; kept for the
+    sibling-path convention specific to ``json_merge_atomic``.
     """
+    from lore_core.lockfile import flocked
+
     lock_path = path.with_suffix(path.suffix + ".lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as f:
-        try:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    with flocked(lock_path, blocking=True):
+        yield
 
 
 def json_merge_atomic(

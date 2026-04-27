@@ -158,9 +158,15 @@ def run_curator_a(
         ledger_snapshot_hash=ledger_snapshot_hash,
         on_record=on_record,
     ) as logger:
-        if dry_run:
-            # Dry-run bypasses the lockfile — must not block on a real run,
-            # and writes nothing anyway.
+        def _iterate_pending() -> None:
+            """Inner loop body — shared by dry-run and locked paths.
+
+            Closures over the locals so the two call sites stay one line
+            each; pre-Phase-11 they were ~22 lines of nearly-identical
+            code that drifted the moment a bug fix touched only one
+            branch (the same shape the Phase 6 ``run_curator_c``
+            decomposition targeted, missed in this function).
+            """
             pending = tledger.pending(resolver=resolver)
             for entry in pending:
                 result.transcripts_considered += 1
@@ -171,7 +177,7 @@ def run_curator_a(
                     lore_root=lore_root,
                     lookup=lookup,
                     llm_client=llm_client,
-                    dry_run=True,
+                    dry_run=dry_run,
                     now=now,
                     logger=logger,
                     resolver=resolver,
@@ -180,28 +186,15 @@ def run_curator_a(
                     _record_outcome(result, outcome)
                     if outcome.wiki_name is not None:
                         touched_wikis.add(outcome.wiki_name)
+
+        if dry_run:
+            # Dry-run bypasses the lockfile — must not block on a real run,
+            # and writes nothing anyway.
+            _iterate_pending()
         else:
             try:
                 with curator_lock(lore_root, timeout=lock_timeout, run_id=logger.run_id):
-                    pending = tledger.pending(resolver=resolver)
-                    for entry in pending:
-                        result.transcripts_considered += 1
-                        outcomes = _process_entry(
-                            entry,
-                            tledger=tledger,
-                            requested_scope=scope,
-                            lore_root=lore_root,
-                            lookup=lookup,
-                            llm_client=llm_client,
-                            dry_run=False,
-                            now=now,
-                            logger=logger,
-                            resolver=resolver,
-                        )
-                        for outcome in outcomes:
-                            _record_outcome(result, outcome)
-                            if outcome.wiki_name is not None:
-                                touched_wikis.add(outcome.wiki_name)
+                    _iterate_pending()
                 # Only update last_curator_a on successful run completion.
                 # On dry-run: skip (telemetry is only for real runs).
                 # On mid-run exception: this line is unreachable, prior value
@@ -697,10 +690,5 @@ def _detect_scope_override(
             return scope_for_wiki[wiki]
     return None
 
-
-# Role-name alias: ``run_session_curator`` matches the module name;
-# ``run_curator_a`` is kept as an alias because ~80 call sites across
-# lib/+tests/ still import the legacy name.
-run_session_curator = run_curator_a
 
 

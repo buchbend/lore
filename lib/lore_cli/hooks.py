@@ -578,28 +578,18 @@ _subtree_siblings = subtree_siblings
 # intercept every call made from this module.
 
 
-def _split_filter(raw: str | None) -> list[str]:
-    return _gh_mod.split_filter(raw)
-
-
 def _run_gh(kind: str, repo: str, filter_args: list[str]) -> list[dict]:
+    """Indirection kept for the test-monkeypatch contract. ``test_hooks_v2``
+    swaps this to feed deterministic JSON. Do NOT inline."""
     return _gh_mod.run_gh(kind, repo, filter_args)
 
 
 def _gh_issues(repo: str, filter_str: str) -> list[dict]:
-    return _run_gh("issue", repo, _split_filter(filter_str))
+    return _run_gh("issue", repo, _gh_mod.split_filter(filter_str))
 
 
 def _gh_prs(repo: str, filter_str: str) -> list[dict]:
-    return _run_gh("pr", repo, _split_filter(filter_str))
-
-
-def _format_issue_line(issue: dict) -> str:
-    return _gh_mod.format_issue_line(issue)
-
-
-def _format_pr_line(pr: dict) -> str:
-    return _gh_mod.format_pr_line(pr)
+    return _run_gh("pr", repo, _gh_mod.split_filter(filter_str))
 
 
 # ---------------------------------------------------------------------------
@@ -692,7 +682,7 @@ def _session_start_from_lore(
         header = f"## Open issues ({scope})" if scope else "## Open issues"
         out_parts.append(header)
         for issue in issues[:MAX_ISSUES_INLINE]:
-            out_parts.append(_format_issue_line(issue))
+            out_parts.append(_gh_mod.format_issue_line(issue))
         if len(issues) > MAX_ISSUES_INLINE:
             out_parts.append(f"- … +{len(issues) - MAX_ISSUES_INLINE} more for this repo")
         out_parts.append("")
@@ -709,7 +699,7 @@ def _session_start_from_lore(
     if prs:
         out_parts.append("## Open PRs")
         for pr in prs[:MAX_PRS_INLINE]:
-            out_parts.append(_format_pr_line(pr))
+            out_parts.append(_gh_mod.format_pr_line(pr))
         if len(prs) > MAX_PRS_INLINE:
             out_parts.append(f"- … +{len(prs) - MAX_PRS_INLINE} more")
         out_parts.append("")
@@ -1725,25 +1715,8 @@ def _now_utc() -> "datetime":
 
 def _curator_c_email() -> str:
     """Resolve git user.email → hostname fallback → empty (offset=0)."""
-    import socket
-    import subprocess
-    # Cheap test override.
-    env_email = os.environ.get("GIT_AUTHOR_EMAIL")
-    if env_email:
-        return env_email
-    try:
-        res = subprocess.run(
-            ["git", "config", "user.email"],
-            capture_output=True, text=True, timeout=2, check=False,
-        )
-        if res.returncode == 0 and res.stdout.strip():
-            return res.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    try:
-        return socket.gethostname()
-    except OSError:
-        return ""
+    from lore_core.git import git_user_email
+    return git_user_email(fallback_hostname=True)
 
 
 def _curator_c_jitter_seconds(email: str) -> int:

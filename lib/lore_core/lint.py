@@ -67,7 +67,7 @@ class NoteInfo:
     filename: str  # stem without .md
     wiki: str
     note_type: str | None = None
-    status: str | None = None  # legacy — superseded by `lifecycle`
+    status: str | None = None  # legacy — superseded by `lifecycle`; scheduled for 1.0 removal
     lifecycle: str = "canonical"  # canonical | draft | superseded
     superseded_by: str | list[str] | None = None
     description: str | None = None
@@ -365,7 +365,7 @@ def build_catalog(wiki_name: str, notes: list[NoteInfo], issues: list[Issue]) ->
             "path": n.path,
             "name": n.filename,
             "type": n.note_type,
-            "status": n.status,  # legacy — retained during deprecation
+            "status": n.status,  # legacy — retained until 1.0; new code reads `lifecycle`
             "lifecycle": n.lifecycle,  # canonical | draft | superseded
             "description": n.description,
             "tags": n.tags,
