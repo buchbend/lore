@@ -25,6 +25,8 @@ def _clear_throttle_cache() -> None:
     from lore_mcp import server
 
     server._reindex_last_seen.clear()
+    # Also clear any pending dirty flags from prior tests.
+    server._reindex_dirty._dirty.clear()
 
 
 def test_first_call_invokes_reindex() -> None:
@@ -81,6 +83,41 @@ def test_none_wiki_is_its_own_throttle_key() -> None:
     assert backend.reindex.call_count == 2
     _maybe_reindex(backend, wiki=None)  # within window for None
     assert backend.reindex.call_count == 2
+
+
+def test_dirty_flag_bypasses_throttle() -> None:
+    """When the fs-watch marks a wiki dirty, the next call inside the
+    throttle window re-indexes it (and clears the flag).
+    """
+    from lore_mcp import server
+    from lore_mcp.server import _maybe_reindex
+
+    backend = MagicMock()
+    _maybe_reindex(backend, wiki="private")
+    assert backend.reindex.call_count == 1
+
+    # Inside the throttle window, mark dirty: next call must reindex.
+    server._reindex_dirty.mark_dirty("private")
+    _maybe_reindex(backend, wiki="private")
+    assert backend.reindex.call_count == 2
+
+    # Flag was consumed — a third call within the window doesn't reindex.
+    _maybe_reindex(backend, wiki="private")
+    assert backend.reindex.call_count == 2
+
+
+def test_dirty_flag_for_other_wiki_does_not_trigger() -> None:
+    """Dirty flag is per-wiki — a dirty private doesn't unthrottle ccat."""
+    from lore_mcp import server
+    from lore_mcp.server import _maybe_reindex
+
+    backend = MagicMock()
+    _maybe_reindex(backend, wiki="ccat")
+    assert backend.reindex.call_count == 1
+
+    server._reindex_dirty.mark_dirty("private")
+    _maybe_reindex(backend, wiki="ccat")
+    assert backend.reindex.call_count == 1  # still throttled — unrelated dirty
 
 
 def test_handle_search_uses_throttle(monkeypatch: pytest.MonkeyPatch) -> None:

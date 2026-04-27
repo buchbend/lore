@@ -1085,6 +1085,19 @@ def cmd_session_start(
     if scope is None and not probe:
         _nudge_unattached(cwd_resolved, out)
 
+    # Cross-host auto-pull (Phase 10 / 0.11.0).
+    # Fast-forward this scope's wiki repo from origin if the wiki opted in
+    # via .lore-wiki.yml's git.auto_pull (default true). Strictly read-only
+    # on dirty/diverged trees — never disrupts the user's in-flight work.
+    # Warning rendered into the banner footer so the user sees diverged
+    # state surfaced; otherwise silent.
+    auto_pull_warning: str | None = None
+    if scope is not None and lore_root is not None and not probe:
+        try:
+            auto_pull_warning = _maybe_auto_pull_for_scope(scope, lore_root)
+        except Exception:  # noqa: BLE001 — pull must never crash SessionStart
+            auto_pull_warning = None
+
     # Attempt to append capture-state breadcrumb banner
     try:
         from datetime import UTC, datetime as dt
@@ -1136,6 +1149,9 @@ def cmd_session_start(
                     pass
     except Exception:  # noqa: BLE001 - banner is presentation; never block SessionStart on it
         pass
+
+    if auto_pull_warning is not None:
+        out = out + "\n" + auto_pull_warning
 
     # Side-effect spawns — suppressed under --probe.
     if not probe and scope is not None and lore_root is not None:
@@ -1452,6 +1468,33 @@ def _load_wiki_cfg_from_scope(scope, lore_root: Path):
     from lore_core.wiki_config import load_wiki_config
     wiki_dir = lore_root / "wiki" / scope.wiki
     return load_wiki_config(wiki_dir)
+
+
+def _maybe_auto_pull_for_scope(scope, lore_root: Path) -> str | None:
+    """Fast-forward this scope's wiki repo from origin if config opts in.
+
+    Returns a one-line user-facing warning when the pull was skipped for
+    a reason the user should know about (dirty tree, diverged history),
+    or ``None`` for clean / silent outcomes (already in sync, no remote,
+    pull succeeded). The caller renders the warning into the SessionStart
+    banner so divergence is surfaced; auto-pull is otherwise transparent.
+    """
+    from lore_core.git_sync import SyncStatus, auto_pull
+    from lore_core.wiki_config import load_wiki_config
+
+    wiki_dir = lore_root / "wiki" / scope.wiki
+    if not wiki_dir.exists():
+        return None
+    cfg = load_wiki_config(wiki_dir)
+    if not cfg.git.auto_pull:
+        return None
+
+    result = auto_pull(wiki_dir)
+    if result.status is SyncStatus.SKIPPED_DIRTY:
+        return f"› wiki [[{scope.wiki}]] has uncommitted changes — auto-pull skipped"
+    if result.status is SyncStatus.SKIPPED_DIVERGED:
+        return f"› wiki [[{scope.wiki}]] diverged from origin — `git pull` manually"
+    return None
 
 
 def _offer_notice_line(cwd: Path) -> str | None:

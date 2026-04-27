@@ -4,8 +4,9 @@ Three subcommands:
   lore briefing gather --wiki <name>   read-only: returns new sessions
                                         + sink config + ledger state
                                         as JSON envelope
-  lore briefing publish --sink <name>  publish stdin/--file via the
-                                        named sink adapter
+  lore briefing publish --sink <uri>   publish stdin/--file via the
+                                        named sink (markdown:<path>,
+                                        matrix, …)
   lore briefing mark --wiki <name>     update the ledger and
     --session <path> [...]              optionally include them in
                                         the next briefing's exclude set
@@ -16,16 +17,20 @@ shells out to publish + mark (visible side effects).
 
 from __future__ import annotations
 
-import importlib
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 import typer
 
 from lore_runtime.argv import argv_main
-from lore_core.briefing import gather, mark_incorporated
+from lore_core.briefing import (
+    UnknownSinkError,
+    dispatch,
+    gather,
+    mark_incorporated,
+    registered_sinks,
+)
 
 app = typer.Typer(
     add_completion=False,
@@ -33,8 +38,6 @@ app = typer.Typer(
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
-
-_KNOWN_SINKS = {"matrix", "markdown"}
 
 
 def _emit_json(envelope: dict) -> None:
@@ -61,7 +64,13 @@ def cmd_gather(
 @app.command("publish")
 def cmd_publish(
     sink: str = typer.Option(
-        ..., "--sink", help=f"Sink name ({', '.join(sorted(_KNOWN_SINKS))})."
+        ...,
+        "--sink",
+        help=(
+            "Sink URI (scheme[:target]). Registered schemes: "
+            f"{', '.join(registered_sinks())}. "
+            "Examples: 'markdown:/tmp/briefing-YYYY-MM-DD.md', 'matrix'."
+        ),
     ),
     file: str = typer.Option(
         None, "--file", help="Briefing markdown (default: stdin)."
@@ -69,57 +78,37 @@ def cmd_publish(
     out: str = typer.Option(
         None,
         "--out",
-        help="Sink-specific output target (markdown sink: file path).",
+        help=(
+            "Compatibility shim — appended to --sink as ':<out>'. "
+            "Prefer the URI form."
+        ),
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON envelope."),
 ) -> None:
-    """Publish a briefing via the named sink adapter."""
-    if sink not in _KNOWN_SINKS:
-        print(
-            f"lore: unknown sink '{sink}'. Known: {', '.join(sorted(_KNOWN_SINKS))}",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=2)
-    text: str
-    if file:
-        text = Path(file).read_text()
-    else:
-        text = sys.stdin.read()
+    """Publish a briefing through the registered sink dispatcher."""
+    text = Path(file).read_text() if file else sys.stdin.read()
     if not text.strip():
         print("lore: nothing to publish (empty input)", file=sys.stderr)
         raise typer.Exit(code=1)
 
-    sink_argv: list[str] = ["send"]
-    if file:
-        sink_argv += ["--file", file]
-    if sink == "markdown":
-        if not out:
-            print("lore: markdown sink requires --out <path>", file=sys.stderr)
-            raise typer.Exit(code=2)
-        sink_argv += ["--out", out]
-    module = importlib.import_module(f"lore_sinks.{sink}")
-    # Sinks read stdin themselves when --file is omitted; if we already
-    # consumed stdin above, write a temp file so the sink can re-read it.
-    if not file:
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".md", delete=False, prefix="lore-briefing-"
-        ) as tmp:
-            tmp.write(text)
-            tmp_path = tmp.name
-        sink_argv = ["send", "--file", tmp_path]
-        if sink == "markdown" and out:
-            sink_argv += ["--out", out]
+    uri = sink
+    if out and ":" not in sink:
+        uri = f"{sink}:{out}"
 
-    rc = int(module.main(sink_argv) or 0)
-    if json_out:
-        _emit_json(
-            {
-                "schema": "lore.briefing.publish/1",
-                "data": {"sink": sink, "rc": rc},
-            }
+    try:
+        dispatch(uri, text)
+    except UnknownSinkError as exc:
+        print(
+            f"lore: unknown sink '{exc}'. Known: {', '.join(registered_sinks())}",
+            file=sys.stderr,
         )
-    if rc != 0:
-        raise typer.Exit(code=rc)
+        raise typer.Exit(code=2) from None
+    except Exception as exc:  # noqa: BLE001 — surfaced to user
+        print(f"lore: sink failed: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from None
+
+    if json_out:
+        _emit_json({"schema": "lore.briefing.publish/1", "data": {"sink": uri}})
 
 
 @app.command("mark")

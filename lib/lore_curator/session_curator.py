@@ -535,7 +535,7 @@ def _process_chunk(
     )
 
     if not dry_run:
-        _maybe_auto_commit(wiki_dir, filed, logger)
+        _maybe_auto_commit(wiki_dir, filed, logger, llm_client=llm_client)
 
     try:
         from lore_core.drain import DrainStore, resolve_session_id
@@ -558,8 +558,20 @@ def _maybe_auto_commit(
     wiki_dir: Path,
     filed: "FiledNote",
     logger: "RunLogger | None" = None,
+    *,
+    llm_client: Any = None,
 ) -> None:
-    """Git-add + commit the filed note if wiki config says auto_commit."""
+    """Git-add + commit (and optionally push) the filed note per wiki config.
+
+    Sequence on a configured wiki:
+      1. ``auto_commit=true``  → add + commit the filed note
+      2. ``auto_push=true``    → push (with LLM-merge on surface conflicts
+                                   if ``llm_client`` is provided)
+
+    All failures are logged via ``logger.emit("warning", ...)`` and never
+    raise — auto-commit/push is opportunistic; the curator's correctness
+    contract is the ledger update, not the git state.
+    """
     import subprocess
     from lore_core.wiki_config import load_wiki_config
 
@@ -581,6 +593,28 @@ def _maybe_auto_commit(
     except (subprocess.SubprocessError, OSError) as exc:
         if logger is not None:
             logger.emit("warning", message=f"auto-commit failed: {exc}")
+        return
+
+    if cfg.git.auto_push:
+        try:
+            from lore_core.git_sync import SyncStatus, auto_push
+
+            result = auto_push(wiki_dir, llm_client=llm_client)
+            if logger is not None:
+                if result.status is SyncStatus.MERGE_BLOCKED:
+                    logger.emit(
+                        "warning",
+                        message=f"auto-push merge blocked: {result.message}",
+                        blocked_paths=result.blocked_paths,
+                    )
+                elif result.status not in (SyncStatus.OK, SyncStatus.NOOP, SyncStatus.MERGED):
+                    logger.emit(
+                        "warning",
+                        message=f"auto-push skipped: {result.status.value} ({result.message})",
+                    )
+        except Exception as exc:  # noqa: BLE001 — push must never abort the curator
+            if logger is not None:
+                logger.emit("warning", message=f"auto-push failed: {exc}")
 
 
 def _record_outcome(result: CuratorAResult, outcome: _Outcome) -> None:

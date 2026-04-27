@@ -86,21 +86,45 @@ def _resolve_wiki(wiki: str | None) -> Path | None:
 # ammortizes the cost across the burst.
 #
 # 5s is conservative — fresh edits made by the user mid-conversation
-# show up on the next search after the throttle expires. For
-# explicit re-index, use ``lore lint`` (which writes the catalog
-# that ``reindex_one`` is based on).
+# show up on the next search after the throttle expires. For explicit
+# re-index, use ``lore lint`` (which writes the catalog that
+# ``reindex_one`` is based on).
+#
+# When the optional ``watchdog`` dependency is installed, the fs-watch
+# daemon (``reindex_watcher``) bypasses the throttle by marking a wiki
+# dirty whenever a note under it is created/modified/deleted. The next
+# search re-indexes that wiki regardless of the throttle window. See
+# ``docs/architecture/sync.md`` for the rationale.
 _REINDEX_THROTTLE_S = 5.0
 _reindex_last_seen: dict[str | None, float] = {}
 
+from lore_mcp.reindex_watcher import ReindexDirtyState  # noqa: E402
+
+_reindex_dirty = ReindexDirtyState()
+
 
 def _maybe_reindex(backend: FtsBackend, wiki: str | None) -> None:
-    """Throttled wrapper around ``backend.reindex``. Skips when this
-    wiki was already reindexed within ``_REINDEX_THROTTLE_S`` seconds."""
+    """Throttled wrapper around ``backend.reindex``.
+
+    Skips when this wiki was already reindexed within
+    ``_REINDEX_THROTTLE_S`` seconds — *unless* the fs-watcher has marked
+    the wiki dirty since the last reindex, in which case the throttle
+    is bypassed.
+    """
     import time as _time
     now = _time.monotonic()
     last = _reindex_last_seen.get(wiki)
+
     if last is not None and now - last < _REINDEX_THROTTLE_S:
-        return
+        # Inside throttle window — only proceed if a real change was observed.
+        if wiki is None or not _reindex_dirty.take(wiki):
+            return
+    else:
+        # Outside throttle window — always reindex; clear any pending dirty
+        # flag so we don't double-reindex on the very next call.
+        if wiki is not None:
+            _reindex_dirty.take(wiki)
+
     backend.reindex(wiki=wiki)
     _reindex_last_seen[wiki] = now
 
@@ -767,6 +791,22 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 
 
+def _start_reindex_watcher() -> None:
+    """Start the optional fs-watch daemon that invalidates the reindex throttle.
+
+    No-op if ``watchdog`` isn't installed or the lore root is missing.
+    Called once at MCP-server boot. Daemon thread; exits with the process.
+    """
+    from lore_core.config import get_lore_root
+    from lore_mcp.reindex_watcher import start_watcher
+
+    try:
+        lore_root = get_lore_root()
+    except Exception:  # noqa: BLE001 — never fail boot for telemetry
+        return
+    start_watcher(lore_root, _reindex_dirty)
+
+
 def _start_server() -> int:
     """Start the MCP STDIO server.
 
@@ -774,6 +814,8 @@ def _start_server() -> int:
     to a minimal JSON-RPC-over-stdio loop that's compatible with the
     MCP core protocol for tool listing and invocation.
     """
+    _start_reindex_watcher()
+
     try:
         from mcp.server import Server  # type: ignore[import-untyped]
         from mcp.server.stdio import stdio_server  # type: ignore[import-untyped]

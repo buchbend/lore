@@ -10,6 +10,118 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-04-27
+
+**Cross-host sync.** This is the release that turns Lore from "a
+beautifully-architected single-host tool that *describes* a multi-host
+product" (verbatim from the multi-agent review) into the cross-host
+AI ↔ human knowledge vault its README pitches. Three orthogonal
+mechanisms ship together:
+
+### Added — auto-pull at SessionStart
+
+`lore_core.git_sync.auto_pull(wiki_dir)` does a fetch + fast-forward on
+the scope's wiki repo when SessionStart fires. Strictly read-only on
+dirty or diverged trees; never disturbs in-flight user work. The
+`lore_cli/hooks.py:cmd_session_start` handler invokes it once for the
+attached scope; warnings (`· wiki [[name]] diverged from origin —
+``git pull`` manually`) render into the banner footer. Per-wiki opt-in
+via `.lore-wiki.yml`'s `git.auto_pull: true` (default true; was a dead
+dataclass field through 0.10.x).
+
+### Added — auto-push with LLM-merge surface conflict resolution
+
+`lore_core.git_sync.auto_push(wiki_dir, *, llm_client=None)` pushes
+local commits, classifies conflicts, and resolves surface conflicts
+inline via an LLM call. **No temp `.host-A.md` artefacts. No wait for
+Curator C to defrag.** When two hosts independently produce
+`concepts/foo.md`, the second host's push triggers the merge, runs
+the LLM with both versions + the merge-base, writes one canonical
+file, commits "merge(auto-llm): N surface(s)", and pushes.
+
+Conflict classification:
+- **Surface** (`concepts/`, `decisions/`, `results/`, …): LLM-merge
+- **Session note**: LLM-merge (rare in steady state — pre-pull eliminates)
+- **Regenerable** (`_catalog.json`, `_index.md`, `llms.txt`,
+  `threads.md`): take ours; lint reconciles
+- **Unknown** (e.g. hand-edited `CLAUDE.md`): `git merge --abort`,
+  surface to user
+
+`lore_curator.session_curator._maybe_auto_commit` and
+`lore_curator.daily_curator._maybe_auto_push` invoke `auto_push` when
+the wiki opts in via `.lore-wiki.yml`'s `git.auto_push: true` (default
+false — flip per-wiki when ready). Both curators already have an
+`llm_client`; they pass it through so merges happen at curator cost,
+not at user-prompt cost.
+
+### Added — fs-watch reindex invalidation
+
+`lore_mcp.reindex_watcher.start_watcher` boots a `watchdog`-backed
+daemon thread inside the MCP server (one per Claude session). On
+`*.md` create/modify/delete under `<lore_root>/wiki/`, it marks the
+affected wiki dirty. The next `lore_search` reindexes that wiki
+*regardless* of the 5-second throttle — so post-pull edits surface
+immediately, not after the throttle's natural decay.
+
+`watchdog>=4` is in the `[search]` extras (was already declared, just
+unused). When the dep isn't installed, behaviour falls back to
+throttle-only invalidation — same as 0.10.x. Kernel-level monitoring
+(inotify on Linux, FSEvents on macOS) makes this near-zero-overhead.
+
+### Added — sink registry
+
+`lore_core.briefing.sinks` is now a real registry: schemes register
+themselves at import (`markdown`, `matrix`), and
+`dispatch(uri, text)` looks up the scheme prefix and calls the
+registered sender. Adding Slack / Discord / GitHub Discussion is one
+new module and one `register("slack", _send)` call — no edits to
+`daily_curator.py` or `briefing_cmd.py`.
+
+`lib/lore_curator/daily_curator.py:435`'s hardcoded
+`if sink.startswith("markdown:")` chain is gone; `briefing_cmd.py`'s
+`_KNOWN_SINKS` static set is gone. Both go through `dispatch`.
+
+### Changed (breaking — pre-1.0)
+
+- **`lib/lore_sinks/` deleted.** Contents moved to
+  `lib/lore_core/briefing/sinks/` per the simplifier review's CC1
+  finding. Anyone running `python -m lore_sinks.markdown` directly
+  needs to switch to `lore briefing publish --sink markdown:<path>`.
+- **`lib/lore_core/briefing.py` is now a package** (`lib/lore_core/briefing/`).
+  `gather()` and `mark_incorporated()` re-exported from
+  `lore_core.briefing` — public import path unchanged.
+- `_strip_frontmatter` / `_split_frontmatter` test no longer required:
+  the existing helpers are now `from lore_core.schema import …`
+  re-exports; they continue to work but the canonical path is direct
+  import of `split_frontmatter` / `strip_frontmatter` from `schema`.
+
+### Architecture
+
+`docs/architecture/sync.md` (new) documents the conflict policy, the
+fs-watch lifecycle, and the **MCP-daemon-as-fast-path principle**:
+
+> MCP-daemon work is the fast-path; hooks are the correctness fallback.
+> If the MCP server crashes, hook-driven work still fires on Claude
+> lifecycle events and produces the same end state.
+
+The fs-watcher is the first daemon thread inside the MCP server; the
+ADR documents the principle so future work (e.g. detaching Curator A
+trigger from hooks) inherits the same shape.
+
+### Tests
+
+- 21 new tests for `git_sync` against bare-repo+two-clone fixtures
+  (auto_pull, auto_push happy path, LLM-merge stub, regenerable
+  ours-wins, unknown bail, classifier parametrisation)
+- 9 new tests for `reindex_watcher` (state primitives, watchdog
+  integration, optional-dep fallback)
+- 2 new tests for the dirty-flag bypass of the throttle
+- 1 reworked test in `test_curator_b_briefing_integration` (renamed
+  from "unsupported sink" to "unknown sink" — matrix is now
+  registered, so the test now uses an unregistered scheme to exercise
+  the same skip-and-log path)
+- Total: 1551/1551 passing (was 1520 in 0.10.6)
+
 ## [0.10.6] — 2026-04-26
 
 Phase 9d — frontmatter splitter consolidation. Six sites collapsed to

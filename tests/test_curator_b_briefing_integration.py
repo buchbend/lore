@@ -368,12 +368,15 @@ briefing:
 # ---------------------------------------------------------------------------
 
 
-def test_curator_b_unsupported_sink_logged_and_skipped(tmp_path, monkeypatch):
+def test_curator_b_unknown_sink_logged_and_skipped(tmp_path, monkeypatch):
+    """A sink whose scheme isn't in the registry must be skipped without
+    crashing the curator run. A future ``slack`` sink is unregistered today.
+    """
     yml = """\
 briefing:
   auto: true
   sinks:
-    - "matrix:#dev-notes"
+    - "slack:#dev-notes"
 """
     _setup_wiki(tmp_path, briefing_yml=yml)
 
@@ -385,8 +388,13 @@ briefing:
 
     assert result.surfaces_emitted, "Surfaces should still be emitted"
 
-    # Curator log should mention "skipping"
     log_path = tmp_path / ".lore" / "curator.log"
     assert log_path.exists(), "curator.log should exist"
-    log_content = log_path.read_text()
-    assert "skipping" in log_content.lower(), f"Expected 'skipping' in log, got: {log_content!r}"
+    log_content = log_path.read_text().lower()
+    # Either of the registry's two failure modes is acceptable:
+    #   - dispatch raised UnknownSinkError → daily_curator logs "unknown sink ..."
+    #   - registered sender raised something else → logs "briefing sink error ..."
+    # The test's contract is "logged + curator did not crash on this slug".
+    assert "unknown sink" in log_content or "skipping" in log_content, (
+        f"Expected 'unknown sink' / 'skipping' in log, got: {log_content!r}"
+    )

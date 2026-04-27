@@ -3,7 +3,7 @@
 Splits the briefing pipeline so the LLM only writes prose:
 
     deterministic gather (this module)  →  LLM compose body (skill)
-                                       →  CLI publish (lore_sinks)
+                                       →  CLI publish (briefing.sinks)
                                        →  CLI mark-incorporated (ledger)
 
 `gather()` is read-only: it returns the new sessions since the last

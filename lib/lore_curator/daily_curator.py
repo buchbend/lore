@@ -224,8 +224,67 @@ def run_curator_b(
         except Exception as exc:
             _curator_log(lore_root, f"_maybe_publish_briefing raised unexpectedly: {exc}")
 
+    # Post-publish: cross-host auto-push for the surfaces Curator B just filed.
+    # Opt-in per wiki via .lore-wiki.yml git.auto_push. LLM-merge on surface
+    # conflicts uses the same llm_client Curator B already has open.
+    if not dry_run and result.surfaces_emitted and cfg.git.auto_push:
+        try:
+            _maybe_auto_push(lore_root, wiki, llm_client=llm_client)
+        except Exception as exc:
+            _curator_log(lore_root, f"auto-push raised unexpectedly: {exc}")
+
     result.duration_seconds = time.monotonic() - start
     return result
+
+
+def _maybe_auto_push(lore_root: Path, wiki: str, *, llm_client: Any) -> None:
+    """Commit + push the wiki's working tree if auto_push is enabled.
+
+    Curator B writes surfaces directly to the working tree without
+    committing; this helper stages everything Curator B touched, commits,
+    and pushes (with LLM-merge on surface conflicts).
+    """
+    import subprocess
+    from lore_core.git_sync import SyncStatus, auto_push
+
+    wiki_dir = lore_root / "wiki" / wiki
+    if not (wiki_dir / ".git").exists():
+        return
+
+    # Stage all curator-touched files. ``git add -A`` is fine here because
+    # Curator B is the sole writer of surfaces and is in control of the
+    # tree at this point.
+    add = subprocess.run(
+        ["git", "add", "-A"],
+        cwd=str(wiki_dir), capture_output=True, timeout=10, check=False,
+    )
+    if add.returncode != 0:
+        _curator_log(lore_root, f"auto-push: git add failed: {add.stderr}")
+        return
+    commit = subprocess.run(
+        ["git", "commit", "-m", "lore: curator-b surfaces"],
+        cwd=str(wiki_dir), capture_output=True, timeout=10, check=False,
+    )
+    if commit.returncode != 0 and "nothing to commit" not in commit.stdout.lower():
+        _curator_log(lore_root, f"auto-push: git commit failed: {commit.stderr}")
+        return
+
+    result = auto_push(wiki_dir, llm_client=llm_client)
+    if result.status is SyncStatus.MERGE_BLOCKED:
+        _curator_log(
+            lore_root,
+            f"auto-push merge blocked for {wiki}: {result.message} "
+            f"({len(result.blocked_paths)} unresolved)",
+        )
+    elif result.status is SyncStatus.MERGED:
+        _curator_log(
+            lore_root,
+            f"auto-push merged {len(result.merged_paths)} surface(s) via LLM for {wiki}",
+        )
+    elif result.status not in (SyncStatus.OK, SyncStatus.NOOP):
+        _curator_log(
+            lore_root, f"auto-push skipped for {wiki}: {result.status.value}"
+        )
 
 
 # ---------- helpers ----------
@@ -429,17 +488,15 @@ def _maybe_publish_briefing(
         if not content.strip():
             return None
 
+        from lore_core.briefing import UnknownSinkError, dispatch
+
         sinks_written: list[str] = []
         for sink in briefing_cfg.sinks:
             try:
-                if sink.startswith("markdown:"):
-                    path_str = sink[len("markdown:"):]
-                    out_path = Path(os.path.expanduser(path_str))
-                    atomic_write_text(out_path, content)
-                    sinks_written.append(sink)
-                else:
-                    sink_type = sink.split(":")[0] if ":" in sink else sink
-                    _curator_log(lore_root, f"skipping unsupported sink type '{sink_type}' ({sink!r})")
+                dispatch(sink, content)
+                sinks_written.append(sink)
+            except UnknownSinkError as exc:
+                _curator_log(lore_root, f"unknown sink '{exc}' in {sink!r}; skipping")
             except Exception as exc:
                 _curator_log(lore_root, f"briefing sink error for {sink!r}: {exc}")
 

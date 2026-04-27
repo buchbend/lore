@@ -31,7 +31,6 @@ LOWER_LAYERS = (
     "lore_curator",
     "lore_mcp",
     "lore_search",
-    "lore_sinks",
     "lore_adapters",
     "lore_runtime",
 )
