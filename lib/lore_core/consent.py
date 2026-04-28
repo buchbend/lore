@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from lore_core.offer import Offer, find_lore_yml, offer_fingerprint, parse_lore_yml
+from lore_core.offer import FILENAME, Offer, find_lore_yml, offer_fingerprint, parse_lore_yml
 from lore_core.state.attachments import AttachmentsFile
 
 
@@ -47,21 +47,52 @@ class ConsentResult:
 def classify_state(cwd: Path, attachments: AttachmentsFile) -> ConsentResult:
     """Classify the attachment state for ``cwd``.
 
-    Looks up ``.lore.yml`` via walk-up (bounded); checks ``attachments``
-    for an active row and ``declined`` list for a prior dismiss. Pure:
-    does not write anything.
+    Pure — writes nothing. Two paths:
+
+    * **Attachment present** in the registry (longest-prefix match):
+      the user has already committed for this subtree. Look up the
+      offer directly at the attachment root (no walk-up policy) to
+      verify fingerprint state. Yields ATTACHED / DRIFT / MANUAL.
+    * **No attachment**: apply the inherit-aware walk-up via
+      :func:`find_lore_yml`. Yields OFFERED / DORMANT / UNTRACKED.
+
+    The asymmetry is deliberate: ``inherit: true`` gates *unsolicited
+    prompts* in unattached descendants (issue #24), but does not
+    re-litigate state in attached subtrees.
     """
-    offer, offer_path = _load_offer(cwd)
     attachment = attachments.longest_prefix_match(cwd)
 
-    if offer is None:
-        if attachment is not None:
+    if attachment is not None:
+        offer = parse_lore_yml(attachment.path / FILENAME)
+        if offer is None:
+            # Attached without a parseable offer at the attachment root.
+            # Either the attachment was created via `lore attach manual`
+            # (no .lore.yml at all) or the file has gone missing/broken.
             return ConsentResult(
                 state=ConsentState.MANUAL,
                 offer=None,
                 repo_root=attachment.path,
                 offer_fingerprint=None,
             )
+        fp = offer_fingerprint(offer)
+        if attachment.offer_fingerprint == fp:
+            return ConsentResult(
+                state=ConsentState.ATTACHED,
+                offer=offer,
+                repo_root=attachment.path,
+                offer_fingerprint=fp,
+            )
+        return ConsentResult(
+            state=ConsentState.DRIFT,
+            offer=offer,
+            repo_root=attachment.path,
+            offer_fingerprint=fp,
+        )
+
+    # No attachment — apply the inherit-aware policy for OFFERED /
+    # DORMANT / UNTRACKED.
+    offer, offer_path = _load_offer(cwd)
+    if offer is None:
         return ConsentResult(
             state=ConsentState.UNTRACKED,
             offer=None,
@@ -69,27 +100,9 @@ def classify_state(cwd: Path, attachments: AttachmentsFile) -> ConsentResult:
             offer_fingerprint=None,
         )
 
-    # Offer is present.
     assert offer_path is not None  # invariant: offer implies offer_path
     repo_root = offer_path.parent
     fp = offer_fingerprint(offer)
-
-    if attachment is not None:
-        if attachment.offer_fingerprint == fp:
-            return ConsentResult(
-                state=ConsentState.ATTACHED,
-                offer=offer,
-                repo_root=repo_root,
-                offer_fingerprint=fp,
-            )
-        # Attachment exists but fingerprint mismatches — the offer has
-        # changed since acceptance, or the attachment was manual (no fp).
-        return ConsentResult(
-            state=ConsentState.DRIFT,
-            offer=offer,
-            repo_root=repo_root,
-            offer_fingerprint=fp,
-        )
 
     if attachments.is_declined(repo_root, fp):
         return ConsentResult(
@@ -108,14 +121,15 @@ def classify_state(cwd: Path, attachments: AttachmentsFile) -> ConsentResult:
 
 
 def _load_offer(cwd: Path) -> tuple[Offer | None, Path | None]:
-    """Walk up for ``.lore.yml`` and parse. Returns ``(None, None)`` if
-    absent or malformed."""
-    offer_path = find_lore_yml(cwd)
-    if offer_path is None:
+    """Discover an applicable `.lore.yml` and return ``(offer, path)``.
+
+    Returns ``(None, None)`` if no offer applies — absent, malformed,
+    or an ancestor that lacks ``inherit: true``. The chokepoint
+    semantics live in :func:`find_lore_yml`; this is just a shim for
+    the consent system's preferred ``(offer, path)`` ordering.
+    """
+    found = find_lore_yml(cwd)
+    if found is None:
         return None, None
-    offer = parse_lore_yml(offer_path)
-    if offer is None:
-        # File present but malformed — treat as absent for consent
-        # purposes so a broken offer doesn't trigger prompts.
-        return None, None
-    return offer, offer_path
+    path, offer = found
+    return offer, path

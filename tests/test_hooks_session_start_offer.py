@@ -129,11 +129,27 @@ def test_emits_notice_on_drift(lore_root: Path, tmp_path: Path) -> None:
     assert "different" in notice
 
 
-def test_emits_notice_from_descendant_cwd(lore_root: Path, tmp_path: Path) -> None:
-    """cwd inside the repo (not at the root) still triggers the notice."""
+def test_no_notice_from_descendant_without_inherit(
+    lore_root: Path, tmp_path: Path,
+) -> None:
+    """Issue #24: a parent `.lore.yml` without `inherit: true` is inert
+    in descendants — no SessionStart notice."""
     repo = tmp_path / "repo"
     (repo / "src" / "nested").mkdir(parents=True)
-    _write_offer(repo)
+    _write_offer(repo)  # no inherit
+    notice = _offer_notice_line(repo / "src" / "nested")
+    assert notice is None
+
+
+def test_emits_notice_from_descendant_with_inherit(
+    lore_root: Path, tmp_path: Path,
+) -> None:
+    """`inherit: true` opts back in to descendant SessionStart notices."""
+    repo = tmp_path / "repo"
+    (repo / "src" / "nested").mkdir(parents=True)
+    (repo / FILENAME).write_text(
+        "wiki: team-alpha\nscope: ccat:ds\ninherit: true\n"
+    )
     notice = _offer_notice_line(repo / "src" / "nested")
     assert notice is not None
 

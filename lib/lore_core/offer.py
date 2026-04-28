@@ -26,7 +26,14 @@ _FINGERPRINT_FIELDS: tuple[str, ...] = ("wiki", "scope", "wiki_source")
 
 @dataclass(frozen=True)
 class Offer:
-    """Parsed `.lore.yml`. ``wiki`` and ``scope`` are required."""
+    """Parsed `.lore.yml`. ``wiki`` and ``scope`` are required.
+
+    ``inherit`` opts in to subtree application: a `.lore.yml` with
+    ``inherit: true`` is discovered by walk-up from descendant cwds.
+    Default ``False`` means the offer applies only at its own directory.
+    Not part of the fingerprint — toggling it must not invalidate prior
+    accept/decline decisions.
+    """
 
     wiki: str
     scope: str
@@ -35,6 +42,7 @@ class Offer:
     issues: str | None = None
     prs: str | None = None
     schema_version: int = 1
+    inherit: bool = False
 
 
 def parse_lore_yml(path: Path) -> Offer | None:
@@ -66,15 +74,47 @@ def parse_lore_yml(path: Path) -> Offer | None:
         issues=_str_or_none(raw.get("issues")),
         prs=_str_or_none(raw.get("prs")),
         schema_version=int(raw.get("schema_version", 1)),
+        inherit=raw.get("inherit") is True,
     )
 
 
-def find_lore_yml(cwd: Path, *, max_depth: int = 8) -> Path | None:
-    """Walk up from ``cwd`` looking for a `.lore.yml` file.
+def find_lore_yml(cwd: Path, *, max_depth: int = 8) -> tuple[Path, Offer] | None:
+    """Walk up from ``cwd`` looking for an applicable `.lore.yml`.
+
+    The first `.lore.yml` we cross is authoritative for the decision.
+    Returns ``(path, offer)`` when:
+      * the offer is at exact ``cwd``, or
+      * the offer has ``inherit: true``.
+
+    Returns ``None`` when:
+      * no `.lore.yml` found within ``max_depth``, or
+      * the first found `.lore.yml` is malformed (treated as a stop
+        signal — a present-but-broken file shadows any inheriting
+        parent so a broken offer never triggers prompts), or
+      * the first found `.lore.yml` is at an ancestor without
+        ``inherit: true`` (default).
 
     SessionStart is not a hot path — one walk-up per session start,
     bounded depth. Unlike scope resolution (O(log n) registry lookup),
     offer discovery can tolerate a filesystem walk.
+    """
+    raw = find_lore_yml_raw(cwd, max_depth=max_depth)
+    if raw is None:
+        return None
+    offer = parse_lore_yml(raw)
+    if offer is None:
+        return None
+    cwd_resolved = cwd.resolve() if cwd.exists() else cwd.absolute()
+    if raw.parent == cwd_resolved or offer.inherit:
+        return raw, offer
+    return None
+
+
+def find_lore_yml_raw(cwd: Path, *, max_depth: int = 8) -> Path | None:
+    """Find the nearest `.lore.yml` path. No parsing, no policy.
+
+    For diagnostics only — production callers should use
+    :func:`find_lore_yml`, which applies the inherit policy.
     """
     current = cwd.resolve() if cwd.exists() else cwd.absolute()
     for _ in range(max_depth):

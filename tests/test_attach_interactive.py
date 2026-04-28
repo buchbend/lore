@@ -187,6 +187,55 @@ def test_parent_attached_shows_info_but_continues(lore_env: Path, tmp_path: Path
     assert "Attached" in result.output
 
 
+# ---- Inherited offers (issue #24) ----
+
+def test_inherit_message_shown_from_descendant(
+    lore_env: Path, tmp_path: Path,
+) -> None:
+    """Parent `.lore.yml` with `inherit: true`, cwd in a descendant —
+    wizard surfaces 'Inherited from {path}' before the config flow."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    (parent / FILENAME).write_text(
+        "wiki: ccat\nscope: ccat:backend\nbackend: github\ninherit: true\n"
+    )
+    child = parent / "child"
+    child.mkdir()
+    # u = use as-is (config-detected flow's "use this offer")
+    result = runner.invoke(app, ["attach", "--cwd", str(child)], input="u\n")
+    assert result.exit_code == 0, result.output
+    assert "Inherited from" in result.output
+    assert "Attached" in result.output
+
+
+def test_no_inherit_message_when_offer_at_cwd(
+    lore_env: Path, tmp_path: Path,
+) -> None:
+    """When the offer is at exact cwd, no 'Inherited from' line."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_offer(repo)
+    result = runner.invoke(app, ["attach", "--cwd", str(repo)], input="u\n")
+    assert result.exit_code == 0, result.output
+    assert "Inherited from" not in result.output
+
+
+def test_accept_subcommand_diagnostic_for_non_inheriting_parent(
+    lore_env: Path, tmp_path: Path,
+) -> None:
+    """`lore attach accept` from a child of a non-inheriting parent
+    surfaces the migration hint, not just 'no .lore.yml'."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    _write_offer(parent)  # no inherit
+    child = parent / "child"
+    child.mkdir()
+    result = runner.invoke(app, ["attach", "accept", "--cwd", str(child)])
+    assert result.exit_code == 1
+    assert "inherit: true" in result.output
+    assert "does not apply" in result.output
+
+
 # ---- Subcommands still work ----
 
 def test_subcommand_accept_still_works(lore_env: Path, tmp_path: Path) -> None:

@@ -10,6 +10,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-04-28
+
 ### Fixed (BREAKING — `.lore.yml` walk-up semantics)
 
 - **`.lore.yml` no longer auto-applies to descendant directories.**

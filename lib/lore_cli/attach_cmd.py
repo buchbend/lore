@@ -103,27 +103,44 @@ def _cwd_arg(cwd_opt: str | None) -> Path:
 
 # ---- Extracted helpers (shared by subcommands + wizard) ----
 
-def _do_accept(lore_root: Path, cwd_path: Path) -> None:
-    from datetime import UTC, datetime
+def _no_applicable_offer_message(cwd_path: Path) -> None:
+    """Print a diagnostic explaining why no offer applies to ``cwd_path``.
 
-    from lore_core.consent import ConsentState, classify_state
-    from lore_core.offer import find_lore_yml, offer_fingerprint, parse_lore_yml
-    from lore_core.state.attachments import Attachment, AttachmentsFile
-    from lore_core.state.scopes import ScopeConflict, ScopesFile
+    Distinguishes "no file anywhere" from "file at ancestor without
+    ``inherit: true``" so users hit by the migration get a clear hint.
+    """
+    from lore_core.offer import find_lore_yml_raw
 
-    offer_path = find_lore_yml(cwd_path)
-    if offer_path is None:
+    raw = find_lore_yml_raw(cwd_path)
+    if raw is None:
         err_console.print(
             f"[red]No .lore.yml found at or above[/red] {cwd_path}.\n"
             "Use `lore attach manual --wiki ... --scope ...` for a repo "
             "without a checked-in offer."
         )
-        raise typer.Exit(1)
+        return
+    err_console.print(
+        f"[red]No applicable .lore.yml for[/red] {cwd_path}.\n"
+        f"Found one at {raw}, but it does not apply to this directory.\n"
+        f"  * Add `inherit: true` to {raw} to make it apply to descendants, or\n"
+        f"  * Run `lore attach` from {raw.parent}, or\n"
+        f"  * Use `lore attach manual --wiki ... --scope ...` for a separate config."
+    )
 
-    offer = parse_lore_yml(offer_path)
-    if offer is None:
-        err_console.print(f"[red]Could not parse[/red] {offer_path}")
+
+def _do_accept(lore_root: Path, cwd_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    from lore_core.consent import ConsentState, classify_state
+    from lore_core.offer import find_lore_yml, offer_fingerprint
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+    from lore_core.state.scopes import ScopeConflict, ScopesFile
+
+    found = find_lore_yml(cwd_path)
+    if found is None:
+        _no_applicable_offer_message(cwd_path)
         raise typer.Exit(1)
+    offer_path, offer = found
 
     repo_root = offer_path.parent
     fp = offer_fingerprint(offer)
@@ -182,18 +199,14 @@ def _do_accept(lore_root: Path, cwd_path: Path) -> None:
 
 
 def _do_decline(lore_root: Path, cwd_path: Path) -> None:
-    from lore_core.offer import find_lore_yml, offer_fingerprint, parse_lore_yml
+    from lore_core.offer import find_lore_yml, offer_fingerprint
     from lore_core.state.attachments import AttachmentsFile
 
-    offer_path = find_lore_yml(cwd_path)
-    if offer_path is None:
-        err_console.print(f"[red]No .lore.yml found at or above[/red] {cwd_path}")
+    found = find_lore_yml(cwd_path)
+    if found is None:
+        _no_applicable_offer_message(cwd_path)
         raise typer.Exit(1)
-
-    offer = parse_lore_yml(offer_path)
-    if offer is None:
-        err_console.print(f"[red]Could not parse[/red] {offer_path}")
-        raise typer.Exit(1)
+    offer_path, offer = found
 
     repo_root = offer_path.parent
     fp = offer_fingerprint(offer)
@@ -467,9 +480,13 @@ def _config_wizard(
     backend = raw if raw in ("github", "none") else default_backend
 
     # Step D: Write .lore.yml for other contributors?
-    from lore_core.offer import FILENAME, find_lore_yml
+    # Exact-cwd existence check — we only need to know whether we'd
+    # be overwriting a local file. Inheriting parent offers don't
+    # block writing a child override; the user is here precisely to
+    # configure this directory.
+    from lore_core.offer import FILENAME
     write_offer = False
-    if find_lore_yml(cwd_path) is None:
+    if not (cwd_path / FILENAME).exists():
         raw = input("\n  Write .lore.yml so other contributors get this config? [y/N]: ").strip().lower()
         write_offer = raw in ("y", "yes")
 
@@ -501,7 +518,7 @@ def _config_wizard(
 
 
 def _interactive_wizard(cwd_path: Path, lore_root: Path) -> None:
-    from lore_core.offer import find_lore_yml, parse_lore_yml
+    from lore_core.offer import find_lore_yml
     from lore_core.state.attachments import AttachmentsFile
 
     resolved = cwd_path.resolve() if cwd_path.exists() else cwd_path.absolute()
@@ -525,12 +542,13 @@ def _interactive_wizard(cwd_path: Path, lore_root: Path) -> None:
             f"scope [magenta]{existing.scope}[/magenta]"
         )
 
-    offer_path = find_lore_yml(cwd_path)
-    if offer_path:
-        offer = parse_lore_yml(offer_path)
-        if offer:
-            _config_detected_flow(offer, offer_path, cwd_path, lore_root)
-            return
+    found = find_lore_yml(cwd_path)
+    if found is not None:
+        offer_path, offer = found
+        if offer_path.parent != resolved:
+            console.print(f"\n[dim]Inherited from[/dim] {offer_path}")
+        _config_detected_flow(offer, offer_path, cwd_path, lore_root)
+        return
 
     _config_wizard(cwd_path, lore_root)
 

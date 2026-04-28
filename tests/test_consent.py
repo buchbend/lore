@@ -75,15 +75,32 @@ def test_offered(lore_root: Path, tmp_path: Path) -> None:
     assert r.offer_fingerprint is not None
 
 
-def test_offered_from_descendant_of_offer(lore_root: Path, tmp_path: Path) -> None:
-    """cwd deep inside the repo still sees the offer via walk-up."""
+def test_descendant_of_offer_without_inherit_is_untracked(
+    lore_root: Path, tmp_path: Path,
+) -> None:
+    """Issue #24: walk-up no longer auto-attaches descendants. A
+    `.lore.yml` without `inherit: true` is inert below its own dir."""
     repo = tmp_path / "repo"
     (repo / "src" / "nested").mkdir(parents=True)
-    _write_offer(repo)
+    _write_offer(repo)  # no inherit
+    af = AttachmentsFile(lore_root)
+    af.load()
+    r = classify_state(repo / "src" / "nested", af)
+    assert r.state is ConsentState.UNTRACKED
+
+
+def test_descendant_of_offer_with_inherit_is_offered(
+    lore_root: Path, tmp_path: Path,
+) -> None:
+    """`inherit: true` opts back in to subtree attachment offers."""
+    repo = tmp_path / "repo"
+    (repo / "src" / "nested").mkdir(parents=True)
+    (repo / FILENAME).write_text("wiki: w\nscope: a:b\ninherit: true\n")
     af = AttachmentsFile(lore_root)
     af.load()
     r = classify_state(repo / "src" / "nested", af)
     assert r.state is ConsentState.OFFERED
+    assert r.repo_root == repo
 
 
 # ---- ATTACHED ----

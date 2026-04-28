@@ -10,6 +10,7 @@ from lore_core.offer import (
     FILENAME,
     Offer,
     find_lore_yml,
+    find_lore_yml_raw,
     offer_fingerprint,
     parse_lore_yml,
 )
@@ -74,16 +75,35 @@ def test_parse_list_root_returns_none(tmp_path: Path) -> None:
     assert parse_lore_yml(tmp_path / FILENAME) is None
 
 
+def test_parse_inherit_true(tmp_path: Path) -> None:
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: s\ninherit: true\n")
+    offer = parse_lore_yml(tmp_path / FILENAME)
+    assert offer is not None
+    assert offer.inherit is True
+
+
+def test_parse_inherit_default_false(tmp_path: Path) -> None:
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: s\n")
+    offer = parse_lore_yml(tmp_path / FILENAME)
+    assert offer is not None
+    assert offer.inherit is False
+
+
+def test_parse_inherit_string_yes_is_false(tmp_path: Path) -> None:
+    """Only literal Python ``True`` counts. Strings, ints, etc. are False."""
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: s\ninherit: 'yes'\n")
+    offer = parse_lore_yml(tmp_path / FILENAME)
+    assert offer is not None
+    assert offer.inherit is False
+
+
 def test_find_lore_yml_at_cwd(tmp_path: Path) -> None:
     (tmp_path / FILENAME).write_text("wiki: w\nscope: s\n")
-    assert find_lore_yml(tmp_path) == tmp_path / FILENAME
-
-
-def test_find_lore_yml_walks_up(tmp_path: Path) -> None:
-    (tmp_path / FILENAME).write_text("wiki: w\nscope: s\n")
-    deep = tmp_path / "a" / "b" / "c"
-    deep.mkdir(parents=True)
-    assert find_lore_yml(deep) == tmp_path / FILENAME
+    found = find_lore_yml(tmp_path)
+    assert found is not None
+    path, offer = found
+    assert path == tmp_path / FILENAME
+    assert offer.wiki == "w"
 
 
 def test_find_lore_yml_returns_none_when_absent(tmp_path: Path) -> None:
@@ -91,20 +111,62 @@ def test_find_lore_yml_returns_none_when_absent(tmp_path: Path) -> None:
 
 
 def test_find_lore_yml_respects_max_depth(tmp_path: Path) -> None:
-    (tmp_path / FILENAME).write_text("wiki: w\nscope: s\n")
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: s\ninherit: true\n")
     deep = tmp_path / "a" / "b" / "c" / "d"
     deep.mkdir(parents=True)
     assert find_lore_yml(deep, max_depth=2) is None
 
 
-def test_find_lore_yml_picks_nearest(tmp_path: Path) -> None:
-    """Nearest ancestor wins when multiple .lore.yml files exist."""
-    (tmp_path / FILENAME).write_text("wiki: outer\nscope: o\n")
+def test_find_lore_yml_ancestor_without_inherit_returns_none(tmp_path: Path) -> None:
+    """Walk-up no longer auto-inherits — issue #24."""
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: s\n")
+    deep = tmp_path / "a" / "b" / "c"
+    deep.mkdir(parents=True)
+    assert find_lore_yml(deep) is None
+
+
+def test_find_lore_yml_ancestor_with_inherit_applies(tmp_path: Path) -> None:
+    """`inherit: true` opts back in to subtree application."""
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: s\ninherit: true\n")
+    deep = tmp_path / "a" / "b" / "c"
+    deep.mkdir(parents=True)
+    found = find_lore_yml(deep)
+    assert found is not None
+    path, offer = found
+    assert path == tmp_path / FILENAME
+    assert offer.inherit is True
+
+
+def test_find_lore_yml_child_shadows_inheriting_parent(tmp_path: Path) -> None:
+    """Child's own .lore.yml always wins over an inheriting parent."""
+    (tmp_path / FILENAME).write_text("wiki: outer\nscope: o\ninherit: true\n")
     sub = tmp_path / "sub"
     sub.mkdir()
     (sub / FILENAME).write_text("wiki: inner\nscope: i\n")
     found = find_lore_yml(sub)
-    assert found == sub / FILENAME
+    assert found is not None
+    path, offer = found
+    assert path == sub / FILENAME
+    assert offer.wiki == "inner"
+
+
+def test_find_lore_yml_malformed_at_cwd_shadows_parent(tmp_path: Path) -> None:
+    """A present-but-malformed .lore.yml is a stop signal — preserves the
+    'broken offer doesn't trigger prompts' guarantee even when a parent
+    has inherit: true."""
+    (tmp_path / FILENAME).write_text("wiki: outer\nscope: o\ninherit: true\n")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / FILENAME).write_text("wiki: [unclosed\n")
+    assert find_lore_yml(sub) is None
+
+
+def test_find_lore_yml_raw_no_policy(tmp_path: Path) -> None:
+    """`find_lore_yml_raw` ignores the inherit policy — diagnostic only."""
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: s\n")  # no inherit
+    deep = tmp_path / "a" / "b"
+    deep.mkdir(parents=True)
+    assert find_lore_yml_raw(deep) == tmp_path / FILENAME
 
 
 def test_fingerprint_deterministic() -> None:
@@ -116,6 +178,13 @@ def test_fingerprint_invariant_under_non_routing_fields() -> None:
     a = Offer(wiki="w", scope="a:b", issues="--state open", prs="--author @me")
     b = Offer(wiki="w", scope="a:b", issues="--state closed", prs=None)
     # issues/prs are NOT routing-relevant → fingerprints equal
+    assert offer_fingerprint(a) == offer_fingerprint(b)
+
+
+def test_fingerprint_invariant_under_inherit_toggle() -> None:
+    """Toggling `inherit` must not invalidate prior accept/decline."""
+    a = Offer(wiki="w", scope="a:b", inherit=False)
+    b = Offer(wiki="w", scope="a:b", inherit=True)
     assert offer_fingerprint(a) == offer_fingerprint(b)
 
 
