@@ -1313,6 +1313,116 @@ def _stop() -> str:
     return ""
 
 
+def _plan_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
+    """Surface ⚠ nudges for `Plan: <slug>#sN` trailers committed this turn.
+
+    Closes the mid-session gap: SessionStart already nudges on
+    unaddressed trailers, but only fires once per session. After that
+    the user can commit with `Plan:` trailers all turn long and never
+    see a reminder until the next SessionStart. This helper runs in
+    the Stop hook (once per Claude turn) and re-runs the same
+    breadcrumb scanner against the active plan set.
+
+    Per-session seen-set at
+    ``~/.cache/lore/sessions/<sid>/plan-nudges.seen`` records every
+    ``<sha>#<step_id>`` key already nudged. Same-second-but-different
+    commits land separate entries; identical (sha, step) pairs are
+    skipped. The set is append-only, capped only by session lifetime.
+
+    Always best-effort: returns ``[]`` on any error so a malformed
+    plan or git failure can't break Stop.
+    """
+    try:
+        from datetime import UTC as _UTC, datetime as _dt
+
+        from lore_core.drain import resolve_session_id
+        from lore_core.git import git_repo_root
+        from lore_core.plans.breadcrumbs import is_nudge, scan_recent_commits
+        from lore_core.plans.registry import list_active
+
+        scope = resolve_scope(cwd_path)
+        if scope is None:
+            return []
+        wiki_root = get_wiki_root() / scope.wiki
+        if not wiki_root.exists():
+            return []
+        repo_slug = current_repo(cwd_path)
+        repo_root = git_repo_root(cwd_path)
+        if repo_root is None:
+            return []
+
+        cards = list_active(wiki_root, repo=repo_slug)
+        if not cards:
+            return []
+
+        sid, _ = resolve_session_id(cwd_path)
+        seen_path = (
+            Path.home() / ".cache" / "lore" / "sessions" / sid / "plan-nudges.seen"
+        )
+        seen = _read_nudge_seen_set(seen_path)
+
+        nudges: list[str] = []
+        new_keys: list[str] = []
+        for card in cards[:_PLAN_INLINE_CAP]:
+            crumbs = scan_recent_commits(repo_root, card.slug, n=20)
+            if not crumbs:
+                continue
+
+            step_status_dt: _dt | None = None
+            if card.step_status_updated:
+                try:
+                    parsed = _dt.fromisoformat(
+                        card.step_status_updated.replace("Z", "+00:00")
+                    )
+                    step_status_dt = (
+                        parsed if parsed.tzinfo else parsed.replace(tzinfo=_UTC)
+                    )
+                except (ValueError, TypeError):
+                    step_status_dt = None
+
+            for crumb in crumbs:
+                key = f"{crumb.ref}#{crumb.step_id}"
+                if key in seen:
+                    continue
+                if not is_nudge(
+                    crumb,
+                    step_status=card.step_status,
+                    step_status_updated=step_status_dt,
+                ):
+                    continue
+                nudges.append(
+                    f"⚠ commit {crumb.ref} references plan/{card.slug}#{crumb.step_id} "
+                    f"— `/lore:plan-step {card.slug} {crumb.step_id} --done`?"
+                )
+                new_keys.append(key)
+
+        if new_keys:
+            _append_nudge_seen_set(seen_path, new_keys)
+
+        return nudges
+    except Exception:  # noqa: BLE001 — never break Stop
+        return []
+
+
+def _read_nudge_seen_set(path: Path) -> set[str]:
+    """Read the per-session nudge-seen file. Returns empty set on any error."""
+    try:
+        return {ln.strip() for ln in path.read_text().splitlines() if ln.strip()}
+    except (OSError, UnicodeDecodeError):
+        return set()
+
+
+def _append_nudge_seen_set(path: Path, keys: list[str]) -> None:
+    """Append nudge keys to the seen file. Best-effort; never raises."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            for k in keys:
+                f.write(k + "\n")
+    except OSError:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # CLI dispatch
 # ---------------------------------------------------------------------------
@@ -1800,10 +1910,23 @@ def cmd_stop(
     """Hint to capture a session note."""
     if _in_curator_mode():
         return
-    _read_hook_payload()
+    payload = _read_hook_payload()
     if _session_off_all():
         return
     out = _stop()
+
+    # Mid-session advance gap: emit ⚠ nudges for plan trailers landed
+    # since the last nudge in this session. Per-session seen-set lives in
+    # ~/.cache/lore/sessions/<sid>/plan-nudges.seen so the same commit
+    # doesn't re-fire on every Stop hook until the user advances.
+    cwd_str = (payload or {}).get("cwd")
+    cwd_path = Path(cwd_str) if cwd_str else Path(os.getcwd())
+    nudges = _plan_trailer_nudges_for_stop(cwd_path)
+    if nudges:
+        if out:
+            out = out.rstrip() + "\n\n"
+        out += "\n".join(nudges)
+
     _emit("Stop", out, plain=plain)
 
 

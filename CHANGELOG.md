@@ -10,6 +10,28 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.18.5] - 2026-04-28
+
+### Added
+
+- **Mid-session plan-trailer nudges (Stop hook).** The Stop hook now
+  scans active plans for `Plan: <slug>#sN` commit trailers landed in
+  this session and emits ⚠ nudges when ``step_status`` doesn't reflect
+  them yet. Closes the gap between commit-time and the next
+  SessionStart — Claude sees the nudge in the systemMessage envelope
+  immediately after finishing a turn and can advance via
+  `/lore:plan-step <slug> <step> --done`.
+
+  Per-session seen-set at
+  ``~/.cache/lore/sessions/<sid>/plan-nudges.seen`` records every
+  ``<sha>#<step_id>`` already nudged so the same trailer doesn't
+  re-fire on every Stop until you advance. Robust against same-second
+  commits (two trailers landed in the same second still get distinct
+  nudges and dedup keys).
+
+  Best-effort: any error inside the helper is swallowed so a
+  malformed plan or git failure can't break the Stop hook.
+
 ## [0.18.4] - 2026-04-28
 
 ### Fixed
