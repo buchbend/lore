@@ -1,0 +1,13 @@
+{
+  "session_id": "01J9X7K3R4D5N6Q7T8V9W0X1Y2",
+  "transcript_path": "/home/user/.claude/projects/foo/transcripts/abc.jsonl",
+  "cwd": "/home/user/git/myproject",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "ExitPlanMode",
+  "tool_input": {
+    "plan": "# Refactor authentication\n\nMigrate from session tokens to OIDC across the auth service.\n\n## Steps\n\n### Step 1: Add OIDC provider configuration\n- Add provider config to settings\n- Wire up the discovery endpoint\n\n### Step 2: Implement new login flow\n- Add the new endpoint\n- Update the redirect URI handling\n\n### Step 3: Migrate existing sessions\n- Read all active session tokens\n- Issue OIDC refresh tokens\n\n### Step 4: Remove old token code\n- Drop the legacy verifier\n- Update tests\n"
+  },
+  "tool_response": {
+    "approved": true
+  }
+}

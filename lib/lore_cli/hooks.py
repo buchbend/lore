@@ -597,6 +597,257 @@ def _gh_prs(repo: str, filter_str: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+_PLAN_INLINE_CAP = 3
+
+
+def _active_plans_resume_block(
+    wiki: Path, repo: str | None, *, repo_root: Path | None = None
+) -> tuple[list[str], int]:
+    """Build the SessionStart Resume block lines for the active plans.
+
+    Returns ``(lines, plan_count)``. ``lines`` is empty when no plans
+    qualify; ``plan_count`` feeds the status-line summary ("1 plan",
+    "3 plans") regardless of whether the inline block was rendered.
+
+    Reads ``glob('<wiki>/plans/*.md')`` directly via the registry —
+    NEVER ``_catalog.json`` — so the headline demo path
+    (``accept → /clear → restart``, no lint between) shows the just-
+    captured plan immediately.
+
+    Defensive: any exception inside is swallowed so SessionStart never
+    crashes on a malformed plan note.
+    """
+    try:
+        from lore_core.plans.breadcrumbs import (
+            is_nudge,
+            newest_per_step,
+            scan_recent_commits,
+            scan_recent_session_links,
+        )
+        from lore_core.plans.registry import list_active
+
+        cards = list_active(wiki, repo=repo)
+        if not cards:
+            return [], 0
+
+        lines: list[str] = []
+        rendered = 0
+        for card in cards:
+            if rendered >= _PLAN_INLINE_CAP:
+                break
+            # First card uses ## Resume:; subsequent cards demote to
+            # ### so the rendered output reads as ONE Resume section
+            # with multiple plans rather than three peer headings.
+            heading_level = 2 if rendered == 0 else 3
+            lines.extend(
+                _render_one_plan_card(
+                    card,
+                    repo_root=repo_root,
+                    scan_commits=scan_recent_commits,
+                    scan_sessions=scan_recent_session_links,
+                    wiki_root=wiki,
+                    is_nudge_fn=is_nudge,
+                    newest_per_step_fn=newest_per_step,
+                    heading_level=heading_level,
+                )
+            )
+            lines.append("")  # blank between cards
+            rendered += 1
+
+        # Trim trailing blank.
+        while lines and lines[-1] == "":
+            lines.pop()
+
+        more = len(cards) - rendered
+        if more > 0:
+            extra_slug = cards[rendered].slug
+            lines.append("")
+            lines.append(
+                f"+{more} more active plan{'s' if more != 1 else ''} — "
+                f"`/lore:plan-resume {extra_slug}` to expand"
+            )
+
+        return lines, len(cards)
+    except Exception:  # noqa: BLE001 — never break SessionStart
+        return [], 0
+
+
+def _render_one_plan_card(
+    card,
+    *,
+    repo_root: Path | None,
+    scan_commits,
+    scan_sessions,
+    wiki_root: Path,
+    is_nudge_fn,
+    newest_per_step_fn,
+    heading_level: int = 2,
+) -> list[str]:
+    """Render one plan as a Resume-block card.
+
+    ``heading_level`` controls the heading depth: 2 for the first card
+    (``## Resume: <title> …``), 3 for subsequent ones (``### <title> …``)
+    so a multi-plan Resume block reads as one section, not N peers.
+
+    Card shape per :class:`lore_core.plans.registry.ActivePlanCard`.
+    """
+    title = card.description or card.slug
+    total = card.steps_total
+    done = card.steps_done
+    in_prog = card.steps_in_progress
+    blocked = card.steps_blocked
+    next_pending = card.next_pending_step()
+
+    summary_bits = [f"{done}/{total} done"]
+    if in_prog:
+        summary_bits.append(f"{len(in_prog)} in-progress")
+    if blocked:
+        summary_bits.append(f"{len(blocked)} blocked")
+    summary_bits.append(_stale_marker(card))
+    summary_bits = [b for b in summary_bits if b]
+    summary = " · ".join(summary_bits)
+    if heading_level == 2:
+        header = f"## Resume: {title} · {summary}"
+    else:
+        # Subsequent cards: drop the verb (it's already in the H2),
+        # lead with the title at one heading level deeper.
+        header = f"### {title} · {summary}"
+
+    body: list[str] = [header]
+
+    # Body lines — what's actively going on
+    if in_prog:
+        body.append(
+            f"In progress: {' · '.join(_step_label(card, sid) for sid in in_prog)}"
+        )
+    if next_pending:
+        body.append(f"Next pending: {_step_label(card, next_pending)}")
+    elif done == total and total > 0:
+        body.append("All steps done — `/lore:plan-advance " + card.slug + " --complete`?")
+
+    # Wikilink line so the user can copy-paste into a session note
+    anchor = in_prog[0] if in_prog else next_pending
+    if anchor:
+        body.append(f"[[plan/{card.slug}#{anchor}]]")
+    else:
+        body.append(f"[[plan/{card.slug}]]")
+
+    # Breadcrumb nudges
+    body.extend(
+        _render_breadcrumb_nudges(
+            card,
+            repo_root=repo_root,
+            wiki_root=wiki_root,
+            scan_commits=scan_commits,
+            scan_sessions=scan_sessions,
+            is_nudge_fn=is_nudge_fn,
+            newest_per_step_fn=newest_per_step_fn,
+        )
+    )
+    return body
+
+
+def _step_label(card, step_id: str) -> str:
+    """Format ``s2 — Implement new login flow``. Title is best-effort."""
+    title = _read_step_title(card.path, step_id)
+    if title:
+        return f"{step_id} — {title}"
+    return step_id
+
+
+def _read_step_title(plan_path: Path, step_id: str) -> str:
+    """Pull the human title out of ``### s<N>: <title>``. Best-effort."""
+    try:
+        text = plan_path.read_text()
+    except OSError:
+        return ""
+    pattern = re.compile(rf"^###\s+{re.escape(step_id)}:\s*(.+?)\s*$", re.MULTILINE | re.IGNORECASE)
+    m = pattern.search(text)
+    return m.group(1).strip() if m else ""
+
+
+def _stale_marker(card) -> str:
+    """``stale (Nd)`` if the plan hasn't been reviewed in >7 days, else ``""``.
+
+    Uses UTC date to match what the writer side persists — local-date
+    comparison silently flips the marker on/off across DST boundaries
+    and the IDL.
+    """
+    try:
+        from datetime import UTC as _UTC
+        from datetime import date as _date
+        from datetime import datetime as _dt
+
+        if not card.last_reviewed:
+            return ""
+        last = _date.fromisoformat(card.last_reviewed)
+        today_utc = _dt.now(_UTC).date()
+        days = (today_utc - last).days
+        if days > 7:
+            return f"stale ({days}d)"
+    except (ValueError, TypeError):
+        pass
+    return ""
+
+
+def _render_breadcrumb_nudges(
+    card,
+    *,
+    repo_root: Path | None,
+    wiki_root: Path,
+    scan_commits,
+    scan_sessions,
+    is_nudge_fn,
+    newest_per_step_fn,
+) -> list[str]:
+    """Surface ⚠ nudges for commit/session refs ahead of step_status."""
+    from datetime import datetime as _dt
+    crumbs = []
+    if repo_root is not None:
+        crumbs.extend(scan_commits(repo_root, card.slug, n=200))
+    crumbs.extend(scan_sessions(wiki_root, card.slug, days=14))
+    if not crumbs:
+        return []
+    newest = newest_per_step_fn(crumbs)
+
+    # Parse step_status_updated for the is_nudge comparison.
+    step_status_updated_dt: _dt | None = None
+    if card.step_status_updated:
+        try:
+            from datetime import UTC as _UTC
+            parsed = _dt.fromisoformat(card.step_status_updated.replace("Z", "+00:00"))
+            step_status_updated_dt = (
+                parsed if parsed.tzinfo else parsed.replace(tzinfo=_UTC)
+            )
+        except (ValueError, TypeError):
+            step_status_updated_dt = None
+
+    nudges: list[str] = []
+    for step_id in sorted(newest):
+        crumb = newest[step_id]
+        if not is_nudge_fn(
+            crumb,
+            step_status=card.step_status,
+            step_status_updated=step_status_updated_dt,
+        ):
+            continue
+        if crumb.source == "commit":
+            nudges.append(
+                f"- ⚠ commit {crumb.ref} references {crumb.step_id} — "
+                f"`/lore:plan-step {crumb.step_id} --done`?"
+            )
+        else:
+            nudges.append(
+                f"- ⚠ session [[{crumb.ref}]] links {crumb.step_id} — "
+                f"`/lore:plan-step {crumb.step_id} --done`?"
+            )
+    if not nudges:
+        return []
+    # Lead with a blank line so the nudges start a new paragraph rather
+    # than collapsing into the wikilink line as a continuation.
+    return ["", *nudges]
+
+
 def _session_start_from_lore(
     cwd: str,
     config: tuple[Path, dict],
@@ -643,8 +894,20 @@ def _session_start_from_lore(
 
     project_entry = _project_note_for_repo(wiki, repo) if repo else None
     session_hints = _last_session_hint(wiki)
+    plan_resume_block, plan_count = _active_plans_resume_block(
+        wiki, repo, repo_root=Path(cwd)
+    )
 
     injected_bits: list[str] = []
+    if plan_count == 1:
+        injected_bits.append("1 plan")
+    elif plan_count > 1:
+        # Append "(K shown)" only when the cap kicked in, so the status
+        # line never lies about what the user is actually looking at.
+        if plan_count > _PLAN_INLINE_CAP:
+            injected_bits.append(f"{plan_count} plans ({_PLAN_INLINE_CAP} shown)")
+        else:
+            injected_bits.append(f"{plan_count} plans")
     if project_entry is not None:
         injected_bits.append(f"[[{project_entry['name']}]]")
     if session_hints:
@@ -658,6 +921,13 @@ def _session_start_from_lore(
     status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     out_parts: list[str] = [status_line, ""]
+    # Resume block comes FIRST after the status line — it's the highest-value,
+    # most-actionable item for the headline zero-handover demo. UX delta from
+    # the design pivot: lead with the verb ("Resume:"), human title, then
+    # wikilink + step anchor on its own line.
+    if plan_resume_block:
+        out_parts.extend(plan_resume_block)
+        out_parts.append("")
     if project_entry is not None:
         out_parts.append(f"## Focus: [[{project_entry['name']}]]")
         desc = project_entry.get("description")
@@ -2138,6 +2408,251 @@ def capture(
                     write_pending_breadcrumb(lore_root, crumb)
             except Exception:
                 pass  # breadcrumb is best-effort, never fatal
+
+
+@hook_app.command("plan-capture")
+def cmd_plan_capture(
+    cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
+    plain: bool = typer.Option(
+        False,
+        "--plain",
+        help="Print raw text instead of Claude Code JSON envelope.",
+    ),
+) -> None:
+    """PostToolUse:ExitPlanMode handler — capture an accepted plan to the wiki.
+
+    Stdin payload (Claude Code hook):
+
+    .. code-block:: json
+
+       {
+         "tool_input": { "plan": "## …markdown…" },
+         "tool_response": { "approved": true | false },
+         "cwd": "/abs/path",
+         "session_id": "…"
+       }
+
+    Behaviour:
+
+    * Rejected plan → exit 0 silently (rejection = revision cycle).
+    * Unattached cwd → soft hint to ``/lore:attach``; exit 0 (don't crash the harness).
+    * Top-level exception → orphan-dump payload to ``~/.cache/lore/orphan-plans/``
+      and emit a recovery hint. **Never silent loss** (differs from SessionStart's
+      silent-fail policy because plan loss is unrecoverable).
+    """
+    from datetime import date as _date
+
+    if _in_curator_mode():
+        return
+    cwd_resolved = Path(_resolve_cwd(cwd))
+    lore_root_for_log = _infer_lore_root(cwd_resolved) or Path.home()
+    logger = HookEventLogger(lore_root_for_log)
+
+    raw_payload: bytes | None = None
+    try:
+        from lore_core.io import read_hook_stdin
+        from lore_core.plans.parser import parse, parse_payload
+        from lore_core.plans.writer import (
+            compute_source_hash,
+            plan_path,
+            write_plan_note,
+        )
+
+        stdin_result = read_hook_stdin()
+        if stdin_result.outcome != "ok":
+            logger.emit(
+                event="plan-capture",
+                outcome=stdin_result.outcome,
+                cwd=str(cwd_resolved),
+            )
+            if stdin_result.outcome == "tty":
+                _emit_post_tool_use(
+                    "lore: plan-capture reads JSON from stdin (run via Claude Code)",
+                    plain=plain,
+                )
+            return
+
+        raw_payload = stdin_result.data
+        try:
+            payload = json.loads(raw_payload.decode("utf-8", errors="replace"))
+        except json.JSONDecodeError as e:
+            logger.emit(
+                event="plan-capture",
+                outcome="malformed-json",
+                error={"type": "JSONDecodeError", "message": str(e)},
+                cwd=str(cwd_resolved),
+            )
+            _orphan_dump(raw_payload, plain=plain)
+            return
+
+        approved = bool((payload.get("tool_response") or {}).get("approved"))
+        if not approved:
+            logger.emit(
+                event="plan-capture",
+                outcome="rejected",
+                cwd=str(cwd_resolved),
+            )
+            return
+
+        scope = resolve_scope(cwd_resolved)
+        if scope is None:
+            logger.emit(
+                event="plan-capture",
+                outcome="unattached",
+                cwd=str(cwd_resolved),
+            )
+            _emit_post_tool_use(
+                "lore: plan ignored (cwd not attached to a wiki — `/lore:attach`)",
+                plain=plain,
+            )
+            return
+
+        wiki_root = get_wiki_root() / scope.wiki
+        repo_slug = current_repo(cwd_resolved)
+
+        plan_text, source_field = parse_payload(payload)
+        if plan_text is None:
+            logger.emit(
+                event="plan-capture",
+                outcome="no-plan-in-payload",
+                source_field=source_field,
+                cwd=str(cwd_resolved),
+            )
+            _orphan_dump(raw_payload, plain=plain)
+            return
+
+        plan = parse(plan_text)
+        source_hash = compute_source_hash(plan_text)
+
+        target_path = plan_path(wiki_root, plan.slug)
+        prior_last_reviewed = ""
+        if target_path.exists():
+            prior_fm = parse_frontmatter(target_path.read_text())
+            prior_last_reviewed = str(prior_fm.get("last_reviewed") or "")
+
+        result = write_plan_note(
+            wiki_root=wiki_root,
+            plan=plan,
+            source_hash=source_hash,
+            source_adapter="claude-code-hook",
+            repo=repo_slug,
+        )
+
+        logger.emit(
+            event="plan-capture",
+            outcome=result.outcome,
+            source_field=source_field,
+            mode=plan.mode,
+            slug=result.slug,
+            cwd=str(cwd_resolved),
+        )
+
+        message = _format_capture_message(
+            result=result,
+            today_iso=_date.today().isoformat(),
+            prior_last_reviewed=prior_last_reviewed,
+        )
+        if message:
+            _emit_post_tool_use(message, plain=plain)
+
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001 — never silent loss for plan capture
+        try:
+            logger.emit(
+                event="plan-capture",
+                outcome="error",
+                error={"type": type(exc).__name__, "message": str(exc)},
+                cwd=str(cwd_resolved),
+            )
+        except Exception:
+            pass
+        if raw_payload is not None:
+            _orphan_dump(raw_payload, plain=plain, error=str(exc))
+        else:
+            _emit_post_tool_use(
+                f"lore: plan-capture failed ({type(exc).__name__}); see lore status",
+                plain=plain,
+            )
+
+
+_HOOK_MSG_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def _scrub_systemMessage(text: str) -> str:
+    """Make ``text`` safe to embed in a Claude Code hook ``systemMessage``.
+
+    LLM-produced plan titles may contain ANSI escape sequences or other
+    control characters; the JSON envelope itself stays valid but the
+    downstream parser/UI may render them weirdly. Strip all C0 control
+    chars except tab (\\x09) and newline (\\x0a), then take the first
+    line and cap at 200 chars.
+    """
+    line = _first_line(text)
+    line = _HOOK_MSG_CONTROL_CHARS.sub("", line)
+    return line[:200]
+
+
+def _emit_post_tool_use(text: str, *, plain: bool) -> None:
+    """Emit a JSON envelope for PostToolUse — only ``systemMessage`` is allowed.
+
+    Distinct from ``_emit`` (which handles SessionStart's
+    ``hookSpecificOutput`` shape) because PostToolUse hooks are
+    constrained to the simpler schema.
+    """
+    text = (text or "").strip()
+    if plain or not text:
+        if text:
+            print(text)
+        return
+    print(json.dumps({"systemMessage": _scrub_systemMessage(text)}))
+
+
+def _orphan_dump(raw_payload: bytes, *, plain: bool, error: str | None = None) -> None:
+    """Write the raw payload to ``~/.cache/lore/orphan-plans/<ts>.json`` and notify."""
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+
+    cache_dir = Path.home() / ".cache" / "lore" / "orphan-plans"
+    ts = _dt.now(_UTC).strftime("%Y%m%dT%H%M%SZ")
+    target = cache_dir / f"{ts}.json"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw_payload)
+        msg = (
+            f"lore: plan-capture failed; payload at {target}; "
+            f"recover: lore plan import --from-orphan {target}"
+        )
+    except OSError as e:
+        msg = (
+            f"lore: plan-capture failed and orphan-dump also failed ({e}); "
+            "see lore status for the original payload bytes"
+        )
+    if error:
+        msg += f" — error: {error}"
+    _emit_post_tool_use(msg, plain=plain)
+
+
+def _format_capture_message(
+    *, result, today_iso: str, prior_last_reviewed: str
+) -> str:
+    """Pick the user-facing systemMessage based on outcome + within-day rule."""
+    slug = result.slug
+    n = result.step_count
+    if result.outcome == "filed":
+        return f"lore: filed [[plan/{slug}]] · {n} steps"
+    if result.outcome == "deduped":
+        return ""  # silent — exact re-acceptance is uninteresting
+    if result.outcome == "updated":
+        if prior_last_reviewed == today_iso:
+            return f"lore: updated [[plan/{slug}]] · {n} steps"
+        return (
+            f"lore: updated [[plan/{slug}]] (refreshed body; "
+            "preserved status/tags)"
+        )
+    if result.outcome == "collision-suffixed":
+        return f"lore: filed [[plan/{slug}]] (slug collision; {n} steps)"
+    return ""
 
 
 main = argv_main(hook_app)
