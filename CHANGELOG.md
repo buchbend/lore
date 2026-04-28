@@ -10,6 +10,37 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-04-28
+
+### Changed
+
+- **Session-note revision Phase 6 — Curator B section-aware input
+  + decision prompt strengthening.** Curator B's
+  `_load_recent_session_notes` now feeds clustering and the abstract
+  prompt a section-aware extract (`## Summary` paragraph + first 300
+  chars of `## Decisions made`) instead of `body[:800]`. The
+  rationale-rich layer lands in B's prefix window first, regardless
+  of whether the Summary paragraph runs 4 sentences or 6. Legacy
+  notes (pre-revision, no Summary/Decisions sections) fall back to
+  the original `body[:800]` slice so existing cluster fixtures keep
+  working until the vault rolls forward.
+
+  `surface_templates/standard.md` `decision` `extract_prompt` now
+  anchors on rationale-presence (six-month rule) rather than section
+  presence. The prompt explicitly notes that a `## Decisions made`
+  bullet is a *candidate* — apply the rejection rules — not license
+  to extract. This complements the per-section authoring norms that
+  Curator A's prompt now injects (Phase 5), so trivial bullets that
+  slip through the writer get caught at the surface-extraction
+  step.
+
+### Notes
+
+- Existing wikis with their own `<wiki>/SURFACES.md` won't pick up
+  the strengthened `decision` prompt automatically — only new wikis
+  initialised after this release get it. A `lore surface` resync
+  command is a separate follow-up.
+
 ## [0.17.0] - 2026-04-28
 
 ### Added

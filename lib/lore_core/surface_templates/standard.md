@@ -47,6 +47,12 @@ extract_prompt: |-
   - The trade-off is articulated: what was gained, what was given up, why this beat the alternative.
   - The decision has lasting force — future work will be informed by it, not merely affected by it.
 
+  Anchor on RATIONALE PRESENCE, not section headings. A bullet in a session note's
+  ``## Decisions made`` section is a CANDIDATE — it satisfies the "decision was made"
+  bar but you must still apply the rejection rules below. Do NOT treat presence in
+  Decisions made as license to extract; the section often carries tactical bullets
+  the author noted for completeness rather than for permanent record.
+
   Body should follow this structure (omit empty sections):
   - **Context** — the problem that prompted the choice
   - **Alternatives considered** — each rejected option with a one-line "why not"
@@ -57,6 +63,10 @@ extract_prompt: |-
   - The cluster is purely descriptive (a feature was built, no rejected alternative).
   - The "decision" is a routine implementation step (use the right library, follow conventions).
   - The choice is reversible without lasting consequence.
+  - The rationale would not still matter six months from now (six-month rule).
+  - The bullet reads as activity narrative ("we decided to do X") rather than as
+    a standing claim ("X is how we handle Y because Z"). Activity belongs in
+    sessions, not decisions.
 
   Title names the CHOICE, not the topic. Good: "Threads.md as derived read-only surface".
   Bad: "Surface authoring" (that's a topic, not a decision).

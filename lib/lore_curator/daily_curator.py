@@ -292,8 +292,21 @@ def _maybe_auto_push(lore_root: Path, wiki: str, *, llm_client: Any) -> None:
 def _load_recent_session_notes(sessions_dir: Path, *, cutoff: datetime) -> list[dict]:
     """Return list of {path, frontmatter, summary} for session notes touched since cutoff.
 
-    `summary` = the first 800 chars of the note body (after frontmatter).
-    `cutoff` is treated as tz-aware UTC; falls back to mtime if `created` frontmatter absent.
+    Phase 6: ``summary`` is now a *section-aware* extract — the
+    ``## Summary`` paragraph plus the first 600 chars of
+    ``## Decisions made`` — rather than the flat ``body[:800]``.
+    Curator B's clustering and abstract steps both consume this string
+    to decide topic boundaries and surface candidates; landing on the
+    rationale layer first (rather than on whichever H2 happened to
+    appear in the first 800 chars) cuts noise from Activity bullets,
+    Loose ends grammar, and other non-rationale content.
+
+    Legacy notes (pre-revision) lack the new sections; falls back to
+    the original ``body[:800]`` slice for those so the existing
+    cluster fixtures keep working until the vault rolls forward.
+
+    ``cutoff`` is treated as tz-aware UTC; falls back to mtime when
+    ``created`` frontmatter is absent.
     """
     if not sessions_dir.exists():
         return []
@@ -323,7 +336,7 @@ def _load_recent_session_notes(sessions_dir: Path, *, cutoff: datetime) -> list[
             if not include:
                 continue
         body = _strip_frontmatter(text)
-        summary = body[:800]
+        summary = _section_aware_summary(body)
         out.append((mtime, {
             "path": str(p),
             "wikilink": f"[[{p.stem}]]",
@@ -333,6 +346,76 @@ def _load_recent_session_notes(sessions_dir: Path, *, cutoff: datetime) -> list[
         }))
     out.sort(key=lambda r: r[0], reverse=True)
     return [d for _, d in out]
+
+
+# The downstream consumer (``lore_curator.cluster`` line ~77) caps the
+# rendered summary at 300 chars before sending it to the cluster LLM,
+# and the abstract step doesn't read ``summary`` at all (it reads the
+# full ``body`` via ``sources_by_wl``). So these budgets are about
+# *what content lands in those first 300 chars*, not about how many
+# total chars we send. Sized so a typical 4-5 sentence Summary
+# paragraph (~500 chars) fits whole, with Decisions appended — the
+# Decisions content tail is then truncated by cluster.py's cap if the
+# Summary doesn't fully consume the window.
+_BUDGET_SUMMARY_CHARS = 500
+_BUDGET_DECISIONS_CHARS = 300
+_BUDGET_FALLBACK_CHARS = 800
+
+
+def _section_aware_summary(body: str) -> str:
+    """Extract ``## Summary`` + start of ``## Decisions made`` from a
+    revised session-note body. Falls back to ``body[:800]`` for legacy
+    notes that lack the new sections.
+
+    Returns a string suitable for cluster topic-discrimination + the
+    abstract prompt's per-note context: rationale-rich, low-noise.
+    """
+    summary = _extract_section_text(body, "## Summary", _BUDGET_SUMMARY_CHARS)
+    decisions = _extract_section_text(
+        body, "## Decisions made", _BUDGET_DECISIONS_CHARS
+    )
+    if not summary and not decisions:
+        # Legacy note (or a freshly-filed note where the LLM emitted
+        # nothing for either section) — fall back to the flat prefix
+        # so cluster behaviour stays consistent until we re-curate.
+        return body[:_BUDGET_FALLBACK_CHARS]
+    parts: list[str] = []
+    if summary:
+        parts.append(summary)
+    if decisions:
+        parts.append(decisions)
+    return "\n\n".join(parts)
+
+
+def _extract_section_text(body: str, heading: str, max_chars: int) -> str:
+    """Pull the literal text under ``heading`` up to the next H2/H3 or EOF.
+
+    Bounded by ``max_chars`` so a runaway Decisions list can't blow
+    the cluster prompt budget. The heading itself is excluded — only
+    the section's content (paragraph or bullets) is returned, with
+    leading/trailing whitespace stripped.
+    """
+    # We scan line-by-line so we can track when the next ``## `` or
+    # ``### `` heading appears. ``###`` boundary handling matters for
+    # Activity subsections, which we don't want bleeding into the
+    # Summary text.
+    lines = body.splitlines()
+    in_section = False
+    collected: list[str] = []
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("## ") and stripped[:len(heading)] == heading and stripped[len(heading):len(heading) + 1] in ("", " ", "\t", "\n"):
+            in_section = True
+            continue
+        if not in_section:
+            continue
+        if stripped.startswith("## ") or stripped.startswith("### "):
+            break
+        collected.append(line)
+    text = "\n".join(collected).strip()
+    if len(text) > max_chars:
+        text = text[:max_chars].rstrip() + "…"
+    return text
 
 
 def _build_sources_map(notes: list[dict]) -> dict[str, str]:
