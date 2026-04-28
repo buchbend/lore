@@ -39,7 +39,7 @@ OVERSIZED_LINES = 150
 INDEX_MAX_LINES = 80
 TODAY = date.today()
 
-KNOWLEDGE_DIRS = ["projects", "concepts", "decisions", "papers"]
+KNOWLEDGE_DIRS = ["projects", "concepts", "decisions", "papers", "plans"]
 SKIP_DIRS = {"templates", "inbox", ".processed", ".obsidian"}
 SKIP_FILES = {"CLAUDE.md", "README.md", "_index.md", "_catalog.json", "llms.txt", "_recent.md"}
 
@@ -436,7 +436,7 @@ def generate_index_md(wiki_name: str, notes: list[NoteInfo]) -> str:
             return f" `SUPERSEDED → {targets}`" if targets else " `SUPERSEDED`"
         return ""
 
-    for section_name in ["projects", "concepts", "decisions", "papers"]:
+    for section_name in ["projects", "concepts", "decisions", "papers", "plans"]:
         if section_name not in sections:
             continue
         folders = sections[section_name]

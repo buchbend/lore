@@ -62,6 +62,20 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
         "description",
         "tags",
     ],
+    "plan": [
+        # `status` is intentionally NOT required — status-vocabulary-minimalism
+        # treats absence as the implicit default ("active" for plans). Setting
+        # it explicitly is encouraged but not enforced by the linter, matching
+        # how every other surface treats lifecycle.
+        "schema_version",
+        "type",
+        "slug",
+        "created",
+        "last_reviewed",
+        "description",
+        "source_adapter",
+        "source_hash",
+    ],
 }
 
 # Optional fields the linter understands across types. Listing them here
@@ -86,6 +100,17 @@ OPTIONAL_FIELDS: set[str] = {
     # status-vocabulary-minimalism — lifecycle via opt-in signals
     "draft",  # bool — note is not yet committed to (rare, opt-in)
     "superseded_by",  # str | list[str] — wikilink(s) to successor note(s)
+    # plan + project additions (v0.11.0)
+    "repo",  # str — single-repo primary owner (project notes; optional plan tag)
+    "step_status",  # dict[str, str] — plan step_id → "done"|"in_progress"|"blocked"
+    "step_status_updated",  # str — ISO timestamp; bumped on any step_status mutation
+    "slug",  # str — explicit slug override (used by plan notes; filename otherwise)
+    "status",  # str — plan lifecycle: active|paused|done|abandoned|superseded
+    "source_adapter",  # str — e.g. "claude-code-hook" for plans captured via PostToolUse
+    "source_hash",  # str — sha256 of canonical_text(source) for idempotent re-capture
+    "spec",  # str — wikilink to a spec note (plans, forward-compat)
+    "roadmap",  # str — wikilink to a roadmap note (plans, forward-compat)
+    "notes",  # str — free-form user notes (plan user-owned whitelist)
 }
 
 
