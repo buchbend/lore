@@ -154,8 +154,48 @@ def test_drain_session_isolation(tmp_path):
 def test_drain_system_session_path(tmp_path):
     """The _system session lands at a predictable filename."""
     store = DrainStore(tmp_path, SYSTEM_SESSION)
-    store.emit("surface-proposed", wiki="w")
+    store.emit("transcript-synced", wiki="w", transcript_id="t1")
     assert (tmp_path / ".lore" / "drain" / "_system.jsonl").exists()
+
+
+def test_drain_system_session_rejects_non_transcript_synced(tmp_path):
+    """`_system` is shared across sessions — only transcript-synced is legitimate."""
+    store = DrainStore(tmp_path, SYSTEM_SESSION)
+    for bad in ("note-filed", "note-appended", "surface-proposed"):
+        with pytest.raises(ValueError, match="system drain accepts only"):
+            store.emit(bad, wiki="w", wikilink="[[x]]")
+    # transcript-synced still works
+    store.emit("transcript-synced", wiki="w", transcript_id="t1")
+
+
+def test_drain_read_or_init_cursor_initialises_when_missing(tmp_path):
+    """Cold start: no cursor → write `now`, return it."""
+    store = DrainStore(tmp_path, "s1")
+    assert store.read_cursor() is None
+    before = datetime.now(UTC)
+    got = store.read_or_init_cursor()
+    after = datetime.now(UTC)
+    assert before <= got <= after
+    # Cursor file now exists and round-trips.
+    assert store.read_cursor() == got
+
+
+def test_drain_read_or_init_cursor_returns_existing(tmp_path):
+    """Existing cursor wins; init does not overwrite."""
+    store = DrainStore(tmp_path, "s1")
+    pinned = datetime(2026, 1, 1, tzinfo=UTC)
+    store.write_cursor(pinned)
+    assert store.read_or_init_cursor() == pinned
+    # Calling again is idempotent.
+    assert store.read_or_init_cursor() == pinned
+
+
+def test_drain_read_or_init_cursor_uses_explicit_now(tmp_path):
+    """Caller can pin the cold-start anchor (deterministic in tests)."""
+    store = DrainStore(tmp_path, "s1")
+    anchor = datetime(2026, 4, 28, 12, 0, tzinfo=UTC)
+    assert store.read_or_init_cursor(now=anchor) == anchor
+    assert store.read_cursor() == anchor
 
 
 # ---------------------------------------------------------------------------

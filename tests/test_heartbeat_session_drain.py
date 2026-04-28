@@ -6,6 +6,7 @@ background system events.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +16,27 @@ import pytest
 from lore_core.drain import SYSTEM_SESSION, DrainStore
 from lore_core.wiki_config import HeartbeatConfig, WikiConfig
 from lore_cli.hooks import _heartbeat
+
+
+def _write_legacy_system_row(lore_root: Path, *, event: str, wiki: str,
+                              wikilink: str, ts: datetime | None = None) -> None:
+    """Bypass DrainStore.emit() to plant a row that pre-Phase-1 code wrote.
+
+    Phase 1 of the drain plan (Change C) forbids non-transcript-synced
+    events in `_system`, but production vaults still carry legacy rows
+    written before the guard. The reader path must continue to handle
+    them gracefully — those tests need to plant exactly that shape.
+    """
+    path = lore_root / ".lore" / "drain" / "_system.jsonl"
+    record = {
+        "ts": (ts or datetime.now(UTC)).isoformat(),
+        "event": event,
+        "wiki": wiki,
+        "session_id": SYSTEM_SESSION,
+        "data": {"wikilink": wikilink},
+    }
+    with path.open("a") as fp:
+        fp.write(json.dumps(record) + "\n")
 
 
 @pytest.fixture()
@@ -44,8 +66,17 @@ def test_heartbeat_surfaces_session_drain_events(lore_root, wiki_cfg) -> None:
 
 
 def test_heartbeat_merges_system_and_session_events(lore_root, wiki_cfg) -> None:
-    system_store = DrainStore(lore_root, SYSTEM_SESSION)
-    system_store.emit("note-filed", wiki="private", wikilink="[[sys-note]]")
+    # Seed the system cursor in the past so cold-start init does not
+    # filter the legacy row we plant below.
+    DrainStore(lore_root, SYSTEM_SESSION).write_cursor(
+        datetime.now(UTC) - timedelta(hours=1)
+    )
+    # Legacy data: a stale note-filed row left over before Change C
+    # added the producer-side guard. Heartbeat must keep surfacing it
+    # so users see existing pollution surface (and can prune it).
+    _write_legacy_system_row(
+        lore_root, event="note-filed", wiki="private", wikilink="[[sys-note]]",
+    )
 
     session_store = DrainStore(lore_root, "test-session")
     session_store.emit("note-appended", wiki="private", wikilink="[[sess-note]]")
@@ -64,8 +95,13 @@ def test_heartbeat_merges_system_and_session_events(lore_root, wiki_cfg) -> None
 
 
 def test_heartbeat_cursors_advance_independently(lore_root, wiki_cfg) -> None:
-    system_store = DrainStore(lore_root, SYSTEM_SESSION)
-    system_store.emit("note-filed", wiki="private", wikilink="[[s1]]")
+    DrainStore(lore_root, SYSTEM_SESSION).write_cursor(
+        datetime.now(UTC) - timedelta(hours=1)
+    )
+    # Legacy stale row in _system to verify both streams advance.
+    _write_legacy_system_row(
+        lore_root, event="note-filed", wiki="private", wikilink="[[s1]]",
+    )
 
     session_store = DrainStore(lore_root, "test-session")
     session_store.emit("note-filed", wiki="private", wikilink="[[n1]]")

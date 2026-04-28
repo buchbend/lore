@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from lore_core.drain import DrainStore, SYSTEM_SESSION
@@ -17,9 +19,32 @@ def _make_heartbeat_stamp(lore_root: Path) -> Path:
     return stamp
 
 
+def _seed_system_cursor_in_past(lore_root: Path) -> None:
+    """Pre-plant `_system.cursor` so cold-start init doesn't skip events."""
+    DrainStore(lore_root, SYSTEM_SESSION).write_cursor(
+        datetime.now(UTC) - timedelta(hours=1)
+    )
+
+
 def _emit(lore_root: Path, event: str, wiki: str = "private", **data) -> None:
+    """Plant a row in `_system`. Events that Change C blocks from `_system`
+    get written raw so the heartbeat reader still sees legacy pollution."""
     store = DrainStore(lore_root, SYSTEM_SESSION)
-    store.emit(event=event, wiki=wiki, **data)
+    if event == "transcript-synced":
+        store.emit("transcript-synced", wiki=wiki, **data)
+        return
+    drain_dir = lore_root / ".lore" / "drain"
+    drain_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts": datetime.now(UTC).isoformat(),
+        "event": event,
+        "wiki": wiki,
+        "session_id": SYSTEM_SESSION,
+        "data": dict(data),
+    }
+    path = drain_dir / f"{SYSTEM_SESSION}.jsonl"
+    with open(path, "a") as f:
+        f.write(json.dumps(record) + "\n")
 
 
 def _pid_cursor_path(lore_root: Path, pid: int) -> Path:
@@ -38,6 +63,7 @@ def test_returns_none_within_cooldown(tmp_path: Path) -> None:
 
 
 def test_returns_summary_when_new_events(tmp_path: Path) -> None:
+    _seed_system_cursor_in_past(tmp_path)
     _emit(tmp_path, "note-filed", wikilink="[[test-note]]")
 
     cfg = WikiConfig()
@@ -55,6 +81,7 @@ def test_returns_none_when_no_events(tmp_path: Path) -> None:
 
 
 def test_cursor_advances_no_double_surface(tmp_path: Path) -> None:
+    _seed_system_cursor_in_past(tmp_path)
     _emit(tmp_path, "note-filed", wikilink="[[test-note]]")
 
     cfg = WikiConfig()
@@ -70,6 +97,7 @@ def test_cursor_advances_no_double_surface(tmp_path: Path) -> None:
 
 
 def test_push_context_true_returns_additional_context(tmp_path: Path) -> None:
+    _seed_system_cursor_in_past(tmp_path)
     _emit(tmp_path, "note-filed", wikilink="[[new-note]]")
 
     cfg = WikiConfig()
@@ -81,6 +109,7 @@ def test_push_context_true_returns_additional_context(tmp_path: Path) -> None:
 
 
 def test_push_context_false_no_additional_context(tmp_path: Path) -> None:
+    _seed_system_cursor_in_past(tmp_path)
     _emit(tmp_path, "note-filed", wikilink="[[new-note]]")
 
     cfg = WikiConfig()

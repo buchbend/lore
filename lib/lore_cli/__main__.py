@@ -43,6 +43,7 @@ def _build_app() -> typer.Typer:
         curator_cmd,
         detach_cmd,
         doctor_cmd,
+        drain_cmd,
         drill_cmd,
         hooks,
         inbox_cmd,
@@ -113,6 +114,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(briefing_cmd.app, name="briefing", rich_help_panel=_ADV)
     app.add_typer(completions_cmd.app, name="completions", rich_help_panel=_ADV)
     app.add_typer(detach_cmd.app, name="detach", rich_help_panel=_ADV)
+    app.add_typer(drain_cmd.app, name="drain", rich_help_panel=_ADV)
     app.add_typer(hooks.hook_app, name="hook", rich_help_panel=_ADV)
     app.add_typer(inbox_cmd.app, name="inbox", rich_help_panel=_ADV)
     app.add_typer(ingest_cmd.app, name="ingest", rich_help_panel=_ADV)

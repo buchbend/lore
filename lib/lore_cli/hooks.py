@@ -1529,7 +1529,12 @@ _HOOK_EVENT = {
 }
 
 
-def _hook_failure_banner(hook_event: str, exc: BaseException) -> str:
+def _hook_failure_banner(
+    hook_event: str,
+    exc: BaseException,
+    *,
+    log_path: Path | None = None,
+) -> str:
     """Build a user-friendly diagnostic for a crashed hook.
 
     Claude Code surfaces stderr + traceback as
@@ -1540,13 +1545,18 @@ def _hook_failure_banner(hook_event: str, exc: BaseException) -> str:
 
     Common causes named explicitly: stale install (templates / package
     data missing under pipx wheels) and binary-vs-plugin-cache drift.
+
+    ``log_path`` (when provided) appears on a final ``Full traceback:``
+    line so the maintainer / user can attach the file to a GitHub issue.
+    Persisted by ``_crash_log.write_crash`` from both the per-hook
+    shield and the ``__main__`` top-level backstop.
     """
     exc_name = type(exc).__name__
     exc_msg = str(exc) or "(no message)"
     # Truncate noisy paths/values so the banner stays readable.
     if len(exc_msg) > 200:
         exc_msg = exc_msg[:197] + "..."
-    return (
+    banner = (
         f"⚠ lore {hook_event} hook failed: {exc_name}: {exc_msg}\n"
         "\n"
         "Likely causes + fixes:\n"
@@ -1556,10 +1566,14 @@ def _hook_failure_banner(hook_event: str, exc: BaseException) -> str:
         "[bold]lore doctor[/bold] flags it and prints the exact command.\n"
         "  • If the error persists, file an issue: "
         "https://github.com/buchbend/lore/issues\n"
-        "\n"
-        "Lore continues without its SessionStart banner — your session "
+    )
+    if log_path is not None:
+        banner += f"\nFull traceback: {log_path}\n"
+    banner += (
+        "\nLore continues without its SessionStart banner — your session "
         "is otherwise unaffected."
     )
+    return banner
 
 
 def _shield_hook(typer_event: str):
@@ -1591,7 +1605,16 @@ def _shield_hook(typer_event: str):
                 # plain stderr — never re-raise (the whole point of
                 # the shield is "no traceback in the user's session").
                 plain = bool(kwargs.get("plain", False))
-                banner = _hook_failure_banner(typer_event, exc)
+                # Persist traceback to disk so doctor + the user can
+                # find it later. write_crash returns None silently if
+                # the cache dir isn't writable — don't let that mask
+                # the original failure.
+                try:
+                    from lore_cli._crash_log import write_crash
+                    log_path = write_crash(typer_event, exc)
+                except Exception:  # noqa: BLE001
+                    log_path = None
+                banner = _hook_failure_banner(typer_event, exc, log_path=log_path)
                 try:
                     _emit(typer_event, banner, plain=plain)
                 except Exception:  # noqa: BLE001
@@ -1805,14 +1828,17 @@ def cmd_session_start(
                     out = out + "\n\n" + banner
 
                 # P5b: appended drain lines — "this session" and "since you
-                # left." Session-scoped cursor prevents the same event from
-                # showing up on repeat SessionStarts within one Claude run.
-                try:
-                    drain_lines = _render_drain_lines(lore_root, cwd_resolved)
-                    if drain_lines:
-                        out = out + "\n" + "\n".join(drain_lines)
-                except (OSError, json.JSONDecodeError):
-                    pass
+                # left." Skipped under `--probe` because the rendering
+                # writes cursor files (cold-start init + post-render
+                # advance), and `lore doctor` must leave no on-disk
+                # footprint.
+                if not probe:
+                    try:
+                        drain_lines = _render_drain_lines(lore_root, cwd_resolved)
+                        if drain_lines:
+                            out = out + "\n" + "\n".join(drain_lines)
+                    except (OSError, json.JSONDecodeError):
+                        pass
 
                 try:
                     cross = _cross_scope_breadcrumbs(lore_root, scope.wiki)
@@ -2013,13 +2039,18 @@ def _heartbeat(
     drain_dir = lore_root / ".lore" / "drain"
     drain_dir.mkdir(parents=True, exist_ok=True)
 
-    sys_cursor_path = drain_dir / f"heartbeat-{effective_pid}.cursor"
+    # Session cursor stays pid-keyed: each Claude OS process tracks its
+    # own "have I shown this session event" mark, so two parallel
+    # windows don't steal each other's notifications.
     sess_cursor_path = drain_dir / f"heartbeat-session-{effective_pid}.cursor"
-
-    sys_cursor_ts = _read_cursor(sys_cursor_path)
     sess_cursor_ts = _read_cursor(sess_cursor_path)
 
+    # System cursor is process-shared: events surface to whichever
+    # reader (SessionStart or any heartbeat) gets there first, then
+    # never again. ``read_or_init_cursor`` cold-starts to ``now`` so a
+    # fresh install never reaches back through history.
     system_store = DrainStore(lore_root, SYSTEM_SESSION)
+    sys_cursor_ts = system_store.read_or_init_cursor()
     system_events = system_store.read(since=sys_cursor_ts, limit=200)
 
     sid, _ = resolve_session_id(cwd)
@@ -2047,7 +2078,9 @@ def _heartbeat(
             ctx = "New in vault: " + ", ".join(dict.fromkeys(wikilinks))
 
     if system_events:
-        _write_cursor(sys_cursor_path, max(e.ts for e in system_events))
+        from datetime import timedelta
+        newest = max(e.ts for e in system_events)
+        system_store.write_cursor(newest + timedelta(microseconds=1))
     if session_events:
         _write_cursor(sess_cursor_path, max(e.ts for e in session_events))
 
@@ -2489,16 +2522,21 @@ def _render_drain_lines(lore_root: Path, cwd: Path) -> list[str]:
     """Compile the two drain-banner lines shown at SessionStart.
 
     Line 1 — "· This session"   — session-scoped notes filed/appended
-    Line 2 — "· Since you left" — _system events since this session
-                                  last rendered a banner
+    Line 2 — "· Since you left" — _system events since the system
+                                  cursor last advanced
 
     Both lines are omitted when their respective stream has no new
     events. Returns an empty list when both are silent (callers
     suppress the newline).
 
-    Cursor advance: the session drain's cursor is bumped to the newest
-    ts rendered so a second SessionStart inside the same Claude session
-    (e.g. re-opening a window) doesn't re-surface the same events.
+    Cursor advance: each stream owns its own cursor. The session
+    cursor (``{sid}.cursor``) prevents repeat SessionStarts within
+    one Claude run from re-rendering session events. The system
+    cursor (``_system.cursor``) is the single authoritative
+    "shown through" mark for the shared system stream — without it,
+    a stale row in ``_system.jsonl`` would haunt every fresh session.
+    Cold-start initialises ``_system.cursor`` to ``now`` so the first
+    read on a new install never reaches back through history.
     """
     from lore_core.drain import SYSTEM_SESSION, DrainStore, resolve_session_id
 
@@ -2506,16 +2544,11 @@ def _render_drain_lines(lore_root: Path, cwd: Path) -> list[str]:
     session_store = DrainStore(lore_root, sid)
     system_store = DrainStore(lore_root, SYSTEM_SESSION)
 
-    # Session cursor = "what have I already shown this session?"
     session_cursor = session_store.read_cursor()
     session_events = session_store.read(since=session_cursor, limit=200)
 
-    # System cursor per-session so repeat SessionStarts in the same
-    # Claude run don't spam; we piggyback on the session drain's cursor
-    # (events from both streams are only surfaced once per session_cursor
-    # advance). This is the simplest model that also handles the "user
-    # opens two windows at once" case sanely.
-    system_events = system_store.read(since=session_cursor, limit=200)
+    system_cursor = system_store.read_or_init_cursor()
+    system_events = system_store.read(since=system_cursor, limit=200)
 
     lines: list[str] = []
     if session_events:
@@ -2530,14 +2563,16 @@ def _render_drain_lines(lore_root: Path, cwd: Path) -> list[str]:
         if summary:
             lines.append(f"  · Since you left {summary}")
 
-    # Advance cursor to ``newest + 1µs`` — `since` in DrainStore.read is
-    # inclusive (``ts >= since``), so setting the cursor to the event's
+    # Advance each cursor to ``newest + 1µs`` — `since` in DrainStore.read
+    # is inclusive (``ts >= since``), so setting the cursor to the event's
     # own ts would resurface it on the next banner call.
-    all_events = session_events + system_events
-    if all_events:
-        from datetime import timedelta
-        newest = max(e.ts for e in all_events)
+    from datetime import timedelta
+    if session_events:
+        newest = max(e.ts for e in session_events)
         session_store.write_cursor(newest + timedelta(microseconds=1))
+    if system_events:
+        newest = max(e.ts for e in system_events)
+        system_store.write_cursor(newest + timedelta(microseconds=1))
 
     return lines
 

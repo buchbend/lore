@@ -10,8 +10,26 @@ from lore_cli.hooks import _cross_scope_breadcrumbs
 
 
 def _emit_event(lore_root: Path, event: str, wiki: str) -> None:
+    """Plant a wiki-tagged row in `_system`. Events that Change C blocks
+    from `_system` get written raw so the reader still sees them — the
+    cross-scope counter is event-type-agnostic, so the test intent
+    (per-wiki activity counts) is preserved."""
     store = DrainStore(lore_root, SYSTEM_SESSION)
-    store.emit(event=event, wiki=wiki)
+    if event == "transcript-synced":
+        store.emit("transcript-synced", wiki=wiki, transcript_id="t")
+        return
+    drain_dir = lore_root / ".lore" / "drain"
+    drain_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts": datetime.now(UTC).isoformat(),
+        "event": event,
+        "wiki": wiki,
+        "session_id": SYSTEM_SESSION,
+        "data": {},
+    }
+    path = drain_dir / f"{SYSTEM_SESSION}.jsonl"
+    with open(path, "a") as f:
+        f.write(json.dumps(record) + "\n")
 
 
 def _emit_old_event(lore_root: Path, event: str, wiki: str, ts: datetime) -> None:

@@ -84,13 +84,19 @@ class DrainStore:
     ) -> None:
         """Append one event record to the drain.
 
-        Raises ValueError on an unknown ``event`` name. Caller should
-        pass only keys in :data:`EVENT_VOCAB` — unrecognized events
-        would be silently written-then-skipped by readers, which is
-        the worst of both worlds.
+        Raises ValueError on an unknown ``event`` name, or when a
+        non-``transcript-synced`` event is targeted at the system
+        drain (``SYSTEM_SESSION``). The system stream is shared
+        across all sessions, so per-note events written there would
+        haunt every future SessionStart — only ``transcript-synced``
+        belongs in ``_system``.
         """
         if event not in EVENT_VOCAB:
             raise ValueError(f"unknown drain event: {event!r}")
+        if self._session_id == SYSTEM_SESSION and event != "transcript-synced":
+            raise ValueError(
+                f"system drain accepts only 'transcript-synced'; got {event!r}"
+            )
 
         record: dict[str, Any] = {
             "ts": datetime.now(UTC).isoformat(),
@@ -199,6 +205,23 @@ class DrainStore:
             os.replace(tmp, self._cursor_path)
         except OSError:
             pass
+
+    def read_or_init_cursor(self, *, now: datetime | None = None) -> datetime:
+        """Return the existing cursor, or initialise it to ``now`` and return that.
+
+        Cold-start protection for shared drains (chiefly ``_system``):
+        a brand-new install or a fresh session has no cursor file, and
+        without one the reader would walk back through the entire
+        history. Initialising to ``now`` means the first read after
+        upgrade surfaces no events; subsequent emits land past the
+        cursor and surface normally.
+        """
+        existing = self.read_cursor()
+        if existing is not None:
+            return existing
+        anchor = now if now is not None else datetime.now(UTC)
+        self.write_cursor(anchor)
+        return anchor
 
 
 def resolve_session_id(

@@ -87,7 +87,7 @@ def _render_event(e: DrainEvent, *, include_session_tag: str | None = None) -> s
 
 def _collect_events(
     lore_root: Path, session_id: str, cutoff: datetime | None, wiki: str | None, limit: int,
-) -> tuple[DrainStore, list[DrainEvent], list[DrainEvent]]:
+) -> tuple[DrainStore, DrainStore, list[DrainEvent], list[DrainEvent]]:
     """Load session + system events since ``cutoff``, filtered by ``wiki``."""
     session_store = DrainStore(lore_root, session_id)
     system_store = DrainStore(lore_root, SYSTEM_SESSION)
@@ -96,7 +96,7 @@ def _collect_events(
     if wiki:
         session_events = [e for e in session_events if e.wiki == wiki]
         system_events = [e for e in system_events if e.wiki == wiki]
-    return session_store, session_events, system_events
+    return session_store, system_store, session_events, system_events
 
 
 def _advance_cursor(store: DrainStore, events: list[DrainEvent]) -> None:
@@ -128,7 +128,7 @@ def cmd_news(
     if cutoff is None:
         cutoff = DrainStore(lore_root, sid).read_cursor()
 
-    session_store, session_events, system_events = _collect_events(
+    session_store, system_store, session_events, system_events = _collect_events(
         lore_root, sid, cutoff, wiki, limit,
     )
 
@@ -148,7 +148,8 @@ def cmd_news(
         for e in system_events:
             console.print(_render_event(e))
 
-    _advance_cursor(session_store, session_events + system_events)
+    _advance_cursor(session_store, session_events)
+    _advance_cursor(system_store, system_events)
 
 
 @app.command("latest", help="Show everything since the last time news was viewed.")
@@ -160,7 +161,7 @@ def cmd_latest(
     sid, _ = resolve_session_id(Path.cwd())
     cutoff = DrainStore(lore_root, sid).read_cursor()
 
-    session_store, session_events, system_events = _collect_events(
+    session_store, system_store, session_events, system_events = _collect_events(
         lore_root, sid, cutoff, wiki, limit,
     )
 
@@ -173,7 +174,8 @@ def cmd_latest(
     for e in system_events:
         console.print(_render_event(e, include_session_tag="background"))
 
-    _advance_cursor(session_store, session_events + system_events)
+    _advance_cursor(session_store, session_events)
+    _advance_cursor(system_store, system_events)
 
 
 main = argv_main(app)
