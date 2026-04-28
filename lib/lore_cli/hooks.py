@@ -249,8 +249,16 @@ def _load_directive_lines() -> list[str]:
     Output shape preserves the historical 3-element layout exactly:
     `["## Directives", "- **Vault first.** …", ""]`. The trailing
     empty string produces the blank line spacer in the joined output.
+
+    Returns an empty list if the bundled template can't be read — the
+    surrounding banner survives without the postscript, and the
+    SessionStart top-level shield surfaces a fix hint when the root
+    cause is a stale install (templates not bundled in the wheel).
     """
-    text = _DIRECTIVE_PATH.read_text()
+    try:
+        text = _DIRECTIVE_PATH.read_text()
+    except OSError:
+        return []
     return [*text.rstrip("\n").split("\n"), ""]
 
 
@@ -1288,6 +1296,82 @@ _HOOK_EVENT = {
 }
 
 
+def _hook_failure_banner(hook_event: str, exc: BaseException) -> str:
+    """Build a user-friendly diagnostic for a crashed hook.
+
+    Claude Code surfaces stderr + traceback as
+    "Failed with non-blocking status code" when a hook exits non-zero.
+    That's noise without a next step. The shield catches the exception,
+    feeds the banner through `_emit` like normal, and exits 0 — the user
+    sees an actionable message instead of a traceback.
+
+    Common causes named explicitly: stale install (templates / package
+    data missing under pipx wheels) and binary-vs-plugin-cache drift.
+    """
+    exc_name = type(exc).__name__
+    exc_msg = str(exc) or "(no message)"
+    # Truncate noisy paths/values so the banner stays readable.
+    if len(exc_msg) > 200:
+        exc_msg = exc_msg[:197] + "..."
+    return (
+        f"⚠ lore {hook_event} hook failed: {exc_name}: {exc_msg}\n"
+        "\n"
+        "Likely causes + fixes:\n"
+        "  • Stale install (e.g. templates not bundled): "
+        "[bold]lore install --upgrade[/bold] (or re-run install.sh).\n"
+        "  • Binary vs plugin-cache drift: "
+        "[bold]lore doctor[/bold] flags it and prints the exact command.\n"
+        "  • If the error persists, file an issue: "
+        "https://github.com/buchbend/lore/issues\n"
+        "\n"
+        "Lore continues without its SessionStart banner — your session "
+        "is otherwise unaffected."
+    )
+
+
+def _shield_hook(typer_event: str):
+    """Decorator: wrap a hook entry point so unexpected exceptions
+    surface a friendly diagnostic via `_emit` and exit 0.
+
+    Local try/except blocks scattered through the hook bodies catch
+    *expected* failures (offer-rendering, drain breadcrumbs, curator
+    spawns). The shield is the backstop for *unexpected* ones —
+    NameError, FileNotFoundError on a bundled resource, etc. — that
+    would otherwise leak a Python traceback into Claude Code's UI.
+
+    `typer_event` is the Claude Code event name (SessionStart,
+    PreCompact, Stop, UserPromptSubmit) so the banner names what
+    failed precisely.
+    """
+    from functools import wraps
+
+    def decorator(fn):
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except (typer.Exit, KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:  # noqa: BLE001 - hook crash shield
+                # Best-effort: emit via the same JSON envelope used on
+                # the happy path. If even that fails, fall through to
+                # plain stderr — never re-raise (the whole point of
+                # the shield is "no traceback in the user's session").
+                plain = bool(kwargs.get("plain", False))
+                banner = _hook_failure_banner(typer_event, exc)
+                try:
+                    _emit(typer_event, banner, plain=plain)
+                except Exception:  # noqa: BLE001
+                    sys.stderr.write(
+                        f"lore {typer_event} hook crashed and the diagnostic "
+                        f"emitter also failed: {type(exc).__name__}: {exc}\n"
+                    )
+                # Exit 0 so Claude Code doesn't show 'non-blocking status code'.
+                return None
+        return wrapped
+    return decorator
+
+
 import typer  # noqa: E402
 
 from lore_adapters import get_adapter  # noqa: E402
@@ -1399,6 +1483,7 @@ def _read_hook_payload() -> dict:
 
 
 @hook_app.command("session-start")
+@_shield_hook("SessionStart")
 def cmd_session_start(
     cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
     plain: bool = typer.Option(
@@ -1574,6 +1659,7 @@ def cmd_session_start(
 
 
 @hook_app.command("pre-compact")
+@_shield_hook("PreCompact")
 def cmd_pre_compact(
     cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
     plain: bool = typer.Option(
@@ -1593,6 +1679,7 @@ def cmd_pre_compact(
 
 
 @hook_app.command("stop")
+@_shield_hook("Stop")
 def cmd_stop(
     plain: bool = typer.Option(
         False,
@@ -1723,6 +1810,7 @@ def _heartbeat(
 
 
 @hook_app.command("user-prompt-submit")
+@_shield_hook("UserPromptSubmit")
 def cmd_user_prompt_submit(
     cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
     plain: bool = typer.Option(
