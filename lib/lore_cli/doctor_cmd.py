@@ -445,6 +445,67 @@ def _check_ledger_buckets(cwd: str) -> Check:
     return True, " · ".join(parts)
 
 
+def _check_pending(cwd: str) -> Check:
+    """Summarise the spawn-gate state across all attached wikis.
+
+    Answers "why isn't curator A firing?" without having to grep the
+    ledger. For each attached wiki: pending entry count, sum of new
+    turns since last scan, oldest pending age, and whether the gate
+    would currently fire. Never fails the install — purely informational.
+    """
+    from lore_core.config import get_lore_root
+    from lore_core.ledger import TranscriptLedger
+    from lore_core.wiki_config import load_wiki_config
+
+    lore_root = get_lore_root()
+    ledger_path = lore_root / ".lore" / "transcript-ledger.json"
+    if not ledger_path.exists():
+        return True, "no pending — capture hasn't fired yet"
+
+    try:
+        buckets = TranscriptLedger(lore_root).pending_by_wiki()
+    except Exception as e:
+        return False, f"ledger read failed: {e}"
+
+    from datetime import UTC, datetime
+    now = datetime.now(UTC)
+
+    parts: list[str] = []
+    any_would_spawn = False
+    for wiki_name, entries in sorted(buckets.items()):
+        if wiki_name.startswith("__") or not entries:
+            continue
+        new_turns = sum(
+            max(0, e.total_turns - (e.digested_index_hint or 0))
+            for e in entries
+        )
+        oldest_age_s = int(
+            (now - min(e.last_mtime for e in entries)).total_seconds()
+        )
+        wiki_dir = lore_root / "wiki" / wiki_name
+        try:
+            wiki_cfg = load_wiki_config(wiki_dir)
+        except Exception:
+            continue
+        turns_threshold = wiki_cfg.curator.threshold_pending_turns
+        age_threshold = wiki_cfg.curator.max_pending_age_s
+        would_spawn = (
+            new_turns >= turns_threshold or oldest_age_s >= age_threshold
+        )
+        if would_spawn:
+            any_would_spawn = True
+        flag = "spawn" if would_spawn else "wait"
+        parts.append(
+            f"{wiki_name}: {len(entries)} pending, "
+            f"{new_turns}/{turns_threshold}t, "
+            f"oldest {oldest_age_s}s/{age_threshold}s [{flag}]"
+        )
+
+    if not parts:
+        return True, "no attached-wiki pending"
+    return True, " · ".join(parts)
+
+
 # (name, check_fn, fails_run). `fails_run=False` means the check is
 # informational — its `ok=False` is rendered as ✗ but does not set the
 # overall non-zero exit.
@@ -457,6 +518,9 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     ("attachments", _check_attachments, True),
     ("scope tree", _check_scope_tree, True),
     ("ledger buckets", _check_ledger_buckets, True),
+    # Surfaces curator A spawn-gate state per wiki. Tells the user
+    # "why isn't curator A firing?" at a glance.
+    ("pending", _check_pending, False),
     ("SessionStart hook", _check_hook_runnable, True),
     # Advisory: surfaces silent failures Claude Code hides behind the
     # friendly hook banner. Doesn't fail the install — the user may

@@ -276,6 +276,16 @@ def file_session_note(
         fallback_time=work_time,
     )
 
+    # Provenance — record which LLM produced this note's verdict so model
+    # swaps (subscription → OpenAI-compatible → SDK) can be diagnosed
+    # retroactively. Empty strings are skipped so cascade_trivial and
+    # legacy fixtures don't add noisy keys.
+    extra_fm: dict[str, Any] = {}
+    if noteworthy.llm_backend:
+        extra_fm["llm_backend"] = noteworthy.llm_backend
+    if noteworthy.llm_model:
+        extra_fm["llm_model"] = noteworthy.llm_model
+
     si = SessionInput(
         scope=scope,
         wiki_root=wiki_root,
@@ -311,6 +321,7 @@ def file_session_note(
         activity_commits=activity["commits"],
         activity_issues_opened=activity["issues_opened"],
         activity_issues_closed=activity["issues_closed"],
+        extra_frontmatter=extra_fm,
     )
     return file_or_merge(si, logger=logger, transcript_id=transcript_id)
 

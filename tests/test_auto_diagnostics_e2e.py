@@ -111,8 +111,11 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
     lore_root = tmp_path
     wiki_dir = lore_root / "wiki" / wiki_name
     (wiki_dir / "sessions").mkdir(parents=True)
-    # P2 per-wiki threshold — single-transcript e2e needs threshold=1.
-    (wiki_dir / ".lore-wiki.yml").write_text("curator:\n  threshold_pending: 1\n")
+    # Per-wiki gate is turns-OR-age. Tests don't run sync, so total_turns
+    # stays 0 — fall back on age (set to 0 so it always trips).
+    (wiki_dir / ".lore-wiki.yml").write_text(
+        "curator:\n  threshold_pending_turns: 1\n  max_pending_age_s: 0\n"
+    )
 
     cwd = lore_root / "project"
     cwd.mkdir()

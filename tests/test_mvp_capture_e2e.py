@@ -124,16 +124,20 @@ _NOW = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
 def _setup_lore_root(tmp_path: Path, wiki_name: str = "private") -> tuple[Path, Path]:
     """Create lore_root with wiki/<wiki_name>/sessions/ and an attached work dir.
 
-    Writes a per-wiki ``.lore-wiki.yml`` with ``threshold_pending: 1`` so
-    tests that seed a single pending transcript still exercise the full
-    curator path (P2 introduced per-wiki gating).
+    Writes a per-wiki ``.lore-wiki.yml`` with the turns-or-age gate forced
+    on (``threshold_pending_turns: 1`` plus ``max_pending_age_s: 0``) so
+    tests that seed a single pending transcript without running sync still
+    exercise the full curator path. The age fallback fires unconditionally
+    because the test's transcript mtime is older than now.
     """
     from lore_core.state.attachments import Attachment, AttachmentsFile
 
     lore_root = tmp_path / "vault"
     wiki_dir = lore_root / "wiki" / wiki_name
     (wiki_dir / "sessions").mkdir(parents=True)
-    (wiki_dir / ".lore-wiki.yml").write_text("curator:\n  threshold_pending: 1\n")
+    (wiki_dir / ".lore-wiki.yml").write_text(
+        "curator:\n  threshold_pending_turns: 1\n  max_pending_age_s: 0\n"
+    )
     (lore_root / ".lore").mkdir(parents=True, exist_ok=True)
 
     work = tmp_path / "work" / "project-a"

@@ -86,6 +86,12 @@ class NoteworthyResult:
     entities: list[str] = field(default_factory=list)  # wikilink candidates
     decisions: list[str] = field(default_factory=list) # one-liners; empty list if none
     loose_ends: list[str] = field(default_factory=list)  # past-tense / stative bullets; never TODOs
+    # Provenance — what LLM produced this verdict. Empty when the cascade
+    # short-circuited and no LLM was called (cascade_trivial). The session
+    # filer surfaces these into the note's frontmatter so model swaps can
+    # be tracked retroactively.
+    llm_backend: str = ""           # e.g. "subscription" | "openai" | "sdk"
+    llm_model: str = ""             # the resolved model id from the response
 
 
 def classify_slice(
@@ -177,6 +183,14 @@ def classify_slice(
     # Extract the tool_use block's input — that's our structured result
     data = _extract_tool_input(resp)
     result = _data_to_result(data)
+
+    # Stamp provenance: which backend/model produced this verdict.
+    # Falls back to the resolver's model id if the response doesn't echo
+    # one (some OpenAI-compatible endpoints elide it on tool-use replies).
+    backend_name = getattr(llm_client, "backend_name", "") or ""
+    response_model = getattr(resp, "model", "") or model
+    from dataclasses import replace as _dc_replace
+    result = _dc_replace(result, llm_backend=backend_name, llm_model=response_model)
 
     if logger is not None:
         try:

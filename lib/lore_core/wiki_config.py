@@ -26,8 +26,14 @@ class CuratorCConfig:
 
 @dataclass
 class CuratorConfig:
-    threshold_pending: int = 10
-    threshold_tokens: int = 50_000
+    # Spawn gate — Curator A fires when EITHER condition is true per wiki:
+    #   new_turns ≥ threshold_pending_turns   (sum across pending entries)
+    #   oldest_pending_age ≥ max_pending_age_s
+    # Replaces the v0.24-and-earlier ``threshold_pending`` (transcript count)
+    # and ``threshold_tokens`` (declared but never wired). Old keys land in
+    # _merge's unknown-key path and emit a deprecation warning.
+    threshold_pending_turns: int = 30
+    max_pending_age_s: int = 600
     a_noteworthy_tier: str = "middle"    # middle | simple
     curator_a_cooldown_s: int = 60
     curator_b_cooldown_s: int = 300

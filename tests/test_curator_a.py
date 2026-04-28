@@ -173,15 +173,16 @@ def _seed_ledger(
 def _setup_wiki(lore_root: Path, wiki_name: str = "private", *, threshold: int = 1) -> Path:
     """Create minimal wiki directory structure.
 
-    Writes a ``.lore-wiki.yml`` with ``curator.threshold_pending = 1`` by
-    default so tests that seed a single pending transcript aren't gated
-    by the P2 per-wiki threshold. Override by passing ``threshold=...``.
+    Writes a ``.lore-wiki.yml`` with ``curator.threshold_pending_turns = threshold``
+    AND ``max_pending_age_s: 0`` so the gate fires unconditionally when a
+    test seeds a pending transcript without running sync (which would
+    populate ``total_turns``). The age fallback covers the cold-start gap.
     """
     wiki_dir = lore_root / "wiki" / wiki_name
     wiki_dir.mkdir(parents=True, exist_ok=True)
     (wiki_dir / "sessions").mkdir(exist_ok=True)
     (wiki_dir / ".lore-wiki.yml").write_text(
-        f"curator:\n  threshold_pending: {threshold}\n"
+        f"curator:\n  threshold_pending_turns: {threshold}\n  max_pending_age_s: 0\n"
     )
     return wiki_dir
 
@@ -883,7 +884,7 @@ def test_run_curator_a_creates_run_log(tmp_path):
 
 def _write_wiki_cfg(wiki_dir: Path, *, threshold: int) -> None:
     (wiki_dir / ".lore-wiki.yml").write_text(
-        f"curator:\n  threshold_pending: {threshold}\n"
+        f"curator:\n  threshold_pending_turns: {threshold}\n  max_pending_age_s: 0\n"
     )
 
 

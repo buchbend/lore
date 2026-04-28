@@ -29,12 +29,14 @@ import json
 import os
 import shutil
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from lore_core.io import atomic_write_text
 from lore_core.ledger import TranscriptLedger
 from lore_core.scope_resolver import resolve_scope
 from lore_core.state.attachments import AttachmentsFile
+from lore_core.types import TranscriptHandle
 
 
 # Line-equality set for ``.gitignore`` — we treat these as "already
@@ -171,6 +173,25 @@ def _copy_transcript_atomically(src: Path, dst: Path) -> None:
     os.replace(tmp, dst)
 
 
+def _count_turns_via_adapter(integration: str, handle: TranscriptHandle) -> int:
+    """Count total turns in a transcript via the registered adapter.
+
+    Used by sync to stamp ``total_turns`` on the ledger entry — the
+    spawn-gate metric. Returns 0 on any failure (unknown integration,
+    parse error, missing file). 0 means "unknown"; the gate's age
+    fallback covers the cold-start staleness window.
+    """
+    try:
+        from lore_adapters import get_adapter
+        adapter = get_adapter(integration)
+    except Exception:
+        return 0
+    try:
+        return sum(1 for _ in adapter.read_slice(handle, 0))
+    except Exception:
+        return 0
+
+
 def _needs_copy(src: Path, dst: Path) -> bool:
     """True when ``dst`` is missing or older than ``src``."""
     if not dst.exists():
@@ -254,24 +275,45 @@ def sync_transcripts(
             continue
 
         dst = wiki_dir / ".transcripts" / f"{entry.transcript_id}.jsonl"
-        if not _needs_copy(src, dst):
-            result.skipped += 1
-            continue
-
-        try:
-            _copy_transcript_atomically(src, dst)
-            result.copied += 1
+        copied_now = False
+        if _needs_copy(src, dst):
             try:
-                from lore_core.drain import SYSTEM_SESSION, DrainStore
+                _copy_transcript_atomically(src, dst)
+                copied_now = True
+                result.copied += 1
+                try:
+                    from lore_core.drain import SYSTEM_SESSION, DrainStore
 
-                DrainStore(lore_root, SYSTEM_SESSION).emit(
-                    "transcript-synced",
-                    wiki=scope.wiki,
-                    transcript_id=entry.transcript_id,
+                    DrainStore(lore_root, SYSTEM_SESSION).emit(
+                        "transcript-synced",
+                        wiki=scope.wiki,
+                        transcript_id=entry.transcript_id,
+                    )
+                except Exception:
+                    pass  # drain is telemetry — never block the sync
+            except OSError as exc:
+                result.errors.append(f"{entry.transcript_id}: {exc}")
+                continue
+        else:
+            result.skipped += 1
+
+        # Refresh total_turns when the file changed, or backfill on legacy
+        # entries (total_turns == 0). The gate reads this without I/O, so
+        # keeping it fresh here is what makes heartbeat-time spawn cheap.
+        if copied_now or entry.total_turns == 0:
+            try:
+                handle = TranscriptHandle(
+                    integration=entry.integration,
+                    id=entry.transcript_id,
+                    path=dst,
+                    cwd=entry.directory,
+                    mtime=datetime.fromtimestamp(dst.stat().st_mtime, tz=UTC),
                 )
-            except Exception:
-                pass  # drain is telemetry — never block the sync
-        except OSError as exc:
-            result.errors.append(f"{entry.transcript_id}: {exc}")
+            except OSError:
+                continue
+            new_total = _count_turns_via_adapter(entry.integration, handle)
+            if new_total != entry.total_turns:
+                entry.total_turns = new_total
+                ledger.upsert(entry)
 
     return result

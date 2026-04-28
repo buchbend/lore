@@ -72,9 +72,11 @@ def _setup_lore_root(tmp_path: Path, wiki_name: str = "private") -> tuple[Path, 
     lore_root = tmp_path / "vault"
     wiki_dir = lore_root / "wiki" / wiki_name
     (wiki_dir / "sessions").mkdir(parents=True)
-    # P2: per-wiki threshold gate. Tests seed one pending transcript,
-    # so lower the threshold to 1.
-    (wiki_dir / ".lore-wiki.yml").write_text("curator:\n  threshold_pending: 1\n")
+    # Per-wiki gate is turns-OR-age. Subprocess test seeds one pending
+    # transcript without running sync; force-fire via the age fallback.
+    (wiki_dir / ".lore-wiki.yml").write_text(
+        "curator:\n  threshold_pending_turns: 1\n  max_pending_age_s: 0\n"
+    )
     (lore_root / ".lore").mkdir(parents=True, exist_ok=True)
 
     work = tmp_path / "work" / "project-a"

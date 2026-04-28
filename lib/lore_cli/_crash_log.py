@@ -27,13 +27,42 @@ def _crash_dir() -> Path:
     return Path(base) / "crashes"
 
 
+def _is_dev_invocation() -> bool:
+    """True when this process is a developer-side invocation that shouldn't
+    pollute the real crash log.
+
+    Two cases produce noise that masks real production hook crashes from
+    `lore doctor` and the maintainer's signal:
+
+    * **pytest test runs** — tests intentionally simulate hook failures
+      to verify the crash-handling pipeline (see ``test_directive_template.py``).
+      Those simulated tracebacks land in the user's real ``~/.cache/lore/crashes/``
+      and inflate the doctor count.
+    * **manual --dry-run debugging** — when a user runs
+      ``lore curator run --dry-run`` to investigate a backend, any
+      transient failure (missing dep, bad config) writes a crash entry
+      that's not actually a hook bug.
+
+    Detection is conservative — only filter when the signal is unambiguous.
+    """
+    argv0 = (sys.argv[0] if sys.argv else "") or ""
+    if "pytest" in argv0:
+        return True
+    if "--dry-run" in sys.argv:
+        return True
+    return False
+
+
 def write_crash(event: str, exc: BaseException) -> Path | None:
     """Write a timestamped traceback file. Returns the path, or None on
     secondary failure (cache unwritable, disk full, etc.).
 
     ``event`` is a short label (``SessionStart``, ``main``, …). It is
-    sanitized for filesystem safety.
+    sanitized for filesystem safety. Returns ``None`` (silently skipped)
+    when this is a developer-side invocation — see :func:`_is_dev_invocation`.
     """
+    if _is_dev_invocation():
+        return None
     safe_event = "".join(c if c.isalnum() or c in "-_" else "_" for c in event) or "unknown"
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = _crash_dir() / f"{ts}-{safe_event}.log"

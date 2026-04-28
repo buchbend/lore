@@ -392,10 +392,16 @@ def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_
 def test_capture_does_not_spawn_when_under_threshold(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:
-    """capture does NOT spawn when pending < threshold (default 3)."""
+    """capture does NOT spawn when below the gate (turns + age both under).
+
+    Uses event=session-start so we exercise the gate rather than the
+    session-end force_eos path (which spawns regardless of the gate as
+    a handover guarantee).
+    """
     project = _make_attached_project(tmp_path)
 
-    # Only 1 pending transcript — below threshold of 3.
+    # Only 1 pending transcript with no turn data — below default
+    # threshold_pending_turns=30 and within max_pending_age_s=600.
     handle = _make_handle(project)
     fake_adapter_factory([handle])
 
@@ -407,7 +413,7 @@ def test_capture_does_not_spawn_when_under_threshold(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
+        ["capture", "--event", "session-start", "--cwd", str(project), "--integration", "fake"],
         env={"LORE_ROOT": str(project)},
         catch_exceptions=False,
     )
@@ -954,8 +960,10 @@ def _make_two_wiki_lore_root(
     """Create a lore_root with two attached projects + two wiki dirs.
 
     Returns (lore_root, proj_a, proj_b). The per-wiki `.lore-wiki.yml`
-    files set distinct `curator.threshold_pending` values so we can
-    verify each wiki's threshold is honoured independently.
+    files set distinct `curator.threshold_pending_turns` values so we can
+    verify each wiki's threshold is honoured independently. Age fallback
+    is left at default (600s) so the threshold-turns arm is what's
+    actually being exercised — test transcripts have fresh mtimes.
     """
     lore_root = root / "lore_root"
     lore_root.mkdir()
@@ -964,7 +972,7 @@ def _make_two_wiki_lore_root(
         wiki_dir = lore_root / "wiki" / name
         wiki_dir.mkdir(parents=True)
         (wiki_dir / ".lore-wiki.yml").write_text(
-            f"curator:\n  threshold_pending: {threshold}\n"
+            f"curator:\n  threshold_pending_turns: {threshold}\n"
         )
 
     proj_a = lore_root / "proj_a"
@@ -993,14 +1001,18 @@ def _make_two_wiki_lore_root(
 def test_capture_spawns_when_any_wiki_crosses_threshold(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:
-    """One wiki (alpha, threshold=2) has 2 pending; other (beta, threshold=10) has 1.
-    The capture hook runs in proj_b's cwd but must still spawn because alpha crosses."""
+    """One wiki (alpha, threshold=2 turns) has 2 turns pending; other (beta, threshold=10) has 0.
+    The capture hook runs in proj_b's cwd but must still spawn because alpha crosses.
+
+    Uses event=session-start so the test exercises the threshold-gate path
+    rather than the session-end force_eos path (which spawns regardless).
+    """
     lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
         tmp_path, alpha_threshold=2, beta_threshold=10
     )
 
     ledger = TranscriptLedger(lore_root)
-    # Two pending entries for alpha (pre-seed).
+    # Two pending entries for alpha — each with 1 turn so the wiki sums to 2.
     for i in range(2):
         ledger.upsert(
             TranscriptLedgerEntry(
@@ -1015,6 +1027,7 @@ def test_capture_spawns_when_any_wiki_crosses_threshold(
                 curator_a_run=None,
                 noteworthy=None,
                 session_note=None,
+                total_turns=1,
             )
         )
 
@@ -1030,7 +1043,7 @@ def test_capture_spawns_when_any_wiki_crosses_threshold(
 
     result = runner.invoke(
         hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(proj_b), "--integration", "fake"],
+        ["capture", "--event", "session-start", "--cwd", str(proj_b), "--integration", "fake"],
         env={"LORE_ROOT": str(lore_root)},
         catch_exceptions=False,
     )
@@ -1044,8 +1057,13 @@ def test_capture_spawns_when_any_wiki_crosses_threshold(
 def test_capture_no_spawn_when_no_wiki_crosses_its_threshold(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:
-    """Neither wiki crosses its per-wiki threshold → no spawn, even with
-    multiple pending entries globally."""
+    """Neither wiki crosses its per-wiki turns threshold → no spawn, even
+    with multiple pending entries globally.
+
+    Uses event=session-start so we exercise the gate rather than the
+    session-end force_eos path. Each seeded entry has total_turns=1 and
+    fresh mtime, keeping the age fallback well below default 600s.
+    """
     lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
         tmp_path, alpha_threshold=5, beta_threshold=5
     )
@@ -1065,9 +1083,10 @@ def test_capture_no_spawn_when_no_wiki_crosses_its_threshold(
                 curator_a_run=None,
                 noteworthy=None,
                 session_note=None,
+                total_turns=1,
             )
         )
-    # Add 3 to beta — global count is 6, but no single wiki crosses 5.
+    # Add 3 to beta — 3 turns each side, neither crosses 5.
     for i in range(3):
         ledger.upsert(
             TranscriptLedgerEntry(
@@ -1082,8 +1101,87 @@ def test_capture_no_spawn_when_no_wiki_crosses_its_threshold(
                 curator_a_run=None,
                 noteworthy=None,
                 session_note=None,
+                total_turns=1,
             )
         )
+
+    handle = _make_handle(proj_a, transcript_id="new1")
+    fake_adapter_factory([handle])
+
+    spawn_calls: list[Path] = []
+    monkeypatch.setattr(
+        "lore_cli.hooks._spawn_detached_curator_a",
+        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
+    )
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-start", "--cwd", str(proj_a), "--integration", "fake"],
+        env={"LORE_ROOT": str(lore_root)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert len(spawn_calls) == 0, (
+        "No single wiki crossed its threshold — global pending (6) must "
+        "not trigger a spawn."
+    )
+
+
+def test_capture_threshold_zero_empty_wiki_does_not_spawn(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """Guard the edge case: threshold_pending_turns=0 AND wiki empty → no spawn.
+    Without the empty-bucket guard, ``0 >= 0`` would incorrectly trip."""
+    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
+        tmp_path, alpha_threshold=0, beta_threshold=10
+    )
+
+    # No pending entries anywhere. Adapter returns nothing either (empty list).
+    fake_adapter_factory([])
+
+    spawn_calls: list[Path] = []
+    monkeypatch.setattr(
+        "lore_cli.hooks._spawn_detached_curator_a",
+        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
+    )
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-start", "--cwd", str(proj_a), "--integration", "fake"],
+        env={"LORE_ROOT": str(lore_root)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert len(spawn_calls) == 0, "Empty wiki with threshold=0 must not spawn."
+
+
+def test_capture_session_end_force_spawns_below_threshold(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """Handover guarantee: session-end with pending > 0 must spawn even when
+    no wiki crosses the gate. Otherwise short sessions leave work stranded
+    waiting for the next session-start to cross threshold."""
+    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
+        tmp_path, alpha_threshold=100, beta_threshold=100
+    )
+
+    ledger = TranscriptLedger(lore_root)
+    ledger.upsert(
+        TranscriptLedgerEntry(
+            integration="fake",
+            transcript_id="a0",
+            path=proj_a / "a0.jsonl",
+            directory=proj_a,
+            digested_hash=None,
+            digested_index_hint=None,
+            synthesised_hash=None,
+            last_mtime=_now(),
+            curator_a_run=None,
+            noteworthy=None,
+            session_note=None,
+            total_turns=1,  # well below threshold of 100
+        )
+    )
 
     handle = _make_handle(proj_a, transcript_id="new1")
     fake_adapter_factory([handle])
@@ -1101,38 +1199,9 @@ def test_capture_no_spawn_when_no_wiki_crosses_its_threshold(
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
-    assert len(spawn_calls) == 0, (
-        "No single wiki crossed its threshold — global pending (6) must "
-        "not trigger a spawn."
+    assert len(spawn_calls) == 1, (
+        "session-end with any pending must force-spawn regardless of gate."
     )
-
-
-def test_capture_threshold_zero_empty_wiki_does_not_spawn(
-    tmp_path: Path, fake_adapter_factory, monkeypatch
-) -> None:
-    """Guard the edge case: threshold_pending=0 AND wiki empty → no spawn.
-    Without the `len > 0` guard, `0 >= 0` would incorrectly trip."""
-    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
-        tmp_path, alpha_threshold=0, beta_threshold=10
-    )
-
-    # No pending entries anywhere. Adapter returns nothing either (empty list).
-    fake_adapter_factory([])
-
-    spawn_calls: list[Path] = []
-    monkeypatch.setattr(
-        "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
-    )
-
-    result = runner.invoke(
-        hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(proj_a), "--integration", "fake"],
-        env={"LORE_ROOT": str(lore_root)},
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0, result.output
-    assert len(spawn_calls) == 0, "Empty wiki with threshold=0 must not spawn."
 
 
 def test_capture_emits_pending_by_wiki_in_hook_event(

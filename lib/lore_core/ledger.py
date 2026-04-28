@@ -36,6 +36,7 @@ class TranscriptLedgerEntry:
     noteworthy: bool | None
     session_note: str | None  # wikilink, e.g. "[[2026-04-19-slug]]"
     orphan: bool = False  # cwd permanently gone; excluded from pending()
+    total_turns: int = 0  # turns observed at last sync; gate metric for spawn
 
 
 @dataclass
@@ -123,6 +124,7 @@ class TranscriptLedger:
             "noteworthy": e.noteworthy,
             "session_note": e.session_note,
             "orphan": e.orphan,
+            "total_turns": e.total_turns,
         }
 
     @staticmethod
@@ -147,6 +149,7 @@ class TranscriptLedger:
             noteworthy=raw.get("noteworthy"),
             session_note=raw.get("session_note"),
             orphan=raw.get("orphan", False),
+            total_turns=raw.get("total_turns", 0),
         )
 
     def all_entries(self) -> list[TranscriptLedgerEntry]:

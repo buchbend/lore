@@ -10,6 +10,102 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Fixed (BREAKING — `.lore.yml` walk-up semantics)
+
+- **`.lore.yml` no longer auto-applies to descendant directories.**
+  Closes #24 ("Stop filesystem walk-up in find_lore_yml to prevent bleed
+  into unattached repos"). Previously a nested git repo silently
+  inherited a parent's `.lore.yml`, triggering unsolicited SessionStart
+  prompts and wizard flows in repos the user never attached. The walk-up
+  is now gated by an explicit opt-in: an ancestor `.lore.yml` only
+  applies to descendants when it sets **`inherit: true`**.
+
+  **Migration**: setups where one `.lore.yml` covers multiple sibling
+  repos under a workspace directory (e.g. `/home/.../orgs/ccatobs/`)
+  need to add `inherit: true` to that file to keep working. Without it,
+  descendants will see no offer and Lore will be inert in them — which
+  is the correct behavior for the bleed case but breaks intentional
+  workspace setups until the flag is added.
+
+  Already-attached subtrees are unaffected: once a repo is registered
+  in `attachments.json`, descendants continue to classify as ATTACHED
+  regardless of `inherit`. The flag only governs the OFFERED-prompt
+  surface, which is where the bleed entered.
+
+  Also adds `find_lore_yml_raw` for diagnostic-only path discovery and
+  improves the `lore attach accept`/`decline` error message when the
+  hit case is "parent without `inherit: true`" rather than "no file
+  found at all". The wizard prints "Inherited from {path}" when the
+  applicable offer was discovered via inheritance.
+
+## [0.26.0] - 2026-04-28
+
+### Changed (BREAKING — config field rename)
+
+- **Curator A spawn gate is now turn-aware with an age fallback, and
+  fires from `UserPromptSubmit` (every prompt) in addition to session
+  boundaries.** A 4-hour active session in a single repo could
+  previously sit on megabytes of unfiled work because `threshold_pending`
+  counted *transcripts* (one per session, growing in place) rather
+  than turns. The new gate is per-wiki:
+
+      sum(total_turns − digested_index_hint) ≥ threshold_pending_turns
+        OR  oldest pending mtime ≥ max_pending_age_s
+
+  Defaults: `threshold_pending_turns: 30`, `max_pending_age_s: 600`.
+  The `threshold_tokens: 50_000` field (declared in `wiki_config.py`
+  since v0.6 but never read by the spawn-decision code) is dropped —
+  turns are the unit of work.
+
+  **Migration**: existing `.lore-wiki.yml` files setting
+  `threshold_pending` or `threshold_tokens` will warn-and-ignore on
+  load (the existing unknown-key path in `_load_with_warnings`).
+  Rewrite to `threshold_pending_turns: 30` for the rough equivalent —
+  or lower for snappier filing.
+
+- **Session-end / pre-compact handover guarantee.** Both events now
+  unconditionally spawn Curator A when there is *any* pending work,
+  bypassing the gate. This stops short sessions from leaving unfiled
+  work stranded for the next session-start to clear. Outcome label
+  in `hook-events.jsonl` is `spawned-curator-eos` to distinguish
+  from the gate-driven `spawned-curator`.
+
+### Added
+
+- **`llm_backend` and `llm_model` provenance in note frontmatter.**
+  Curator A and Curator B notes now record which LLM produced them
+  (e.g. `llm_backend: openai`, `llm_model: Mistral Small 4 119B 2603 KI:EZ`).
+  Makes regression triage possible after backend swaps. Empty on
+  cascade-trivial early-return paths (no LLM was called).
+
+- **`lore doctor` `pending` row.** Surfaces gate-readiness per wiki
+  at a glance: `<wiki>: N pending, T/threshold_t turns, oldest A/B s
+  [spawn|wait]`. Answers "why isn't curator A firing?" without
+  ledger grep.
+
+- **`total_turns` field on `TranscriptLedgerEntry`.** Stamped by
+  `transcripts sync` when files change (or backfilled lazily for
+  legacy entries). Drives the gate without per-evaluation file I/O,
+  so the every-prompt heartbeat stays cheap.
+
+- **Mid-session `_heartbeat_spawn_curator_a`** — every
+  UserPromptSubmit hook evaluates the gate for the current wiki and
+  spawns Curator A on its own 120s cooldown. Combined with the
+  existing 60s spawn-lock, two layers of rate-limiting prevent
+  storms regardless of prompt cadence.
+
+### Fixed
+
+- **Crash log no longer pollutes `~/.cache/lore/crashes/` from
+  pytest runs and `--dry-run` debug invocations.** Today's
+  `lore doctor` reports "21 hook crashes in 7 days" because test
+  fakes that simulate hook failures (e.g.
+  `tests/test_directive_template.py`) write through to the real
+  cache, and any `lore curator run --dry-run` that fails for a
+  transient config reason adds another. `_crash_log.write_crash`
+  now skips the write when `argv[0]` contains `pytest` or
+  `--dry-run` is in argv.
+
 ## [0.25.1] - 2026-04-28
 
 ### Fixed

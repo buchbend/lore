@@ -134,11 +134,13 @@ def _minimal_curator_a_setup(tmp_path: Path):
     _af.save()
     wiki_dir = tmp_path / "wiki" / "private"
     (wiki_dir / "sessions").mkdir(parents=True)
-    # P2: Curator A gates per-wiki by threshold_pending. Default is 10, and
-    # this fixture only seeds one pending transcript — set threshold=1 so
-    # the test actually exercises the classification / ledger-write path.
+    # Curator A gates per-wiki by turn count OR pending age. Tests seed
+    # one transcript without populating total_turns (sync isn't run), so
+    # the turns arm reads zero — set max_pending_age_s=0 so the age arm
+    # always trips. threshold_pending_turns=1 covers the case where a
+    # later test does populate total_turns.
     (wiki_dir / ".lore-wiki.yml").write_text(
-        "curator:\n  threshold_pending: 1\n"
+        "curator:\n  threshold_pending_turns: 1\n  max_pending_age_s: 0\n"
     )
 
     turns = [

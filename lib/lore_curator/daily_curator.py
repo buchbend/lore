@@ -182,6 +182,23 @@ def run_curator_b(
                                 wiki_root / plural_dir / f"<dry-run:{_short_slug(ab.title)}>.md"
                             )
                             continue
+                        # Stamp backend/model provenance so we can diagnose
+                        # surface regressions across model swaps. Tier
+                        # mirrors the abstract_cluster choice (high → middle
+                        # when high tier is off).
+                        ab_extra = dict(ab.extra_frontmatter)
+                        backend_name = (
+                            getattr(llm_client, "backend_name", "") or ""
+                        )
+                        if backend_name:
+                            ab_extra.setdefault("llm_backend", backend_name)
+                        try:
+                            ab_tier = "middle" if high_tier_off else "high"
+                            ab_model = model_resolver(ab_tier)
+                            if ab_model:
+                                ab_extra.setdefault("llm_model", ab_model)
+                        except Exception:
+                            pass
                         try:
                             filed = file_surface(
                                 surface_name=ab.surface_name,
@@ -190,7 +207,7 @@ def run_curator_b(
                                 sources=cluster.session_notes,
                                 wiki_root=wiki_root,
                                 surfaces_doc=surfaces_doc,
-                                extra_frontmatter=ab.extra_frontmatter,
+                                extra_frontmatter=ab_extra,
                                 now=now,
                             )
                             result.surfaces_emitted.append(filed.path)

@@ -15,6 +15,12 @@ These tests cover three layers:
 3. ``__main__.main()``'s top-level except writes a crash file AND
    emits a hook-shaped JSON envelope when argv is a hook call (so
    Claude Code shows a banner, not a traceback).
+
+The ``_disable_dev_filter`` fixture is autouse: ``write_crash`` skips
+writes when invoked from ``pytest`` or ``--dry-run`` argv (so test
+fakes and local debug runs don't pollute the user's real crash dir),
+but the tests below need the write path to actually fire — they
+explicitly cover that path.
 """
 
 from __future__ import annotations
@@ -23,6 +29,20 @@ import json
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _disable_dev_filter(monkeypatch):
+    """Bypass the pytest/--dry-run skip in write_crash for this test module.
+
+    The skip exists so simulated test failures don't land in
+    ``~/.cache/lore/crashes/`` and inflate ``lore doctor``'s count.
+    But these tests are exactly the ones that exercise the write
+    path, so they need to opt out.
+    """
+    monkeypatch.setattr(
+        "lore_cli._crash_log._is_dev_invocation", lambda: False
+    )
 
 
 def test_write_crash_persists_traceback(tmp_path, monkeypatch):
@@ -44,6 +64,29 @@ def test_write_crash_persists_traceback(tmp_path, monkeypatch):
     # Timestamped under the configured cache root.
     assert path.parent == tmp_path / "crashes"
     assert path.name.endswith("-SessionStart.log")
+
+
+def test_write_crash_skipped_when_pytest_in_argv(tmp_path, monkeypatch):
+    """pytest test runs intentionally simulate hook failures (see
+    ``test_directive_template.py``). Their tracebacks must NOT land in
+    the user's real ``~/.cache/lore/crashes/`` and inflate
+    ``lore doctor``'s reported crash count.
+    """
+    # Override the autouse fixture for THIS test only — we want the
+    # dev-invocation filter active here.
+    monkeypatch.setattr(
+        "lore_cli._crash_log._is_dev_invocation", lambda: True
+    )
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path))
+    from lore_cli._crash_log import write_crash
+
+    try:
+        raise RuntimeError("simulated test failure")
+    except RuntimeError as exc:
+        path = write_crash("SessionStart", exc)
+    assert path is None
+    crash_dir = tmp_path / "crashes"
+    assert not crash_dir.exists() or not list(crash_dir.iterdir())
 
 
 def test_write_crash_returns_none_on_unwritable_cache(tmp_path, monkeypatch):
