@@ -16,6 +16,7 @@ and by ``lore detach`` to strip legacy ``## Lore`` CLAUDE.md sections.
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
@@ -171,7 +172,13 @@ def _do_accept(lore_root: Path, cwd_path: Path) -> None:
         f"[green]Attached[/green] {repo_root} → wiki [cyan]{offer.wiki}[/cyan], "
         f"scope [magenta]{offer.scope}[/magenta]"
     )
-    _print_post_attach_guidance(lore_root, offer.wiki)
+    stub = _maybe_stub_project_note(
+        lore_root=lore_root,
+        wiki=offer.wiki,
+        repo_root=repo_root,
+        scope=offer.scope,
+    )
+    _print_post_attach_guidance(lore_root, offer.wiki, stub=stub)
 
 
 def _do_decline(lore_root: Path, cwd_path: Path) -> None:
@@ -234,10 +241,18 @@ def _do_manual(lore_root: Path, cwd_path: Path, wiki: str, scope: str) -> None:
         f"[green]Attached[/green] {cwd_path} → wiki [cyan]{wiki}[/cyan], "
         f"scope [magenta]{scope}[/magenta] (manual)"
     )
-    _print_post_attach_guidance(lore_root, wiki)
+    stub = _maybe_stub_project_note(
+        lore_root=lore_root,
+        wiki=wiki,
+        repo_root=cwd_path,
+        scope=scope,
+    )
+    _print_post_attach_guidance(lore_root, wiki, stub=stub)
 
 
-def _print_post_attach_guidance(lore_root: Path, wiki: str) -> None:
+def _print_post_attach_guidance(
+    lore_root: Path, wiki: str, *, stub: "StubOutcome | None" = None
+) -> None:
     from lore_core.config import get_wiki_root
     try:
         wiki_sessions = get_wiki_root() / wiki / "sessions"
@@ -246,10 +261,81 @@ def _print_post_attach_guidance(lore_root: Path, wiki: str) -> None:
     console.print()
     console.print("  [dim]What happens now:[/dim]")
     console.print("  [dim]* Future sessions here will be captured automatically[/dim]")
+    if stub is not None:
+        if stub.new_link:
+            # Quiet sub-bullet: only printed when a NEW project note was
+            # stubbed. Idempotent re-stubs emit nothing — the user
+            # already knows the note exists.
+            console.print(
+                f"  [dim]* Auto-stubbed project note:[/dim] [[{stub.new_link}]]"
+            )
+        elif stub.error_kind:
+            # Visible-but-quiet failure signal — not a crash, but the
+            # user (or operator running lore doctor) gets a thread to
+            # pull. Beats silent "nothing happened."
+            console.print(
+                f"  [dim]* Project-note stub skipped ({stub.error_kind}); "
+                "see lore doctor[/dim]"
+            )
     console.print(f"  [dim]* Notes will appear in[/dim] {wiki_sessions}/")
     console.print("  [dim]* Historical sessions are not processed[/dim] (run [cyan]lore backfill[/cyan] to import past work)")
     console.print()
     console.print("  [dim]Verify: start a new Claude Code session, then[/dim] [cyan]lore status[/cyan]")
+
+
+@dataclass(frozen=True)
+class StubOutcome:
+    """Three states `_print_post_attach_guidance` distinguishes.
+
+    Without this distinction a stub failure was silent: ``None`` could
+    mean either "note already exists, refreshed in place" or "stub
+    generator crashed." Operators couldn't tell whether to investigate.
+    """
+
+    new_link: str | None = None  # set when a NEW note was created
+    error_kind: str | None = None  # set on real exception (defensive path)
+
+
+def _maybe_stub_project_note(
+    *,
+    lore_root: Path,
+    wiki: str,
+    repo_root: Path,
+    scope: str | None,
+) -> StubOutcome:
+    """Auto-stub a project note for the just-attached repo. Best-effort.
+
+    Returns a :class:`StubOutcome` so the caller can distinguish
+    idempotent no-op from actual failure — silent failure on attach
+    is exactly the kind of bug nobody discovers until the
+    project-note feature appears broken weeks later.
+    """
+    try:
+        from lore_core.config import get_wiki_root
+        from lore_core.git import current_repo
+        from lore_core.projects.stub_generator import stub_project_note
+
+        try:
+            wiki_root = get_wiki_root() / wiki
+        except Exception:
+            wiki_root = lore_root / "wiki" / wiki
+
+        repo_slug = current_repo(repo_root)
+        if not repo_slug:
+            # Repo doesn't have a recognizable origin; fall back to dir name.
+            repo_slug = repo_root.name
+
+        result = stub_project_note(
+            wiki_root=wiki_root,
+            repo_root=repo_root,
+            repo_slug=repo_slug,
+            scope=scope,
+        )
+        if result.was_new:
+            return StubOutcome(new_link=result.path.stem)
+        return StubOutcome()  # idempotent no-op
+    except Exception as exc:  # noqa: BLE001 — never fail attach on stub error
+        return StubOutcome(error_kind=type(exc).__name__)
 
 
 # ---- Interactive wizard ----
