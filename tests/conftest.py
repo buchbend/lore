@@ -39,3 +39,22 @@ import pytest
 @pytest.fixture(autouse=True)
 def _default_noteworthy_mode_llm_only(monkeypatch):
     monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_config(tmp_path_factory, monkeypatch):
+    """Fake ``$HOME`` and wipe ``$XDG_CONFIG_HOME`` for every test so the
+    LORE_ROOT resolver never reads the developer's real
+    ``~/.config/lore/config.yml`` (issue #6 added a config-file fallback).
+
+    POSIX-only assumption: ``Path.home()`` reads ``$HOME``, so ``setenv``
+    suffices. We deliberately do NOT monkeypatch ``pathlib.Path.home``
+    directly — the repo has 20+ unrelated callsites (cache, install,
+    adapters), and ``briefing/sinks/matrix.py`` evaluates ``Path.home()``
+    at import time where a fixture cannot reach it. Limiting the
+    isolation to env vars keeps the blast radius bounded.
+    """
+    fake_home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    yield

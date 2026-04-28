@@ -1,48 +1,170 @@
 """Configuration — where the vault lives.
 
-Resolves LORE_ROOT from the environment. Default: ~/lore. Set LORE_ROOT
-to the root of any existing markdown vault that matches the canonical
-shape (a directory with a `wiki/` subfolder containing one or more
-mounted wikis).
+Resolves LORE_ROOT in this order:
 
-Two resolvers are exported:
+1. ``$LORE_ROOT`` env var (whitespace-stripped, non-empty)
+2. ``~/.config/lore/config.yml`` (or ``$XDG_CONFIG_HOME/lore/config.yml``)
+   with a top-level ``lore_root: <path>`` key
+3. Default ``~/lore``
 
-- :func:`get_lore_root` — silently defaults to ``~/lore`` when env is
-  unset. Use when "any LORE_ROOT is fine, just compute it."
-- :func:`require_lore_root` — raises :class:`LoreRootNotSet` or
-  :class:`LoreRootMissing` when env is unset or points at a missing
-  directory. Use in CLI commands and other entrypoints that need the
-  user to have explicitly set up a vault.
+The config-file fallback exists for hosts where setting an env var
+per-shell isn't ergonomic (Cursor, Codex, Gemini — see issue #6).
+
+Four resolvers are exported:
+
+- :func:`resolve_lore_root` — returns ``Path | None``; ``None`` iff
+  neither env nor config-file provides a value. Use when the question
+  is "did the user explicitly configure a vault anywhere?"
+- :func:`get_lore_root` — silently defaults to ``~/lore`` when neither
+  env nor config-file is set. Use when "any path is fine, just compute
+  one."
+- :func:`require_lore_root` — raises :class:`LoreRootNotConfigured` or
+  :class:`LoreRootMissing`. Use in CLI entrypoints that need a real
+  vault present.
+- :func:`lore_root_source` — debug/display only; returns which source
+  the path came from. Provenance is *not* propagated to subprocesses
+  (children see ``LORE_ROOT`` injected by their parent and report
+  ``"env"``). Do not branch on this — use ``resolve_lore_root`` instead.
 """
 
 from __future__ import annotations
 
 import os
+import warnings
 from pathlib import Path
+from typing import Literal
+
+import yaml
 
 
 class LoreRootError(Exception):
     """Base class for resolver errors raised by :func:`require_lore_root`."""
 
 
-class LoreRootNotSet(LoreRootError):
-    """Raised when ``LORE_ROOT`` is unset or empty in the environment."""
+class LoreRootNotConfigured(LoreRootError):
+    """Neither ``$LORE_ROOT`` nor ``~/.config/lore/config.yml`` provides a value."""
+
+
+# Deprecated alias — kept one release for any external code catching it.
+LoreRootNotSet = LoreRootNotConfigured
 
 
 class LoreRootMissing(LoreRootError):
-    """Raised when ``LORE_ROOT`` is set but the path does not exist."""
+    """A value was provided but the resolved path doesn't exist."""
 
     def __init__(self, path: Path) -> None:
         super().__init__(f"LORE_ROOT does not exist: {path}")
         self.path = path
 
 
-def get_lore_root() -> Path:
-    """Resolve the Lore root directory from LORE_ROOT env var or default."""
-    env = os.environ.get("LORE_ROOT")
+# ---------------------------------------------------------------------------
+# Config-file (~/.config/lore/config.yml) reader
+# ---------------------------------------------------------------------------
+
+
+def user_config_path() -> Path:
+    """Resolve ``$XDG_CONFIG_HOME/lore/config.yml`` (or ``~/.config/lore/config.yml``).
+
+    Per the XDG spec, ``$XDG_CONFIG_HOME`` set to empty / whitespace-only /
+    a relative path is treated as unset (fall back to ``$HOME/.config``).
+    """
+    xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    xdg_path = Path(xdg) if xdg else None
+    if xdg_path is None or not xdg_path.is_absolute():
+        xdg_path = Path.home() / ".config"
+    return xdg_path / "lore" / "config.yml"
+
+
+def _read_lore_root_from_config() -> Path | None:
+    """Read ``lore_root`` from the user config file, or return ``None``.
+
+    Failure modes (all return ``None``; warn where the file is present
+    but unusable):
+
+    - File absent → silent
+    - OSError reading (directory, symlink loop, EACCES) → warn
+    - Malformed YAML → warn
+    - Top-level not a mapping → warn
+    - Unknown top-level keys → warn (but still try ``lore_root``)
+    - ``lore_root`` absent / null → silent (file may exist for future keys)
+    - ``lore_root`` non-string / empty / whitespace-only → warn (non-string only)
+    """
+    path = user_config_path()
+    if not path.exists():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        warnings.warn(f"config: cannot read {path}: {e}", stacklevel=3)
+        return None
+    try:
+        raw = yaml.safe_load(text) or {}
+    except yaml.YAMLError as e:
+        warnings.warn(f"config: malformed YAML at {path}: {e}", stacklevel=3)
+        return None
+    if not isinstance(raw, dict):
+        warnings.warn(
+            f"config: top-level must be a mapping at {path}", stacklevel=3
+        )
+        return None
+    for key in raw:
+        if key != "lore_root":
+            warnings.warn(f"config: unknown key {key!r} in {path}", stacklevel=3)
+    value = raw.get("lore_root")
+    if value is None:
+        return None  # missing or explicit-null — silent (forward-compat)
+    if not isinstance(value, str):
+        warnings.warn(
+            f"config: lore_root must be a string, got {type(value).__name__}",
+            stacklevel=3,
+        )
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    return Path(value).expanduser().resolve()
+
+
+# ---------------------------------------------------------------------------
+# Resolvers
+# ---------------------------------------------------------------------------
+
+# DO NOT @cache — both env and config file may change within a process
+# lifetime (long-running hooks; tests using monkeypatch). Re-resolution
+# on every call is intentional. If perf becomes a concern, cache with
+# an mtime-based invalidation key, not unconditionally.
+
+
+def _resolve_lore_root() -> tuple[Path | None, Literal["env", "config"] | None]:
+    """Single source of truth for resolution precedence.
+
+    Returns ``(path, source)`` where ``path`` is ``None`` iff neither
+    env nor config-file provides a value. Path is ``.expanduser().resolve()``;
+    existence is *not* checked here.
+    """
+    env = os.environ.get("LORE_ROOT", "").strip()
     if env:
-        return Path(env).expanduser().resolve()
-    return (Path.home() / "lore").resolve()
+        return Path(env).expanduser().resolve(), "env"
+    config = _read_lore_root_from_config()
+    if config is not None:
+        return config, "config"
+    return None, None
+
+
+def resolve_lore_root() -> Path | None:
+    """Return the configured Lore root, or ``None`` if unconfigured.
+
+    Use when the question is "did the user explicitly configure a vault
+    anywhere?" — env or config-file both count as configured.
+    """
+    path, _ = _resolve_lore_root()
+    return path
+
+
+def get_lore_root() -> Path:
+    """Resolve the Lore root, falling back to ``~/lore``. Always returns a path."""
+    path, _ = _resolve_lore_root()
+    return path or (Path.home() / "lore").resolve()
 
 
 def get_wiki_root() -> Path:
@@ -51,18 +173,34 @@ def get_wiki_root() -> Path:
 
 
 def require_lore_root() -> Path:
-    """Strict version of :func:`get_lore_root`.
+    """Strict resolver — raises if unconfigured or path missing.
 
-    Raises :class:`LoreRootNotSet` if ``LORE_ROOT`` is unset or empty,
-    :class:`LoreRootMissing` if it points at a path that does not
-    exist. Use in entrypoints that require the user to have explicitly
-    set up a vault, where silently falling back to ``~/lore`` would
-    mask a configuration error.
+    Raises :class:`LoreRootNotConfigured` if neither env nor config-file
+    provides a value, :class:`LoreRootMissing` if the resolved path does
+    not exist on disk. Use in entrypoints that need a real vault.
     """
-    env = os.environ.get("LORE_ROOT")
-    if not env:
-        raise LoreRootNotSet("LORE_ROOT is not set")
-    root = Path(env).expanduser().resolve()
-    if not root.exists():
-        raise LoreRootMissing(root)
-    return root
+    path, _ = _resolve_lore_root()
+    if path is None:
+        raise LoreRootNotConfigured(
+            "LORE_ROOT not configured "
+            "(neither $LORE_ROOT nor ~/.config/lore/config.yml is set)"
+        )
+    if not path.exists():
+        raise LoreRootMissing(path)
+    return path
+
+
+def lore_root_source() -> Literal["env", "config", "default"]:
+    """Debug/display only — DO NOT branch on this for control flow.
+
+    Returns which source resolved the value: ``"env"`` if ``$LORE_ROOT``
+    was set, ``"config"`` if the config file provided it, ``"default"``
+    if neither (caller falls back to ``~/lore``).
+
+    Provenance is per-process; subprocesses spawned with ``LORE_ROOT``
+    injected into their env see ``"env"`` regardless of how the parent
+    resolved. Use :func:`resolve_lore_root` when you need "is this
+    configured?" — that question survives process boundaries.
+    """
+    _, source = _resolve_lore_root()
+    return source or "default"
