@@ -10,6 +10,62 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-04-28
+
+### Changed
+
+- **Plans now self-close from commit trailers — no manual
+  `/lore:plan-step` needed.** Two coordinated changes close a gap
+  observed when a sibling session shipped the drain-notification-chain
+  plan in `9cece6b`: the implementation landed but the plan note stayed
+  `status: active` with empty `step_status`, because the chain from
+  commit-trailer → step-status mutation → plan-status flip had three
+  manual hops in it.
+
+  - **Layer A — Stop hook auto-advances on trailers.** Until 0.22.0
+    the Stop hook scanned recent commits for `Plan: <slug>#sN`
+    trailers and emitted suggestion lines like `⚠ commit X references
+    plan/Y#sN — /lore:plan-step Y sN --done?`. The trailer is already
+    a binding promise from the author, so the hook now calls
+    `set_step(slug, sN, DONE)` directly and emits a confirmation
+    line: `✓ marked plan/Y#sN done from commit X`. The per-session
+    seen-set still prevents re-firing on every Stop. Per-trailer
+    try/except so a malformed plan can't cascade into the next
+    plan's processing.
+
+    Removed the `is_nudge` timestamp gate from this codepath: it
+    was right for the manual-advance flow but caused same-second
+    sibling commits to be silently filtered out once the first
+    advance bumped `step_status_updated`. The per-step done check
+    plus the seen-set are sufficient and don't have the
+    same-second collision.
+
+  - **Layer B — `set_step` auto-flips plan status when the last step
+    lands.** Inside `_mutate_under_lock`: if the mutation is a
+    forward step→done transition AND every parsed step ID is now
+    `done` AND the current top-level status is `active`, set
+    `fm["status"] = "done"` and bump `last_reviewed`. One-way
+    ratchet — clearing a previously-done step (`status=None`) does
+    NOT revert the plan to active. Manual terminal statuses
+    (`superseded`, `abandoned`) are left alone.
+
+  Net effect: a developer / model who writes `Plan: <slug>#sN` in
+  commit messages gets the entire plan-as-authority machinery for
+  free. End of turn: trailers found → step_status updated → final
+  step lands → plan auto-closes → drops out of `lore_plan_active`,
+  `plans/_recent.md` shows `· done`, `_session_start_plans` resume
+  block stops surfacing it. Stale plans (active with no progress)
+  remain a curator concern, deliberately out of scope here.
+
+### Compat
+
+- `_active_plans_resume_block`'s "All steps done — `/lore:plan-advance
+  --complete`?" suggestion is now an edge-case path. It still fires
+  when a user manually re-opens an auto-closed plan
+  (`status: done → active`), but the typical flow no longer reaches
+  it. Tests pin both the new auto-drop behavior and the manual-reopen
+  fallback.
+
 ## [0.22.0] - 2026-04-28
 
 Maintenance + observability batch. Two themes:

@@ -127,7 +127,10 @@ def _commit_with_trailer(repo: Path, message: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_nudge_for_unaddressed_trailer(env: dict) -> None:
+def test_trailer_auto_advances_step(env: dict) -> None:
+    """A `Plan: <slug>#sN` trailer auto-advances the step at Stop time
+    and emits a confirmation line — no manual `/lore:plan-step` action
+    needed. Verifies the on-disk `step_status` write too."""
     _write_plan_note(env["wiki_root"], "refactor-auth")
     sha = _commit_with_trailer(env["repo"], "Wire OIDC config\n\nPlan: refactor-auth#s1")
 
@@ -135,7 +138,10 @@ def test_nudge_for_unaddressed_trailer(env: dict) -> None:
     assert len(nudges) == 1
     assert sha in nudges[0]
     assert "refactor-auth#s1" in nudges[0]
-    assert "/lore:plan-step refactor-auth s1 --done" in nudges[0]
+    assert nudges[0].startswith("✓ marked plan/")
+    # And the on-disk plan note must reflect the advance.
+    plan_text = (env["wiki_root"] / "plans" / "refactor-auth.md").read_text()
+    assert "s1: done" in plan_text
 
 
 def test_no_nudge_when_step_already_done(env: dict) -> None:

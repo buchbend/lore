@@ -203,6 +203,119 @@ def _concurrent_set_step(args: tuple[str, str, str, str]) -> str:
     return f"{step_id}:{update.current}"
 
 
+# ---------------------------------------------------------------------------
+# Auto-close: plan status flips to ``done`` when the last step lands
+# ---------------------------------------------------------------------------
+
+
+def test_auto_close_when_last_step_done(plan_with_steps: tuple[Path, str]) -> None:
+    """Setting the final remaining step to ``done`` flips ``status:
+    active → done`` and bumps ``last_reviewed`` automatically. No
+    manual ``status: done`` write needed."""
+    wiki, slug = plan_with_steps
+    set_step(wiki_root=wiki, slug=slug, step_id="s1", status=StepStatus.DONE)
+    set_step(wiki_root=wiki, slug=slug, step_id="s2", status=StepStatus.DONE)
+
+    # Two of three done — plan must still be active.
+    fm_mid = parse_frontmatter(plan_path(wiki, slug).read_text())
+    assert fm_mid["status"] == "active"
+
+    # Final step lands → auto-close.
+    now = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+    set_step(
+        wiki_root=wiki, slug=slug, step_id="s3", status=StepStatus.DONE, now=now
+    )
+    fm = parse_frontmatter(plan_path(wiki, slug).read_text())
+    assert fm["status"] == "done"
+    assert fm["last_reviewed"] == "2026-05-01"
+
+
+def test_auto_close_does_not_overwrite_terminal_status(
+    plan_with_steps: tuple[Path, str],
+) -> None:
+    """A plan already at ``superseded`` / ``abandoned`` must not be
+    auto-flipped to ``done`` — those are author-set terminal states.
+
+    Edge case in practice (the vault is mostly self-writing) but cheap
+    to guard against.
+    """
+    wiki, slug = plan_with_steps
+    # Hand-promote to superseded as if a curator had decided so.
+    target = plan_path(wiki, slug)
+    text = target.read_text().replace("status: active", "status: superseded")
+    target.write_text(text)
+
+    set_step(wiki_root=wiki, slug=slug, step_id="s1", status=StepStatus.DONE)
+    set_step(wiki_root=wiki, slug=slug, step_id="s2", status=StepStatus.DONE)
+    set_step(wiki_root=wiki, slug=slug, step_id="s3", status=StepStatus.DONE)
+
+    fm = parse_frontmatter(target.read_text())
+    assert fm["status"] == "superseded"
+
+
+def test_auto_close_skips_partial_completion(plan_with_steps: tuple[Path, str]) -> None:
+    """Marking a non-final step done must not flip plan status."""
+    wiki, slug = plan_with_steps
+    set_step(wiki_root=wiki, slug=slug, step_id="s1", status=StepStatus.DONE)
+    fm = parse_frontmatter(plan_path(wiki, slug).read_text())
+    assert fm["status"] == "active"
+
+
+def test_auto_close_no_op_path_does_not_trigger(
+    plan_with_steps: tuple[Path, str],
+) -> None:
+    """Repeating ``set_step(s1, done)`` after s1 is already done must
+    not write to the file. The auto-close branch is on the mutation
+    path; the no-op fast path returns early before reaching it."""
+    wiki, slug = plan_with_steps
+    set_step(wiki_root=wiki, slug=slug, step_id="s1", status=StepStatus.DONE)
+    set_step(wiki_root=wiki, slug=slug, step_id="s2", status=StepStatus.DONE)
+    # s3 is the last step — but we re-set s1 instead. status must stay active.
+    set_step(wiki_root=wiki, slug=slug, step_id="s1", status=StepStatus.DONE)
+    fm = parse_frontmatter(plan_path(wiki, slug).read_text())
+    assert fm["status"] == "active"
+
+
+def test_un_doing_step_does_not_revert_plan_status(
+    plan_with_steps: tuple[Path, str],
+) -> None:
+    """Auto-close is a one-way ratchet: clearing a previously-done
+    step (``status=None``) does NOT flip plan back to ``active``.
+
+    Rationale: the status flip implies "this work shipped"; an
+    accidental clear shouldn't re-open the plan. If the user genuinely
+    wants to re-open, they edit ``status`` back themselves.
+    """
+    wiki, slug = plan_with_steps
+    set_step(wiki_root=wiki, slug=slug, step_id="s1", status=StepStatus.DONE)
+    set_step(wiki_root=wiki, slug=slug, step_id="s2", status=StepStatus.DONE)
+    set_step(wiki_root=wiki, slug=slug, step_id="s3", status=StepStatus.DONE)
+    # Plan is now done.
+
+    set_step(wiki_root=wiki, slug=slug, step_id="s3", status=None)
+    fm = parse_frontmatter(plan_path(wiki, slug).read_text())
+    # Plan stays done; the user can choose to re-open by hand.
+    assert fm["status"] == "done"
+    # But step_status reflects the clear — s3 is back to pending (absent).
+    assert "s3" not in (fm.get("step_status") or {})
+
+
+def test_advance_triggers_auto_close_on_last_step(
+    plan_with_steps: tuple[Path, str],
+) -> None:
+    """End-to-end: ``advance`` calls into ``set_step``, so its final
+    invocation must trip the auto-close exactly the same way."""
+    wiki, slug = plan_with_steps
+    advance(wiki_root=wiki, slug=slug)  # s1 → done
+    advance(wiki_root=wiki, slug=slug)  # s2 → done
+    final = advance(wiki_root=wiki, slug=slug)  # s3 → done
+    assert final is not None
+    assert final.current == "done"
+
+    fm = parse_frontmatter(plan_path(wiki, slug).read_text())
+    assert fm["status"] == "done"
+
+
 def test_concurrent_set_step_serializes(plan_with_steps: tuple[Path, str]) -> None:
     """Four workers mutate distinct steps in parallel; all writes survive.
 

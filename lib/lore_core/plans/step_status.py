@@ -206,6 +206,23 @@ def _mutate_under_lock(
     fm.setdefault("schema_version", 2)
     fm.setdefault("type", "plan")
 
+    # Auto-close: when this mutation makes the plan complete (every
+    # parsed step_id is ``done`` AND the current top-level status is
+    # ``active``), promote the plan to ``status: done`` and bump
+    # ``last_reviewed``. Only fires on a forward step→done transition;
+    # un-doing a step (``new_status`` is None) never triggers this
+    # branch even if the remaining set is all-done. Manual terminal
+    # statuses (``superseded``, ``abandoned``) are left alone — the
+    # author is the source of truth for those.
+    if (
+        new_status == "done"
+        and step_ids
+        and fm.get("status") == "active"
+        and all(step_status.get(sid) == "done" for sid in step_ids)
+    ):
+        fm["status"] = "done"
+        fm["last_reviewed"] = now.date().isoformat()
+
     new_text = _render_with_fm(fm, body)
     atomic_write_text(target_path, new_text)
     return StepStatusUpdate(

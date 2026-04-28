@@ -1327,30 +1327,33 @@ def _stop() -> str:
 
 
 def _plan_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
-    """Surface ⚠ nudges for `Plan: <slug>#sN` trailers committed this turn.
+    """Auto-advance plan steps from `Plan: <slug>#sN` commit trailers.
 
-    Closes the mid-session gap: SessionStart already nudges on
-    unaddressed trailers, but only fires once per session. After that
-    the user can commit with `Plan:` trailers all turn long and never
-    see a reminder until the next SessionStart. This helper runs in
-    the Stop hook (once per Claude turn) and re-runs the same
-    breadcrumb scanner against the active plan set.
+    A `Plan:` trailer in a commit body is a binding promise from the
+    author that this commit closed step ``sN``. The Stop hook honors
+    that promise directly: it calls ``set_step(slug, sN, DONE)`` and
+    emits a confirmation line so the model sees what just happened.
+    Layer B in ``step_status._mutate_under_lock`` then auto-flips the
+    plan's top-level ``status`` to ``done`` once the last step lands.
 
     Per-session seen-set at
     ``~/.cache/lore/sessions/<sid>/plan-nudges.seen`` records every
-    ``<sha>#<step_id>`` key already nudged. Same-second-but-different
-    commits land separate entries; identical (sha, step) pairs are
-    skipped. The set is append-only, capped only by session lifetime.
+    ``<sha>#<step_id>`` key already actioned. Same-second-but-
+    different commits land separate entries; identical (sha, step)
+    pairs are skipped. ``set_step`` is itself idempotent (no-op fast
+    path on identical writes), so the seen-set is belt-and-braces:
+    keeps the confirmation line from re-firing each Stop until session
+    end.
 
     Always best-effort: returns ``[]`` on any error so a malformed
-    plan or git failure can't break Stop.
+    plan or git failure can't break Stop. Per-trailer ``set_step``
+    failures are swallowed individually so one bad plan doesn't
+    block the rest of the batch.
     """
     try:
-        from datetime import UTC as _UTC, datetime as _dt
-
         from lore_core.drain import resolve_session_id
         from lore_core.git import git_repo_root
-        from lore_core.plans.breadcrumbs import is_nudge, scan_recent_commits
+        from lore_core.plans.breadcrumbs import scan_recent_commits
         from lore_core.plans.registry import list_active
 
         scope = resolve_scope(cwd_path)
@@ -1381,33 +1384,46 @@ def _plan_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
             if not crumbs:
                 continue
 
-            step_status_dt: _dt | None = None
-            if card.step_status_updated:
-                try:
-                    parsed = _dt.fromisoformat(
-                        card.step_status_updated.replace("Z", "+00:00")
-                    )
-                    step_status_dt = (
-                        parsed if parsed.tzinfo else parsed.replace(tzinfo=_UTC)
-                    )
-                except (ValueError, TypeError):
-                    step_status_dt = None
-
+            # Per-step done is the eligibility check we want here. The
+            # global ``step_status_updated`` timestamp gate inside
+            # ``is_nudge`` was right for the old manual-advance flow
+            # (where same-second commits across distinct steps couldn't
+            # collide), but in the auto-advance flow the very first
+            # set_step bumps step_status_updated to ``now`` — a sibling
+            # commit landing in the same second would be wrongly
+            # filtered. The seen-set already handles session-level
+            # dedup; per-step status handles cross-session safety.
+            current_status = {**(card.step_status or {})}
             for crumb in crumbs:
                 key = f"{crumb.ref}#{crumb.step_id}"
                 if key in seen:
                     continue
-                if not is_nudge(
-                    crumb,
-                    step_status=card.step_status,
-                    step_status_updated=step_status_dt,
-                ):
+                if current_status.get(crumb.step_id) == "done":
                     continue
-                nudges.append(
-                    f"⚠ commit {crumb.ref} references plan/{card.slug}#{crumb.step_id} "
-                    f"— `/lore:plan-step {card.slug} {crumb.step_id} --done`?"
-                )
-                new_keys.append(key)
+                # Honor the trailer: actually mark the step done. Per-
+                # trailer try/except so a malformed plan or invalid
+                # step_id doesn't cascade into the next plan's
+                # processing.
+                try:
+                    from lore_core.plans.step_status import set_step
+                    from lore_core.plans.types import StepStatus
+                    set_step(
+                        wiki_root=wiki_root,
+                        slug=card.slug,
+                        step_id=crumb.step_id,
+                        status=StepStatus.DONE,
+                    )
+                    current_status[crumb.step_id] = "done"
+                    nudges.append(
+                        f"✓ marked plan/{card.slug}#{crumb.step_id} done "
+                        f"from commit {crumb.ref}"
+                    )
+                    new_keys.append(key)
+                except Exception:  # noqa: BLE001
+                    # Don't drop the seen-key here — leaving it absent
+                    # lets a future Stop retry the write if the cause
+                    # was transient (e.g. lock contention).
+                    continue
 
         if new_keys:
             _append_nudge_seen_set(seen_path, new_keys)

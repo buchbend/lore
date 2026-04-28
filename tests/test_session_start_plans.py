@@ -152,10 +152,41 @@ def test_blocked_step_appears_in_summary(wiki_root: Path) -> None:
     assert "1 blocked" in text
 
 
-def test_all_done_offers_complete(wiki_root: Path) -> None:
+def test_auto_closed_plan_drops_out_of_active_resume_block(
+    wiki_root: Path,
+) -> None:
+    """Marking the last step done auto-flips the plan to ``status:
+    done`` (Layer B in step_status). Active resume-block filtering
+    then excludes it — no "all done — `/lore:plan-advance --complete`?"
+    suggestion needed because the state no longer exists.
+    """
     slug = _make_plan(wiki_root, n_steps=2)
     for sid in ("s1", "s2"):
         set_step(wiki_root=wiki_root, slug=slug, step_id=sid, status=StepStatus.DONE)
+    # Auto-close fired — plan is no longer active.
+    from lore_core.schema import parse_frontmatter
+    fm = parse_frontmatter((wiki_root / "plans" / f"{slug}.md").read_text())
+    assert fm["status"] == "done"
+
+    lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
+    assert lines == []
+
+
+def test_all_done_active_plan_still_offers_complete(wiki_root: Path) -> None:
+    """Edge case: a manually-re-opened plan whose steps are all done.
+    The suggestion path in the resume block still fires for those
+    (auto-close is one-way; if a user resets ``status: active`` by
+    hand, the SessionStart prompt becomes useful again).
+    """
+    slug = _make_plan(wiki_root, n_steps=2)
+    for sid in ("s1", "s2"):
+        set_step(wiki_root=wiki_root, slug=slug, step_id=sid, status=StepStatus.DONE)
+    # Manually re-open the plan as if a user reverted the auto-close.
+    plan_file = wiki_root / "plans" / f"{slug}.md"
+    plan_file.write_text(
+        plan_file.read_text().replace("status: done", "status: active")
+    )
+
     lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
     text = "\n".join(lines)
     assert "2/2 done" in text
