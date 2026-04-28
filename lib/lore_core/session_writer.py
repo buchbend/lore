@@ -13,12 +13,19 @@ Layout invariant
 
 Every session note lives at::
 
-    <wiki>/sessions[/<handle>]/<YYYY>/<MM>/<DD>-<slug>.md
+    <wiki>/sessions[/<handle>]/<YYYY>/<MM>/<DD>-<HHMM>-<slug>.md
 
 ``<handle>`` is present iff the wiki is in team mode (``_users.yml``
 exists — see `lore_core.identity.session_note_dir`). Append-to-today
 searches the *handle-scoped* month directory so concurrent authors
 don't collide.
+
+``<HHMM>`` is the file-time of the *first* chunk of a session note
+(zero-padded 24h, e.g. ``1432``). Subsequent chunks merging into the
+same note keep the original prefix — the prefix marks "when this
+session started", not "when the last edit landed". Legacy notes filed
+before the v0.20.x cutover live at the older ``<DD>-<slug>.md`` shape;
+readers (lint, status-line, walkers) accept both.
 
 Transcripts cap
 ---------------
@@ -397,11 +404,12 @@ def file_or_merge(
         return FiledNote(path=today_note, wikilink=wikilink, was_merge=True)
 
     day_prefix = f"{si.work_time.day:02d}"
-    path = month_dir / f"{day_prefix}-{si.slug}.md"
+    time_prefix = si.work_time.strftime("%H%M")
+    path = month_dir / f"{day_prefix}-{time_prefix}-{si.slug}.md"
     counter = 1
     while path.exists():
         counter += 1
-        path = month_dir / f"{day_prefix}-{si.slug}-{counter}.md"
+        path = month_dir / f"{day_prefix}-{time_prefix}-{si.slug}-{counter}.md"
 
     _write_new_note(path, si)
     wikilink = f"[[{path.stem}]]"
@@ -414,6 +422,55 @@ def file_or_merge(
             wikilink=wikilink,
         )
     return FiledNote(path=path, wikilink=wikilink, was_merge=False)
+
+
+# ---- path parsing (public — consumed by lint + hooks status-line) ----------
+
+
+_SESSION_FILENAME_RE = re.compile(
+    r"^(?P<day>\d{2})(?:-(?P<hhmm>\d{4}))?-(?P<slug>.+)\.md$"
+)
+
+
+def session_path_sort_key(
+    path: Path,
+) -> tuple[int, int, int, int, str]:
+    """Sort key for session-note paths under the sharded layout.
+
+    Returns ``(year, month, day, hhmm, slug)`` — sortable tuple where
+    ascending order is oldest→newest. Reverse the sort to render
+    newest-first lists.
+
+    Both filename shapes are recognized:
+
+    - New: ``DD-HHMM-slug.md`` → ``(Y, M, D, HHMM, slug)``
+    - Legacy: ``DD-slug.md``   → ``(Y, M, D, 0,    slug)``
+
+    Legacy entries deliberately collapse to ``hhmm=0`` so they sort
+    *first* within their day in ascending order — equivalently, *last*
+    within their day in reverse order. Since we don't know what time
+    of day a legacy note was filed, treating it as "earliest" avoids
+    falsely surfacing it ahead of timed peers.
+
+    Year/month come from the parent directories. Files outside the
+    expected ``YYYY/MM/`` shape return ``(0, 0, 0, 0, name)`` so they
+    sink to the bottom of any ranking rather than crashing.
+    """
+    parent = path.parent
+    try:
+        month = int(parent.name)
+        year = int(parent.parent.name)
+    except (ValueError, AttributeError):
+        return (0, 0, 0, 0, path.name)
+
+    m = _SESSION_FILENAME_RE.match(path.name)
+    if m is None:
+        return (year, month, 0, 0, path.name)
+
+    day = int(m.group("day"))
+    hhmm = int(m.group("hhmm")) if m.group("hhmm") else 0
+    slug = m.group("slug")
+    return (year, month, day, hhmm, slug)
 
 
 # ---- private helpers --------------------------------------------------------

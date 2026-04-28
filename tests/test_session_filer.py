@@ -247,7 +247,7 @@ def _make_handle_with_mtime(mtime: datetime) -> TranscriptHandle:
 
 
 def test_work_time_drives_directory_and_filename(tmp_path):
-    """Directory uses YYYY/MM from work_time; filename uses DD."""
+    """Directory uses YYYY/MM from work_time; filename uses DD-HHMM- prefix."""
     work_time = datetime(2026, 4, 18, 22, 30, tzinfo=UTC)
     curation_time = datetime(2026, 4, 19, 12, 0, tzinfo=UTC)
 
@@ -262,8 +262,9 @@ def test_work_time_drives_directory_and_filename(tmp_path):
     )
     assert result.path.parent.name == "04"
     assert result.path.parent.parent.name == "2026"
-    assert result.path.name.startswith("18-"), (
-        f"filename must use work day, got {result.path.name}"
+    # Filename now carries day + HHMM prefix so intra-day order is sortable.
+    assert result.path.name.startswith("18-2230-"), (
+        f"filename must use work day + HHMM, got {result.path.name}"
     )
 
 
@@ -314,10 +315,16 @@ def test_work_time_defaults_to_now_when_not_supplied(tmp_path):
 
 
 def test_collision_appends_counter(tmp_path):
-    """Second note with same day + slug gets a -2 suffix."""
+    """Second note with same day + HHMM + slug gets a -2 suffix.
+
+    The HHMM prefix makes natural collisions much rarer (would need a
+    second new-note open in the same minute with the same slug for the
+    same scope — and same-scope same-day would normally merge instead).
+    Here we force the collision by pre-seeding the *closed* timed file.
+    """
     sessions_dir = tmp_path / "sessions" / "2026" / "04"
     sessions_dir.mkdir(parents=True)
-    closed_first = sessions_dir / "19-add-ledger-feature.md"
+    closed_first = sessions_dir / "19-1200-add-ledger-feature.md"
     fm = {
         "schema_version": 2,
         "type": "session",

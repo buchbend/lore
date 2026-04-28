@@ -487,17 +487,18 @@ def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[tuple[str, str]]:
     closing ``---``.
     """
     from lore_core.schema import parse_frontmatter
+    from lore_core.session_writer import session_path_sort_key
 
     sessions_dir = wiki / "sessions"
     if not sessions_dir.is_dir():
         return []
 
-    # Sort by filename — date-prefixed slugs (``YYYY-MM-DD-...`` or
-    # ``DD-...``) sort lexicographically alongside their parent
-    # year/month directory, so reverse-sorted ``rglob`` gives newest
-    # first.
+    # Sort newest-first using the layout-aware sort key — handles both
+    # the new ``DD-HHMM-slug.md`` shape and legacy ``DD-slug.md`` (the
+    # latter sinks to the bottom of its day; see helper docstring).
     candidates = sorted(
         (p for p in sessions_dir.rglob("*.md") if p.is_file() and not p.name.startswith("_")),
+        key=session_path_sort_key,
         reverse=True,
     )
     results: list[tuple[str, str]] = []
