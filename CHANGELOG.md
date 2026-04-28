@@ -10,6 +10,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-04-28
+
+### Fixed
+
+- **`plan-capture` no longer silently drops every plan.** The
+  `PostToolUse:ExitPlanMode` handler gated capture on
+  `tool_response.approved`, but Claude Code's actual ExitPlanMode
+  payload has no `approved` field — the field was a defensive guess
+  during initial implementation. Every accepted plan was logged as
+  `outcome: "rejected"` and dropped, contradicting the handler's
+  "Never silent loss" guarantee. The handler now treats hook firing
+  as the authoritative approval signal (Claude Code never fires
+  `PostToolUse` on rejection — rejection bounces back into plan
+  mode without producing a `tool_result`). Added a regression test
+  using the real captured payload shape (`tool_response: { plan,
+  isAgent, filePath, hasTaskTool }`).
+
 ## [0.18.0] - 2026-04-28
 
 ### Changed

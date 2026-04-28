@@ -2695,14 +2695,20 @@ def cmd_plan_capture(
 
        {
          "tool_input": { "plan": "## …markdown…" },
-         "tool_response": { "approved": true | false },
+         "tool_response": { "plan": "…", "isAgent": false,
+                            "filePath": "…", "hasTaskTool": true },
          "cwd": "/abs/path",
          "session_id": "…"
        }
 
+    Claude Code only fires ``PostToolUse:ExitPlanMode`` after the user accepts
+    the plan; rejection bounces back into plan mode without producing a
+    tool_result. The handler therefore treats firing as the authoritative
+    approval signal and does not gate on a ``tool_response.approved`` field
+    (which the harness does not send).
+
     Behaviour:
 
-    * Rejected plan → exit 0 silently (rejection = revision cycle).
     * Unattached cwd → soft hint to ``/lore:attach``; exit 0 (don't crash the harness).
     * Top-level exception → orphan-dump payload to ``~/.cache/lore/orphan-plans/``
       and emit a recovery hint. **Never silent loss** (differs from SessionStart's
@@ -2751,15 +2757,6 @@ def cmd_plan_capture(
                 cwd=str(cwd_resolved),
             )
             _orphan_dump(raw_payload, plain=plain)
-            return
-
-        approved = bool((payload.get("tool_response") or {}).get("approved"))
-        if not approved:
-            logger.emit(
-                event="plan-capture",
-                outcome="rejected",
-                cwd=str(cwd_resolved),
-            )
             return
 
         scope = resolve_scope(cwd_resolved)

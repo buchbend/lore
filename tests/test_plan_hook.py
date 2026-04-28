@@ -140,19 +140,47 @@ def test_accepted_plan_files_to_wiki(
     assert "4 steps" in msg
 
 
-def test_rejected_plan_silent_no_write(
+def test_real_claude_code_payload_no_approved_field(
     lore_env: dict,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """Real ExitPlanMode tool_response has no `approved` key — captured 2026-04-28.
+
+    Why: an earlier handler version gated on ``tool_response.approved`` and
+    silently dropped every plan because Claude Code never sets that field.
+    Claude Code only fires PostToolUse on user acceptance, so absence of the
+    field must not block capture.
+    """
     _attach(lore_env["lore_root"], lore_env["repo"])
-    payload = _payload_for(lore_env["repo"], fixture="exitplanmode-payload-rejected.json")
+    plan_text = (
+        "# Refactor authentication\n\n"
+        "## Steps\n\n"
+        "### Step 1: Add OIDC config\n- thing\n\n"
+        "### Step 2: Migrate sessions\n- thing\n"
+    )
+    payload = {
+        "session_id": "01J9X7K3R4D5N6Q7T8V9W0X1Y2",
+        "cwd": str(lore_env["repo"]),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "ExitPlanMode",
+        "tool_input": {"plan": plan_text},
+        "tool_response": {
+            "plan": plan_text,
+            "isAgent": False,
+            "filePath": "/home/user/.claude/plans/foo.md",
+            "hasTaskTool": True,
+        },
+    }
     _patch_stdin(monkeypatch, json.dumps(payload).encode("utf-8"))
 
     cmd_plan_capture(cwd=str(lore_env["repo"]), plain=False)
 
-    assert not (lore_env["wiki_root"] / "plans").exists()
-    assert _read_systemMessage(capsys.readouterr().out) is None
+    plan_file = lore_env["wiki_root"] / "plans" / "refactor-authentication.md"
+    assert plan_file.exists()
+    msg = _read_systemMessage(capsys.readouterr().out)
+    assert msg is not None
+    assert "filed" in msg
 
 
 def test_idempotent_reacceptance_silent_dedup(
