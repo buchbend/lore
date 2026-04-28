@@ -10,6 +10,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.18.4] - 2026-04-28
+
+### Fixed
+
+- **Plan step titles no longer truncate at hard wraps.** When a numbered
+  list item's first sentence wrapped across multiple indented lines, only
+  the first line landed in `step.title`; the tail orphaned into `step.body`
+  and was lost from the rendered `### sN: <title>` heading. The list-mode
+  parser (`_steps_from_list`) now reflows indented prose continuation
+  lines into the title. A blank line or a sub-list marker (`-`, `*`,
+  `+`, `N. `) ends the title block — sub-lists still go to body.
+  Visible in `lore plan list` and MCP `lore_plan_status` step titles.
+
 ## [0.18.3] - 2026-04-28
 
 ### Fixed

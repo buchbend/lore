@@ -57,6 +57,12 @@ _TOP_NUMBERED_LIST_RE = re.compile(r"^(\d+)\.\s+(.*)$")
 #: Any ATX heading (used to split body_intro from the first step).
 _ATX_HEADING_RE = re.compile(r"^#{1,6}\s+")
 
+#: Markdown list-item marker at the start of a *stripped* line. Used to
+#: distinguish prose continuations (reflowed into the step title) from
+#: sub-list items (kept in the body). Requires whitespace after the marker
+#: so italicized text (``*foo*``) does not match.
+_LIST_MARKER_RE = re.compile(r"^([-*+]|\d+\.)\s")
+
 #: Fenced code block — ``` or ~~~ openers; matched non-greedily.
 #: Triple-backtick variants only; we don't support indented code blocks.
 _FENCE_RE = re.compile(r"^(```|~~~)", re.MULTILINE)
@@ -281,16 +287,23 @@ def _steps_from_list(
 ) -> list[PlanStep]:
     """Slice the body into one step per numbered-list item.
 
-    The first line is the title (after the ``N. `` marker). Everything
-    indented under it (until the next top-level item or a non-indented
-    line) is the body.
+    The title is the first line of the item plus any indented prose
+    continuation lines that follow (reflowed onto one line, separated
+    by spaces). A sub-list (line starting with ``-``, ``*``, ``+`` or
+    ``N. `` after stripping leading whitespace) or a blank line ends the
+    title block; everything from there until the next top-level item
+    (or the next non-indented line) becomes the body.
+
+    Reflow matters: source markdown often hard-wraps a single sentence
+    across two indented lines. Without reflow, the step title would be
+    truncated mid-sentence and the truncated tail orphaned into the body.
     """
     lines = text.split("\n")
     steps: list[PlanStep] = []
     for idx, (line_idx, _marker, first_line_body) in enumerate(hits):
         body_start = line_idx + 1
-        # End at the next list item's line index, or at the next non-indented
-        # non-blank line, whichever comes first.
+        # Outer body window: up to the next top-level item, or up to the
+        # first non-indented non-blank line — whichever comes first.
         next_hit_line = hits[idx + 1][0] if idx + 1 < len(hits) else len(lines)
         body_end = next_hit_line
         for j in range(body_start, next_hit_line):
@@ -298,12 +311,30 @@ def _steps_from_list(
             if line and not line[0].isspace():
                 body_end = j
                 break
-        # Dedent body lines by the first line's leading whitespace.
-        body_block = "\n".join(lines[body_start:body_end]).strip()
+
+        # Within the outer window, split off leading PROSE continuation
+        # lines into the title. A blank line or a sub-list marker ends
+        # the title block.
+        title_extra: list[str] = []
+        body_kept_start = body_start
+        for j in range(body_start, body_end):
+            stripped = lines[j].strip()
+            if not stripped:
+                body_kept_start = j + 1
+                break
+            if _LIST_MARKER_RE.match(stripped):
+                break
+            title_extra.append(stripped)
+            body_kept_start = j + 1
+
+        title = " ".join(
+            [first_line_body.strip(), *title_extra]
+        ).strip()
+        body_block = "\n".join(lines[body_kept_start:body_end]).strip()
         steps.append(
             PlanStep(
                 id=f"s{idx + 1}",
-                title=first_line_body.strip(),
+                title=title,
                 body=body_block,
             )
         )

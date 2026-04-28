@@ -147,6 +147,50 @@ def test_mode_list_with_indented_continuations() -> None:
     assert plan.mode == "list"
     assert len(plan.steps) == 2
     assert "sub-bullet" in plan.steps[0].body
+    # Sub-list lives in body, not reflowed into title.
+    assert plan.steps[0].title == "Big step"
+
+
+def test_mode_list_reflows_prose_continuations_into_title() -> None:
+    """Hard-wrapped sentence in a list item → reflowed into the step title.
+
+    Why: Claude Code's plan files often hard-wrap long sentences inside
+    numbered list items. Without reflow, the step title is truncated
+    mid-sentence and the tail orphans into body.
+    """
+    text = """# Plan
+
+1. The captured plan is filed under a fresh slug derived from the H1 of
+   *this* file — proving we read the correct payload section, not stale
+   state from earlier tests.
+2. Second step that fits on one line.
+"""
+    plan = parse(text)
+    assert plan.mode == "list"
+    assert len(plan.steps) == 2
+    assert plan.steps[0].title == (
+        "The captured plan is filed under a fresh slug derived from the H1 of "
+        "*this* file — proving we read the correct payload section, not stale "
+        "state from earlier tests."
+    )
+    assert plan.steps[0].body == ""
+    assert plan.steps[1].title == "Second step that fits on one line."
+
+
+def test_mode_list_blank_line_ends_title_block() -> None:
+    """A blank line after the first prose line stops title reflow.
+
+    Subsequent indented content becomes body, not title.
+    """
+    text = """1. First line of item
+
+   Indented body paragraph that is NOT title.
+2. Second
+"""
+    plan = parse(text)
+    assert plan.mode == "list"
+    assert plan.steps[0].title == "First line of item"
+    assert "Indented body paragraph" in plan.steps[0].body
 
 
 def test_mode_list_single_item_falls_through_to_single() -> None:
