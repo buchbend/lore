@@ -10,6 +10,75 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-04-28
+
+### Added
+
+- **Config-file fallback for `LORE_ROOT`** at `~/.config/lore/config.yml`
+  (XDG-aware via `$XDG_CONFIG_HOME`). Resolution order is now env →
+  config-file → `~/lore` default. Hosts that don't have a Claude
+  Code-style `settings.json` env block to mutate (Cursor, Codex, Gemini)
+  no longer need a per-shell `export LORE_ROOT=...`. The file format
+  is YAML with a single top-level `lore_root: <path>` key — unknown
+  keys warn but don't break, leaving room for future user-level
+  preferences.
+
+  ```yaml
+  # ~/.config/lore/config.yml
+  lore_root: ~/git/vault
+  ```
+
+  Resolves issue #6.
+
+- **`resolve_lore_root() -> Path | None`** as a first-class resolver
+  alongside the existing `get_lore_root()` (silent default) and
+  `require_lore_root()` (strict). Returns `None` when neither env nor
+  config-file provides a value — useful for code paths that need to
+  distinguish "user genuinely never configured anything" from "user
+  pointed somewhere that doesn't exist."
+
+- **`lore doctor` reports the resolution source** — labels are now
+  `[$LORE_ROOT]`, `[config-file]`, or `[unconfigured (fallback)]`.
+
+### Changed
+
+- **`secrets_path()` always returns a `Path`** (was `Path | None`).
+  Falls back through `get_lore_root()` so the config-file fallback
+  applies uniformly. `load_into_environ` no-ops when the file doesn't
+  exist regardless. **Behavior change:** users who previously relied
+  on `$LORE_ROOT` being unset to skip secrets-loading should now
+  ensure the secrets file itself is absent or use a process-level
+  env override.
+
+- **Resolver unification.** Nine call sites that bypassed the canonical
+  resolvers and read `os.environ.get("LORE_ROOT")` directly are now
+  routed through `get_lore_root` / `require_lore_root` /
+  `resolve_lore_root` so the new config-file fallback applies
+  everywhere — `lore registry`, `lore ingest`, `lore curator`, scope
+  resolver, secrets loader, and the SessionStart / capture hooks.
+
+- **`hooks._infer_lore_root` precedence** is now env → walk-up →
+  config-file → default. Walk-up beats config-file (but not env)
+  because in a hook context the path argument is the explicit signal:
+  a user with a global config pointing at `~/personal-vault` who is
+  currently editing inside `~/work-vault/wiki/foo/` should resolve to
+  `~/work-vault`. The function also accepts either a file (CLAUDE.md)
+  or a directory (cwd) — fixes a latent caller-shape bug at
+  `hooks.py:2845` where a directory was being passed and `.parent`
+  skipped one level too high.
+
+### Fixed
+
+- **`surface_cmd` no longer defaults to `~/git/vault`** when
+  `$LORE_ROOT` is unset. The original developer's path had been baked
+  in as a default, silently routing surface commands to a path on
+  someone else's machine.
+
+### Deprecated
+
+- `LoreRootNotSet` (exception class) — use `LoreRootNotConfigured`.
+  The old name is kept as an alias for one release.
+
 ## [0.19.2] - 2026-04-28
 
 ### Fixed
