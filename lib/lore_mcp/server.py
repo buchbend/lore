@@ -10,6 +10,9 @@ Exposed tools:
     lore_catalog            — return a wiki's _catalog.json
     lore_resume             — unified context gather (recent/wiki/keyword/scope)
     lore_wikilinks          — in/out wikilinks for a note
+    lore_drill              — composite multi-stage retrieval (search→read→
+                              expand→read_expanded) in one envelope with a
+                              structured trace
     lore_session_scaffold   — read-only scaffold (path + frontmatter) for a new
                               session note; the subagent uses this before any
                               write so the deterministic work happens once
@@ -496,6 +499,131 @@ def handle_surface_validate(wiki: str, draft: dict) -> dict[str, Any]:
     }
 
 
+def handle_drill(
+    query: str,
+    wiki: str | None = None,
+    k: int = 5,
+    expand_limit: int = 5,
+) -> dict[str, Any]:
+    """Composite multi-stage retrieval: search → read → expand → read_expanded.
+
+    Returns one envelope ``{"trace": [...], "result": {"notes": [...]}}`` so
+    callers get the full chain in a single round-trip. Each stage records
+    ``elapsed_ms`` and a stage-specific summary; empty intermediate results
+    short-circuit downstream stages and are recorded with a ``skipped`` reason
+    so the LLM/human can see *why* a stage was skipped without re-running.
+
+    See ``docs/architecture/lore-drill.md`` for the full design.
+    """
+    import time as _time
+
+    wiki_path = _resolve_wiki(wiki)
+    if wiki_path is None:
+        return _mcp_error(
+            "wiki_not_found",
+            f"wiki not found: {wiki}",
+            next_="run `lore status` to list configured wikis",
+        )
+
+    trace: list[dict[str, Any]] = []
+    notes: list[dict[str, Any]] = []
+
+    # Stage 1: search
+    t0 = _time.monotonic()
+    hits = handle_search(query=query, wiki=wiki, k=k)
+    trace.append({
+        "stage": "search",
+        "query": query,
+        "hits": len(hits),
+        "elapsed_ms": int((_time.monotonic() - t0) * 1000),
+    })
+
+    if not hits:
+        # Record the downstream stages as skipped so the trace shape is
+        # uniform — easier for clients to parse than missing entries.
+        for stage in ("read", "expand", "read_expanded"):
+            trace.append({"stage": stage, "skipped": "search_returned_zero", "elapsed_ms": 0})
+        return {"trace": trace, "result": {"notes": notes}}
+
+    # Stage 2: read top hits
+    t0 = _time.monotonic()
+    top_paths = [h["path"] for h in hits]
+    read_failed_top: list[str] = []
+    for path in top_paths:
+        body = handle_read(path=path, wiki=wiki)
+        if "error" in body:
+            read_failed_top.append(path)
+            continue
+        notes.append(body)
+    read_step: dict[str, Any] = {
+        "stage": "read",
+        "paths": top_paths,
+        "elapsed_ms": int((_time.monotonic() - t0) * 1000),
+    }
+    if read_failed_top:
+        read_step["read_failed"] = read_failed_top
+    trace.append(read_step)
+
+    # Stage 3: expand wikilinks
+    t0 = _time.monotonic()
+    seen: set[str] = set()
+    expanded_slugs: list[str] = []
+    for note in notes:
+        for slug in extract_wikilinks(note.get("content", "")):
+            if slug not in seen:
+                seen.add(slug)
+                expanded_slugs.append(slug)
+    if not expanded_slugs:
+        trace.append({"stage": "expand", "skipped": "no_wikilinks", "elapsed_ms": int((_time.monotonic() - t0) * 1000)})
+        trace.append({"stage": "read_expanded", "skipped": "no_wikilinks", "elapsed_ms": 0})
+        return {"trace": trace, "result": {"notes": notes}}
+    trace.append({
+        "stage": "expand",
+        "wikilinks": expanded_slugs,
+        "elapsed_ms": int((_time.monotonic() - t0) * 1000),
+    })
+
+    # Stage 4: read expanded (cap at expand_limit, skip unresolvable slugs).
+    # `truncated` only applies when we actually hit the cap — an unresolvable
+    # slug is NOT a "truncation" (the candidate set was just smaller than it
+    # looked). `expand.wikilinks` records the discovery set;
+    # `read_expanded.paths` records what was actually read. Clients reading
+    # the trace must look at the right stage to answer "did we see X?" vs.
+    # "did we read X?".
+    t0 = _time.monotonic()
+    resolved_paths: list[str] = []
+    read_failed_expanded: list[str] = []
+    cap_triggered_at: int | None = None
+    for idx, slug in enumerate(expanded_slugs):
+        if len(resolved_paths) >= expand_limit:
+            cap_triggered_at = idx
+            break
+        rel = _resolve_slug(wiki_path, slug)
+        if rel is None:
+            continue
+        body = handle_read(path=rel, wiki=wiki)
+        if "error" in body:
+            read_failed_expanded.append(rel)
+            continue
+        notes.append(body)
+        resolved_paths.append(rel)
+    trace_step: dict[str, Any] = {
+        "stage": "read_expanded",
+        "paths": resolved_paths,
+        "elapsed_ms": int((_time.monotonic() - t0) * 1000),
+    }
+    if cap_triggered_at is not None:
+        # Only count truncation when the cap actually stopped us, not when
+        # the candidate set was simply smaller than expand_limit.
+        trace_step["truncated"] = len(expanded_slugs) - cap_triggered_at
+        trace_step["kept"] = expand_limit
+    if read_failed_expanded:
+        trace_step["read_failed"] = read_failed_expanded
+    trace.append(trace_step)
+
+    return {"trace": trace, "result": {"notes": notes}}
+
+
 def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
@@ -756,6 +884,33 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
+            "name": "lore_drill",
+            "description": (
+                "Composite multi-stage retrieval: search → read top hits → expand "
+                "wikilinks → read expanded set, all in one round-trip. Returns "
+                "{trace: [...], result: {notes: [...]}} with structured stage "
+                "breadcrumbs (elapsed_ms per stage; `skipped` reasons for empty "
+                "intermediate results: `search_returned_zero`, `no_wikilinks`). "
+                "Prefer `lore_drill` for cold-start exploration of a topic. "
+                "Prefer `lore_search` (then `lore_read`) when you already know "
+                "the rough path/slug or want to steer between stages."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "wiki": {"type": "string", "description": "Scope to one wiki (optional)"},
+                    "k": {"type": "integer", "default": 5, "description": "Top-k for the search stage"},
+                    "expand_limit": {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "Max number of expanded notes to read (cap on hub-note blowup)",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+        {
             "name": "lore_briefing_gather",
             "description": (
                 "Read-only briefing gather: returns the new session "
@@ -947,6 +1102,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_resume(**args)
         case "lore_wikilinks":
             return handle_wikilinks(**args)
+        case "lore_drill":
+            return handle_drill(**args)
         case "lore_session_scaffold":
             return handle_session_scaffold(**args)
         case "lore_briefing_gather":

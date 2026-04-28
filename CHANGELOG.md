@@ -10,6 +10,35 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-04-28
+
+P3.2 from the multi-agent synthesis review — composite multi-stage
+retrieval. Settles the trace-vs-composite design question with one
+round-trip + structured stage breadcrumbs in the response envelope.
+
+### Added
+
+- **`lore_drill` MCP tool** — composite chain `search → read → expand
+  → read_expanded` in one envelope. Returns
+  ``{trace: [...], result: {notes: [...]}}`` with `elapsed_ms` per
+  stage and `skipped` reasons (`search_returned_zero`,
+  `no_wikilinks`) for short-circuited intermediates. Cap on the
+  expand stage via `expand_limit` (default 5) keeps hub-note
+  blowups bounded; truncation is recorded in the trace as
+  `{truncated: N, kept: M}` only when the cap actually fires (not
+  when the candidate set was simply smaller after unresolvable
+  slugs were skipped). Failed reads are surfaced as `read_failed`
+  arrays so divergence between `paths` and `result.notes` stays
+  debuggable.
+- **`lore drill <query>` CLI verb** — calls the same handler;
+  renders the trace as a rich Tree and the result as a paginated
+  note list. `--json` returns the raw envelope. Supports
+  `--wiki`, `--k`, `--expand-limit`. Mounted under the Knowledge
+  panel in `lore --help`.
+- **Trace contract documented** in
+  ``docs/architecture/lore-drill.md`` — clients should always
+  check ``"skipped" in step`` before reading data keys.
+
 ## [0.15.0] — 2026-04-28
 
 P3.3 from the multi-agent synthesis review — settles slash-toggle

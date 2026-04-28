@@ -86,6 +86,36 @@ trace as a tree (rich) and the result as a paginated note list. No
 special-casing — the trace ships in the response either way; the CLI
 just chooses to format it visibly.
 
+## Trace contract for clients
+
+The trace shape is part of the MCP response and is now public. Clients
+should:
+
+* Always check ``"skipped" in step`` before reading ``paths`` /
+  ``wikilinks`` — skipped stages omit the data keys.
+* Treat ``elapsed_ms`` as always present and always an int.
+* Use ``expand.wikilinks`` to answer "which wikilinks were
+  *discovered*" and ``read_expanded.paths`` for "which were
+  *read*". They diverge when a wikilink doesn't resolve to a real
+  note or when the read fails — in that case the slug appears in
+  ``expand.wikilinks`` only.
+* ``read.read_failed`` and ``read_expanded.read_failed`` (optional
+  keys) surface paths whose ``handle_read`` returned an error. The
+  presence of a path here means it's listed under ``paths`` but its
+  body is **not** in ``result.notes``.
+* ``read_expanded.truncated`` / ``kept`` only appear when the
+  ``expand_limit`` cap actually stopped the loop. A smaller resolved
+  set than ``expand_limit`` (because slugs were unresolvable, not
+  because the cap fired) will *not* show truncation.
+
+## Known limitations
+
+* **Catalog ambiguity.** ``_resolve_slug`` falls back to ``rglob`` and
+  returns the first match if the catalog doesn't carry the slug. Two
+  notes with the same filename → drill silently picks one. Drill
+  amplifies this versus ``lore_read`` because it walks the link graph.
+  Inherited from the existing read path; not a drill-specific bug.
+
 ## Out of scope (for the first ship)
 
 - Re-ranking with embeddings — punt to a future flag once the basic

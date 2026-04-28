@@ -26,6 +26,7 @@ from lore_cli import (
     curator_cmd,
     detach_cmd,
     doctor_cmd,
+    drill_cmd,
     hooks,
     inbox_cmd,
     ingest_cmd,
@@ -74,6 +75,7 @@ app.add_typer(doctor_cmd.app, name="doctor", rich_help_panel=_GS)
 app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
 
 app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
+app.add_typer(drill_cmd.app, name="drill", rich_help_panel=_KN)
 app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
 app.add_typer(plan_cmd.app, name="plan", rich_help_panel=_KN)
 app.add_typer(surface_cmd.app, name="surface", rich_help_panel=_KN)
