@@ -10,6 +10,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-04-28
+
+### Fixed
+
+- **`plan-capture` reads from `tool_response` when `tool_input` is
+  empty.** Second smoke test after v0.18.1 surfaced that Claude Code's
+  hook payload sometimes delivers the plan in `tool_response.plan`
+  with `tool_input: {}` — specifically when the model calls
+  ExitPlanMode without a `plan` argument and the harness loads the
+  plan from the plan file. `parse_payload` now searches both sections
+  in order: `tool_input.<field>` → `tool_input` longest-string fallback
+  → `tool_response.<field>` → `tool_response` longest-string fallback.
+  Telemetry source-field strings now name which section matched
+  (`tool_response.plan`, etc.). The previously-orphaned payload from
+  the 0.18.2 smoke test now files correctly.
+
 ## [0.18.2] - 2026-04-28
 
 ### Performance

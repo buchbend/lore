@@ -293,9 +293,10 @@ def test_parse_payload_fallback_rejects_short_strings() -> None:
 
 
 def test_parse_payload_no_tool_input() -> None:
+    """Neither ``tool_input`` nor ``tool_response`` carries a plan."""
     text, source = parse_payload({"other": "stuff"})
     assert text is None
-    assert source == "no-tool-input"
+    assert source == "no-match"
 
 
 def test_parse_payload_empty_string_skipped() -> None:
@@ -304,6 +305,45 @@ def test_parse_payload_empty_string_skipped() -> None:
         {"tool_input": {"plan": "   ", "plan_text": "real"}}
     )
     assert text == "real"
+
+
+def test_parse_payload_falls_back_to_tool_response() -> None:
+    """Empty ``tool_input`` + plan in ``tool_response.plan`` — captured 2026-04-28.
+
+    Why: when the model calls ExitPlanMode with no ``plan`` argument, Claude
+    Code's harness reads the plan file content and surfaces it via
+    ``tool_response.plan``; ``tool_input`` arrives as an empty dict. Older
+    parse_payload only inspected ``tool_input`` so plans were silently
+    orphan-dumped.
+    """
+    plan_text = (
+        "# Refactor authentication\n\n## Steps\n\n### s1: thing\n- thing\n"
+    )
+    text, source = parse_payload(
+        {
+            "tool_input": {},
+            "tool_response": {
+                "plan": plan_text,
+                "isAgent": False,
+                "filePath": "/x.md",
+                "hasTaskTool": True,
+            },
+        }
+    )
+    assert text == plan_text
+    assert source == "tool_response.plan"
+
+
+def test_parse_payload_prefers_tool_input_over_tool_response() -> None:
+    """When both sections have a plan, ``tool_input`` wins (model intent first)."""
+    text, source = parse_payload(
+        {
+            "tool_input": {"plan": "from input"},
+            "tool_response": {"plan": "from response"},
+        }
+    )
+    assert text == "from input"
+    assert source == "tool_input.plan"
 
 
 # ---------------------------------------------------------------------------

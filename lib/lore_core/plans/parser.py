@@ -74,40 +74,47 @@ def parse_payload(payload: dict[str, Any]) -> tuple[str | None, str]:
     extractable was found; ``source_field`` names which path matched
     (for telemetry).
 
-    Tries documented ``tool_input.<field>`` names first, then falls
-    back to any string-typed value ≥100 chars. The fallback's
-    threshold rejects short slugs / IDs that happen to live alongside
-    the plan text.
+    Search order:
+
+    1. Documented ``tool_input.<field>`` names (``plan``, ``plan_text``, …).
+    2. Longest string ≥100 chars anywhere in ``tool_input`` (handles future
+       schema renames).
+    3. Same lookups against ``tool_response`` — Claude Code's actual hook
+       payload puts the plan in ``tool_response.plan`` when the model
+       calls ExitPlanMode without a ``plan`` argument (the harness loads
+       it from the plan file). ``tool_input`` is empty in that case.
+
+    The 100-char fallback threshold rejects short slugs / IDs that happen
+    to live alongside the plan text.
     """
-    tool_input = payload.get("tool_input")
-    if tool_input is None:
-        return None, "no-tool-input"
-    if not isinstance(tool_input, dict):
-        return None, "no-tool-input"
-
-    for field_name in _PAYLOAD_FIELDS:
-        value = tool_input.get(field_name)
-        if isinstance(value, str) and value.strip():
-            return value, f"tool_input.{field_name}"
-
-    # Fallback: prefer the LONGEST string >= threshold. Dict insertion
-    # order is determined by the JSON producer, not by us — picking
-    # the longest is more robust against future schema additions where
-    # an extra string field happens to be listed before the real plan.
-    longest_key: str | None = None
-    longest_val: str | None = None
-    longest_len = -1
-    for key, value in tool_input.items():
-        if not isinstance(value, str):
+    for source_name in ("tool_input", "tool_response"):
+        section = payload.get(source_name)
+        if not isinstance(section, dict):
             continue
-        if len(value) < _FALLBACK_MIN_CHARS:
-            continue
-        if len(value) > longest_len:
-            longest_len = len(value)
-            longest_key = key
-            longest_val = value
-    if longest_val is not None:
-        return longest_val, f"tool_input.{longest_key}[fallback]"
+
+        for field_name in _PAYLOAD_FIELDS:
+            value = section.get(field_name)
+            if isinstance(value, str) and value.strip():
+                return value, f"{source_name}.{field_name}"
+
+        # Fallback: prefer the LONGEST string >= threshold. Dict insertion
+        # order is determined by the JSON producer, not by us — picking
+        # the longest is more robust against future schema additions where
+        # an extra string field happens to be listed before the real plan.
+        longest_key: str | None = None
+        longest_val: str | None = None
+        longest_len = -1
+        for key, value in section.items():
+            if not isinstance(value, str):
+                continue
+            if len(value) < _FALLBACK_MIN_CHARS:
+                continue
+            if len(value) > longest_len:
+                longest_len = len(value)
+                longest_key = key
+                longest_val = value
+        if longest_val is not None:
+            return longest_val, f"{source_name}.{longest_key}[fallback]"
 
     return None, "no-match"
 
