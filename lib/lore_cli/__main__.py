@@ -37,6 +37,7 @@ from lore_cli import (
     migrate_cmd,
     new_wiki_cmd,
     news_cmd,
+    plan_cmd,
     proc_cmd,
     registry_cmd,
     resume_cmd,
@@ -72,6 +73,7 @@ app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
 
 app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
 app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
+app.add_typer(plan_cmd.app, name="plan", rich_help_panel=_KN)
 app.add_typer(surface_cmd.app, name="surface", rich_help_panel=_KN)
 app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
 app.add_typer(news_cmd.app, name="news", rich_help_panel=_KN)
