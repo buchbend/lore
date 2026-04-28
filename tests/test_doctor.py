@@ -98,6 +98,76 @@ def test_doctor_footer_points_to_status(healthy_vault, capsys):
     assert "lore status" in out
 
 
+# ---------------------------------------------------------------------------
+# `_check_claude_plugin_cache_drift` — Claude plugin cache vs pip drift
+# ---------------------------------------------------------------------------
+
+
+def _write_plugin_index(home: Path, *, version: str | None, scope: str = "user") -> None:
+    """Write a minimal `~/.claude/plugins/installed_plugins.json`."""
+    plugins_dir = home / ".claude" / "plugins"
+    plugins_dir.mkdir(parents=True, exist_ok=True)
+    entries = []
+    if version is not None:
+        entries.append(
+            {"scope": scope, "version": version, "installPath": str(plugins_dir / "lore" / version)}
+        )
+    (plugins_dir / "installed_plugins.json").write_text(
+        json.dumps({"version": 2, "plugins": {"lore@lore": entries}})
+    )
+
+
+def test_plugin_cache_drift_skips_when_no_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    assert ok is True
+    assert "no Claude plugin cache" in msg
+
+
+def test_plugin_cache_drift_skips_when_lore_not_installed_in_claude(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    _write_plugin_index(tmp_path, version=None)
+    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    assert ok is True
+    assert "not present" in msg
+
+
+def test_plugin_cache_drift_passes_when_versions_match(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    _write_plugin_index(tmp_path, version="0.13.1")
+    # Stub importlib.metadata.version to return the matching string.
+    import importlib.metadata as _md
+    monkeypatch.setattr(_md, "version", lambda _name: "0.13.1")
+    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    assert ok is True
+    assert "0.13.1 matches pip" in msg
+
+
+def test_plugin_cache_drift_fails_when_pip_lags_behind_cache(tmp_path, monkeypatch):
+    """The headline footgun: `claude plugin update` advanced the cache,
+    pipx wasn't upgraded, banner silently shows the old version."""
+    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    _write_plugin_index(tmp_path, version="0.13.1")
+    import importlib.metadata as _md
+    monkeypatch.setattr(_md, "version", lambda _name: "0.10.0")
+    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    assert ok is False
+    assert "0.13.1" in msg
+    assert "0.10.0" in msg
+    assert "pipx upgrade lore" in msg
+    assert "restart Claude Code" in msg
+
+
+def test_plugin_cache_drift_unreadable_index_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    plugins_dir = tmp_path / ".claude" / "plugins"
+    plugins_dir.mkdir(parents=True)
+    (plugins_dir / "installed_plugins.json").write_text("{not json")
+    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    assert ok is False
+    assert "unreadable" in msg
+
+
 def test_doctor_capture_panel_lock_free_removed_smoke(tmp_path):
     """Placeholder so pytest collection still passes; old capture-panel
     tests for free-lock / hook-errors / marker are superseded by

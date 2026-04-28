@@ -111,3 +111,86 @@ def test_default_subcommand_is_install(clean_home, capsys):
     install_cmd.main(["check", "--integration", "cursor"])
     # The fact that it ran without SystemExit on argparse confirms the
     # default subcommand routing works.
+
+
+# ---------------------------------------------------------------------------
+# `_refresh_claude_plugin_cache` — auto `claude plugin update` after install
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_claude_plugin_cache_skips_when_claude_missing(
+    monkeypatch, capsys
+):
+    """No `claude` on PATH → print a manual hint, don't shell out."""
+    monkeypatch.setattr(install_cmd.shutil, "which", lambda _name: None)
+
+    called = []
+    monkeypatch.setattr(
+        install_cmd.subprocess,
+        "run",
+        lambda *a, **kw: called.append((a, kw)),
+    )
+    install_cmd._refresh_claude_plugin_cache(quiet=False)
+    out = capsys.readouterr().out
+    assert called == []
+    assert "claude plugin update lore@lore" in out
+
+
+def test_refresh_claude_plugin_cache_runs_update_on_success(
+    monkeypatch, capsys
+):
+    """`claude` on PATH → run `claude plugin update lore@lore` and relay output."""
+    monkeypatch.setattr(install_cmd.shutil, "which", lambda _name: "/fake/claude")
+
+    captured_argv = {}
+
+    class _Result:
+        returncode = 0
+        stdout = "Plugin 'lore' updated from 0.10.0 to 0.13.1 for scope user.\n"
+        stderr = ""
+
+    def _fake_run(argv, **kwargs):
+        captured_argv["argv"] = argv
+        return _Result()
+
+    monkeypatch.setattr(install_cmd.subprocess, "run", _fake_run)
+    install_cmd._refresh_claude_plugin_cache(quiet=False)
+    out = capsys.readouterr().out
+    assert captured_argv["argv"] == ["/fake/claude", "plugin", "update", "lore@lore"]
+    assert "0.10.0 to 0.13.1" in out
+    assert "Restart Claude Code" in out
+
+
+def test_refresh_claude_plugin_cache_warns_on_nonzero_exit(monkeypatch, capsys):
+    """Non-zero exit → print a warning with the last stderr/stdout line."""
+    monkeypatch.setattr(install_cmd.shutil, "which", lambda _name: "/fake/claude")
+
+    class _Result:
+        returncode = 1
+        stdout = ""
+        stderr = "error: plugin 'lore@lore' is not installed\n"
+
+    monkeypatch.setattr(
+        install_cmd.subprocess, "run", lambda *a, **kw: _Result()
+    )
+    install_cmd._refresh_claude_plugin_cache(quiet=False)
+    out = capsys.readouterr().out
+    assert "is not installed" in out
+    assert "/plugin" in out  # marketplace hint
+
+
+def test_refresh_claude_plugin_cache_quiet_suppresses_output(monkeypatch, capsys):
+    """`quiet=True` keeps the helper silent on the happy path."""
+    monkeypatch.setattr(install_cmd.shutil, "which", lambda _name: "/fake/claude")
+
+    class _Result:
+        returncode = 0
+        stdout = "Plugin 'lore' updated.\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        install_cmd.subprocess, "run", lambda *a, **kw: _Result()
+    )
+    install_cmd._refresh_claude_plugin_cache(quiet=True)
+    out = capsys.readouterr().out
+    assert out == ""

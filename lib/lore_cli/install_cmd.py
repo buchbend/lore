@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -468,6 +469,130 @@ def _post_install_setup() -> None:
     )
 
 
+_INSTALL_SH_URL = "https://raw.githubusercontent.com/buchbend/lore/main/install.sh"
+
+
+def _run_self_upgrade(*, quiet: bool) -> int:
+    """Hand off to ``install.sh upgrade`` for a binary self-upgrade.
+
+    The bash script is the source of truth for installation: it picks
+    pipx / uv / pip, runs the upgrade, then chains into ``lore install``
+    (the freshly-installed binary) to refresh integrations. Doing this
+    via a subprocess — instead of mutating the running Python process —
+    sidesteps the self-replacement problem (a process can't reliably
+    upgrade the binary it's currently executing from).
+
+    Resolution order for the script:
+      1. ``./install.sh`` next to a source checkout (dev workflow)
+      2. curl-fetch from the canonical URL on GitHub
+    """
+    if not quiet:
+        console.print(
+            "\n[dim]→ self-upgrade: handing off to "
+            "[cyan]install.sh upgrade[/cyan]...[/dim]",
+            markup=True,
+        )
+
+    # Prefer a local checkout if one is on disk (the source layout puts
+    # install.sh two levels above this module: lib/lore_cli/install_cmd.py).
+    local = Path(__file__).resolve().parents[2] / "install.sh"
+    if local.is_file():
+        cmd = ["bash", str(local), "upgrade"]
+    elif shutil.which("curl") and shutil.which("bash"):
+        cmd = [
+            "bash",
+            "-c",
+            f"curl -fsSL {_INSTALL_SH_URL} | bash -s upgrade",
+        ]
+    else:
+        console.print(
+            "[red]Self-upgrade needs `curl` + `bash` on PATH, or a lore "
+            "source checkout next to this module.[/red]\n"
+            "  Manual fallback: [cyan]pipx install --force "
+            "git+https://github.com/buchbend/lore.git[/cyan] then "
+            "[cyan]claude plugin update lore@lore[/cyan].",
+            markup=True,
+        )
+        return 1
+
+    try:
+        return subprocess.run(cmd, check=False).returncode
+    except (OSError, KeyboardInterrupt) as exc:
+        console.print(f"[red]install.sh failed: {exc}[/red]", markup=True)
+        return 1
+
+
+def _refresh_claude_plugin_cache(*, quiet: bool) -> None:
+    """Run `claude plugin update lore@lore` so Claude re-fetches the manifest.
+
+    The Claude plugin cache is keyed on the `version` in
+    `.claude-plugin/plugin.json`; without this refresh, installed plugins
+    keep serving the previous manifest (skills, hooks config, MCP server
+    registration) until the user runs the update by hand. We invoke it as
+    part of `lore install` so the Claude-side install is one step.
+
+    Failures are non-fatal: `claude` may not be on PATH (Code-only setup),
+    the plugin may not yet be installed via `/plugin add`, or the update
+    may report up-to-date. In each case we print a short hint and return.
+    """
+    claude_bin = shutil.which("claude")
+    if claude_bin is None:
+        if not quiet:
+            console.print(
+                "\n[dim]Note:[/dim] [bold]claude[/bold] CLI not on PATH — "
+                "run [cyan]claude plugin update lore@lore[/cyan] manually "
+                "once Claude Code is installed.",
+                markup=True,
+            )
+        return
+
+    if not quiet:
+        console.print(
+            "\n[dim]→ refreshing Claude plugin cache "
+            "([cyan]claude plugin update lore@lore[/cyan])...[/dim]",
+            markup=True,
+        )
+    try:
+        result = subprocess.run(
+            [claude_bin, "plugin", "update", "lore@lore"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        if not quiet:
+            console.print(
+                f"  [yellow]claude plugin update failed: {exc}[/yellow] "
+                "Run [cyan]claude plugin update lore@lore[/cyan] manually.",
+                markup=True,
+            )
+        return
+
+    if result.returncode != 0:
+        if not quiet:
+            stderr = (result.stderr or result.stdout or "").strip().splitlines()
+            tail = stderr[-1] if stderr else f"exit {result.returncode}"
+            console.print(
+                f"  [yellow]claude plugin update lore@lore: {rich_escape(tail)}[/yellow]\n"
+                "  If the plugin isn't installed yet, add it from the Claude "
+                "marketplace via [cyan]/plugin[/cyan].",
+                markup=True,
+            )
+        return
+
+    if not quiet:
+        # Claude prints its own success line on stdout; relay it so the
+        # version transition is visible in the install summary.
+        last = (result.stdout or "").strip().splitlines()
+        if last:
+            console.print(f"  [green]{rich_escape(last[-1])}[/green]", markup=True)
+        console.print(
+            "  [dim]Restart Claude Code to load the refreshed plugin.[/dim]",
+            markup=True,
+        )
+
+
 def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
     """Shared install / upgrade / uninstall driver. `mode` selects:
         install   → integration.plan(ctx)
@@ -568,6 +693,11 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
 
     # Final handoff
     if mode == "install" and overall_failures == 0:
+        # Refresh Claude's plugin manifest cache so hooks/skills/MCP land
+        # without a manual `claude plugin update lore@lore`. Only when the
+        # Claude integration was actually part of the run.
+        if any(name == "claude" for name, _ in plans) and not args.json:
+            _refresh_claude_plugin_cache(quiet=args.quiet)
         if interactive:
             try:
                 _post_install_setup()
@@ -647,6 +777,16 @@ _FORCE = typer.Option(
 _LORE_REPO = typer.Option(
     None, "--lore-repo", help="Path to a lore source checkout (for editable / dev installs)."
 )
+_UPGRADE = typer.Option(
+    False,
+    "--upgrade",
+    "-u",
+    help=(
+        "Upgrade the lore binary via install.sh before configuring "
+        "integrations. install.sh chains back into `lore install` once "
+        "the new binary is in place — single command, full roundtrip."
+    ),
+)
 
 
 @app.callback(invoke_without_command=True)
@@ -658,10 +798,17 @@ def root(
     json_out: bool = _JSON,
     force: bool = _FORCE,
     lore_repo: str = _LORE_REPO,
+    upgrade: bool = _UPGRADE,
 ) -> None:
     """Default action — install Lore for one or more integrations."""
     if ctx.invoked_subcommand is not None:
         return  # the subcommand handles its own work
+    if upgrade:
+        # Hand off to install.sh; it will exec the new `lore install`
+        # after the binary is upgraded, so we never touch _cmd_install
+        # in the old process.
+        _exit_with(_run_self_upgrade(quiet=quiet))
+        return
     args = _make_args(
         "install",
         integration=integration,
@@ -755,10 +902,11 @@ def cmd_reinstall(
 
         lore install uninstall && lore install
 
-    Pair with ``claude plugin update lore@lore`` to force Claude's
-    plugin cache to re-fetch (the ``.claude-plugin/plugin.json``
-    version must be bumped in the repo for the update to do anything
-    — see CHANGELOG.md).
+    The install pass automatically runs ``claude plugin update lore@lore``
+    when the Claude integration is part of the run, so the plugin manifest
+    cache stays in sync. The ``.claude-plugin/plugin.json`` version still
+    has to be bumped in the source for Claude's update to do anything —
+    see CHANGELOG.md.
     """
     uninstall_args = _make_args(
         "reinstall",
@@ -783,13 +931,6 @@ def cmd_reinstall(
         lore_repo=lore_repo,
     )
     rc = _cmd_install(install_args, mode="install")
-
-    if rc == 0 and not json_out and not quiet:
-        from rich.console import Console
-        Console().print(
-            "\n[dim]Next:[/dim] run [bold]claude plugin update lore@lore[/bold] "
-            "(or restart Claude) to re-fetch the plugin cache."
-        )
     _exit_with(rc)
 
 
