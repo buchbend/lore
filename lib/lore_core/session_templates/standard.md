@@ -29,7 +29,28 @@ curator_a_run: <ISO timestamp>
 human reading. `title` is short, content-named, and becomes the
 filename slug (after smart word-boundary truncation). `description`
 is the status-line preview SessionStart shows in the next session.
-**No phase numbers** in either. Phases die; concepts live.
+
+**Title rules** (hard):
+
+- 6-8 words, content-named.
+- **No phase numbers, no version numbers, no release tags.** ("v0.16.x",
+  "phase 6", "v0.18.2 release" are all banned.) Phases and versions
+  die; concepts live. Title the *substance*, not the shipping
+  arc — "session-note shape overhaul" not "session-note shape v0.16.1
+  to v0.18.0".
+
+**Description rules** (hard):
+
+- **1-2 sentences. ~30 words. ≤ 50 words absolute.** A status-line
+  preview, not a paragraph. If you cannot get below 50 words, the
+  description is bleeding into Summary territory.
+- **Must NOT be a verbatim copy of `## Summary`.** They are different
+  shapes for different readers: `description` is the one-glance
+  handle SessionStart shows; `## Summary` is the rationale-rich
+  4-5 sentence narrative. If both fields contain the same prose,
+  the redesign has failed for that note. Compose them as two
+  distinct outputs — description first as the handle, then expand
+  into Summary with the *why* and how.
 
 ## Body shape (locked)
 
@@ -70,6 +91,14 @@ from git log + gh issue refs — no LLM authoring there.
 in continuous prose. This is what a 6-month-future reader and Curator
 B's clustering pass both land on first — the rationale-rich anchor.
 
+**Must differ from `description`.** `description` is the 1-2-sentence
+status-line preview; `## Summary` expands into the *rationale* — the
+problem that prompted the work, the constraints that shaped the
+approach, the trade-offs that mattered. If your Summary is a
+copy-paste of the description, you have written one shape for two
+readers and lost the redesign's value. Lead Summary with the *why*,
+not a re-statement of the *what*.
+
 ### `## Decisions made` — bullets with rationale
 
 **Promote-vs-don't rule.** Include a bullet here only if the rationale
@@ -103,6 +132,51 @@ fights the human's scan.
 Activity narrative — what got changed and what happened. Same bold-
 phrase-first style. This is where tactical choices, edits, and
 discoveries land.
+
+### Wikilink discipline — what goes inside `[[ ]]`
+
+`[[ ]]` is reserved for **vault note slugs** — the filenames (sans
+`.md`) of notes that live in `concepts/`, `decisions/`, `papers/`,
+`projects/`, `plans/`, or other session notes. The linter resolves
+each `[[X]]` against `X.md` somewhere in the vault. Anything that
+will not resolve to a vault note is noise in the lint report.
+
+**Use `[[ ]]` for:**
+
+- Existing vault notes you have actually seen in `lore_search` results.
+- Concepts you are simultaneously promoting into a new note as part of
+  this session (and you must actually create that note).
+- Plan refs in the documented `[[plan/<slug>]]` or `[[plan/<slug>#sN]]`
+  form — those are first-class.
+
+**Do NOT echo wikilinks from the input transcript.** The transcript
+may contain `[[slug]]`-shaped strings injected by Lore's own
+SessionStart messages ("Since you left new note [[debug-test-foo]]"),
+hook banners, or paste-throughs from prior sessions. Those are *not*
+verified vault notes — many are ephemeral, test-only, or already
+deleted. Treat any wikilink in the transcript as suspect and only
+emit one in the session note if you would have written it independently
+based on the work you observed.
+
+**Never use `[[ ]]` for:**
+
+- File or directory paths (`lib/foo/bar.py`, `.claude-plugin/plugin.json`,
+  `/home/...`). Use backticks: `` `lib/foo/bar.py` ``.
+- External repo names (`org/repo`, `ccatobs/system-integration`). Use
+  backticks: `` `ccatobs/system-integration` ``.
+- Pull-request or issue refs (`PR #77`, `issue #29`, `org/repo#66`).
+  Leave them as plain text or backticks; `gh` and the human reader
+  resolve them.
+- Code symbols, class names, env vars, version strings, branch names
+  (`CLAUDE_SESSION_ID`, `v0.13.1`, `feature/foo`). Use backticks.
+- Tools, products, or proper nouns (`Dynaconf`, `Docker Scout`,
+  `Claude Code`) **unless** there is already a vault note for them.
+  When in doubt: plain text.
+
+The rule of thumb: if you have not just seen this exact slug as a
+search result or you are not creating that note in this same session,
+do **not** wrap it in `[[ ]]`. A broken wikilink is worse than no
+wikilink — it pollutes lint and the catalog without adding navigation.
 
 ### `## Loose ends` — informational, never TODOs
 

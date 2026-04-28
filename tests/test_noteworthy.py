@@ -271,7 +271,10 @@ def test_build_prompt_text_caps_per_turn_content():
     turns = [_t(role="user", text=long)]
     prompt = _build_prompt_text(turns, max_per_turn_chars=4_000)
     assert "chars elided" in prompt
-    assert len(prompt) < 10_000
+    # Per-turn cap ~4 KB body + ~5.5 KB section-norms steering header.
+    # Bumped from 10_000 after the title/description/Summary discipline
+    # rules landed in session_templates/standard.md.
+    assert len(prompt) < 11_000
 
 
 def test_build_prompt_text_tail_biases_when_over_budget():
@@ -288,11 +291,12 @@ def test_build_prompt_text_tail_biases_when_over_budget():
     assert "turn 199" in prompt  # most recent kept
     assert "turn 0" not in prompt  # earliest dropped
     # Budget applies to the turn body. The steering header includes the
-    # active session-note template's section-authoring norms (~3 KB) plus
-    # the inline title/description/bullet guidance — total fixed overhead
-    # ~4 KB. Cap large enough to absorb header growth but tight enough to
-    # catch a real budget regression.
-    assert len(prompt) <= 6_000
+    # active session-note template's section-authoring norms (~5 KB after
+    # the title/description/Summary discipline rules + wikilink-discipline
+    # subsection) plus the inline title / description / bullet / wikilink
+    # guidance — total fixed overhead ~5.5 KB. Cap large enough to absorb
+    # header growth but tight enough to catch a real budget regression.
+    assert len(prompt) <= 7_500
 
 
 def test_build_prompt_text_under_budget_is_unchanged():

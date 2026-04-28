@@ -28,6 +28,12 @@ extract_prompt: |-
 
   Title test: does it work as a `[[wikilink]]` target a year from now? Body test: could the same
   body have been written *before* the cluster's sessions happened, given the right inputs?
+
+  **Tags** — 2–5 short, lower-case, hyphenated tags in the `topic/<area>` namespace
+  (e.g. `topic/curator`, `topic/cli`, `topic/knowledge-management`). Tags are for
+  discovery and clustering — pick orthogonal axes that future search will land on,
+  not synonyms of the title. Never emit `tags: []`; if you cannot name two tags the
+  cluster does not yet warrant a concept. No project-name tags (those go in scope).
 ```
 
 Extract when: a named abstraction has emerged that other notes will want to reference.
@@ -70,6 +76,12 @@ extract_prompt: |-
 
   Title names the CHOICE, not the topic. Good: "Threads.md as derived read-only surface".
   Bad: "Surface authoring" (that's a topic, not a decision).
+
+  **Tags** — 2–5 short, lower-case, hyphenated tags in the `topic/<area>` namespace
+  (e.g. `topic/process`, `topic/security`, `topic/storage`). Tags are for discovery
+  and clustering across decisions — pick orthogonal axes future search will land on,
+  not synonyms of the title. Never emit `tags: []`; if you cannot name two tags
+  the choice is probably not yet a decision worth recording.
 ```
 
 Extract when: a session note records a trade-off with explicit rejected alternatives.
@@ -80,4 +92,5 @@ Work session log filed by Curator A.
 ```yaml
 required: [type, created, last_reviewed, description]
 optional: [scope, tags, draft, source_transcripts]
+authored_by: curator_a
 ```
