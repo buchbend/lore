@@ -19,6 +19,12 @@ class SurfaceDef:
     plural: str | None = None
     slug_format: str | None = None
     extract_prompt: str | None = None
+    # Marks the surface as owned by a specific writer. ``curator_a`` means
+    # Curator B's extraction loop must skip it (the surface is filed
+    # through a dedicated writer with its own path layout — e.g.
+    # ``session_writer`` shards by date). Other values are reserved for
+    # future authors and pass through unfiltered.
+    authored_by: str | None = None
 
 
 @dataclass(frozen=True)
@@ -122,6 +128,7 @@ def _parse_section(name: str, body: str, *, source: Path) -> SurfaceDef | None:
     plural: str | None = None
     slug_format: str | None = None
     extract_prompt: str | None = None
+    authored_by: str | None = None
 
     if yaml_match:
         yaml_text = yaml_match.group(1)
@@ -150,6 +157,8 @@ def _parse_section(name: str, body: str, *, source: Path) -> SurfaceDef | None:
                 slug_format = str(value) if value is not None else None
             elif key == "extract_prompt":
                 extract_prompt = str(value) if value is not None else None
+            elif key == "authored_by":
+                authored_by = str(value) if value is not None else None
             else:
                 warnings.warn(
                     f"surfaces: unknown YAML key '{key}' in section '{name}' at {source}",
@@ -168,6 +177,7 @@ def _parse_section(name: str, body: str, *, source: Path) -> SurfaceDef | None:
         plural=plural,
         slug_format=slug_format,
         extract_prompt=extract_prompt,
+        authored_by=authored_by,
     )
 
 
@@ -199,6 +209,8 @@ def render_section(surface: SurfaceDef) -> str:
             lines.append(indented)
         else:
             lines.append(f'extract_prompt: "{_yaml_dq_escape(surface.extract_prompt)}"')
+    if surface.authored_by is not None:
+        lines.append(f"authored_by: {surface.authored_by}")
     lines.append("```")
     if surface.extract_when:
         lines.append("")

@@ -271,6 +271,28 @@ def test_surfaces_parse_new_keys_absent_defaults_to_none():
     assert s.plural is None
     assert s.slug_format is None
     assert s.extract_prompt is None
+    assert s.authored_by is None
+
+
+def test_surfaces_parse_authored_by_key():
+    text = (
+        "# Surfaces\nschema_version: 2\n\n"
+        "## session\nWork session log.\n\n"
+        "```yaml\nrequired: [type]\noptional: []\nauthored_by: curator_a\n```\n"
+    )
+    from lore_core.surfaces import _parse
+    from pathlib import Path
+    doc = _parse(text, Path("<test>"))
+    assert doc.surfaces[0].authored_by == "curator_a"
+
+
+def test_packaged_standard_marks_session_as_curator_a_authored():
+    """The shipped standard template declares session as Curator A's territory
+    so Curator B's extraction loop skips it."""
+    from lore_core.surfaces import _load_packaged_standard
+    doc = _load_packaged_standard()
+    session = next(s for s in doc.surfaces if s.name == "session")
+    assert session.authored_by == "curator_a"
 
 
 def test_render_section_minimal():

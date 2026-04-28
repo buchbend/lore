@@ -23,6 +23,7 @@ Work session log filed by Curator A.
 ```yaml
 required: [type, created, last_reviewed, description]
 optional: [scope, tags, draft, source_transcripts]
+authored_by: curator_a
 ```
 
 ## artefact
