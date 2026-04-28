@@ -95,6 +95,7 @@ def classify_slice(
     model_resolver: Callable[[str], str],         # e.g. lambda t: cfg.models.middle
     llm_client: LlmClient,
     lore_root: Path | None = None,
+    wiki_dir: Path | None = None,                 # for per-wiki section-norm prompt injection
     logger: "RunLogger | None" = None,
     transcript_id: str | None = None,
 ) -> NoteworthyResult:
@@ -142,7 +143,11 @@ def classify_slice(
     redaction_log_path = (
         (lore_root / ".lore" / "redaction.log") if lore_root is not None else None
     )
-    prompt_text = _build_prompt_text(turns, redaction_log_path=redaction_log_path)
+    prompt_text = _build_prompt_text(
+        turns,
+        redaction_log_path=redaction_log_path,
+        wiki_dir=wiki_dir,
+    )
     prompt_chars = len(prompt_text)
     prompt_messages = [{"role": "user", "content": prompt_text}]
 
@@ -223,6 +228,7 @@ def _build_prompt_text(
     redaction_log_path: Path | None = None,
     max_prompt_chars: int | None = None,
     max_per_turn_chars: int | None = None,
+    wiki_dir: Path | None = None,
 ) -> str:
     """Build a prompt summarising the slice — text, tool calls, tool results.
 
@@ -253,9 +259,22 @@ def _build_prompt_text(
         "what + why in one breath. Bullets in `bullets` and `decisions` lead "
         "with a bold substance phrase, then colon, then detail. Loose ends "
         "are past-tense / stative observations, never TODOs.",
-        "",
-        "--- transcript slice ---",
     ]
+
+    # Inject the active wiki's section-authoring norms (per-wiki override
+    # at <wiki>/templates/session.md, fallback to the shipped standard).
+    # The norms steer Decisions / What we worked on / Loose ends bullet
+    # discipline without re-stating it in code each time the prompt is
+    # tightened.
+    try:
+        from lore_core.session_template import section_norms_for_prompt
+        norms = section_norms_for_prompt(wiki_dir)
+    except Exception:  # noqa: BLE001 — never fail the prompt on template errors
+        norms = ""
+    if norms:
+        header.extend(["", "--- session-note template norms ---", norms])
+
+    header.extend(["", "--- transcript slice ---"])
 
     turn_lines: list[str] = []
     for t in turns:

@@ -287,10 +287,12 @@ def test_build_prompt_text_tail_biases_when_over_budget():
     assert "earlier turns elided" in prompt
     assert "turn 199" in prompt  # most recent kept
     assert "turn 0" not in prompt  # earliest dropped
-    # Budget applies to the turn body; the steering header (title/description/
-    # bullet norms) adds ~700 chars overhead. Pad the assertion accordingly so
-    # this test doesn't break the next time we tighten prompt guidance.
-    assert len(prompt) <= 2_000
+    # Budget applies to the turn body. The steering header includes the
+    # active session-note template's section-authoring norms (~3 KB) plus
+    # the inline title/description/bullet guidance — total fixed overhead
+    # ~4 KB. Cap large enough to absorb header growth but tight enough to
+    # catch a real budget regression.
+    assert len(prompt) <= 6_000
 
 
 def test_build_prompt_text_under_budget_is_unchanged():

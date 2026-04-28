@@ -459,6 +459,7 @@ def _process_chunk(
             model_resolver=model_resolver,
             llm_client=llm_client,
             lore_root=lore_root,
+            wiki_dir=wiki_dir,
             logger=logger,
             transcript_id=entry.transcript_id,
         )

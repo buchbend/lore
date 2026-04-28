@@ -10,6 +10,24 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-04-28
+
+### Added
+
+- **Session-note revision Phase 5 — per-wiki session templates.** New
+  `lib/lore_core/session_templates/standard.md` documents the locked
+  body shape and per-section authoring norms (Decisions promote-vs-don't
+  rule, Loose ends past-tense / stative grammar, bold-substance-phrase
+  bullet style, etc.). New `lib/lore_core/session_template.py` loads
+  it with a per-wiki override at `<wiki>/templates/session.md`, parallel
+  to how `surface_templates/standard.md` works. `classify_slice` and
+  `_build_prompt_text` accept a `wiki_dir` kwarg and inject the active
+  template's `## Section-authoring norms` block into the noteworthy
+  LLM prompt — so when a wiki tunes its norms the LLM picks them up
+  on the next call without code changes. Drift test asserts every
+  heading the renderer emits is mentioned in `standard.md` so the
+  documentation can't silently diverge from the code.
+
 ## [0.16.4] - 2026-04-28
 
 ### Fixed
