@@ -376,6 +376,86 @@ ln -s ~/git/myorg/team-knowledge ~/lore/wiki/team
 
 All `/lore:*` commands work with a single mount; no routing prompts.
 
+## Curator LLM backend — Claude subscription, Anthropic API, or OpenAI-compatible
+
+The curator can talk to three different LLM backends. Pick one based on
+where your API budget lives:
+
+| Backend | Selector | Auth | Used when |
+|---|---|---|---|
+| **Subscription** (`claude` CLI on PATH) | `subscription` | your existing `claude` login | you have a Claude Pro / Team subscription and the `claude` binary on PATH — zero extra cost per curator call |
+| **Anthropic API** (SDK) | `api` | `ANTHROPIC_API_KEY` | you want Claude models but pay per token |
+| **OpenAI-compatible** | `openai` | `LORE_OPENAI_API_KEY` + `LORE_OPENAI_BASE_URL` | you have an institutional gateway, a local model server (vLLM, llama.cpp, Ollama with the openai shim, LiteLLM, OpenRouter, …) or want to point at the real OpenAI API |
+| **auto** | `auto` | first one that works | the default — `claude` on PATH → API key → OpenAI gateway → no LLM (cascade rules only) |
+
+Selection precedence, highest first: CLI flag (`--backend`) → env var
+`LORE_LLM_BACKEND` → `curator.backend` in `$LORE_ROOT/.lore/config.yml`
+→ `auto`.
+
+### OpenAI-compatible backend setup
+
+Two files under `$LORE_ROOT/.lore/`. Non-secrets go in YAML; the API key
+goes in a separate, gitignored env file.
+
+**`$LORE_ROOT/.lore/config.yml`** — diffable, shareable:
+
+```yaml
+curator:
+  backend: openai
+  openai:
+    base_url: https://chat.kiconnect.nrw/api/v1   # your gateway root
+    # api_key_env: LORE_OPENAI_API_KEY            # optional override
+    model_simple: gpt-4o-mini                     # cheap tier
+    model_middle: gpt-4o                          # default tier (Curator A noteworthy, Curator B sections)
+    model_high:   gpt-4o                          # heaviest tier (Curator B abstract, Curator C defrag)
+```
+
+**`$LORE_ROOT/.lore/secrets.env`** — secrets only, mode `0600`:
+
+```
+# Auto-loaded by Lore at curator startup.
+# Process env wins; this file fills in anything the shell didn't export.
+LORE_OPENAI_API_KEY=sk-...
+```
+
+```bash
+chmod 600 $LORE_ROOT/.lore/secrets.env
+```
+
+That's it. The whole `$LORE_ROOT/.lore/` directory is gitignored at the
+vault level (see the default `.gitignore` written by `lore init`), so
+the file never ends up in a commit. Lore warns at load time if the file
+is readable by group or other.
+
+**Resolution rules per field**, highest precedence first:
+
+1. process env (e.g. `LORE_OPENAI_API_KEY` exported in your shell)
+2. `$LORE_ROOT/.lore/secrets.env`
+3. `$LORE_ROOT/.lore/config.yml` → `curator.openai.*`
+4. unset → curator falls back to subscription/API/no-LLM per `auto`
+
+The grammar of `secrets.env` is the dotenv subset every editor renders:
+one `KEY=VALUE` per line, `#` for comments, blank lines ignored, single
+or double quotes around the value optional and stripped on read. Any
+line that isn't shaped like that emits a one-line warning and is
+skipped — Lore will not silently fall over because of a stray paste.
+
+Recognised env vars (any of these can live in `secrets.env` *or* the
+shell — same precedence):
+
+| Var | Purpose |
+|---|---|
+| `LORE_LLM_BACKEND` | overrides `curator.backend` (`subscription` \| `api` \| `openai` \| `auto`) |
+| `LORE_OPENAI_BASE_URL` | OpenAI-compatible API root |
+| `LORE_OPENAI_API_KEY` | API key for the OpenAI-compatible endpoint |
+| `LORE_OPENAI_MODEL_SIMPLE` / `_MIDDLE` / `_HIGH` | per-tier model override |
+| `ANTHROPIC_API_KEY` | for the `api` backend |
+
+Verify the wiring with `lore doctor` (which checks selectability) or run
+a one-shot: `lore curator run --backend openai --dry-run --trace-llm` —
+the trace file under `$LORE_ROOT/.lore/runs/<id>.trace.jsonl` shows the
+exact prompt/response pair for inspection.
+
 ## Scheduling the curator — cost-free defaults
 
 The curator (flags stale notes, detects superseded decisions, keeps

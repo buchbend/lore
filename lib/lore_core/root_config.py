@@ -45,7 +45,11 @@ class OpenAIBackendConfig:
     """Settings for an OpenAI-compatible curator backend (e.g. local model gateways).
 
     ``base_url`` is the OpenAI-compatible API root (e.g. ``https://chat.kiconnect.nrw/api/v1``).
-    ``api_key_env`` names the env var holding the API key — this stays out of config files.
+    ``api_key_env`` names the env var holding the API key — this stays out of
+    config files. The recommended persistent home for the key itself is
+    ``$LORE_ROOT/.lore/secrets.env`` (see :mod:`lore_core.secrets_env`); that
+    file is auto-loaded into ``os.environ`` at curator startup, lives inside
+    the gitignored ``.lore/`` directory, and never appears in diffs.
     ``model_{simple,middle,high}`` override the Anthropic tier names; leave empty to fall
     back to the env var ``LORE_OPENAI_MODEL_{SIMPLE,MIDDLE,HIGH}`` or pass-through.
     """

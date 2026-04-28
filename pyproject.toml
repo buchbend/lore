@@ -1,6 +1,6 @@
 [project]
 name = "lore"
-version = "0.18.5"
+version = "0.19.0"
 description = "LLM-optimized knowledge graph for AI-coding teams"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -43,6 +43,7 @@ dev = [
 ]
 capture = [
     "anthropic>=0.40",
+    "openai>=1.40",
 ]
 
 [project.scripts]

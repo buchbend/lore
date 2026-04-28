@@ -684,9 +684,22 @@ def _resolve_openai_settings(
 ) -> tuple[str, str, dict[str, str]]:
     """Resolve base_url, api_key, and tier→model map from env + root config.
 
-    Precedence per field: env var > root config > empty.
+    Precedence per field: process env > $LORE_ROOT/.lore/secrets.env > root
+    config > empty. The secrets.env layer lets users persist the API key
+    on disk without putting it in the diffable config.yml; the file itself
+    sits inside the already-gitignored ``.lore/`` directory.
+
     Raises LlmClientError if base_url or api_key can't be found.
     """
+    # Hydrate process env from secrets.env for any keys not already set.
+    # Done before the os.environ lookups below so the file is the source
+    # of truth when the shell doesn't export these.
+    try:
+        from lore_core.secrets_env import load_into_environ
+        load_into_environ(lore_root)
+    except Exception:
+        pass
+
     base_url = os.environ.get("LORE_OPENAI_BASE_URL", "").strip()
     api_key_env_name = "LORE_OPENAI_API_KEY"
     tier_to_model: dict[str, str] = {}
@@ -787,6 +800,22 @@ def make_llm_client(
         Optional Lore root for reading ``.lore/config.yml``. When absent,
         only env vars are consulted for OpenAI settings.
     """
+    # Hydrate process env from secrets.env so LORE_LLM_BACKEND /
+    # ANTHROPIC_API_KEY / LORE_OPENAI_* persisted on disk are visible
+    # to the lookups below. Existing process env wins over the file.
+    try:
+        from lore_core.secrets_env import load_into_environ
+        load_into_environ(lore_root)
+    except Exception:
+        pass
+
+    # If the caller didn't pass an Anthropic key but secrets.env supplied
+    # one, pick it up so the api / auto branches can use it.
+    if not api_key:
+        env_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if env_key:
+            api_key = env_key
+
     effective = _normalize_backend_arg(backend)
 
     if effective is not None and effective not in _ALLOWED_BACKEND_ARGS:
