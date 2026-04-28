@@ -10,6 +10,41 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- **`install.sh` bootstrap installer.** Replaces the deprecation shim
+  that lived at the repo root since the v0.10 migration. Picks
+  `pipx` / `uv tool` / `pip --user` (in that preference order),
+  installs or upgrades the `lore` binary, then chains into
+  `lore install` to wire up integrations. Curl-pipeable from
+  `https://raw.githubusercontent.com/buchbend/lore/main/install.sh`
+  for first-time installs; re-run for upgrades. Detects Claude
+  plugin presence to skip the full integration plan on upgrade
+  reruns and just refresh the manifest cache instead.
+- **`lore install --upgrade` / `-u`.** Delegates to `install.sh
+  upgrade` via subprocess so the binary self-replacement happens
+  outside the running Python process. Single command, full roundtrip
+  (binary + integrations + plugin cache).
+- **`lore install` auto-runs `claude plugin update lore@lore`** after
+  a successful install when the Claude integration was part of the
+  run, so the plugin manifest cache no longer drifts behind the
+  binary. Falls back to a copy-pasteable hint when `claude` isn't on
+  PATH or the plugin isn't yet marketplace-installed.
+- **`lore doctor` plugin-cache drift check.** Reads
+  `~/.claude/plugins/installed_plugins.json` and compares the cached
+  `lore@lore` version to the installed pip version; flags the inverse
+  footgun (cache updated, binary not) with the exact fix command.
+
+### Fixed
+
+- **Templates ship as package data.** `templates/` moved into
+  `lib/lore_core/templates/` and declared in
+  `[tool.setuptools.package-data]`. Previously `lore install` (cursor
+  integration) and SessionStart's directive injection assumed a
+  repo-root layout via `Path(__file__).parent.parent.parent.parent` —
+  fine for editable installs, FileNotFoundError under pipx/uv wheel
+  installs.
+
 ## [0.16.0] — 2026-04-28
 
 P3.2 from the multi-agent synthesis review — composite multi-stage

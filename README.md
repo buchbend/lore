@@ -50,9 +50,23 @@ stay at the repo boundary; Obsidian sees one unified graph via symlinks.
 
 ## Install
 
-**This is the canonical install path. Everything below is for special cases
-(uninstall, marketplace, dev checkout, migration).** Three commands. Works on
-Linux + macOS in v1 (Windows tracked as a known gap).
+**One-liner (canonical path).** Works on Linux + macOS in v1 (Windows
+tracked as a known gap):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/buchbend/lore/main/install.sh | sh
+lore init                                               # scaffold a vault + set $LORE_ROOT
+```
+
+The bootstrap script picks `pipx` / `uv tool` / `pip --user` (in that
+preference order), installs the `lore` CLI, then chains into
+`lore install` to wire up Claude Code + Cursor integrations and refresh
+Claude's plugin cache. Re-running it is the canonical upgrade path —
+or use `lore install --upgrade` once the binary is on your PATH.
+
+### Manual install
+
+If you'd rather skip the bootstrap script and install by hand:
 
 ```bash
 pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"  # CLI + passive-capture extras
@@ -91,18 +105,22 @@ Removes the entries Lore added — including from shared JSON files like
 `~/.cursor/mcp.json`. Other servers / your own edits outside Lore-managed
 markers stay put.
 
-### Migrating from `install.sh` (legacy)
+### Migrating from the pre-v0.10 `install.sh`
 
-If you ran the old bash installer, `lore install` will refuse with a
-clear warning until you reset:
+> Only relevant if you ran a `lore` `install.sh` from before v0.10 — the
+> one that wrote skill symlinks directly into `~/.claude/skills/`. The
+> current `install.sh` is the thin bootstrap installer documented in
+> § Install above; it never writes those symlinks.
+
+If you ran the pre-v0.10 bash installer, `lore install` will refuse
+with a clear warning until you reset:
 
 ```bash
 git clone https://github.com/buchbend/lore.git    # if you don't have a checkout
 cd lore
 python3 tools/undo_install_sh.py --dry-run        # preview what would change
 python3 tools/undo_install_sh.py                  # apply
-pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"   # install the new CLI
-lore install                                      # then proceed cleanly
+curl -fsSL https://raw.githubusercontent.com/buchbend/lore/main/install.sh | sh
 ```
 
 The undo helper is stdlib-only Python; runs even if `lore` isn't on
@@ -139,10 +157,18 @@ abstracted daily by Curator B.
 
 ### Update from an older install
 
+One command — upgrades the binary, refreshes integrations, and pokes
+Claude's plugin cache:
+
 ```bash
-pipx install --force "git+https://github.com/buchbend/lore.git#egg=lore[capture]"
-lore install                                 # re-wire hooks + skills (picks up new SessionEnd wiring)
+lore install --upgrade
 ```
+
+`--upgrade` (or `-u`) delegates to `install.sh upgrade`, which picks
+your installer (pipx / uv / pip), pulls the latest `lore`, then
+re-enters `lore install` so hooks/skills/MCP stay in sync. Re-running
+the curl one-liner from § Install does the same thing if you don't
+have `lore` on PATH for any reason.
 
 For an editable dev checkout:
 
