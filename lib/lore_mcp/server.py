@@ -13,9 +13,6 @@ Exposed tools:
     lore_drill              — composite multi-stage retrieval (search→read→
                               expand→read_expanded) in one envelope with a
                               structured trace
-    lore_session_scaffold   — read-only scaffold (path + frontmatter) for a new
-                              session note; the subagent uses this before any
-                              write so the deterministic work happens once
     lore_briefing_gather    — read-only briefing gather (new sessions since last
                               briefing + sink config + ledger); skill writes
                               prose, then shells out to publish + mark
@@ -283,40 +280,6 @@ def handle_inbox_classify() -> dict[str, Any]:
     from lore_core.inbox import classify
 
     return classify()
-
-
-def handle_session_scaffold(
-    cwd: str,
-    slug: str,
-    description: str,
-    title: str | None = None,
-    target_wiki: str | None = None,
-    extra_repos: list[str] | None = None,
-    tags: list[str] | None = None,
-    implements: list[str] | None = None,
-    loose_ends: list[str] | None = None,
-    project: str | None = None,
-) -> dict[str, Any]:
-    """Read-only scaffold for a new session note.
-
-    Returns the computed path, frontmatter, body template, and identity
-    state — pure data, no file write. The caller (subagent) then composes
-    the prose body and writes via the CLI subprocess `lore session new`.
-    """
-    from lore_core.session import scaffold
-
-    return scaffold(
-        cwd=cwd,
-        slug=slug,
-        description=description,
-        title=title,
-        target_wiki=target_wiki,
-        extra_repos=extra_repos,
-        tags=tags,
-        implements=implements,
-        loose_ends=loose_ends,
-        project=project,
-    )
 
 
 def handle_surface_context(wiki: str) -> dict[str, Any]:
@@ -948,61 +911,6 @@ def _tool_schema() -> list[dict]:
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
-            "name": "lore_session_scaffold",
-            "description": (
-                "Compute path, frontmatter, identity, and recent-commits "
-                "for a new session note — read-only, no file write. Call "
-                "this BEFORE composing the session body so the determinist "
-                "work (routing, scope, handle, sharded path, frontmatter) "
-                "happens once. Then write the file via the CLI subprocess "
-                "`lore session new --body -` < <body>."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "cwd": {
-                        "type": "string",
-                        "description": "Working directory the session ran in",
-                    },
-                    "slug": {
-                        "type": "string",
-                        "description": "Short kebab-case topic identifier",
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "One-sentence summary",
-                    },
-                    "title": {"type": "string", "description": "Note H1 (default: slug)"},
-                    "target_wiki": {
-                        "type": "string",
-                        "description": "Wiki name (default: from `## Lore` block or only-wiki)",
-                    },
-                    "extra_repos": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Additional repos to tag beyond the cwd's repo",
-                    },
-                    "tags": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Frontmatter tags (3–5 max)",
-                    },
-                    "implements": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Proposal slugs that landed in this session",
-                    },
-                    "loose_ends": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Frontmatter loose-end strings",
-                    },
-                    "project": {"type": "string", "description": "Primary project name"},
-                },
-                "required": ["cwd", "slug", "description"],
-            },
-        },
-        {
             "name": "lore_surface_context",
             "description": (
                 "Gather context for surface-authoring skills: current SURFACES.md, "
@@ -1104,8 +1012,6 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_wikilinks(**args)
         case "lore_drill":
             return handle_drill(**args)
-        case "lore_session_scaffold":
-            return handle_session_scaffold(**args)
         case "lore_briefing_gather":
             return handle_briefing_gather(**args)
         case "lore_inbox_classify":

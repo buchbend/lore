@@ -92,14 +92,13 @@ types, not session-specific.
 `description` field exists (a constraint that holds in both legacy
 and revised shapes). It doesn't interpret content.
 
-### `lib/lore_core/session.py:411`
+### `lib/lore_core/session.py` (retired explicit-flow code)
 
-**What it does**: The explicit `/lore:session` flow — reads
-user-authored frontmatter to build the SessionInput.
-
-**Phase 1 fix (already shipped)**: Now also reads `title` from
-frontmatter (`fm.get("title", "")`). Users writing notes by hand can
-provide a separate `title:`; otherwise `description` doubles as both.
+**What it did**: The explicit `/lore:session` flow read user-authored
+frontmatter to build a `SessionInput`. Removed alongside the
+`/lore:session` skill — auto-capture (curator A) is the canonical
+write path now, and it builds `SessionInput` directly in
+`lore_curator/session_filer.py`.
 
 ### `lib/lore_curator/daily_curator.py:_load_recent_session_notes` (Phase 6 territory)
 

@@ -30,7 +30,7 @@ Session with AI  →  (auto at SessionEnd / PreCompact)
 
 The flagship is the **session-note pipeline**. As of the work on `main`
 (Plans 1 + 2 of the passive-capture roadmap), capture is automatic —
-no `/lore:session` gesture needed. See the "Bootstrap" section below.
+no explicit capture command needed. See the "Bootstrap" section below.
 Everything else (search, MCP, curator C) serves the same pipeline.
 
 ## Canonical shape
@@ -151,9 +151,9 @@ network egress to PyPI / the marketplace.
 
 As of the work on `main` (see
 `docs/superpowers/specs/2026-04-19-passive-capture-v1-design.md`),
-session notes auto-extract from Claude Code transcripts without
-`/lore:session`, and surfaces (concepts, decisions, results, …) are
-abstracted daily by Curator B.
+session notes auto-extract from Claude Code transcripts; explicit
+capture commands are no longer needed. Surfaces (concepts, decisions,
+results, …) are abstracted daily by Curator B.
 
 ### Update from an older install
 
@@ -261,7 +261,6 @@ Once attached with a wiki present:
   list configured wikis and validate them. (For looking up the
   attachment covering a specific path, use `lore attachments show
   <path>`.)
-- `/lore:session` — still available for explicit capture.
 
 ### Per-wiki configuration
 
