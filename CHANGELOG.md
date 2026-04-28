@@ -10,6 +10,55 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-04-28
+
+Plans-as-Lore-core: capture, store, and surface multi-step plans
+directly in the wiki. Headline outcome is the **zero-handover demo**
+— form a plan in Claude Code, accept ExitPlanMode, ``/clear``, restart
+in the same repo, and the SessionStart banner brings Claude back
+oriented on the right step with no manual ritual.
+
+### ⚠️ Required upgrade step
+
+Run ``/plugin update lore`` (or ``claude plugin update lore@lore``)
+after upgrading the pip package. The new ``PostToolUse:ExitPlanMode``
+hook only fires once Claude Code re-fetches the plugin manifest;
+without the update, plan capture silently doesn't happen. ``lore
+doctor`` warns when the installed plugin version diverges from the
+pip version.
+
+### Added
+
+- **``type: plan`` surface** at ``wiki/<wiki>/plans/<slug>.md`` with
+  stable step anchors (``s1..sN``) and a ``step_status`` frontmatter
+  dict that is the single authoritative signal for "where are we" in
+  a plan. Set semantics support out-of-order completion (Claude
+  reorders steps for efficiency) and parallel agents (multiple
+  ``in_progress`` is normal). Three values: ``done | in_progress |
+  blocked``; pending is implicit (absence).
+- **``PostToolUse:ExitPlanMode`` hook** (``lore hook plan-capture``)
+  captures accepted plans automatically. Top-level except writes the
+  raw payload to ``~/.cache/lore/orphan-plans/<ts>.json`` and emits a
+  recovery hint — never silent loss.
+- **``lore plan`` CLI**: ``list``, ``delete [--force]``, ``import
+  [--from-orphan|--from-markdown]``, ``step <slug> <step_id>
+  --done|--in-progress|--blocked|--pending``, ``advance <slug>``.
+  ``advance`` is sugar — marks the in-progress step done if any,
+  else the next pending step.
+- **Per-slug ``flock``** in plan writer + step_status mutator;
+  concurrent same-slug writes serialize without data loss.
+- **Project-note auto-stub on attach** (Phase 3, not yet wired):
+  ``stub_project_note`` composes a project note from CLAUDE.md /
+  AGENTS.md / .cursorrules / README / pyproject metadata. Canonical
+  headings (``## Overview``, ``## Conventions``, ``## Architecture``,
+  ``## Key decisions``) regenerate on re-stub; user content under
+  any other heading is preserved.
+- **Breadcrumb scan** (Phase 4 surface): trailers of the form
+  ``Plan: <slug>#s<N>`` in recent commits + session note wikilinks
+  surface in the SessionStart Resume block as informational nudges
+  ("commit abc123 references s4 — ``/lore:plan-step s4 --done``?").
+  Never authoritative; the ``step_status`` field is law.
+
 ## [0.13.1] — 2026-04-28
 
 Fix #29 — mid-stream session notes now surface in the active session.
