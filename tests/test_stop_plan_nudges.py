@@ -468,3 +468,135 @@ def test_missing_trailer_action_and_missing_coexist(
     assert len(missing_msgs) == 1
     assert sha2 in missing_msgs[0]
     assert "refactor-auth#s2" in missing_msgs[0]
+
+
+# ---------------------------------------------------------------------------
+# Coalesce + cross-session bleed guard
+# ---------------------------------------------------------------------------
+
+
+def test_missing_trailer_coalesces_multiple_commits_into_one_line(
+    env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Several untrailed commits against the same plan/step → ONE
+    consolidated nudge listing the SHAs, not one nudge per commit.
+    The fan-out (one line per commit) was spamming Stop output when a
+    parallel session worked through a plan without trailers."""
+    _write_plan_with_step_body(
+        env["wiki_root"],
+        "refactor-auth",
+        step_files={"s1": ["lib/auth/login.py"]},
+    )
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "test-coalesce")
+
+    shas = [
+        _commit_with_file(env["repo"], "lib/auth/login.py", f"edit {i}")
+        for i in range(3)
+    ]
+
+    nudges = _missing_trailer_nudges_for_stop(env["repo"])
+
+    assert len(nudges) == 1
+    msg = nudges[0]
+    assert "3 commits" in msg
+    for sha in shas:
+        assert sha in msg
+    assert "refactor-auth#s1" in msg
+    assert "`Plan: refactor-auth#s1`" in msg
+
+
+def test_missing_trailer_caps_sha_list_at_five(
+    env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When more than five commits hit the same step, the line shows
+    the first five and a ``+N more`` tail — keeps Stop output tight
+    even on a long backlog."""
+    _write_plan_with_step_body(
+        env["wiki_root"],
+        "refactor-auth",
+        step_files={"s1": ["lib/auth/login.py"]},
+    )
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "test-cap")
+
+    for i in range(7):
+        _commit_with_file(env["repo"], "lib/auth/login.py", f"edit {i}")
+
+    nudges = _missing_trailer_nudges_for_stop(env["repo"])
+
+    assert len(nudges) == 1
+    assert "7 commits" in nudges[0]
+    assert "+2 more" in nudges[0]
+
+
+def test_missing_trailer_skips_commits_before_session_start(
+    env: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Commits whose committer-time predates this session's transcript
+    must not nudge — they belong to a parallel session. This is the
+    cross-session bleed guard: without it, every Stop in a fresh
+    session would re-litigate the other session's commits."""
+    _write_plan_with_step_body(
+        env["wiki_root"],
+        "refactor-auth",
+        step_files={"s1": ["lib/auth/login.py"]},
+    )
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "test-bleed")
+
+    # Make the "other-session" commit happen with an old committer date.
+    target = env["repo"] / "lib/auth/login.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("// old session edit\n")
+    subprocess.run(
+        ["git", "add", "lib/auth/login.py"],
+        cwd=env["repo"], check=True, capture_output=True,
+    )
+    old_env = {
+        **os.environ,
+        "GIT_AUTHOR_DATE": "2020-01-01T00:00:00Z",
+        "GIT_COMMITTER_DATE": "2020-01-01T00:00:00Z",
+    }
+    subprocess.run(
+        ["git", "commit", "-m", "old session edit"],
+        cwd=env["repo"], check=True, capture_output=True, env=old_env,
+    )
+
+    # Fabricate a transcript for our session whose first record is from
+    # 2026 — well after the old commit.
+    encoded = str(env["repo"].resolve()).replace("/", "-")
+    transcript_dir = env["cache_home"] / ".claude" / "projects" / encoded
+    transcript_dir.mkdir(parents=True)
+    (transcript_dir / "test-bleed.jsonl").write_text(
+        json.dumps({"timestamp": "2026-04-28T12:00:00Z"}) + "\n"
+    )
+
+    nudges = _missing_trailer_nudges_for_stop(env["repo"])
+
+    # Old commit predates session_floor → filtered out → no nudge.
+    assert nudges == []
+
+
+def test_missing_trailer_emits_for_in_session_commits(
+    env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sanity check the bleed guard isn't over-aggressive: when the
+    transcript anchor is *before* the commit, the nudge fires normally."""
+    _write_plan_with_step_body(
+        env["wiki_root"],
+        "refactor-auth",
+        step_files={"s1": ["lib/auth/login.py"]},
+    )
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "test-in-session")
+
+    encoded = str(env["repo"].resolve()).replace("/", "-")
+    transcript_dir = env["cache_home"] / ".claude" / "projects" / encoded
+    transcript_dir.mkdir(parents=True)
+    # Anchor far in the past so any commit we make now is "after".
+    (transcript_dir / "test-in-session.jsonl").write_text(
+        json.dumps({"timestamp": "2000-01-01T00:00:00Z"}) + "\n"
+    )
+
+    sha = _commit_with_file(env["repo"], "lib/auth/login.py", "wire it")
+
+    nudges = _missing_trailer_nudges_for_stop(env["repo"])
+    assert len(nudges) == 1
+    assert sha in nudges[0]

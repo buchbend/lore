@@ -10,6 +10,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-04-28
+
+### Fixed
+
+- **Stop hook missing-trailer nudge no longer bleeds across sessions or
+  fans out per commit.** When a parallel session was working a plan
+  without `Plan:` trailers, every Stop in an unrelated session emitted
+  one ⚠ line per recent commit (8+ lines was typical). Two fixes in
+  `_missing_trailer_nudges_for_stop`:
+  - **Cross-session bleed guard** — drop commits whose committer-time
+    predates the session's transcript first record. Synthetic test
+    sessions and pid-fallback (no transcript on disk) skip the filter
+    so existing behavior is preserved.
+  - **Coalesce per `(slug, anchor)`** — accumulate matching SHAs into a
+    single line (`⚠ N commits (sha1, sha2, ...) touched files in
+    plan/<slug>#<anchor> ...`) capped at 5 SHAs + `+N more` tail. The
+    seen-set still keys per-SHA so re-runs in the same session stay
+    quiet.
+
 ## [0.25.0] - 2026-04-28
 
 ### Added

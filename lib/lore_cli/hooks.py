@@ -1513,6 +1513,66 @@ def _recent_commit_shas(repo_root: Path, n: int = 20) -> list[str]:
     return [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
 
 
+def _recent_commits_with_time(
+    repo_root: Path, n: int = 20
+) -> list[tuple[str, int]]:
+    """``(short_sha, committer_unix_ts)`` for the last ``n`` commits.
+
+    Newest-first. Used to filter out commits made before the current
+    session began so the missing-trailer detector doesn't bleed into
+    work owned by other sessions.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "log", f"-n{n}", "--format=%h %ct"],
+            capture_output=True, text=True, timeout=5.0, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+    out: list[tuple[str, int]] = []
+    for ln in result.stdout.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        sha, _, ts = ln.partition(" ")
+        try:
+            out.append((sha, int(ts)))
+        except ValueError:
+            continue
+    return out
+
+
+def _session_started_at(sid: str, cwd: Path) -> float | None:
+    """Unix timestamp of this session's first transcript record.
+
+    Reads the first line of ``~/.claude/projects/<encoded-cwd>/<sid>.jsonl``
+    and parses its ``timestamp`` field. Returns ``None`` on any failure;
+    callers must treat that as "no time bound" rather than "before
+    epoch", so synthetic test sessions (no on-disk transcript) keep
+    their existing semantics.
+    """
+    try:
+        encoded = str(Path(cwd).resolve()).replace("/", "-")
+        path = Path.home() / ".claude" / "projects" / encoded / f"{sid}.jsonl"
+        if not path.exists():
+            return None
+        with path.open("r", encoding="utf-8", errors="replace") as f:
+            first = f.readline()
+        if not first.strip():
+            return None
+        record = json.loads(first)
+        ts = record.get("timestamp")
+        if not isinstance(ts, str) or not ts:
+            return None
+        from datetime import datetime
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return dt.timestamp()
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+
+
 def _missing_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
     """Soft prompts for commits that touched plan-implementing files
     but carry no ``Plan:`` trailer.
@@ -1579,9 +1639,22 @@ def _missing_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
         )
         seen = _read_nudge_seen_set(seen_path)
 
-        nudges: list[str] = []
+        # Cross-session bleed guard: drop commits made before this
+        # session began. Without this we'd nag the model about commits
+        # owned by a parallel session that's running the same plan.
+        # ``None`` (no transcript / synthetic test sid) disables the
+        # filter — preserves prior behavior for tests and pid-fallback.
+        session_floor = _session_started_at(sid, cwd_path)
+
+        # Coalesce per (slug, anchor): one consolidated nudge listing
+        # the matching SHAs, instead of one nudge per (sha, slug,
+        # anchor) — that fan-out spammed Stop output when several
+        # untrailed commits landed against one plan.
+        matches: dict[tuple[str, str], list[str]] = {}
         new_keys: list[str] = []
-        for sha in _recent_commit_shas(repo_root, n=20):
+        for sha, ct in _recent_commits_with_time(repo_root, n=20):
+            if session_floor is not None and ct < session_floor:
+                continue
             if _commit_has_plan_trailer(repo_root, sha):
                 continue
             commit_files = _commit_files(repo_root, sha)
@@ -1593,12 +1666,26 @@ def _missing_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
                 key = f"{sha}!missing#{slug}#{anchor}"
                 if key in seen:
                     continue
-                nudges.append(
-                    f"⚠ commit {sha} touched files in plan/{slug}#{anchor} "
-                    f"but has no `Plan:` trailer — add "
-                    f"`Plan: {slug}#{anchor}` to a follow-up commit?"
-                )
+                matches.setdefault((slug, anchor), []).append(sha)
                 new_keys.append(key)
+
+        nudges: list[str] = []
+        for (slug, anchor), shas in matches.items():
+            if len(shas) == 1:
+                nudges.append(
+                    f"⚠ commit {shas[0]} touched files in "
+                    f"plan/{slug}#{anchor} but has no `Plan:` trailer — "
+                    f"add `Plan: {slug}#{anchor}` to a follow-up commit?"
+                )
+            else:
+                shown = shas[:5]
+                tail = "" if len(shas) <= 5 else f", +{len(shas) - 5} more"
+                nudges.append(
+                    f"⚠ {len(shas)} commits ({', '.join(shown)}{tail}) "
+                    f"touched files in plan/{slug}#{anchor} but have no "
+                    f"`Plan:` trailer — add `Plan: {slug}#{anchor}` to a "
+                    f"follow-up commit?"
+                )
 
         if new_keys:
             _append_nudge_seen_set(seen_path, new_keys)
@@ -2329,6 +2416,58 @@ def _heartbeat(
     return sys_msg, ctx
 
 
+def _heartbeat_spawn_curator_a(
+    lore_root: Path,
+    scope: "Scope",
+    *,
+    cooldown_s: int = 120,
+) -> str | None:
+    """Evaluate the spawn-gate for the current scope's wiki; spawn if it crosses.
+
+    Called from ``cmd_user_prompt_submit`` after the drain heartbeat. This is
+    the mid-session snappy lever: long active sessions hit this every prompt,
+    so accumulated turn count or stale pending-age can trigger Curator A
+    without waiting for the next session-start/end boundary.
+
+    Independent 120s cooldown stamp (``curator-heartbeat-spawn.stamp``) so
+    this never thrashes regardless of prompt cadence. The actual spawn also
+    runs through ``_spawn_detached_curator_a``'s own 60s lock+stamp, so two
+    layers of rate-limiting prevent storms.
+
+    Returns a reason string for telemetry, or None when no spawn was made.
+    """
+    stamp = lore_root / ".lore" / "curator-heartbeat-spawn.stamp"
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    if _stamp_within_cooldown(stamp, cooldown_s):
+        return None
+
+    try:
+        tledger = TranscriptLedger(lore_root)
+        buckets = tledger.pending_by_wiki()
+    except Exception:
+        return None
+
+    entries = buckets.get(scope.wiki, [])
+    if not entries:
+        _write_stamp(stamp)
+        return None
+
+    try:
+        wiki_cfg = _load_wiki_cfg_for_wiki(lore_root, scope.wiki)
+    except Exception:
+        return None
+
+    should, reason = _wiki_should_spawn(entries, wiki_cfg, now=_now_utc())
+    _write_stamp(stamp)
+    if not should:
+        return None
+
+    spawned = _spawn_detached_curator_a(
+        lore_root, cooldown_s=wiki_cfg.curator.curator_a_cooldown_s
+    )
+    return reason if spawned else None
+
+
 @hook_app.command("user-prompt-submit")
 @_shield_hook("UserPromptSubmit")
 def cmd_user_prompt_submit(
@@ -2353,6 +2492,14 @@ def cmd_user_prompt_submit(
     wiki_cfg = _load_wiki_cfg_from_scope(scope, lore_root)
 
     sys_msg, ctx = _heartbeat(lore_root, cwd_resolved, wiki_cfg)
+
+    # Mid-session snappy spawn — evaluate the turn-aware gate every prompt
+    # so long sessions don't sit on accumulated work waiting for session-end.
+    # Independently rate-limited (120s heartbeat cooldown + 60s spawn lock).
+    try:
+        _heartbeat_spawn_curator_a(lore_root, scope)
+    except Exception:
+        pass  # never break the prompt path on a spawn-gate hiccup
 
     # Citations toggle takes effect mid-session: re-assert the suppression
     # directive on every prompt while `/lore:off citations` is active so the
@@ -2718,6 +2865,45 @@ def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
     )
 
 
+def _wiki_should_spawn(
+    entries: "list[TranscriptLedgerEntry]",
+    wiki_cfg: "WikiConfig",
+    *,
+    now: "datetime",
+) -> "tuple[bool, str]":
+    """Decide whether Curator A should spawn for a single wiki's pending bucket.
+
+    Pure-functional — no I/O. Reads only fields cached on the ledger entry
+    (``total_turns`` is stamped by ``transcript_sync``). Safe to call from
+    every UserPromptSubmit heartbeat without measurable cost.
+
+    Returns ``(spawn, reason)``. The reason is a short string emitted into
+    hook telemetry so we can debug "why did/didn't this spawn?" without
+    re-deriving the gate inputs.
+
+    OR-gate:
+      * sum(total_turns − digested_index_hint) ≥ threshold_pending_turns
+      * (now − min(last_mtime)) ≥ max_pending_age_s   — age fallback so old
+        work below the turns threshold still files within bounded latency.
+    """
+    if not entries:
+        return False, "empty"
+    new_turns = sum(
+        max(0, e.total_turns - (e.digested_index_hint or 0))
+        for e in entries
+    )
+    if new_turns >= wiki_cfg.curator.threshold_pending_turns:
+        return (
+            True,
+            f"turns:{new_turns}>={wiki_cfg.curator.threshold_pending_turns}",
+        )
+    oldest_mtime = min(e.last_mtime for e in entries)
+    age_s = int((now - oldest_mtime).total_seconds())
+    if age_s >= wiki_cfg.curator.max_pending_age_s:
+        return True, f"age:{age_s}s>={wiki_cfg.curator.max_pending_age_s}s"
+    return False, f"under(turns={new_turns},age={age_s}s)"
+
+
 def _now_utc() -> "datetime":
     """Return datetime.now(UTC). Isolated as a seam so tests can pin time."""
     from datetime import UTC, datetime as _dt
@@ -3037,25 +3223,38 @@ def capture(
         pending_by_wiki_counts = {k: len(v) for k, v in buckets.items()}
         cfg = _load_wiki_cfg_from_scope(scope, lore_root)
 
-        # Spawn when any *attached* wiki crosses its own threshold_pending.
-        # The `len > 0` clause guards threshold_pending=0 + empty-wiki: the
-        # bucket wouldn't be in `buckets` at all, but an explicit guard keeps
-        # the intent obvious if the dict later gains zero-count entries.
+        # Spawn-gate: turn-aware OR (turns ≥ threshold) (oldest age ≥ fallback).
+        # Computed via `_wiki_should_spawn` per wiki bucket. Force-spawn at
+        # session-end / pre-compact regardless of gate so no in-flight work
+        # is stranded across session boundaries (handover guarantee).
+        now = _now_utc()
         crossed: list[str] = []
+        spawn_reasons: dict[str, str] = {}
         for wiki_name, entries in buckets.items():
             if wiki_name.startswith("__"):
                 continue
             if len(entries) == 0:
                 continue
             wiki_cfg = _load_wiki_cfg_for_wiki(lore_root, wiki_name)
-            if len(entries) >= wiki_cfg.curator.threshold_pending:
+            should, reason = _wiki_should_spawn(entries, wiki_cfg, now=now)
+            spawn_reasons[wiki_name] = reason
+            if should:
                 crossed.append(wiki_name)
 
-        if crossed:
+        force_eos = event in ("session-end", "pre-compact") and pending_after > 0
+
+        if crossed or force_eos:
             spawned = _spawn_detached_curator_a(
                 lore_root, cooldown_s=cfg.curator.curator_a_cooldown_s
             )
-            outcome = "spawned-curator" if spawned else "spawn-cooldown"
+            if spawned:
+                outcome = (
+                    "spawned-curator-eos"
+                    if (force_eos and not crossed)
+                    else "spawned-curator"
+                )
+            else:
+                outcome = "spawn-cooldown"
         elif pending_after > 0:
             outcome = "below-threshold"
         else:
@@ -3093,9 +3292,13 @@ def capture(
         if event in ("session-end", "pre-compact"):
             try:
                 from lore_cli.breadcrumb import render_session_end_breadcrumb, write_pending_breadcrumb
-                threshold = 3
+                # The current breadcrumb body ignores both pending_after and
+                # threshold (only the error branch returns text). Pass
+                # threshold_pending_turns as a forward-compatible value if
+                # the breadcrumb ever surfaces gate state.
+                threshold = 30
                 try:
-                    threshold = cfg.curator.threshold_pending
+                    threshold = cfg.curator.threshold_pending_turns
                 except Exception:
                     pass
                 crumb = render_session_end_breadcrumb(
