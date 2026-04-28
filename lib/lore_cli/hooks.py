@@ -1113,10 +1113,22 @@ def _session_start(cwd: str | None) -> str:
     """
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
-        hint = os.environ.get("LORE_ROOT") or "(unset, defaulting to ~/lore)"
+        # Compose the hint from observable state directly — env var or
+        # config-file presence — without consulting lore_root_source().
+        # Source labels are debug-only; branching on them ties this
+        # caller to the resolver's internal taxonomy.
+        from lore_core.config import user_config_path
+        env_value = os.environ.get("LORE_ROOT", "").strip()
+        cfg_path = user_config_path()
+        if env_value:
+            hint = f"$LORE_ROOT={env_value}"
+        elif cfg_path.exists():
+            hint = f"{cfg_path} → {get_lore_root()}"
+        else:
+            hint = f"(unset, fallback {get_lore_root()})"
         return (
-            f"lore: no vault at LORE_ROOT={hint}. "
-            "Set LORE_ROOT to your vault path or run `lore init`."
+            f"lore: no vault at {hint}. "
+            "Set $LORE_ROOT, write ~/.config/lore/config.yml, or run `lore init`."
         )
 
     # Schema v2 path: cwd has (or inherits) a `## Lore` section.
@@ -2142,21 +2154,31 @@ def _nudge_unattached(cwd: Path, out: str) -> None:
     )
 
 
-def _infer_lore_root(claude_md_path: Path) -> Path:
-    """Infer LORE_ROOT from env, else walk up from claude_md_path for a wiki/ dir.
+def _infer_lore_root(start: Path) -> Path:
+    """Infer LORE_ROOT for a hook-context path.
 
-    Preference: $LORE_ROOT env var. Otherwise walk up looking for a directory
-    that contains a `wiki/` subdirectory — that's the lore_root. Falls back
-    to the CLAUDE.md's parent directory.
+    Precedence: ``$LORE_ROOT`` env var → walk-up → config-file → default.
+
+    - **env** wins because it's explicit per-invocation; a user who
+      exports ``LORE_ROOT=...`` is overriding for a reason.
+    - **walk-up** beats config-file: when the hook has a path argument,
+      that path is the explicit signal — a user with a global config-file
+      pointing at ``~/personal-vault`` but currently editing inside
+      ``~/work-vault/wiki/foo/`` should resolve to ``~/work-vault``.
+    - **config-file → ~/lore default** via ``get_lore_root()`` when no
+      walk-up ancestor contains ``wiki/``.
+
+    Accepts either a file (CLAUDE.md) or a directory (cwd). Returns a
+    resolved absolute path.
     """
-    env = os.environ.get("LORE_ROOT")
+    env = os.environ.get("LORE_ROOT", "").strip()
     if env:
-        return Path(env)
-    for parent in [claude_md_path.parent, *claude_md_path.parents]:
+        return Path(env).expanduser().resolve()
+    starting_dir = start.parent if start.is_file() else start
+    for parent in [starting_dir, *starting_dir.parents]:
         if (parent / "wiki").is_dir():
-            return parent
-    # Fallback — the CLAUDE.md's parent (best effort).
-    return claude_md_path.parent
+            return parent.resolve()
+    return get_lore_root()
 
 
 def _load_wiki_cfg_from_scope(scope, lore_root: Path):
@@ -2205,10 +2227,13 @@ def _offer_notice_line(cwd: Path) -> str | None:
     Logs a ``lore-yml-offered`` event when it does emit (OFFERED, DRIFT)
     so telemetry captures the prompt even if the user ignores it.
     """
-    lore_root_env = os.environ.get("LORE_ROOT")
-    if not lore_root_env:
+    from lore_core.config import resolve_lore_root
+    lore_root = resolve_lore_root()
+    # Use resolve_lore_root (not get_lore_root) so a stale ~/lore from a
+    # previous install does NOT trigger offer logic when the user has
+    # neither $LORE_ROOT exported nor ~/.config/lore/config.yml set.
+    if lore_root is None:
         return None
-    lore_root = Path(lore_root_env)
 
     try:
         from lore_core.consent import ConsentState, classify_state
@@ -2372,6 +2397,12 @@ def _spawn_detached(
         if migrate_stamp:
             _migrate_legacy_spawn_stamp(lore_root, role)
         env = os.environ.copy()
+        # Re-inject as LORE_ROOT so child processes resolve identically
+        # without re-reading ~/.config/lore/config.yml. The child's
+        # lore_root_source() will report "env" even if the parent
+        # resolved via config — that's intentional. Resolution-source
+        # provenance is per-process; the path value is what matters
+        # across boundaries.
         env["LORE_ROOT"] = str(lore_root)
         env["LORE_CURATOR_MODE"] = "1"
         log_fd = _open_proc_log(lore_root, role)

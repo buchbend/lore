@@ -3,6 +3,10 @@ module needs but that don't deserve their own module.
 
 Keep this minimal: the test of fitness is "is this duplicated in 3+
 files?" If yes, lift it here. If no, leave it inline.
+
+ONE-WAY DEPENDENCY: this module imports from ``lore_core.*`` but
+``lore_core`` never imports from here. ``typer`` and ``rich`` are
+CLI-only deps and must not leak into the core resolver layer.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ from rich.console import Console
 
 from lore_core.config import (
     LoreRootMissing,
-    LoreRootNotSet,
+    LoreRootNotConfigured,
     require_lore_root,
 )
 
@@ -30,10 +34,10 @@ def lore_root_or_die(err_console: Console) -> Path:
     """
     try:
         return require_lore_root()
-    except LoreRootNotSet:
+    except LoreRootNotConfigured:
         err_console.print(
-            "[red]LORE_ROOT is not set.[/red] "
-            "Set $LORE_ROOT to your vault path or run `lore init`."
+            "[red]LORE_ROOT is not configured.[/red] "
+            "Set $LORE_ROOT, write ~/.config/lore/config.yml, or run `lore init`."
         )
         raise typer.Exit(code=2)
     except LoreRootMissing as exc:

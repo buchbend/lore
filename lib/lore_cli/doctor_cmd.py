@@ -56,12 +56,21 @@ def _issue_summary(label: str, issues: list[str], ok_msg: str) -> Check:
 
 
 def _check_lore_root(cwd: str) -> Check:
-    from lore_core.config import get_lore_root
+    from lore_core.config import get_lore_root, lore_root_source
 
     root = get_lore_root()
+    label = {
+        "env": "$LORE_ROOT",
+        "config": "config-file",
+        "default": "unconfigured (fallback)",
+    }[lore_root_source()]
     if not root.exists():
-        return False, f"LORE_ROOT={root} does not exist (set $LORE_ROOT or run `lore init`)"
-    return True, f"LORE_ROOT={root}"
+        return (
+            False,
+            f"LORE_ROOT={root} [{label}] — does not exist "
+            "(set $LORE_ROOT, write ~/.config/lore/config.yml, or run `lore init`)",
+        )
+    return True, f"LORE_ROOT={root} [{label}]"
 
 
 def _check_wikis(cwd: str) -> Check:

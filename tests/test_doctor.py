@@ -55,6 +55,61 @@ def test_doctor_lore_root_missing_fails(tmp_path, monkeypatch, capsys):
     assert envelope["data"]["ok"] is False
 
 
+# ----- LORE_ROOT source label (issue #6) -----
+
+
+def test_doctor_reports_source_env(healthy_vault, capsys):
+    """When $LORE_ROOT is set, doctor labels the source ``$LORE_ROOT``."""
+    rc = doctor_cmd.main(["--cwd", str(healthy_vault), "--json"])
+    assert rc == 0
+    envelope = json.loads(capsys.readouterr().out)
+    msg = next(c for c in envelope["data"]["checks"] if c["check"] == "LORE_ROOT")["message"]
+    assert "[$LORE_ROOT]" in msg
+
+
+def test_doctor_reports_source_config(tmp_path, monkeypatch, capsys):
+    """When config-file is set (env unset), doctor labels source ``config-file``."""
+    vault = tmp_path / "vault"
+    (vault / "wiki" / "ccat").mkdir(parents=True)
+    cfg_dir = Path.home() / ".config" / "lore"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "config.yml").write_text(f"lore_root: {vault}\n")
+    monkeypatch.delenv("LORE_ROOT", raising=False)
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
+    rc = doctor_cmd.main(["--cwd", str(vault), "--json"])
+    assert rc == 0
+    envelope = json.loads(capsys.readouterr().out)
+    msg = next(c for c in envelope["data"]["checks"] if c["check"] == "LORE_ROOT")["message"]
+    assert "[config-file]" in msg
+
+
+def test_doctor_reports_source_default_when_unconfigured(tmp_path, monkeypatch, capsys):
+    """When neither env nor config-file is set, doctor labels source ``unconfigured (fallback)``."""
+    monkeypatch.delenv("LORE_ROOT", raising=False)
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
+    # Create the default ~/lore so the check itself passes existence,
+    # which lets us verify the label without conflating with the missing
+    # path failure mode.
+    (Path.home() / "lore" / "wiki").mkdir(parents=True)
+    rc = doctor_cmd.main(["--cwd", str(Path.home() / "lore"), "--json"])
+    envelope = json.loads(capsys.readouterr().out)
+    msg = next(c for c in envelope["data"]["checks"] if c["check"] == "LORE_ROOT")["message"]
+    assert "[unconfigured (fallback)]" in msg
+
+
+def test_doctor_reports_source_even_on_missing_root(tmp_path, monkeypatch, capsys):
+    """Missing path failure case still includes the source label."""
+    ghost = tmp_path / "ghost-vault"
+    monkeypatch.setenv("LORE_ROOT", str(ghost))
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
+    rc = doctor_cmd.main(["--cwd", str(tmp_path), "--json"])
+    assert rc == 1
+    envelope = json.loads(capsys.readouterr().out)
+    msg = next(c for c in envelope["data"]["checks"] if c["check"] == "LORE_ROOT")["message"]
+    assert "[$LORE_ROOT]" in msg
+    assert "does not exist" in msg
+
+
 def test_doctor_attach_check_finds_lore_block(healthy_vault, tmp_path, monkeypatch, capsys):
     """The `attach` check reads the synthesised block from the
     attachments registry."""
