@@ -10,6 +10,54 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-04-28
+
+### Added
+
+- **Resume block surfaces the canonical `Plan:` trailer literal.**
+  Layer A in v0.23.0 made plans self-close *if* commits carry
+  `Plan: <slug>#sN` trailers. The reliability of that promise
+  depended on the model remembering the convention at commit time —
+  a textbook LLM forgetting failure mode. Each active-plan card in
+  the SessionStart Resume block now ends with:
+
+      Commit trailer: `Plan: <slug>#<step>`
+
+  Anchored to the in-progress step (or first pending). The exact
+  string the model needs to paste is in context for the whole turn.
+
+- **Stop hook flags commits that touched plan files without a
+  `Plan:` trailer.** A second pass in the Stop hook identifies
+  commits made this session that:
+
+  1. Touched at least one file path that appears verbatim in an
+     active plan's step body, AND
+  2. Carry no `Plan:` trailer in the commit message.
+
+  Each such commit produces a soft prompt:
+
+      ⚠ commit X touched files in plan/<slug>#sN but has no `Plan:`
+        trailer — add `Plan: <slug>#sN` to a follow-up commit?
+
+  The suggested step is the plan's current in-progress step (or
+  first pending). Per-session seen-set namespaced separately from
+  the action pass — `<sha>!missing#<slug>#<step>` — so the prompt
+  fires once per session and doesn't conflate with the auto-advance
+  log entries. Soft prompt only: never auto-mutates anything (the
+  inference is heuristic; only explicit trailers trigger writes).
+
+  Together with the Resume-block literal, these reinforce the
+  convention at two distinct moments: *before* the model writes a
+  commit (literal in context), and *after* it forgets (specific,
+  actionable nudge in the next turn's input).
+
+### Compat
+
+- The Stop hook adds two short `git log` / `git show` calls per
+  recent-commit batch. Both are wrapped in 5-second timeouts and
+  best-effort try/except so a slow git or missing repo never blocks
+  Stop. Capped at 20 most-recent commits per scan.
+
 ## [0.23.0] - 2026-04-28
 
 ### Changed

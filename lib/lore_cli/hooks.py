@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -840,6 +841,12 @@ def _render_one_plan_card(
     anchor = in_prog[0] if in_prog else next_pending
     if anchor:
         body.append(f"[[plan/{card.slug}#{anchor}]]")
+        # Surface the canonical commit trailer literal so the executing
+        # model has the exact string in context — auto-advance Layer A
+        # only fires when commits carry this trailer, and "remember the
+        # convention" is the most reliable failure mode for LLMs unless
+        # the literal is on screen at decision time.
+        body.append(f"Commit trailer: `Plan: {card.slug}#{anchor}`")
     else:
         body.append(f"[[plan/{card.slug}]]")
 
@@ -1433,6 +1440,185 @@ def _plan_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
         return []
 
 
+_PLAN_TRAILER_RE = re.compile(
+    r"^Plan:\s*([\w./-]+)#(s\d+)\s*$", re.IGNORECASE | re.MULTILINE
+)
+
+#: File-path-shaped tokens inside a plan step body. Permissive enough to
+#: cover the conventional shapes: ``lib/foo/bar.py``, ``tests/test_x.py``,
+#: ``CHANGELOG.md``, ``.claude-plugin/plugin.json``. Trailing ``:42``
+#: line numbers are stripped by ``_extract_paths_from_text`` before
+#: matching against commit file lists.
+_FILE_PATH_RE = re.compile(
+    r"\b([\w./-]+\.(?:py|md|yml|yaml|toml|json|sh|txt|rst|conf|cfg|ini|"
+    r"ts|tsx|js|jsx|css|html|xml|csv|sql|env|rs|cpp|h|java|go|rb))\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_paths_from_text(text: str) -> set[str]:
+    """Return the set of file-path-shaped tokens in ``text``.
+
+    Used to compare a plan step body against a commit's file list.
+    Conservative — relies on file extensions to avoid matching prose
+    words like ``hooks`` or ``models``.
+    """
+    return {m.group(1) for m in _FILE_PATH_RE.finditer(text or "")}
+
+
+def _commit_files(repo_root: Path, sha: str) -> set[str]:
+    """Files touched by a single commit (relative to repo root)."""
+    try:
+        result = subprocess.run(
+            [
+                "git", "-C", str(repo_root), "show",
+                "--name-only", "--format=", sha,
+            ],
+            capture_output=True, text=True, timeout=5.0, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    if result.returncode != 0:
+        return set()
+    return {ln.strip() for ln in result.stdout.splitlines() if ln.strip()}
+
+
+def _commit_has_plan_trailer(repo_root: Path, sha: str) -> bool:
+    """True iff the commit message contains any ``Plan: <slug>#sN`` trailer."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "show", "-s", "--format=%B", sha],
+            capture_output=True, text=True, timeout=5.0, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    return bool(_PLAN_TRAILER_RE.search(result.stdout))
+
+
+def _recent_commit_shas(repo_root: Path, n: int = 20) -> list[str]:
+    """Short SHAs of the last ``n`` commits, newest-first."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "log", f"-n{n}", "--format=%h"],
+            capture_output=True, text=True, timeout=5.0, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+    return [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+
+
+def _missing_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
+    """Soft prompts for commits that touched plan-implementing files
+    but carry no ``Plan:`` trailer.
+
+    Companion to ``_plan_trailer_nudges_for_stop`` (which acts on
+    explicit trailers). This pass closes the case where the LLM
+    *forgot* to add a trailer despite the commit clearly closing a
+    step. We can't auto-advance here — the inference is heuristic
+    (file overlap) — so we surface a soft prompt and let the model
+    decide whether to add the trailer to a follow-up commit.
+
+    Heuristic: a commit is a candidate if it touches at least one
+    file path that appears (verbatim) in a step body of an active
+    plan attached to the current repo. The suggested step is the
+    plan's currently-in-progress step (or the first pending if
+    none). Per (sha, slug, step) seen-set keeps the prompt from
+    re-firing each Stop.
+
+    Always best-effort: returns ``[]`` on any error. Stop must never
+    break.
+    """
+    try:
+        from lore_core.drain import resolve_session_id
+        from lore_core.git import git_repo_root
+        from lore_core.plans.registry import list_active
+
+        scope = resolve_scope(cwd_path)
+        if scope is None:
+            return []
+        wiki_root = get_wiki_root() / scope.wiki
+        if not wiki_root.exists():
+            return []
+        repo_slug = current_repo(cwd_path)
+        repo_root = git_repo_root(cwd_path)
+        if repo_root is None:
+            return []
+
+        cards = list_active(wiki_root, repo=repo_slug)
+        if not cards:
+            return []
+
+        # Build per-card (slug, anchor_step, step_files) once.
+        plan_targets: list[tuple[str, str, set[str]]] = []
+        for card in cards[:_PLAN_INLINE_CAP]:
+            anchor = _suggested_step_for_card(card)
+            if anchor is None:
+                continue
+            try:
+                body = card.path.read_text(errors="replace")
+            except OSError:
+                continue
+            files = _extract_paths_from_text(body)
+            if not files:
+                continue
+            plan_targets.append((card.slug, anchor, files))
+
+        if not plan_targets:
+            return []
+
+        sid, _ = resolve_session_id(cwd_path)
+        seen_path = (
+            Path.home() / ".cache" / "lore" / "sessions" / sid
+            / "plan-missing-trailers.seen"
+        )
+        seen = _read_nudge_seen_set(seen_path)
+
+        nudges: list[str] = []
+        new_keys: list[str] = []
+        for sha in _recent_commit_shas(repo_root, n=20):
+            if _commit_has_plan_trailer(repo_root, sha):
+                continue
+            commit_files = _commit_files(repo_root, sha)
+            if not commit_files:
+                continue
+            for slug, anchor, step_files in plan_targets:
+                if not (commit_files & step_files):
+                    continue
+                key = f"{sha}!missing#{slug}#{anchor}"
+                if key in seen:
+                    continue
+                nudges.append(
+                    f"⚠ commit {sha} touched files in plan/{slug}#{anchor} "
+                    f"but has no `Plan:` trailer — add "
+                    f"`Plan: {slug}#{anchor}` to a follow-up commit?"
+                )
+                new_keys.append(key)
+
+        if new_keys:
+            _append_nudge_seen_set(seen_path, new_keys)
+        return nudges
+    except Exception:  # noqa: BLE001 — never break Stop
+        return []
+
+
+def _suggested_step_for_card(card) -> str | None:
+    """Best-guess step ID for a missing-trailer prompt on this plan.
+
+    Prefer the first in-progress step; fall back to the first pending.
+    Returns ``None`` when neither exists (plan is fully done — but
+    auto-close should have flipped status already so we won't see it
+    here).
+    """
+    in_prog = card.steps_in_progress
+    if in_prog:
+        return in_prog[0]
+    return card.next_pending_step()
+
+
 def _read_nudge_seen_set(path: Path) -> set[str]:
     """Read the per-session nudge-seen file. Returns empty set on any error."""
     try:
@@ -1976,11 +2162,21 @@ def cmd_stop(
     # doesn't re-fire on every Stop hook until the user advances.
     cwd_str = (payload or {}).get("cwd")
     cwd_path = Path(cwd_str) if cwd_str else Path(os.getcwd())
-    nudges = _plan_trailer_nudges_for_stop(cwd_path)
-    if nudges:
+    # Two complementary passes:
+    #   1. Trailer-action: commits WITH `Plan:` trailers → auto-advance
+    #      the step (writes step_status, may flip plan to status: done).
+    #   2. Missing-trailer: commits WITHOUT trailers that touch files
+    #      mentioned in active plan step bodies → soft prompt asking
+    #      the model to add the trailer to a follow-up commit.
+    # Both share the seen-set namespace prefix scheme so neither
+    # re-fires on subsequent Stops.
+    action_msgs = _plan_trailer_nudges_for_stop(cwd_path)
+    missing_msgs = _missing_trailer_nudges_for_stop(cwd_path)
+    plan_lines = action_msgs + missing_msgs
+    if plan_lines:
         if out:
             out = out.rstrip() + "\n\n"
-        out += "\n".join(nudges)
+        out += "\n".join(plan_lines)
 
     _emit("Stop", out, plain=plain)
 

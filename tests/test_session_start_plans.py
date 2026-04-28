@@ -134,6 +134,29 @@ def test_in_progress_step_appears_in_card(wiki_root: Path) -> None:
     assert f"[[plan/{slug}#s2]]" in text
 
 
+def test_resume_block_surfaces_literal_commit_trailer(wiki_root: Path) -> None:
+    """The auto-advance pipeline (Layer A) only fires when commits
+    carry `Plan: <slug>#sN` trailers. To make that discipline reliable
+    we put the canonical literal in the resume block, anchored to the
+    in-progress step (or first pending). The model has the exact
+    string in context whenever it considers a commit."""
+    slug = _make_plan(wiki_root, n_steps=3)
+    set_step(wiki_root=wiki_root, slug=slug, step_id="s1", status=StepStatus.IN_PROGRESS)
+    lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
+    text = "\n".join(lines)
+    # Trailer literal anchored to the in-progress step.
+    assert f"Commit trailer: `Plan: {slug}#s1`" in text
+
+
+def test_resume_block_trailer_falls_back_to_next_pending(wiki_root: Path) -> None:
+    """When no step is in-progress, the trailer literal anchors to the
+    first pending step — the most likely target of the next commit."""
+    slug = _make_plan(wiki_root, n_steps=3)
+    lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
+    text = "\n".join(lines)
+    assert f"Commit trailer: `Plan: {slug}#s1`" in text
+
+
 def test_multi_in_progress_lists_all(wiki_root: Path) -> None:
     slug = _make_plan(wiki_root, n_steps=4)
     set_step(wiki_root=wiki_root, slug=slug, step_id="s2", status=StepStatus.IN_PROGRESS)
