@@ -126,18 +126,23 @@ def load_file(path: Path) -> dict[str, str]:
     return parsed
 
 
-def secrets_path(lore_root: Path | None) -> Path | None:
+def secrets_path(lore_root: Path | None) -> Path:
     """Resolve the canonical secrets.env path under a Lore root.
 
-    Returns ``None`` if neither the explicit ``lore_root`` nor the
-    ``$LORE_ROOT`` env var is available — in that case there's no
-    well-defined place to look.
+    When ``lore_root`` is ``None``, falls back to :func:`get_lore_root`
+    (which itself honours env → config-file → ``~/lore`` default).
+    Always returns a path; the caller is expected to check ``.exists()``
+    if needed. Loading from the path is safe regardless — ``load_file``
+    no-ops when the file doesn't exist.
+
+    Behavior change (issue #6): previously returned ``None`` when neither
+    explicit ``lore_root`` nor ``$LORE_ROOT`` env var was set. Now
+    consistent with the rest of the resolver layer — config-file
+    fallback applies uniformly.
     """
     if lore_root is None:
-        env = os.environ.get("LORE_ROOT", "").strip()
-        if not env:
-            return None
-        lore_root = Path(env)
+        from lore_core.config import get_lore_root
+        lore_root = get_lore_root()
     return lore_root / ".lore" / "secrets.env"
 
 
@@ -158,8 +163,6 @@ def load_into_environ(
     debugging in doctor / trace logs).
     """
     path = secrets_path(lore_root)
-    if path is None:
-        return {}
     parsed = load_file(path)
     if not parsed:
         return {}

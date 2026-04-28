@@ -150,9 +150,17 @@ def test_secrets_path_falls_back_to_env(tmp_path, monkeypatch):
     assert secrets_env.secrets_path(None) == tmp_path / ".lore" / "secrets.env"
 
 
-def test_secrets_path_returns_none_without_root(monkeypatch):
+def test_secrets_path_falls_back_to_default_lore_root_without_env(monkeypatch):
+    """Issue #6 behavior change: secrets_path no longer returns None.
+
+    Falls back to ``get_lore_root()`` (env → config-file → ~/lore default)
+    so the config-file fallback applies uniformly. Caller need not
+    pre-check — ``load_file`` no-ops when the path doesn't exist.
+    """
+    from pathlib import Path
     monkeypatch.delenv("LORE_ROOT", raising=False)
-    assert secrets_env.secrets_path(None) is None
+    expected = (Path.home() / "lore" / ".lore" / "secrets.env").resolve()
+    assert secrets_env.secrets_path(None).resolve() == expected
 
 
 # ---------------------------------------------------------------------------
