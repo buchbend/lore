@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from lore_core.config import get_lore_root
 from lore_core.io import atomic_write_text
 from lore_core.surfaces import load_surfaces
 
@@ -41,10 +42,8 @@ def _resolve_wiki_dir(wiki: str | None) -> Path:
 
     Raises typer.Exit(1) if wiki is None and the cwd isn't under a wiki dir.
     """
-    import os
-    lore_root = Path(os.environ.get("LORE_ROOT", Path.home() / "git" / "vault"))
     if wiki:
-        return lore_root / "wiki" / wiki
+        return get_lore_root() / "wiki" / wiki
     # Try to infer from cwd: look for wiki/<name>/ ancestor.
     cwd = Path.cwd().resolve()
     for parent in [cwd, *cwd.parents]:

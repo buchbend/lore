@@ -29,13 +29,6 @@ app = typer.Typer(
 )
 
 
-def _get_lore_root() -> Path | None:
-    lore_root_str = os.environ.get("LORE_ROOT", "")
-    if not lore_root_str:
-        return None
-    return Path(lore_root_str)
-
-
 def _wiki_dirs(lore_root: Path) -> list[Path]:
     wiki_root = lore_root / "wiki"
     if not wiki_root.exists():
@@ -48,10 +41,8 @@ def registry_ls(
     format_: str = typer.Option("table", "--format", help="Output format: json or table."),
 ) -> None:
     """List known wiki dirs under $LORE_ROOT/wiki/."""
-    lore_root = _get_lore_root()
-    if lore_root is None:
-        err_console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
-        raise typer.Exit(1)
+    from lore_cli._cli_helpers import lore_root_or_die
+    lore_root = lore_root_or_die(err_console)
 
     dirs = _wiki_dirs(lore_root)
     records = []
@@ -79,10 +70,8 @@ def registry_ls(
 @app.command("doctor")
 def registry_doctor() -> None:
     """Validate wiki dirs for basic health. Exit 1 if issues found."""
-    lore_root = _get_lore_root()
-    if lore_root is None:
-        err_console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
-        raise typer.Exit(1)
+    from lore_cli._cli_helpers import lore_root_or_die
+    lore_root = lore_root_or_die(err_console)
 
     dirs = _wiki_dirs(lore_root)
     issues: list[str] = []

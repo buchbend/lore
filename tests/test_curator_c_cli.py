@@ -78,9 +78,12 @@ def test_no_defrag_flag_uses_curator_a_path(tmp_path, monkeypatch) -> None:
 
 
 def test_defrag_without_lore_root_exits_error(tmp_path, monkeypatch) -> None:
+    """Exit 2 (not 1) — issue #6 routed all CLI lore-root errors through
+    ``lore_root_or_die`` which uses exit code 2 to match the rest of the
+    CLI. The error message references config-file as well as env."""
     monkeypatch.delenv("LORE_ROOT", raising=False)
     result = runner.invoke(app, ["run", "--defrag"], catch_exceptions=False)
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "LORE_ROOT" in result.output
 
 

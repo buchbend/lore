@@ -46,11 +46,10 @@ def resolve_scope(
 
 
 def _load_default_attachments() -> AttachmentsFile | None:
-    env = os.environ.get("LORE_ROOT")
-    if not env:
-        return None
-    lore_root = Path(env)
-    if not lore_root.exists():
+    from lore_core.config import resolve_lore_root
+
+    lore_root = resolve_lore_root()
+    if lore_root is None or not lore_root.exists():
         return None
     af = AttachmentsFile(lore_root)
     af.load()

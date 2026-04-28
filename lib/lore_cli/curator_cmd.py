@@ -157,24 +157,19 @@ def run_command(
     + LLM proposals for adjacent-concept merges, auto-supersession,
     orphan wikilink repair, and draft promotions).
     """
-    import os as _os_check
     if defrag:
         # --defrag runs Curator C directly, not Curator A. Bypass the
         # transcript classification path and go straight to the whole-wiki
         # pipeline.
-        from pathlib import Path as _P
-        lore_root_str = _os_check.environ.get("LORE_ROOT", "")
-        if not lore_root_str:
-            console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
-            raise typer.Exit(1)
-
-        lore_root_defrag = _P(lore_root_str)
+        import os
+        from lore_cli._cli_helpers import lore_root_or_die
+        err_console = Console(stderr=True)
+        lore_root_defrag = lore_root_or_die(err_console)
         effective_backend = _resolve_backend(backend, lore_root_defrag)
 
         # LLM client resolution (same seam as Curator A).
         from lore_curator.llm_client import LlmClientError, make_llm_client
-        err_console = Console(stderr=True)
-        api_key = _os_check.environ.get("ANTHROPIC_API_KEY", "") or None
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "") or None
         try:
             llm_client = make_llm_client(
                 backend=effective_backend,
@@ -205,14 +200,11 @@ def run_command(
     from datetime import UTC, datetime
     from pathlib import Path
 
+    from lore_cli._cli_helpers import lore_root_or_die
     from lore_curator.session_curator import run_curator_a
 
-    lore_root_str = os.environ.get("LORE_ROOT", "")
-    if not lore_root_str:
-        console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
-        raise typer.Exit(1)
-
-    lore_root = Path(lore_root_str)
+    err_console = Console(stderr=True)
+    lore_root = lore_root_or_die(err_console)
 
     # Build scope filter if provided
     scope_obj = None

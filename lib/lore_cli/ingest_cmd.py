@@ -40,12 +40,8 @@ def ingest(
     from lore_adapters import get_adapter
     from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
 
-    lore_root_str = os.environ.get("LORE_ROOT", "")
-    if not lore_root_str:
-        err_console.print("[red]Error:[/red] LORE_ROOT environment variable not set.")
-        raise typer.Exit(1)
-
-    lore_root = Path(lore_root_str)
+    from lore_cli._cli_helpers import lore_root_or_die
+    lore_root = lore_root_or_die(err_console)
     cwd = Path(directory).resolve()
     now = datetime.now(UTC)
 
