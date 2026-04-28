@@ -394,8 +394,19 @@ def _read_wiki_index(wiki: Path, max_chars: int) -> str:
     return text[: max_chars - 40] + "\n... (truncated — run /lore:context for full)"
 
 
-# Matches "## Open items" section up to next `##` or EOF.
-_OPEN_ITEMS_RE = re.compile(r"##\s+Open items\s*\n(.+?)(?=\n##|\Z)", re.DOTALL)
+# Matches the loose-ends-style section up to next `##` or EOF.
+#
+# Recognises three heading shapes for back-compat across the v1/v2/v3
+# session-note revisions:
+#   - ``## Open items``   (v1, pre-revision; never auto-flipped to v2)
+#   - ``## Loose ends``   (v2 + v3, current)
+# ``## Issues touched`` (v2-only — actual gh issue references) is
+# deliberately NOT matched here: its content is "things filed
+# elsewhere", not "discussed but not pursued".
+_OPEN_ITEMS_RE = re.compile(
+    r"##\s+(?:Open items|Loose ends)\s*\n(.+?)(?=\n##|\Z)",
+    re.DOTALL,
+)
 
 
 def _session_touches_repo(text: str, fm: dict, repo: str) -> bool:
@@ -418,31 +429,97 @@ def _is_ephemeral(item: str) -> bool:
     return any(marker in lower for marker in EPHEMERAL_MARKERS)
 
 
-def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[tuple[str, str]]:
-    """Return (slug, summary) pairs for the most recent session notes.
+def _session_note_date(path: Path) -> date | None:
+    """Infer the work-date for a session note from its sharded path.
 
-    Reads only YAML frontmatter (first ~1KB). Does not filter by user —
-    any user's sessions are shown for cross-user awareness.
+    Two layouts in the wild:
+
+    - Sharded (current): ``sessions/.../YYYY/MM/DD-slug.md`` — year/month
+      come from the parent dirs, day from the filename's leading
+      ``DD-`` prefix.
+    - Flat-legacy: ``sessions/YYYY-MM-DD-slug.md`` — the full date
+      sits in the filename.
+
+    Returns ``None`` when neither shape matches (the file isn't a
+    real session note — e.g. an inbox draft or stray markdown).
+    """
+    name = path.name
+    # Flat-legacy: filename starts with YYYY-MM-DD.
+    if len(name) >= 10 and name[4] == "-" and name[7] == "-":
+        try:
+            return date.fromisoformat(name[:10])
+        except ValueError:
+            pass
+    # Sharded: YYYY/MM/ parent dirs + DD-... filename.
+    if len(name) >= 3 and name[2] == "-":
+        try:
+            day = int(name[:2])
+            month = int(path.parent.name)
+            year = int(path.parent.parent.name)
+            return date(year, month, day)
+        except (ValueError, IndexError):
+            pass
+    return None
+
+
+def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[tuple[str, str]]:
+    """Return (slug, status-line text) pairs for the most recent session notes.
+
+    The session layout is sharded ``sessions/<YYYY>/<MM>/<DD>-<slug>.md``
+    (and optionally team-mode-handle-shard
+    ``sessions/<handle>/<YYYY>/<MM>/<DD>-<slug>.md``), so we walk the
+    whole subtree with ``rglob`` and filter to date-prefixed filenames.
+
+    Status-line preference:
+
+    1. ``title`` — content-named, short. The session-note revision adds
+       this explicitly for SessionStart's status-line consumption.
+    2. ``description`` — short paragraph (revision form).
+    3. ``summary`` — back-compat for legacy notes that pre-date the
+       revision (where ``summary`` was the paragraph and ``description``
+       was the short headline).
+
+    Does not filter by user — any user's sessions are shown for
+    cross-user awareness.
+
+    The previous implementation read only the first 1024 bytes — on
+    real-world notes the ``source_transcripts`` block (with full
+    SHA-256 hashes) plus a long ``summary`` paragraph blew past that
+    cap, so the status-line silently went empty. Cap removed; we read
+    each candidate fully and let ``parse_frontmatter`` stop at the
+    closing ``---``.
     """
     from lore_core.schema import parse_frontmatter
 
     sessions_dir = wiki / "sessions"
     if not sessions_dir.is_dir():
         return []
-    candidates = sorted(sessions_dir.glob("*.md"), reverse=True)
+
+    # Sort by filename — date-prefixed slugs (``YYYY-MM-DD-...`` or
+    # ``DD-...``) sort lexicographically alongside their parent
+    # year/month directory, so reverse-sorted ``rglob`` gives newest
+    # first.
+    candidates = sorted(
+        (p for p in sessions_dir.rglob("*.md") if p.is_file() and not p.name.startswith("_")),
+        reverse=True,
+    )
     results: list[tuple[str, str]] = []
     for path in candidates:
         if len(results) >= max_notes:
             break
         try:
-            head = path.read_text(errors="replace")[:1024]
+            text = path.read_text(errors="replace")
         except OSError:
             continue
-        fm = parse_frontmatter(head)
-        desc = fm.get("summary") or fm.get("description")
-        if not desc:
+        fm = parse_frontmatter(text)
+        if fm.get("type") != "session":
             continue
-        results.append((path.stem, desc))
+        # title (revision) → description (revision short form) → summary
+        # (legacy paragraph) — all three are valid status-line content.
+        hint = fm.get("title") or fm.get("description") or fm.get("summary")
+        if not hint:
+            continue
+        results.append((path.stem, hint))
     return results
 
 
@@ -491,11 +568,19 @@ def _recent_open_items(
     seen: set[str] = set()
     elsewhere = 0
 
-    for md in sorted(sessions_dir.glob("*.md"), reverse=True):
-        try:
-            iso = md.stem[:10]
-            d = date.fromisoformat(iso)
-        except (ValueError, IndexError):
+    # Sharded layout: walk recursively. The previous flat
+    # ``sessions_dir.glob("*.md")`` only ever found ``_recent.md`` (a
+    # cached pointer file), so the loose-ends harvest was empty in
+    # production. Date filter accepts both YYYY-MM-DD-prefixed (legacy
+    # team-mode flat) and the DD-prefixed names that live under
+    # ``<year>/<month>/`` — for the latter we compare against the
+    # parent month directory for the year/month and the filename's DD
+    # prefix.
+    for md in sorted(sessions_dir.rglob("*.md"), reverse=True):
+        if not md.is_file() or md.name.startswith("_"):
+            continue
+        d = _session_note_date(md)
+        if d is None:
             continue
         if d < cutoff:
             continue
@@ -1080,7 +1165,10 @@ def _session_start(cwd: str | None) -> str:
         parts.append("")
 
     if items:
-        parts.append(f"## Open items{' (this repo)' if repo else ''}")
+        # Loose-ends framing: things discussed but not pursued — NOT a
+        # TODO list. Surviving work belongs in the configured PM
+        # backend (gh issues / Jira / etc.), not here.
+        parts.append(f"## Loose ends from recent sessions{' (this repo)' if repo else ''}")
         for item in items[:MAX_OPEN_ITEMS_INLINE]:
             parts.append(f"- {item}")
         extras: list[str] = []
@@ -1093,8 +1181,8 @@ def _session_start(cwd: str | None) -> str:
         parts.append("")
     elif elsewhere:
         parts.append(
-            f"No open items for this repo. "
-            f"{elsewhere} open items elsewhere in {wiki.name} — `/lore:resume` to see."
+            f"No loose ends from recent sessions for this repo. "
+            f"{elsewhere} elsewhere in {wiki.name} — `/lore:resume` to see."
         )
         parts.append("")
 

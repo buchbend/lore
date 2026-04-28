@@ -10,6 +10,51 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-04-28
+
+### Fixed
+
+- **`_last_session_hint` walks the sharded layout.** The previous
+  `sessions/*.md` flat glob only matched `_recent.md` (a stale cached
+  pointer) — SessionStart's "last note: …" line silently went empty
+  against any real vault. Now `rglob`s the full `sessions/<YYYY>/<MM>/`
+  subtree, filters to date-prefixed filenames via the new
+  `_session_note_date` helper, and skips non-session frontmatter.
+- **No more 1024-byte head-read cap.** Real notes with SHA-256 hashes
+  in `source_transcripts` plus a long paragraph routinely sat past the
+  cap, dropping the field. Cap removed; `parse_frontmatter` stops at
+  the closing `---` regardless.
+- **`_recent_open_items` walks the sharded layout** with the same
+  `rglob` fix and the new date helper.
+
+### Changed
+
+- **Status-line preference: `title` → `description` → `summary`.**
+  Revised notes' `title` (explicit slug source) wins for the status
+  line; legacy notes fall through to `description` (legacy short
+  headline) and finally `summary` (legacy paragraph).
+- **`_OPEN_ITEMS_RE` recognises both shapes.** `## Open items` (legacy
+  v1) and `## Loose ends` (current) match. `## Issues touched` (v2 gh
+  reference section) is intentionally excluded — it's resolved-work,
+  not "things discussed but not pursued".
+- **SessionStart copy softened.** "Open items" → "Loose ends from
+  recent sessions". Loose ends are informational, not a TODO list;
+  surviving work belongs in the configured PM backend.
+- **`threads.py` reads `title`/`description`/`summary` with the new
+  preference.** Title prefers `title`, falls back to `description`.
+  Summary prefers `summary`, falls back to `description` only when
+  `title` is also present (signals revision shape).
+
+### Added
+
+- **`docs/audit-description-readers.md`** — inventory of every
+  session-note `description` / `summary` / `title` reader in
+  `lore_core/` and `lore_cli/`, with the per-site Phase 4 decision.
+- **6 new sharded-layout / cross-shape tests** in
+  `test_hooks_last_session_hint.py` covering: title preference,
+  description fallback, summary fallback, sharded walking, full
+  frontmatter reads, non-session note skipping.
+
 ## [0.16.3] - 2026-04-28
 
 ### Added

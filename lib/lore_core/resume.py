@@ -31,10 +31,15 @@ DEFAULT_PRS_FILTER = "--author @me"
 # Lines marked with these markers are noise — dropped from open-items.
 EPHEMERAL_MARKERS = ("(ephemeral)", "(trivial)", "(todo)", "(skip)")
 
-# v1 schema "## Open items" section. v2 schema replaces this with
-# "## Loose ends" + "## Issues touched" — extending the scrape to v2 is
-# tracked separately; today the legacy form still covers most notes.
-_OPEN_ITEMS_RE = re.compile(r"##\s+Open items\s*\n(.+?)(?=\n##|\Z)", re.DOTALL)
+# Loose-ends-style section. Recognises both the legacy v1 heading
+# (``## Open items``) and the current ``## Loose ends`` so a vault that
+# straddles the migration window scrapes cleanly. The v2 sibling
+# ``## Issues touched`` is intentionally excluded — it tracks gh issue
+# refs, not "things discussed but not pursued".
+_OPEN_ITEMS_RE = re.compile(
+    r"##\s+(?:Open items|Loose ends)\s*\n(.+?)(?=\n##|\Z)",
+    re.DOTALL,
+)
 
 
 # ---------------------------------------------------------------------------

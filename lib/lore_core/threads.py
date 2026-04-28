@@ -371,10 +371,29 @@ def scan_session_notes(wiki_root: Path) -> list[NoteRef]:
         files = fm.get("files_touched") or []
         if not isinstance(files, list):
             files = []
+        # Title: revised notes carry an explicit ``title`` (content-named,
+        # short, slug source). Legacy v2 notes used ``description`` for the
+        # same role; legacy v1 had no title-shape field at all.
+        title_text = (
+            fm.get("title")
+            or fm.get("description")
+            or md_path.stem
+        )
+        # Summary: revised notes' ``description`` is a 1-2 sentence
+        # paragraph that does the work the old paragraph ``summary``
+        # used to do. ``summary`` itself is dropped for new writes but
+        # kept as a fallback for notes filed before the revision.
+        summary_text = fm.get("summary") or ""
+        if not summary_text and isinstance(fm.get("description"), str):
+            # Use ``description`` as the summary surface only when it
+            # *isn't* the title (i.e. revision shape, where title is
+            # the slug-source and description is the paragraph).
+            if fm.get("title"):
+                summary_text = fm["description"]
         out.append(NoteRef(
             wikilink=f"[[{md_path.stem}]]",
-            title=str(fm.get("description") or md_path.stem),
-            summary=str(fm.get("summary") or ""),
+            title=str(title_text),
+            summary=str(summary_text),
             files_touched=[f for f in files if isinstance(f, str)],
             created=str(created),
             scope=str(fm.get("scope") or ""),
