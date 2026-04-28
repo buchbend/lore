@@ -345,12 +345,18 @@ def test_collision_appends_counter(tmp_path):
 
 
 def test_filer_appends_to_todays_open_note_for_same_scope(tmp_path):
-    """Existing today + same-scope open note -> append, no LLM call."""
+    """Existing today + same-scope open note -> append, no LLM call.
+
+    Phase 2: append merges bullets into the locked sections rather than
+    wrapping each chunk in its own ``## <chunk title>`` H2 — see the
+    section-merge tests below for the canonical behaviour. This test
+    just confirms the merge-instead-of-create decision still holds.
+    """
     sessions_dir = tmp_path / "sessions"
     existing = _write_session_note(
         sessions_dir, "19-morning-work.md",
         scope_str="proj:feature", created="2026-04-19",
-        body="### Summary\n- morning slice",
+        body="## What we worked on\n\n- morning slice\n",
     )
 
     result = _file_note(
@@ -362,8 +368,11 @@ def test_filer_appends_to_todays_open_note_for_same_scope(tmp_path):
     assert result.was_merge is True
     assert result.path == existing
     text = existing.read_text()
-    assert "## Afternoon Work" in text
+    # New chunk's bullets merge into the existing What-we-worked-on section.
     assert "- morning slice" in text
+    assert "- Added ledger module" in text
+    # The old ``## <chunk title>`` per-append wrapper is gone.
+    assert "## Afternoon Work" not in text
 
 
 def test_filer_creates_new_note_when_todays_note_is_closed(tmp_path):
@@ -459,6 +468,217 @@ def test_find_todays_open_note_respects_work_time_not_now(tmp_path):
 
     assert result.path == existing
     assert result.was_merge is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — body shape (rationale-first sections, no Session: H1 prefix)
+# ---------------------------------------------------------------------------
+
+
+def _body(path: Path) -> str:
+    """Return just the markdown body of a session note (frontmatter stripped)."""
+    text = path.read_text()
+    parts = text.split("---\n", 2)
+    return parts[2] if len(parts) >= 3 else text
+
+
+def test_body_h1_is_bare_title_no_session_prefix(tmp_path):
+    """The H1 is the title verbatim — no 'Session:' prefix.
+
+    The old form prefixed every body with ``# Session: <title>``; the
+    revision drops it because ``type: session`` and the path already
+    establish the kind.
+    """
+    result = _file_note(tmp_path, noteworthy=_make_noteworthy("Add Ledger Feature"))
+    body = _body(result.path)
+    assert "# Add Ledger Feature\n" in body
+    assert "# Session:" not in body
+
+
+def test_body_section_order_is_rationale_first(tmp_path):
+    """Locked section order: Summary → Decisions made → What we worked on
+    → Activity → Loose ends. Rationale-first puts Decisions ahead of
+    activity bullets so a 6-month-future reader (and Curator B's prefix
+    window) lands on the durable layer first.
+    """
+    result = _file_note(tmp_path, noteworthy=_make_noteworthy())
+    body = _body(result.path)
+    # Each section's offset must strictly increase down the locked order.
+    summary_at = body.find("## Summary")
+    decisions_at = body.find("## Decisions made")
+    worked_on_at = body.find("## What we worked on")
+    loose_at = body.find("## Loose ends")
+    assert summary_at != -1
+    assert decisions_at != -1
+    assert worked_on_at != -1
+    # Decisions must appear before "What we worked on".
+    assert decisions_at < worked_on_at
+    # Summary must come first.
+    assert summary_at < decisions_at
+    # Loose ends comes last (when present); _make_noteworthy doesn't set
+    # any loose_ends so it's omitted — guard the assertion.
+    if loose_at != -1:
+        assert worked_on_at < loose_at
+
+
+def test_body_summary_section_carries_description_paragraph(tmp_path):
+    """## Summary is the body home of the 1-2-sentence description.
+
+    The frontmatter carries the same string for SessionStart's cheap read;
+    the body section is what humans / Curator B see when they actually
+    open the note.
+    """
+    nw = _make_noteworthy(
+        "Add Ledger Feature",
+        description=(
+            "Added an append-only ledger module for tracking curator runs. "
+            "Decided on JSONL over SQLite for grep-ability."
+        ),
+    )
+    result = _file_note(tmp_path, noteworthy=nw)
+    body = _body(result.path)
+    assert "## Summary\n" in body
+    assert "append-only ledger module" in body
+    assert "JSONL over SQLite" in body
+
+
+def test_body_omits_loose_ends_section_when_empty(tmp_path):
+    """No loose-ends bullets → no ``## Loose ends`` heading. Empty
+    sections fragment scan and read as 'something is missing'."""
+    nw = _make_noteworthy()  # default: loose_ends=[]
+    result = _file_note(tmp_path, noteworthy=nw)
+    body = _body(result.path)
+    assert "## Loose ends" not in body
+
+
+def test_body_renders_loose_ends_when_present(tmp_path):
+    nw = NoteworthyResult(
+        noteworthy=True,
+        reason="r",
+        title="Test",
+        description="A test session.",
+        bullets=["did stuff"],
+        decisions=[],
+        loose_ends=[
+            "Sphinx-with-MyST build was untested as of this session.",
+            "Auth-gating remains undecided.",
+        ],
+    )
+    result = _file_note(tmp_path, noteworthy=nw)
+    body = _body(result.path)
+    assert "## Loose ends" in body
+    assert "MyST build was untested" in body
+    assert "Auth-gating remains undecided" in body
+
+
+def test_body_omits_activity_when_empty(tmp_path):
+    """Phase 2 emits empty Activity (Phase 3 populates from git/gh).
+    With no commits / issues, the parent and all subheadings stay out
+    of the body — no orphan ``## Activity\\n`` blocks."""
+    result = _file_note(tmp_path, noteworthy=_make_noteworthy())
+    body = _body(result.path)
+    assert "## Activity" not in body
+    assert "### Commits" not in body
+    assert "### Issues opened" not in body
+    assert "### Issues closed" not in body
+
+
+def test_body_drops_legacy_files_touched_section(tmp_path):
+    """``### Files touched`` was a duplicate of frontmatter ``files_touched``.
+    Revision drops the body section."""
+    result = _file_note(
+        tmp_path,
+        turns=_make_turns_with_files("auth.py", "auth_test.py"),
+    )
+    body = _body(result.path)
+    assert "### Files touched" not in body
+    assert "## Files touched" not in body
+
+
+def test_body_drops_legacy_entities_line(tmp_path):
+    """The freeform ``Entities: [[a]], [[b]]`` line is gone — the contract
+    was inconsistent (mix of file basenames, branches, versions, concepts)."""
+    nw = _make_noteworthy()
+    # _make_noteworthy sets entities=["ledger"]; ensure it's not surfaced.
+    assert nw.entities == ["ledger"]
+    result = _file_note(tmp_path, noteworthy=nw)
+    body = _body(result.path)
+    assert "Entities:" not in body
+
+
+def test_append_merges_bullets_into_existing_sections(tmp_path):
+    """The canonical Phase 2 append rule: a second chunk's bullets merge
+    into the existing note's ``## What we worked on`` and ``## Decisions
+    made`` sections — no new ``## <chunk title>`` H2 wrapper, no nested
+    duplicate ``## What we worked on`` block."""
+    sessions_dir = tmp_path / "sessions"
+    # Plant an open note already in the new shape.
+    body_md = (
+        "# Morning\n\n"
+        "## Summary\nMorning narrative.\n\n"
+        "## Decisions made\n- **A** chose path A\n\n"
+        "## What we worked on\n- morning slice\n"
+    )
+    existing = _write_session_note(
+        sessions_dir, "19-morning.md",
+        scope_str="proj:feature", created="2026-04-19",
+        body=body_md,
+    )
+
+    result = _file_note(
+        tmp_path,
+        noteworthy=NoteworthyResult(
+            noteworthy=True, reason="r",
+            title="Afternoon", description="Afternoon narrative.",
+            bullets=["afternoon slice"],
+            decisions=["**B** chose path B"],
+        ),
+        scope=_make_scope("proj:feature"),
+    )
+
+    text = existing.read_text()
+    body = _body(result.path)
+    assert result.path == existing
+    # No nested-H2-per-chunk wrapper.
+    assert "## Afternoon\n" not in body
+    # Both chunks' bullets coexist under one ``## What we worked on``.
+    assert body.count("## What we worked on") == 1
+    assert "- morning slice" in body
+    assert "- afternoon slice" in body
+    # Same for Decisions made.
+    assert body.count("## Decisions made") == 1
+    assert "**A**" in body
+    assert "**B**" in body
+
+
+def test_append_keeps_summary_paragraph_of_first_chunk(tmp_path):
+    """First chunk wins on ``## Summary``. Subsequent chunks contribute to
+    bullet sections only — the narrative stays the original framing."""
+    sessions_dir = tmp_path / "sessions"
+    body_md = (
+        "# Morning\n\n"
+        "## Summary\nThe morning framing.\n\n"
+        "## What we worked on\n- morning slice\n"
+    )
+    existing = _write_session_note(
+        sessions_dir, "19-morning.md",
+        scope_str="proj:feature", created="2026-04-19",
+        body=body_md,
+    )
+
+    _file_note(
+        tmp_path,
+        noteworthy=NoteworthyResult(
+            noteworthy=True, reason="r",
+            title="Afternoon", description="The afternoon framing.",
+            bullets=["afternoon slice"],
+        ),
+        scope=_make_scope("proj:feature"),
+    )
+
+    body = _body(existing)
+    assert "The morning framing." in body
+    assert "The afternoon framing." not in body
 
 
 # ---------------------------------------------------------------------------

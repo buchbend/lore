@@ -22,7 +22,13 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from lore_core.session_writer import FiledNote, SessionInput, file_or_merge
+from lore_core.session_writer import (
+    BodySections,
+    FiledNote,
+    SessionInput,
+    file_or_merge,
+    render_body_sections,
+)
 from lore_core.types import Scope, TranscriptHandle, Turn
 from lore_curator.noteworthy import NoteworthyResult
 
@@ -75,33 +81,37 @@ def _resolve_handle_for(wiki_root: Path, handle: TranscriptHandle) -> str:
     return resolve_handle(wiki_root, email) if email else ""
 
 
+def _sections_from_noteworthy(noteworthy: NoteworthyResult) -> BodySections:
+    """Project Curator A's output into the locked body-section shape.
+
+    ``files_touched`` and ``entities`` are dropped: the former lives in
+    frontmatter (no need to duplicate in body) and the latter had no
+    consistent contract (mix of file basenames, branch names, version
+    strings, concept names — useful for none of them).
+    """
+    decisions = [f"- {d}" for d in noteworthy.decisions if d]
+    worked_on = [f"- {b}" for b in noteworthy.bullets if b]
+    loose_ends = [f"- {le}" for le in noteworthy.loose_ends if le]
+    return BodySections(
+        title=noteworthy.title or "session",
+        summary=noteworthy.description or "",
+        decisions=decisions,
+        worked_on=worked_on,
+        loose_ends=loose_ends,
+        commits=[],
+        issues_opened=[],
+        issues_closed=[],
+    )
+
+
 def _render_body(noteworthy: NoteworthyResult) -> str:
-    # Phase 1 keeps the legacy body shape (### Summary / ### Files touched /
-    # ### Decisions / Entities: line). Phase 2 of the session-note revision
-    # rewrites this to the rationale-first 5-section layout (## Summary
-    # paragraph, ## Decisions made, ## What we worked on, ## Activity,
-    # ## Loose ends) and is where ``noteworthy.loose_ends`` finally renders.
-    # See plans/ok-file-issues-and-harmonic-lagoon.md.
-    lines: list[str] = []
-    if noteworthy.bullets:
-        lines.append("### Summary")
-        for b in noteworthy.bullets:
-            lines.append(f"- {b}")
-        lines.append("")
-    if noteworthy.files_touched:
-        lines.append("### Files touched")
-        for f in noteworthy.files_touched:
-            lines.append(f"- `{f}`")
-        lines.append("")
-    if noteworthy.decisions:
-        lines.append("### Decisions")
-        for d in noteworthy.decisions:
-            lines.append(f"- {d}")
-        lines.append("")
-    if noteworthy.entities:
-        links = ", ".join(f"[[{e}]]" for e in noteworthy.entities)
-        lines.append(f"Entities: {links}")
-    return "\n".join(lines).rstrip() + "\n"
+    """Render a fresh chunk's body in the locked Phase-2 layout.
+
+    Append-mode (``session_writer._append_to_note``) re-parses this output
+    and merges it into the existing note's sections rather than wrapping
+    it in a per-chunk H2.
+    """
+    return render_body_sections(_sections_from_noteworthy(noteworthy))
 
 
 def file_session_note(

@@ -30,10 +30,11 @@ contract.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, date as _date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import yaml
 
@@ -81,6 +82,187 @@ def _dedup_preserving_order(items: list[str] | None) -> list[str]:
             seen.add(item)
             out.append(item)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Body section primitives — Phase 2 of the session-note revision
+#
+# Session-note bodies are rendered as a fixed set of sections:
+#
+#   # <title>
+#   ## Summary           ← 4-5 sentence narrative paragraph
+#   ## Decisions made    ← bullets (rationale-bearing)
+#   ## What we worked on ← bullets (activity narrative)
+#   ## Activity          ← parent for mechanical extracts (Phase 3 populates)
+#     ### Commits
+#     ### Issues opened
+#     ### Issues closed
+#   ## Loose ends        ← bullets (past-tense / stative)
+#
+# Append-mode merges a new chunk into an existing note's sections rather
+# than wrapping each chunk in its own ``## <chunk title>`` H2. The parser
+# below is permissive — unrecognised content is dropped (legacy
+# ``### Files touched`` / ``Entities:`` lines fade out as old notes are
+# touched), but recognised section content round-trips losslessly.
+# ---------------------------------------------------------------------------
+
+
+class BodySections(NamedTuple):
+    """Structured view of a session-note body for parse → merge → render."""
+
+    title: str
+    summary: str           # paragraph (multiline allowed; no leading "- ")
+    decisions: list[str]   # bullet lines including their leading "- "
+    worked_on: list[str]
+    loose_ends: list[str]
+    commits: list[str]     # under ### Commits
+    issues_opened: list[str]
+    issues_closed: list[str]
+
+
+_HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
+_KNOWN_H2: dict[str, str] = {
+    "Summary": "summary",
+    "Decisions made": "decisions",
+    "What we worked on": "worked_on",
+    "Activity": "activity",
+    "Loose ends": "loose_ends",
+}
+_KNOWN_H3_UNDER_ACTIVITY: dict[str, str] = {
+    "Commits": "commits",
+    "Issues opened": "issues_opened",
+    "Issues closed": "issues_closed",
+}
+
+
+def parse_body_sections(body: str) -> BodySections:
+    """Split a session-note body into its locked sections.
+
+    Recognises the H1 title, the five locked H2 sections, and the three
+    H3 subheadings under ``## Activity``. Any other content (legacy
+    ``### Files touched``, freeform ``Entities:`` lines, free-form text
+    inside Decisions/What-we-worked-on) is silently dropped — old shape
+    content fades out the next time a note is appended to.
+
+    The summary is the only section that keeps non-bullet text; bullet
+    sections only retain lines that start with ``-``.
+    """
+    title = ""
+    summary_lines: list[str] = []
+    decisions: list[str] = []
+    worked_on: list[str] = []
+    loose_ends: list[str] = []
+    commits: list[str] = []
+    issues_opened: list[str] = []
+    issues_closed: list[str] = []
+    current_h2: str | None = None
+    current_h3_in_activity: str | None = None
+
+    for raw_line in body.splitlines():
+        line = raw_line.rstrip()
+        m = _HEADING_RE.match(line)
+        if m:
+            level = len(m.group(1))
+            heading = m.group(2)
+            if level == 1:
+                title = heading
+                current_h2 = None
+                current_h3_in_activity = None
+            elif level == 2:
+                current_h2 = _KNOWN_H2.get(heading)
+                current_h3_in_activity = None
+            elif level == 3 and current_h2 == "activity":
+                current_h3_in_activity = _KNOWN_H3_UNDER_ACTIVITY.get(heading)
+            continue
+
+        if current_h2 == "summary":
+            summary_lines.append(line)
+        elif current_h2 == "decisions" and line.lstrip().startswith("-"):
+            decisions.append(line)
+        elif current_h2 == "worked_on" and line.lstrip().startswith("-"):
+            worked_on.append(line)
+        elif current_h2 == "loose_ends" and line.lstrip().startswith("-"):
+            loose_ends.append(line)
+        elif current_h2 == "activity" and current_h3_in_activity is not None \
+                and line.lstrip().startswith("-"):
+            if current_h3_in_activity == "commits":
+                commits.append(line)
+            elif current_h3_in_activity == "issues_opened":
+                issues_opened.append(line)
+            elif current_h3_in_activity == "issues_closed":
+                issues_closed.append(line)
+
+    return BodySections(
+        title=title,
+        summary="\n".join(summary_lines).strip(),
+        decisions=decisions,
+        worked_on=worked_on,
+        loose_ends=loose_ends,
+        commits=commits,
+        issues_opened=issues_opened,
+        issues_closed=issues_closed,
+    )
+
+
+def render_body_sections(sections: BodySections) -> str:
+    """Render the locked layout. Empty sections (and the ``## Activity``
+    parent when all subsections are empty) are omitted entirely."""
+    parts: list[str] = []
+    parts.append(f"# {sections.title}\n")
+
+    if sections.summary:
+        parts.append("\n## Summary\n\n")
+        parts.append(sections.summary.rstrip() + "\n")
+
+    if sections.decisions:
+        parts.append("\n## Decisions made\n\n")
+        parts.extend(line + "\n" for line in sections.decisions)
+
+    if sections.worked_on:
+        parts.append("\n## What we worked on\n\n")
+        parts.extend(line + "\n" for line in sections.worked_on)
+
+    activity_subs: list[tuple[str, list[str]]] = [
+        ("### Commits", sections.commits),
+        ("### Issues opened", sections.issues_opened),
+        ("### Issues closed", sections.issues_closed),
+    ]
+    if any(items for _, items in activity_subs):
+        parts.append("\n## Activity\n")
+        for heading, items in activity_subs:
+            if not items:
+                continue
+            parts.append(f"\n{heading}\n\n")
+            parts.extend(line + "\n" for line in items)
+
+    if sections.loose_ends:
+        parts.append("\n## Loose ends\n\n")
+        parts.extend(line + "\n" for line in sections.loose_ends)
+
+    return "".join(parts).rstrip() + "\n"
+
+
+def merge_body_sections(existing: BodySections, new: BodySections) -> BodySections:
+    """Merge a new chunk's sections into an existing note's sections.
+
+    Existing title and summary win — the original framing of the note
+    is the user's anchor and shouldn't churn under accumulating
+    appends. Bullet lists are unioned by appending (caller's order
+    preserved). Activity subsections (commits / issues opened+closed)
+    are *not* unioned here — Phase 3 re-renders them from cumulative
+    mechanical data, so passing through the new chunk's lists would
+    double-count. We keep the existing values until Phase 3 takes over.
+    """
+    return BodySections(
+        title=existing.title or new.title,
+        summary=existing.summary or new.summary,
+        decisions=list(existing.decisions) + list(new.decisions),
+        worked_on=list(existing.worked_on) + list(new.worked_on),
+        loose_ends=list(existing.loose_ends) + list(new.loose_ends),
+        commits=list(existing.commits),
+        issues_opened=list(existing.issues_opened),
+        issues_closed=list(existing.issues_closed),
+    )
 
 
 def _topic_jaccard(a: list[str] | None, b: list[str] | None) -> float:
@@ -386,14 +568,22 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
             list(existing_files) + list(si.files_touched)
         )
 
-    # Append-chunk H2 boundary: prefer the short content-named title (used
-    # for body H1 in fresh notes) over the longer description, which under
-    # the new shape will routinely run to 1-2 full sentences and would make
-    # an awkward heading. Fall back to description for legacy callers that
-    # don't pass ``title`` yet.
-    chunk_heading = (si.title or si.description).strip() or "Update"
-    new_section = f"\n\n## {chunk_heading}\n\n{si.body_markdown.rstrip()}\n"
-    text_new = _render_markdown(fm, body.rstrip() + new_section)
+    # Phase 2 append rule: parse both bodies into the locked section
+    # shape and merge bullet lists. The existing note's title and
+    # ``## Summary`` paragraph win — they are the user's anchor and
+    # shouldn't churn under accumulating appends. New chunk's bullets
+    # append to the corresponding section.
+    #
+    # Fallback: when the existing note pre-dates the locked shape (no
+    # recognisable H2 sections), the parser returns an empty
+    # BodySections and the merge result will be effectively the new
+    # chunk on its own — which is the right behaviour given the
+    # invariant that only Curator A appends, and Curator A always emits
+    # the new shape.
+    existing_sections = parse_body_sections(body)
+    new_sections = parse_body_sections(si.body_markdown)
+    merged = merge_body_sections(existing_sections, new_sections)
+    text_new = _render_markdown(fm, render_body_sections(merged))
     atomic_write_text(path, text_new)
 
 

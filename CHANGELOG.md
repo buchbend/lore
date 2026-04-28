@@ -10,6 +10,27 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-04-28
+
+### Changed
+
+- **Session-note revision Phase 2 — body shape.** The body now opens
+  with `# <title>` (no `Session:` prefix), then a rationale-first
+  layout: `## Summary` paragraph → `## Decisions made` → `## What we
+  worked on` → `## Activity` (parent for Phase 3's `### Commits` /
+  `### Issues opened` / `### Issues closed`) → `## Loose ends`.
+  Curator B's prefix window now lands on the durable rationale layer
+  first. The legacy `### Summary` bullets, `### Files touched` (which
+  duplicated frontmatter), and freeform `Entities:` line are gone.
+  Append-mode merges new chunks into the existing sections — no more
+  per-chunk `## <chunk title>` H2 wrappers; first chunk's title and
+  Summary win, subsequent chunks contribute bullets only. Activity
+  sub-sections stay empty in this phase; Phase 3 populates them from
+  git/gh. Section parsing is permissive — old-shape content (e.g. a
+  v2-old `### Summary` block on a same-day open note) fades out the
+  next time the note is appended to. Part of
+  [plans/ok-file-issues-and-harmonic-lagoon.md].
+
 ## [0.16.1] - 2026-04-28
 
 ### Changed
