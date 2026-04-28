@@ -4,6 +4,12 @@ Each subcommand is implemented as its own typer app in a sibling
 module; this file mounts them under a single root so `lore --help`
 renders the full subcommand tree with Rich-styled boxes and each
 `lore <verb> --help` works uniformly.
+
+The full mount happens lazily inside `_build_app()` and is cached
+module-globally on first access. The `lore hook <event>` fast path
+in `main()` skips it entirely — hooks only need `lore_cli.hooks`,
+not the ~30 sibling cmd modules whose eager import would cost
+~170-240ms of cold-start time per hook fire.
 """
 
 from __future__ import annotations
@@ -13,133 +19,171 @@ import sys
 import click
 import typer
 
-# Subcommand apps — every one of these is a typer.Typer instance with
-# its own commands / callback. Registering them via add_typer gives a
-# unified `lore --help` listing.
-from lore_cli import (
-    attach_cmd,
-    attachments_cmd,
-    backfill_cmd,
-    briefing_cmd,
-    completions_cmd,
-    config_cmd,
-    curator_cmd,
-    detach_cmd,
-    doctor_cmd,
-    drill_cmd,
-    hooks,
-    inbox_cmd,
-    ingest_cmd,
-    init_cmd,
-    install_cmd,
-    lint_cmd,
-    log_cmd,
-    mcp_cmd,
-    migrate_cmd,
-    new_wiki_cmd,
-    news_cmd,
-    off_cmd,
-    on_cmd,
-    plan_cmd,
-    proc_cmd,
-    registry_cmd,
-    resume_cmd,
-    runs_cmd,
-    scopes_cmd,
-    search_cmd,
-    session_cmd,
-    status_cmd,
-    surface_cmd,
-    transcripts_cmd,
-    wiki_cmd,
-)
 
-app = typer.Typer(
-    add_completion=False,
-    help="lore — knowledge-graph tooling for AI-coding teams.",
-    no_args_is_help=True,
-    rich_markup_mode="rich",
-)
-
-# Mount subcommands grouped by audience. `rich_help_panel` controls the
-# section header in `lore --help`.
-_GS = "Getting Started"
-_KN = "Knowledge"
-_ADV = "Advanced"
-
-app.add_typer(install_cmd.app, name="install", rich_help_panel=_GS)
-app.add_typer(init_cmd.app, name="init", rich_help_panel=_GS)
-app.add_typer(attach_cmd.app, name="attach", rich_help_panel=_GS)
-app.add_typer(status_cmd.app, name="status", rich_help_panel=_GS)
-app.add_typer(doctor_cmd.app, name="doctor", rich_help_panel=_GS)
-app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
-
-app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
-app.add_typer(drill_cmd.app, name="drill", rich_help_panel=_KN)
-app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
-app.add_typer(plan_cmd.app, name="plan", rich_help_panel=_KN)
-app.add_typer(surface_cmd.app, name="surface", rich_help_panel=_KN)
-app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
-app.add_typer(news_cmd.app, name="news", rich_help_panel=_KN)
-app.add_typer(resume_cmd.app, name="resume", rich_help_panel=_KN)
-app.add_typer(lint_cmd.app, name="lint", rich_help_panel=_KN)
-app.add_typer(curator_cmd.app, name="curator", rich_help_panel=_KN)
-app.add_typer(on_cmd.app, name="on", rich_help_panel=_KN)
-app.add_typer(off_cmd.app, name="off", rich_help_panel=_KN)
-# Legacy alias: `lore new-wiki <name>` forwards to the same scaffolder
-# as `lore wiki new <name>`. Kept for backward compat with users who
-# typed the old form during 0.x; the canonical path is `lore wiki new`.
-app.add_typer(new_wiki_cmd.app, name="new-wiki", rich_help_panel=_ADV)
-
-app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
-app.add_typer(attachments_cmd.app, name="attachments", rich_help_panel=_ADV)
-app.add_typer(briefing_cmd.app, name="briefing", rich_help_panel=_ADV)
-app.add_typer(completions_cmd.app, name="completions", rich_help_panel=_ADV)
-app.add_typer(detach_cmd.app, name="detach", rich_help_panel=_ADV)
-app.add_typer(hooks.hook_app, name="hook", rich_help_panel=_ADV)
-app.add_typer(inbox_cmd.app, name="inbox", rich_help_panel=_ADV)
-app.add_typer(ingest_cmd.app, name="ingest", rich_help_panel=_ADV)
-app.add_typer(log_cmd.app, name="log", rich_help_panel=_ADV)
-app.add_typer(mcp_cmd.app, name="mcp", rich_help_panel=_ADV)
-app.add_typer(migrate_cmd.app, name="migrate", rich_help_panel=_ADV)
-app.add_typer(proc_cmd.app, name="proc", rich_help_panel=_ADV)
-app.add_typer(registry_cmd.app, name="registry", rich_help_panel=_ADV)
-app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
-app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
-app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
+_app: typer.Typer | None = None
 
 
-@app.command(
-    "uninstall",
-    help="Symmetric semantic remove (alias for `install uninstall`).",
-)
-def cmd_uninstall_alias(
-    integration: str = install_cmd._INTEGRATION,
-    yes: bool = install_cmd._YES,
-    quiet: bool = install_cmd._QUIET,
-    json_out: bool = install_cmd._JSON,
-    force: bool = install_cmd._FORCE,
-    lore_repo: str = install_cmd._LORE_REPO,
-) -> None:
-    """Top-level `lore uninstall` — same flags as `lore install uninstall`."""
-    args = install_cmd._make_args(
-        "uninstall",
-        integration=integration,
-        yes=yes,
-        quiet=quiet,
-        json_out=json_out,
-        force=force,
-        lore_repo=lore_repo,
+def _build_app() -> typer.Typer:
+    """Construct the full lore CLI dispatcher.
+
+    Cached via the module-level ``_app`` singleton: tests that do
+    ``from lore_cli.__main__ import app`` go through ``__getattr__``
+    which calls this once and reuses the result.
+    """
+    # Subcommand apps — every one of these is a typer.Typer instance with
+    # its own commands / callback. Registering them via add_typer gives a
+    # unified `lore --help` listing.
+    from lore_cli import (
+        attach_cmd,
+        attachments_cmd,
+        backfill_cmd,
+        briefing_cmd,
+        completions_cmd,
+        config_cmd,
+        curator_cmd,
+        detach_cmd,
+        doctor_cmd,
+        drill_cmd,
+        hooks,
+        inbox_cmd,
+        ingest_cmd,
+        init_cmd,
+        install_cmd,
+        lint_cmd,
+        log_cmd,
+        mcp_cmd,
+        migrate_cmd,
+        new_wiki_cmd,
+        news_cmd,
+        off_cmd,
+        on_cmd,
+        plan_cmd,
+        proc_cmd,
+        registry_cmd,
+        resume_cmd,
+        runs_cmd,
+        scopes_cmd,
+        search_cmd,
+        session_cmd,
+        status_cmd,
+        surface_cmd,
+        transcripts_cmd,
+        wiki_cmd,
     )
-    install_cmd._exit_with(install_cmd._cmd_install(args, mode="uninstall"))
+
+    app = typer.Typer(
+        add_completion=False,
+        help="lore — knowledge-graph tooling for AI-coding teams.",
+        no_args_is_help=True,
+        rich_markup_mode="rich",
+    )
+
+    # Mount subcommands grouped by audience. `rich_help_panel` controls the
+    # section header in `lore --help`.
+    _GS = "Getting Started"
+    _KN = "Knowledge"
+    _ADV = "Advanced"
+
+    app.add_typer(install_cmd.app, name="install", rich_help_panel=_GS)
+    app.add_typer(init_cmd.app, name="init", rich_help_panel=_GS)
+    app.add_typer(attach_cmd.app, name="attach", rich_help_panel=_GS)
+    app.add_typer(status_cmd.app, name="status", rich_help_panel=_GS)
+    app.add_typer(doctor_cmd.app, name="doctor", rich_help_panel=_GS)
+    app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
+
+    app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
+    app.add_typer(drill_cmd.app, name="drill", rich_help_panel=_KN)
+    app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
+    app.add_typer(plan_cmd.app, name="plan", rich_help_panel=_KN)
+    app.add_typer(surface_cmd.app, name="surface", rich_help_panel=_KN)
+    app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
+    app.add_typer(news_cmd.app, name="news", rich_help_panel=_KN)
+    app.add_typer(resume_cmd.app, name="resume", rich_help_panel=_KN)
+    app.add_typer(lint_cmd.app, name="lint", rich_help_panel=_KN)
+    app.add_typer(curator_cmd.app, name="curator", rich_help_panel=_KN)
+    app.add_typer(on_cmd.app, name="on", rich_help_panel=_KN)
+    app.add_typer(off_cmd.app, name="off", rich_help_panel=_KN)
+    # Legacy alias: `lore new-wiki <name>` forwards to the same scaffolder
+    # as `lore wiki new <name>`. Kept for backward compat with users who
+    # typed the old form during 0.x; the canonical path is `lore wiki new`.
+    app.add_typer(new_wiki_cmd.app, name="new-wiki", rich_help_panel=_ADV)
+
+    app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
+    app.add_typer(attachments_cmd.app, name="attachments", rich_help_panel=_ADV)
+    app.add_typer(briefing_cmd.app, name="briefing", rich_help_panel=_ADV)
+    app.add_typer(completions_cmd.app, name="completions", rich_help_panel=_ADV)
+    app.add_typer(detach_cmd.app, name="detach", rich_help_panel=_ADV)
+    app.add_typer(hooks.hook_app, name="hook", rich_help_panel=_ADV)
+    app.add_typer(inbox_cmd.app, name="inbox", rich_help_panel=_ADV)
+    app.add_typer(ingest_cmd.app, name="ingest", rich_help_panel=_ADV)
+    app.add_typer(log_cmd.app, name="log", rich_help_panel=_ADV)
+    app.add_typer(mcp_cmd.app, name="mcp", rich_help_panel=_ADV)
+    app.add_typer(migrate_cmd.app, name="migrate", rich_help_panel=_ADV)
+    app.add_typer(proc_cmd.app, name="proc", rich_help_panel=_ADV)
+    app.add_typer(registry_cmd.app, name="registry", rich_help_panel=_ADV)
+    app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
+    app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
+    app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
+
+    @app.command(
+        "uninstall",
+        help="Symmetric semantic remove (alias for `install uninstall`).",
+    )
+    def cmd_uninstall_alias(
+        integration: str = install_cmd._INTEGRATION,
+        yes: bool = install_cmd._YES,
+        quiet: bool = install_cmd._QUIET,
+        json_out: bool = install_cmd._JSON,
+        force: bool = install_cmd._FORCE,
+        lore_repo: str = install_cmd._LORE_REPO,
+    ) -> None:
+        """Top-level `lore uninstall` — same flags as `lore install uninstall`."""
+        args = install_cmd._make_args(
+            "uninstall",
+            integration=integration,
+            yes=yes,
+            quiet=quiet,
+            json_out=json_out,
+            force=force,
+            lore_repo=lore_repo,
+        )
+        install_cmd._exit_with(install_cmd._cmd_install(args, mode="uninstall"))
+
+    return app
+
+
+def __getattr__(name: str):
+    """Lazy module-level ``app`` for ``from lore_cli.__main__ import app``.
+
+    Tests and ``lore_cli.completions_cmd`` reach for ``app`` directly;
+    serving it through PEP 562 ``__getattr__`` lets the ``lore hook ...``
+    fast path in :func:`main` skip ``_build_app()`` (and the eager
+    cmd-module import that comes with it) entirely.
+    """
+    if name == "app":
+        global _app
+        if _app is None:
+            _app = _build_app()
+        return _app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point — `lore` and `python -m lore_cli`."""
     if argv is None:
         argv = sys.argv[1:]
+    is_hook = len(argv) >= 1 and argv[0] == "hook"
     try:
-        result = app(args=argv, standalone_mode=False)
+        if is_hook:
+            # Fast path — skip _build_app() and its ~30 cmd-module imports.
+            # The hook subapp is self-contained inside lore_cli.hooks.
+            from lore_cli import hooks as _hooks_mod
+            result = _hooks_mod.hook_app(args=argv[1:], standalone_mode=False)
+        else:
+            global _app
+            if _app is None:
+                _app = _build_app()
+            result = _app(args=argv, standalone_mode=False)
         if isinstance(result, int):
             return result
         return 0
