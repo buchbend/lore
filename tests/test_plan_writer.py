@@ -128,6 +128,47 @@ def test_fresh_write_no_repo_when_unattached(wiki_root: Path) -> None:
     assert "repo" not in fm
 
 
+def test_single_mode_renders_body_verbatim_without_steps_wrapper(
+    wiki_root: Path,
+) -> None:
+    """Single-mode plans preserve the source body — no ``## Steps`` /
+    ``### s1: s1`` wrapper that would mangle the visual hierarchy.
+
+    The plan's own H2 sections (``## Notes``, ``## Risks``) must stay at
+    the H2 level. The trailer hint and step heading are dropped because
+    a single-step plan has nothing meaningful to anchor.
+    """
+    plan = StructuredPlan(
+        slug="freeform",
+        title="Freeform plan",
+        body_intro="",
+        steps=[
+            PlanStep(
+                id="s1",
+                title="",
+                body="## Notes\n\nSome prose.\n\n## Risks\n\nMore prose.",
+            )
+        ],
+        mode="single",
+    )
+    result = write_plan_note(
+        wiki_root=wiki_root,
+        plan=plan,
+        source_hash=compute_source_hash("x"),
+        source_adapter="claude-code-hook",
+    )
+    body = strip_frontmatter(result.path.read_text())
+    assert "# Freeform plan" in body
+    assert "## Notes" in body
+    assert "## Risks" in body
+    assert "Some prose." in body
+    # No `## Steps` wrapper or `### s1:` anchor heading in single mode.
+    assert "## Steps" not in body
+    assert "### s1" not in body
+    # No commit-trailer hint either — only meaningful for multi-step plans.
+    assert "Plan: freeform#s<N>" not in body
+
+
 # ---------------------------------------------------------------------------
 # yaml.safe_dump correctness on fragile descriptions
 # ---------------------------------------------------------------------------

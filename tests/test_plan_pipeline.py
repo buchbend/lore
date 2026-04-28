@@ -108,6 +108,35 @@ def test_mode_headings_h2_numeric_prefix() -> None:
     assert len(plan.steps) == 2
 
 
+def test_mode_headings_p_prefix() -> None:
+    """`### P1` / `### P2` — compact phase form Claude Code emits."""
+    text = (
+        "# P\n\n"
+        "### P1 — Resolver primitives\nbody for P1\n\n"
+        "### P2 — Test isolation\nbody for P2\n"
+    )
+    plan = parse(text)
+    assert plan.mode == "headings"
+    assert len(plan.steps) == 2
+    assert plan.steps[0].title == "— Resolver primitives"
+    assert "body for P1" in plan.steps[0].body
+    assert plan.steps[1].title == "— Test isolation"
+
+
+def test_p_prefix_does_not_match_other_letters() -> None:
+    """Only literal ``P`` followed by digits triggers the new pattern.
+
+    Guards against incidental matches like ``### Pneumatic 1``.
+    """
+    text = (
+        "# P\n\n"
+        "### Pneumatic 1: not a phase\nbody\n\n"
+        "### Pneumatic 2: also not\nbody\n"
+    )
+    plan = parse(text)
+    assert plan.mode == "single"
+
+
 def test_mode_headings_single_heading_falls_through_to_single_mode() -> None:
     """One step heading is not enough — needs ≥2 siblings."""
     text = "# P\n\n### Step 1: only one\nbody\n"
@@ -200,6 +229,67 @@ def test_mode_list_single_item_falls_through_to_single() -> None:
     assert plan.mode == "single"
 
 
+def test_mode_list_disjoint_numbered_lists_fall_through_to_single() -> None:
+    """Two unrelated numbered lists separated by an ATX heading — ambiguous.
+
+    Earlier behavior flattened Goals + Risks + Verification.smoke from
+    real plans into ``s1..sN`` regardless of which section the items
+    came from. The fix: when a top-level numbered list is interrupted
+    by an ATX heading, the runs are disjoint and we fall through to
+    single mode rather than stitching them together.
+    """
+    text = """# Plan
+
+## Goals
+
+1. First goal
+2. Second goal
+
+## Risks
+
+1. First risk
+2. Second risk
+"""
+    plan = parse(text)
+    assert plan.mode == "single"
+    # Body preserves both sections verbatim.
+    assert "## Goals" in plan.steps[0].body
+    assert "## Risks" in plan.steps[0].body
+    assert "First goal" in plan.steps[0].body
+    assert "First risk" in plan.steps[0].body
+
+
+def test_mode_list_explicit_steps_heading_wins() -> None:
+    """A ``## Steps`` heading immediately preceding a list selects that run.
+
+    Even when the document also contains other numbered lists (e.g. a
+    Notes or Variables appendix), the list right under ``## Steps`` is
+    the canonical one.
+    """
+    text = """# Plan
+
+intro
+
+## Steps
+
+1. First step
+2. Second step
+3. Third step
+
+## Notes
+
+1. extraneous note A
+2. extraneous note B
+"""
+    plan = parse(text)
+    assert plan.mode == "list"
+    assert [s.title for s in plan.steps] == [
+        "First step",
+        "Second step",
+        "Third step",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Mode 3: single (degenerate)
 # ---------------------------------------------------------------------------
@@ -215,10 +305,12 @@ def test_mode_single_no_steps_detected() -> None:
 
 
 def test_mode_single_with_only_title() -> None:
-    """Title only, no body → zero steps, body_intro carries the title."""
+    """Title only, no body → zero steps. ``body_intro`` is empty so the
+    writer doesn't render the title twice."""
     plan = parse("# Title only\n")
     assert plan.mode == "single"
     assert plan.steps == []
+    assert plan.body_intro == ""
 
 
 def test_mode_single_empty_input() -> None:
@@ -426,3 +518,99 @@ Migrate from session tokens to OIDC across the auth service.
     assert len(plan.steps) == 4
     assert [s.id for s in plan.steps] == ["s1", "s2", "s3", "s4"]
     assert "Migrate from session tokens" in plan.body_intro
+
+
+def test_ritchie_shaped_plan_uses_heading_mode_with_full_bodies() -> None:
+    """Regression: the LORE_ROOT/Ritchie plan shape — phases as ``### P<N>``
+    plus unrelated numbered lists in Goals / Verification / Risks — must
+    parse via heading mode with the phase bodies preserved verbatim.
+
+    Earlier behavior fell through to list mode and flattened
+    Goals + smoke-test + Risks numbered items into ``s1..sN``, dropping
+    the entire Phase plan section (code blocks, migration table, sub-
+    headings). This test pins the fix.
+    """
+    text = """# LORE_ROOT config-file fallback + resolver unification
+
+## Context
+
+Cursor / Codex / Gemini users have no env block to mutate.
+
+## Goals
+
+1. `~/.config/lore/config.yml` acts as a third fallback.
+2. All env reads migrate to canonical resolvers.
+3. `lore doctor` reports which source resolved.
+4. No regressions in test isolation.
+
+## Phase plan
+
+### P1 — Resolver primitives + error states
+
+**File:** `lib/lore_core/config.py`
+
+```python
+def _resolve_lore_root() -> tuple[Path | None, str | None]:
+    env = os.environ.get("LORE_ROOT", "").strip()
+    if env:
+        return Path(env).expanduser().resolve(), "env"
+    return None, None
+```
+
+### P2 — Test isolation: autouse conftest fixture
+
+**File:** `tests/conftest.py`
+
+Add a sibling autouse fixture that fakes `$HOME`.
+
+### P3 — Unify direct env reads (10 sites)
+
+| # | File:line | Migration |
+|---|---|---|
+| 1 | `surface_cmd.py:45` | `get_lore_root()` |
+| 2 | `registry_cmd.py:33` | `lore_root_or_die()` |
+
+### P4 — Doctor source display
+
+Render source labels in user-friendly form.
+
+### P5 — `_cli_helpers` boundary documentation
+
+Module docstring change only.
+
+## Verification
+
+**Manual smoke test:**
+
+1. `unset LORE_ROOT && lore doctor` → reports unconfigured.
+2. `mkdir -p ~/.config/lore && lore doctor` → reports config-file.
+3. `LORE_ROOT=/tmp/other lore doctor` → reports env.
+4. `lore registry ls` succeeds with config-only.
+5. Multi-vault walk-up beats config.
+
+## Risks
+
+1. Walk-up precedence flip is the riskiest single change.
+2. Autouse conftest may surface latent test bugs.
+3. `_os_check` indirection must be retargeted.
+4. `secrets_path` always-returns-a-path is a behavior change.
+"""
+    plan = parse(text)
+    # Heading mode wins because P1..P5 are recognized as step headings.
+    assert plan.mode == "headings"
+    assert len(plan.steps) == 5
+    assert [s.id for s in plan.steps] == ["s1", "s2", "s3", "s4", "s5"]
+    # Phase titles preserved.
+    titles = [s.title for s in plan.steps]
+    assert titles[0] == "— Resolver primitives + error states"
+    assert titles[1] == "— Test isolation: autouse conftest fixture"
+    assert titles[3] == "— Doctor source display"
+    # Phase bodies preserve code blocks and the migration table — content
+    # that was silently dropped by the old list-mode flattening.
+    assert "```python" in plan.steps[0].body
+    assert "_resolve_lore_root" in plan.steps[0].body
+    assert "| # | File:line" in plan.steps[2].body
+    # The Goals / Risks / smoke-test numbered lists must NOT appear as
+    # separate steps — they live inside body_intro / inside step bodies.
+    assert "## Goals" in plan.body_intro
+    assert "Cursor / Codex / Gemini" in plan.body_intro

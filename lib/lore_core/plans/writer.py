@@ -384,6 +384,12 @@ def _render_plan_body_from_steps(
     Each entry is ``(PlanStep, removed_marker_or_None)`` — ``removed_marker``
     is ``"[removed-from-source]"`` for steps that no longer appear in the
     source.
+
+    Single-mode plans (no recognizable step boundaries) emit the source
+    body verbatim — wrapping it under ``## Steps / ### s1: s1`` would
+    nest the source's own H2 sections under H3 and mangle the visual
+    hierarchy. The implicit ``s1`` anchor is still valid for step_status
+    / breadcrumbs; it just isn't rendered as a heading.
     """
     lines: list[str] = []
     if plan.title:
@@ -392,6 +398,15 @@ def _render_plan_body_from_steps(
     if plan.body_intro:
         lines.append(plan.body_intro)
         lines.append("")
+
+    if plan.mode == "single":
+        if steps:
+            single_body = steps[0][0].body.strip()
+            if single_body:
+                lines.append(single_body)
+                lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+
     lines.append(
         "> Commit refs: `Plan: " + plan.slug + "#s<N>` (trailer-style; "
         "surfaced by SessionStart breadcrumbs)"

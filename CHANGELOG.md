@@ -10,6 +10,39 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-04-28
+
+### Fixed
+
+- **Plan capture preserves the source structure.** Plans with `### P1`,
+  `### P2`, … phase headings (Claude Code's compact phase form) now
+  parse via heading mode instead of falling through to list mode. The
+  recognizer was previously hard-coded to the long `### Phase 1` /
+  `### Step 1` form, so phased plans with rich bodies (code blocks,
+  migration tables, sub-headings) silently collapsed into "step lists"
+  built from whatever scattered numbered lists the document happened
+  to contain (Goals, Verification smoke tests, Risks). The saved vault
+  note bore little resemblance to the plan as presented.
+
+  Three coordinated fixes in `lore_core.plans.parser` and
+  `lore_core.plans.writer`:
+
+  - `### P<N>` joins the step-heading regex set.
+  - List mode now requires either an explicit `## Steps` heading
+    immediately preceding the list, or a single contiguous numbered
+    list. Multiple disjoint numbered lists (separated by ATX headings)
+    are ambiguous and fall through to single mode rather than being
+    flattened into `s1..sN`.
+  - Detection still runs on the fence-stripped text, but body slicing
+    now uses the raw source — code blocks and tables in step bodies
+    round-trip into the vault note instead of being blanked.
+  - Single-mode plans render their body verbatim; the previous
+    `## Steps / ### s1: s1` wrapper mis-nested the source's own H2
+    sections under H3.
+
+  Six new regression tests pin the behaviour, including a Ritchie-shaped
+  end-to-end test that reproduces the failure mode.
+
 ## [0.18.5] - 2026-04-28
 
 ### Added

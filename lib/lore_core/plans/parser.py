@@ -42,11 +42,26 @@ _FALLBACK_MIN_CHARS = 100
 _SLUG_FALLBACK_CHARS = 40
 
 #: Step heading regexes — match the heading *line* exactly (no body capture).
-#: Order matters: the union forms the trigger set for the ``headings`` mode.
+#: Order matters: the union forms the trigger set for the ``headings`` mode,
+#: AND ``writer._merge_steps_renumber_safe`` indexes ``[1]`` to recover
+#: existing ``### s<N>`` IDs on re-capture. Don't reshuffle the first three
+#: entries — append new patterns at the end.
+#: ``P<N>`` matches the compact ``### P1``/``### P2`` form Claude Code emits
+#: when phases are written as code-style anchors instead of the long
+#: ``### Phase 1`` / ``### Step 1`` form.
 _STEP_HEADING_PATTERNS = (
     re.compile(r"^###\s+(?:Phase|Step)\s+(\d+)\b", re.IGNORECASE),
     re.compile(r"^###\s+s(\d+)\b", re.IGNORECASE),
     re.compile(r"^##\s+(\d+)\.\s+", re.IGNORECASE),
+    re.compile(r"^###\s+P(\d+)\b", re.IGNORECASE),
+)
+
+#: Heading line that *introduces* a steps list (``## Steps``, ``### Plan steps``).
+#: Used by list-mode disambiguation to prefer the list immediately following
+#: such a heading when the document also contains unrelated numbered lists
+#: (Goals, Risks, Verification smoke tests, …).
+_STEPS_INTRO_HEADING_RE = re.compile(
+    r"^#{1,6}\s+(?:plan\s+)?steps\s*$", re.IGNORECASE
 )
 
 #: Top-level numbered-list item: digits + period + space at column zero.
@@ -215,25 +230,40 @@ def _detect_steps(
     blocks in the intro round-trip verbatim.
     """
     # Mode 1: headings. Need ≥2 sibling step-headings.
+    # Detection runs on scan_text (fenced code blocks blanked out) so
+    # heading-shaped lines inside code examples don't fire. Body slicing
+    # uses raw_text — line indices are 1:1 because _strip_fenced_blocks
+    # preserves line counts. This is what lets a step body round-trip
+    # with its code blocks and tables intact.
     heading_hits = _find_step_headings(scan_text)
     if len(heading_hits) >= 2:
-        steps = _steps_from_headings(scan_text, heading_hits)
+        steps = _steps_from_headings(raw_text, heading_hits)
         body_intro = _body_intro_before_first_heading(raw_text, heading_hits[0][0])
         return steps, "headings", body_intro
 
-    # Mode 2: top-level numbered list. Need ≥2 sibling items at column 0.
+    # Mode 2: top-level numbered list. Need ≥2 sibling items at column 0,
+    # AND a single coherent steps run — either explicitly preceded by a
+    # ``## Steps`` heading, or the only contiguous numbered list in the
+    # document. Multiple disjoint numbered lists (Goals + Risks + smoke
+    # tests, etc.) are ambiguous and fall through to single mode rather
+    # than being silently flattened into ``s1..sN``.
     list_hits = _find_top_numbered_list(scan_text)
     if len(list_hits) >= 2:
-        steps = _steps_from_list(scan_text, list_hits)
-        body_intro = _body_intro_before_first_list_item(raw_text, list_hits[0][0])
-        return steps, "list", body_intro
+        steps_run = _select_steps_run(scan_text, list_hits)
+        if steps_run is not None:
+            steps = _steps_from_list(scan_text, steps_run, raw_text=raw_text)
+            body_intro = _body_intro_before_first_list_item(
+                raw_text, steps_run[0][0]
+            )
+            return steps, "list", body_intro
 
-    # Mode 3: single. Whole body is one step. body_intro is the title
-    # line (if any) and we put everything else into step s1.
+    # Mode 3: single. Whole body is one step. The H1 line (if any) is
+    # already captured by ``plan.title``; we strip it from the body and
+    # leave ``body_intro`` empty so the writer doesn't duplicate it.
     title_line_count = 1 if raw_text.lstrip().startswith("# ") else 0
     body = "\n".join(raw_text.splitlines()[title_line_count:]).strip()
     if not body:
-        return [], "single", raw_text.strip()
+        return [], "single", ""
     return [PlanStep(id="s1", title="", body=body)], "single", ""
 
 
@@ -258,7 +288,13 @@ def _find_step_headings(text: str) -> list[tuple[int, str, str]]:
 def _steps_from_headings(
     text: str, hits: list[tuple[int, str, str]]
 ) -> list[PlanStep]:
-    """Slice the body into one step per heading hit."""
+    """Slice the body into one step per heading hit.
+
+    ``text`` is the **raw** plan text (not the fence-stripped scan text)
+    so step bodies round-trip with their code blocks and tables intact.
+    Heading positions discovered against scan_text remain valid because
+    fence-stripping preserves line counts.
+    """
     lines = text.split("\n")
     steps: list[PlanStep] = []
     for idx, (line_idx, _heading, title) in enumerate(hits):
@@ -282,8 +318,71 @@ def _find_top_numbered_list(text: str) -> list[tuple[int, str, str]]:
     return hits
 
 
+def _select_steps_run(
+    text: str, list_hits: list[tuple[int, str, str]]
+) -> list[tuple[int, str, str]] | None:
+    """Pick the contiguous run of numbered items that represents the steps.
+
+    Strategy:
+
+    1. Group ``list_hits`` into contiguous runs — items separated by an
+       ATX heading (``#``..``######``) belong to different runs.
+    2. Discard runs of fewer than two items (a single ``1.`` is not a list).
+    3. If any run is preceded (after blank lines) by a ``## Steps``-like
+       heading, that run wins — explicit author intent.
+    4. Otherwise, accept the run **only** when there is exactly one run
+       left after filtering. Multiple disjoint runs without a ``## Steps``
+       hint are ambiguous; the caller falls through to single mode and
+       preserves the body verbatim.
+    """
+    if not list_hits:
+        return None
+
+    lines = text.split("\n")
+    runs: list[list[tuple[int, str, str]]] = [[list_hits[0]]]
+    for prev_hit, hit in zip(list_hits, list_hits[1:]):
+        if _has_heading_between(lines, prev_hit[0], hit[0]):
+            runs.append([hit])
+        else:
+            runs[-1].append(hit)
+
+    candidate_runs = [r for r in runs if len(r) >= 2]
+    if not candidate_runs:
+        return None
+
+    for run in candidate_runs:
+        if _preceded_by_steps_heading(lines, run[0][0]):
+            return run
+
+    if len(candidate_runs) == 1:
+        return candidate_runs[0]
+
+    return None
+
+
+def _has_heading_between(lines: list[str], start_line: int, end_line: int) -> bool:
+    """True if any line strictly between ``start_line`` and ``end_line`` is an ATX heading."""
+    for j in range(start_line + 1, end_line):
+        if _ATX_HEADING_RE.match(lines[j]):
+            return True
+    return False
+
+
+def _preceded_by_steps_heading(lines: list[str], list_start_line: int) -> bool:
+    """True if a ``## Steps``-like heading is the nearest non-blank line above ``list_start_line``."""
+    j = list_start_line - 1
+    while j >= 0 and not lines[j].strip():
+        j -= 1
+    if j < 0:
+        return False
+    return bool(_STEPS_INTRO_HEADING_RE.match(lines[j].strip()))
+
+
 def _steps_from_list(
-    text: str, hits: list[tuple[int, str, str]]
+    text: str,
+    hits: list[tuple[int, str, str]],
+    *,
+    raw_text: str | None = None,
 ) -> list[PlanStep]:
     """Slice the body into one step per numbered-list item.
 
@@ -297,8 +396,13 @@ def _steps_from_list(
     Reflow matters: source markdown often hard-wraps a single sentence
     across two indented lines. Without reflow, the step title would be
     truncated mid-sentence and the truncated tail orphaned into the body.
+
+    Detection runs on the fence-stripped ``text``; ``raw_text`` (when
+    provided) supplies the unmodified source for body slicing so fenced
+    code blocks inside list items round-trip into the step body.
     """
     lines = text.split("\n")
+    raw_lines = raw_text.split("\n") if raw_text is not None else lines
     steps: list[PlanStep] = []
     for idx, (line_idx, _marker, first_line_body) in enumerate(hits):
         body_start = line_idx + 1
@@ -330,7 +434,7 @@ def _steps_from_list(
         title = " ".join(
             [first_line_body.strip(), *title_extra]
         ).strip()
-        body_block = "\n".join(lines[body_kept_start:body_end]).strip()
+        body_block = "\n".join(raw_lines[body_kept_start:body_end]).strip()
         steps.append(
             PlanStep(
                 id=f"s{idx + 1}",
