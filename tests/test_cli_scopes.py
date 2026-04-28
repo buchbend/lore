@@ -12,7 +12,7 @@ from lore_cli.__main__ import app
 from lore_core.state.attachments import Attachment, AttachmentsFile
 from lore_core.state.scopes import ScopesFile
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 @pytest.fixture

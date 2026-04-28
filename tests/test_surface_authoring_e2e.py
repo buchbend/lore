@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 from lore_cli.surface_cmd import app
 from lore_mcp.server import handle_surface_context, handle_surface_validate
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 def test_flow_a_append_end_to_end(tmp_path, monkeypatch):

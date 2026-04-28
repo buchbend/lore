@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from lore_cli.__main__ import app
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 def test_registry_ls_lists_wiki_dirs(tmp_path, monkeypatch):

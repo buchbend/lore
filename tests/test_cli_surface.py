@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from lore_cli.surface_cmd import app
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 def _make_surfaces_md(wiki_dir: Path, content: str) -> Path:

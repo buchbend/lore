@@ -722,7 +722,7 @@ def test_curator_run_cli_backend_flag_openai(tmp_path: Path, monkeypatch, fake_o
         lambda **kwargs: _FakeResult(),
     )
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(app, ["curator", "run", "--dry-run", "--backend", "openai"])
     assert result.exit_code == 0, result.output + (result.stderr or "")
     assert "OpenAI-compatible endpoint" in result.output

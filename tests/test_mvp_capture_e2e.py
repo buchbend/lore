@@ -453,7 +453,7 @@ def test_mvp_e2e_manual_send_via_cli(tmp_path, monkeypatch):
     from lore_cli.__main__ import app
     from lore_core.ledger import TranscriptLedger
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(
         app,
         [

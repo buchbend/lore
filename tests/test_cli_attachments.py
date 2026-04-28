@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from lore_cli.__main__ import app
 from lore_core.state.attachments import Attachment, AttachmentsFile
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 @pytest.fixture

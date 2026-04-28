@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 
 from lore_cli.__main__ import app
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ def test_core_skip_warning_NOT_doubled_on_backend_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr("lore_curator.session_curator.run_curator_a", _fake_run_a)
 
-    local_runner = CliRunner(mix_stderr=False)
+    local_runner = CliRunner()
     result = local_runner.invoke(app, ["curator", "run", "--dry-run"])
 
     # The specific warning from the factory should appear on stderr:

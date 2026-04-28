@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from lore_cli.__main__ import app
 from lore_core.ledger import TranscriptLedger
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 VALID_JSONL = "\n".join([
     json.dumps({"index": 0, "role": "user", "text": "hello"}),

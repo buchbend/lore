@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from lore_cli.__main__ import app
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 @dataclass

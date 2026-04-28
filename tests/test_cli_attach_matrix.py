@@ -13,7 +13,7 @@ from lore_core.offer import FILENAME, offer_fingerprint, parse_lore_yml
 from lore_core.state.attachments import Attachment, AttachmentsFile
 from lore_core.state.scopes import ScopesFile
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 @pytest.fixture
