@@ -266,7 +266,9 @@ def test_mvp_e2e_session_end_produces_note(
     note_text = notes[0].read_text()
     fm = _parse_frontmatter(note_text)
 
-    assert fm.get("draft") is True, f"Expected draft:true, got {fm.get('draft')}"
+    # ``draft`` was vestigial — sessions are immutable historical records;
+    # the field never flipped. Dropped in the session-note revision.
+    assert "draft" not in fm, f"draft field should be absent, got {fm.get('draft')}"
     assert fm.get("type") == "session", f"Expected type:session, got {fm.get('type')}"
     assert fm.get("scope") == "projectA", f"Expected scope:projectA, got {fm.get('scope')}"
 

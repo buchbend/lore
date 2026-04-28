@@ -10,6 +10,26 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-04-28
+
+### Changed
+
+- **Session-note revision Phase 1 — frontmatter shape + slug.** New
+  `title` field carries the content-named headline (slug source);
+  `description` keeps a 1-2-sentence status-line preview; the old
+  paragraph `summary` field is gone (its content moved into
+  `description`); `draft: true` is dropped — sessions are immutable
+  historical records and the flag never flipped. The slug logic now
+  truncates at the last hyphen boundary instead of the naive
+  `[:60]` cut, so filenames stop ending mid-word
+  (`...rebase-onto-pha`). Old notes (with `summary` + `draft`) keep
+  validating via permissive `OPTIONAL_FIELDS`. Curator A's noteworthy
+  prompt explicitly steers titles toward content names (no "Phase 12"
+  / "v0.13.0" headlines) and asks for past-tense `loose_ends` bullets
+  that read as state-of-the-world, not as TODOs. Body rendering is
+  unchanged in this phase — Phase 2 picks that up. Part of
+  [plans/ok-file-issues-and-harmonic-lagoon.md].
+
 ### Added
 
 - **`install.sh` bootstrap installer.** Replaces the deprecation shim

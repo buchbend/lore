@@ -111,6 +111,10 @@ OPTIONAL_FIELDS: set[str] = {
     "spec",  # str — wikilink to a spec note (plans, forward-compat)
     "roadmap",  # str — wikilink to a roadmap note (plans, forward-compat)
     "notes",  # str — free-form user notes (plan user-owned whitelist)
+    # cross-note linkage fields landed with the session-note revision
+    "title",  # str — content-named slug source for sessions; H1 of the body
+    "projects",  # list[str] — wikilinks to project notes this session touched
+    "plans",  # list[str] — plan slug refs this session advanced (e.g. "<slug>#s2")
 }
 
 

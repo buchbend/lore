@@ -219,7 +219,7 @@ class TestScopeRedirectFrontmatter:
         )
         noteworthy = NoteworthyResult(
             noteworthy=True, reason="test", title="Test Note",
-            summary="A test", bullets=["did stuff"], files_touched=[],
+            description="A test", bullets=["did stuff"], files_touched=[],
             entities=[], decisions=[],
         )
         scope = Scope(wiki="ccat", scope="ccat:data", backend="none",
@@ -252,7 +252,7 @@ class TestScopeRedirectFrontmatter:
         )
         noteworthy = NoteworthyResult(
             noteworthy=True, reason="test", title="Normal Note",
-            summary="Normal", bullets=["stuff"], files_touched=[],
+            description="Normal", bullets=["stuff"], files_touched=[],
             entities=[], decisions=[],
         )
         scope = Scope(wiki="private", scope="lore", backend="none",

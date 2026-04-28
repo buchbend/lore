@@ -44,11 +44,15 @@ def _make_turns() -> list[Turn]:
     ]
 
 
-def _make_noteworthy(title: str = "Add Ledger Feature") -> NoteworthyResult:
+def _make_noteworthy(
+    title: str = "Add Ledger Feature",
+    description: str = "Added an append-only ledger module for tracking curator runs.",
+) -> NoteworthyResult:
     return NoteworthyResult(
         noteworthy=True,
         reason="substantive refactor",
         title=title,
+        description=description,
         bullets=["Added ledger module", "Tests passing"],
         files_touched=["ledger.py"],
         entities=["ledger"],
@@ -136,18 +140,25 @@ def test_file_new_session_note_frontmatter(tmp_path):
     fm = parse_frontmatter(result.path.read_text())
     assert fm["type"] == "session"
     assert fm["scope"] == "proj:feature"
-    assert fm["draft"] is True
+    # ``draft`` was vestigial on session notes (never flipped) — the revision
+    # drops it. Sessions are immutable historical records, not living docs.
+    assert "draft" not in fm
     assert isinstance(fm["source_transcripts"], list)
     assert len(fm["source_transcripts"]) == 1
     assert fm["created"] == "2026-04-19"
     assert fm["last_reviewed"] == "2026-04-19"
 
 
-def test_file_draft_true_on_new_note(tmp_path):
-    """New session notes always have draft: true."""
+def test_file_new_session_note_has_title_and_description(tmp_path):
+    """New shape: frontmatter carries `title` (slug source) AND `description`
+    (1-2 sentence status-line preview). The old paragraph ``summary`` field
+    is gone — its content moved into ``description``.
+    """
     result = _file_note(tmp_path)
     fm = parse_frontmatter(result.path.read_text())
-    assert fm["draft"] is True
+    assert fm["title"] == "Add Ledger Feature"
+    assert fm["description"].startswith("Added an append-only ledger")
+    assert "summary" not in fm
 
 
 def test_no_llm_merge_call(tmp_path):
@@ -183,6 +194,41 @@ def test_slug_sanitises_title():
     assert s == "add-ledger-now"
     assert "--" not in s
     assert all(c.isalnum() or c == "-" for c in s)
+
+
+def test_slug_word_boundary_truncates_at_dash():
+    """Long titles truncate at a hyphen boundary, never mid-word.
+
+    The old hard ``[:60]`` produced filenames like
+    ``"...rebase-onto-pha"`` (cut mid-word in "Phase"). The fix walks back
+    to the last hyphen that fits.
+    """
+    title = (
+        "Ship v0.13.1 — fix #29 mid-stream curator notes "
+        "(rebase onto Phase 12)"
+    )
+    s = _slug(title)
+    assert len(s) <= 60
+    assert not s.endswith("-")
+    # Result must end on a complete word (next char in the source slug
+    # must be a hyphen — i.e. we cut at a boundary).
+    full = "ship-v0-13-1-fix-29-mid-stream-curator-notes-rebase-onto-phase-12"
+    assert full.startswith(s + "-"), (
+        f"slug {s!r} should be a prefix of {full!r} stopping at a hyphen"
+    )
+
+
+def test_slug_short_title_unchanged():
+    """A short, already-clean title passes through untouched."""
+    assert _slug("Add Ledger Feature") == "add-ledger-feature"
+
+
+def test_slug_hard_cut_when_no_word_boundary():
+    """One giant unbroken token has no boundary to walk back to — fall
+    back to the hard ``[:60]`` cut so we always produce *some* slug."""
+    s = _slug("a" * 80)
+    assert len(s) == 60
+    assert s == "a" * 60
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +486,8 @@ def test_new_note_places_transcripts_last_in_frontmatter(tmp_path):
     assert "transcripts" in keys_in_order
     assert keys_in_order.index("transcripts") > keys_in_order.index("description")
     assert keys_in_order.index("transcripts") > keys_in_order.index("scope")
+    # Title precedes description (it's the human's first scan target).
+    assert keys_in_order.index("title") < keys_in_order.index("description")
 
 
 def test_append_extends_transcripts_list(tmp_path):

@@ -79,7 +79,7 @@ def test_classify_returns_noteworthy_true_for_substantive_slice():
         "noteworthy": True,
         "reason": "substantive refactor",
         "title": "Add ledger",
-        "summary": "Added append-only ledger module for tracking curator runs. Decided on JSONL format over SQLite for simplicity.",
+        "description": "Added an append-only ledger module for tracking curator runs.",
         "bullets": ["Added ledger module", "Tests passing"],
         "files_touched": ["ledger.py"],
         "entities": ["ledger"],
@@ -91,7 +91,23 @@ def test_classify_returns_noteworthy_true_for_substantive_slice():
     assert result.noteworthy is True
     assert result.reason == "substantive refactor"
     assert result.title == "Add ledger"
-    assert "append-only ledger" in result.summary
+    assert "append-only ledger" in result.description
+
+
+def test_classify_back_compat_summary_field_lands_in_description():
+    """Older fixtures and any cached tool replays may still emit ``summary``.
+    The classifier accepts it as a synonym for ``description`` so we don't
+    silently lose content during the v2 → revised v2 migration window.
+    """
+    data = {
+        "noteworthy": True,
+        "reason": "substantive",
+        "title": "Old shape",
+        "summary": "Legacy paragraph that should land as description.",
+    }
+    client = _make_client(data)
+    result = classify_slice(_simple_turns(), model_resolver=_resolver, llm_client=client)
+    assert result.description == "Legacy paragraph that should land as description."
 
 
 def test_classify_returns_noteworthy_false_for_trivial():
@@ -271,8 +287,10 @@ def test_build_prompt_text_tail_biases_when_over_budget():
     assert "earlier turns elided" in prompt
     assert "turn 199" in prompt  # most recent kept
     assert "turn 0" not in prompt  # earliest dropped
-    # Budget applies to the turn body; header adds a fixed ~300 chars overhead.
-    assert len(prompt) <= 1_500
+    # Budget applies to the turn body; the steering header (title/description/
+    # bullet norms) adds ~700 chars overhead. Pad the assertion accordingly so
+    # this test doesn't break the next time we tighten prompt guidance.
+    assert len(prompt) <= 2_000
 
 
 def test_build_prompt_text_under_budget_is_unchanged():

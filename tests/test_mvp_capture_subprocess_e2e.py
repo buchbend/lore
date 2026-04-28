@@ -256,8 +256,9 @@ def test_e2e_subprocess_backend_produces_session_note(
     note_text = new_notes[0].read_text()
     fm = _parse_frontmatter(note_text)
 
-    # (b) Frontmatter has draft: true and the classify-supplied title.
-    assert fm.get("draft") is True, f"Expected draft:true, got {fm.get('draft')}"
+    # (b) Frontmatter no longer carries ``draft`` (revision drops it) and
+    # carries the classify-supplied title via the new ``title`` field.
+    assert "draft" not in fm, f"draft field should be absent, got {fm.get('draft')}"
     assert fm.get("description") == "Refactor the thing", (
         f"Expected title from classify, got {fm.get('description')!r}"
     )

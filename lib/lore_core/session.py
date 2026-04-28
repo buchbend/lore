@@ -407,6 +407,7 @@ def write_note(
         now=datetime.now(UTC),
         handle=scaffolded.get("handle") or "",
         slug=scaffolded["slug"],
+        title=fm.get("title", "") or "",
         description=fm.get("description", ""),
         body_markdown=body.strip() + "\n",
         tags=list(fm.get("tags") or []),

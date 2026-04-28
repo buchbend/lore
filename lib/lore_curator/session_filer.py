@@ -36,12 +36,28 @@ __all__ = ["FiledNote", "file_session_note"]
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+_SLUG_MAX = 60
 
 
 def _slug(title: str) -> str:
-    """Lowercase, hyphen-separated, alphanumeric-only; trimmed. Max 60 chars."""
+    """Lowercase, hyphen-separated, alphanumeric-only; smart-truncated.
+
+    When the cleaned title exceeds ``_SLUG_MAX`` chars, truncate at the last
+    hyphen boundary that keeps the slug within the limit so we never cut a
+    word in half (the old hard ``[:60]`` produced filenames like
+    "...rebase-onto-pha"). If no boundary fits — pathological case where the
+    title is one giant unbroken alphanumeric blob — fall back to a hard cut.
+    """
     s = _SLUG_RE.sub("-", title.lower()).strip("-")
-    return s[:60] if s else "session"
+    if not s:
+        return "session"
+    if len(s) <= _SLUG_MAX:
+        return s
+    truncated = s[:_SLUG_MAX]
+    last_dash = truncated.rfind("-")
+    if last_dash > 0:
+        return truncated[:last_dash]
+    return truncated
 
 
 def _resolve_handle_for(wiki_root: Path, handle: TranscriptHandle) -> str:
@@ -60,6 +76,12 @@ def _resolve_handle_for(wiki_root: Path, handle: TranscriptHandle) -> str:
 
 
 def _render_body(noteworthy: NoteworthyResult) -> str:
+    # Phase 1 keeps the legacy body shape (### Summary / ### Files touched /
+    # ### Decisions / Entities: line). Phase 2 of the session-note revision
+    # rewrites this to the rationale-first 5-section layout (## Summary
+    # paragraph, ## Decisions made, ## What we worked on, ## Activity,
+    # ## Loose ends) and is where ``noteworthy.loose_ends`` finally renders.
+    # See plans/ok-file-issues-and-harmonic-lagoon.md.
     lines: list[str] = []
     if noteworthy.bullets:
         lines.append("### Summary")
@@ -117,8 +139,12 @@ def file_session_note(
         now=now,
         handle=_resolve_handle_for(wiki_root, handle),
         slug=_slug(noteworthy.title),
-        description=noteworthy.title,
-        summary=noteworthy.summary or "",
+        # New shape: ``title`` is the content-named slug-source / body H1.
+        # ``description`` is the 1-2-sentence status-line preview that used to
+        # live in the dropped ``summary`` field. Falls back to title for the
+        # cascade-trivial path, which only emits a title.
+        title=noteworthy.title,
+        description=noteworthy.description or noteworthy.title,
         body_markdown=_render_body(noteworthy),
         transcript=handle,
         turn_hashes=(from_hash, to_hash),

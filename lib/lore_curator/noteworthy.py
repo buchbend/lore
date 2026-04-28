@@ -79,12 +79,13 @@ def _resolve_budget(name: str, default: int) -> int:
 class NoteworthyResult:
     noteworthy: bool
     reason: str                     # short — "single-shot bash question" | "substantive refactor"
-    title: str                      # 5-10 words
-    summary: str = ""               # 2-3 sentences of substance
+    title: str                      # 6-8 words; content-named; slug source; no phase numbers
+    description: str = ""           # 1-2 sentences — status-line shape, what + why in one breath
     bullets: list[str] = field(default_factory=list)   # 3-5 items, short phrases
     files_touched: list[str] = field(default_factory=list)
     entities: list[str] = field(default_factory=list)  # wikilink candidates
     decisions: list[str] = field(default_factory=list) # one-liners; empty list if none
+    loose_ends: list[str] = field(default_factory=list)  # past-tense / stative bullets; never TODOs
 
 
 def classify_slice(
@@ -128,13 +129,13 @@ def classify_slice(
         )
 
     if mode == "cascade" and verdict.label == "trivial":
-        # Hard-skip: no LLM call, no summary. Ledger advances as not-noteworthy
+        # Hard-skip: no LLM call, no description. Ledger advances as not-noteworthy
         # via the caller's noteworthy=False path.
         return NoteworthyResult(
             noteworthy=False,
             reason=f"cascade_trivial:{verdict.reason}",
             title="",
-            summary="",
+            description="",
         )
 
     model = model_resolver(tier)
@@ -245,6 +246,14 @@ def _build_prompt_text(
         "`classify` tool. Be conservative about `noteworthy`: only false "
         "for single-shot tool questions or trivial edits without decisions.",
         "",
+        "Title and description shape the session note's filename and the "
+        "SessionStart status line. Title: 6-8 words, content-named (NOT "
+        "'Phase 12' or 'v0.13.0' — name what was actually done, like "
+        "'typer-app lift and CLI contract test'). Description: 1-2 sentences, "
+        "what + why in one breath. Bullets in `bullets` and `decisions` lead "
+        "with a bold substance phrase, then colon, then detail. Loose ends "
+        "are past-tense / stative observations, never TODOs.",
+        "",
         "--- transcript slice ---",
     ]
 
@@ -331,17 +340,60 @@ def _classify_tool_schema() -> dict[str, Any]:
             "properties": {
                 "noteworthy": {"type": "boolean"},
                 "reason": {"type": "string"},
-                "title": {"type": "string"},
-                "summary": {
+                "title": {
                     "type": "string",
-                    "description": "2-3 sentence summary of what was accomplished, decided, or changed. Focus on substance, not mechanics.",
+                    "description": (
+                        "6-8 words. Name the substance of the work, not phase "
+                        "numbers or release labels. Should read as a filename a "
+                        "year from now (e.g. 'typer-app lift and CLI contract test', "
+                        "not 'Phase 12 v0.13.0')."
+                    ),
                 },
-                "bullets": {"type": "array", "items": {"type": "string"}},
+                "description": {
+                    "type": "string",
+                    "description": (
+                        "1-2 sentences — what was done and why, in one breath. "
+                        "Used as the status-line preview for SessionStart. Substance, "
+                        "not mechanics; no phase numbers."
+                    ),
+                },
+                "bullets": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "3-5 narrative bullets for `## What we worked on`. Lead each "
+                        "bullet with a 2-5 word bold phrase that names the substance "
+                        "(not the category), then a colon, then the detail. "
+                        "Example: '**Drop VitePress** — both architect and UX agreed'."
+                    ),
+                },
                 "files_touched": {"type": "array", "items": {"type": "string"}},
                 "entities": {"type": "array", "items": {"type": "string"}},
-                "decisions": {"type": "array", "items": {"type": "string"}},
+                "decisions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Bullets for `## Decisions made`. Include ONLY decisions whose "
+                        "rationale would still matter six months from now. Tactical or "
+                        "incident-specific choices belong in `bullets`, not here. Same "
+                        "bold-phrase-then-detail style. Example: "
+                        "'**/private/ convention** — any path under /private/ auto-gates "
+                        "auth; convention is self-documenting and repo-local'."
+                    ),
+                },
+                "loose_ends": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Bullets for `## Loose ends` — things discussed but not pursued. "
+                        "MUST use past-tense or stative phrasing, never imperatives. "
+                        "Good: 'X was discussed but not pursued', 'Y remains untested'. "
+                        "Bad: 'Test X', 'Push Y', 'Fix Z'. If something is important "
+                        "enough to act on, file an issue, don't put it here."
+                    ),
+                },
             },
-            "required": ["noteworthy", "reason", "title", "summary"],
+            "required": ["noteworthy", "reason", "title", "description"],
         },
     }
 
@@ -360,15 +412,19 @@ def _extract_tool_input(resp: Any) -> dict[str, Any]:
 
 
 def _data_to_result(data: dict[str, Any]) -> NoteworthyResult:
+    # Back-compat: older fixtures and any cached-tool-call replays may still
+    # carry `summary`. Treat it as `description` if `description` is absent.
+    description = str(data.get("description", "") or data.get("summary", ""))
     return NoteworthyResult(
         noteworthy=bool(data.get("noteworthy")),
         reason=str(data.get("reason", "")),
         title=str(data.get("title", "")),
-        summary=str(data.get("summary", "")),
+        description=description,
         bullets=list(data.get("bullets", [])),
         files_touched=list(data.get("files_touched", [])),
         entities=list(data.get("entities", [])),
         decisions=list(data.get("decisions", [])),
+        loose_ends=list(data.get("loose_ends", [])),
     )
 
 

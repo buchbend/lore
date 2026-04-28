@@ -120,7 +120,10 @@ class SessionInput:
     description: str
     body_markdown: str
     now: datetime = field(default_factory=lambda: datetime.now(UTC))
-    summary: str = ""
+    # Content-named headline used for body H1 and append-mode H2 boundaries.
+    # Falls back to ``description`` when omitted (e.g. the explicit /lore:session
+    # path before users start writing a separate ``title:`` field).
+    title: str = ""
     tags: list[str] = field(default_factory=list)
     extra_frontmatter: dict[str, Any] = field(default_factory=dict)
 
@@ -295,15 +298,22 @@ def _build_frontmatter(si: SessionInput) -> dict[str, Any]:
         "type": "session",
         "created": si.work_time.date().isoformat(),
         "last_reviewed": si.work_time.date().isoformat(),
-        "description": si.description,
     }
-    if si.summary:
-        fm["summary"] = si.summary
+    # Title is the content-named slug source; description is the 1-2-sentence
+    # status-line preview. Title may be absent on legacy explicit-path callers
+    # that haven't been updated yet — in that case description carries both
+    # roles, same as before.
+    if si.title:
+        fm["title"] = si.title
+    fm["description"] = si.description
     fm["scope"] = si.scope.scope
     if si.handle:
         fm["user"] = si.handle
     if si.transcript is not None:
-        fm["draft"] = True
+        # ``draft: true`` was vestigial — sessions are immutable historical
+        # records, not living docs that flip canonical/draft. Dropped per the
+        # session-note revision; old notes keep validating via permissive
+        # OPTIONAL_FIELDS.
         fm["curator_a_run"] = si.now.isoformat()
         fm["source_transcripts"] = [
             {
@@ -376,7 +386,13 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
             list(existing_files) + list(si.files_touched)
         )
 
-    new_section = f"\n\n## {si.description}\n\n{si.body_markdown.rstrip()}\n"
+    # Append-chunk H2 boundary: prefer the short content-named title (used
+    # for body H1 in fresh notes) over the longer description, which under
+    # the new shape will routinely run to 1-2 full sentences and would make
+    # an awkward heading. Fall back to description for legacy callers that
+    # don't pass ``title`` yet.
+    chunk_heading = (si.title or si.description).strip() or "Update"
+    new_section = f"\n\n## {chunk_heading}\n\n{si.body_markdown.rstrip()}\n"
     text_new = _render_markdown(fm, body.rstrip() + new_section)
     atomic_write_text(path, text_new)
 
