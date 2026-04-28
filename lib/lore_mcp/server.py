@@ -539,6 +539,122 @@ def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def handle_plan_active(
+    wiki: str | None = None, repo: str | None = None
+) -> dict[str, Any]:
+    """List active plans for a wiki + optional repo filter.
+
+    Returns the same shape SessionStart's Resume block consumes — same
+    code path (``lore_core.plans.registry.list_active``) so the CLI,
+    SessionStart, and MCP all render consistent state.
+    """
+    from lore_core.plans.registry import list_active
+
+    wiki_path = _resolve_wiki(wiki)
+    if wiki_path is None:
+        return _mcp_error(
+            "no_wiki",
+            "no wiki resolved (set --wiki or attach a single-wiki vault)",
+        )
+
+    cards = list_active(wiki_path, repo=repo)
+    return {
+        "wiki": wiki_path.name,
+        "repo": repo,
+        "plans": [
+            {
+                "slug": c.slug,
+                "description": c.description,
+                "status": c.status,
+                "repo": c.repo,
+                "steps_total": c.steps_total,
+                "steps_done": c.steps_done,
+                "steps_in_progress": c.steps_in_progress,
+                "steps_blocked": c.steps_blocked,
+                "next_pending_step": c.next_pending_step(),
+                "last_reviewed": c.last_reviewed,
+                "step_status_updated": c.step_status_updated,
+            }
+            for c in cards
+        ],
+    }
+
+
+def handle_plan_status(
+    slug: str, wiki: str | None = None, repo_root: str | None = None
+) -> dict[str, Any]:
+    """Full status for one plan slug, including breadcrumbs.
+
+    Used by ``/lore:plan-resume`` and any agent that wants more detail
+    than the Resume block surfaces.
+    """
+    from pathlib import Path as _Path
+
+    from lore_core.plans.breadcrumbs import (
+        scan_recent_commits,
+        scan_recent_session_links,
+    )
+    from lore_core.plans.registry import (
+        extract_step_ids_from_body,
+        read_one,
+    )
+
+    wiki_path = _resolve_wiki(wiki)
+    if wiki_path is None:
+        return _mcp_error("no_wiki", "no wiki resolved")
+    card = read_one(wiki_path, slug)
+    if card is None:
+        return _mcp_error("plan_not_found", f"no plan {slug!r} in {wiki_path.name}")
+
+    text = card.path.read_text()
+    step_ids = extract_step_ids_from_body(text)
+
+    # Derive per-step records (id, title, status). Title pulled from headings.
+    import re as _re
+    title_re = _re.compile(r"^###\s+(s\d+):\s*(.+?)\s*$", _re.MULTILINE | _re.IGNORECASE)
+    step_titles = {m.group(1): m.group(2).strip() for m in title_re.finditer(text)}
+    steps = [
+        {
+            "id": sid,
+            "title": step_titles.get(sid, ""),
+            "status": card.step_status.get(sid, "pending"),
+        }
+        for sid in step_ids
+    ]
+
+    # Breadcrumbs: optional commit scan if repo_root supplied + always sessions.
+    crumbs = []
+    if repo_root:
+        try:
+            crumbs.extend(scan_recent_commits(_Path(repo_root), card.slug, n=200))
+        except Exception:  # noqa: BLE001
+            pass
+    crumbs.extend(scan_recent_session_links(wiki_path, card.slug, days=14))
+    breadcrumbs = [
+        {
+            "step_id": c.step_id,
+            "source": c.source,
+            "ref": c.ref,
+            # Breadcrumb.ts is typed `datetime` (frozen dataclass); always ISO-able.
+            "ts": c.ts.isoformat(),
+            "extra": c.extra,
+        }
+        for c in crumbs
+    ]
+
+    return {
+        "slug": card.slug,
+        "title": card.description,
+        "status": card.status,
+        "repo": card.repo,
+        "step_status": dict(card.step_status),
+        "step_status_updated": card.step_status_updated,
+        "last_reviewed": card.last_reviewed,
+        "steps": steps,
+        "breadcrumbs": breadcrumbs,
+    }
+
+
 def _tool_schema() -> list[dict]:
     return [
         {
@@ -758,6 +874,49 @@ def _tool_schema() -> list[dict]:
                 "required": ["wiki", "draft"],
             },
         },
+        {
+            "name": "lore_plan_active",
+            "description": (
+                "List active plans in a wiki, ranked by recency. Optionally "
+                "filter by repo (org/name); wiki-general plans (no `repo:`) "
+                "appear after repo-matched ones. Each plan returns a summary "
+                "of step_status (done count, in-progress list, next pending) "
+                "plus a stale flag. Read directly from `plans/*.md` — no "
+                "_catalog.json dependency on the hot path."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "wiki": {"type": "string"},
+                    "repo": {
+                        "type": "string",
+                        "description": "Repo slug (org/name) to filter by",
+                    },
+                },
+            },
+        },
+        {
+            "name": "lore_plan_status",
+            "description": (
+                "Full status for one plan slug: title, status, step_status "
+                "map, step list with per-step status, and breadcrumb signals "
+                "from recent commits + session wikilinks (informational; "
+                "step_status is the authoritative source). Used by "
+                "`/lore:plan-resume` to render a focused view."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "wiki": {"type": "string"},
+                    "repo_root": {
+                        "type": "string",
+                        "description": "Optional path to the attached repo for commit-trailer scan",
+                    },
+                },
+                "required": ["slug"],
+            },
+        },
     ]
 
 
@@ -785,6 +944,10 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_surface_context(**args)
         case "lore_surface_validate":
             return handle_surface_validate(**args)
+        case "lore_plan_active":
+            return handle_plan_active(**args)
+        case "lore_plan_status":
+            return handle_plan_status(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 
