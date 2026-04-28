@@ -10,6 +10,37 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-04-28
+
+### Added
+
+- **Session-note revision Phase 3 — mechanical Activity section +
+  cross-note frontmatter.** New module
+  `lib/lore_curator/session_activity.py` collects:
+  - **Commits** in the chunk's work window via `git log --since/--until`.
+  - **Issues opened / closed** by extracting `<verb> #<N>` patterns
+    from turn text + commit subjects, then intersecting with `gh issue
+    list --state open/closed` so only issues actually mentioned this
+    session land in the section.
+  - **Plans advanced** from `Plan: <slug>#sN` commit trailers and
+    `[[plan/<slug>(#sN)?]]` body wikilinks, validated against
+    `wiki/<wiki>/plans/`. Hallucinated slugs drop silently.
+  - **Projects** from cwd repo + repo prefixes in `files_touched`,
+    validated against `wiki/<wiki>/projects/`.
+  Results render under the body's `## Activity` parent (with
+  `### Commits` / `### Issues opened` / `### Issues closed`
+  subheadings, omit-when-empty) and into the frontmatter `plans:` /
+  `projects:` lists. All collectors are best-effort: missing git, gh,
+  network — return empty lists, never block. 26 new tests cover the
+  collectors, renderers, and integration end-to-end.
+
+### Changed
+
+- **Append-mode Activity union.** `merge_body_sections` now unions
+  Activity sub-sections (commits / issues) across appends with
+  exact-line dedup, so re-running the collectors on a new chunk
+  doesn't double-list a commit seen earlier.
+
 ## [0.16.2] - 2026-04-28
 
 ### Changed

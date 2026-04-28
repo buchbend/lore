@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lore_core.session_writer import (
     BodySections,
@@ -31,6 +31,15 @@ from lore_core.session_writer import (
 )
 from lore_core.types import Scope, TranscriptHandle, Turn
 from lore_curator.noteworthy import NoteworthyResult
+from lore_curator.session_activity import (
+    collect_commits_in_window,
+    collect_issues_in_window,
+    collect_plans_advanced,
+    collect_projects_for_session,
+    extract_issue_refs,
+    render_commits_section,
+    render_issue_section,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -81,13 +90,23 @@ def _resolve_handle_for(wiki_root: Path, handle: TranscriptHandle) -> str:
     return resolve_handle(wiki_root, email) if email else ""
 
 
-def _sections_from_noteworthy(noteworthy: NoteworthyResult) -> BodySections:
+def _sections_from_noteworthy(
+    noteworthy: NoteworthyResult,
+    *,
+    commits: list[str] | None = None,
+    issues_opened: list[str] | None = None,
+    issues_closed: list[str] | None = None,
+) -> BodySections:
     """Project Curator A's output into the locked body-section shape.
 
     ``files_touched`` and ``entities`` are dropped: the former lives in
     frontmatter (no need to duplicate in body) and the latter had no
     consistent contract (mix of file basenames, branch names, version
     strings, concept names — useful for none of them).
+
+    Phase 3: Activity sub-section bullets (commits / issues opened /
+    issues closed) flow through as pre-rendered ``- ...`` lines from
+    the mechanical collectors.
     """
     decisions = [f"- {d}" for d in noteworthy.decisions if d]
     worked_on = [f"- {b}" for b in noteworthy.bullets if b]
@@ -98,20 +117,114 @@ def _sections_from_noteworthy(noteworthy: NoteworthyResult) -> BodySections:
         decisions=decisions,
         worked_on=worked_on,
         loose_ends=loose_ends,
-        commits=[],
-        issues_opened=[],
-        issues_closed=[],
+        commits=list(commits or []),
+        issues_opened=list(issues_opened or []),
+        issues_closed=list(issues_closed or []),
     )
 
 
-def _render_body(noteworthy: NoteworthyResult) -> str:
-    """Render a fresh chunk's body in the locked Phase-2 layout.
+def _render_body(
+    noteworthy: NoteworthyResult,
+    *,
+    commits: list[str] | None = None,
+    issues_opened: list[str] | None = None,
+    issues_closed: list[str] | None = None,
+) -> str:
+    """Render a fresh chunk's body in the locked layout.
 
     Append-mode (``session_writer._append_to_note``) re-parses this output
     and merges it into the existing note's sections rather than wrapping
     it in a per-chunk H2.
     """
-    return render_body_sections(_sections_from_noteworthy(noteworthy))
+    return render_body_sections(_sections_from_noteworthy(
+        noteworthy,
+        commits=commits, issues_opened=issues_opened, issues_closed=issues_closed,
+    ))
+
+
+def _turn_window(turns: list[Turn], *, fallback: datetime) -> tuple[datetime, datetime]:
+    """Return (since, until) for the chunk's git/gh queries.
+
+    Uses the earliest and latest timestamped turns; falls back to the
+    caller-supplied work_time when no turn carries a timestamp (the
+    fallback path during deterministic tests).
+    """
+    times = [t.timestamp for t in turns if t.timestamp is not None]
+    if not times:
+        return fallback, fallback
+    return min(times), max(times)
+
+
+def _all_turn_text(turns: list[Turn]) -> str:
+    """Concatenate the user/assistant text content of a chunk's turns.
+
+    Used for free-text issue-reference extraction (``opened #42`` /
+    ``closes #29``). Tool-result text is intentionally skipped — it's
+    high-volume and rarely contains genuine issue actions; including
+    it would add false-positives without much recall.
+    """
+    parts: list[str] = []
+    for t in turns:
+        if t.text:
+            parts.append(t.text)
+    return "\n".join(parts)
+
+
+def _collect_activity(
+    *,
+    cwd: Path,
+    wiki_root: Path,
+    turns: list[Turn],
+    files_touched: list[str],
+    body_text_for_plan_scan: str,
+    fallback_time: datetime,
+) -> dict[str, Any]:
+    """Run all Phase-3 collectors for a chunk and return the inputs the
+    body renderer + frontmatter need.
+
+    Returns a dict with keys ``commits``, ``issues_opened``,
+    ``issues_closed`` (rendered bullet lines), ``plans``, ``projects``
+    (ref strings).
+    """
+    from lore_core.git import git_repo_root, current_repo
+
+    repo_root = git_repo_root(cwd)
+    repo = current_repo(cwd) or ""
+    since, until = _turn_window(turns, fallback=fallback_time)
+
+    raw_commits = collect_commits_in_window(repo_root, since=since, until=until)
+
+    # Issue-reference extraction: union turn text + commit subjects so
+    # `closes #29` lands whether the LLM wrote it in chat or only in a
+    # commit message.
+    commit_text = "\n".join(c.subject for c in raw_commits)
+    turn_text = _all_turn_text(turns)
+    opened_refs, closed_refs = extract_issue_refs(turn_text + "\n" + commit_text)
+
+    issues_opened, issues_closed = collect_issues_in_window(
+        repo,
+        referenced_opened=opened_refs,
+        referenced_closed=closed_refs,
+    )
+
+    plans = collect_plans_advanced(
+        repo_root=repo_root,
+        body_text=body_text_for_plan_scan,
+        wiki_root=wiki_root,
+    )
+    projects = collect_projects_for_session(
+        cwd=cwd,
+        files_touched=files_touched,
+        wiki_root=wiki_root,
+    )
+
+    return {
+        "commits": render_commits_section(raw_commits),
+        "issues_opened": render_issue_section(issues_opened, repo=repo),
+        "issues_closed": render_issue_section(issues_closed, repo=repo),
+        "plans": plans,
+        "projects": projects,
+    }
 
 
 def file_session_note(
@@ -142,6 +255,27 @@ def file_session_note(
     from_hash = turns[0].content_hash() if turns else None
     to_hash = turns[-1].content_hash() if turns else None
 
+    files_touched = _files_touched_from_turns(turns)
+
+    # Plan-wikilink scan looks at the noteworthy body content (bullets +
+    # decisions + loose ends + description) rather than the rendered
+    # markdown — same source material, no parser round-trip.
+    plan_scan_text = "\n".join([
+        noteworthy.description or "",
+        *noteworthy.bullets,
+        *noteworthy.decisions,
+        *noteworthy.loose_ends,
+    ])
+
+    activity = _collect_activity(
+        cwd=handle.cwd,
+        wiki_root=wiki_root,
+        turns=turns,
+        files_touched=files_touched,
+        body_text_for_plan_scan=plan_scan_text,
+        fallback_time=work_time,
+    )
+
     si = SessionInput(
         scope=scope,
         wiki_root=wiki_root,
@@ -155,7 +289,12 @@ def file_session_note(
         # cascade-trivial path, which only emits a title.
         title=noteworthy.title,
         description=noteworthy.description or noteworthy.title,
-        body_markdown=_render_body(noteworthy),
+        body_markdown=_render_body(
+            noteworthy,
+            commits=activity["commits"],
+            issues_opened=activity["issues_opened"],
+            issues_closed=activity["issues_closed"],
+        ),
         transcript=handle,
         turn_hashes=(from_hash, to_hash),
         scope_redirected_from=scope_redirected_from,
@@ -163,7 +302,15 @@ def file_session_note(
         # (host-agnostic via ToolCall.category) drive topic-aware merge
         # decisions in session_writer. We trust the structural extraction
         # over noteworthy.files_touched (which the LLM can hallucinate).
-        files_touched=_files_touched_from_turns(turns),
+        files_touched=files_touched,
+        # Phase 3: cross-note linkage (frontmatter) + Activity bullets
+        # (already rendered into body_markdown above; copies live here so
+        # append-mode can re-derive without re-running collectors).
+        plans=activity["plans"],
+        projects=activity["projects"],
+        activity_commits=activity["commits"],
+        activity_issues_opened=activity["issues_opened"],
+        activity_issues_closed=activity["issues_closed"],
     )
     return file_or_merge(si, logger=logger, transcript_id=transcript_id)
 

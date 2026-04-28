@@ -471,6 +471,127 @@ def test_find_todays_open_note_respects_work_time_not_now(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Phase 3 — mechanical sections + auto-populated frontmatter
+# ---------------------------------------------------------------------------
+
+
+def _patch_collectors(monkeypatch, *, commits=None, issues=None, repo=None):
+    """Stub the Phase-3 collectors at the names session_filer imports them by.
+
+    session_filer pulls the symbols into its namespace at import time
+    (``from lore_curator.session_activity import collect_commits_in_window``)
+    so monkeypatching the source module doesn't intercept the filer's
+    references — patch ``lore_curator.session_filer.<name>`` instead.
+    """
+    monkeypatch.setattr(
+        "lore_curator.session_filer.collect_commits_in_window",
+        lambda *a, **kw: list(commits or []),
+    )
+    monkeypatch.setattr(
+        "lore_curator.session_filer.collect_issues_in_window",
+        lambda *a, **kw: ((issues or {}).get("opened", []), (issues or {}).get("closed", [])),
+    )
+    if repo is not None:
+        # `current_repo` is imported lazily inside `_collect_activity`
+        # from lore_core.git — patching the source module catches it.
+        monkeypatch.setattr(
+            "lore_core.git.current_repo",
+            lambda cwd: repo,
+        )
+
+
+def test_phase_3_plans_frontmatter_populated_from_body_wikilinks(tmp_path, monkeypatch):
+    """Body wikilinks ``[[plan/<slug>(#sN)?]]`` validated against
+    wiki/<wiki>/plans/ feed the frontmatter ``plans:`` list.
+    Hallucinated plan slugs (no matching plan note) are dropped."""
+    wiki_root = tmp_path / "wiki" / "private"
+    (wiki_root / "plans").mkdir(parents=True)
+    (wiki_root / "plans" / "real-plan.md").write_text("---\ntype: plan\n---\n")
+
+    nw = NoteworthyResult(
+        noteworthy=True, reason="r",
+        title="Plan work",
+        description="Worked on [[plan/real-plan#s2]] and touched [[plan/ghost#s1]] which is hallucinated.",
+        bullets=["did the thing"],
+    )
+    _patch_collectors(monkeypatch)  # no commits, no issues
+
+    result = _file_note(
+        wiki_root, noteworthy=nw, scope=_make_scope("private:lore"),
+    )
+    fm = parse_frontmatter(result.path.read_text())
+    assert "real-plan#s2" in (fm.get("plans") or [])
+    assert all("ghost" not in p for p in (fm.get("plans") or []))
+
+
+def test_phase_3_projects_frontmatter_populated_from_cwd_repo(tmp_path, monkeypatch):
+    """Cwd repo's project note (when present) lands in ``projects:``."""
+    wiki_root = tmp_path / "wiki" / "private"
+    (wiki_root / "projects").mkdir(parents=True)
+    (wiki_root / "projects" / "lore.md").write_text("---\ntype: project\n---\n")
+
+    monkeypatch.setattr(
+        "lore_curator.session_activity.current_repo",
+        lambda cwd: "buchbend/lore",
+    )
+    _patch_collectors(monkeypatch, repo="buchbend/lore")
+
+    result = _file_note(wiki_root, scope=_make_scope("private:lore"))
+    fm = parse_frontmatter(result.path.read_text())
+    assert "lore" in (fm.get("projects") or [])
+
+
+def test_phase_3_activity_section_renders_commits(tmp_path, monkeypatch):
+    """Commits collected in the work window render under
+    ``## Activity / ### Commits``."""
+    from lore_curator.session_activity import CommitRef
+
+    fake_commits = [
+        CommitRef(short_hash="abc1234", subject="add ledger",
+                  branch="main", repo="org/lore"),
+    ]
+    _patch_collectors(monkeypatch, commits=fake_commits)
+
+    result = _file_note(tmp_path, scope=_make_scope("private:lore"))
+    body = _body(result.path)
+    assert "## Activity" in body
+    assert "### Commits" in body
+    assert "`abc1234` add ledger" in body
+    # No issues → no ### Issues opened/closed subheadings.
+    assert "### Issues opened" not in body
+    assert "### Issues closed" not in body
+
+
+def test_phase_3_activity_section_omitted_when_no_commits_or_issues(tmp_path, monkeypatch):
+    """No git/gh data → no Activity parent rendered (omit-when-empty)."""
+    _patch_collectors(monkeypatch)
+    result = _file_note(tmp_path)
+    body = _body(result.path)
+    assert "## Activity" not in body
+
+
+def test_phase_3_issues_closed_section_renders_referenced_only(tmp_path, monkeypatch):
+    """Only issues actually mentioned in commits or turns appear under
+    ``### Issues closed``. The collector path: a commit subject with
+    ``closes #29`` produces a closed-reference set, gh returns the
+    issue, the renderer surfaces it."""
+    from lore_curator.session_activity import CommitRef
+
+    fake_commits = [
+        CommitRef(short_hash="def5678", subject="fix: closes #29",
+                  branch="main", repo="org/lore"),
+    ]
+    fake_issues = {"closed": [{"number": 29, "title": "the bug", "state": "CLOSED"}]}
+    _patch_collectors(monkeypatch, commits=fake_commits, issues=fake_issues, repo="org/lore")
+
+    result = _file_note(tmp_path, scope=_make_scope("private:lore"))
+    body = _body(result.path)
+    assert "## Activity" in body
+    assert "### Issues closed" in body
+    assert "#29 the bug" in body
+
+
+# ---------------------------------------------------------------------------
 # Phase 2 — body shape (rationale-first sections, no Session: H1 prefix)
 # ---------------------------------------------------------------------------
 

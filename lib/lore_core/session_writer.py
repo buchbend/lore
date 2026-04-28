@@ -247,22 +247,35 @@ def merge_body_sections(existing: BodySections, new: BodySections) -> BodySectio
 
     Existing title and summary win — the original framing of the note
     is the user's anchor and shouldn't churn under accumulating
-    appends. Bullet lists are unioned by appending (caller's order
-    preserved). Activity subsections (commits / issues opened+closed)
-    are *not* unioned here — Phase 3 re-renders them from cumulative
-    mechanical data, so passing through the new chunk's lists would
-    double-count. We keep the existing values until Phase 3 takes over.
+    appends. Bullet lists are unioned by appending; exact-match dups
+    drop so a new chunk's collector pass that re-discovers a commit
+    seen in an earlier chunk doesn't double-list it.
     """
     return BodySections(
         title=existing.title or new.title,
         summary=existing.summary or new.summary,
-        decisions=list(existing.decisions) + list(new.decisions),
-        worked_on=list(existing.worked_on) + list(new.worked_on),
-        loose_ends=list(existing.loose_ends) + list(new.loose_ends),
-        commits=list(existing.commits),
-        issues_opened=list(existing.issues_opened),
-        issues_closed=list(existing.issues_closed),
+        decisions=_dedup_lines(existing.decisions, new.decisions),
+        worked_on=_dedup_lines(existing.worked_on, new.worked_on),
+        loose_ends=_dedup_lines(existing.loose_ends, new.loose_ends),
+        commits=_dedup_lines(existing.commits, new.commits),
+        issues_opened=_dedup_lines(existing.issues_opened, new.issues_opened),
+        issues_closed=_dedup_lines(existing.issues_closed, new.issues_closed),
     )
+
+
+def _dedup_lines(*sources: list[str]) -> list[str]:
+    """Concatenate ``sources`` then drop later occurrences of any
+    already-seen line. Order is the first-seen order across the inputs.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for source in sources:
+        for line in source:
+            if line in seen:
+                continue
+            seen.add(line)
+            out.append(line)
+    return out
 
 
 def _topic_jaccard(a: list[str] | None, b: list[str] | None) -> float:
@@ -319,6 +332,22 @@ class SessionInput:
     # via file-set overlap. Already-stripped of boilerplate before being
     # handed in is fine but not required — the merge logic strips again.
     files_touched: list[str] = field(default_factory=list)
+
+    # Phase 3 — auto-populated cross-note linkage. ``plans`` are
+    # ``<slug>#s<N>`` refs (or bare ``<slug>``); ``projects`` are
+    # bare project-note slugs. Both are validated against the wiki's
+    # plans/ and projects/ dirs by the filer; hallucinated refs are
+    # dropped before they reach SessionInput.
+    plans: list[str] = field(default_factory=list)
+    projects: list[str] = field(default_factory=list)
+
+    # Phase 3 — pre-rendered Activity bullets. These flow into the body
+    # ``## Activity`` parent (with ``### Commits`` / ``### Issues
+    # opened`` / ``### Issues closed`` subheadings) via the locked
+    # body-section shape.
+    activity_commits: list[str] = field(default_factory=list)
+    activity_issues_opened: list[str] = field(default_factory=list)
+    activity_issues_closed: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -508,6 +537,10 @@ def _build_frontmatter(si: SessionInput) -> dict[str, Any]:
         fm["transcripts"] = [si.transcript.id]
     if si.tags:
         fm["tags"] = si.tags
+    if si.projects:
+        fm["projects"] = _dedup_preserving_order(si.projects)
+    if si.plans:
+        fm["plans"] = _dedup_preserving_order(si.plans)
     if si.files_touched:
         fm["files_touched"] = _dedup_preserving_order(si.files_touched)
     for k, v in si.extra_frontmatter.items():
@@ -566,6 +599,26 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
             existing_files = []
         fm["files_touched"] = _dedup_preserving_order(
             list(existing_files) + list(si.files_touched)
+        )
+
+    # Phase 3: union projects/plans across appends. These are the
+    # cross-note linkage fields that Curator A re-derives per chunk
+    # from cwd repo / files_touched / Plan: trailers / body wikilinks.
+    # On append we keep prior-chunk refs in case the new chunk's
+    # collectors miss a previously-seen plan or project.
+    if si.projects:
+        existing_projects = fm.get("projects") or []
+        if not isinstance(existing_projects, list):
+            existing_projects = []
+        fm["projects"] = _dedup_preserving_order(
+            list(existing_projects) + list(si.projects)
+        )
+    if si.plans:
+        existing_plans = fm.get("plans") or []
+        if not isinstance(existing_plans, list):
+            existing_plans = []
+        fm["plans"] = _dedup_preserving_order(
+            list(existing_plans) + list(si.plans)
         )
 
     # Phase 2 append rule: parse both bodies into the locked section
