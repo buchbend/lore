@@ -52,8 +52,9 @@ def test_plan_present_same_schema_emits_only_check(cursor_home):
         )
     )
     rules_path = cursor_home / ".cursor" / "rules" / "lore.md"
+    import lore_core
     body = (
-        Path(__file__).resolve().parent.parent
+        Path(lore_core.__file__).resolve().parent
         / "templates"
         / "integration-rules"
         / "default.md"

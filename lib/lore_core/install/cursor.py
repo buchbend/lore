@@ -35,11 +35,16 @@ SCHEMA_VERSION = "1"
 
 
 def _read_directive_body() -> str:
-    """Pull the canonical vault-first directive out of templates/integration-rules/default.md."""
-    # Resolve the template at call time, not import time, so tests
-    # can monkeypatch the directive path.
-    base = Path(__file__).resolve().parent.parent.parent.parent
-    return (base / "templates" / "integration-rules" / "default.md").read_text().rstrip("\n")
+    """Pull the canonical vault-first directive out of the bundled templates.
+
+    Templates ship as package-data inside ``lore_core/templates/``;
+    reading via ``Path(__file__)`` (not the old ``parent.parent.parent``
+    walk to a repo root) keeps the lookup correct under both editable
+    installs and pipx/uv wheel installs. Resolved at call time so tests
+    can monkeypatch the directive path.
+    """
+    base = Path(__file__).resolve().parent.parent / "templates"
+    return (base / "integration-rules" / "default.md").read_text().rstrip("\n")
 
 
 def plan(ctx: InstallContext) -> list[Action]:

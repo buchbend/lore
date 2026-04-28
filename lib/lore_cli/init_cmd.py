@@ -23,18 +23,18 @@ app = typer.Typer(
 
 
 def _plugin_templates_dir() -> Path:
-    """Find the plugin's templates/ directory (shipped with the install)."""
-    # __file__ is lib/lore_cli/init_cmd.py; templates/ is two levels up
-    here = Path(__file__).resolve()
-    candidates = [
-        here.parent.parent.parent / "templates",  # editable install / source
-        here.parent.parent / "templates",  # installed package layout
-    ]
-    for c in candidates:
-        if (c / "root-CLAUDE.md").exists():
-            return c
+    """Find the plugin's templates/ directory (shipped with the install).
+
+    Canonical home is ``lore_core/templates/`` — packaged as data so
+    the lookup works under wheel installs (pipx / uv tool) without
+    needing a source checkout adjacent to the install.
+    """
+    import lore_core
+    pkg_templates = Path(lore_core.__file__).resolve().parent / "templates"
+    if (pkg_templates / "root-CLAUDE.md").exists():
+        return pkg_templates
     raise FileNotFoundError(
-        "Could not locate plugin templates/. Reinstall Lore."
+        f"Could not locate templates at {pkg_templates}. Reinstall Lore."
     )
 
 

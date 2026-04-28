@@ -224,18 +224,23 @@ MAX_OPEN_ITEMS_INLINE = 5
 # the rule survives compaction. Bullet form, negatively framed — both
 # stick harder in long sessions than passive permission.
 #
-# The canonical content lives in `templates/integration-rules/default.md` so
-# the same source feeds both this hook (Claude Code) and the Cursor
-# installer's `~/.cursor/rules/lore.md`. Module-level `__getattr__`
-# below preserves the historical `LORE_DIRECTIVE_LINES` name without
-# reading the template at import time (so pytest can monkeypatch the
-# template path without import-order pain).
-_DIRECTIVE_PATH = (
-    Path(__file__).resolve().parent.parent.parent
-    / "templates"
-    / "integration-rules"
-    / "default.md"
-)
+# The canonical content lives in `lore_core/templates/integration-rules/default.md`
+# (shipped as package data) so the same source feeds both this hook
+# (Claude Code) and the Cursor installer's `~/.cursor/rules/lore.md`.
+# Module-level `__getattr__` below preserves the historical
+# `LORE_DIRECTIVE_LINES` name without reading the template at import time
+# (so pytest can monkeypatch the template path without import-order pain).
+def _resolve_directive_path() -> Path:
+    import lore_core
+    return (
+        Path(lore_core.__file__).resolve().parent
+        / "templates"
+        / "integration-rules"
+        / "default.md"
+    )
+
+
+_DIRECTIVE_PATH = _resolve_directive_path()
 
 
 def _load_directive_lines() -> list[str]:
