@@ -10,6 +10,32 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-04-28
+
+### Performance
+
+- **SessionStart cold-start cut by ~50%+ (#27).** Two independent
+  fixes:
+  - `gh` issue + PR + subtree-sibling fetches in
+    `_session_start_from_lore` were sequential — ~1.7s each, summing
+    to ~3.7s of wall time. They now fan out via
+    `_run_gh_parallel(calls)` (`hooks.py`), routed through the
+    existing `_run_gh` monkeypatch surface so the `test_hooks_v2`
+    contract is preserved. Wall time now tracks the slowest single
+    call.
+  - `lore_cli/__main__.py` eagerly imported ~30 sibling cmd modules
+    to mount their typer subapps; every hook fire paid the full cost.
+    Those imports + the `add_typer` calls + the `uninstall` alias
+    now live inside `_build_app()`, cached as a module-global `_app`
+    singleton served via PEP 562 `__getattr__`. `main()` short-
+    circuits `lore hook <event>` straight to
+    `lore_cli.hooks.hook_app`, skipping `_build_app()` entirely.
+    ~240ms saved per hook fire.
+
+  Combined: typical SessionStart drops from ~2.4-3.5s to ~0.9-2.0s.
+  See issue #27 for the cProfile measurements and where the
+  remaining gh-bound time goes.
+
 ## [0.18.1] - 2026-04-28
 
 ### Fixed
