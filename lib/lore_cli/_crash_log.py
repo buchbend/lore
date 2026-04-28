@@ -1,0 +1,81 @@
+"""Persist hook crash tracebacks to disk.
+
+Hook failures surface to the user as a friendly banner via `_emit`, but
+the actual traceback is what the maintainer needs to fix the bug. This
+module writes one file per crash under ``$LORE_CACHE/crashes/`` so:
+
+  * `lore doctor` can tell the user "N crashes in last 7 days" + path
+  * the user can attach the file to a GitHub issue
+  * the agent itself can read it when the user asks "what crashed?"
+
+Best-effort by design — if the cache dir isn't writable, we silently
+return ``None`` rather than triggering a second crash inside the
+crash handler. Callers must tolerate ``None``.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import traceback
+from datetime import UTC, datetime
+from pathlib import Path
+
+
+def _crash_dir() -> Path:
+    base = os.environ.get("LORE_CACHE") or str(Path.home() / ".cache" / "lore")
+    return Path(base) / "crashes"
+
+
+def write_crash(event: str, exc: BaseException) -> Path | None:
+    """Write a timestamped traceback file. Returns the path, or None on
+    secondary failure (cache unwritable, disk full, etc.).
+
+    ``event`` is a short label (``SessionStart``, ``main``, …). It is
+    sanitized for filesystem safety.
+    """
+    safe_event = "".join(c if c.isalnum() or c in "-_" else "_" for c in event) or "unknown"
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    path = _crash_dir() / f"{ts}-{safe_event}.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        body = [
+            f"event: {event}",
+            f"timestamp: {ts}",
+            f"argv: {sys.argv!r}",
+            f"cwd: {os.getcwd()}",
+            f"exception: {type(exc).__name__}: {exc}",
+            "",
+            "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+        ]
+        path.write_text("\n".join(body))
+    except OSError:
+        return None
+    return path
+
+
+def recent_crashes(within_days: int = 7) -> list[Path]:
+    """Return crash log paths newer than ``within_days``, newest first.
+
+    Empty list when the directory doesn't exist or is unreadable —
+    callers treat absence as "no crashes."
+    """
+    cdir = _crash_dir()
+    if not cdir.exists():
+        return []
+    cutoff = datetime.now(UTC).timestamp() - within_days * 86400
+    out: list[tuple[float, Path]] = []
+    try:
+        for p in cdir.iterdir():
+            if not p.is_file() or not p.name.endswith(".log"):
+                continue
+            try:
+                mtime = p.stat().st_mtime
+            except OSError:
+                continue
+            if mtime >= cutoff:
+                out.append((mtime, p))
+    except OSError:
+        return []
+    out.sort(key=lambda t: t[0], reverse=True)
+    return [p for _, p in out]

@@ -89,7 +89,7 @@ def test_candidate_gen_requires_overlapping_scope(tmp_path: Path) -> None:
 
 def test_candidate_gen_ignores_non_decisions(tmp_path: Path) -> None:
     from lore_curator.c_auto_supersede import generate_supersede_candidates
-    from tests.test_c_adjacent_merge import _write_note
+    from test_c_adjacent_merge import _write_note
 
     lore_root = _seed(tmp_path)
     wiki = lore_root / "wiki" / "w"

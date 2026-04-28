@@ -9,7 +9,7 @@ The full mount happens lazily inside `_build_app()` and is cached
 module-globally on first access. The `lore hook <event>` fast path
 in `main()` skips it entirely — hooks only need `lore_cli.hooks`,
 not the ~30 sibling cmd modules whose eager import would cost
-~170-240ms of cold-start time per hook fire.
+~240ms of cold-start time per hook fire.
 """
 
 from __future__ import annotations
@@ -18,6 +18,29 @@ import sys
 
 import click
 import typer
+
+_HOOK_TYPER_EVENT = {
+    "session-start": "SessionStart",
+    "pre-compact": "PreCompact",
+    "stop": "Stop",
+    "user-prompt-submit": "UserPromptSubmit",
+    "session-end": "SessionEnd",
+    "capture": "Capture",
+    "plan-capture": "PlanCapture",
+}
+
+
+def _detect_hook_event(argv: list[str]) -> str | None:
+    """Return a Claude Code hook event label if argv is a hook invocation.
+
+    Matches ``lore hook <event>``; ignores everything else. Used by main()
+    to decide whether to emit a JSON envelope (for hook callers) or a
+    plain stderr line (for human callers) when a top-level exception
+    escapes.
+    """
+    if len(argv) >= 2 and argv[0] == "hook":
+        return _HOOK_TYPER_EVENT.get(argv[1])
+    return None
 
 
 _app: typer.Typer | None = None
@@ -206,6 +229,36 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(code, str):
             print(code, file=sys.stderr)
             return 1
+        return 1
+    except Exception as exc:  # noqa: BLE001 — top-level crash backstop
+        # Backstop for failures that escape the per-hook shield: import
+        # errors, typer parameter resolution, or anything raised before
+        # cmd_session_start's body runs. Always persists the traceback
+        # to disk so doctor can surface it; on hook calls, also emits
+        # the friendly JSON envelope so Claude Code shows an actionable
+        # banner instead of a Rich-rendered traceback.
+        from lore_cli._crash_log import write_crash
+
+        hook_event = _detect_hook_event(argv)
+        log_path = write_crash(hook_event or "main", exc)
+        if hook_event is not None:
+            try:
+                from lore_cli.hooks import _emit, _hook_failure_banner
+                banner = _hook_failure_banner(hook_event, exc, log_path=log_path)
+                plain = "--plain" in argv
+                _emit(hook_event, banner, plain=plain)
+            except Exception:  # noqa: BLE001 — last-ditch fallback
+                sys.stderr.write(
+                    f"lore {hook_event} hook crashed: {type(exc).__name__}: {exc}\n"
+                )
+            # Exit 0 so Claude Code doesn't render the error panel.
+            return 0
+        # Non-hook callers (humans at a terminal) get a one-liner +
+        # the log path. The full traceback would be the more useful
+        # thing here, but we already have the file — keep stderr terse.
+        sys.stderr.write(f"lore: unexpected error: {type(exc).__name__}: {exc}\n")
+        if log_path is not None:
+            sys.stderr.write(f"lore: full traceback written to {log_path}\n")
         return 1
 
 

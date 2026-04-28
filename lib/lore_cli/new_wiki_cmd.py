@@ -43,15 +43,9 @@ TEMPLATE_NAMES = ("standard", "science", "design", "custom")
 
 
 def _plugin_templates_dir() -> Path:
-    here = Path(__file__).resolve()
-    candidates = [
-        here.parent.parent.parent / "templates",
-        here.parent.parent / "templates",
-    ]
-    for c in candidates:
-        if (c / "wiki-CLAUDE.md").exists():
-            return c
-    raise FileNotFoundError("Could not locate plugin templates/.")
+    """Backwards-compatible shim for `lore_core.templates.templates_dir`."""
+    from lore_core.templates import templates_dir
+    return templates_dir()
 
 
 def _load_template(name: str) -> str:

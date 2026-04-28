@@ -35,8 +35,12 @@ class _FakeAnthropicClient:
 
 
 def _stub_anthropic(monkeypatch):
-    """Prevent real anthropic.Anthropic() from being called."""
-    import anthropic
+    """Prevent real anthropic.Anthropic() from being called.
+
+    The ``anthropic`` SDK is an optional dependency (extras=capture). Skip
+    rather than fail when it isn't installed in the dev environment.
+    """
+    anthropic = pytest.importorskip("anthropic")
     monkeypatch.setattr(anthropic, "Anthropic", lambda **kw: _FakeAnthropicClient())
 
 

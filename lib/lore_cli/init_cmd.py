@@ -23,19 +23,9 @@ app = typer.Typer(
 
 
 def _plugin_templates_dir() -> Path:
-    """Find the plugin's templates/ directory (shipped with the install).
-
-    Canonical home is ``lore_core/templates/`` — packaged as data so
-    the lookup works under wheel installs (pipx / uv tool) without
-    needing a source checkout adjacent to the install.
-    """
-    import lore_core
-    pkg_templates = Path(lore_core.__file__).resolve().parent / "templates"
-    if (pkg_templates / "root-CLAUDE.md").exists():
-        return pkg_templates
-    raise FileNotFoundError(
-        f"Could not locate templates at {pkg_templates}. Reinstall Lore."
-    )
+    """Backwards-compatible shim for `lore_core.templates.templates_dir`."""
+    from lore_core.templates import templates_dir
+    return templates_dir()
 
 
 def init_vault(root: Path, force: bool = False) -> None:

@@ -10,6 +10,95 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-04-28
+
+Maintenance + observability batch. Two themes:
+
+1. **Crash visibility.** Hook failures now persist a traceback to disk
+   so the user can attach it to a bug report; `lore doctor` surfaces
+   recent crashes; the top-level main() backstop catches failures
+   that escape the per-hook shield.
+2. **Drain hygiene + cursor correctness.** Authoritative `_system`
+   cursor + emit-side guard + `lore drain prune` CLI for cleaning up
+   legacy orphan rows. Plus a clutch of linter-exemption fixes that
+   were generating spurious warnings on real session notes.
+
+### Added
+
+- **Hook crash logging.** Every hook crash now persists a timestamped
+  traceback under `$LORE_CACHE/crashes/<ISO>-<HookEvent>.log` so the
+  maintainer / user can attach the file to a GitHub issue. Two layers:
+
+  - `_shield_hook` (per-hook decorator) writes the log and folds the
+    path into the friendly banner Claude Code sees:
+    `Full traceback: <path>`.
+  - `__main__.main()` adds a top-level except backstop that catches
+    failures escaping the shield (import errors, typer parameter
+    resolution, anything before the hook body runs). Hook-shaped
+    callers still get the JSON envelope; non-hook callers get a
+    one-line stderr advisory plus the log path.
+
+  Best-effort: if the cache dir isn't writable, `write_crash` returns
+  `None` rather than triggering a second crash inside the handler.
+
+- **`lore doctor` reports recent crashes.** New advisory check —
+  surfaces the count + most recent hook event when files exist under
+  `$LORE_CACHE/crashes/` within the last 7 days. Flips `ok=False` but
+  doesn't fail the install (informational).
+
+- **`lore drain prune`** (with `--dry-run`). New CLI for maintenance
+  of the per-vault drain stores. Walks `_system.jsonl` and atomically
+  drops `note-filed` / `note-appended` / `surface-proposed` rows
+  whose referenced path is gone. Append-only by design; `prune` is
+  the explicit escape hatch for cleanup. Atomic via
+  `_system.jsonl.tmp` + `os.replace`.
+
+- **Producer-side guard in `DrainStore.emit`** rejects rows targeting
+  `_system.jsonl` from non-system callers. Only `transcript-synced`
+  events legitimately target `SYSTEM_SESSION`. Prevents new pollution;
+  `lore drain prune` excises legacy rows that predate the guard.
+
+- **Linter wikilink-discipline exemptions.** `_is_non_note_link_target`
+  predicate suppresses `broken_link` warnings for targets the session-
+  template wikilink discipline already forbids: file/dir paths, PR/issue
+  refs, URLs, env vars, version strings. Concept-style names still
+  flag — those are real candidates either to be promoted into notes or
+  to be removed by the author.
+
+- **`papers/` exempt from `oversized` check.** Each note in `papers/`
+  is one paper by design; flagging them as split candidates was noise.
+
+### Changed
+
+- **Authoritative system cursor.** `DrainStore.read_or_init_cursor()`
+  cold-starts the system-events cursor to `now` so a fresh install
+  never reaches back through history. The system cursor becomes the
+  single "shown through" mark for SessionStart, heartbeat, and
+  `lore news`. Replaces the per-pid cursor file for system events;
+  parallel Claude windows no longer steal each other's notifications.
+  Session cursor stays pid-keyed because that's per-process state.
+
+- **`_render_drain_lines` skipped under `--probe`** so `lore doctor`
+  stays side-effect-free. The cold-start init writes a cursor file
+  on first read, which a probe must not do.
+
+- **Hierarchy check tightened: same-named folders in different
+  knowledge dirs no longer pool.** A `concepts/lore/` folder no longer
+  implies an index-relationship with `decisions/lore/` — the namespace
+  match was a bug producing spurious `index_too_large` /
+  `unlinked_subnote` warnings.
+
+- **Index detection requires ≥ 70% of siblings actually link to the
+  prefix-matched note** (`INDEX_PREFIX_LINK_RATIO`). A long topical
+  note that happens to share a name prefix with its folder is no
+  longer auto-promoted to "the index", which was generating
+  obligation warnings for children that had no reason to backlink.
+
+### Compat
+
+- New optional dependency: none. `_crash_log` and `drain_cmd` live in
+  `lore_cli/` and use only stdlib.
+
 ## [0.21.0] - 2026-04-28
 
 ### Added

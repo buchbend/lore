@@ -257,6 +257,29 @@ def _check_claude_plugin_cache_drift(cwd: str) -> Check:
     )
 
 
+def _check_recent_crashes(cwd: str) -> Check:
+    """Report hook crashes recorded in the last 7 days.
+
+    Crash logs are written by `lore_cli._crash_log.write_crash` whenever
+    a hook escapes ``_shield_hook`` or the top-level ``main()`` backstop
+    catches an unexpected exception. Surfacing them here gives the user
+    a single place to discover silent failures Claude Code suppressed
+    behind the friendly banner.
+
+    Advisory only — recent crashes don't fail the install (the user
+    might already know about them and be working on a fix).
+    """
+    from lore_cli._crash_log import recent_crashes
+
+    crashes = recent_crashes(within_days=7)
+    if not crashes:
+        return True, "no hook crashes in last 7 days"
+    latest = crashes[0]
+    return False, (
+        f"{len(crashes)} hook crash(es) in last 7 days; latest: {latest}"
+    )
+
+
 def _check_hook_runnable(cwd: str) -> Check:
     """Run `lore hook session-start --plain --probe` and confirm it produces output.
 
@@ -435,6 +458,10 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     ("scope tree", _check_scope_tree, True),
     ("ledger buckets", _check_ledger_buckets, True),
     ("SessionStart hook", _check_hook_runnable, True),
+    # Advisory: surfaces silent failures Claude Code hides behind the
+    # friendly hook banner. Doesn't fail the install — the user may
+    # already be triaging.
+    ("recent crashes", _check_recent_crashes, False),
     # Advisory: version drift is informational. The CLI still functions
     # at the older version; the user just sees a stale SessionStart line.
     ("CLI version", _check_lore_version_drift, False),

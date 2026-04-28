@@ -13,6 +13,7 @@ Invoke programmatically via `run_lint()` or from the CLI:
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
@@ -49,6 +50,72 @@ SKIP_FILES = {
     "llms.txt",
     "_recent.md",
 }
+
+# Knowledge dirs whose notes are long by nature (each note is one paper) and
+# therefore exempt from the ``oversized`` split-candidate warning.
+OVERSIZED_EXEMPT_DIRS = {"papers"}
+
+# Index detection: a prefix-matched note (e.g. ``lore-thesis.md`` in
+# ``lore/``) is only treated as the folder's index when it actually links
+# to at least this share of its siblings — otherwise it's just a long
+# topical note that happens to share a name prefix with the folder, and
+# promoting it would generate spurious ``index_too_large`` /
+# ``unlinked_subnote`` warnings against children that have no obligation
+# to backlink.
+INDEX_PREFIX_LINK_RATIO = 0.7
+
+# Wikilink targets that look like file paths, PR/issue refs, URLs, env
+# vars, or version strings are not vault-note candidates and should not
+# trigger ``broken_link`` warnings. The session-template wikilink
+# discipline forbids these forms going forward; this predicate keeps the
+# linter's signal clean for the historical session notes that still
+# carry them.
+_FILE_EXT_RE = re.compile(
+    r"\.(py|md|yml|yaml|toml|json|sh|txt|rst|conf|cfg|ini|ts|tsx|js|jsx|"
+    r"css|html|xml|csv|sql|env|lock|pyc|pyo)$",
+    re.IGNORECASE,
+)
+_PR_ISSUE_RE = re.compile(
+    r"^(?:PR\s*#?\d+|issue\s*#?\d+|#\d+|[\w./-]+#\d+)\b",
+    re.IGNORECASE,
+)
+_VERSION_RE = re.compile(r"^v?\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?$")
+_ENV_VAR_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}(?:\s*[/=].*)?$")
+
+
+def _is_non_note_link_target(target: str) -> bool:
+    """True when a wikilink target cannot reasonably resolve to a vault note.
+
+    Used by :func:`check_wikilinks` to suppress ``broken_link`` warnings
+    for targets that the session-note wikilink discipline already
+    forbids: file/dir paths, PR/issue refs, URLs, env vars, version
+    strings. Concept-style names (``Curator B``, ``CCAT Data Center``)
+    still flag — those are real candidates either to be promoted into
+    notes or to be removed by the author.
+    """
+    t = target.strip()
+    if not t:
+        return False
+    # URLs and absolute paths.
+    if "://" in t or t.startswith(("/", "~", "$")):
+        return True
+    # Paths (anything containing a slash) — also covers ``org/repo``,
+    # ``feature/branch``, etc.
+    if "/" in t:
+        return True
+    # File-extension suffix (``hooks.py``, ``CHANGELOG.md``, etc.).
+    if _FILE_EXT_RE.search(t):
+        return True
+    # PR / issue references.
+    if _PR_ISSUE_RE.match(t):
+        return True
+    # Version strings (``v0.13.1``, ``1.100.0``).
+    if _VERSION_RE.match(t):
+        return True
+    # ENV-style identifiers (``CLAUDE_SESSION_ID``, ``LORE_OPENAI_MODEL``).
+    if _ENV_VAR_RE.match(t):
+        return True
+    return False
 
 console = Console()
 
@@ -244,18 +311,41 @@ def check_hierarchy(
             if not subfolder.is_dir() or subfolder.name in SKIP_DIRS:
                 continue
             folder_name = subfolder.name
-            folder_notes = [n for n in notes if n.parent_folder == folder_name]
+            # Filter on both ``parent_folder`` and the kdir prefix —
+            # ``parent_folder`` only stores the basename, so without the
+            # path-prefix guard a folder like ``concepts/lore/`` and
+            # ``decisions/lore/`` would pool their notes together and
+            # generate spurious cross-folder index/subnote warnings.
+            folder_path_prefix = f"{kdir}/{folder_name}/"
+            folder_notes = [
+                n for n in notes
+                if n.parent_folder == folder_name and n.path.startswith(folder_path_prefix)
+            ]
             index_candidates = [n for n in folder_notes if n.filename == folder_name]
             if not index_candidates:
-                index_candidates = [
+                # Prefix-match fallback: a note named ``<folder>-something.md``
+                # only counts as the folder's index when it actually behaves
+                # like one — i.e. it links to at least
+                # INDEX_PREFIX_LINK_RATIO of its siblings. Otherwise it's a
+                # long topical note that happens to share a prefix with the
+                # folder name and shouldn't drag spurious index/subnote
+                # warnings onto its neighbours.
+                sibling_names = {n.filename for n in folder_notes}
+                prefix_matches = [
                     n for n in folder_notes if n.filename.startswith(folder_name + "-")
                 ]
-                if len(index_candidates) > 1:
-                    sibling_names = {n.filename for n in folder_notes}
-                    index_candidates.sort(
+                siblings_count = max(len(folder_notes) - 1, 1)
+                threshold = max(1, int(siblings_count * INDEX_PREFIX_LINK_RATIO))
+                navigational = [
+                    n for n in prefix_matches
+                    if sum(1 for link in n.links_out if link in sibling_names) >= threshold
+                ]
+                if navigational:
+                    navigational.sort(
                         key=lambda n: sum(1 for link in n.links_out if link in sibling_names),
                         reverse=True,
                     )
+                    index_candidates = navigational
             if not index_candidates:
                 issues.append(
                     Issue(
@@ -266,22 +356,25 @@ def check_hierarchy(
                         message=f"subfolder has no index note (expected {folder_name}.md)",
                     )
                 )
-                idx_filename = folder_name
-            else:
-                idx = index_candidates[0]
-                idx.is_index = True
-                idx.children = [n.filename for n in folder_notes if n.filename != idx.filename]
-                if idx.lines > INDEX_MAX_LINES:
-                    issues.append(
-                        Issue(
-                            severity="WARNING",
-                            wiki=wiki_name,
-                            file=idx.path,
-                            check="index_too_large",
-                            message=f"index note is {idx.lines} lines (target: <{INDEX_MAX_LINES})",
-                        )
+                # No real index → don't fire ``unlinked_subnote`` against
+                # every sibling demanding a backlink to a phantom target.
+                # The single ``missing_index`` line is the actionable signal.
+                continue
+
+            idx = index_candidates[0]
+            idx.is_index = True
+            idx.children = [n.filename for n in folder_notes if n.filename != idx.filename]
+            if idx.lines > INDEX_MAX_LINES:
+                issues.append(
+                    Issue(
+                        severity="WARNING",
+                        wiki=wiki_name,
+                        file=idx.path,
+                        check="index_too_large",
+                        message=f"index note is {idx.lines} lines (target: <{INDEX_MAX_LINES})",
                     )
-                idx_filename = idx.filename
+                )
+            idx_filename = idx.filename
 
             sub_notes = [n for n in folder_notes if n.filename != idx_filename]
             for sn in sub_notes:
@@ -300,6 +393,11 @@ def check_hierarchy(
         if n.note_type == "session":
             continue
         if n.parent_folder is None and n.lines > OVERSIZED_LINES:
+            # Notes in dirs that are long by nature (one paper per note)
+            # are exempt from the split-candidate suggestion.
+            top_dir = n.path.split("/", 1)[0] if "/" in n.path else ""
+            if top_dir in OVERSIZED_EXEMPT_DIRS:
+                continue
             issues.append(
                 Issue(
                     severity="WARNING",
@@ -325,16 +423,23 @@ def check_wikilinks(
         if scoped_wikis and note.wiki not in scoped_wikis:
             continue
         for link in note.links_out:
-            if link not in known_names:
-                issues.append(
-                    Issue(
-                        severity="WARNING",
-                        wiki=note.wiki,
-                        file=note.path,
-                        check="broken_link",
-                        message=f"[[{link}]] target does not exist",
-                    )
+            if link in known_names:
+                continue
+            # Suppress targets that the wikilink discipline forbids — file
+            # paths, PR/issue refs, version strings, env vars, URLs. These
+            # are historical noise from session notes written before the
+            # discipline was tightened; flagging them buries real signal.
+            if _is_non_note_link_target(link):
+                continue
+            issues.append(
+                Issue(
+                    severity="WARNING",
+                    wiki=note.wiki,
+                    file=note.path,
+                    check="broken_link",
+                    message=f"[[{link}]] target does not exist",
                 )
+            )
 
     for note in all_notes.values():
         if scoped_wikis and note.wiki not in scoped_wikis:
@@ -642,10 +747,17 @@ def run_lint(
 
     for note in all_notes.values():
         if note.is_index and note.parent_folder:
+            # parent_folder is just the basename; require sibling notes to
+            # share the index's full directory prefix so that, e.g.,
+            # ``concepts/lore/`` and ``decisions/lore/`` don't bleed
+            # children into each other's indexes.
+            note_dir = note.path.rsplit("/", 1)[0] + "/" if "/" in note.path else ""
             note.children = [
                 n.filename
                 for n in notes_by_wiki[note.wiki]
-                if n.parent_folder == note.parent_folder and n.filename != note.filename
+                if n.parent_folder == note.parent_folder
+                and n.filename != note.filename
+                and n.path.startswith(note_dir)
             ]
 
     # Phase 3: checks

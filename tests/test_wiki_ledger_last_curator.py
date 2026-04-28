@@ -169,7 +169,7 @@ def _minimal_curator_a_setup(tmp_path: Path):
 
 def _noteworthy_false_client():
     """Importing here to avoid circular collection."""
-    from tests.test_curator_a import FakeAnthropicClient
+    from test_curator_a import FakeAnthropicClient
     return FakeAnthropicClient(
         classify_data={
             "noteworthy": False,
@@ -185,7 +185,7 @@ def _noteworthy_false_client():
 
 
 def _fake_adapter(turns):
-    from tests.test_curator_a import FakeAdapter
+    from test_curator_a import FakeAdapter
     return FakeAdapter(turns)
 
 

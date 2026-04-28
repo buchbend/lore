@@ -39,6 +39,7 @@ class _FakeAnthropic:
 
 def test_sdk_client_passes_through_to_anthropic(monkeypatch):
     """SDKClient delegates .messages.create kwargs straight to Anthropic."""
+    pytest.importorskip("anthropic")
     monkeypatch.setattr("anthropic.Anthropic", _FakeAnthropic)
 
     client = SDKClient(api_key="test-key")
@@ -56,6 +57,7 @@ def test_sdk_client_passes_through_to_anthropic(monkeypatch):
 
 def test_sdk_client_backend_name_is_sdk(monkeypatch):
     """SDKClient.backend_name returns 'sdk'."""
+    pytest.importorskip("anthropic")
     monkeypatch.setattr("anthropic.Anthropic", _FakeAnthropic)
 
     client = SDKClient(api_key="x")

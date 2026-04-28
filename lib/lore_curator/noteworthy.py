@@ -259,6 +259,14 @@ def _build_prompt_text(
         "what + why in one breath. Bullets in `bullets` and `decisions` lead "
         "with a bold substance phrase, then colon, then detail. Loose ends "
         "are past-tense / stative observations, never TODOs.",
+        "",
+        "Wikilink discipline: `[[ ]]` is reserved for vault note slugs that "
+        "actually exist (or that you are creating in this same session). "
+        "Never put `[[ ]]` around file paths, directory paths, external repo "
+        "names (`org/repo`), PR/issue refs (`PR #N`, `#N`, `org/repo#N`), "
+        "code symbols, env vars, version strings, branch names, or tool/"
+        "product names. Use backticks for code-shaped tokens and plain text "
+        "for everything else. A broken wikilink is worse than none.",
     ]
 
     # Inject the active wiki's section-authoring norms (per-wiki override
