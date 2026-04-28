@@ -114,6 +114,140 @@ def _check_lore_version_drift(cwd: str) -> Check:
     return check_lore_version_match(repo)
 
 
+def _check_plugin_manifest_sync(cwd: str) -> Check:
+    """Compare the source-tree plugin manifest version to the installed pip version.
+
+    Catches the headline footgun documented in CHANGELOG: ``claude
+    plugin update lore@lore`` is a separate channel from ``pipx
+    install --upgrade lore``. If the user upgrades pip but doesn't
+    refresh the plugin cache, new hooks (PostToolUse:ExitPlanMode in
+    v0.14.0) silently don't fire.
+
+    Limitation: lore can't directly interrogate Claude Code's plugin
+    cache from outside the harness. The best we can do is compare
+    the source-tree plugin.json version to the installed pip version
+    (which test_version_sync.py already enforces in CI for
+    consistency) AND surface an informational reminder.
+    """
+    import json as _json
+    from importlib.metadata import PackageNotFoundError, version
+
+    here = Path(__file__).resolve()
+    repo: Path | None = None
+    for ancestor in [here, *here.parents]:
+        if (ancestor / "pyproject.toml").is_file() and (ancestor / "lib").is_dir():
+            repo = ancestor
+            break
+    if repo is None:
+        return True, (
+            "skipped: no on-disk source tree to compare plugin.json — "
+            "remember to run `/plugin update lore` after each pip upgrade"
+        )
+
+    manifest_path = repo / ".claude-plugin" / "plugin.json"
+    if not manifest_path.exists():
+        return True, (
+            f"skipped: {manifest_path} not found — "
+            "remember to run `/plugin update lore` after each pip upgrade"
+        )
+
+    try:
+        manifest = _json.loads(manifest_path.read_text())
+    except (OSError, ValueError) as e:
+        return False, f"plugin.json unreadable: {e}"
+
+    plugin_version = str(manifest.get("version") or "")
+    if not plugin_version:
+        return False, "plugin.json has no `version` field"
+
+    try:
+        installed = version("lore")
+    except PackageNotFoundError:
+        return False, "lore Python package not installed in this environment"
+
+    if plugin_version != installed:
+        return False, (
+            f"plugin.json version {plugin_version} != installed pip {installed}; "
+            "after `pipx install --upgrade lore` run `/plugin update lore` in Claude Code"
+        )
+
+    return True, (
+        f"plugin.json {plugin_version} matches pip — but Claude Code's plugin "
+        "cache is opaque from here. After every pip upgrade, run "
+        "`/plugin update lore` in a Claude Code session to refresh hooks/skills/MCP."
+    )
+
+
+def _check_claude_plugin_cache_drift(cwd: str) -> Check:
+    """Compare the Claude Code plugin cache version to the installed pip version.
+
+    Complements ``_check_plugin_manifest_sync`` (which compares against the
+    on-disk source tree): this check reads the actual plugin-cache state
+    that ``claude plugin update lore@lore`` writes to. The mismatch this
+    catches is the headline footgun:
+
+      * user runs ``claude plugin update lore@lore`` → cache bumps
+        (e.g. 0.10.0 → 0.13.1)
+      * pipx-installed ``lore`` binary stays on 0.10.0
+      * SessionStart's banner reads ``importlib.metadata.version("lore")``
+        and silently reports the *binary* version, hiding the plugin
+        update entirely
+
+    Cache state lives in ``~/.claude/plugins/installed_plugins.json`` —
+    plain JSON; opaque is too strong a word.
+    """
+    import json as _json
+    from importlib.metadata import PackageNotFoundError, version
+
+    cache_index = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+    if not cache_index.exists():
+        return True, (
+            "skipped: no Claude plugin cache at "
+            f"{cache_index} (Claude Code not installed?)"
+        )
+
+    try:
+        index = _json.loads(cache_index.read_text())
+    except (OSError, ValueError) as exc:
+        return False, f"plugin cache index unreadable: {exc}"
+
+    entries = index.get("plugins", {}).get("lore@lore") or []
+    # Pick the most recently updated entry; multiple scopes (user/project)
+    # can coexist but the user-scope is what SessionStart hooks bind to.
+    user_entry = next(
+        (e for e in entries if e.get("scope") == "user"),
+        entries[0] if entries else None,
+    )
+    if user_entry is None:
+        return True, (
+            "skipped: lore@lore not present in Claude plugin cache "
+            "(install via `/plugin` in Claude Code)"
+        )
+
+    cache_version = str(user_entry.get("version") or "").strip()
+    if not cache_version or cache_version == "unknown":
+        return True, (
+            f"Claude plugin cache version is `{cache_version or 'missing'}` — "
+            "skipping comparison"
+        )
+
+    try:
+        installed = version("lore")
+    except PackageNotFoundError:
+        return False, "lore Python package not installed in this environment"
+
+    if cache_version == installed:
+        return True, f"Claude plugin cache {cache_version} matches pip"
+
+    return False, (
+        f"Claude plugin cache is {cache_version} but pip-installed lore is "
+        f"{installed}. SessionStart's banner will report `{installed}` "
+        "until you upgrade the binary. Run: pipx upgrade lore "
+        "(or `pipx install --force --editable <path-to-lore-repo>`), then "
+        "restart Claude Code."
+    )
+
+
 def _check_hook_runnable(cwd: str) -> Check:
     """Run `lore hook session-start --plain --probe` and confirm it produces output.
 
@@ -295,6 +429,14 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     # Advisory: version drift is informational. The CLI still functions
     # at the older version; the user just sees a stale SessionStart line.
     ("CLI version", _check_lore_version_drift, False),
+    # Advisory: plugin-cache drift only matters once the user has
+    # upgraded pip; the message itself is the value (it tells them
+    # to run /plugin update lore).
+    ("plugin manifest", _check_plugin_manifest_sync, False),
+    # Advisory: catches the inverse — user ran `claude plugin update`
+    # but didn't refresh the pipx binary. Banner silently reports the
+    # old version; this names the fix command.
+    ("plugin cache", _check_claude_plugin_cache_drift, False),
     ("attach", _check_attach, False),
 ]
 
