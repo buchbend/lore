@@ -13,6 +13,9 @@ build/
 .coverage
 htmlcov/
 
+# uv lockfile — pip-installable package, no shared lock pinned
+uv.lock
+
 # Local config (per-user, not for the plugin repo itself)
 .env
 .env.local
