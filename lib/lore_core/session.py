@@ -3,15 +3,14 @@
 Used by:
   - lore_cli/session_cmd.py (`lore session new`, `lore session commit`)
   - lore_mcp/server.py     (MCP `lore_session_scaffold` tool, read-only)
-  - the `lore-session-writer` subagent (calls MCP read first, then CLI
-    writes)
+  - the `/lore:session` skill (calls MCP read first, then the CLI writes)
 
 This is the deterministic spine of /lore:session: routing, identity,
 paths, frontmatter, recent-commits enumeration. The LLM-judgment work —
-body prose, concept extraction — stays in the subagent. Per the
-CLI-first / token-economy thesis the subagent's tool budget shrinks
-from ~6–8 calls to ~3 (1 MCP scaffold-read + 1 Bash write + 1 Bash
-commit).
+body prose, concept extraction — stays in the skill's own conversation
+context. Per the CLI-first / token-economy thesis the skill's tool
+budget is ~3 calls (1 MCP scaffold-read + 1 Bash write + 1 Bash
+commit), with one optional MCP search for wikilink candidates.
 
 Writes funnel through `lore_core.session_writer.file_or_merge` — the
 same entry point curator-A uses — so path, append-to-today, and

@@ -7,9 +7,11 @@ Two subcommands:
 
 These are the side-effecting (write) half of the session pipeline. The
 read-only counterpart is the MCP tool `lore_session_scaffold`. The
-`lore-session-writer` subagent calls scaffold via MCP first (silent,
-fast), composes the prose body, then shells out here to make the writes
-visible/auditable to the user.
+`/lore:session` skill calls scaffold via MCP first (silent, fast),
+composes the prose body, then shells out here to make the writes
+visible/auditable to the user. Auto-capture (curator A) bypasses both
+this CLI and the skill — it goes directly through
+`lore_curator/session_filer.py` → `lore_core/session_writer.py`.
 """
 
 from __future__ import annotations
