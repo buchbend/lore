@@ -3,30 +3,35 @@ name: lore:loud
 description: Re-enable inline "› consulted [[note]]" citation affordances
   after `/lore:quiet` silenced them. Does not affect SessionStart
   auto-injection or MCP retrieval — those are always on. Run with
-  "/lore:loud".
+  "/lore:loud". (Alias for `/lore:on citations` — kept for backward
+  compatibility; will be removed in a future release.)
 user_invocable: true
 ---
 
 # Loud — re-enable inline citations
 
-Inverse of `/lore:quiet`. Clears the per-session preference flag so the
-agent resumes rendering `› consulted [[note-name]]` above answers that
-used `lore_search`.
+Inverse of `/lore:quiet`. Clears the per-session sentinel so the
+SessionStart additionalContext stops carrying the suppression
+directive.
 
-## Behavior
+## What to do
 
-- `/lore:loud` — clears the quiet flag for the current session;
-  citations appear on the next answer that consults the vault
-- No-op if quiet was never set
+Run:
+
+```bash
+lore on citations
+```
+
+No-op if quiet was never set.
 
 ## What stays the same
 
 - SessionStart one-liner, PreCompact injection, Stop hint — these were
   unaffected by `/lore:quiet` and remain unaffected.
-- Vault content when explicitly asked for.
+- MCP retrieval (always on regardless of citations toggle).
 
 ## Related
 
-- `/lore:quiet` — silence inline citations
-- `/lore:off` / `/lore:on` — mute everything, not just citations
-- `/lore:context` — see what was loaded at session start
+- `/lore:quiet` — silence inline citations.
+- `/lore:off` / `/lore:on` — mute everything, not just citations.
+- `/lore:context` — see what was loaded at session start.

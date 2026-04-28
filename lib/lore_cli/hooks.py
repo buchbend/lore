@@ -978,6 +978,7 @@ def _session_start_from_lore(
     # the user *first*; the rule postscript reasserts the contract without
     # competing for the most-attention slot at the top of the banner.
     out_parts.extend(_load_directive_lines())
+    out_parts.extend(_citation_directive_lines())
 
     return "\n".join(out_parts)
 
@@ -1086,6 +1087,7 @@ def _session_start(cwd: str | None) -> str:
 
     # Directive last: see _session_start_from_lore for rationale.
     parts.extend(_load_directive_lines())
+    parts.extend(_citation_directive_lines())
 
     return "\n".join(parts)
 
@@ -1306,6 +1308,42 @@ def _in_curator_mode() -> bool:
     return os.environ.get("LORE_CURATOR_MODE") == "1"
 
 
+def _session_off_all() -> bool:
+    """True iff `/lore:off` (scope=all) is active for the current session.
+
+    Resolves the session id from CLAUDE_SESSION_ID, which `_read_hook_payload`
+    publishes from the Claude Code stdin payload (issue #29 / v0.13.1).
+    Returns False when no sid is available — without a sid we can't scope a
+    sentinel, so the safe default is "not muted."
+    """
+    sid = os.environ.get("CLAUDE_SESSION_ID")
+    if not sid:
+        return False
+    from lore_core.toggles import is_off
+    return is_off("all", sid)
+
+
+def _citation_directive_lines() -> list[str]:
+    """Suppression directive for `/lore:off citations`.
+
+    Returns the lines appended to the SessionStart additionalContext
+    directive cluster when the citations sentinel is set for this
+    session, else an empty list. The line tells the agent to skip the
+    inline `› consulted [[X]]` affordance for the rest of the session.
+    """
+    sid = os.environ.get("CLAUDE_SESSION_ID")
+    if not sid:
+        return []
+    from lore_core.toggles import is_off
+    if not is_off("citations", sid):
+        return []
+    return [
+        "- Inline citations are silenced this session — do not emit "
+        "`› consulted [[X]]` lines after consulting the vault.",
+        "",
+    ]
+
+
 def _read_hook_payload() -> dict:
     """Consume the JSON payload Claude Code passes on stdin for every hook fire.
 
@@ -1374,6 +1412,8 @@ def cmd_session_start(
     if _in_curator_mode():
         return
     _read_hook_payload()
+    if _session_off_all():
+        return
     cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(str(cwd_resolved))
 
@@ -1541,6 +1581,8 @@ def cmd_pre_compact(
     if _in_curator_mode():
         return
     _read_hook_payload()
+    if _session_off_all():
+        return
     out = _pre_compact(_resolve_cwd(cwd))
     _emit("PreCompact", out, plain=plain)
 
@@ -1557,6 +1599,8 @@ def cmd_stop(
     if _in_curator_mode():
         return
     _read_hook_payload()
+    if _session_off_all():
+        return
     out = _stop()
     _emit("Stop", out, plain=plain)
 
@@ -1686,6 +1730,8 @@ def cmd_user_prompt_submit(
     if _in_curator_mode():
         return
     _read_hook_payload()
+    if _session_off_all():
+        return
     cwd_resolved = Path(_resolve_cwd(cwd))
     scope = resolve_scope(cwd_resolved)
     if scope is None:
@@ -1694,6 +1740,16 @@ def cmd_user_prompt_submit(
     wiki_cfg = _load_wiki_cfg_from_scope(scope, lore_root)
 
     sys_msg, ctx = _heartbeat(lore_root, cwd_resolved, wiki_cfg)
+
+    # Citations toggle takes effect mid-session: re-assert the suppression
+    # directive on every prompt while `/lore:off citations` is active so the
+    # agent sees it on the very next turn after the user toggles it,
+    # rather than waiting for the next SessionStart.
+    cite_lines = _citation_directive_lines()
+    if cite_lines:
+        cite_block = "\n".join(line for line in cite_lines if line)
+        ctx = cite_block if not ctx else ctx + "\n\n" + cite_block
+
     if not sys_msg and not ctx:
         return
 
@@ -2218,6 +2274,15 @@ def capture(
     if _in_curator_mode():
         return
     _read_hook_payload()
+    if _session_off_all():
+        # `/lore:off all` is the security-first contract: no transcript
+        # ingestion, no curator spawn, no ledger writes, no vault output
+        # while the user has muted us. SessionEnd is the *only* hook bound
+        # to the capture pipeline, so if this is bypassed the user can
+        # mute SessionStart/PreCompact/Stop/UserPromptSubmit and still see
+        # vault content surface from a curator that ran during their
+        # "muted" session.
+        return
     import time as _time
     from lore_adapters import UnknownIntegrationError
     from lore_core.hook_log import _ppid_cmd

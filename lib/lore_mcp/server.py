@@ -29,6 +29,7 @@ Start:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -921,6 +922,18 @@ def _tool_schema() -> list[dict]:
 
 
 def _dispatch(tool_name: str, args: dict) -> Any:
+    # `/lore:off` (scope=all) — refuse every tool for this session.
+    # See `docs/architecture/slash-toggles.md`.
+    sid = os.environ.get("CLAUDE_SESSION_ID")
+    if sid:
+        from lore_core.toggles import is_off
+        if is_off("all", sid):
+            return _mcp_error(
+                "session_off",
+                "Lore is muted for this session.",
+                next_="Run `lore on` from a shell in this session, or restart the session.",
+            )
+
     match tool_name:
         case "lore_search":
             return handle_search(**args)

@@ -1,38 +1,49 @@
 ---
 name: lore:off
-description: Mute all Lore hooks for the current session (SessionStart,
-  PreCompact, Stop, inline "consulted" affordances). Resets on next
-  session. Run with "/lore:off" to disable, "/lore:on" to re-enable.
+description: Mute all Lore touchpoints for the current session — hooks
+  (SessionStart, PreCompact, Stop, UserPromptSubmit), MCP retrieval,
+  and inline "consulted" affordances. Resets at session end. Run with
+  "/lore:off" to disable, "/lore:on" to re-enable.
 user_invocable: true
 ---
 
 # Off — per-session mute
 
 Silences Lore for the current session. Useful for demos, screen-shares,
-or when you just want a clean context without auto-injection.
+or when you just want a clean context with no auto-injection and no
+vault content reaching the model.
 
-## Behavior
+## What to do
 
-- `/lore:off` — writes `$TMPDIR/lore-off-<session>` sentinel;
-  hook commands check for it and exit cleanly
-- `/lore:on` — removes the sentinel; hooks resume immediately
-- Sentinel is cleared automatically on session end (next SessionStart
-  starts fresh)
+Run:
+
+```bash
+lore off
+```
+
+`lore off` writes a per-session sentinel under `$TMPDIR`. Hooks check
+for it before any work and exit cleanly; the MCP `_dispatch` returns a
+`session_off` refusal envelope without touching the vault.
 
 ## What gets muted
 
-- SessionStart auto-injection (no one-liner, no index, no open items)
-- PreCompact injection
-- Stop prompt
-- Inline "consulted [[X]]" affordances
+- SessionStart, PreCompact, Stop, UserPromptSubmit hooks.
+- The capture pipeline (SessionEnd + the SessionStart/PreCompact
+  capture invocations) — no transcript ingestion, no curator spawn,
+  no ledger writes, no vault output during the muted session.
+- Every MCP tool (`lore_search`, `lore_read`, `lore_resume`, …) — they
+  return `{"error": {"code": "session_off", …}}` until `/lore:on`.
+- Inline `› consulted [[X]]` affordances.
 
 ## What still works
 
-- Explicit `/lore:*` commands (`/lore:search`, `/lore:session`,
-  `/lore:lint`, etc.) — always active
-- MCP tools — always active (the agent can still call them)
+- `/lore:on` — clears the sentinel, hooks and MCP resume immediately.
+- Explicit local CLI commands you run yourself (`lore search`,
+  `lore session`, `lore lint`) — unaffected.
 
 ## Related
 
-- `/lore:quiet` — silence only inline citations, keep SessionStart
-- `/lore:context` — audit what SessionStart would have injected
+- `/lore:off citations` — narrower scope: silence only the inline
+  affordance; hooks and MCP keep working.
+- `/lore:on` — un-mute everything that was muted.
+- `/lore:context` — audit what SessionStart had injected before muting.

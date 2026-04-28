@@ -37,6 +37,8 @@ from lore_cli import (
     migrate_cmd,
     new_wiki_cmd,
     news_cmd,
+    off_cmd,
+    on_cmd,
     plan_cmd,
     proc_cmd,
     registry_cmd,
@@ -80,6 +82,8 @@ app.add_typer(news_cmd.app, name="news", rich_help_panel=_KN)
 app.add_typer(resume_cmd.app, name="resume", rich_help_panel=_KN)
 app.add_typer(lint_cmd.app, name="lint", rich_help_panel=_KN)
 app.add_typer(curator_cmd.app, name="curator", rich_help_panel=_KN)
+app.add_typer(on_cmd.app, name="on", rich_help_panel=_KN)
+app.add_typer(off_cmd.app, name="off", rich_help_panel=_KN)
 # Legacy alias: `lore new-wiki <name>` forwards to the same scaffolder
 # as `lore wiki new <name>`. Kept for backward compat with users who
 # typed the old form during 0.x; the canonical path is `lore wiki new`.

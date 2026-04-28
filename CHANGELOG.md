@@ -10,6 +10,61 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-04-28
+
+P3.3 from the multi-agent synthesis review — settles slash-toggle
+vocabulary AND closes the long-standing UX honesty bug where
+`/lore:on`, `/lore:off`, `/lore:loud`, `/lore:quiet` described
+sentinel-backed mute behaviour that was never wired in code.
+
+### Added
+
+- **`lore on [scope]` and `lore off [scope]` CLI verbs.** Scope
+  defaults to `all`. `all` mutes hooks, the capture pipeline, MCP
+  retrieval, and inline citation affordances for the session.
+  `citations` mutes only the inline `› consulted [[X]]` affordance.
+  Sentinel files live under `$TMPDIR/lore-off-{scope}-{sid}` so the
+  OS reaps them at session boundary. See
+  ``docs/architecture/slash-toggles.md``.
+- **`/lore:off citations` takes effect mid-session.** The citation
+  suppression directive is now also injected on every
+  `UserPromptSubmit` while the sentinel is set, so the agent stops
+  emitting `› consulted` lines on the very next turn rather than
+  waiting for the next SessionStart.
+- **`docs/architecture/slash-toggles.md`** — full vocabulary +
+  semantics + check-site contract.
+- **`docs/architecture/lore-drill.md`** — settles P3.2 design
+  (composite MCP call with structured trace + result envelope, plus
+  server-side short-circuit on empty intermediate results).
+  Implementation pending.
+- **`lib/lore_core/toggles.py`** — `is_off(scope, sid)` /
+  `set_off(scope, sid)` / `clear_off(scope, sid)` — single source of
+  truth for "is this session muted?" queries.
+
+### Changed
+
+- **`/lore:off` is now security-honest:** every Lore touchpoint is
+  gated. Hook entries (`cmd_session_start`, `cmd_pre_compact`,
+  `cmd_stop`, `cmd_user_prompt_submit`), the capture pipeline
+  (SessionEnd / SessionStart-capture / PreCompact-capture), and the
+  MCP `_dispatch` all check the per-session sentinel and short-circuit
+  cleanly when set. Previously the four toggle skills described this
+  behaviour but the SKILL.md prose had no implementation behind it.
+- **MCP refusal envelope** — every tool returns
+  `{"error": {"code": "session_off", "message": ..., "next": ...}}`
+  while `off all` is active. Code string follows the existing
+  snake_case taxonomy.
+- **Skill bodies** for `/lore:off`, `/lore:on`, `/lore:loud`,
+  `/lore:quiet` now invoke the new CLI verbs rather than describing
+  imaginary behaviour.
+
+### Deprecated
+
+- **`/lore:loud` and `/lore:quiet`** are now thin aliases for
+  `/lore:on citations` and `/lore:off citations`. Kept for one minor
+  release with a deprecation note in the SKILL.md `description`; will
+  be removed in `0.16.0`.
+
 ## [0.14.0] — 2026-04-28
 
 Plans-as-Lore-core: capture, store, and surface multi-step plans
