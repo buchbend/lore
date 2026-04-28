@@ -337,3 +337,46 @@ def test_session_start_from_lore_missing_wiki_falls_through(fake_vault, tmp_path
     # Wiki doesn't exist → _session_start_from_lore returns None →
     # legacy branch kicks in → single wiki in vault is picked
     assert ": active" in out or "no wiki" in out
+
+
+def test_run_gh_parallel_runs_concurrently(monkeypatch):
+    """Four 50ms-each fakes should finish well under the 200ms serial cost.
+
+    Guards the SessionStart fix for issue #27: when sibling-scope
+    fan-out adds calls, they must run in parallel, not serially.
+    """
+    import time
+
+    def slow_fake(kind, repo, _filter_args):
+        time.sleep(0.05)
+        return [{"kind": kind, "repo": repo}]
+
+    monkeypatch.setattr(hooks, "_run_gh", slow_fake)
+
+    calls = [
+        ("issue", "r1", []),
+        ("issue", "r2", []),
+        ("pr", "r3", []),
+        ("issue", "r4", []),
+    ]
+    t0 = time.monotonic()
+    results = hooks._run_gh_parallel(calls)
+    elapsed = time.monotonic() - t0
+
+    assert len(results) == 4
+    # 4 × 50ms serial = 200ms; parallel should be ~50ms. 150ms is the
+    # generous ceiling that still distinguishes parallel from serial.
+    assert elapsed < 0.15, f"expected parallel execution, got {elapsed:.3f}s"
+    assert results[0][0]["repo"] == "r1"
+    assert results[3][0]["repo"] == "r4"
+
+
+def test_run_gh_parallel_empty_returns_empty():
+    assert hooks._run_gh_parallel([]) == []
+
+
+def test_run_gh_parallel_single_call_no_pool(monkeypatch):
+    """Single-call path skips the executor (avoid thread overhead)."""
+    monkeypatch.setattr(hooks, "_run_gh", lambda k, r, f: [{"k": k, "r": r}])
+    out = hooks._run_gh_parallel([("issue", "solo", [])])
+    assert out == [[{"k": "issue", "r": "solo"}]]

@@ -2,28 +2,25 @@
 
 These commands read cached files the linter regenerates (_index.md,
 _catalog.json) and emit bounded context blobs for the hook stream.
-No LLM invocation, no network — the design goal is "as fast as the
-filesystem allows after Python startup."
+No LLM invocation; the only network calls are the parallel-fanned
+``gh`` queries below.
 
-Measured cost on a populated single-wiki vault (Phase 7 audit
-2026-04-26):
+Measured cost on a populated single-wiki vault (issue #27 re-audit
+2026-04-28, after the gh-parallelization fix):
 
   - ``lore --help``                — ~600ms (Python startup + typer
                                     dispatch + eager import of ~30
                                     cmd modules in `__main__.py`)
-  - ``lore hook session-start --probe``
-                                    — ~2.3s end-to-end (the 600ms
-                                    startup + ~1.7s of file I/O:
-                                    catalog/index reads, scope
-                                    resolution, GH calls when
-                                    available)
+  - ``lore hook session-start``     — ~2.0s end-to-end (the 600ms
+                                    startup + ~max(issue_gh, pr_gh)
+                                    parallel fetch ~1.7-2.0s + small
+                                    file I/O)
 
-The work *inside* the hook handlers is fast (~50-200ms); Python
-startup + the eager-import surface dominate. Lazy-mounting subcommand
-typer apps in ``__main__.py`` would cut ~300-500ms but is a
-structural refactor (deferred from Phase 7's safe-and-useful scope).
-A sub-100ms budget is not realistic with the current dispatcher
-shape and was an aspirational target, not a contract.
+Before this fix the gh fetches were sequential (issues then PRs then
+each sibling), summing to ~3.7s. They now fan out via
+``_run_gh_parallel`` so wall time tracks the slowest single call.
+Lazy-mounting subcommand typer apps in ``__main__.py`` would cut a
+further ~300-400ms but is a structural refactor.
 
     lore hook session-start [--cwd PATH]
     lore hook pre-compact  [--cwd PATH]
@@ -682,12 +679,27 @@ def _run_gh(kind: str, repo: str, filter_args: list[str]) -> list[dict]:
     return _gh_mod.run_gh(kind, repo, filter_args)
 
 
-def _gh_issues(repo: str, filter_str: str) -> list[dict]:
-    return _run_gh("issue", repo, _gh_mod.split_filter(filter_str))
+def _run_gh_parallel(
+    calls: list[tuple[str, str, list[str]]],
+) -> list[list[dict]]:
+    """Fan out ``_run_gh`` calls concurrently; preserve input order.
 
+    Each ``calls`` entry is ``(kind, repo, filter_args)`` matching
+    ``_run_gh``. SessionStart used to pay these gh fetches serially
+    (~1.7s each); fanning them out keeps wall time at the slowest
+    single call. Routes through ``_run_gh`` so the
+    ``hooks._run_gh`` monkeypatch in ``test_hooks_v2`` still
+    intercepts every fetch.
+    """
+    if not calls:
+        return []
+    if len(calls) == 1:
+        return [_run_gh(*calls[0])]
+    from concurrent.futures import ThreadPoolExecutor
 
-def _gh_prs(repo: str, filter_str: str) -> list[dict]:
-    return _run_gh("pr", repo, _gh_mod.split_filter(filter_str))
+    with ThreadPoolExecutor(max_workers=min(8, len(calls))) as pool:
+        futures = [pool.submit(_run_gh, *c) for c in calls]
+        return [f.result() for f in futures]
 
 
 # ---------------------------------------------------------------------------
@@ -978,8 +990,12 @@ def _session_start_from_lore(
     subtree_scope = ""
 
     if backend == "github" and repo:
-        issues = _gh_issues(repo, issues_filter)
-        prs = _gh_prs(repo, prs_filter)
+        issues_args = _gh_mod.split_filter(issues_filter)
+        prs_args = _gh_mod.split_filter(prs_filter)
+        calls: list[tuple[str, str, list[str]]] = [
+            ("issue", repo, issues_args),
+            ("pr", repo, prs_args),
+        ]
         if scope:
             scopes = _load_scopes_yml(wiki)
             siblings = _subtree_siblings(scopes, scope)
@@ -988,7 +1004,13 @@ def _session_start_from_lore(
             for _sib_scope, sib_repo in siblings:
                 if sib_repo == repo:
                     continue
-                subtree_issues += len(_gh_issues(sib_repo, issues_filter))
+                calls.append(("issue", sib_repo, issues_args))
+
+        results = _run_gh_parallel(calls)
+        issues = results[0]
+        prs = results[1]
+        for sib_result in results[2:]:
+            subtree_issues += len(sib_result)
 
     project_entry = _project_note_for_repo(wiki, repo) if repo else None
     session_hints = _last_session_hint(wiki)
