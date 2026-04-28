@@ -282,6 +282,52 @@ def handle_inbox_classify() -> dict[str, Any]:
     return classify()
 
 
+def handle_journal_write(
+    kind: str,
+    text: str,
+    author: str | None = None,
+) -> dict[str, Any]:
+    """Append a freeform entry to the AI or human journal."""
+    from lore_core import journal
+
+    if kind not in journal.VALID_KINDS:
+        return _mcp_error(
+            "invalid_kind",
+            f"journal kind must be one of {journal.VALID_KINDS!r}, got {kind!r}",
+        )
+    text = (text or "").strip()
+    if not text:
+        return _mcp_error(
+            "empty_entry",
+            "journal entry text must be non-empty",
+            next_="Pass a non-empty `text` arg.",
+        )
+    try:
+        result = journal.write(kind, text, author=author)  # type: ignore[arg-type]
+    except ValueError as e:
+        return _mcp_error("invalid_entry", str(e))
+    return {"schema": "lore.journal.write/1", "data": result}
+
+
+def handle_journal_read(
+    kind: str = "ai",
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Read recent entries from the AI or human journal (newest-first)."""
+    from lore_core import journal
+
+    if kind not in journal.VALID_KINDS:
+        return _mcp_error(
+            "invalid_kind",
+            f"journal kind must be one of {journal.VALID_KINDS!r}, got {kind!r}",
+        )
+    entries = journal.read(kind, limit=limit)  # type: ignore[arg-type]
+    return {
+        "schema": "lore.journal.read/1",
+        "data": {"kind": kind, "entries": entries},
+    }
+
+
 def handle_surface_context(wiki: str) -> dict[str, Any]:
     """Gather context pack for surface-authoring skills."""
     from importlib import resources
@@ -981,6 +1027,56 @@ def _tool_schema() -> list[dict]:
                 "required": ["slug"],
             },
         },
+        {
+            "name": "lore_journal_write",
+            "description": (
+                "Append a freeform entry to the AI or human journal "
+                "(newest-first). The AI journal is YOUR space — write "
+                "observations about workflow, criticism, half-formed "
+                "ideas, jokes, weather, anything that would otherwise "
+                "be lost. The bar is *would this be lost otherwise*, "
+                "not *does this serve the user*. Don't write filler. "
+                "Available iff `journal.enabled` in the root config."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["ai", "human"],
+                        "description": "Which journal to write to.",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "The entry body (plain markdown).",
+                    },
+                    "author": {
+                        "type": "string",
+                        "description": "Override the auto-resolved author tag.",
+                    },
+                },
+                "required": ["kind", "text"],
+            },
+        },
+        {
+            "name": "lore_journal_read",
+            "description": (
+                "Read recent entries from the AI or human journal "
+                "(newest-first). Use sparingly — the journal is for "
+                "*writing*, not for self-referential reading."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["ai", "human"],
+                        "default": "ai",
+                    },
+                    "limit": {"type": "integer", "default": 10},
+                },
+            },
+        },
     ]
 
 
@@ -1024,6 +1120,10 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_plan_active(**args)
         case "lore_plan_status":
             return handle_plan_status(**args)
+        case "lore_journal_write":
+            return handle_journal_write(**args)
+        case "lore_journal_read":
+            return handle_journal_read(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 

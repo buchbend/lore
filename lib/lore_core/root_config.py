@@ -82,9 +82,24 @@ class CuratorBackendConfig:
 
 
 @dataclass
+class JournalConfig:
+    """AI + human freeform journal feature flag.
+
+    Off by default. Enabling injects a SessionStart prompt fragment
+    inviting the model to append to ``journals/ai.md`` when it has
+    something noteworthy, and exposes ``lore_journal_{read,write}``
+    MCP tools. Distinct from the per-day journal *surface* (auto-
+    extracted by Curator B) — see ``project_lore_journal_idea``.
+    """
+
+    enabled: bool = False
+
+
+@dataclass
 class RootConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     curator: CuratorBackendConfig = field(default_factory=CuratorBackendConfig)
+    journal: JournalConfig = field(default_factory=JournalConfig)
 
 
 def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:

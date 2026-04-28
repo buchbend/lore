@@ -10,6 +10,49 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-04-28
+
+### Added
+
+- **AI + human journal side-chains** — opt-in feature flag, off by
+  default. Two newest-first markdown logs at the top of the vault:
+
+      $LORE_ROOT/journals/ai.md      — model writes whatever it likes
+      $LORE_ROOT/journals/human.md   — user scratch pad
+
+  These are deliberately **non-derived** channels — observations,
+  criticism, half-formed ideas, jokes, weather. Distinct from the
+  per-day `journal` *surface* (auto-extracted by Curator B into a
+  wiki). The journals here sit outside the curator/surface graph
+  on purpose — the bar to write must be near-zero or the channel
+  fails. No frontmatter, no schema, no extraction pass.
+
+- **CLI** — `lore journal write [--ai|--human] "<text>"`,
+  `lore journal read [--ai|--human] [-n N]`, `lore journal
+  enable|disable|status`. Author tag auto-resolves from
+  `LORE_USER_HANDLE` / git config / email local-part for humans;
+  `LORE_AI_AUTHOR` / `CLAUDE_MODEL_ID` for the model.
+
+- **MCP tools** — `lore_journal_write`, `lore_journal_read`. Always
+  registered (so the model can be told about them via prompt), but
+  the SessionStart invitation only fires when the flag is on.
+
+- **SessionStart prompt fragment** — when `journal.enabled` is set
+  in `$LORE_ROOT/.lore/config.yml`, the directive cluster gains an
+  AI Journal invitation: "*you may call `lore_journal_write` any
+  time you have an observation, criticism, idea, joke, or weather
+  note that would otherwise be lost. Bar: would this be lost
+  otherwise, not does this serve the user. Don't write filler.*"
+
+- **`/lore:journal` skill** — thin dispatcher over the CLI:
+  `/lore:journal` reads, `/lore:journal "<text>"` appends a human
+  entry, `/lore:journal ai` reads the AI side.
+
+The journals are intentionally outside the wiki/curator pipeline
+because the entire premise is *anti-extraction*: this is the
+release-valve channel for things that wouldn't otherwise be
+captured. Auto-curation would defeat that.
+
 ## [0.24.0] - 2026-04-28
 
 ### Added

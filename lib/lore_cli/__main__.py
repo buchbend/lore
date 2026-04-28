@@ -72,6 +72,7 @@ def _build_app() -> typer.Typer:
         inbox_cmd,
         ingest_cmd,
         init_cmd,
+        journal_cmd,
         install_cmd,
         lint_cmd,
         log_cmd,
@@ -140,6 +141,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(drain_cmd.app, name="drain", rich_help_panel=_ADV)
     app.add_typer(hooks.hook_app, name="hook", rich_help_panel=_ADV)
     app.add_typer(inbox_cmd.app, name="inbox", rich_help_panel=_ADV)
+    app.add_typer(journal_cmd.app, name="journal", rich_help_panel=_KN)
     app.add_typer(ingest_cmd.app, name="ingest", rich_help_panel=_ADV)
     app.add_typer(log_cmd.app, name="log", rich_help_panel=_ADV)
     app.add_typer(mcp_cmd.app, name="mcp", rich_help_panel=_ADV)

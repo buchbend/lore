@@ -1107,6 +1107,7 @@ def _session_start_from_lore(
     # competing for the most-attention slot at the top of the banner.
     out_parts.extend(_load_directive_lines())
     out_parts.extend(_citation_directive_lines())
+    out_parts.extend(_journal_directive_lines())
 
     return "\n".join(out_parts)
 
@@ -1231,6 +1232,7 @@ def _session_start(cwd: str | None) -> str:
     # Directive last: see _session_start_from_lore for rationale.
     parts.extend(_load_directive_lines())
     parts.extend(_citation_directive_lines())
+    parts.extend(_journal_directive_lines())
 
     return "\n".join(parts)
 
@@ -1868,6 +1870,33 @@ def _session_off_all() -> bool:
         return False
     from lore_core.toggles import is_off
     return is_off("all", sid)
+
+
+def _journal_directive_lines() -> list[str]:
+    """Invitation directive for the AI journal when the feature flag is on.
+
+    Returns the lines appended to the SessionStart additionalContext
+    directive cluster when ``journal.enabled`` is set in the root
+    config. The line gives the model explicit license to write
+    freeform entries via ``lore_journal_write`` — anything that would
+    otherwise be lost (observations, criticism, ideas, jokes,
+    weather). Off by default; enable with ``lore journal enable``.
+    """
+    try:
+        from lore_core import journal
+        if not journal.enabled():
+            return []
+    except Exception:  # noqa: BLE001 — never break SessionStart
+        return []
+    return [
+        "- **AI Journal active.** You may call `lore_journal_write` "
+        "(kind=`ai`) any time you have an observation, criticism, "
+        "workflow idea, joke, or weather note that would otherwise "
+        "be lost. This is your space — not extraction, not curation. "
+        "Bar: *would this be lost otherwise*, not *does this serve "
+        "the user*. Don't write filler. We're team building.",
+        "",
+    ]
 
 
 def _citation_directive_lines() -> list[str]:
