@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_wiki_root
+from lore_core.errors import NO_VAULT, mcp_error
 from lore_core.gh import gh_issues, gh_prs
 from lore_core.schema import parse_frontmatter
 from lore_core.scopes import load_scopes_yml, subtree_members
@@ -325,7 +326,11 @@ def gather(
     """
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
-        return {"error": f"No vault at {wiki_root}"}
+        return mcp_error(
+            NO_VAULT,
+            f"no vault at {wiki_root}",
+            next_="run `lore init` or set $LORE_ROOT",
+        )
     if scope:
         return _gather_scope(
             wiki_root,
@@ -347,7 +352,9 @@ def gather(
 def format_markdown(result: dict[str, Any]) -> str:
     """Render `gather()` output as markdown for human consumption."""
     if "error" in result and not result.get("mode"):
-        return f"_{result['error']}_"
+        err = result["error"]
+        msg = err["message"] if isinstance(err, dict) else str(err)
+        return f"_{msg}_"
     mode = result.get("mode")
     if mode == "scope":
         return _format_scope(result)
@@ -400,7 +407,9 @@ def _format_keyword(result: dict[str, Any]) -> str:
 
 def _format_scope(result: dict[str, Any]) -> str:
     if "error" in result:
-        return f"_{result['error']}_"
+        err = result["error"]
+        msg = err["message"] if isinstance(err, dict) else str(err)
+        return f"_{msg}_"
     scope = result["scope"]
     wiki = result["wiki"]
     members = result.get("members") or []

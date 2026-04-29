@@ -21,6 +21,7 @@ from pathlib import Path
 from rich.console import Console
 
 from lore_core.config import get_wiki_root
+from lore_core.errors import NO_WIKIS, mcp_error
 from lore_core.io import atomic_write_text
 from lore_core.schema import (
     REQUIRED_FIELDS,
@@ -748,7 +749,11 @@ def run_lint(
     wikis = discover_wikis(wiki_filter)
     if not wikis:
         console.print(f"[red]No wikis found in {get_wiki_root()}[/red]")
-        return {"error": "no wikis found"}
+        return mcp_error(
+            NO_WIKIS,
+            "no wikis found",
+            next_=f"create a wiki under {get_wiki_root()} or run `lore init`",
+        )
 
     all_wikis = discover_wikis(None)
     all_notes: dict[str, NoteInfo] = {}

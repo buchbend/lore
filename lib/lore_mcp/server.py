@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_wiki_root
+from lore_core.errors import mcp_error as _mcp_error
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
@@ -42,24 +43,11 @@ from lore_search.fts import FtsBackend
 # ---------------------------------------------------------------------------
 
 
-def _mcp_error(code: str, message: str, *, next_: str | None = None) -> dict[str, Any]:
-    """Standard structured error envelope for MCP tool responses.
-
-    Tool handlers return ``{"error": {"code", "message", "next"}}`` so
-    Claude (or any MCP client) can branch on ``code`` for retry logic
-    instead of pattern-matching English strings. ``next`` is an
-    optional recovery hint shown verbatim to the user.
-
-    Phase 5 of the cleanup roadmap introduced this. Pre-existing
-    bare-string ``{"error": "..."}`` returns are migrated incrementally.
-    The JSON-RPC protocol-level error responses (``-32xxx`` codes) at
-    the dispatcher use the JSON-RPC standard shape and are *not* this
-    envelope — different layer, different contract.
-    """
-    payload: dict[str, Any] = {"code": code, "message": message}
-    if next_:
-        payload["next"] = next_
-    return {"error": payload}
+# ``_mcp_error`` is re-exported from ``lore_core.errors``. Migration of the
+# remaining bare-string ``{"error": "..."}`` returns under ``lore_core/`` to
+# the structured envelope is complete. The JSON-RPC protocol-level error
+# responses (``-32xxx`` codes) at the dispatcher use the JSON-RPC standard
+# shape and are *not* this envelope — different layer, different contract.
 
 
 def _resolve_wiki(wiki: str | None) -> Path | None:

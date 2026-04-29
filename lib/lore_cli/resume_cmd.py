@@ -110,7 +110,9 @@ def resume(
 
     if launch_integration:
         if "error" in result and not result.get("mode"):
-            print(f"lore: {result['error']}", file=sys.stderr)
+            err = result["error"]
+            msg = err["message"] if isinstance(err, dict) else str(err)
+            print(f"lore: {msg}", file=sys.stderr)
             raise typer.Exit(code=1)
         context_text = format_markdown(result)
         rc = launch(

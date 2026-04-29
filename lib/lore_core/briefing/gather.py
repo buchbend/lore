@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_wiki_root
+from lore_core.errors import NO_VAULT, WIKI_NOT_FOUND, mcp_error
 from lore_core.schema import parse_frontmatter
 
 _LEDGER_FILE = ".briefing-ledger.json"
@@ -96,10 +97,18 @@ def gather(
     """
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
-        return {"error": f"No vault at {wiki_root}"}
+        return mcp_error(
+            NO_VAULT,
+            f"no vault at {wiki_root}",
+            next_="run `lore init` or set $LORE_ROOT",
+        )
     wiki_path = wiki_root / wiki
     if not wiki_path.exists():
-        return {"error": f"Wiki not found: {wiki}"}
+        return mcp_error(
+            WIKI_NOT_FOUND,
+            f"wiki not found: {wiki}",
+            next_="run `lore status` to list configured wikis",
+        )
 
     ledger = _read_ledger(wiki_path)
     incorporated = set(ledger.get("incorporated") or [])
@@ -157,10 +166,18 @@ def mark_incorporated(*, wiki: str, session_paths: list[str]) -> dict[str, Any]:
     """
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
-        return {"error": f"No vault at {wiki_root}"}
+        return mcp_error(
+            NO_VAULT,
+            f"no vault at {wiki_root}",
+            next_="run `lore init` or set $LORE_ROOT",
+        )
     wiki_path = wiki_root / wiki
     if not wiki_path.exists():
-        return {"error": f"Wiki not found: {wiki}"}
+        return mcp_error(
+            WIKI_NOT_FOUND,
+            f"wiki not found: {wiki}",
+            next_="run `lore status` to list configured wikis",
+        )
 
     ledger = _read_ledger(wiki_path)
     incorporated = list(ledger.get("incorporated") or [])

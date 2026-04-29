@@ -601,7 +601,9 @@ def _maybe_publish_briefing(
 
         gather_result = _briefing_mod.gather(wiki=wiki)
         if "error" in gather_result:
-            _curator_log(lore_root, f"briefing.gather error for wiki={wiki!r}: {gather_result['error']}")
+            err = gather_result["error"]
+            err_str = err["message"] if isinstance(err, dict) else str(err)
+            _curator_log(lore_root, f"briefing.gather error for wiki={wiki!r}: {err_str}")
             return None
 
         content = _format_briefing_markdown(gather_result, wiki=wiki, now=now)

@@ -54,7 +54,9 @@ def cmd_archive(
     if json_out:
         _emit_json({"schema": "lore.inbox.archive/1", "data": result})
     elif "error" in result:
-        print(f"lore: {result['error']}", file=sys.stderr)
+        err = result["error"]
+        msg = err["message"] if isinstance(err, dict) else str(err)
+        print(f"lore: {msg}", file=sys.stderr)
     else:
         print(f"archived: {result['archived_to']}")
     if "error" in result:

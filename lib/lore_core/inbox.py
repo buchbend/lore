@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_wiki_root
+from lore_core.errors import (
+    NO_VAULT,
+    SOURCE_NOT_A_FILE,
+    SOURCE_NOT_FOUND,
+    mcp_error,
+)
 
 _TYPE_BY_EXT = {
     ".md": "markdown",
@@ -73,7 +79,11 @@ def classify(*, vault_root: Path | None = None) -> dict[str, Any]:
     if vault_root is None:
         wiki_root = get_wiki_root()
         if not wiki_root.exists():
-            return {"error": f"No vault at {wiki_root}"}
+            return mcp_error(
+                NO_VAULT,
+                f"no vault at {wiki_root}",
+                next_="run `lore init` or set $LORE_ROOT",
+            )
         vault_root = wiki_root.parent
     vault_root = vault_root.resolve()
 
@@ -126,9 +136,9 @@ def archive(*, source: Path, processed_dir: Path | None = None) -> dict[str, Any
     """
     source = source.resolve()
     if not source.exists():
-        return {"error": f"Source not found: {source}"}
+        return mcp_error(SOURCE_NOT_FOUND, f"source not found: {source}")
     if not source.is_file():
-        return {"error": f"Not a file: {source}"}
+        return mcp_error(SOURCE_NOT_A_FILE, f"not a file: {source}")
     target_dir = processed_dir or (source.parent / ".processed")
     target_dir.mkdir(parents=True, exist_ok=True)
     today = date.today().isoformat()
