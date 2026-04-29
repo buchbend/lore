@@ -211,6 +211,8 @@ def _collect_activity(
         repo_root=repo_root,
         body_text=body_text_for_plan_scan,
         wiki_root=wiki_root,
+        since=since,
+        until=until,
     )
     projects = collect_projects_for_session(
         cwd=cwd,

@@ -23,7 +23,6 @@ from pathlib import Path
 
 from lore_core.gh import gh_issues
 from lore_core.git import current_repo
-from lore_core.plans.breadcrumbs import scan_recent_commits
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +213,11 @@ def render_issue_section(issues: list[dict], *, repo: str) -> list[str]:
 
 # Body wikilink form: ``[[plan/<slug>]]`` or ``[[plan/<slug>#sN]]``.
 _PLAN_WIKILINK_RE = re.compile(r"\[\[plan/([A-Za-z0-9][\w-]*)(?:#s(\d+))?\]\]")
+# Trailer form: ``Plan: <slug>#s<N>`` on its own line.
+_PLAN_TRAILER_RE = re.compile(
+    r"^Plan:\s*([A-Za-z0-9][\w-]*)#s(\d+)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 
 def collect_plans_advanced(
@@ -221,12 +225,18 @@ def collect_plans_advanced(
     repo_root: Path | None,
     body_text: str,
     wiki_root: Path,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    timeout_seconds: float = 5.0,
 ) -> list[str]:
     """Collect plan refs this chunk advanced.
 
     Sources:
-    - Git ``Plan: <slug>#s<N>`` trailers in commits made during the chunk
-      (reuses ``lore_core.plans.breadcrumbs.scan_recent_commits``).
+    - Git ``Plan: <slug>#s<N>`` trailers in commits within ``[since, until]``.
+      Without a window the trailer scan is skipped — a windowless walk
+      would attribute long-lived trailers (e.g. a recent feature commit)
+      to every later session that happens to share the last-200-commit
+      slice with it.
     - ``[[plan/<slug>(#sN)?]]`` wikilinks in the chunk's body text
       (Curator A may have emitted them in narrative bullets).
 
@@ -239,15 +249,24 @@ def collect_plans_advanced(
     refs: list[str] = []
     seen: set[str] = set()
 
-    # Trailers in commits — `scan_recent_commits` is per-slug, so we'd
-    # need every plan slug to use it. Cheaper: read commit messages
-    # directly and grep for ``Plan: <slug>#s<N>`` ourselves, since the
-    # universe of slugs we care about is the wiki's plans/.
-    if plans_dir.is_dir() and repo_root is not None and Path(repo_root).exists():
-        for plan_path in plans_dir.glob("*.md"):
-            slug = plan_path.stem
-            for crumb in scan_recent_commits(Path(repo_root), slug):
-                ref = f"{slug}#{crumb.step_id}"
+    have_window = since is not None and until is not None
+    if (
+        plans_dir.is_dir()
+        and repo_root is not None
+        and Path(repo_root).exists()
+        and have_window
+    ):
+        known_slugs = {p.stem.lower() for p in plans_dir.glob("*.md")}
+        if known_slugs:
+            for slug, step_num in _scan_window_trailers(
+                Path(repo_root),
+                since=since,
+                until=until,
+                timeout_seconds=timeout_seconds,
+            ):
+                if slug.lower() not in known_slugs:
+                    continue
+                ref = f"{slug}#s{step_num}"
                 if ref not in seen:
                     seen.add(ref)
                     refs.append(ref)
@@ -262,6 +281,50 @@ def collect_plans_advanced(
             refs.append(ref)
 
     return refs
+
+
+def _scan_window_trailers(
+    repo_root: Path,
+    *,
+    since: datetime,
+    until: datetime,
+    timeout_seconds: float,
+) -> list[tuple[str, str]]:
+    """Yield ``(slug, step_num)`` from ``Plan:`` trailers in window commits.
+
+    Single ``git log --since/--until`` call (vs. one per slug previously),
+    so cost is independent of how many plans the wiki has. Returns ``[]``
+    on any subprocess error — Curator A must never block on git.
+    """
+    since_iso = (since.replace(tzinfo=UTC) if since.tzinfo is None else since).isoformat()
+    until_iso = (until.replace(tzinfo=UTC) if until.tzinfo is None else until).isoformat()
+    try:
+        result = subprocess.run(
+            [
+                "git", "-C", str(repo_root),
+                "log",
+                f"--since={since_iso}",
+                f"--until={until_iso}",
+                "--no-decorate",
+                # NUL terminator between commits so trailers can't bleed
+                # across boundaries when one body ends mid-line.
+                "--pretty=format:%B%x00",
+            ],
+            capture_output=True, text=True,
+            timeout=timeout_seconds, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+
+    out: list[tuple[str, str]] = []
+    for body in result.stdout.split("\x00"):
+        if not body.strip():
+            continue
+        for m in _PLAN_TRAILER_RE.finditer(body):
+            out.append((m.group(1), m.group(2)))
+    return out
 
 
 # ---------------------------------------------------------------------------

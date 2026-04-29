@@ -281,6 +281,98 @@ def test_collect_plans_advanced_empty_when_no_plans_dir(tmp_path):
     assert refs == []
 
 
+def _commit_with_body(repo_root: Path, *, subject: str, body: str, filename: str, when: datetime) -> None:
+    """Commit with a multi-line message (subject + trailer body)."""
+    (repo_root / filename).write_text(filename)
+    subprocess.run(["git", "add", "-A"], cwd=repo_root, check=True)
+    iso = when.isoformat()
+    env = {
+        **__import__("os").environ,
+        "GIT_AUTHOR_DATE": iso,
+        "GIT_COMMITTER_DATE": iso,
+    }
+    msg = f"{subject}\n\n{body}\n"
+    subprocess.run(
+        ["git", "commit", "-q", "-F", "-", "--no-verify"],
+        cwd=repo_root, check=True, input=msg, text=True, env=env,
+    )
+
+
+def test_collect_plans_advanced_trailer_only_within_window(tmp_path):
+    """Trailers from commits OUTSIDE the chunk window must not bleed in.
+
+    Regression: previously the trailer scan walked the last 200 commits
+    unconditionally, so a long-lived ``Plan: <slug>#sN`` trailer tagged
+    every later session even when the session had nothing to do with it.
+    """
+    wiki = tmp_path / "wiki"
+    plans = wiki / "plans"
+    plans.mkdir(parents=True)
+    (plans / "old-plan.md").write_text("---\ntype: plan\n---\n")
+    (plans / "new-plan.md").write_text("---\ntype: plan\n---\n")
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    # Old commit BEFORE the window: trailer for old-plan.
+    _commit_with_body(
+        repo,
+        subject="legacy work",
+        body="Plan: old-plan#s1\nPlan: old-plan#s2",
+        filename="legacy.txt",
+        when=datetime(2026, 4, 28, 23, 48, tzinfo=UTC),
+    )
+    # In-window commit: trailer for new-plan.
+    _commit_with_body(
+        repo,
+        subject="this session's work",
+        body="Plan: new-plan#s1",
+        filename="now.txt",
+        when=datetime(2026, 4, 29, 6, 50, tzinfo=UTC),
+    )
+
+    refs = collect_plans_advanced(
+        repo_root=repo,
+        body_text="",
+        wiki_root=wiki,
+        since=datetime(2026, 4, 29, 6, 30, tzinfo=UTC),
+        until=datetime(2026, 4, 29, 7, 0, tzinfo=UTC),
+    )
+
+    assert "new-plan#s1" in refs
+    assert all(not r.startswith("old-plan") for r in refs), (
+        f"old-plan trailer leaked across window boundary: {refs}"
+    )
+
+
+def test_collect_plans_advanced_trailer_drops_unknown_slugs(tmp_path):
+    """Trailers that name a slug with no plans/<slug>.md are dropped."""
+    wiki = tmp_path / "wiki"
+    plans = wiki / "plans"
+    plans.mkdir(parents=True)
+    (plans / "real.md").write_text("---\ntype: plan\n---\n")
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _commit_with_body(
+        repo,
+        subject="work",
+        body="Plan: real#s1\nPlan: ghost#s2",
+        filename="x.txt",
+        when=datetime(2026, 4, 29, 6, 50, tzinfo=UTC),
+    )
+
+    refs = collect_plans_advanced(
+        repo_root=repo,
+        body_text="",
+        wiki_root=wiki,
+        since=datetime(2026, 4, 29, 6, 30, tzinfo=UTC),
+        until=datetime(2026, 4, 29, 7, 0, tzinfo=UTC),
+    )
+
+    assert "real#s1" in refs
+    assert all("ghost" not in r for r in refs)
+
+
 # ---------------------------------------------------------------------------
 # collect_projects_for_session
 # ---------------------------------------------------------------------------
