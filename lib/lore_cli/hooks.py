@@ -3703,6 +3703,105 @@ def _format_capture_message(
     return ""
 
 
+@hook_app.command("plan-edit-writeback")
+def cmd_plan_edit_writeback(
+    cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
+) -> None:
+    """PostToolUse:Edit/Write handler — auto-flip pending → in_progress.
+
+    Reads the just-edited file path from the hook payload, intersects it
+    with each active plan's ``step_files``, and flips matching ``pending``
+    steps to ``in_progress``. Idempotent — already-in_progress and
+    already-done steps are not touched.
+
+    Best-effort: any exception is swallowed so a flaky filesystem,
+    git failure, or attachments hiccup can't break Edit/Write tool use.
+    Emits no systemMessage on success — the flip is invisible by design;
+    SessionStart's Resume block surfaces the new state next time.
+    """
+    if _in_curator_mode():
+        return
+    try:
+        from lore_core.git import git_repo_root
+        from lore_core.io import read_hook_stdin
+        from lore_core.plans.registry import list_active
+        from lore_core.plans.step_status import set_step
+        from lore_core.plans.types import StepStatus
+
+        cwd_path = Path(_resolve_cwd(cwd))
+
+        scope = resolve_scope(cwd_path)
+        if scope is None:
+            return  # unattached cwd — silent no-op
+        wiki_root = get_wiki_root() / scope.wiki
+        if not wiki_root.exists():
+            return
+
+        repo_slug = current_repo(cwd_path)
+        if repo_slug is None:
+            return  # not in a git repo
+        repo_root = git_repo_root(cwd_path)
+        if repo_root is None:
+            return
+
+        stdin_result = read_hook_stdin()
+        if stdin_result.outcome != "ok":
+            return
+        try:
+            payload = json.loads(stdin_result.data.decode("utf-8", errors="replace"))
+        except json.JSONDecodeError:
+            return
+
+        tool_input = payload.get("tool_input") or {}
+        file_path = tool_input.get("file_path")
+        if not isinstance(file_path, str) or not file_path:
+            return
+
+        # Normalize to a path relative to repo root for matching against
+        # step_files entries (which the LLM authors as repo-relative).
+        # Fall back to the raw input when relativization isn't possible
+        # (e.g. file outside repo, or already-relative input).
+        rel_candidates: set[str] = set()
+        try:
+            abs_path = Path(file_path)
+            if abs_path.is_absolute():
+                rel = abs_path.resolve().relative_to(repo_root.resolve())
+                rel_candidates.add(str(rel))
+            else:
+                rel_candidates.add(file_path)
+                rel_candidates.add(str(Path(file_path)))
+        except (ValueError, OSError):
+            rel_candidates.add(file_path)
+
+        cards = list_active(wiki_root, repo=repo_slug)
+        if not cards:
+            return
+
+        for card in cards:
+            for step_id, files in card.step_files.items():
+                if not files:
+                    continue
+                if not any(f in rel_candidates for f in files):
+                    continue
+                # Only flip pending → in_progress. Existing entries
+                # (in_progress, done, blocked) are left alone.
+                if step_id in card.step_status:
+                    continue
+                try:
+                    set_step(
+                        wiki_root=wiki_root,
+                        slug=card.slug,
+                        step_id=step_id,
+                        status=StepStatus.IN_PROGRESS,
+                    )
+                except (FileNotFoundError, ValueError, OSError):
+                    # Plan vanished or step ID typo — never break the
+                    # editing tool.
+                    continue
+    except Exception:  # noqa: BLE001 — never break PostToolUse hooks
+        return
+
+
 main = argv_main(hook_app)
 
 

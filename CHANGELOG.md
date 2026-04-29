@@ -10,6 +10,44 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-04-29
+
+### Added
+
+- **Per-step file lists in plan frontmatter** (`lore_core/plans/types.py`,
+  `lore_core/plans/canonical.py`, `lore_core/plans/markdown_adapter.py`,
+  `lore_core/plans/writer.py`). The plan-authoring LLM declares a
+  `Files:` line under each `### step-N:` heading (inline comma list or
+  bulleted continuation); the parser populates `PlanStep.files`; the
+  writer emits `step_files: {step-N: [paths]}` under plan frontmatter.
+  Authoritative replacement for the regex-on-prose file extraction the
+  Stop hook used. `step_files` is omitted from frontmatter entirely
+  when no step declared files, so legacy plans don't acquire empty-dict
+  noise.
+- **Plan-authoring directive** in
+  `lore_core/templates/integration-rules/default.md`. Instructs the
+  plan-authoring model to enumerate files per step in either inline
+  (`Files: lib/foo.py, tests/test_foo.py`) or bulleted form. Same
+  directive flows into Cursor rules via the existing installer.
+- **PostToolUse:Edit/Write/MultiEdit/NotebookEdit auto-flip**
+  (`lore_cli/hooks.py:cmd_plan_edit_writeback`,
+  `.claude-plugin/plugin.json`). New hook intersects the just-edited
+  file with each active plan's `step_files` and flips matching
+  `pending` steps to `in_progress`. Deterministic — no LLM call.
+  Already-in_progress / done steps are left alone (idempotent). Closes
+  the manual-only `pending → in_progress` gap surfaced during the
+  trailer-demotion design pass.
+
+### Changed
+
+- **AI Journal SessionStart directive** rewritten with trigger-moment
+  framing (work / yourself / user / conversation / just because) and
+  the bar cue flipped from "don't write filler" to "default toward
+  writing." Includes outward observations explicitly so the journal
+  stops being a self-improvement log.
+- `ActivePlanCard` gains a `step_files` field (per-step path lists)
+  parsed from frontmatter for downstream consumers.
+
 ## [0.34.0] - 2026-04-29
 
 ### Fixed

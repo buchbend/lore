@@ -42,6 +42,7 @@ class ActivePlanCard:
     step_status_updated: str | None  # ISO timestamp string
     last_reviewed: str | None  # ISO date string
     step_ids: list[str]  # ordered list parsed from the body, for "X of N" + next-pending
+    step_files: dict[str, list[str]]  # per-step file paths, for commit/edit attribution
 
     @property
     def steps_total(self) -> int:
@@ -177,6 +178,14 @@ def _read_card(path: Path) -> ActivePlanCard | None:
     step_status = fm.get("step_status") or {}
     if not isinstance(step_status, dict):
         step_status = {}
+    raw_step_files = fm.get("step_files") or {}
+    if not isinstance(raw_step_files, dict):
+        raw_step_files = {}
+    step_files: dict[str, list[str]] = {}
+    for sid, paths in raw_step_files.items():
+        if not isinstance(paths, list):
+            continue
+        step_files[str(sid)] = [str(p) for p in paths if isinstance(p, str)]
     return ActivePlanCard(
         slug=str(slug),
         path=path,
@@ -187,6 +196,7 @@ def _read_card(path: Path) -> ActivePlanCard | None:
         step_status_updated=_str_or_none(fm.get("step_status_updated")),
         last_reviewed=_str_or_none(fm.get("last_reviewed")),
         step_ids=_extract_step_ids_from_body(text),
+        step_files=step_files,
     )
 
 
