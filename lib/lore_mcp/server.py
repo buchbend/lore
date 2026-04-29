@@ -165,17 +165,36 @@ def handle_search(
 
 
 def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
-    """Resolve a note slug to a relative path via catalog or rglob."""
+    """Resolve a note slug to a relative path within the wiki.
+
+    Three-tier lookup, fast → safe → last-resort:
+
+    1. ``_catalog.json``'s top-level ``slug_index`` (O(1)) — populated
+       by ``lore lint`` since Phase 1.2.
+    2. Section iteration (O(n)) — fallback for catalogs written by
+       pre-Phase-1.2 lint runs that don't have ``slug_index`` yet.
+       Removed in v0.31.0 once every active wiki has rerun ``lore lint``.
+    3. ``rglob`` walk — last resort for notes the catalog doesn't cover:
+       freshly-written mid-session, drafts outside ``KNOWLEDGE_DIRS``,
+       or files in ``inbox/`` (deliberately skipped by ``discover_notes``).
+       Without this, ``lore_drill`` would silently drop wikilinks to
+       brand-new notes.
+    """
     cat_path = wiki_path / "_catalog.json"
     if cat_path.exists():
         try:
             catalog = json.loads(cat_path.read_text())
+            slug_index = catalog.get("slug_index")
+            if isinstance(slug_index, dict) and slug in slug_index:
+                return slug_index[slug]
+            # Tier 2: pre-Phase-1.2 catalogs lack slug_index — iterate sections.
             for entries in catalog.get("sections", {}).values():
                 for entry in entries:
                     if entry["name"] == slug:
                         return entry["path"]
         except (json.JSONDecodeError, KeyError):
             pass
+    # Tier 3: uncatalogued notes (drafts, inbox, freshly-written).
     candidates = list(wiki_path.rglob(f"{slug}.md"))
     if candidates:
         return str(candidates[0].relative_to(wiki_path))

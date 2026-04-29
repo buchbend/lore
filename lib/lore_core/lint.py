@@ -468,7 +468,17 @@ def check_wikilinks(
 
 
 def build_catalog(wiki_name: str, notes: list[NoteInfo], issues: list[Issue]) -> dict:
-    """Build the per-wiki catalog for RAG navigation."""
+    """Build the per-wiki catalog for RAG navigation.
+
+    Includes a top-level ``slug_index: {slug: relpath}`` for O(1) slug
+    resolution by the MCP server (replaces the per-call section
+    iteration). Duplicate stems within the wiki produce a
+    ``duplicate_stem`` lint warning; the first occurrence (by sorted
+    note order) wins in ``slug_index``.
+    """
+    slug_index, dup_issues = _build_slug_index(wiki_name, notes)
+    issues.extend(dup_issues)
+
     wiki_issues = [i for i in issues if i.wiki == wiki_name]
 
     sections: dict[str, list] = defaultdict(list)
@@ -506,11 +516,47 @@ def build_catalog(wiki_name: str, notes: list[NoteInfo], issues: list[Issue]) ->
             "infos": sum(1 for i in wiki_issues if i.severity == "INFO"),
         },
         "sections": dict(sections),
+        "slug_index": slug_index,
         "issues": [
             {"severity": i.severity, "file": i.file, "check": i.check, "message": i.message}
             for i in wiki_issues
         ],
     }
+
+
+def _build_slug_index(
+    wiki_name: str, notes: list[NoteInfo]
+) -> tuple[dict[str, str], list[Issue]]:
+    """Return ``(slug_index, duplicate_issues)`` for the catalog.
+
+    Iterates notes in sorted-by-path order so the winner on collision is
+    deterministic across runs. Each duplicate stem produces ONE
+    ``duplicate_stem`` WARNING listing all colliding paths so the user
+    can rename one — ambiguous slugs break wikilink resolution.
+    """
+    by_stem: dict[str, list[str]] = defaultdict(list)
+    for n in sorted(notes, key=lambda x: x.path):
+        by_stem[n.filename].append(n.path)
+
+    slug_index: dict[str, str] = {}
+    dup_issues: list[Issue] = []
+    for stem, paths in sorted(by_stem.items()):
+        slug_index[stem] = paths[0]
+        if len(paths) > 1:
+            dup_issues.append(
+                Issue(
+                    severity="WARNING",
+                    wiki=wiki_name,
+                    file=paths[0],
+                    check="duplicate_stem",
+                    message=(
+                        f"slug {stem!r} is shared by {len(paths)} notes: "
+                        f"{', '.join(paths)}. Wikilinks will resolve to "
+                        f"{paths[0]} (first by sort order); rename the others."
+                    ),
+                )
+            )
+    return slug_index, dup_issues
 
 
 def generate_index_txt(wiki_name: str, notes: list[NoteInfo]) -> str:
