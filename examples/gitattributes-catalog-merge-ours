@@ -5,6 +5,9 @@
 # version, because `lore lint` will regenerate them immediately after.
 
 _catalog.json  merge=ours
+_index.txt     merge=ours
+_review.md     merge=ours
+# Legacy filenames — superseded by _index.txt; keep merge=ours during
+# the rollout window so peers on older lore versions don't conflict.
 _index.md      merge=ours
 llms.txt       merge=ours
-_review.md     merge=ours

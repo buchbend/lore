@@ -119,7 +119,7 @@ def test_session_start_includes_citation_directive_when_set(
     # Build minimal inputs for _session_start_from_lore.
     wiki = tmp_path / "wiki"
     wiki.mkdir()
-    (wiki / "_index.md").write_text("# Index\n")
+    (wiki / "_index.txt").write_text("# Index\n")
 
     from lore_cli import hooks
 

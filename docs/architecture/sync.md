@@ -102,7 +102,7 @@ has one canonical surface. No temp artifacts. No drift window.
 
 ### 3. Regenerable artifacts — pick either side, lint to truth
 
-`_catalog.json`, `_index.md`, `llms.txt`, `threads.md` are all
+`_catalog.json`, `_index.txt`, `threads.md` are all
 regenerated from the corpus. On conflict, accept either side
 (`git checkout --ours <path>`), then run `lore lint` after the merge
 to truth them up. They'll converge to the same byte-for-byte output

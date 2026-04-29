@@ -459,7 +459,7 @@ exact prompt/response pair for inspection.
 ## Scheduling the curator — cost-free defaults
 
 The curator (flags stale notes, detects superseded decisions, keeps
-`_index.md` fresh) can run several ways. The README picks no default for
+`_index.txt` fresh) can run several ways. The README picks no default for
 you; pick your trade-off:
 
 | Pattern | Cost | Cadence | For |

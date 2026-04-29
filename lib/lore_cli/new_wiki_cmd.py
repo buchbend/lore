@@ -83,8 +83,8 @@ def scaffold_wiki(
         (target / "templates").mkdir(exist_ok=True)
         shutil.copy(templates_src / "session.md", target / "templates" / "session.md")
 
-        # Seed _index.md so SessionStart doesn't warn on missing catalog
-        (target / "_index.md").write_text(
+        # Seed _index.txt so SessionStart doesn't warn on missing catalog
+        (target / "_index.txt").write_text(
             f"# {name.upper()} Knowledge Index\n\n"
             f"(Newly created wiki — run `lore lint --wiki {name}` to populate.)\n"
         )

@@ -79,7 +79,7 @@ def test_recent_md_excludes_skip_files(tmp_path):
     sessions.mkdir(parents=True)
     (sessions / "01-real.md").write_text("---\ntype: session\n---\n")
     (sessions / "_recent.md").write_text("should be ignored")
-    (sessions / "_index.md").write_text("should be ignored")
+    (sessions / "_index.txt").write_text("should be ignored")
     content = generate_recent_md(w)
     assert content is not None
     assert "[[01-real]]" in content

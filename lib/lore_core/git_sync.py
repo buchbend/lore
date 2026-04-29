@@ -50,7 +50,16 @@ class ConflictKind(str, Enum):
     UNKNOWN = "unknown"                  # bail to user
 
 
-_REGENERABLE_FILENAMES = {"_catalog.json", "_index.md", "llms.txt", "threads.md"}
+_REGENERABLE_FILENAMES = {
+    "_catalog.json",
+    "_index.txt",
+    "threads.md",
+    # Legacy filenames — kept regenerable so a peer pushing from a
+    # vault that hasn't run lint after upgrade still auto-resolves.
+    # Drop once all clients have re-linted.
+    "_index.md",
+    "llms.txt",
+}
 
 
 # ---------------------------------------------------------------------------

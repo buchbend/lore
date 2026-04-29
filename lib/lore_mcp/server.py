@@ -6,7 +6,7 @@ Windsurf, Zed, etc.) can register this and query the vault.
 Exposed tools:
     lore_search             — hybrid ranked search, top-k paths
     lore_read               — read one note by wiki/path
-    lore_index              — return a wiki's _index.md
+    lore_index              — return a wiki's _index.txt
     lore_catalog            — return a wiki's _catalog.json
     lore_resume             — unified context gather (recent/wiki/keyword/scope)
     lore_wikilinks          — in/out wikilinks for a note
@@ -212,11 +212,11 @@ def handle_index(wiki: str | None = None) -> dict[str, Any]:
             f"wiki not found: {wiki}",
             next_="run `lore status` to list configured wikis",
         )
-    index = wiki_path / "_index.md"
+    index = wiki_path / "_index.txt"
     if not index.exists():
         return _mcp_error(
             "catalog_missing",
-            "no _index.md",
+            "no _index.txt",
             next_="run `lore lint` to regenerate the index",
         )
     return {"wiki": wiki_path.name, "content": index.read_text(errors="replace")}
@@ -829,7 +829,7 @@ def _tool_schema() -> list[dict]:
         },
         {
             "name": "lore_index",
-            "description": "Return the wiki's _index.md (human/LLM-scannable knowledge map).",
+            "description": "Return the wiki's _index.txt (LLM-scannable knowledge map; markdown body with wikilinks).",
             "inputSchema": {
                 "type": "object",
                 "properties": {"wiki": {"type": "string"}},

@@ -10,6 +10,32 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- **FTS query telemetry** (`$LORE_CACHE/query-log.jsonl`) — every
+  `lore_search` call writes one JSONL record capturing both the AND
+  attempt count and the OR fallback count, so weight/recall regressions
+  are observable. Reindex-throttle skips share the sink as
+  `event: "reindex_skip"` records.
+
+### Changed
+
+- **FTS search now AND-first, OR-fallback.** `_sanitize_fts_query`
+  builds an AND-style MATCH (FTS5 implicit AND) with each token
+  double-quoted; the OR-joined variant is used only when AND yields
+  zero hits. Quoting also neutralises FTS5 keywords (`AND`, `OR`,
+  `NOT`, `NEAR`) — user queries containing those words no longer
+  crash with `sqlite3.OperationalError`.
+
+### Removed
+
+- **Minimal JSON-RPC MCP fallback** (`_run_minimal_server`) — deleted.
+  The `mcp` SDK is now a hard dependency in `[project].dependencies`
+  rather than an optional `[mcp]` extra. **Breaking install change:**
+  users who installed via `pip install lore` (without `[mcp]`) need to
+  reinstall to pull in the SDK; subsequent installs gain it
+  automatically.
+
 ## [0.28.0] - 2026-04-29
 
 ### Fixed
@@ -1195,8 +1221,8 @@ file, commits "merge(auto-llm): N surface(s)", and pushes.
 Conflict classification:
 - **Surface** (`concepts/`, `decisions/`, `results/`, …): LLM-merge
 - **Session note**: LLM-merge (rare in steady state — pre-pull eliminates)
-- **Regenerable** (`_catalog.json`, `_index.md`, `llms.txt`,
-  `threads.md`): take ours; lint reconciles
+- **Regenerable** (`_catalog.json`, `_index.txt`, `threads.md`):
+  take ours; lint reconciles
 - **Unknown** (e.g. hand-edited `CLAUDE.md`): `git merge --abort`,
   surface to user
 

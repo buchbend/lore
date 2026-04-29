@@ -1,6 +1,6 @@
 """Claude Code hook helpers — cheap, deterministic context injection.
 
-These commands read cached files the linter regenerates (_index.md,
+These commands read cached files the linter regenerates (_index.txt,
 _catalog.json) and emit bounded context blobs for the hook stream.
 No LLM invocation; the only network calls are the parallel-fanned
 ``gh`` queries below.
@@ -382,8 +382,8 @@ def _wiki_for_repo(repo: str) -> Path | None:
 
 
 def _read_wiki_index(wiki: Path, max_chars: int) -> str:
-    """Return the wiki's _index.md, truncated to fit."""
-    index_path = wiki / "_index.md"
+    """Return the wiki's _index.txt, truncated to fit."""
+    index_path = wiki / "_index.txt"
     if not index_path.exists():
         return ""
     text = index_path.read_text(errors="replace")

@@ -477,8 +477,8 @@ def _load_existing_surfaces(
 
     Notes whose `type:` frontmatter doesn't match the surface name are
     skipped (defends against stray files dropped under e.g. concepts/).
-    Standard skip-files (README.md, CLAUDE.md, _index.md, llms.txt, etc.)
-    are excluded for consistency with the linter.
+    Standard skip-files (README.md, CLAUDE.md, _index.txt, etc.) are
+    excluded for consistency with the linter.
 
     Note: the inventory is captured ONCE at the start of run_curator_b.
     Surfaces filed during the same run are not added back to the

@@ -44,7 +44,7 @@ jobs:
           mkdir -p content
           # Quartz's ExplicitPublish filter handles the publish: true gate
           rsync -av --exclude '.git' --exclude '_catalog.json' \
-                --exclude '_index.md' --exclude 'llms.txt' \
+                --exclude '_index.txt' \
                 ../ content/
 
       - name: Build

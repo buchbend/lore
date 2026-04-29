@@ -13,7 +13,7 @@ Contracts pinned in the implementation plan:
   ``_active_plans_for_repo`` is the live channel; an in-body section
   would become a permanent stale snapshot the moment the next plan
   landed (``lore lint`` only regenerates ``_catalog.json`` /
-  ``_index.md`` / ``llms.txt``, not project-note bodies).
+  ``_index.txt``, not project-note bodies).
 * **Idempotent** on re-stub: ``was_new=False``, content under canonical
   headings refreshed in place, user content elsewhere preserved.
 * **Frontmatter via ``yaml.safe_dump``** (consistent with plan writer).

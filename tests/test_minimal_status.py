@@ -190,7 +190,7 @@ def test_index_renders_lifecycle_badges(wiki_root: Path):
     _concept(wiki_root, "other")
 
     run_lint(check_only=False)
-    index = (wiki_root / "_index.md").read_text()
+    index = (wiki_root / "_index.txt").read_text()
     assert "DRAFT" in index, "expected DRAFT badge in index"
     assert "SUPERSEDED → [[alpha]]" in index, "expected SUPERSEDED badge"
     # Canonical notes get no badge

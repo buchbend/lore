@@ -1,9 +1,9 @@
 ---
 name: lore:lint
 description: Validate vault structure and regenerate the derived
-  catalogs (_catalog.json, _index.md, llms.txt). Mechanical — no
-  judgment calls, no frontmatter rewrites. Use when the index feels
-  stale, links are broken, or after manual note edits. Pairs with
+  catalogs (_catalog.json, _index.txt). Mechanical — no judgment
+  calls, no frontmatter rewrites. Use when the index feels stale,
+  links are broken, or after manual note edits. Pairs with
   /lore:curator (which makes judgment calls). Run with "/lore:lint".
 user_invocable: true
 ---
@@ -13,8 +13,7 @@ user_invocable: true
 ## What this skill does
 
 1. Runs `lore lint` to scan all wikis, check health, regenerate
-   catalogs + indexes (including `llms.txt` for forward compatibility
-   with the emerging convention).
+   catalogs + indexes.
 2. Interprets the report and offers auto-fixes for safe issues.
 
 ## Step 1 — Run the linter
@@ -25,8 +24,8 @@ lore lint --json
 
 Outputs a JSON report with all issues. Also writes per-wiki (atomic):
 - `_catalog.json` — machine-readable metadata, links, hierarchy
-- `_index.md` — LLM-scannable knowledge index
-- `llms.txt` — alias of `_index.md` (llms.txt convention)
+- `_index.txt` — LLM-scannable knowledge index (markdown body in a
+  `.txt` file so Obsidian's graph view skips it)
 
 ### CLI options
 
@@ -79,12 +78,11 @@ lore migrate --add-schema-version --apply    # write
 
 ## What the catalogs enable
 
-`_catalog.json` and `_index.md` per wiki make the vault work as a
+`_catalog.json` and `_index.txt` per wiki make the vault work as a
 RAG-style knowledge brain:
 
-- **LLM navigation**: read `_index.md` to find relevant notes by
+- **LLM navigation**: read `_index.txt` to find relevant notes by
   description and tags, then load only what's needed via `[[wikilinks]]`
-- **Team use**: browse the index in Obsidian or any markdown viewer
 - **Programmatic access**: `_catalog.json` has metadata, link graph,
   hierarchy for scripts and tools
 - **Search index**: `lore_search` consumes these outputs to build its
@@ -94,7 +92,7 @@ RAG-style knowledge brain:
 
 - **Always run the script first** — don't manually scan files
 - **Read-only by default** — only fix with user approval
-- **Catalogs are auto-generated** — never edit `_index.md`,
-  `_catalog.json`, or `llms.txt` by hand
+- **Catalogs are auto-generated** — never edit `_index.txt` or
+  `_catalog.json` by hand
 - **Atomic writes** — catalogs are written via `.tmp + rename`, safe for
   concurrent hook reads

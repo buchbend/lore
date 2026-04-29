@@ -1,7 +1,7 @@
 ---
 name: lore:new-wiki
 description: Scaffold a new wiki skeleton inside $LORE_ROOT/wiki/ —
-  directory structure, CLAUDE.md from template, initial _index.md,
+  directory structure, CLAUDE.md from template, initial _index.txt,
   optional git init + GitHub remote. Run with "/lore:new-wiki <name>".
 user_invocable: true
 ---
@@ -28,7 +28,7 @@ layout and a `CLAUDE.md` template. Supports team or personal modes.
    ├── inbox/
    ├── templates/      # symlink to ../../templates/ or copy
    ├── CLAUDE.md       # from plugin template
-   └── _index.md       # stub — filled by the linter
+   └── _index.txt       # stub — filled by the linter
    ```
 3. Write `CLAUDE.md` from `templates/wiki-CLAUDE.md`, substituting the
    wiki name and a starter tag taxonomy.
@@ -36,7 +36,7 @@ layout and a `CLAUDE.md` template. Supports team or personal modes.
    - `git init` inside the wiki
    - Add the remote
    - Initial commit
-5. Run `/lore:lint --wiki <name>` to seed `_index.md` / `_catalog.json`.
+5. Run `/lore:lint --wiki <name>` to seed `_index.txt` / `_catalog.json`.
 
 ## Important rules
 

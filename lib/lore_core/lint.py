@@ -2,9 +2,8 @@
 
 Generates per-wiki:
   - _catalog.json  (machine-readable: note metadata, links, hierarchy)
-  - _index.md      (LLM- and human-scannable knowledge index)
-  - llms.txt       (alias of _index.md, for forward compatibility with
-                    the emerging llms.txt convention)
+  - _index.txt     (LLM- and human-scannable knowledge index; .txt
+                    extension keeps it out of Obsidian's graph view)
 
 Invoke programmatically via `run_lint()` or from the CLI:
     lore lint [--wiki NAME] [--check-only] [--json]
@@ -45,10 +44,13 @@ SKIP_DIRS = {"templates", "inbox", ".processed", ".obsidian"}
 SKIP_FILES = {
     "CLAUDE.md",
     "README.md",
-    "_index.md",
+    "_index.txt",
     "_catalog.json",
-    "llms.txt",
     "_recent.md",
+    # Legacy filenames — kept in skip-list so daily_curator and lint
+    # still ignore them on vaults that haven't been re-linted yet.
+    "_index.md",
+    "llms.txt",
 }
 
 # Knowledge dirs whose notes are long by nature (each note is one paper) and
@@ -511,8 +513,14 @@ def build_catalog(wiki_name: str, notes: list[NoteInfo], issues: list[Issue]) ->
     }
 
 
-def generate_index_md(wiki_name: str, notes: list[NoteInfo]) -> str:
-    """Generate a human/LLM-readable _index.md for a wiki."""
+def generate_index_txt(wiki_name: str, notes: list[NoteInfo]) -> str:
+    """Generate a human/LLM-readable _index.txt for a wiki.
+
+    Markdown-formatted body in a .txt file: dense bullet lists with
+    ``[[wikilinks]]`` for LLM navigation. The .txt extension keeps the
+    file out of Obsidian's graph view (which only ingests .md), so the
+    index doesn't become a god-object node tied to every note.
+    """
     lines = [
         f"# {wiki_name.upper()} Knowledge Index",
         "",
@@ -778,7 +786,7 @@ def run_lint(
     scoped_wiki_names = {w.name for w in wikis}
     all_issues.extend(check_wikilinks(all_notes, scoped_wiki_names))
 
-    # Phase 4: regenerate catalogs + indexes (atomic writes, + llms.txt alias)
+    # Phase 4: regenerate catalogs + index, drop legacy filenames
     if not check_only:
         for wiki_path in wikis:
             wiki_name = wiki_path.name
@@ -790,11 +798,18 @@ def run_lint(
                 json.dumps(catalog, indent=2, default=str),
             )
 
-            index_md = generate_index_md(wiki_name, notes)
-            atomic_write_text(wiki_path / "_index.md", index_md)
-            # llms.txt alias — same content, canonical filename for forward
-            # compatibility with the emerging llms.txt convention
-            atomic_write_text(wiki_path / "llms.txt", index_md)
+            index_txt = generate_index_txt(wiki_name, notes)
+            atomic_write_text(wiki_path / "_index.txt", index_txt)
+
+            # Clean up legacy index files. Older lore versions wrote
+            # ``_index.md`` (god-object in Obsidian's graph) and
+            # ``llms.txt`` (markdown-in-txt mirror). Both are superseded
+            # by ``_index.txt`` — remove if present so vaults self-heal
+            # on the next lint after upgrade.
+            for legacy in ("_index.md", "llms.txt"):
+                stale = wiki_path / legacy
+                if stale.exists():
+                    stale.unlink()
 
             # _recent.md — last 20 session notes as wikilinks
             recent_md = generate_recent_md(wiki_path)
@@ -877,6 +892,6 @@ def _print_report(
     )
     if not check_only:
         console.print()
-        console.print("[dim]Catalogs written: _catalog.json + _index.md + llms.txt per wiki[/dim]")
+        console.print("[dim]Catalogs written: _catalog.json + _index.txt per wiki[/dim]")
 
 
