@@ -134,7 +134,47 @@ Per-vault-mount policy. Schema lives in
 Loader: `load_wiki_config(wiki_dir) -> WikiConfig`. Same fault-tolerant
 behaviour as root config.
 
-### 5. `<repo>/CLAUDE.md ## Lore` block — attachment metadata
+### 5. `<wiki>/.lore-briefing.yml` — per-wiki briefing sink config
+
+Per-wiki sink connection details for `lore briefing publish`. Loaded
+by `lib/lore_core/briefing/gather.py:_read_sink_config()` on every
+`gather()` call (returned in the envelope as `sink_config`); also
+loaded by `lore briefing publish --wiki <name>` and threaded through
+to the sink dispatcher.
+
+Free-form YAML (no typed dataclass — kept lightweight to match the
+`.lore.yml` precedent). Top-level shape:
+
+```yaml
+sink: <scheme>     # required: which sink to publish to
+matrix:
+  homeserver: …    # only required when sink: matrix
+  user_id: …
+  room_id: …
+markdown:
+  path: …          # only required when sink: markdown (URI target wins)
+```
+
+Resolution within a sink follows env > yaml > error, mirroring the
+OpenAI backend pattern. See `docs/how-to/matrix-bot.md` for an
+end-to-end walkthrough.
+
+Flat top-level keys (`homeserver:` / `user_id:` / `room_id:` /
+`path:` at document root) are accepted as a transitional fallback
+with a one-time deprecation warning per process. New configs should
+use the nested form.
+
+`sink:` must agree with the URI scheme passed to `dispatch()` /
+`lore briefing publish --sink`. Mismatches raise
+`SinkConfigMismatchError` (CLI exit 2).
+
+**Secrets do not live here.** Matrix access tokens stay at
+`~/.local/share/lore/matrix-credentials.json`; future webhook-style
+sinks will use `*_env: LORE_*` indirection (mirroring `api_key_env`
+in `curator.openai`) with values from the shell or
+`$LORE_ROOT/.lore/secrets.env`.
+
+### 6. `<repo>/CLAUDE.md ## Lore` block — attachment metadata
 
 Records the wiki/scope binding for a working directory and any GH
 filter overrides. Read by hooks at SessionStart for status-line

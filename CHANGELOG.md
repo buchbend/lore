@@ -10,6 +10,42 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-04-29
+
+### Fixed
+
+- **Briefing sinks now load `.lore-briefing.yml` end-to-end (closes
+  #15, partial #4).** Previously `lore briefing publish --sink matrix`
+  required `LORE_MATRIX_*` env vars at every invocation even when the
+  wiki had a populated `.lore-briefing.yml`. The publish path now
+  threads the parsed yaml through the sink dispatcher.
+
+  Changes:
+  - `dispatch(uri, text, config=None)` — sink registry sender
+    signature gains a `config` arg (`Sender = Callable[[str, str,
+    dict | None], None]`).
+  - `lore briefing publish --wiki <name>` — new flag that loads
+    `<wiki>/.lore-briefing.yml` and passes it to the sink. Without
+    `--wiki`, behaviour is unchanged (env-only).
+  - Matrix sink: resolves `homeserver`/`user_id`/`room_id` via env >
+    yaml > error, mirroring the `curator.openai` precedence in
+    `root_config.py`. Nested `matrix:` block is the recommended
+    schema; flat top-level keys still work (one-time deprecation
+    warning per process).
+  - Markdown sink: URI target still wins, falls back to
+    `markdown.path` in yaml, errors if both absent.
+  - Sink mismatch (`--sink` ≠ yaml's `sink:`) now refused with
+    `SinkConfigMismatchError` (CLI exit 2).
+  - Curator B's auto-publish forwards `gather_result["sink_config"]`
+    into `dispatch`, so daemon-driven publishes no longer require
+    env vars on the curator host.
+  - Skill `/lore:briefing` updated to call `lore briefing publish
+    --sink <name> --wiki <wiki>`.
+
+  New docs: `docs/how-to/matrix-bot.md` (end-to-end recipe).
+  `docs/architecture/config.md` adds `.lore-briefing.yml` as
+  configuration source #5.
+
 ## [0.27.0] - 2026-04-28
 
 ### Fixed (BREAKING — `.lore.yml` walk-up semantics)

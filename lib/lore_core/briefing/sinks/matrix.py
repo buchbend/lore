@@ -1,12 +1,35 @@
 """Matrix briefing sink.
 
-Publishes a markdown briefing to a Matrix room. Credentials live at
-``~/.local/share/lore/matrix-credentials.json`` after a one-time login
-(``lore-sink-matrix login``). Room/homeserver config in env vars:
+Publishes a markdown briefing to a Matrix room. Credentials (access
+token + device id) live at ``~/.local/share/lore/matrix-credentials.json``
+after a one-time login (``lore-sink-matrix login``); that file is the
+sole secret store and never enters the wiki repo.
 
-    LORE_MATRIX_HOMESERVER  — e.g. https://matrix.example.org
-    LORE_MATRIX_USER_ID     — e.g. @lore-bot:matrix.example.org
-    LORE_MATRIX_ROOM_ID     — e.g. !abc123:matrix.example.org
+Non-secret room identifiers resolve from ``.lore-briefing.yml`` (per-
+wiki config) or environment variables. Resolution order, mirroring the
+OpenAI backend in ``root_config.py``:
+
+    1. env var  (one-shot debug override)
+    2. yaml field
+    3. error
+
+YAML schema (nested form, recommended):
+
+    sink: matrix
+    matrix:
+      homeserver: https://matrix.example.org
+      user_id: "@lore-bot:matrix.example.org"
+      room_id: "!abc123:matrix.example.org"
+
+Flat top-level keys (``homeserver:`` / ``user_id:`` / ``room_id:`` at
+the document root) are accepted as a transitional fallback with one
+deprecation warning per process.
+
+Env var names:
+
+    LORE_MATRIX_HOMESERVER
+    LORE_MATRIX_USER_ID
+    LORE_MATRIX_ROOM_ID
 
 The optional dependency is ``matrix-nio`` (in the ``[sinks]`` extras).
 If it's not installed, ``_send`` raises ``ImportError``; the registry
@@ -20,22 +43,72 @@ import asyncio
 import json
 import os
 import sys
+import warnings
 from pathlib import Path
+from typing import Any
 
 from lore_core.briefing.sinks import register
 
 STATE_DIR = Path.home() / ".local" / "share" / "lore"
 CREDENTIALS_FILE = STATE_DIR / "matrix-credentials.json"
 
+_REQUIRED_FIELDS = ("homeserver", "user_id", "room_id")
+_FLAT_DEPRECATION_WARNED = False
 
-def _get_room_config() -> tuple[str, str, str]:
-    homeserver = os.environ.get("LORE_MATRIX_HOMESERVER", "")
-    user_id = os.environ.get("LORE_MATRIX_USER_ID", "")
-    room_id = os.environ.get("LORE_MATRIX_ROOM_ID", "")
-    if not all([homeserver, user_id, room_id]):
+
+def _resolve_field(
+    name: str,
+    env_var: str,
+    config: dict[str, Any] | None,
+) -> str:
+    """Resolve one room field via env > nested-yaml > flat-yaml > "".
+
+    Caller is responsible for raising on empty.
+    """
+    global _FLAT_DEPRECATION_WARNED
+    env_value = os.environ.get(env_var, "").strip()
+    if env_value:
+        return env_value
+    if config:
+        nested = config.get("matrix") or {}
+        if isinstance(nested, dict):
+            v = nested.get(name)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        v = config.get(name)
+        if isinstance(v, str) and v.strip():
+            if not _FLAT_DEPRECATION_WARNED:
+                warnings.warn(
+                    "matrix sink: flat top-level keys in .lore-briefing.yml "
+                    "are deprecated; nest under `matrix:` instead "
+                    "(homeserver/user_id/room_id).",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+                _FLAT_DEPRECATION_WARNED = True
+            return v.strip()
+    return ""
+
+
+def _resolve_room_config(
+    config: dict[str, Any] | None,
+) -> tuple[str, str, str]:
+    """Resolve (homeserver, user_id, room_id), erroring on missing fields."""
+    homeserver = _resolve_field("homeserver", "LORE_MATRIX_HOMESERVER", config)
+    user_id = _resolve_field("user_id", "LORE_MATRIX_USER_ID", config)
+    room_id = _resolve_field("room_id", "LORE_MATRIX_ROOM_ID", config)
+    missing = [
+        name for name, val in zip(
+            _REQUIRED_FIELDS, (homeserver, user_id, room_id), strict=True,
+        )
+        if not val
+    ]
+    if missing:
         raise RuntimeError(
-            "matrix sink requires env vars LORE_MATRIX_HOMESERVER, "
-            "LORE_MATRIX_USER_ID, LORE_MATRIX_ROOM_ID."
+            "matrix sink: missing required field(s) "
+            f"{', '.join(missing)}. Set them in <wiki>/.lore-briefing.yml "
+            "(under `matrix:`) or as env vars LORE_MATRIX_HOMESERVER / "
+            "LORE_MATRIX_USER_ID / LORE_MATRIX_ROOM_ID."
         )
     return homeserver, user_id, room_id
 
@@ -59,10 +132,10 @@ def _markdown_to_html(md: str) -> str:
         return f"<pre>{html.escape(md)}</pre>"
 
 
-async def _send_async(text: str) -> None:
+async def _send_async(text: str, config: dict[str, Any] | None) -> None:
     from nio import AsyncClient, RoomSendResponse  # type: ignore[import-untyped]
 
-    homeserver, _, room_id = _get_room_config()
+    homeserver, _, room_id = _resolve_room_config(config)
     creds = _load_credentials()
     client = AsyncClient(homeserver, creds["user_id"])
     client.access_token = creds["access_token"]
@@ -86,11 +159,11 @@ async def _send_async(text: str) -> None:
         await client.close()
 
 
-def _send(target: str, text: str) -> None:
+def _send(target: str, text: str, config: dict[str, Any] | None) -> None:
     """Send ``text`` to the configured Matrix room. ``target`` ignored."""
     if not text.strip():
         return
-    asyncio.run(_send_async(text))
+    asyncio.run(_send_async(text, config))
 
 
 register("matrix", _send)
@@ -105,7 +178,7 @@ async def _login() -> None:
     from getpass import getpass
     from nio import AsyncClient, LoginResponse  # type: ignore[import-untyped]
 
-    homeserver, user_id, _ = _get_room_config()
+    homeserver, user_id, _ = _resolve_room_config(None)
     password = getpass(f"Password for {user_id}: ")
     client = AsyncClient(homeserver, user_id)
     response = await client.login(password)

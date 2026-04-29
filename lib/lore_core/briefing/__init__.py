@@ -20,6 +20,7 @@ same shape, different domain.
 
 from lore_core.briefing.gather import gather, mark_incorporated
 from lore_core.briefing.sinks import (
+    SinkConfigMismatchError,
     UnknownSinkError,
     dispatch,
     register,
@@ -27,6 +28,7 @@ from lore_core.briefing.sinks import (
 )
 
 __all__ = [
+    "SinkConfigMismatchError",
     "UnknownSinkError",
     "dispatch",
     "gather",

@@ -608,15 +608,22 @@ def _maybe_publish_briefing(
         if not content.strip():
             return None
 
-        from lore_core.briefing import UnknownSinkError, dispatch
+        from lore_core.briefing import (
+            SinkConfigMismatchError,
+            UnknownSinkError,
+            dispatch,
+        )
 
+        sink_config = gather_result.get("sink_config")
         sinks_written: list[str] = []
         for sink in briefing_cfg.sinks:
             try:
-                dispatch(sink, content)
+                dispatch(sink, content, sink_config)
                 sinks_written.append(sink)
             except UnknownSinkError as exc:
                 _curator_log(lore_root, f"unknown sink '{exc}' in {sink!r}; skipping")
+            except SinkConfigMismatchError as exc:
+                _curator_log(lore_root, f"sink config mismatch for {sink!r}: {exc}")
             except Exception as exc:
                 _curator_log(lore_root, f"briefing sink error for {sink!r}: {exc}")
 

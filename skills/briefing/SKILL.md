@@ -63,18 +63,25 @@ Target shape (≤30 lines regardless of how many sessions):
 
 ### 3. Publish via Bash (visible side effect)
 
-Pipe the composed prose through `lore briefing publish`:
+Pipe the composed prose through `lore briefing publish` and pass
+`--wiki <name>` so the sink can read `.lore-briefing.yml`:
 
 ```bash
-lore briefing publish --sink <name> [--out <path>] <<'EOF'
+lore briefing publish --sink <name> --wiki <wiki> <<'EOF'
 <your composed briefing>
 EOF
 ```
 
-Sink name comes from `sink_config.sink` (or pass `markdown` with
-`--out` if no sink is configured — good for review-before-send). The
-markdown sink also accepts `--out` containing the literal
-`YYYY-MM-DD` (replaced at publish time).
+Sink name comes from `sink_config.sink`. With `--wiki`, the CLI loads
+the wiki's `.lore-briefing.yml` and threads it through to the sink;
+without it, sinks fall back to env-only resolution (legacy /
+debug-override path). The CLI refuses if `--sink` disagrees with the
+yaml's `sink:` field (e.g. publishing matrix to a markdown-configured
+wiki).
+
+For one-off review-before-send to a file, the markdown sink also
+accepts a URI target (`--out <path>` is a shim for `markdown:<path>`)
+where `YYYY-MM-DD` is replaced at publish time.
 
 If `sink_config` is null, **don't publish** — just show the prose to
 the user and stop. Don't fabricate a sink.
@@ -110,9 +117,13 @@ works for any path inside a wiki, not just session notes.)
 - **One wiki per briefing.** Different wikis have different audiences.
 - **Sinkless wikis don't publish.** Show the briefing, stop. Don't
   invent a destination.
-- **Credentials never enter the wiki repo.** `.lore-briefing.yml`
-  only references env-var names; the sink adapters resolve actual
-  values from `~/.config/lore/` or environment.
+- **Credentials never enter the wiki repo.** Non-secret config (room
+  IDs, homeserver URLs, output paths) lives in `.lore-briefing.yml`
+  directly. Secrets stay external: matrix access tokens at
+  `~/.local/share/lore/matrix-credentials.json`; future
+  webhook-style sinks indirect via `*_env: LORE_*` keys whose values
+  come from the shell or `$LORE_ROOT/.lore/secrets.env` (mirroring
+  the curator's OpenAI backend pattern).
 
 ## Related
 
