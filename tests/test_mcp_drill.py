@@ -222,6 +222,113 @@ def test_drill_does_not_report_truncation_when_under_cap_due_to_unresolvable():
     assert sorted(expanded["paths"]) == ["a.md", "b.md"]
 
 
+def test_drill_truncated_slugs_lists_dropped_links():
+    """Phase 3.1: when the cap fires, `truncated_slugs` records the dropped
+    links so the agent can re-call with `expand_only` to read them."""
+    from lore_mcp.server import handle_drill
+
+    hits = [_hit("hub.md")]
+    links = " ".join(f"[[child{i}]]" for i in range(10))
+    bodies = {"hub.md": f"## Hub\n{links}"}
+    for i in range(10):
+        bodies[f"child{i}.md"] = f"## Child{i}"
+
+    def fake_resolve(_wiki_path, slug):
+        return f"{slug}.md" if f"{slug}.md" in bodies else None
+
+    with patch("lore_mcp.server.handle_search", return_value=hits), \
+         patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None: _read(path, bodies[path])), \
+         patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
+         patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
+        out = handle_drill(query="hub", wiki="private", expand_limit=3)
+
+    expanded = out["trace"][3]
+    assert expanded["truncated"] == 7
+    assert expanded["truncated_slugs"] == [f"child{i}" for i in range(3, 10)]
+
+
+def test_drill_expand_only_filters_to_intersection():
+    """Phase 3.1: `expand_only` narrows stage 4 to listed slugs only."""
+    from lore_mcp.server import handle_drill
+
+    hits = [_hit("hub.md")]
+    links = " ".join(f"[[child{i}]]" for i in range(5))
+    bodies = {"hub.md": f"## Hub\n{links}"}
+    for i in range(5):
+        bodies[f"child{i}.md"] = f"## Child{i}"
+
+    def fake_resolve(_wiki_path, slug):
+        return f"{slug}.md" if f"{slug}.md" in bodies else None
+
+    with patch("lore_mcp.server.handle_search", return_value=hits), \
+         patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None: _read(path, bodies[path])), \
+         patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
+         patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
+        out = handle_drill(
+            query="hub", wiki="private", expand_only=["child1", "child3"]
+        )
+
+    expand_step = out["trace"][2]
+    read_step = out["trace"][3]
+    assert expand_step["expand_only"] == ["child1", "child3"]
+    assert expand_step["filtered_to"] == ["child1", "child3"]
+    assert sorted(read_step["paths"]) == ["child1.md", "child3.md"]
+    paths = {n["path"] for n in out["result"]["notes"]}
+    assert paths == {"hub.md", "child1.md", "child3.md"}
+
+
+def test_drill_expand_only_cannot_add_undiscovered_slugs():
+    """`expand_only` is intersection-only; slugs not in the discovered
+    set are silently dropped (not added)."""
+    from lore_mcp.server import handle_drill
+
+    hits = [_hit("hub.md")]
+    bodies = {
+        "hub.md": "## Hub\n[[a]] [[b]]",
+        "a.md": "## A",
+        "b.md": "## B",
+        "z.md": "## Z (exists on disk but not linked from hub)",
+    }
+
+    def fake_resolve(_wiki_path, slug):
+        return f"{slug}.md" if f"{slug}.md" in bodies else None
+
+    with patch("lore_mcp.server.handle_search", return_value=hits), \
+         patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None: _read(path, bodies[path])), \
+         patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
+         patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
+        out = handle_drill(query="hub", wiki="private", expand_only=["a", "z"])
+
+    read_step = out["trace"][3]
+    # Only 'a' was both discovered AND requested.
+    assert read_step["paths"] == ["a.md"]
+
+
+def test_drill_expand_only_empty_after_filter_short_circuits():
+    """When `expand_only` filters everything out, the read_expanded stage
+    is recorded as skipped (not silently empty)."""
+    from lore_mcp.server import handle_drill
+
+    hits = [_hit("hub.md")]
+    bodies = {"hub.md": "## Hub\n[[a]] [[b]]", "a.md": "## A", "b.md": "## B"}
+
+    def fake_resolve(_wiki_path, slug):
+        return f"{slug}.md" if f"{slug}.md" in bodies else None
+
+    with patch("lore_mcp.server.handle_search", return_value=hits), \
+         patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None: _read(path, bodies[path])), \
+         patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
+         patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
+        out = handle_drill(
+            query="hub", wiki="private", expand_only=["nothing-matches"]
+        )
+
+    expand_step = out["trace"][2]
+    read_step = out["trace"][3]
+    assert expand_step["filtered_to"] == []
+    assert read_step.get("skipped") == "expand_only_empty"
+
+
 def test_drill_records_read_failures_in_trace():
     """Code-reviewer major #4: silently swallowed read errors leave `paths`
     longer than the actual notes returned. Surface failed reads in the

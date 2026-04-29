@@ -534,6 +534,7 @@ def handle_drill(
     wiki: str | None = None,
     k: int = 5,
     expand_limit: int = 5,
+    expand_only: list[str] | None = None,
 ) -> dict[str, Any]:
     """Composite multi-stage retrieval: search → read → expand → read_expanded.
 
@@ -542,6 +543,12 @@ def handle_drill(
     ``elapsed_ms`` and a stage-specific summary; empty intermediate results
     short-circuit downstream stages and are recorded with a ``skipped`` reason
     so the LLM/human can see *why* a stage was skipped without re-running.
+
+    When the cap fires, the ``read_expanded`` stage records the dropped
+    slugs in ``truncated_slugs`` so the agent can re-call with
+    ``expand_only=[...]`` to read exactly those links without recomputing
+    the search/expand stages. ``expand_only`` is intersection-only: it
+    cannot add slugs that weren't in the discovered set.
 
     See ``docs/architecture/lore-drill.md`` for the full design.
     """
@@ -607,11 +614,24 @@ def handle_drill(
         trace.append({"stage": "expand", "skipped": "no_wikilinks", "elapsed_ms": int((_time.monotonic() - t0) * 1000)})
         trace.append({"stage": "read_expanded", "skipped": "no_wikilinks", "elapsed_ms": 0})
         return {"trace": trace, "result": {"notes": notes}}
-    trace.append({
+    expand_step: dict[str, Any] = {
         "stage": "expand",
         "wikilinks": expanded_slugs,
         "elapsed_ms": int((_time.monotonic() - t0) * 1000),
-    })
+    }
+    # Apply expand_only filter (intersection with discovered set).
+    if expand_only is not None:
+        keep = set(expand_only)
+        filtered = [s for s in expanded_slugs if s in keep]
+        expand_step["expand_only"] = list(expand_only)
+        expand_step["filtered_to"] = filtered
+        expanded_slugs = filtered
+    trace.append(expand_step)
+
+    if not expanded_slugs:
+        # `expand_only` filtered everything out — record skipped + return.
+        trace.append({"stage": "read_expanded", "skipped": "expand_only_empty", "elapsed_ms": 0})
+        return {"trace": trace, "result": {"notes": notes}}
 
     # Stage 4: read expanded (cap at expand_limit, skip unresolvable slugs).
     # `truncated` only applies when we actually hit the cap — an unresolvable
@@ -646,6 +666,7 @@ def handle_drill(
         # Only count truncation when the cap actually stopped us, not when
         # the candidate set was simply smaller than expand_limit.
         trace_step["truncated"] = len(expanded_slugs) - cap_triggered_at
+        trace_step["truncated_slugs"] = expanded_slugs[cap_triggered_at:]
         trace_step["kept"] = expand_limit
     if read_failed_expanded:
         trace_step["read_failed"] = read_failed_expanded
@@ -920,7 +941,13 @@ def _tool_schema() -> list[dict]:
                 "wikilinks → read expanded set, all in one round-trip. Returns "
                 "{trace: [...], result: {notes: [...]}} with structured stage "
                 "breadcrumbs (elapsed_ms per stage; `skipped` reasons for empty "
-                "intermediate results: `search_returned_zero`, `no_wikilinks`). "
+                "intermediate results: `search_returned_zero`, `no_wikilinks`, "
+                "`expand_only_empty`). When the expand cap fires, the "
+                "`read_expanded` stage records `truncated_slugs: [...]` listing "
+                "the dropped links — re-call with `expand_only=[slugs]` to read "
+                "exactly those without recomputing search. `expand_only` is "
+                "intersection-only (it cannot add slugs that weren't in the "
+                "discovered set; only narrow). "
                 "Prefer `lore_drill` for cold-start exploration of a topic. "
                 "Prefer `lore_search` (then `lore_read`) when you already know "
                 "the rough path/slug or want to steer between stages."
@@ -935,6 +962,15 @@ def _tool_schema() -> list[dict]:
                         "type": "integer",
                         "default": 5,
                         "description": "Max number of expanded notes to read (cap on hub-note blowup)",
+                    },
+                    "expand_only": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Intersect the discovered wikilinks with this list "
+                            "before stage 4. Use to re-drill specific slugs from "
+                            "a prior call's `truncated_slugs`."
+                        ),
                     },
                 },
                 "required": ["query"],
