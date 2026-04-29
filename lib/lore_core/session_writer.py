@@ -608,8 +608,11 @@ def _build_frontmatter(si: SessionInput) -> dict[str, Any]:
 
 
 def _write_new_note(path: Path, si: SessionInput) -> None:
+    from lore_core.wikilinks import sanitize_for_write
+
     fm = _build_frontmatter(si)
     text = _render_markdown(fm, si.body_markdown)
+    text = sanitize_for_write(text, si.wiki_root)
     atomic_write_text(path, text)
 
 
@@ -693,7 +696,10 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
     existing_sections = parse_body_sections(body)
     new_sections = parse_body_sections(si.body_markdown)
     merged = merge_body_sections(existing_sections, new_sections)
+    from lore_core.wikilinks import sanitize_for_write
+
     text_new = _render_markdown(fm, render_body_sections(merged))
+    text_new = sanitize_for_write(text_new, si.wiki_root)
     atomic_write_text(path, text_new)
 
 

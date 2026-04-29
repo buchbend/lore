@@ -79,7 +79,10 @@ def file_surface(
         now=now,
     )
 
+    from lore_core.wikilinks import sanitize_for_write
+
     text = _render_markdown(fm, body)
+    text = sanitize_for_write(text, wiki_root)
     atomic_write_text(path, text)
     return FiledSurface(path=path, wikilink=f"[[{path.stem}]]")
 

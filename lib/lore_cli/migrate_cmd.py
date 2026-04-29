@@ -5,7 +5,11 @@ from __future__ import annotations
 import sys
 
 import typer
-from lore_core.migrate import add_schema_version, migrate_minimal_status
+from lore_core.migrate import (
+    add_schema_version,
+    migrate_minimal_status,
+    migrate_strip_broken_wikilinks,
+)
 from lore_core.schema import SCHEMA_VERSION
 
 from lore_cli._argv_compat import argv_main
@@ -33,6 +37,12 @@ def migrate(
         help="Drop `status:` field per status-vocabulary-minimalism "
         "(proposed → draft: true, others dropped).",
     ),
+    strip_broken_wikilinks: bool = typer.Option(
+        False,
+        "--strip-broken-wikilinks",
+        help="Convert `[[broken]]` (target doesn't exist) to plain text "
+        "across all note bodies. `[[slug|alias]]` becomes the alias.",
+    ),
     apply: bool = typer.Option(
         False,
         "--apply",
@@ -48,6 +58,9 @@ def migrate(
         return
     if minimal_status:
         migrate_minimal_status(wiki_filter=wiki, dry_run=not apply)
+        return
+    if strip_broken_wikilinks:
+        migrate_strip_broken_wikilinks(wiki_filter=wiki, dry_run=not apply)
         return
     # No migration flag and no subcommand → show help
     print(ctx.get_help())
