@@ -1,129 +1,74 @@
 ---
 name: lore:briefing
-description: Generate a developer briefing from a wiki's session notes
-  and publish it via a configured sink (Matrix, Slack, Discord, markdown,
-  GitHub Discussion). Calls MCP `lore_briefing_gather` for the
-  deterministic part; LLM only composes prose. Run with
-  "/lore:briefing <wiki>".
+description: Publish a developer briefing for a wiki — gather new sessions
+  since the last briefing, render them, publish via the wiki's configured
+  sink (Matrix, markdown, ...), and update the ledger. Thin wrapper around
+  `lore briefing --wiki <name>`. Run with "/lore:briefing <wiki>".
 user_invocable: true
 ---
 
 # Developer Briefing
 
-Generates a concise briefing from one wiki's new session notes and
-publishes it via the wiki's configured sink. The deterministic work
-(reading the ledger, scanning sessions, parsing frontmatter, loading
-sink config) is one MCP call. The LLM only composes the prose. Side
-effects (publish + ledger update) go through visible Bash calls.
+Thin wrapper around the `lore briefing` CLI: gather + render + publish +
+mark, all in one shot. The CLI reads `<wiki>/.lore-briefing.yml` for the
+sink and uses the briefing ledger to determine what's new.
 
-## Workflow — three tool calls minimum
-
-### 1. MCP gather (silent, fast)
-
-Call `mcp__lore__lore_briefing_gather` with:
-
-```
-{"wiki": "<name>"}
-```
-
-The tool returns:
-- `wiki`, `today`
-- `ledger`: `{last_briefing, incorporated_count}`
-- `sink_config`: parsed `.lore-briefing.yml` (or null)
-- `new_sessions`: list of `{path, date, slug, frontmatter, sections}`
-  where `sections` maps H2 heading → body text per session note
-
-If `new_sessions` is empty, report "No new sessions since last
-briefing" and stop. **Do not** Glob the sessions dir yourself.
-
-### 2. Compose the prose (LLM judgment)
-
-Aggregate "What we worked on" across new sessions. Group by
-project/domain, not chronologically. Deduplicate overlapping work.
-List key decisions with their *why*. Merge open items / loose ends;
-flag items repeated across sessions.
-
-Target shape (≤30 lines regardless of how many sessions):
-
-```
-## Briefing: <today> (<wiki>)
-
-### What happened
-- **<project>**: <summary>
-
-### Key decisions
-- <decision and why>
-
-### Open items
-- <item>
-
-### Vault health
-- <N notes covered, M decisions, K open items>
-```
-
-### 3. Publish via Bash (visible side effect)
-
-Pipe the composed prose through `lore briefing publish` and pass
-`--wiki <name>` so the sink can read `.lore-briefing.yml`:
+## Usage
 
 ```bash
-lore briefing publish --sink <name> --wiki <wiki> <<'EOF'
-<your composed briefing>
-EOF
+lore briefing --wiki <wiki>
 ```
 
-Sink name comes from `sink_config.sink`. With `--wiki`, the CLI loads
-the wiki's `.lore-briefing.yml` and threads it through to the sink;
-without it, sinks fall back to env-only resolution (legacy /
-debug-override path). The CLI refuses if `--sink` disagrees with the
-yaml's `sink:` field (e.g. publishing matrix to a markdown-configured
-wiki).
+If the user invoked `/lore:briefing` without a wiki name, ask which
+wiki. Otherwise pass the argument straight through.
 
-For one-off review-before-send to a file, the markdown sink also
-accepts a URI target (`--out <path>` is a shim for `markdown:<path>`)
-where `YYYY-MM-DD` is replaced at publish time.
+By default the CLI uses the configured LLM backend (auto-detect:
+subscription `claude` binary → `ANTHROPIC_API_KEY` SDK → openai-compatible
+endpoint configured in `.lore/config.yml`) to compose the briefing in the
+structured shape (`### What happened` / `### Key decisions` / `### Open
+items` / `### Vault health`). When no backend is available or the call
+fails, it falls back to a deterministic bullet-list render so briefings
+always publish.
 
-If `sink_config` is null, **don't publish** — just show the prose to
-the user and stop. Don't fabricate a sink.
+## Useful flags
 
-### 4. Mark incorporated via Bash
-
-Once published, update the ledger so these sessions don't appear in
-the next briefing:
-
-```bash
-lore briefing mark --wiki <name> \
-    --session 2026-04-15-fix-a.md \
-    --session 2026-04-16-fix-b.md \
-    [...]
-```
-
-### 5. (Optional) Commit the ledger
-
-```bash
-git -C $LORE_ROOT/wiki/<name> add .briefing-ledger.json
-git -C $LORE_ROOT/wiki/<name> commit -m "lore: briefing ledger <today>"
-```
-
-(Or run `lore session commit <ledger-path>` — the commit subcommand
-works for any path inside a wiki, not just session notes.)
+- `--dry-run` — render and print to stdout, no publish, no ledger
+  write. Use this to preview before sending.
+- `--no-llm` — skip the LLM composer; publish the deterministic
+  bullet-list digest directly. Useful when the LLM backend is down
+  or the user explicitly wants the raw shape.
+- `--since YYYY-MM-DD` — override the ledger floor (e.g. to re-emit
+  the last week without resetting the ledger).
+- `--sink <uri>` — override the configured sink (e.g.
+  `markdown:/tmp/preview.md` for a one-off file dump).
+- `--no-mark` — publish without recording in the ledger (useful for
+  testing or republishing).
 
 ## Hard rules
 
-- **One MCP call for gather.** No Glob, no Read. The tool returns
-  parsed sections.
-- **Always show the prose in the conversation**, even if publish
-  fails — and report the error.
 - **One wiki per briefing.** Different wikis have different audiences.
-- **Sinkless wikis don't publish.** Show the briefing, stop. Don't
-  invent a destination.
+- **Sinkless wikis fail loudly.** The CLI errors if no `sink:` is set
+  in `.lore-briefing.yml` and no `--sink` was passed. Don't paper over
+  that — surface the error so the user can configure the sink.
 - **Credentials never enter the wiki repo.** Non-secret config (room
-  IDs, homeserver URLs, output paths) lives in `.lore-briefing.yml`
-  directly. Secrets stay external: matrix access tokens at
-  `~/.local/share/lore/matrix-credentials.json`; future
-  webhook-style sinks indirect via `*_env: LORE_*` keys whose values
-  come from the shell or `$LORE_ROOT/.lore/secrets.env` (mirroring
-  the curator's OpenAI backend pattern).
+  IDs, homeserver URLs, output paths) lives in `.lore-briefing.yml`.
+  Secrets stay external (e.g. matrix access tokens at
+  `~/.local/share/lore/matrix-credentials.json`).
+
+## When you need to compose prose yourself
+
+The default flow already invokes an LLM inside the CLI. If the user
+wants *you* (the in-conversation model) to compose the prose — e.g. to
+hand-tune the wording before publishing — use the multi-step path:
+
+```
+lore briefing gather --wiki <name>     # JSON envelope (your input)
+lore briefing publish --sink <uri> --wiki <name> --file <prose.md>
+lore briefing mark --wiki <name> --session <path> [...]
+```
+
+Reserve this for explicit "let me hand-author the briefing" requests.
+The default `/lore:briefing <wiki>` flow trusts the CLI's LLM.
 
 ## Related
 

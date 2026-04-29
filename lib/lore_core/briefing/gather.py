@@ -30,6 +30,61 @@ _CONFIG_FILE = ".lore-briefing.yml"
 _SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
 
+def _parse_session_path(
+    rel_parts: tuple[str, ...], stem: str
+) -> tuple[date, str] | None:
+    """Extract (date, slug) from a session-note path.
+
+    Supports two layouts:
+
+    * Flat legacy::
+
+          sessions/YYYY-MM-DD-slug.md
+              → date from ``stem[:10]``, slug from ``stem[11:]``.
+
+    * Sharded (team-mode and post-shard flat)::
+
+          sessions/[<handle>/]YYYY/MM/DD-[HHMM-]slug.md
+              → date from path parents + 2-digit ``DD`` prefix of stem;
+                slug is whatever follows ``DD-`` (with optional 4-digit
+                ``HHMM-`` segment dropped).
+
+    Returns ``None`` for files that match neither shape (so callers can
+    skip non-session noise like ``_recent.md``).
+    """
+    # Flat legacy first — date in stem[:10].
+    try:
+        d = date.fromisoformat(stem[:10])
+        slug = stem[11:] if len(stem) > 11 else stem
+        return d, slug
+    except (ValueError, IndexError):
+        pass
+
+    # Sharded: need at least YYYY/MM/<file> in the path.
+    if len(rel_parts) < 3:
+        return None
+    yyyy = rel_parts[-3]
+    mm = rel_parts[-2]
+    if not (yyyy.isdigit() and len(yyyy) == 4):
+        return None
+    if not (mm.isdigit() and len(mm) == 2):
+        return None
+    if len(stem) < 2 or not stem[:2].isdigit():
+        return None
+    try:
+        d = date.fromisoformat(f"{yyyy}-{mm}-{stem[:2]}")
+    except ValueError:
+        return None
+
+    # Strip leading "DD-" and optional "HHMM-".
+    parts = stem.split("-", 2)
+    if len(parts) >= 2 and parts[1].isdigit() and len(parts[1]) == 4:
+        slug = parts[2] if len(parts) >= 3 else ""
+    else:
+        slug = "-".join(parts[1:])
+    return d, slug or stem
+
+
 def _read_ledger(wiki_path: Path) -> dict[str, Any]:
     path = wiki_path / _LEDGER_FILE
     if not path.exists():
@@ -119,10 +174,11 @@ def gather(
         cutoff = date.fromisoformat(since) if since else None
         for md in sorted(sessions_dir.rglob("*.md")):
             stem = md.stem
-            try:
-                d = date.fromisoformat(stem[:10])
-            except (ValueError, IndexError):
+            rel_parts = md.relative_to(sessions_dir).parts
+            parsed = _parse_session_path(rel_parts, stem)
+            if parsed is None:
                 continue
+            d, slug = parsed
             if cutoff and d < cutoff:
                 continue
             rel = str(md.relative_to(wiki_path))
@@ -134,7 +190,7 @@ def gather(
             entry: dict[str, Any] = {
                 "path": rel,
                 "date": d.isoformat(),
-                "slug": stem[11:] or stem,
+                "slug": slug or stem,
                 "frontmatter": parse_frontmatter(text),
             }
             if user and entry["frontmatter"].get("user") != user:

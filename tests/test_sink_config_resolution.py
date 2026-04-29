@@ -229,7 +229,14 @@ def test_cli_publish_loads_yaml_and_passes_to_markdown_sink(
     )
     monkeypatch.setattr(
         "sys.stdin",
-        type("S", (), {"read": staticmethod(lambda: "## Briefing\n\nbody\n")})(),
+        type(
+            "S",
+            (),
+            {
+                "read": staticmethod(lambda: "## Briefing\n\nbody\n"),
+                "isatty": staticmethod(lambda: False),
+            },
+        )(),
     )
 
     from lore_cli import briefing_cmd
@@ -250,7 +257,14 @@ def test_cli_publish_refuses_yaml_sink_mismatch(
     )
     monkeypatch.setattr(
         "sys.stdin",
-        type("S", (), {"read": staticmethod(lambda: "## body\n")})(),
+        type(
+            "S",
+            (),
+            {
+                "read": staticmethod(lambda: "## body\n"),
+                "isatty": staticmethod(lambda: False),
+            },
+        )(),
     )
 
     from lore_cli import briefing_cmd
@@ -270,7 +284,14 @@ def test_cli_publish_missing_yaml_file(
     """--wiki set but no .lore-briefing.yml present → exit 1 with clear msg."""
     monkeypatch.setattr(
         "sys.stdin",
-        type("S", (), {"read": staticmethod(lambda: "## body\n")})(),
+        type(
+            "S",
+            (),
+            {
+                "read": staticmethod(lambda: "## body\n"),
+                "isatty": staticmethod(lambda: False),
+            },
+        )(),
     )
 
     from lore_cli import briefing_cmd

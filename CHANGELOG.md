@@ -10,6 +10,54 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-04-29
+
+### Added
+
+- **`lore briefing --wiki <name>` is now a one-shot pipeline.** Gathers
+  new sessions since the last briefing, composes prose via the
+  configured LLM backend, publishes through the wiki's sink
+  (`.lore-briefing.yml`), and updates the ledger — all without a
+  separate LLM round-trip from the calling skill. The `/lore:briefing`
+  skill collapses to a thin wrapper around this command. Power-user
+  subcommands (`gather`, `publish`, `mark`) remain for scripted flows.
+- **LLM-composed briefing prose.** New
+  `lore_core.briefing.compose_briefing_prose` builds a bounded prompt
+  (capped to 60 sessions, summary truncation, includes
+  `summary` + `what we worked on` + `decisions made`) and produces the
+  structured `### What happened / Key decisions / Open items / Vault
+  health` shape the `/lore:briefing` skill used to hand-author. The
+  CLI auto-detects an LLM backend via the existing
+  `make_llm_client()` (subscription `claude` binary →
+  `ANTHROPIC_API_KEY` SDK → openai-compatible from
+  `.lore/config.yml`) and uses the wiki's `models.middle` tier.
+- **Deterministic fallback render.** New
+  `lore_core.briefing.render_briefing` emits a bullet-list digest
+  using each session's `summary` frontmatter (or first bullet of
+  "what we worked on" / `description` fallbacks). Used automatically
+  when no LLM backend is configured, the model errors, or the user
+  passes `--no-llm`. Briefings always publish; the LLM is an
+  enhancement, not a gate.
+- **`--dry-run`, `--no-mark`, `--no-llm`, `--since`, `--sink` flags**
+  on the unified command for preview / republish / deterministic /
+  ledger-floor / sink-override workflows.
+
+### Fixed
+
+- **Sharded session layout in `lore_core.briefing.gather`.** The date
+  parser only recognized the flat legacy form
+  `sessions/YYYY-MM-DD-slug.md`, silently skipping every team-mode
+  sharded note (`sessions/[<handle>/]YYYY/MM/DD-[HHMM-]slug.md`). On a
+  real ccat wiki this meant briefings reported "no new sessions" even
+  with 41 unbriefed notes on disk. New `_parse_session_path()` helper
+  tries flat first, then derives the date from `YYYY/MM` parents plus
+  the 2-digit `DD` prefix; slug strips the optional 4-digit `HHMM-`
+  segment.
+- **`lore briefing publish` no longer hangs on a TTY.** When invoked
+  without `--file` or piped input, it now errors with a clear
+  "pipe markdown on stdin or pass --file" message instead of blocking
+  on `sys.stdin.read()` indefinitely.
+
 ## [0.30.0] - 2026-04-29
 
 ### Fixed

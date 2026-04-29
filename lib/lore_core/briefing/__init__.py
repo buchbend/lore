@@ -18,6 +18,8 @@ Mirrors the adapter registry pattern in ``lore_adapters.registry`` —
 same shape, different domain.
 """
 
+from lore_core.briefing.compose import compose_briefing_prose
+from lore_core.briefing.format import render_briefing
 from lore_core.briefing.gather import gather, mark_incorporated
 from lore_core.briefing.sinks import (
     SinkConfigMismatchError,
@@ -30,9 +32,11 @@ from lore_core.briefing.sinks import (
 __all__ = [
     "SinkConfigMismatchError",
     "UnknownSinkError",
+    "compose_briefing_prose",
     "dispatch",
     "gather",
     "mark_incorporated",
     "register",
     "registered_sinks",
+    "render_briefing",
 ]
