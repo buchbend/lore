@@ -143,19 +143,6 @@ def _render_body(
     ))
 
 
-def _turn_window(turns: list[Turn], *, fallback: datetime) -> tuple[datetime, datetime]:
-    """Return (since, until) for the chunk's git/gh queries.
-
-    Uses the earliest and latest timestamped turns; falls back to the
-    caller-supplied work_time when no turn carries a timestamp (the
-    fallback path during deterministic tests).
-    """
-    times = [t.timestamp for t in turns if t.timestamp is not None]
-    if not times:
-        return fallback, fallback
-    return min(times), max(times)
-
-
 def _all_turn_text(turns: list[Turn]) -> str:
     """Concatenate the user/assistant text content of a chunk's turns.
 
@@ -178,7 +165,6 @@ def _collect_activity(
     turns: list[Turn],
     files_touched: list[str],
     body_text_for_plan_scan: str,
-    fallback_time: datetime,
     logger: "RunLogger | None" = None,
 ) -> dict[str, Any]:
     """Run all Phase-3 collectors for a chunk and return the inputs the
@@ -292,7 +278,7 @@ def file_session_note(
         turns=turns,
         files_touched=files_touched,
         body_text_for_plan_scan=plan_scan_text,
-        fallback_time=work_time,
+        logger=logger,
     )
 
     # Provenance — record which LLM produced this note's verdict so model

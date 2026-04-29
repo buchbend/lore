@@ -14,7 +14,6 @@ import pytest
 
 from lore_curator.session_activity import (
     CommitRef,
-    collect_commits_in_window,
     collect_issues_in_window,
     collect_plans_advanced,
     collect_projects_for_session,
@@ -59,51 +58,6 @@ def _commit(
         cwd=repo_root, check=True,
         env={**__import__("os").environ, **(env or {})} if env else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# collect_commits_in_window
-# ---------------------------------------------------------------------------
-
-
-def test_collect_commits_in_window_returns_commits_in_range(tmp_path):
-    repo = tmp_path / "repo"
-    _init_repo(repo, remote_url="https://github.com/test/repo.git")
-    t1 = datetime(2026, 4, 28, 10, 0, tzinfo=UTC)
-    t2 = datetime(2026, 4, 28, 11, 0, tzinfo=UTC)
-    t3 = datetime(2026, 4, 28, 12, 0, tzinfo=UTC)
-    _commit(repo, subject="early commit", filename="a.txt", when=t1)
-    _commit(repo, subject="middle commit closes #29", filename="b.txt", when=t2)
-    _commit(repo, subject="late commit", filename="c.txt", when=t3)
-
-    # Window covers only the middle commit.
-    commits = collect_commits_in_window(
-        repo,
-        since=datetime(2026, 4, 28, 10, 30, tzinfo=UTC),
-        until=datetime(2026, 4, 28, 11, 30, tzinfo=UTC),
-    )
-    assert len(commits) == 1
-    assert commits[0].subject == "middle commit closes #29"
-    assert commits[0].branch == "main"
-    assert commits[0].repo == "test/repo"
-    assert len(commits[0].short_hash) >= 4
-
-
-def test_collect_commits_returns_empty_when_repo_missing(tmp_path):
-    """Soft fail: missing repo path → []."""
-    assert collect_commits_in_window(
-        tmp_path / "does-not-exist",
-        since=datetime(2026, 4, 28, tzinfo=UTC),
-        until=datetime(2026, 4, 29, tzinfo=UTC),
-    ) == []
-
-
-def test_collect_commits_returns_empty_when_repo_root_is_none():
-    assert collect_commits_in_window(
-        None,
-        since=datetime(2026, 4, 28, tzinfo=UTC),
-        until=datetime(2026, 4, 29, tzinfo=UTC),
-    ) == []
 
 
 # ---------------------------------------------------------------------------

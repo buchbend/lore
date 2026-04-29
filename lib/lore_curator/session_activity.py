@@ -18,7 +18,6 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from lore_core.gh import gh_issues
@@ -39,58 +38,6 @@ class CommitRef:
     branch: str  # current branch when collected; same for every commit in a session
     repo: str   # canonical "org/name" or "" if outside a known remote
     body: str = ""  # full commit body (post-subject) — Step 3 trailer scan reads this
-
-
-def collect_commits_in_window(
-    repo_root: Path | None,
-    *,
-    since: datetime,
-    until: datetime,
-    timeout_seconds: float = 5.0,
-) -> list[CommitRef]:
-    """Return commits authored in ``[since, until]`` inside ``repo_root``.
-
-    Uses ``git log --since/--until`` rather than ``HEAD~N`` so the
-    window is time-bounded (matches the chunk's actual work span).
-    Returns newest first. Empty list on any error.
-    """
-    if repo_root is None or not Path(repo_root).exists():
-        return []
-    try:
-        since_str = since.replace(tzinfo=UTC).isoformat() if since.tzinfo is None else since.isoformat()
-        until_str = until.replace(tzinfo=UTC).isoformat() if until.tzinfo is None else until.isoformat()
-        result = subprocess.run(
-            [
-                "git", "-C", str(repo_root),
-                "log",
-                f"--since={since_str}",
-                f"--until={until_str}",
-                "--no-decorate",
-                "--pretty=format:%h\t%s",
-            ],
-            capture_output=True, text=True,
-            timeout=timeout_seconds, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    if result.returncode != 0:
-        return []
-
-    branch = _current_branch(repo_root, timeout_seconds)
-    repo_name = current_repo(repo_root) or ""
-    out: list[CommitRef] = []
-    for raw_line in result.stdout.splitlines():
-        line = raw_line.strip()
-        if not line or "\t" not in line:
-            continue
-        sha, subject = line.split("\t", 1)
-        out.append(CommitRef(
-            short_hash=sha.strip(),
-            subject=subject.strip(),
-            branch=branch,
-            repo=repo_name,
-        ))
-    return out
 
 
 def collect_commits_by_sha(
@@ -396,52 +343,6 @@ def collect_plans_advanced(
             refs.append(ref)
 
     return refs
-
-
-def _scan_window_trailers(
-    repo_root: Path,
-    *,
-    since: datetime,
-    until: datetime,
-    timeout_seconds: float,
-) -> list[tuple[str, str]]:
-    """Yield ``(slug, anchor)`` from ``Plan:`` trailers in window commits.
-
-    ``anchor`` is the full step ID verbatim (canonical ``step-N`` or
-    legacy ``sN``). Single ``git log --since/--until`` call (vs. one per
-    slug previously), so cost is independent of how many plans the wiki
-    has. Returns ``[]`` on any subprocess error — Curator A must never
-    block on git.
-    """
-    since_iso = (since.replace(tzinfo=UTC) if since.tzinfo is None else since).isoformat()
-    until_iso = (until.replace(tzinfo=UTC) if until.tzinfo is None else until).isoformat()
-    try:
-        result = subprocess.run(
-            [
-                "git", "-C", str(repo_root),
-                "log",
-                f"--since={since_iso}",
-                f"--until={until_iso}",
-                "--no-decorate",
-                # NUL terminator between commits so trailers can't bleed
-                # across boundaries when one body ends mid-line.
-                "--pretty=format:%B%x00",
-            ],
-            capture_output=True, text=True,
-            timeout=timeout_seconds, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    if result.returncode != 0:
-        return []
-
-    out: list[tuple[str, str]] = []
-    for body in result.stdout.split("\x00"):
-        if not body.strip():
-            continue
-        for m in _PLAN_TRAILER_RE.finditer(body):
-            out.append((m.group(1), m.group(2)))
-    return out
 
 
 # ---------------------------------------------------------------------------

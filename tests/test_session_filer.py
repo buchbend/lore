@@ -1550,19 +1550,16 @@ def test_step3_no_bleed_across_parallel_sessions(tmp_path):
         Turn(index=1, timestamp=t_post, role="assistant", text="ok"),
     ]
 
-    fallback = datetime(2026, 4, 29, 12, 0, tzinfo=UTC)
     wiki_root = tmp_path / "wiki" / "private"
     (wiki_root / "plans").mkdir(parents=True)
 
     a = _collect_activity(
         cwd=repo, wiki_root=wiki_root, turns=chunk_a,
         files_touched=[], body_text_for_plan_scan="",
-        fallback_time=fallback,
     )
     b = _collect_activity(
         cwd=repo, wiki_root=wiki_root, turns=chunk_b,
         files_touched=[], body_text_for_plan_scan="",
-        fallback_time=fallback,
     )
 
     a_blob = "\n".join(a["commits"])
@@ -1612,7 +1609,6 @@ def test_step3_inter_chunk_gap_captured(tmp_path):
     activity = _collect_activity(
         cwd=repo, wiki_root=wiki_root, turns=turns,
         files_touched=[], body_text_for_plan_scan="",
-        fallback_time=chunk_window_end,
     )
     blob = "\n".join(activity["commits"])
     assert short_sha in blob, (
