@@ -10,6 +10,69 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-04-29
+
+### Added
+
+- **Cursor is now a first-class lore integration.** `lore install --integration cursor`
+  materializes a packaged Cursor 2.5+ plugin at `~/.cursor/plugins/local/lore/`
+  with manifest, sentinel, copied skills tree, copied rules tree,
+  plugin-local `mcp.json`, and a generated `hooks.json` mapping all six
+  Claude Code hook events to Cursor's schema (`SessionStart→sessionStart`,
+  `PreCompact→preCompact`, `UserPromptSubmit→beforeSubmitPrompt`,
+  `SessionEnd→sessionEnd`, `Stop→stop`,
+  `PostToolUse:ExitPlanMode→postToolUse{matcher: "ExitPlanMode"}`).
+
+- **Three Cursor-specific advisory checks in `lore doctor`** — plugin-dir
+  state + manifest version match, MCP `command` resolves to an existing
+  executable (catches sticky-abs-path drift after pipx upgrade), and
+  `hooks.json` parses with non-empty events. All gated on `~/.cursor/`
+  existing so Claude-only users see clean "skipped" lines.
+
+- **Cursor installer dispatcher detects GUI-only installs** via
+  `~/.cursor/` directory existence, in addition to `shutil.which("cursor")`.
+  AppImage / `.deb` / `.dmg` users no longer slip through.
+
+- **`CURSOR_PROJECT_DIR` env-var fallback** in `_resolve_cwd()` and
+  `_resolve_cwd_capture()`, defensive for older Cursor versions where
+  the documented `CLAUDE_PROJECT_DIR` alias hasn't been wired.
+
+### Fixed
+
+- **`spawn lore ENOENT` from Cursor's MCP client.** `lore_mcp_entry()`
+  now resolves `shutil.which("lore")` to an absolute path; Cursor's
+  GUI subprocess inherits a minimal PATH from systemd / desktop
+  launchers and can't find pipx-installed binaries by bare name.
+
+- **Schema-version drift no longer prompts for path-only fixes.** When
+  an existing `mcpServers.lore` entry differs from canonical only in
+  the `command` field (relative `lore` → absolute path) and is
+  recognizably lore-managed (args == `["mcp"]`, no surprise keys),
+  the installer emits `KIND_MERGE` (silent re-merge) instead of
+  `KIND_REPLACE` (prompt). User-customized entries with wrapper
+  scripts, extra args, or env vars still get the prompt.
+
+### Changed
+
+- **Plugin-local `mcp.json` is canonical** when plugin packaging
+  succeeds; the installer skips the global `~/.cursor/mcp.json` merge
+  in that mode and emits a delete for any pre-existing legacy global
+  entry to dedupe registration. Legacy global-mcp.json fallback still
+  works when the lore source-of-truth doesn't resolve.
+
+### Notes
+
+- Skill name divergence — Cursor sanitizes `:` → `-` in SKILL.md
+  `name:` fields silently. Lore keeps canonical `lore:foo` (Claude
+  Code shows `/lore:journal`); Cursor users see `/lore-journal`
+  natively. Keystroke divergence accepted; not breaking anyone's
+  muscle memory by renaming.
+
+- Pipx-installed `lore` binary needs `pipx install --force <repo>`
+  after pulling this release for `lore install` (without `python -m`)
+  to use the new installer logic. Runtime hook commands didn't change,
+  so existing installs keep working.
+
 ## [0.32.0] - 2026-04-29
 
 ### Added

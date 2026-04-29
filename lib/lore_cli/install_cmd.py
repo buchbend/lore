@@ -66,10 +66,28 @@ def _binary_for(integration_name: str) -> str:
     return {"claude": "claude", "cursor": "cursor"}.get(integration_name, integration_name)
 
 
+def _integration_present(integration_name: str) -> bool:
+    """True when the integration is installed on this host.
+
+    Probe order:
+      1. ``shutil.which(<binary>)`` — works for CLI-shipping installs
+         (Claude Code, Cursor's macOS Homebrew flavor)
+      2. Per-integration directory marker — catches GUI-only installs
+         where no CLI is on PATH (Cursor on Linux .deb / .AppImage,
+         macOS .dmg drag-install).
+    """
+    if shutil.which(_binary_for(integration_name)):
+        return True
+    if integration_name == "cursor":
+        return (Path.home() / ".cursor").is_dir()
+    return False
+
+
 def _select_integrations(arg: str | None, *, interactive: bool = False) -> list[str]:
     """Resolve --integration into a concrete list of integration names.
 
-    None or "all" → every integration whose binary is on PATH.
+    None or "all" → every integration detected on this host (CLI on
+    PATH or per-integration directory marker — see ``_integration_present``).
     A specific name → that integration (no PATH check).
 
     When *interactive* is True and no --integration flag was given, present a
@@ -84,7 +102,7 @@ def _select_integrations(arg: str | None, *, interactive: bool = False) -> list[
             )
         return [arg]
 
-    detected = [h for h in all_integrations if shutil.which(_binary_for(h))]
+    detected = [h for h in all_integrations if _integration_present(h)]
 
     if not interactive:
         return detected if detected else all_integrations

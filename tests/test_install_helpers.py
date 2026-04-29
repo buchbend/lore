@@ -251,6 +251,32 @@ def test_content_hash_stable():
 
 def test_lore_mcp_entry_includes_schema_version():
     entry = lore_mcp_entry("1")
-    assert entry["command"] == "lore"
+    # Command is either an absolute path (when lore is on PATH) or the
+    # bare string "lore" as a fallback. Either way, basename is "lore".
+    cmd = entry["command"]
+    from pathlib import Path
+    assert cmd == "lore" or Path(cmd).name == "lore"
     assert entry["args"] == ["mcp"]
     assert entry["_lore_schema_version"] == "1"
+
+
+def test_lore_mcp_entry_resolves_absolute_path(monkeypatch):
+    """When lore is on PATH, the entry's command is the absolute path —
+    Cursor's GUI subprocess can't resolve bare names."""
+    monkeypatch.setattr(
+        "lore_core.install._helpers.shutil.which",
+        lambda name: "/usr/local/bin/lore" if name == "lore" else None,
+    )
+    entry = lore_mcp_entry("1")
+    assert entry["command"] == "/usr/local/bin/lore"
+
+
+def test_lore_mcp_entry_falls_back_to_bare_name_when_not_on_path(monkeypatch):
+    """In clean environments (CI without lore installed), the bare
+    name is acceptable so unit tests still pass."""
+    monkeypatch.setattr(
+        "lore_core.install._helpers.shutil.which",
+        lambda name: None,
+    )
+    entry = lore_mcp_entry("1")
+    assert entry["command"] == "lore"

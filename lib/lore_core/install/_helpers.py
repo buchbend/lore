@@ -111,6 +111,23 @@ def cursor_rules_dir() -> Path:
     return config / "rules"
 
 
+def cursor_plugin_dir() -> Path:
+    """Where Cursor 2.5+ scans for locally-installed plugins.
+
+    Always under ``~/.cursor/`` (NOT the legacy ``~/.config/Cursor/User/``
+    XDG path) because the local-plugin discovery surface is documented
+    only at the ``~/.cursor/plugins/local/`` location.
+    """
+    return Path.home() / ".cursor" / "plugins" / "local" / "lore"
+
+
+# Sentinel file written at the root of a lore-managed plugin tree.
+# uninstall refuses to remove a directory tree that lacks this marker
+# (defends against blowing away unrelated user content if a path
+# collision happens).
+PLUGIN_SENTINEL = ".lore-managed"
+
+
 # ---------------------------------------------------------------------------
 # File primitives
 # ---------------------------------------------------------------------------
@@ -382,15 +399,220 @@ def check_lore_version_match(
 def lore_mcp_entry(schema_version: str) -> dict[str, Any]:
     """The mcpServers.lore block we write into shared MCP config files.
 
+    Resolves `lore` to an absolute path via `shutil.which` because GUI
+    MCP clients (notably Cursor) inherit a minimal PATH from systemd /
+    desktop launchers and won't find pipx-installed binaries via the
+    bare name. Falls back to `"lore"` when nothing is on PATH so unit
+    tests in clean envs still pass.
+
     Includes `_lore_schema_version` so future migrations know whether
     the entry is Lore-managed. Underscore prefix discourages user
     edits.
     """
     return {
-        "command": "lore",
+        "command": shutil.which("lore") or "lore",
         "args": ["mcp"],
         SCHEMA_VERSION_KEY: schema_version,
     }
+
+
+def resolve_lore_source_root(lore_repo: Path | None = None) -> Path | None:
+    """Locate the lore source-of-truth root containing skills/ + .claude-plugin/.
+
+    Resolution order:
+      1. ``lore_repo`` (passed by ``lore install --lore-repo`` for dev installs)
+      2. Walk up from this file looking for a directory containing both
+         ``skills/`` and ``.claude-plugin/plugin.json`` (editable pip install)
+      3. ``~/.claude/plugins/cache/lore/lore/<version>/`` (Claude Code
+         marketplace install — newest version dir wins)
+
+    Returns ``None`` if nothing resolves; callers decide whether that's
+    fatal or a warning.
+    """
+    if lore_repo:
+        candidate = Path(lore_repo).expanduser().resolve()
+        if (candidate / "skills").is_dir() and (
+            candidate / ".claude-plugin" / "plugin.json"
+        ).is_file():
+            return candidate
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "skills").is_dir() and (
+            parent / ".claude-plugin" / "plugin.json"
+        ).is_file():
+            return parent
+    cache_root = Path.home() / ".claude" / "plugins" / "cache" / "lore" / "lore"
+    if cache_root.is_dir():
+        version_dirs = sorted(
+            (d for d in cache_root.iterdir() if d.is_dir()),
+            key=lambda d: d.name,
+            reverse=True,
+        )
+        for version_dir in version_dirs:
+            if (version_dir / "skills").is_dir() and (
+                version_dir / ".claude-plugin" / "plugin.json"
+            ).is_file():
+                return version_dir
+    return None
+
+
+def read_claude_manifest(source_root: Path) -> dict[str, Any]:
+    """Read ``.claude-plugin/plugin.json`` from a resolved source root."""
+    return json.loads(
+        (source_root / ".claude-plugin" / "plugin.json").read_text()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cursor plugin packaging — manifest + hooks generators
+# ---------------------------------------------------------------------------
+
+# Maps Claude Code hook event names to Cursor's hook event names.
+# Sourced from cursor.com/docs/hooks (Cursor 1.7+, Sept 2025).
+_CLAUDE_TO_CURSOR_EVENT = {
+    "SessionStart": "sessionStart",
+    "SessionEnd": "sessionEnd",
+    "PreCompact": "preCompact",
+    "Stop": "stop",
+    "UserPromptSubmit": "beforeSubmitPrompt",
+    "PostToolUse": "postToolUse",
+    "PreToolUse": "preToolUse",
+}
+
+
+def _resolve_lore_in_command(cmd: str) -> str:
+    """Replace a leading bare ``lore`` token with its absolute path.
+
+    Mirrors the lore_mcp_entry resolution: GUI MCP / hook clients inherit
+    a minimal PATH and will fail to spawn `lore` by bare name. Only
+    rewrites when the command starts with `lore ` (or is exactly `lore`)
+    to avoid touching user-customized hook commands.
+    """
+    abs_lore = shutil.which("lore")
+    if not abs_lore:
+        return cmd
+    if cmd == "lore":
+        return abs_lore
+    if cmd.startswith("lore "):
+        return abs_lore + cmd[len("lore"):]
+    return cmd
+
+
+def generate_cursor_plugin_manifest(
+    claude_manifest: dict[str, Any],
+) -> dict[str, Any]:
+    """Generate a ``.cursor-plugin/plugin.json`` from the Claude manifest.
+
+    Cursor's manifest schema is a strict subset: ``name`` (required),
+    plus optional ``description``, ``version``, ``author``. Hooks and
+    MCP servers live in sibling files (``hooks.json`` / ``mcp.json``)
+    inside the plugin dir, not in the manifest itself.
+    """
+    out: dict[str, Any] = {"name": claude_manifest.get("name", "lore")}
+    for key in ("description", "version", "author", "homepage", "license"):
+        if key in claude_manifest:
+            out[key] = claude_manifest[key]
+    return out
+
+
+def generate_cursor_hooks_json(
+    claude_manifest: dict[str, Any],
+) -> dict[str, Any]:
+    """Generate a Cursor ``hooks.json`` from the Claude manifest's hooks block.
+
+    Claude's shape: each event maps to an array of "hook groups", each
+    group has an inner ``hooks`` list and an optional group-level
+    ``matcher``. Cursor's shape: each event maps directly to a flat
+    list of hook entries (with per-entry ``matcher``). We flatten by
+    propagating the group matcher onto each inner hook.
+
+    Hook commands of the form ``lore <subcmd>`` are rewritten with the
+    absolute ``lore`` path (same reason as MCP entries — GUI subprocess
+    PATH is minimal).
+
+    Timeout is intentionally omitted: Cursor's default is generous
+    enough for cold-cache SessionStart cascades, and matching Claude's
+    behavior (no explicit timeout) avoids spurious failures.
+    """
+    claude_hooks = claude_manifest.get("hooks") or {}
+    out_hooks: dict[str, list[dict[str, Any]]] = {}
+    for claude_event, groups in claude_hooks.items():
+        cursor_event = _CLAUDE_TO_CURSOR_EVENT.get(claude_event)
+        if not cursor_event:
+            continue
+        flat: list[dict[str, Any]] = []
+        for group in groups or []:
+            if not isinstance(group, dict):
+                continue
+            group_matcher = group.get("matcher")
+            for hook in group.get("hooks") or []:
+                if not isinstance(hook, dict):
+                    continue
+                cmd = hook.get("command")
+                if not cmd:
+                    continue
+                entry: dict[str, Any] = {
+                    "type": hook.get("type", "command"),
+                    "command": _resolve_lore_in_command(cmd),
+                }
+                if group_matcher:
+                    entry["matcher"] = group_matcher
+                flat.append(entry)
+        if flat:
+            out_hooks[cursor_event] = flat
+    return {"version": 1, "hooks": out_hooks}
+
+
+# ---------------------------------------------------------------------------
+# Directory-tree copy with managed sentinel — used for skills/rules bundling
+# ---------------------------------------------------------------------------
+
+
+def copy_dir_atomic(src: Path, dst: Path) -> None:
+    """Copy a directory tree from src to dst, idempotent on re-run.
+
+    Uses ``shutil.copytree(dirs_exist_ok=True)`` semantics: re-running
+    install overwrites, files removed from src disappear from dst on
+    next install only if we wipe-and-recopy, so we wipe first to keep
+    dst exactly mirroring src. The wipe is gated on the
+    ``PLUGIN_SENTINEL`` file at dst's parent (not dst itself — the
+    parent is the plugin root that owns the whole tree).
+
+    Resolves symlinks in src so the dst is always a real tree.
+    """
+    src_real = Path(os.path.realpath(src))
+    if not src_real.is_dir():
+        raise FileNotFoundError(f"copy source not found or not a dir: {src}")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        # Refuse to wipe dst if the plugin root has no sentinel — that
+        # means we don't own this tree.
+        plugin_root = dst.parent
+        if not (plugin_root / PLUGIN_SENTINEL).exists():
+            raise PermissionError(
+                f"refusing to overwrite {dst}: plugin root {plugin_root} "
+                f"has no {PLUGIN_SENTINEL} sentinel (not lore-managed)"
+            )
+        shutil.rmtree(dst)
+    shutil.copytree(src_real, dst, symlinks=False)
+
+
+def remove_managed_dir(path: Path) -> None:
+    """Remove a lore-managed directory tree, gated on the sentinel.
+
+    Only removes ``path`` if a ``PLUGIN_SENTINEL`` file exists at
+    ``path`` itself (the plugin root). Any other path raises so we
+    never wipe user content by accident.
+    """
+    real = Path(os.path.realpath(path)) if path.exists() else path
+    if not real.exists():
+        return
+    if not (real / PLUGIN_SENTINEL).exists():
+        raise PermissionError(
+            f"refusing to remove {real}: no {PLUGIN_SENTINEL} sentinel "
+            f"(not lore-managed)"
+        )
+    shutil.rmtree(real)
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +735,9 @@ def preview_action(action: Action) -> str:
     """Return a multi-line diff/preview without side effects."""
     if action.kind == KIND_NEW:
         path = action.payload["path"]
+        copy_from = action.payload.get("copy_from")
+        if copy_from:
+            return f"+++ {path}/ (copy tree from {copy_from})"
         content = action.payload["content"]
         return f"+++ {path} (new)\n" + "\n".join(
             f"+ {line}" for line in content.splitlines()
@@ -543,6 +768,8 @@ def preview_action(action: Action) -> str:
         kp = action.payload.get("key_path")
         if kp:
             return f"--- {path}\n   delete key: {' / '.join(kp)}"
+        if action.payload.get("recursive"):
+            return f"--- {path}/ (remove tree, sentinel-gated)"
         return f"--- {path} (remove)"
     raise ValueError(f"unknown action kind: {action.kind}")
 
@@ -552,6 +779,11 @@ def execute_action(action: Action, *, schema_version: str = "1") -> ApplyResult:
     try:
         if action.kind == KIND_NEW:
             path = Path(action.payload["path"]).expanduser()
+            copy_from = action.payload.get("copy_from")
+            if copy_from:
+                src = Path(copy_from).expanduser()
+                copy_dir_atomic(src, path)
+                return ApplyResult(ok=True)
             content = action.payload["content"]
             real = Path(os.path.realpath(path)) if path.exists() else path
             real.parent.mkdir(parents=True, exist_ok=True)
@@ -647,6 +879,13 @@ def execute_action(action: Action, *, schema_version: str = "1") -> ApplyResult:
                         "fail_message", f"{bin_name} not on PATH"
                     ),
                 )
+            if check == "always_advisory":
+                # Always-advisory check — surfaces the fail_message as
+                # informational (paired with on_failure="continue").
+                return ApplyResult(
+                    ok=False,
+                    error=action.payload.get("fail_message", "advisory"),
+                )
             return ApplyResult(ok=False, error=f"unknown check: {check}")
         if action.kind == KIND_DELETE:
             path = Path(action.payload["path"]).expanduser()
@@ -668,6 +907,11 @@ def execute_action(action: Action, *, schema_version: str = "1") -> ApplyResult:
                     return data
 
                 json_merge_atomic(real, _mutator)
+                return ApplyResult(ok=True)
+            if action.payload.get("recursive"):
+                # Recursive directory removal — only allowed on
+                # lore-managed plugin trees marked with PLUGIN_SENTINEL.
+                remove_managed_dir(real)
                 return ApplyResult(ok=True)
             # File removal — managed block first, else whole file
             if real.exists():
@@ -695,6 +939,15 @@ def undo_action(action: Action) -> ApplyResult:
         if action.kind == KIND_NEW:
             path = Path(action.payload["path"]).expanduser()
             real = Path(os.path.realpath(path)) if path.exists() else path
+            if action.payload.get("copy_from"):
+                # Tree-copy undo: remove the dst tree if it's still
+                # lore-managed (parent sentinel present). We only
+                # remove the dst dir itself, not the plugin root.
+                if real.exists() and real.is_dir():
+                    plugin_root = real.parent
+                    if (plugin_root / PLUGIN_SENTINEL).exists():
+                        shutil.rmtree(real)
+                return ApplyResult(ok=True)
             if real.exists():
                 # Check whether the file uses managed markers; if yes
                 # remove just that block, else delete the whole file.

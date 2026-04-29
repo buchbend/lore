@@ -506,6 +506,126 @@ def _check_pending(cwd: str) -> Check:
     return True, " · ".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Cursor integration checks (advisory — `fails_run=False`)
+#
+# All three checks are gated on ``~/.cursor/`` existing. We use the
+# directory marker — not ``shutil.which("cursor")`` — because most
+# Linux/macOS users install Cursor as a GUI .deb / .AppImage / .dmg
+# without a CLI on PATH, and we'd silently miss them otherwise.
+# ---------------------------------------------------------------------------
+
+
+def _cursor_installed() -> bool:
+    """True when Cursor is installed on this host (any flavor)."""
+    return (Path.home() / ".cursor").is_dir()
+
+
+def _check_cursor_plugin_dir(cwd: str) -> Check:
+    """Plugin dir exists with sentinel + manifest version matches lore."""
+    if not _cursor_installed():
+        return True, "skipped: ~/.cursor not present"
+
+    from importlib.metadata import PackageNotFoundError, version
+    from lore_core.install._helpers import PLUGIN_SENTINEL, cursor_plugin_dir
+
+    plugin_dir = cursor_plugin_dir()
+    if not plugin_dir.exists():
+        return False, (
+            f"{plugin_dir} not present — run `lore install --integration cursor` "
+            "to materialize the plugin"
+        )
+    if not (plugin_dir / PLUGIN_SENTINEL).exists():
+        return False, (
+            f"{plugin_dir} missing {PLUGIN_SENTINEL} sentinel — directory may "
+            "predate plugin packaging; reinstall with --force"
+        )
+    manifest_path = plugin_dir / ".cursor-plugin" / "plugin.json"
+    if not manifest_path.exists():
+        return False, f"{manifest_path} not present — reinstall to refresh"
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, ValueError) as exc:
+        return False, f"plugin manifest unreadable: {exc}"
+    plugin_version = str(manifest.get("version") or "").strip()
+    if not plugin_version:
+        return False, "plugin manifest has no `version` field"
+    try:
+        installed = version("lore")
+    except PackageNotFoundError:
+        return False, "lore Python package not installed in this environment"
+    if plugin_version != installed:
+        return False, (
+            f"plugin manifest {plugin_version} != installed pip {installed} — "
+            "run `lore install --integration cursor` after each pip upgrade"
+        )
+    return True, f"plugin {plugin_version} matches pip"
+
+
+def _check_cursor_mcp_command_resolves(cwd: str) -> Check:
+    """Plugin-local mcp.json `command` resolves to an existing executable.
+
+    Catches the sticky-abs-path footgun: at install time the lore CLI
+    is at one absolute path; after a pipx reinstall (different venv
+    UUID) or a binary move the path goes stale and Cursor silently
+    fails to spawn the MCP server with no Cursor-side error message.
+    """
+    if not _cursor_installed():
+        return True, "skipped: ~/.cursor not present"
+
+    from lore_core.install._helpers import cursor_plugin_dir
+
+    plugin_dir = cursor_plugin_dir()
+    mcp_path = plugin_dir / "mcp.json"
+    if not mcp_path.exists():
+        return False, f"{mcp_path} not present — reinstall to materialize"
+    try:
+        data = json.loads(mcp_path.read_text())
+    except (OSError, ValueError) as exc:
+        return False, f"plugin-local mcp.json unreadable: {exc}"
+    entry = (data.get("mcpServers") or {}).get("lore") or {}
+    cmd = entry.get("command")
+    if not cmd:
+        return False, "mcpServers.lore has no `command` field"
+    cmd_path = Path(cmd)
+    if not cmd_path.is_absolute():
+        return False, (
+            f"command is relative ({cmd!r}) — Cursor's GUI subprocess "
+            "PATH does not include ~/.local/bin; reinstall to fix"
+        )
+    if not cmd_path.exists():
+        return False, (
+            f"command points to {cmd} which no longer exists — "
+            "after `pipx upgrade lore`, run `lore install --integration cursor`"
+        )
+    if not os.access(cmd_path, os.X_OK):
+        return False, f"command {cmd} is not executable"
+    return True, f"mcp command {cmd} resolves"
+
+
+def _check_cursor_hooks_config(cwd: str) -> Check:
+    """Plugin-local hooks.json parses with the expected event coverage."""
+    if not _cursor_installed():
+        return True, "skipped: ~/.cursor not present"
+
+    from lore_core.install._helpers import cursor_plugin_dir
+
+    plugin_dir = cursor_plugin_dir()
+    hooks_path = plugin_dir / "hooks.json"
+    if not hooks_path.exists():
+        return False, f"{hooks_path} not present — reinstall to materialize"
+    try:
+        data = json.loads(hooks_path.read_text())
+    except (OSError, ValueError) as exc:
+        return False, f"hooks.json unreadable: {exc}"
+    if data.get("version") != 1:
+        return False, f"hooks.json version is {data.get('version')!r} (expected 1)"
+    hooks = data.get("hooks") or {}
+    if not hooks:
+        return False, "hooks.json has empty hooks block"
+    return True, f"{len(hooks)} event(s) wired: {', '.join(sorted(hooks))}"
+
+
 # (name, check_fn, fails_run). `fails_run=False` means the check is
 # informational — its `ok=False` is rendered as ✗ but does not set the
 # overall non-zero exit.
@@ -537,6 +657,11 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     # but didn't refresh the pipx binary. Banner silently reports the
     # old version; this names the fix command.
     ("plugin cache", _check_claude_plugin_cache_drift, False),
+    # Cursor integration checks. All advisory: a Claude-only user has
+    # no ~/.cursor dir and these all skip cleanly.
+    ("cursor plugin", _check_cursor_plugin_dir, False),
+    ("cursor mcp", _check_cursor_mcp_command_resolves, False),
+    ("cursor hooks", _check_cursor_hooks_config, False),
     ("attach", _check_attach, False),
 ]
 

@@ -1942,8 +1942,19 @@ hook_app = typer.Typer(
 
 
 def _resolve_cwd(explicit: str | None) -> str:
-    """Resolve CWD: explicit --cwd → $CLAUDE_PROJECT_DIR → os.getcwd()."""
-    return explicit or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    """Resolve CWD: explicit --cwd → $CLAUDE_PROJECT_DIR → $CURSOR_PROJECT_DIR → os.getcwd().
+
+    Cursor exposes ``CLAUDE_PROJECT_DIR`` as an alias automatically (per
+    cursor.com/docs/hooks), so the explicit ``CURSOR_PROJECT_DIR`` lookup
+    is a defensive fallback for older Cursor versions or partial-compat
+    environments where the alias hasn't been set up.
+    """
+    return (
+        explicit
+        or os.environ.get("CLAUDE_PROJECT_DIR")
+        or os.environ.get("CURSOR_PROJECT_DIR")
+        or os.getcwd()
+    )
 
 
 def _in_curator_mode() -> bool:
@@ -2559,8 +2570,11 @@ def cmd_user_prompt_submit(
 
 
 def _resolve_cwd_capture() -> Path:
-    """Resolve CWD for capture: $CLAUDE_PROJECT_DIR → os.getcwd()."""
-    env = os.environ.get("CLAUDE_PROJECT_DIR")
+    """Resolve CWD for capture: $CLAUDE_PROJECT_DIR → $CURSOR_PROJECT_DIR → os.getcwd()."""
+    env = (
+        os.environ.get("CLAUDE_PROJECT_DIR")
+        or os.environ.get("CURSOR_PROJECT_DIR")
+    )
     return Path(env) if env else Path(os.getcwd())
 
 

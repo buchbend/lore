@@ -46,20 +46,49 @@ def _read_directive_body() -> str:
 
 
 def plan(ctx: InstallContext) -> list[Action]:
-    """Return Actions to install Lore for Cursor."""
+    """Return Actions to install Lore for Cursor.
+
+    When the lore source-of-truth resolves (dev install / Claude plugin
+    cache available), Cursor 2.5+ plugin packaging is the canonical
+    install state — the global ``~/.cursor/mcp.json`` entry would be a
+    duplicate registration, so we skip it (and clean up any stale
+    legacy entry). The global rules file at ``~/.cursor/rules/lore.md``
+    stays in both modes since it serves a separate purpose (always-on
+    directive vs plugin-scoped activation).
+    """
     actions: list[Action] = []
 
     config_dir = _helpers.cursor_config_dir()
     rules_dir = _helpers.cursor_rules_dir()
     mcp_path = config_dir / "mcp.json"
     rules_path = rules_dir / "lore.md"
+    source_root = _helpers.resolve_lore_source_root(ctx.lore_repo)
+    plugin_will_install = source_root is not None
 
-    # 1. Merge MCP server entry. Distinguish absent-version (legacy
-    #    or user-authored — silent migrate) from present-but-old
-    #    (true schema bump — replace with prompt).
+    # 1. Global mcp.json — only when plugin packaging won't run (legacy
+    #    fallback). Otherwise plugin-local mcp.json is canonical and we
+    #    actively dedupe by emitting a delete for any pre-existing
+    #    legacy global entry.
     existing = _read_existing_lore_entry(mcp_path)
     new_value = _helpers.lore_mcp_entry(SCHEMA_VERSION)
-    if existing is None:
+    if plugin_will_install:
+        if existing is not None:
+            actions.append(
+                Action(
+                    kind=KIND_DELETE,
+                    description=(
+                        "Remove legacy global mcpServers.lore "
+                        "(plugin-local now wins)"
+                    ),
+                    target=str(mcp_path),
+                    summary="dedupe: plugin-local mcp.json supersedes",
+                    payload={
+                        "path": str(mcp_path),
+                        "key_path": ["mcpServers", "lore"],
+                    },
+                )
+            )
+    elif existing is None:
         actions.append(
             Action(
                 kind=KIND_MERGE,
@@ -116,9 +145,48 @@ def plan(ctx: InstallContext) -> list[Action]:
                 },
             )
         )
-    # else: same schema_version — no action needed (the upgrade case
-    # — the dispatcher's `lore install upgrade` reports it as a
-    # no-op).
+    elif existing != new_value and _is_lore_managed_entry(existing):
+        # Schema matches but content drifted — silent re-merge.
+        # This catches the relative-→-absolute path migration: an
+        # entry written by an older lore had `command: "lore"` but
+        # Cursor's GUI subprocess inherits a minimal PATH and can't
+        # find pipx installs by bare name. Refresh silently because
+        # the user didn't change anything; we fixed a bug.
+        actions.append(
+            Action(
+                kind=KIND_MERGE,
+                description="Refresh mcpServers.lore (lore-managed re-resolve)",
+                target=str(mcp_path),
+                summary="refresh mcpServers.lore (resolved abs path / args)",
+                payload={
+                    "path": str(mcp_path),
+                    "key_path": ["mcpServers", "lore"],
+                    "value": new_value,
+                    "schema_version": SCHEMA_VERSION,
+                },
+            )
+        )
+    elif existing != new_value:
+        # Schema matches, content differs, and the entry is not
+        # recognizably lore-managed — user has customized the entry
+        # (wrapper script, custom args, env vars). Prompt before
+        # clobbering.
+        actions.append(
+            Action(
+                kind=KIND_REPLACE,
+                description="Replace user-customized mcpServers.lore",
+                target=str(mcp_path),
+                summary="user-customized entry differs from canonical",
+                payload={
+                    "path": str(mcp_path),
+                    "key_path": ["mcpServers", "lore"],
+                    "old_value": existing,
+                    "new_value": new_value,
+                    "reason": "entry has user customizations (wrapper / args / env)",
+                },
+            )
+        )
+    # else: existing == new_value — no action needed.
 
     # 2. Write the rules file (managed-marker wrapped). If the file
     #    has no managed markers, treat as user-authored — the
@@ -190,6 +258,159 @@ def plan(ctx: InstallContext) -> list[Action]:
         )
     )
 
+    # 4. Cursor 2.5+ plugin packaging — bundle skills/rules/hooks/MCP
+    #    into ~/.cursor/plugins/local/lore/ so Cursor lists "lore" as
+    #    a first-class plugin and uninstall is one rmtree.
+    actions.extend(_plan_plugin_packaging(ctx))
+
+    return actions
+
+
+def _plan_plugin_packaging(ctx: InstallContext) -> list[Action]:
+    """Emit the Actions that materialize ~/.cursor/plugins/local/lore/.
+
+    Returns an empty list (with a CHECK that surfaces the issue) if the
+    lore source-of-truth can't be resolved — Cursor users who installed
+    via pipx without `--lore-repo` and without Claude Code's plugin
+    cache on disk fall into this bucket.
+    """
+    actions: list[Action] = []
+    plugin_dir = _helpers.cursor_plugin_dir()
+    source_root = _helpers.resolve_lore_source_root(ctx.lore_repo)
+    if source_root is None:
+        actions.append(
+            Action(
+                kind=KIND_CHECK,
+                description=(
+                    "Skipping Cursor plugin packaging — lore source not "
+                    "resolved"
+                ),
+                target=str(plugin_dir),
+                summary=(
+                    "no skills/ + .claude-plugin/ found in lore_repo, "
+                    "editable install, or Claude plugin cache"
+                ),
+                payload={
+                    "check": "always_advisory",
+                    "fail_message": (
+                        "Cursor plugin dir not created. Pass --lore-repo "
+                        "or install lore from source to bundle skills."
+                    ),
+                },
+                on_failure="continue",
+            )
+        )
+        return actions
+
+    claude_manifest = _helpers.read_claude_manifest(source_root)
+    cursor_manifest = _helpers.generate_cursor_plugin_manifest(claude_manifest)
+    cursor_hooks = _helpers.generate_cursor_hooks_json(claude_manifest)
+    plugin_mcp = {
+        "mcpServers": {"lore": _helpers.lore_mcp_entry(SCHEMA_VERSION)}
+    }
+
+    sentinel_path = plugin_dir / _helpers.PLUGIN_SENTINEL
+    manifest_path = plugin_dir / ".cursor-plugin" / "plugin.json"
+    skills_dst = plugin_dir / "skills"
+    rules_dst = plugin_dir / "rules"
+    plugin_mcp_path = plugin_dir / "mcp.json"
+    plugin_hooks_path = plugin_dir / "hooks.json"
+
+    # 4a. Plugin sentinel — must exist before any copy_from runs (the
+    #     copy helper checks for it on the parent dir).
+    actions.append(
+        Action(
+            kind=KIND_NEW,
+            description="Mark plugin dir as lore-managed",
+            target=str(sentinel_path),
+            summary=f"sentinel {_helpers.PLUGIN_SENTINEL} (provenance for uninstall)",
+            payload={
+                "path": str(sentinel_path),
+                "content": (
+                    f"# lore-managed Cursor plugin\n"
+                    f"# Removing this file disables uninstall safety.\n"
+                ),
+            },
+        )
+    )
+
+    # 4b. Plugin manifest (Cursor's smaller schema).
+    import json as _json
+    actions.append(
+        Action(
+            kind=KIND_NEW,
+            description="Write Cursor plugin manifest",
+            target=str(manifest_path),
+            summary=f"version {cursor_manifest.get('version', '?')}",
+            payload={
+                "path": str(manifest_path),
+                "content": _json.dumps(cursor_manifest, indent=2) + "\n",
+            },
+        )
+    )
+
+    # 4c. Skills tree — copy from source-of-truth into plugin dir.
+    actions.append(
+        Action(
+            kind=KIND_NEW,
+            description="Copy skills tree into Cursor plugin",
+            target=str(skills_dst),
+            summary=f"copy {source_root / 'skills'} → {skills_dst}",
+            payload={
+                "path": str(skills_dst),
+                "copy_from": str(source_root / "skills"),
+            },
+        )
+    )
+
+    # 4d. Rules tree — vault-first directive in markdown form.
+    rules_src = source_root / "lib" / "lore_core" / "templates" / "integration-rules"
+    if rules_src.is_dir():
+        actions.append(
+            Action(
+                kind=KIND_NEW,
+                description="Copy rules tree into Cursor plugin",
+                target=str(rules_dst),
+                summary=f"copy {rules_src} → {rules_dst}",
+                payload={
+                    "path": str(rules_dst),
+                    "copy_from": str(rules_src),
+                },
+            )
+        )
+
+    # 4e. Plugin-local mcp.json (Cursor's per-plugin MCP discovery).
+    actions.append(
+        Action(
+            kind=KIND_NEW,
+            description="Write plugin-local Cursor MCP config",
+            target=str(plugin_mcp_path),
+            summary="mcpServers.lore (abs path)",
+            payload={
+                "path": str(plugin_mcp_path),
+                "content": _json.dumps(plugin_mcp, indent=2) + "\n",
+            },
+        )
+    )
+
+    # 4f. Plugin-local hooks.json — Cursor 1.7+ schema, generated from
+    #     the Claude manifest's hooks block.
+    actions.append(
+        Action(
+            kind=KIND_NEW,
+            description="Write plugin-local Cursor hooks config",
+            target=str(plugin_hooks_path),
+            summary=f"{len(cursor_hooks.get('hooks') or {})} events mapped",
+            payload={
+                "path": str(plugin_hooks_path),
+                "content": _json.dumps(cursor_hooks, indent=2) + "\n",
+            },
+        )
+    )
+
+    # (Global mcp.json dedupe is handled in plan() above — done at the
+    # top-level so the gating logic is in one place.)
+
     return actions
 
 
@@ -210,6 +431,30 @@ def _read_existing_lore_entry(mcp_path: Path) -> dict | None:
         return None
     entry = servers.get("lore")
     return entry if isinstance(entry, dict) else None
+
+
+def _is_lore_managed_entry(existing: dict) -> bool:
+    """True if `existing` looks like an entry a previous lore install wrote.
+
+    Used to decide whether content drift (e.g. relative `command: "lore"`
+    upgraded to an absolute path) can be silently re-merged or whether
+    the user has customized the entry and a prompt is required.
+
+    Recognizable shape:
+      - `args == ["mcp"]` (lore CLI's MCP subcommand, never customized)
+      - `command` is either the bare string "lore" or a path whose
+        basename is "lore" (catches abs paths from any pipx/uv/pip prefix)
+      - no extra keys beyond {command, args, _lore_schema_version}
+    """
+    if existing.get("args") != ["mcp"]:
+        return False
+    cmd = existing.get("command", "")
+    if not isinstance(cmd, str):
+        return False
+    if cmd != "lore" and Path(cmd).name != "lore":
+        return False
+    allowed = {"command", "args", _helpers.SCHEMA_VERSION_KEY}
+    return set(existing.keys()) <= allowed
 
 
 def uninstall_plan(ctx: InstallContext) -> list[Action]:
@@ -252,6 +497,23 @@ def uninstall_plan(ctx: InstallContext) -> list[Action]:
                 },
             )
         )
+
+    plugin_dir = _helpers.cursor_plugin_dir()
+    sentinel = plugin_dir / _helpers.PLUGIN_SENTINEL
+    if plugin_dir.exists() and sentinel.exists():
+        actions.append(
+            Action(
+                kind=KIND_DELETE,
+                description="Remove Lore Cursor plugin directory",
+                target=str(plugin_dir),
+                summary=f"rmtree (gated on {_helpers.PLUGIN_SENTINEL} sentinel)",
+                payload={
+                    "path": str(plugin_dir),
+                    "recursive": True,
+                },
+            )
+        )
+
     return actions
 
 
