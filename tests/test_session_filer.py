@@ -1202,3 +1202,268 @@ def test_phase_c_disjoint_legacy_notes_do_not_attract_new_file_chunks(tmp_path):
     assert result.was_merge is False
     assert a.read_text() == a_before
     assert b.read_text() == b_before
+
+
+# ---------------------------------------------------------------------------
+# _commit_shas_from_bash_results — per-session SHA capture (Step 1)
+# ---------------------------------------------------------------------------
+
+
+def _bash_pair(
+    *,
+    call_index: int,
+    result_index: int,
+    command: str,
+    output: str,
+    tc_id: str | None = "tc-1",
+    is_error: bool = False,
+) -> list[Turn]:
+    """Build an [assistant tool_call, tool_result] Turn pair for a Bash call."""
+    from lore_core.types import ToolCall, ToolResult
+
+    return [
+        Turn(
+            index=call_index, timestamp=None, role="assistant",
+            tool_call=ToolCall(
+                name="Bash", input={"command": command},
+                id=tc_id, category="shell_exec",
+            ),
+        ),
+        Turn(
+            index=result_index, timestamp=None, role="tool_result",
+            tool_result=ToolResult(
+                tool_call_id=tc_id, output=output, is_error=is_error,
+            ),
+        ),
+    ]
+
+
+def test_extractor_t_single_commit_basic():
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit -m 'x'",
+        output="[main abc1234] x\n 1 file changed, 1 insertion(+)\n",
+    )
+    assert _commit_shas_from_bash_results(turns) == ["abc1234"]
+
+
+def test_extractor_t_root_commit():
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit -m init",
+        output="[main (root-commit) f00ba12] init\n",
+    )
+    assert _commit_shas_from_bash_results(turns) == ["f00ba12"]
+
+
+def test_extractor_t_detached_during_rebase():
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit -m fix",
+        output="[(detached from origin/foo) abc1234] fix\n",
+    )
+    assert _commit_shas_from_bash_results(turns) == ["abc1234"]
+
+
+def test_extractor_t_amend_after_hook():
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    # Hook-amend produces two anchored SHA lines; we want the LAST.
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit -m fix",
+        output=(
+            "[main 1111111] fix\n"
+            "ruff did some autofix; amending\n"
+            "[main 2222222] fix\n"
+        ),
+    )
+    assert _commit_shas_from_bash_results(turns) == ["2222222"]
+
+
+def test_extractor_t_parallel_calls_reordered_results():
+    """Three Bash tool_use ids; results returned in shuffled order
+    (post-Claude parallel-tool feature). SHAs must come back in
+    tool_call order, not tool_result order."""
+    from lore_core.types import ToolCall, ToolResult
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    # Calls in order id1 → id2 → id3
+    calls = [
+        Turn(index=0, timestamp=None, role="assistant",
+             tool_call=ToolCall(name="Bash", input={"command": "git commit -m a"},
+                                id="id1", category="shell_exec")),
+        Turn(index=1, timestamp=None, role="assistant",
+             tool_call=ToolCall(name="Bash", input={"command": "git commit -m b"},
+                                id="id2", category="shell_exec")),
+        Turn(index=2, timestamp=None, role="assistant",
+             tool_call=ToolCall(name="Bash", input={"command": "git commit -m c"},
+                                id="id3", category="shell_exec")),
+    ]
+    # Results returned id3 → id1 → id2.
+    results = [
+        Turn(index=3, timestamp=None, role="tool_result",
+             tool_result=ToolResult(tool_call_id="id3", output="[main ccccccc] c")),
+        Turn(index=4, timestamp=None, role="tool_result",
+             tool_result=ToolResult(tool_call_id="id1", output="[main aaaaaaa] a")),
+        Turn(index=5, timestamp=None, role="tool_result",
+             tool_result=ToolResult(tool_call_id="id2", output="[main bbbbbbb] b")),
+    ]
+    assert _commit_shas_from_bash_results(calls + results) == [
+        "aaaaaaa", "bbbbbbb", "ccccccc",
+    ]
+
+
+def test_extractor_t_failed_commit_no_sha_in_output():
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit -m x",
+        output="nothing to commit, working tree clean\n",
+        is_error=True,
+    )
+    assert _commit_shas_from_bash_results(turns) == []
+
+
+def test_extractor_t_pre_commit_hook_noise_then_real_sha():
+    """Pre-commit hook prints `[ruff fixed abc1234]` (not anchored — has
+    'ruff' inside). Git's real `[main def5678] msg` line at column 0 wins.
+    """
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit -m foo",
+        output=(
+            "  [ruff fixed abc1234]\n"   # indented — not anchored
+            "[main def5678] foo\n"        # anchored — real
+            " 1 file changed\n"
+        ),
+    )
+    assert _commit_shas_from_bash_results(turns) == ["def5678"]
+
+
+def test_extractor_t_chained_commits_one_call():
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit -m a && git commit -m b",
+        output="[main aaaaaaa] a\n[main bbbbbbb] b\n",
+    )
+    # Spec note: extractor takes the LAST anchored match per result. A
+    # `&&` chain inside one Bash call appears as one tool_result; we
+    # only get the final commit SHA. Multi-commit recovery from a
+    # chained call is out of scope (would require parsing per-line).
+    assert _commit_shas_from_bash_results(turns) == ["bbbbbbb"]
+
+
+def test_extractor_t_substring_false_positive_log_grep():
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git log --grep='git commit' --oneline -5",
+        output="abcdef0 some commit\n",
+    )
+    assert _commit_shas_from_bash_results(turns) == []
+
+
+def test_extractor_t_commit_tree_plumbing():
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit-tree -m x deadbeef",
+        output="0123456789abcdef0123456789abcdef01234567\n",
+    )
+    assert _commit_shas_from_bash_results(turns) == []
+
+
+def test_extractor_t_unpaired_call_truncated():
+    """tool_call with no matching tool_result — extractor skips silently."""
+    from lore_core.types import ToolCall
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = [
+        Turn(index=0, timestamp=None, role="assistant",
+             tool_call=ToolCall(name="Bash", input={"command": "git commit -m x"},
+                                id="orphan", category="shell_exec")),
+    ]
+    assert _commit_shas_from_bash_results(turns) == []
+
+
+def test_extractor_t_missing_tool_call_id():
+    """tool_call.id is None → cannot pair with a result; documented as []."""
+    from lore_core.types import ToolCall, ToolResult
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = [
+        Turn(index=0, timestamp=None, role="assistant",
+             tool_call=ToolCall(name="Bash", input={"command": "git commit -m x"},
+                                id=None, category="shell_exec")),
+        Turn(index=1, timestamp=None, role="tool_result",
+             tool_result=ToolResult(tool_call_id=None,
+                                    output="[main abc1234] x")),
+    ]
+    assert _commit_shas_from_bash_results(turns) == []
+
+
+def test_extractor_t_dedup_preserves_order():
+    """Two Bash calls produce the same SHA (e.g. shown twice somehow);
+    only the first occurrence survives."""
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    pair1 = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit -m x",
+        output="[main abc1234] x\n",
+        tc_id="t1",
+    )
+    pair2 = _bash_pair(
+        call_index=2, result_index=3,
+        command="git commit -m y",
+        output="[main abc1234] x\n",  # same SHA repeated
+        tc_id="t2",
+    )
+    assert _commit_shas_from_bash_results(pair1 + pair2) == ["abc1234"]
+
+
+def test_extractor_t_short_and_long_sha():
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    pair_short = _bash_pair(
+        call_index=0, result_index=1,
+        command="git commit -m a", output="[main abc1234] a\n",
+        tc_id="s",
+    )
+    pair_long = _bash_pair(
+        call_index=2, result_index=3,
+        command="git commit -m b",
+        output="[main 0123456789abcdef0123456789abcdef01234567] b\n",
+        tc_id="l",
+    )
+    assert _commit_shas_from_bash_results(pair_short + pair_long) == [
+        "abc1234",
+        "0123456789abcdef0123456789abcdef01234567",
+    ]
+
+
+def test_extractor_t_pipe_or_redirect_before_git():
+    """`echo x | git commit -F -` — pipeline / redirect ahead of git
+    means we can't trust the next-token-is-commit heuristic; reject."""
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="echo x | git commit -F -",
+        output="[main abc1234] x\n",
+    )
+    assert _commit_shas_from_bash_results(turns) == []
