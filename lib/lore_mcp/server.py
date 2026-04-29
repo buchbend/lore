@@ -108,6 +108,10 @@ def _maybe_reindex(backend: FtsBackend, wiki: str | None) -> None:
     ``_REINDEX_THROTTLE_S`` seconds — *unless* the fs-watcher has marked
     the wiki dirty since the last reindex, in which case the throttle
     is bypassed.
+
+    Skips emit a ``reindex_skip`` event to ``$LORE_CACHE/query-log.jsonl``
+    so "feels stale" debugging ("why didn't my edit show up?") has a
+    paper trail without code-reading.
     """
     import time as _time
     now = _time.monotonic()
@@ -116,6 +120,7 @@ def _maybe_reindex(backend: FtsBackend, wiki: str | None) -> None:
     if last is not None and now - last < _REINDEX_THROTTLE_S:
         # Inside throttle window — only proceed if a real change was observed.
         if wiki is None or not _reindex_dirty.take(wiki):
+            _log_reindex_skip(wiki, "throttle")
             return
     else:
         # Outside throttle window — always reindex; clear any pending dirty
@@ -125,6 +130,16 @@ def _maybe_reindex(backend: FtsBackend, wiki: str | None) -> None:
 
     backend.reindex(wiki=wiki)
     _reindex_last_seen[wiki] = now
+
+
+def _log_reindex_skip(wiki: str | None, reason: str) -> None:
+    """Best-effort emit to the shared query log; never raises."""
+    try:
+        from lore_search.query_log import get_logger
+
+        get_logger().emit(event="reindex_skip", wiki=wiki, reason=reason)
+    except Exception:  # noqa: BLE001 — telemetry must never break the hot path
+        pass
 
 
 def handle_search(

@@ -133,3 +133,24 @@ def test_handle_search_uses_throttle(monkeypatch: pytest.MonkeyPatch) -> None:
     server.handle_search("query b", wiki="private")
     assert backend.reindex.call_count == 1
     assert backend.search.call_count == 2
+
+
+def test_throttle_skip_emits_log_event(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A throttled skip records a `reindex_skip` event in the query log."""
+    import json
+
+    from lore_mcp import server
+
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path))
+
+    backend = MagicMock()
+    server._maybe_reindex(backend, wiki="private")  # first call → reindex
+    server._maybe_reindex(backend, wiki="private")  # second within window → skip + log
+
+    log = tmp_path / "query-log.jsonl"
+    assert log.exists()
+    records = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+    skip_events = [r for r in records if r.get("event") == "reindex_skip"]
+    assert len(skip_events) == 1
+    assert skip_events[0]["wiki"] == "private"
+    assert skip_events[0]["reason"] == "throttle"
