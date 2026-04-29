@@ -17,6 +17,27 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   attempt count and the OR fallback count, so weight/recall regressions
   are observable. Reindex-throttle skips share the sink as
   `event: "reindex_skip"` records.
+- **Catalog `slug_index`** — `lore lint` now writes a top-level
+  `slug_index: {stem: relpath}` to `_catalog.json`, giving the MCP
+  server O(1) wikilink resolution. Duplicate stems within a wiki
+  produce a `duplicate_stem` lint WARNING listing all colliding paths
+  so the user can rename one (ambiguous slugs break wikilink
+  resolution; first-by-sort-order wins until you fix it).
+- **`lore_drill` truncation transparency.** When the expand cap fires,
+  the `read_expanded` trace stage now records `truncated_slugs: [...]`
+  listing the dropped links. New optional `expand_only: list[str]` arg
+  intersects the discovered wikilink set with this list, letting an
+  agent re-drill exactly the dropped slugs without recomputing
+  search/expand.
+- **`lore_read` section extraction.** New optional `section: str` arg
+  returns just one H2 section (first match in document order,
+  case-insensitive substring; nested H3+ included). Code-fence aware:
+  `## not a heading` inside ` ``` ` or `~~~` blocks is correctly
+  ignored. Useful for long surface notes when only one heading is
+  needed.
+- **`lore_core/errors.py`** — canonical MCP error envelope helper
+  (`mcp_error`) plus error-code constants (`NO_VAULT`, `WIKI_NOT_FOUND`,
+  …) shared by `lore_core` handler modules and the MCP server.
 
 ### Changed
 
@@ -26,6 +47,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   zero hits. Quoting also neutralises FTS5 keywords (`AND`, `OR`,
   `NOT`, `NEAR`) — user queries containing those words no longer
   crash with `sqlite3.OperationalError`.
+- **Bare-string error envelope migration complete.** All `lore_core`
+  handler modules (`resume`, `inbox`, `briefing/gather`, `lint`) now
+  return the structured `{"error": {"code", "message", "next"}}`
+  shape. The previous bare-string `{"error": "..."}` returns are
+  gone. CLI callers updated to format `error.message` instead of
+  printing the dict.
+- **`_resolve_slug` is now three-tier:** `slug_index` (O(1)) → section
+  iteration (fallback for pre-`slug_index` catalogs, removed in v0.31.0)
+  → rglob (last resort for uncatalogued notes — drafts, inbox,
+  freshly-written). The rglob fallback stays indefinitely; without it
+  `lore_drill` would silently drop wikilinks to brand-new notes.
 
 ### Removed
 
