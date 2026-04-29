@@ -1475,6 +1475,28 @@ def test_extractor_t_pipe_or_redirect_before_git():
     assert _commit_shas_from_bash_results(turns) == []
 
 
+def test_extractor_t_combined_form_global_flags():
+    """`git --git-dir=/repo/.git commit -m x` — shlex preserves the
+    `=`-suffixed global flag as a single token; the membership check
+    must treat the prefix form, not the bare-arg form, or the commit is
+    silently skipped (regression for the original Step 1 implementation)."""
+    from lore_curator.session_filer import _commit_shas_from_bash_results
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git --git-dir=/repo/.git commit -m x",
+        output="[main 1234abc] x\n",
+    )
+    assert _commit_shas_from_bash_results(turns) == ["1234abc"]
+
+    turns = _bash_pair(
+        call_index=0, result_index=1,
+        command="git --work-tree=/repo --git-dir=/repo/.git commit -m y",
+        output="[main 5678def] y\n",
+    )
+    assert _commit_shas_from_bash_results(turns) == ["5678def"]
+
+
 # ---------------------------------------------------------------------------
 # _collect_activity — integration regression tests for bleed + gap (Step 3)
 # ---------------------------------------------------------------------------

@@ -373,9 +373,13 @@ def _is_git_commit_command(command: str) -> bool:
     Filters out:
     - substring matches (``git log --grep='git commit'``, ``echo 'git commit' | …``)
     - plumbing variants (``git commit-tree``)
-    - pipelines / redirects ahead of git (``echo x | git commit -F -``) — we
-      can't trust the next-token-is-commit heuristic when shell features
-      reorder things; reject conservatively.
+    - pipelines / redirects ahead of git (``echo x | git commit -F -``) —
+      these reposition git relative to its input/output stream so we can't
+      trust the regex match against tool_result. Rejected.
+    - ``;`` / ``&&`` / ``||`` chains ARE accepted: they don't reposition
+      git relative to its own arguments, and the regex against output still
+      lands on git's own ``[branch sha]`` line. The
+      ``t_chained_commits_one_call`` test exercises this deliberately.
     """
     if not command or not command.strip():
         return False
@@ -402,9 +406,20 @@ def _is_git_commit_command(command: str) -> bool:
     if i >= len(tokens) or tokens[i] != "git":
         return False
     i += 1
-    # Skip ``-C path`` global flags.
-    while i < len(tokens) and tokens[i] in ("-C", "-c", "--git-dir", "--work-tree"):
-        i += 2
+    # Skip global flags. Two forms each: bare-arg (``-C path``) and
+    # ``=``-suffixed (``--git-dir=/repo/.git``). shlex preserves the
+    # latter as a single token, so a membership check would silently
+    # miss them — and `git --git-dir=/repo/.git commit -m x` would be
+    # rejected as not-a-commit. Handle both.
+    _COMBINED_FLAGS = ("--git-dir=", "--work-tree=", "--namespace=", "--super-prefix=")
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix"):
+            i += 2
+        elif tok.startswith(_COMBINED_FLAGS):
+            i += 1
+        else:
+            break
     if i >= len(tokens):
         return False
     return tokens[i] == "commit"
