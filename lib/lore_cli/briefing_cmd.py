@@ -8,7 +8,16 @@ which gathers new sessions, renders a deterministic markdown digest,
 publishes via the wiki's configured sink (`.lore-briefing.yml`), and
 marks the ledger.
 
-Power-user subcommands (used by `/lore:briefing` and scripted flows):
+The one-shot also coordinates the wiki repo across teammates:
+``auto_pull`` runs before gather (so we see teammates' marks) and
+``commit + auto_push`` runs after mark (so teammates see ours).
+Aborts on dirty or diverged repos with a clear remediation message;
+single-user wikis without a remote skip coordination silently.
+Pass ``--no-git`` to opt out.
+
+Power-user subcommands (used by `/lore:briefing` and scripted flows)
+do **not** touch git — operators using the manual flow are expected
+to handle their own pull/commit/push:
 
   lore briefing gather --wiki <name>   read-only: returns new sessions
                                         + sink config + ledger state as
@@ -23,6 +32,7 @@ Power-user subcommands (used by `/lore:briefing` and scripted flows):
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -40,6 +50,7 @@ from lore_core.briefing import (
     render_briefing,
 )
 from lore_core.config import get_lore_root, get_wiki_root
+from lore_core.git_sync import SyncStatus, auto_pull, auto_push
 from lore_core.wiki_config import load_wiki_config
 
 app = typer.Typer(
@@ -133,6 +144,126 @@ def _try_compose_prose(
     return prose, None
 
 
+def _git_pre(wiki_dir: Path) -> tuple[bool, int]:
+    """Pull the wiki repo before gather. Returns ``(proceed, exit_code)``.
+
+    ``proceed=True`` means caller should continue with the briefing;
+    ``exit_code`` is only meaningful when ``proceed=False``.
+
+    Skip semantics:
+      - ``NO_REMOTE``        — silent continue (single-user wiki).
+      - ``OK`` / ``NOOP``    — continue (announce on real pull).
+      - ``DIRTY``            — abort: user must commit/stash first.
+      - ``DIVERGED``         — abort: user resolves manually.
+      - ``UNREACHABLE``      — warn + continue (network blip beats no briefing).
+    """
+    result = auto_pull(wiki_dir)
+    status = result.status
+    if status in (SyncStatus.OK, SyncStatus.NOOP, SyncStatus.SKIPPED_NO_REMOTE):
+        if status == SyncStatus.OK:
+            print(
+                f"lore: pulled {result.pulled_commits} commit(s) before briefing",
+                file=sys.stderr,
+            )
+        return True, 0
+    if status == SyncStatus.SKIPPED_DIRTY:
+        print(
+            "lore: wiki repo has uncommitted changes — refusing to publish "
+            "briefing (could double-publish if a teammate's mark is stale).\n"
+            f"  Resolve in {wiki_dir} (commit or stash), or pass --no-git to "
+            "skip coordination.",
+            file=sys.stderr,
+        )
+        return False, 1
+    if status == SyncStatus.SKIPPED_DIVERGED:
+        print(
+            "lore: wiki repo has diverged from remote "
+            f"({result.message}).\n"
+            f"  Resolve manually (e.g. `git -C {wiki_dir} pull --rebase`) "
+            "before re-running, or pass --no-git to skip coordination.",
+            file=sys.stderr,
+        )
+        return False, 1
+    if status == SyncStatus.SKIPPED_UNREACHABLE:
+        print(
+            f"lore: warn: pre-briefing pull failed ({result.message}); "
+            "proceeding without sync — risk of double-publish if a teammate "
+            "is briefing concurrently.",
+            file=sys.stderr,
+        )
+        return True, 0
+    # Other statuses (MERGED / MERGE_BLOCKED) shouldn't surface from auto_pull
+    # but be defensive.
+    print(
+        f"lore: warn: pull returned {status} ({result.message}); proceeding.",
+        file=sys.stderr,
+    )
+    return True, 0
+
+
+def _git_post(wiki_dir: Path, *, wiki: str, n_sessions: int) -> int:
+    """Stage ledger, commit, push. Returns exit code.
+
+    Returns 0 on success or no-remote (single-user). Returns non-zero
+    if commit or push failed — the briefing has already been published,
+    so callers should surface the warning but not retract success.
+    """
+    if not (wiki_dir / ".git").exists():
+        return 0  # not a git repo; nothing to coordinate
+
+    ledger = wiki_dir / ".briefing-ledger.json"
+    if not ledger.exists():
+        return 0  # mark probably failed; nothing to commit
+
+    add = subprocess.run(
+        ["git", "-C", str(wiki_dir), "add", ledger.name],
+        capture_output=True, text=True, check=False,
+    )
+    if add.returncode != 0:
+        print(
+            f"lore: warn: failed to stage ledger: {add.stderr.strip()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Skip the commit if nothing actually changed (e.g. re-run with same set).
+    diff = subprocess.run(
+        ["git", "-C", str(wiki_dir), "diff", "--cached", "--quiet"],
+        capture_output=True, text=True, check=False,
+    )
+    if diff.returncode == 0:
+        return 0  # nothing staged
+
+    msg = f"briefing({wiki}): incorporated {n_sessions} session(s)"
+    commit = subprocess.run(
+        ["git", "-C", str(wiki_dir), "commit", "-m", msg],
+        capture_output=True, text=True, check=False,
+    )
+    if commit.returncode != 0:
+        print(
+            f"lore: warn: ledger commit failed: {commit.stderr.strip()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    push = auto_push(wiki_dir)
+    if push.status in (SyncStatus.OK, SyncStatus.MERGED):
+        print(
+            f"lore: pushed ledger update ({push.pushed_commits} commit(s))",
+            file=sys.stderr,
+        )
+        return 0
+    if push.status in (SyncStatus.NOOP, SyncStatus.SKIPPED_NO_REMOTE):
+        return 0
+    print(
+        f"lore: warn: ledger committed locally but push failed "
+        f"({push.status}: {push.message}).\n"
+        f"  Briefing was published. Push manually: `git -C {wiki_dir} push`",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def _run_oneshot(
     *,
     wiki: str,
@@ -141,8 +272,15 @@ def _run_oneshot(
     dry_run: bool,
     no_mark: bool,
     no_llm: bool,
+    no_git: bool,
 ) -> int:
     """Gather + compose + publish + mark in one shot. Returns exit code."""
+    wiki_dir = get_wiki_root() / wiki
+    if not (no_git or dry_run):
+        proceed, code = _git_pre(wiki_dir)
+        if not proceed:
+            return code
+
     result = gather(wiki=wiki, since=since, include_body_sections=True)
     if "error" in result:
         print(f"lore: {result.get('error', 'gather failed')}", file=sys.stderr)
@@ -223,7 +361,10 @@ def _run_oneshot(
             file=sys.stderr,
         )
         return 1
-    return 0
+
+    if no_git:
+        return 0
+    return _git_post(wiki_dir, wiki=wiki, n_sessions=len(sessions))
 
 
 @app.callback(invoke_without_command=True)
@@ -265,6 +406,15 @@ def main_callback(
             "bullet-list briefing."
         ),
     ),
+    no_git: bool = typer.Option(
+        False,
+        "--no-git",
+        help=(
+            "Skip git coordination (pull-before-gather and "
+            "commit+push-after-mark). Use for local-only flows or when "
+            "the wiki repo is intentionally out-of-sync."
+        ),
+    ),
 ) -> None:
     """One-shot: gather + compose + publish + mark for ``--wiki``."""
     if ctx.invoked_subcommand is not None:
@@ -280,6 +430,7 @@ def main_callback(
             dry_run=dry_run,
             no_mark=no_mark,
             no_llm=no_llm,
+            no_git=no_git,
         )
     )
 

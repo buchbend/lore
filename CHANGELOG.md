@@ -10,6 +10,34 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-04-29
+
+### Added
+
+- **`lore briefing` now coordinates the wiki git repo across teammates.**
+  Before gather, `auto_pull` fast-forwards the wiki repo so we see
+  teammates' ledger marks. After mark, the ledger update is committed
+  (`briefing(<wiki>): incorporated N session(s)`) and pushed via
+  `auto_push`. Single-user wikis without a remote continue silently.
+  Aborts on dirty or diverged working trees with a clear remediation
+  message — no more silent double-publish when a teammate forgot to
+  push their ledger update.
+
+- **`--no-git` flag** opts out of coordination (testing, intentionally
+  out-of-sync repos, local-only flows). `--dry-run` already skipped
+  publish and now also skips git ops.
+
+### Notes
+
+- Power-user subcommands (`gather` / `publish` / `mark`) are unchanged
+  — operators using the manual flow handle their own git. Coordination
+  applies only to the one-shot pipeline (`lore briefing --wiki <name>`).
+- Residual race not addressed: if A pulls clean, publishes, but hasn't
+  pushed yet, B can still pull the same pre-publish state and
+  double-publish. A real fix needs a remote lease (e.g. claim-commit
+  before publish). Documented as a known limitation; out of scope for
+  this release.
+
 ## [0.31.0] - 2026-04-29
 
 ### Added
