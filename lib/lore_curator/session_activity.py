@@ -38,6 +38,7 @@ class CommitRef:
     subject: str
     branch: str  # current branch when collected; same for every commit in a session
     repo: str   # canonical "org/name" or "" if outside a known remote
+    body: str = ""  # full commit body (post-subject) — Step 3 trailer scan reads this
 
 
 def collect_commits_in_window(
@@ -89,6 +90,122 @@ def collect_commits_in_window(
             branch=branch,
             repo=repo_name,
         ))
+    return out
+
+
+def collect_commits_by_sha(
+    repo_root: Path | None,
+    shas: list[str],
+    *,
+    timeout_seconds: float = 5.0,
+) -> list[CommitRef]:
+    """Resolve a list of SHAs into ``CommitRef`` records inside ``repo_root``.
+
+    SHAs that don't resolve (rebased away, wrong repo, typo) are silently
+    dropped — fail-soft is the contract because under-attribution beats
+    wrong-attribution and the upstream extractor (``_commit_shas_from_bash_results``)
+    captures intent regardless of post-hoc repo state.
+
+    Empty input MUST short-circuit: bare ``git show`` with no args defaults
+    to ``HEAD``, which would re-introduce the parallel-session bleed in a
+    different shape.
+
+    Two-pass design (architect-recommended):
+      1. ``git cat-file --batch-check`` filters phantoms in O(1) git invocations
+         without aborting the run on the first missing ref (which ``git show``
+         would do).
+      2. ``git log --no-walk -z`` over survivors yields ``%h\\t%s\\t%B`` per
+         commit, NUL-separated so commit bodies containing literal tabs or
+         newlines parse cleanly.
+
+    Out-of-cwd-repo commits are documented v1 risk — Bash commands that
+    ``cd`` into another repo will have their SHAs captured by the extractor
+    but dropped here when this resolver runs against ``handle.cwd``'s repo
+    only.
+    """
+    if not shas or repo_root is None or not Path(repo_root).exists():
+        return []
+
+    # Pass 1: filter phantoms with batch-check. Stdin: one SHA per line.
+    # Stdout: ``<sha> <type> <size>`` for resolvable, ``<sha> missing`` for not.
+    try:
+        check = subprocess.run(
+            ["git", "-C", str(repo_root), "cat-file", "--batch-check"],
+            input="\n".join(shas) + "\n",
+            capture_output=True, text=True,
+            timeout=timeout_seconds, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if check.returncode != 0:
+        return []
+
+    survivors: list[str] = []
+    for line in check.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "commit":
+            survivors.append(parts[0])
+    if not survivors:
+        return []
+
+    # Pass 2: hydrate survivors. ``--no-walk`` shows only the named commits
+    # (not their ancestors). ``-z`` adds a NUL terminator after each entry's
+    # %B body so multi-line bodies don't bleed into the next record. Field
+    # separator is ASCII unit-separator (``%x1f``), not tab — commit subjects
+    # legitimately contain tabs and would corrupt a tab-separated parse.
+    try:
+        log = subprocess.run(
+            [
+                "git", "-C", str(repo_root),
+                "log", "--no-walk", "-z",
+                "--pretty=format:%H%x1f%h%x1f%s%x1f%B",
+                *survivors,
+            ],
+            capture_output=True, text=True,
+            timeout=timeout_seconds, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if log.returncode != 0:
+        return []
+
+    branch = _current_branch(repo_root, timeout_seconds)
+    repo_name = current_repo(repo_root) or ""
+
+    # Map full-SHA → CommitRef so we can return in the order the caller asked.
+    by_full_sha: dict[str, CommitRef] = {}
+    for record in log.stdout.split("\x00"):
+        record = record.strip("\n")
+        if not record:
+            continue
+        # Split into [full_sha, short_hash, subject, body]; body may contain
+        # tabs/newlines and is the remainder.
+        parts = record.split("\x1f", 3)
+        if len(parts) < 3:
+            continue
+        full_sha = parts[0].strip()
+        short_hash = parts[1].strip()
+        subject = parts[2]
+        body = parts[3] if len(parts) >= 4 else ""
+        # Strip a single trailing newline that git's %B always appends; keep
+        # internal newlines intact.
+        if body.endswith("\n"):
+            body = body[:-1]
+        by_full_sha[full_sha] = CommitRef(
+            short_hash=short_hash, subject=subject,
+            branch=branch, repo=repo_name, body=body,
+        )
+
+    # Order results by the caller's input order (preserves call-site ordering
+    # from the extractor). Map short / abbreviated SHAs to full via prefix.
+    out: list[CommitRef] = []
+    seen_full: set[str] = set()
+    for sha in shas:
+        for full, ref in by_full_sha.items():
+            if full.startswith(sha) and full not in seen_full:
+                seen_full.add(full)
+                out.append(ref)
+                break
     return out
 
 
