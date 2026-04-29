@@ -28,6 +28,8 @@ from typing import Iterable
 
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 
+from . import canonical
+
 # ---------------------------------------------------------------------------
 # Public dataclasses
 # ---------------------------------------------------------------------------
@@ -155,8 +157,15 @@ def scan_recent_session_links(
 # ---------------------------------------------------------------------------
 
 
+#: Plan-trailer regex.
+#:
+#: Accepts both the canonical ``Plan: <slug>#step-<N>`` and the legacy
+#: ``Plan: <slug>#s<N>`` form. Read-compat is permanent — historical
+#: commit trailers in any vault stay actionable forever, even after
+#: vaults migrate via ``lore plan migrate-ids``. Only one of the two
+#: groups (canonical or legacy) is non-empty per match.
 _TRAILER_RE = re.compile(
-    r"^Plan:\s*([A-Za-z0-9][\w-]*)#s(\d+)\s*$",
+    r"^Plan:\s*([A-Za-z0-9][\w-]*)#(?:step-(\d+)|s(\d+))\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
 
@@ -185,7 +194,14 @@ def _parse_commit_log(stdout: str, slug: str) -> list[Breadcrumb]:
             commit_slug = m.group(1).lower()
             if commit_slug != slug.lower():
                 continue
-            step_id = f"s{m.group(2)}"
+            # Group 2 = canonical ``step-<N>``; group 3 = legacy ``s<N>``.
+            # Exactly one is non-None per match. step_id is reported
+            # verbatim so legacy trailers continue to match legacy
+            # step_status keys until the plan is migrated.
+            if m.group(2) is not None:
+                step_id = f"step-{m.group(2)}"
+            else:
+                step_id = f"s{m.group(3)}"
             out.append(
                 Breadcrumb(
                     step_id=step_id,
@@ -229,11 +245,17 @@ def _session_timestamp(text: str, fallback_mtime: float) -> datetime:
 
 
 def _step_id_from_link_anchor(link: str, target_prefix: str) -> str | None:
-    """Extract ``sN`` from ``plan/<slug>#sN``. Returns None if no anchor."""
+    """Extract ``step-N`` or legacy ``sN`` from ``plan/<slug>#anchor``.
+
+    Returns None if no anchor or the anchor doesn't match either step
+    ID shape. Anchors are returned verbatim so legacy session-note
+    wikilinks keep matching legacy step_status keys.
+    """
     if "#" not in link:
         return None
     _, _, anchor = link.partition("#")
-    if not anchor.startswith("s") or not anchor[1:].isdigit():
+    n = canonical.parse_step_id_ordinal(anchor)
+    if n is None:
         return None
     return anchor
 

@@ -96,7 +96,7 @@ def test_list_shows_step_status(lore_with_plan: dict) -> None:
     assert result.exit_code == 0
     assert "refactor-auth" in result.stdout
     assert "0/3 done" in result.stdout
-    assert "next: s1" in result.stdout
+    assert "next: step-1" in result.stdout
 
 
 def test_list_json(lore_with_plan: dict) -> None:
@@ -109,7 +109,7 @@ def test_list_json(lore_with_plan: dict) -> None:
     assert plan["slug"] == "refactor-auth"
     assert plan["steps_total"] == 3
     assert plan["steps_done"] == 0
-    assert plan["next_pending_step"] == "s1"
+    assert plan["next_pending_step"] == "step-1"
 
 
 def test_list_repo_filter(lore_with_plan: dict) -> None:
@@ -127,51 +127,51 @@ def test_list_repo_filter(lore_with_plan: dict) -> None:
 
 
 def test_step_mark_done(lore_with_plan: dict) -> None:
-    result = runner.invoke(app, ["plan", "step", "refactor-auth", "s1", "--done"])
+    result = runner.invoke(app, ["plan", "step", "refactor-auth", "step-1", "--done"])
     assert result.exit_code == 0
-    assert "s1: pending → done" in result.stdout
+    assert "step-1: pending → done" in result.stdout
 
 
 def test_step_requires_exactly_one_flag(lore_with_plan: dict) -> None:
     """Zero or two+ status flags → exit 2 (the message goes to stderr;
     CliRunner doesn't always capture print(..., file=sys.stderr), so we
     pin only the exit code)."""
-    result = runner.invoke(app, ["plan", "step", "refactor-auth", "s1"])
+    result = runner.invoke(app, ["plan", "step", "refactor-auth", "step-1"])
     assert result.exit_code == 2
 
     result = runner.invoke(
-        app, ["plan", "step", "refactor-auth", "s1", "--done", "--in-progress"]
+        app, ["plan", "step", "refactor-auth", "step-1", "--done", "--in-progress"]
     )
     assert result.exit_code == 2
 
 
 def test_step_unknown_id_errors(lore_with_plan: dict) -> None:
-    result = runner.invoke(app, ["plan", "step", "refactor-auth", "s99", "--done"])
+    result = runner.invoke(app, ["plan", "step", "refactor-auth", "step-99", "--done"])
     assert result.exit_code == 1
     assert "not in plan" in _err_or_out(result)
 
 
 def test_step_pending_clears_status(lore_with_plan: dict) -> None:
-    runner.invoke(app, ["plan", "step", "refactor-auth", "s1", "--done"])
-    result = runner.invoke(app, ["plan", "step", "refactor-auth", "s1", "--pending"])
+    runner.invoke(app, ["plan", "step", "refactor-auth", "step-1", "--done"])
+    result = runner.invoke(app, ["plan", "step", "refactor-auth", "step-1", "--pending"])
     assert result.exit_code == 0
-    assert "s1: done → pending" in result.stdout
+    assert "step-1: done → pending" in result.stdout
 
 
 def test_advance_marks_first_pending(lore_with_plan: dict) -> None:
     result = runner.invoke(app, ["plan", "advance", "refactor-auth"])
     assert result.exit_code == 0
-    assert "s1: pending → done" in result.stdout
+    assert "step-1: pending → done" in result.stdout
 
 
 def test_advance_picks_in_progress_first(lore_with_plan: dict) -> None:
-    runner.invoke(app, ["plan", "step", "refactor-auth", "s2", "--in-progress"])
+    runner.invoke(app, ["plan", "step", "refactor-auth", "step-2", "--in-progress"])
     result = runner.invoke(app, ["plan", "advance", "refactor-auth"])
-    assert "s2: in_progress → done" in result.stdout
+    assert "step-2: in_progress → done" in result.stdout
 
 
 def test_advance_returns_when_all_done(lore_with_plan: dict) -> None:
-    for sid in ("s1", "s2", "s3"):
+    for sid in ("step-1", "step-2", "step-3"):
         runner.invoke(app, ["plan", "step", "refactor-auth", sid, "--done"])
     result = runner.invoke(app, ["plan", "advance", "refactor-auth"])
     assert result.exit_code == 0

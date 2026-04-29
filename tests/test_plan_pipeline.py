@@ -78,7 +78,7 @@ do bar
 """
     plan = parse(text)
     assert plan.mode == "headings"
-    assert [s.id for s in plan.steps] == ["s1", "s2"]
+    assert [s.id for s in plan.steps] == ["step-1", "step-2"]
     assert plan.steps[0].title == "Foo"
     assert "do foo" in plan.steps[0].body
     assert plan.body_intro == "Intro paragraph."
@@ -118,9 +118,11 @@ def test_mode_headings_p_prefix() -> None:
     plan = parse(text)
     assert plan.mode == "headings"
     assert len(plan.steps) == 2
-    assert plan.steps[0].title == "— Resolver primitives"
+    # Em-dash and similar separators are stripped from titles by the
+    # post-redesign classifier so the rendered title is clean.
+    assert plan.steps[0].title == "Resolver primitives"
     assert "body for P1" in plan.steps[0].body
-    assert plan.steps[1].title == "— Test isolation"
+    assert plan.steps[1].title == "Test isolation"
 
 
 def test_p_prefix_does_not_match_other_letters() -> None:
@@ -137,12 +139,21 @@ def test_p_prefix_does_not_match_other_letters() -> None:
     assert plan.mode == "single"
 
 
-def test_mode_headings_single_heading_falls_through_to_single_mode() -> None:
-    """One step heading is not enough — needs ≥2 siblings."""
+def test_mode_headings_single_heading_falls_through_to_fallback() -> None:
+    """One step heading is not enough — needs ≥2 siblings.
+
+    Post-redesign behavior: classifier returns ShapeUnknown (no
+    silent single-step plan); the dispatcher emits a fallback-
+    confidence plan with empty steps + a structured warning. The
+    hook handler will refuse to file fallback plans (step-13).
+    """
     text = "# P\n\n### Step 1: only one\nbody\n"
     plan = parse(text)
-    assert plan.mode == "single"
-    assert len(plan.steps) == 1
+    assert plan.confidence == "fallback"
+    assert len(plan.steps) == 0
+    assert plan.warnings  # structured warning attached
+    # Body preserved in body_intro so consumers can inspect what failed.
+    assert "Step 1: only one" in plan.body_intro
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +172,7 @@ Some intro.
 """
     plan = parse(text)
     assert plan.mode == "list"
-    assert [s.id for s in plan.steps] == ["s1", "s2", "s3"]
+    assert [s.id for s in plan.steps] == ["step-1", "step-2", "step-3"]
     assert plan.steps[0].title == "First step"
 
 
@@ -229,14 +240,14 @@ def test_mode_list_single_item_falls_through_to_single() -> None:
     assert plan.mode == "single"
 
 
-def test_mode_list_disjoint_numbered_lists_fall_through_to_single() -> None:
+def test_mode_list_disjoint_numbered_lists_fall_through_to_fallback() -> None:
     """Two unrelated numbered lists separated by an ATX heading — ambiguous.
 
     Earlier behavior flattened Goals + Risks + Verification.smoke from
     real plans into ``s1..sN`` regardless of which section the items
-    came from. The fix: when a top-level numbered list is interrupted
-    by an ATX heading, the runs are disjoint and we fall through to
-    single mode rather than stitching them together.
+    came from. Post-redesign: the classifier returns ShapeUnknown
+    rather than stitching disjoint runs; dispatcher emits a
+    fallback-confidence plan. Body preserved in ``body_intro``.
     """
     text = """# Plan
 
@@ -251,12 +262,13 @@ def test_mode_list_disjoint_numbered_lists_fall_through_to_single() -> None:
 2. Second risk
 """
     plan = parse(text)
-    assert plan.mode == "single"
-    # Body preserves both sections verbatim.
-    assert "## Goals" in plan.steps[0].body
-    assert "## Risks" in plan.steps[0].body
-    assert "First goal" in plan.steps[0].body
-    assert "First risk" in plan.steps[0].body
+    assert plan.confidence == "fallback"
+    assert len(plan.steps) == 0
+    # Body content preserved verbatim in body_intro for human inspection.
+    assert "## Goals" in plan.body_intro
+    assert "## Risks" in plan.body_intro
+    assert "First goal" in plan.body_intro
+    assert "First risk" in plan.body_intro
 
 
 def test_mode_list_explicit_steps_heading_wins() -> None:
@@ -296,12 +308,20 @@ intro
 
 
 def test_mode_single_no_steps_detected() -> None:
+    """Pure prose with no structure → ShapeUnknown → fallback plan.
+
+    Post-redesign behavior: parse() always returns a plan, but a plan
+    we couldn't structure carries ``confidence="fallback"`` + a
+    structured warning. The hook handler refuses to file fallback
+    plans (step-13).
+    """
     text = "# Plan\n\nJust some prose with no obvious steps.\nMore prose.\n"
     plan = parse(text)
-    assert plan.mode == "single"
-    assert len(plan.steps) == 1
-    assert plan.steps[0].id == "s1"
-    assert "Just some prose" in plan.steps[0].body
+    assert plan.confidence == "fallback"
+    assert len(plan.steps) == 0
+    assert plan.warnings
+    # Body preserved in body_intro for human inspection.
+    assert "Just some prose" in plan.body_intro
 
 
 def test_mode_single_with_only_title() -> None:
@@ -516,7 +536,7 @@ Migrate from session tokens to OIDC across the auth service.
     assert plan.mode == "headings"
     assert plan.title == "Refactor authentication"
     assert len(plan.steps) == 4
-    assert [s.id for s in plan.steps] == ["s1", "s2", "s3", "s4"]
+    assert [s.id for s in plan.steps] == ["step-1", "step-2", "step-3", "step-4"]
     assert "Migrate from session tokens" in plan.body_intro
 
 
@@ -599,12 +619,12 @@ Module docstring change only.
     # Heading mode wins because P1..P5 are recognized as step headings.
     assert plan.mode == "headings"
     assert len(plan.steps) == 5
-    assert [s.id for s in plan.steps] == ["s1", "s2", "s3", "s4", "s5"]
-    # Phase titles preserved.
+    assert [s.id for s in plan.steps] == ["step-1", "step-2", "step-3", "step-4", "step-5"]
+    # Phase titles preserved (em-dash separator stripped).
     titles = [s.title for s in plan.steps]
-    assert titles[0] == "— Resolver primitives + error states"
-    assert titles[1] == "— Test isolation: autouse conftest fixture"
-    assert titles[3] == "— Doctor source display"
+    assert titles[0] == "Resolver primitives + error states"
+    assert titles[1] == "Test isolation: autouse conftest fixture"
+    assert titles[3] == "Doctor source display"
     # Phase bodies preserve code blocks and the migration table — content
     # that was silently dropped by the old list-mode flattening.
     assert "```python" in plan.steps[0].body

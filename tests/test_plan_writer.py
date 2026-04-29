@@ -53,7 +53,7 @@ def _make_plan(
     n_steps: int = 3,
 ) -> StructuredPlan:
     steps = [
-        PlanStep(id=f"s{i + 1}", title=f"Step {i + 1}", body=f"do step {i + 1}")
+        PlanStep(id=f"step-{i + 1}", title=f"Step {i + 1}", body=f"do step {i + 1}")
         for i in range(n_steps)
     ]
     return StructuredPlan(
@@ -117,9 +117,9 @@ def test_fresh_write_body_renders_steps_and_trailer_hint(wiki_root: Path) -> Non
     body = strip_frontmatter(result.path.read_text())
     assert "# Refactor auth" in body
     assert "## Steps" in body
-    assert "### s1: Step 1" in body
-    assert "### s2: Step 2" in body
-    assert "Plan: refactor-auth#s<N>" in body  # commit-trailer hint
+    assert "### step-1: Step 1" in body
+    assert "### step-2: Step 2" in body
+    assert "Plan: refactor-auth#step-<N>" in body  # commit-trailer hint
 
 
 def test_fresh_write_no_repo_when_unattached(wiki_root: Path) -> None:
@@ -132,7 +132,7 @@ def test_single_mode_renders_body_verbatim_without_steps_wrapper(
     wiki_root: Path,
 ) -> None:
     """Single-mode plans preserve the source body — no ``## Steps`` /
-    ``### s1: s1`` wrapper that would mangle the visual hierarchy.
+    ``### step-1: step-1`` wrapper that would mangle the visual hierarchy.
 
     The plan's own H2 sections (``## Notes``, ``## Risks``) must stay at
     the H2 level. The trailer hint and step heading are dropped because
@@ -144,7 +144,7 @@ def test_single_mode_renders_body_verbatim_without_steps_wrapper(
         body_intro="",
         steps=[
             PlanStep(
-                id="s1",
+                id="step-1",
                 title="",
                 body="## Notes\n\nSome prose.\n\n## Risks\n\nMore prose.",
             )
@@ -162,11 +162,11 @@ def test_single_mode_renders_body_verbatim_without_steps_wrapper(
     assert "## Notes" in body
     assert "## Risks" in body
     assert "Some prose." in body
-    # No `## Steps` wrapper or `### s1:` anchor heading in single mode.
+    # No `## Steps` wrapper or `### step-1:` anchor heading in single mode.
     assert "## Steps" not in body
-    assert "### s1" not in body
+    assert "### step-1" not in body
     # No commit-trailer hint either — only meaningful for multi-step plans.
-    assert "Plan: freeform#s<N>" not in body
+    assert "Plan: freeform#step-<N>" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ def test_yaml_safe_dump_handles_colon_in_description(wiki_root: Path) -> None:
         slug="x",
         title="Plan: refactor X",
         body_intro="",
-        steps=[PlanStep(id="s1", title="t", body="b")],
+        steps=[PlanStep(id="step-1", title="t", body="b")],
     )
     result = write_plan_note(
         wiki_root=wiki_root,
@@ -203,7 +203,7 @@ def test_yaml_safe_dump_handles_brackets_and_pipes(wiki_root: Path) -> None:
         slug="x",
         title="x",
         body_intro="",
-        steps=[PlanStep(id="s1", title="t", body="b")],
+        steps=[PlanStep(id="step-1", title="t", body="b")],
     )
     result = write_plan_note(
         wiki_root=wiki_root,
@@ -299,10 +299,10 @@ def test_recapture_preserves_step_status(wiki_root: Path) -> None:
     plan = _make_plan()
     r1 = _write(wiki_root, plan, text="v1")
 
-    # Simulate Claude marking s1 done between captures.
+    # Simulate Claude marking step-1 done between captures.
     text = r1.path.read_text()
     fm = parse_frontmatter(text)
-    fm["step_status"] = {"s1": "done", "s2": "in_progress"}
+    fm["step_status"] = {"step-1": "done", "step-2": "in_progress"}
     fm["step_status_updated"] = "2026-04-28T10:00:00Z"
     body = strip_frontmatter(text)
     r1.path.write_text(
@@ -313,7 +313,7 @@ def test_recapture_preserves_step_status(wiki_root: Path) -> None:
     r2 = _write(wiki_root, plan, text="v2-different")
     assert r2.outcome == "updated"
     fm_after = parse_frontmatter(r2.path.read_text())
-    assert fm_after["step_status"] == {"s1": "done", "s2": "in_progress"}
+    assert fm_after["step_status"] == {"step-1": "done", "step-2": "in_progress"}
     assert fm_after["step_status_updated"] == "2026-04-28T10:00:00Z"
 
 
@@ -369,14 +369,14 @@ def test_user_owned_keys_set_is_explicit() -> None:
 
 
 def test_recapture_preserves_step_ids_when_steps_added(wiki_root: Path) -> None:
-    """Adding steps to source: existing s1, s2 keep their IDs; new ones become s3."""
+    """Adding steps to source: existing step-1, step-2 keep their IDs; new ones become step-3."""
     plan_v1 = _make_plan(n_steps=2)
     r1 = _write(wiki_root, plan_v1, text="v1")
 
-    # Mark s2 in_progress so we can verify status survives renumber.
+    # Mark step-2 in_progress so we can verify status survives renumber.
     text = r1.path.read_text()
     fm = parse_frontmatter(text)
-    fm["step_status"] = {"s2": "in_progress"}
+    fm["step_status"] = {"step-2": "in_progress"}
     body = strip_frontmatter(text)
     r1.path.write_text(
         f"---\n{yaml.safe_dump(fm, default_flow_style=False, sort_keys=False).strip()}\n---\n\n{body}"
@@ -386,24 +386,66 @@ def test_recapture_preserves_step_ids_when_steps_added(wiki_root: Path) -> None:
     r2 = _write(wiki_root, plan_v2, text="v2")
     assert r2.outcome == "updated"
     body_after = strip_frontmatter(r2.path.read_text())
-    assert "### s1:" in body_after
-    assert "### s2:" in body_after
-    assert "### s3:" in body_after
-    assert "### s4:" in body_after
+    assert "### step-1:" in body_after
+    assert "### step-2:" in body_after
+    assert "### step-3:" in body_after
+    assert "### step-4:" in body_after
     fm_after = parse_frontmatter(r2.path.read_text())
-    # step_status pointing at s2 still meaningful — s2 is still s2.
-    assert fm_after["step_status"] == {"s2": "in_progress"}
+    # step_status pointing at step-2 still meaningful — step-2 is still step-2.
+    assert fm_after["step_status"] == {"step-2": "in_progress"}
+
+
+def test_recapture_migrates_legacy_step_ids_to_canonical(wiki_root: Path) -> None:
+    """A plan written before the rename has ``### s<N>:`` headings and
+    ``step_status: {s1: ...}``. Re-capturing it must migrate the body
+    headings and the frontmatter keys atomically — anchors and status
+    must stay consistent.
+
+    This is the piecemeal migration path; the same logic is exposed
+    standalone via ``lore plan migrate-ids``.
+    """
+    # Stage 1: write a fresh plan, then hand-rewrite to legacy shape on disk.
+    plan = _make_plan(n_steps=3)
+    r1 = _write(wiki_root, plan, text="v1")
+    text = r1.path.read_text()
+    fm = parse_frontmatter(text)
+    fm["step_status"] = {"step-1": "done", "step-2": "in_progress"}
+    body = strip_frontmatter(text)
+    # Downgrade body and step_status to the legacy shape.
+    legacy_body = body.replace("### step-1:", "### s1:").replace(
+        "### step-2:", "### s2:"
+    ).replace("### step-3:", "### s3:")
+    fm["step_status"] = {"s1": "done", "s2": "in_progress"}
+    r1.path.write_text(
+        f"---\n{yaml.safe_dump(fm, default_flow_style=False, sort_keys=False).strip()}\n---\n\n{legacy_body}"
+    )
+
+    # Stage 2: re-capture with different content. Writer should canonicalize.
+    r2 = _write(wiki_root, plan, text="v2-different")
+    assert r2.outcome == "updated"
+    body_after = strip_frontmatter(r2.path.read_text())
+    fm_after = parse_frontmatter(r2.path.read_text())
+
+    # Body migrated: canonical headings only.
+    assert "### step-1:" in body_after
+    assert "### step-2:" in body_after
+    assert "### step-3:" in body_after
+    assert "### s1:" not in body_after
+    assert "### s2:" not in body_after
+
+    # step_status keys migrated, statuses preserved.
+    assert fm_after["step_status"] == {"step-1": "done", "step-2": "in_progress"}
 
 
 def test_recapture_marks_removed_steps(wiki_root: Path) -> None:
-    """Removing a step from source: existing s2 stays as ``[removed-from-source]``."""
+    """Removing a step from source: existing step-3 stays as ``[removed-from-source]``."""
     r1 = _write(wiki_root, _make_plan(n_steps=3), text="v1")
     r2 = _write(wiki_root, _make_plan(n_steps=2), text="v2")
     assert r2.outcome == "updated"
     body = strip_frontmatter(r2.path.read_text())
     assert "[removed-from-source]" in body
-    # s3 must still exist as a heading (so step_status[s3] doesn't dangle).
-    assert "### s3:" in body
+    # step-3 must still exist as a heading (so step_status[step-3] doesn't dangle).
+    assert "### step-3:" in body
 
 
 # ---------------------------------------------------------------------------
@@ -493,7 +535,7 @@ def test_list_active_card_step_status_summary(wiki_root: Path) -> None:
     r = _write(wiki_root, plan, text="x")
     text = r.path.read_text()
     fm = parse_frontmatter(text)
-    fm["step_status"] = {"s1": "done", "s2": "in_progress"}
+    fm["step_status"] = {"step-1": "done", "step-2": "in_progress"}
     body = strip_frontmatter(text)
     r.path.write_text(
         f"---\n{yaml.safe_dump(fm, default_flow_style=False, sort_keys=False).strip()}\n---\n\n{body}"
@@ -504,8 +546,8 @@ def test_list_active_card_step_status_summary(wiki_root: Path) -> None:
     c = cards[0]
     assert c.steps_total == 4
     assert c.steps_done == 1
-    assert c.steps_in_progress == ["s2"]
-    assert c.next_pending_step() == "s3"
+    assert c.steps_in_progress == ["step-2"]
+    assert c.next_pending_step() == "step-3"
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +563,7 @@ def test_scan_incoming_wikilinks_finds_referencing_session(
     sessions = wiki_root / "sessions"
     sessions.mkdir(parents=True, exist_ok=True)
     (sessions / "2026-04-28-x.md").write_text(
-        "---\ntype: session\n---\n\nWorking on [[plan/refactor-auth#s2]]"
+        "---\ntype: session\n---\n\nWorking on [[plan/refactor-auth#step-2]]"
     )
 
     matches = registry.scan_incoming_wikilinks(wiki_root, "refactor-auth")

@@ -313,6 +313,241 @@ def _extract_plan_from_orphan(path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# `lore plan file` — primary producer-facing capture command
+# ---------------------------------------------------------------------------
+
+
+@app.command("file")
+def cmd_file(
+    path: Path = typer.Argument(
+        ..., help="Path to envelope JSON (with --json) or markdown."
+    ),
+    json_envelope: bool = typer.Option(
+        False, "--json", help="Treat <path> as a `lore.plan.envelope/1` JSON envelope."
+    ),
+    wiki: str = typer.Option(None, "--wiki"),
+    repo: str = typer.Option(None, "--repo"),
+    json_out: bool = typer.Option(False, "--json-out", help="Emit a JSON report."),
+) -> None:
+    """File a plan via the structured envelope path.
+
+    The envelope (``lore.plan.envelope/1``) is the canonical interop
+    contract for tools that can emit JSON — Cursor, Aider, Cline,
+    custom CI scripts, etc. Producers skip markdown shape detection
+    entirely; they construct the canonical IR directly and lore
+    validates + writes.
+
+    Markdown plans (legacy/recovery path) still go via
+    ``lore plan import``.
+    """
+    if not json_envelope:
+        typer.echo(
+            "lore: pass --json <path> to file an envelope plan; "
+            "use `lore plan import` for markdown",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if not path.exists():
+        typer.echo(f"lore: not found: {path}", err=True)
+        raise typer.Exit(code=1)
+
+    from lore_core.plans.envelope import EnvelopeError
+    from lore_core.plans.ingest import IngestSource, ingest_plan
+    from lore_core.plans.writer import compute_source_hash, write_plan_note
+
+    try:
+        payload = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        typer.echo(f"lore: envelope read failed: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        result = ingest_plan(
+            IngestSource(kind="envelope", payload=payload, producer="cli")
+        )
+    except EnvelopeError as e:
+        typer.echo(f"lore: envelope schema error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    wiki_root = _resolve_wiki(wiki)
+    canonical_text = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    write_result = write_plan_note(
+        wiki_root=wiki_root,
+        plan=result.plan,
+        source_hash=compute_source_hash(canonical_text),
+        source_adapter="envelope-cli",
+        repo=repo,
+    )
+
+    if json_out:
+        _emit_json({
+            "schema": "lore.plan.file/1",
+            "data": {
+                "slug": write_result.slug,
+                "path": str(write_result.path),
+                "outcome": write_result.outcome,
+                "step_count": write_result.step_count,
+                "confidence": result.confidence,
+                "adapter": result.adapter_name,
+            },
+        })
+    else:
+        print(f"{write_result.outcome}: {write_result.path}")
+
+
+# ---------------------------------------------------------------------------
+# `lore plan migrate-ids` — one-shot legacy ``s<N>`` → canonical ``step-<N>``
+# ---------------------------------------------------------------------------
+
+
+def _migrate_one_plan(path: Path, *, dry_run: bool) -> dict:
+    """Migrate one plan file in place. Returns a per-file report dict.
+
+    Idempotent: a plan that's already canonical is read once, found
+    unchanged, and not rewritten — preserving mtime. Files that fail
+    to parse (malformed YAML, missing frontmatter, ``type != "plan"``)
+    are reported as ``skipped`` and left untouched — the migration
+    walks the rest of the vault rather than aborting.
+    """
+    from lore_core.io import atomic_write_text
+    from lore_core.plans import canonical
+    from lore_core.schema import parse_frontmatter, strip_frontmatter
+
+    report: dict = {
+        "path": str(path),
+        "headings_rewritten": 0,
+        "status_keys_rewritten": 0,
+        "changed": False,
+        "skipped": False,
+        "skip_reason": None,
+    }
+
+    try:
+        text = path.read_text()
+        fm = parse_frontmatter(text)
+    except (OSError, ValueError, Exception) as e:  # noqa: BLE001
+        report["skipped"] = True
+        report["skip_reason"] = f"parse_failed: {type(e).__name__}"
+        return report
+
+    if not isinstance(fm, dict) or not fm:
+        report["skipped"] = True
+        report["skip_reason"] = "no_frontmatter"
+        return report
+
+    if fm.get("type") != "plan":
+        report["skipped"] = True
+        report["skip_reason"] = "not_a_plan"
+        return report
+
+    body = strip_frontmatter(text)
+    body_after, body_rewrites = canonical.migrate_legacy_body(body)
+    fm_rewrites = canonical.migrate_legacy_step_status(fm)
+
+    report["headings_rewritten"] = body_rewrites
+    report["status_keys_rewritten"] = fm_rewrites
+    report["changed"] = bool(body_rewrites or fm_rewrites)
+
+    if not report["changed"] or dry_run:
+        return report
+
+    # Re-render frontmatter using yaml.safe_dump (consistent with writer).
+    # ``allow_unicode=True`` matches writer._render_markdown — without it,
+    # non-ASCII description text gets backslash-escaped.
+    import yaml as _yaml
+
+    new_text = (
+        "---\n"
+        + _yaml.safe_dump(
+            fm, default_flow_style=False, sort_keys=False, allow_unicode=True
+        ).strip()
+        + "\n---\n\n"
+        + body_after.lstrip("\n")
+    )
+    atomic_write_text(path, new_text)
+    return report
+
+
+@app.command("migrate-ids")
+def cmd_migrate_ids(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report changes without writing."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit a JSON report."),
+) -> None:
+    """Rewrite legacy ``s<N>`` step IDs to canonical ``step-<N>`` across the vault.
+
+    Walks every wiki under ``$LORE_ROOT/wiki/`` and rewrites:
+      * Body headings ``### s<N>: …`` → ``### step-<N>: …``
+      * Frontmatter ``step_status`` / ``step_status_updated`` keys
+
+    Idempotent — already-canonical plans are untouched (mtime preserved).
+    The same logic runs piecemeal during plan re-capture; this command
+    is the standalone path for vaults that won't re-capture every plan.
+    """
+    from lore_core.config import get_lore_root
+
+    lore_root = get_lore_root()
+    if lore_root is None or not lore_root.exists():
+        typer.echo("lore: $LORE_ROOT not configured", err=True)
+        raise typer.Exit(code=1)
+
+    wiki_root = lore_root / "wiki"
+    if not wiki_root.is_dir():
+        typer.echo(f"lore: no wikis under {wiki_root}", err=True)
+        raise typer.Exit(code=1)
+
+    reports: list[dict] = []
+    for wiki_dir in sorted(wiki_root.iterdir()):
+        if not wiki_dir.is_dir():
+            continue
+        plans_dir = wiki_dir / "plans"
+        if not plans_dir.is_dir():
+            continue
+        for plan_path in sorted(plans_dir.glob("*.md")):
+            reports.append(_migrate_one_plan(plan_path, dry_run=dry_run))
+
+    changed = [r for r in reports if r["changed"]]
+    skipped = [r for r in reports if r.get("skipped")]
+    if json_out:
+        _emit_json({
+            "schema": "lore.plan.migrate-ids/1",
+            "data": {
+                "dry_run": dry_run,
+                "scanned": len(reports),
+                "changed": len(changed),
+                "skipped": len(skipped),
+                "reports": reports,
+            },
+        })
+        return
+
+    verb = "would migrate" if dry_run else "migrated"
+    if not changed and not skipped:
+        typer.echo(f"lore: scanned {len(reports)} plans — none needed migration")
+        return
+    for r in changed:
+        slug = Path(r["path"]).stem
+        typer.echo(
+            f"  {verb} {slug}: "
+            f"{r['headings_rewritten']} headings, "
+            f"{r['status_keys_rewritten']} step_status keys"
+        )
+    for r in skipped:
+        slug = Path(r["path"]).stem
+        typer.echo(f"  skipped {slug}: {r['skip_reason']}")
+    summary_parts: list[str] = []
+    if changed:
+        summary_parts.append(f"{verb} {len(changed)}")
+    if skipped:
+        summary_parts.append(f"skipped {len(skipped)}")
+    typer.echo(
+        f"lore: {' / '.join(summary_parts)} of {len(reports)} plans scanned"
+    )
+
+
+# ---------------------------------------------------------------------------
 # `lore plan step`
 # ---------------------------------------------------------------------------
 
@@ -320,7 +555,7 @@ def _extract_plan_from_orphan(path: Path) -> str:
 @app.command("step")
 def cmd_step(
     slug: str = typer.Argument(..., help="Plan slug."),
-    step_id: str = typer.Argument(..., help="Step ID (e.g. s2)."),
+    step_id: str = typer.Argument(..., help="Step ID (e.g. step-2)."),
     done: bool = typer.Option(False, "--done", help="Mark step as done."),
     in_progress: bool = typer.Option(
         False, "--in-progress", help="Mark step as in_progress."

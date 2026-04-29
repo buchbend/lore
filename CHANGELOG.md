@@ -10,8 +10,53 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-04-29
+
 ### Added
 
+- **Generic plan ingestion architecture.** Replaces the closed regex
+  union (5 brittle patterns) with a typed shape classifier + structured
+  envelope path + producer-keyed adapter registry, designed for lore
+  to act as the glue layer between AI coding tools (Claude Code today,
+  Cursor / Aider / Cline / custom CI tomorrow).
+  - **`canonical.py`** is the single source of truth for the step
+    heading + ID format. Three modules previously held their own
+    regex copy; now they all import from here.
+  - **`shapes.py` + `markdown_adapter.py`** — typed verdicts
+    (`ShapeATXSteps`, `ShapeHierarchical`, `ShapeNumberedList`,
+    `ShapeCheckboxList`, `ShapeAmbiguous`, `ShapeUnknown`) plus a
+    structural classifier that asks one question — *do ≥2 sibling
+    headings at one level form a monotone sequence under any
+    interpretation?* — subsuming all five legacy regexes plus the
+    hierarchical case (`## Phase N` + `### N.M`) that triggered the
+    redesign.
+  - **`envelope.py`** — `lore.plan.envelope/1` schema with a
+    hand-rolled validator. Tools that can emit JSON skip markdown
+    shape detection entirely.
+  - **`adapters/`** — producer-keyed registry (`claude-code` shipped;
+    `cursor` stub) so future tool dialects plug in via a small
+    adapter without churning the parser.
+  - **`ingest.py`** — single producer-facing entrypoint
+    (`ingest_plan(IngestSource)`) that routes envelope / hook /
+    markdown to the right path and returns an `IngestResult` with
+    typed `confidence` + structured warnings.
+- **`lore plan file --json <path>`** — CLI command for filing a plan
+  via the envelope schema. Validates the envelope, writes the canonical
+  plan note. (Markdown filing remains under `lore plan import` and
+  the ExitPlanMode hook.)
+- **`lore_plan_file` MCP tool** — envelope-only ingestion path for
+  agents. Markdown filing stays hook-only by design — agents wanting
+  to file via MCP must produce structured input.
+- **`lore plan migrate-ids`** CLI command — one-shot legacy
+  `### s<N>:` → canonical `### step-<N>:` rewrite across every plan
+  in every wiki under `$LORE_ROOT`. Idempotent; preserves mtime when
+  no changes needed; skips non-plan files and malformed YAML
+  gracefully; `--dry-run` and `--json` flags supported.
+- **Hierarchical step grouping.** Plans authored with `## Phase N
+  — title` containers + `### N.M` leaves now lift the leaves into
+  flat `step-1..step-N` IDs and stamp each with `PlanStep.group =
+  "Phase N — title"`. The hierarchical structure survives the IR
+  flattening for downstream consumers that want to render groups.
 - **FTS query telemetry** (`$LORE_CACHE/query-log.jsonl`) — every
   `lore_search` call writes one JSONL record capturing both the AND
   attempt count and the OR fallback count, so weight/recall regressions
@@ -41,6 +86,29 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- **Canonical plan step heading + ID renamed.** On disk: `### s<N>:`
+  → `### step-<N>:`. Step IDs: `s1`/`s2`/… → `step-1`/`step-2`/…
+  Wikilinks: `[[plan/slug#s2]]` → `[[plan/slug#step-2]]`. Commit
+  trailers: `Plan: slug#s2` → `Plan: slug#step-2`. The on-disk shape
+  is now self-explanatory. **Read compat is permanent** — historical
+  `s<N>` trailers in git logs and unmigrated plans on disk continue to
+  resolve forever (the trailer regex and registry both accept either
+  shape). The piecemeal-migration writer also rewrites legacy plans on
+  the next re-capture; for vaults that won't re-capture every plan,
+  `lore plan migrate-ids` does the same in one pass.
+- **Plan parser renamed shapes:** the `mode` field on `StructuredPlan`
+  now reports `"hierarchical"`, `"checkbox"`, `"envelope"` in addition
+  to the legacy `"headings"` / `"list"` / `"single"` strings. Pure
+  telemetry; consumers that branch on `mode` should match the new set.
+- **`lore_core/plans/parser.py` shrunk to a 70-line compatibility
+  shim.** The 480-line monolith with closed regex union is gone;
+  step detection lives in `markdown_adapter.py`, hook-payload
+  extraction in `adapters/claude_code.py`, the dispatcher in
+  `ingest.py`. Public API (`parse`, `parse_payload`) preserved
+  verbatim — existing imports keep working.
+- **Plan ATX titles now strip leading `:`/`—`/`–`/`-`/`.` separators**
+  from titles after the prefix (e.g. `### P1 — Foundation` →
+  title=`"Foundation"`, not `"— Foundation"`). Cleaner rendering.
 - **FTS search now AND-first, OR-fallback.** `_sanitize_fts_query`
   builds an AND-style MATCH (FTS5 implicit AND) with each token
   double-quoted; the OR-joined variant is used only when AND yields
@@ -61,6 +129,26 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Removed
 
+- **Silent single-mode plan filing.** When the markdown shape
+  classifier can't recognize a step structure, the
+  `PostToolUse:ExitPlanMode` hook **refuses to file** instead of
+  silently dropping a one-step degraded plan into the wiki (the bug
+  that triggered this whole redesign). The hook surfaces a structured
+  `systemMessage` to Claude Code naming the failure code
+  (`shape_unknown` / `shape_ambiguous`) and example heading shapes
+  the next attempt should use. `lore lint` flags any
+  `ingest_confidence: fallback` plan that did slip through other
+  paths. Pre-1.0; no deprecation cycle. Plans authored with
+  recognizable structures (ATX headings with Phase/Step/P/S/numeric
+  prefixes, hierarchical `## Phase N` + `### N.M`, top-level numbered
+  lists, checkbox lists) keep working unchanged.
+- **`StructuredPlan.mode == "single"`** is no longer a load-bearing
+  filing path. The IR keeps the field for telemetry but the writer
+  never emits a step-less plan note from real producers.
+- **The cross-module `_STEP_HEADING_PATTERNS[1]` index reach in the
+  writer is gone.** Step-ID extraction now goes through
+  `canonical.extract_step_ids` everywhere — reordering parser
+  patterns is safe again.
 - **Minimal JSON-RPC MCP fallback** (`_run_minimal_server`) — deleted.
   The `mcp` SDK is now a hard dependency in `[project].dependencies`
   rather than an optional `[mcp]` extra. **Breaking install change:**

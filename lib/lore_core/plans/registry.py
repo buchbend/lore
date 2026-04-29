@@ -198,28 +198,24 @@ def _str_or_none(value: Any) -> str | None:
     return str(value)
 
 
-import re as _re
-
-_STEP_HEADING_RE = _re.compile(r"^###\s+s(\d+)\b", _re.IGNORECASE)
-
-
 def extract_step_ids_from_body(text: str) -> list[str]:
-    """Parse ``### s<N>`` headings out of a plan note's body in document order.
+    """Parse step headings out of a plan note's body in document order.
 
-    Public helper because ``step_status.set_step`` and Phase-4
-    SessionStart rendering both need the canonical step-ID list. Used
-    to be private + cross-module imported with an apologetic comment;
-    promoted here so the seam is part of the contract.
+    Permissive read: accepts both canonical (``### step-<N>:``) and legacy
+    (``### s<N>:``) heading shapes via :mod:`canonical`. IDs are
+    returned **verbatim** (``step-1`` or ``s1``) so callers comparing
+    against an unmigrated ``step_status: {s1: …}`` dict still match.
+    Use :func:`canonical.canonicalize_step_id` if canonical form is
+    required.
+
+    Public helper because ``step_status.set_step`` and SessionStart
+    rendering both need the ordered step-ID list.
     """
     from lore_core.schema import strip_frontmatter
 
-    body = strip_frontmatter(text)
-    ids: list[str] = []
-    for line in body.split("\n"):
-        m = _STEP_HEADING_RE.match(line)
-        if m:
-            ids.append(f"s{m.group(1)}")
-    return ids
+    from . import canonical
+
+    return canonical.extract_step_ids(strip_frontmatter(text))
 
 
 # Backward-compat alias — internal callers may still use the underscored name

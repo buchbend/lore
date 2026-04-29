@@ -1442,8 +1442,13 @@ def _plan_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
         return []
 
 
+#: Plan-trailer regex used by Stop-hook nudges.
+#:
+#: Accepts both canonical ``step-<N>`` and legacy ``s<N>`` anchors so
+#: historical commits keep matching after the rename. Match groups:
+#: 1 = slug, 2 = full step ID (``step-N`` or ``sN``).
 _PLAN_TRAILER_RE = re.compile(
-    r"^Plan:\s*([\w./-]+)#(s\d+)\s*$", re.IGNORECASE | re.MULTILINE
+    r"^Plan:\s*([\w./-]+)#(step-\d+|s\d+)\s*$", re.IGNORECASE | re.MULTILINE
 )
 
 #: File-path-shaped tokens inside a plan step body. Permissive enough to
@@ -3359,7 +3364,7 @@ def cmd_plan_capture(
     raw_payload: bytes | None = None
     try:
         from lore_core.io import read_hook_stdin
-        from lore_core.plans.parser import parse, parse_payload
+        from lore_core.plans.ingest import IngestSource, ingest_plan
         from lore_core.plans.writer import (
             compute_source_hash,
             plan_path,
@@ -3409,8 +3414,31 @@ def cmd_plan_capture(
         wiki_root = get_wiki_root() / scope.wiki
         repo_slug = current_repo(cwd_resolved)
 
-        plan_text, source_field = parse_payload(payload)
-        if plan_text is None:
+        # Route the entire hook payload through the ingest dispatcher's
+        # ``hook_payload`` branch — this exercises the producer-keyed
+        # adapter (Claude Code today; Cursor / Aider tomorrow) and
+        # returns a unified confidence verdict + structured warnings.
+        # The branch handles both "no plan markdown extractable" and
+        # "extractable but unstructured" via different warning codes.
+        ingest_result = ingest_plan(
+            IngestSource(
+                kind="hook_payload", payload=payload, producer="claude-code"
+            )
+        )
+        plan = ingest_result.plan
+        warning_codes = [w.code for w in ingest_result.warnings]
+        warning_messages = [w.message for w in ingest_result.warnings]
+        # ``adapter_name`` is ``hook/claude-code:tool_input.plan`` etc;
+        # extract the source field for legacy telemetry compat.
+        adapter_name = ingest_result.adapter_name
+        source_field = (
+            adapter_name.split(":", 1)[1]
+            if ":" in adapter_name and adapter_name.startswith("hook/")
+            else adapter_name
+        )
+
+        # No plan markdown found in the payload at all → orphan dump.
+        if "payload_no_plan" in warning_codes:
             logger.emit(
                 event="plan-capture",
                 outcome="no-plan-in-payload",
@@ -3420,8 +3448,35 @@ def cmd_plan_capture(
             _orphan_dump(raw_payload, plain=plain)
             return
 
-        plan = parse(plan_text)
-        source_hash = compute_source_hash(plan_text)
+        # Markdown extracted but the classifier couldn't recognize a
+        # step structure → fail loud, do NOT file.
+        if ingest_result.confidence == "fallback":
+            logger.emit(
+                event="plan-capture",
+                outcome="unstructured",
+                source_field=source_field,
+                shape_diagnosis=warning_messages[0] if warning_messages else "",
+                warning_codes=warning_codes,
+                slug=plan.slug,
+                cwd=str(cwd_resolved),
+            )
+            _emit_post_tool_use(
+                _format_unstructured_message(
+                    slug=plan.slug,
+                    warning_codes=warning_codes,
+                    warning_messages=warning_messages,
+                ),
+                plain=plain,
+            )
+            return  # do NOT write the plan
+
+        # Recompute source_hash from the extracted markdown for dedup
+        # parity with prior behavior (the writer compares this hash
+        # against existing files to decide filed/deduped/updated).
+        from lore_core.plans.parser import parse_payload as _legacy_extract
+
+        _extracted_text, _ = _legacy_extract(payload)
+        source_hash = compute_source_hash(_extracted_text or "")
 
         target_path = plan_path(wiki_root, plan.slug)
         prior_last_reviewed = ""
@@ -3473,6 +3528,28 @@ def cmd_plan_capture(
                 f"lore: plan-capture failed ({type(exc).__name__}); see lore status",
                 plain=plain,
             )
+
+
+def _format_unstructured_message(
+    *,
+    slug: str,
+    warning_codes: list[str],
+    warning_messages: list[str],
+) -> str:
+    """User-facing message when the hook refuses to file an unstructured plan.
+
+    The message must give the agent enough context to re-author the plan
+    using a recognized shape. We name the canonical example so the
+    next attempt has a concrete target.
+    """
+    code = warning_codes[0] if warning_codes else "shape_unknown"
+    detail = warning_messages[0] if warning_messages else "no recognized step structure"
+    return (
+        f"lore: plan ingest failed ({code}) — {detail}. "
+        f"Re-run plan mode with explicit step headings "
+        f"(e.g. `### step-1: title`, `### Phase 1 — title`, or hierarchical "
+        f"`## Phase N` + `### N.M`). Plan NOT filed."
+    )
 
 
 _HOOK_MSG_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")

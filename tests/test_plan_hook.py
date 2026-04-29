@@ -276,6 +276,62 @@ def test_malformed_json_orphan_dumps(
     assert b"this is not JSON" in dumps[0].read_bytes()
 
 
+def test_unstructured_plan_hard_fails_no_write(
+    lore_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An unrecognizable plan body (pure prose, no structure) MUST NOT
+    silently file a degraded zero-step plan.
+
+    Post-redesign behavior (step-13): the hook handler refuses to file
+    a plan with ``confidence="fallback"``, surfaces a systemMessage to
+    Claude Code explaining the failure, and emits a structured
+    ``event: exit_plan_mode_unstructured`` to the hook log. This is
+    the load-bearing fail-loud test — it pins the bug-fix that
+    triggered the whole redesign.
+    """
+    _attach(lore_env["lore_root"], lore_env["repo"])
+    plan_text = (
+        "# Refactor things\n\n"
+        "Just some prose with no headings or numbered list at all.\n"
+        "Multiple paragraphs of intent without structure.\n"
+    )
+    payload = {
+        "session_id": "test-unstructured",
+        "cwd": str(lore_env["repo"]),
+        "hook_event_name": "PostToolUse",
+        "tool_name": "ExitPlanMode",
+        "tool_input": {"plan": plan_text},
+    }
+    _patch_stdin(monkeypatch, json.dumps(payload).encode("utf-8"))
+
+    cmd_plan_capture(cwd=str(lore_env["repo"]), plain=False)
+
+    # No plan file written.
+    plan_file = lore_env["wiki_root"] / "plans" / "refactor-things.md"
+    assert not plan_file.exists()
+
+    # systemMessage surfaces a useful diagnostic.
+    msg = _read_systemMessage(capsys.readouterr().out)
+    assert msg is not None
+    msg_lower = msg.lower()
+    assert "shape" in msg_lower or "unrecognized" in msg_lower or "structure" in msg_lower
+
+    # Hook log records a structured fail-loud event.
+    hook_log = lore_env["lore_root"] / ".lore" / "hook-events.jsonl"
+    if hook_log.exists():
+        events = [json.loads(line) for line in hook_log.read_text().splitlines() if line.strip()]
+        unstructured_events = [
+            e for e in events
+            if e.get("event") in ("plan-capture", "exit_plan_mode_unstructured")
+            and e.get("outcome") == "unstructured"
+        ]
+        assert unstructured_events, (
+            f"expected a plan-capture/unstructured event in hook log, got: {events}"
+        )
+
+
 def test_no_plan_in_payload_orphan_dumps(
     lore_env: dict,
     monkeypatch: pytest.MonkeyPatch,

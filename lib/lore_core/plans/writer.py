@@ -43,7 +43,8 @@ import yaml
 from lore_core.io import atomic_write_text, canonical_text
 from lore_core.schema import parse_frontmatter, strip_frontmatter
 
-from .types import StructuredPlan
+from . import canonical
+from .types import PlanStep, StructuredPlan
 
 # ---------------------------------------------------------------------------
 # Public dataclasses
@@ -325,6 +326,11 @@ def _refresh_in_place(
         if key in existing_fm:
             new_fm[key] = existing_fm[key]
 
+    # Migrate legacy ``s<N>`` step_status keys to canonical ``step-<N>`` so
+    # frontmatter and body anchors stay consistent across the rename.
+    # Idempotent — no-op on already-canonical plans.
+    _migrate_legacy_step_status(new_fm)
+
     # Renumber-safe step merge: existing steps keep their IDs even when the
     # new source has additions / removals. New steps are appended; missing
     # steps are tagged ``[removed-from-source]`` so the user sees the drift.
@@ -368,6 +374,13 @@ def _build_fresh_frontmatter(
         fm["repo"] = repo
     if extra_tags:
         fm["tags"] = list(extra_tags)
+    # Stamp ingest provenance so consumers (lore_plan_active, lint,
+    # SessionStart) can surface low-confidence plans. Only emitted when
+    # non-default to keep frontmatter clean for the typical case.
+    if plan.confidence and plan.confidence != "high":
+        fm["ingest_confidence"] = plan.confidence
+    if plan.warnings:
+        fm["parse_warnings"] = list(plan.warnings)
     return fm
 
 
@@ -386,10 +399,14 @@ def _render_plan_body_from_steps(
     source.
 
     Single-mode plans (no recognizable step boundaries) emit the source
-    body verbatim — wrapping it under ``## Steps / ### s1: s1`` would
-    nest the source's own H2 sections under H3 and mangle the visual
-    hierarchy. The implicit ``s1`` anchor is still valid for step_status
-    / breadcrumbs; it just isn't rendered as a heading.
+    body verbatim — wrapping it under ``## Steps / ### step-1: step-1``
+    would nest the source's own H2 sections under H3 and mangle the
+    visual hierarchy. The implicit ``step-1`` anchor is still valid for
+    step_status / breadcrumbs; it just isn't rendered as a heading.
+
+    All step IDs are canonicalized on emission via
+    :func:`canonical.format_canonical_heading`, so legacy plans pulled
+    forward through re-capture migrate piecemeal to the new shape.
     """
     lines: list[str] = []
     if plan.title:
@@ -408,7 +425,7 @@ def _render_plan_body_from_steps(
         return "\n".join(lines).rstrip() + "\n"
 
     lines.append(
-        "> Commit refs: `Plan: " + plan.slug + "#s<N>` (trailer-style; "
+        "> Commit refs: `Plan: " + plan.slug + "#step-<N>` (trailer-style; "
         "surfaced by SessionStart breadcrumbs)"
     )
     lines.append("")
@@ -416,11 +433,11 @@ def _render_plan_body_from_steps(
         lines.append("## Steps")
         lines.append("")
         for step, removed_marker in steps:
-            heading_title = step.title or step.id
+            heading = canonical.format_canonical_heading(step)
             if removed_marker:
-                lines.append(f"### {step.id}: {heading_title} {removed_marker}")
+                lines.append(f"{heading} {removed_marker}")
             else:
-                lines.append(f"### {step.id}: {heading_title}")
+                lines.append(heading)
             if step.body.strip():
                 lines.append(step.body.strip())
             lines.append("")
@@ -434,55 +451,50 @@ def _steps_with_status(steps: list) -> list[tuple[Any, str | None]]:
 def _merge_steps_renumber_safe(
     existing_text: str, new_plan: StructuredPlan
 ) -> list[tuple[Any, str | None]]:
-    """Preserve existing step IDs across re-capture.
+    """Preserve existing step IDs across re-capture, canonicalizing on the way.
 
     Strategy: pair existing steps with new steps by ordinal position
-    (s1 ↔ first new, s2 ↔ second new, …). New steps beyond the existing
-    count get fresh IDs ``s<N+1>..s<N+M>``. Existing steps with no
-    matching new step are kept and tagged ``[removed-from-source]``.
-    The ID space therefore monotonically grows; existing
-    ``step_status`` entries never become orphaned.
+    (existing[0] ↔ first new, existing[1] ↔ second new, …). New steps
+    beyond the existing count get fresh IDs ``step-<N+1>..step-<N+M>``.
+    Existing steps with no matching new step are kept and tagged
+    ``[removed-from-source]``. The ID space therefore monotonically
+    grows; existing ``step_status`` entries never become orphaned.
 
-    "Existing steps" are recovered by parsing ``### s<N>:`` headings in
-    the previous file body. We don't try to be clever about reordering
-    or content matching — ID stability is the load-bearing property.
+    Existing IDs are read via :func:`canonical.extract_step_ids` (which
+    accepts both ``### s<N>:`` legacy and ``### step-<N>:`` canonical)
+    and then canonicalized so the output always uses canonical form.
+    Legacy plans migrate piecemeal on every re-capture.
     """
-    from .parser import _STEP_HEADING_PATTERNS  # local import: same package
+    from dataclasses import replace as _replace
 
     existing_body = strip_frontmatter(existing_text)
-    existing_step_ids: list[str] = []
-    s_re = _STEP_HEADING_PATTERNS[1]  # the ### s<N> form
-    for line in existing_body.split("\n"):
-        m = s_re.match(line)
-        if m:
-            existing_step_ids.append(f"s{m.group(1)}")
+    existing_step_ids = [
+        canonical.canonicalize_step_id(sid)
+        for sid in canonical.extract_step_ids(existing_body)
+    ]
 
     out: list[tuple[Any, str | None]] = []
     new_steps = list(new_plan.steps)
 
-    # Phase A: for each existing s<N>, pair with the corresponding ordinal
-    # new step (if any).
+    # Phase A: for each existing ID, pair with the corresponding ordinal new
+    # step (if any). The preserved ID is always canonical here.
     for idx, eid in enumerate(existing_step_ids):
         if idx < len(new_steps):
             ns = new_steps[idx]
-            # Replace the new step's id with the preserved existing id.
-            from dataclasses import replace as _replace
             preserved = _replace(ns, id=eid)
             out.append((preserved, None))
         else:
             # Existing step has no counterpart — preserve with removed marker.
             # Body is empty because we don't carry it across; the user can
             # consult git history.
-            from .types import PlanStep
             out.append(
                 (PlanStep(id=eid, title="(removed)", body=""), "[removed-from-source]")
             )
 
-    # Phase B: any new steps beyond existing count get fresh IDs.
+    # Phase B: any new steps beyond existing count get fresh canonical IDs.
     next_id = _next_id_after(existing_step_ids)
     for ns in new_steps[len(existing_step_ids):]:
-        from dataclasses import replace as _replace
-        new_id = f"s{next_id}"
+        new_id = canonical.step_id_for(next_id)
         out.append((_replace(ns, id=new_id), None))
         next_id += 1
 
@@ -490,14 +502,31 @@ def _merge_steps_renumber_safe(
 
 
 def _next_id_after(existing_ids: list[str]) -> int:
-    """Return the next free numeric step suffix."""
+    """Return the next free numeric step suffix.
+
+    Accepts both canonical (``step-N``) and legacy (``sN``) IDs via
+    :func:`canonical.parse_step_id_ordinal`, so the running max survives
+    a transition where a plan has been hand-edited mid-flight.
+    """
     if not existing_ids:
         return 1
     max_n = 0
     for sid in existing_ids:
-        if sid.startswith("s") and sid[1:].isdigit():
-            max_n = max(max_n, int(sid[1:]))
+        n = canonical.parse_step_id_ordinal(sid)
+        if n is not None:
+            max_n = max(max_n, n)
     return max_n + 1
+
+
+def _migrate_legacy_step_status(fm: dict[str, Any]) -> None:
+    """Rewrite legacy ``s<N>`` keys in ``step_status`` to canonical ``step-<N>``.
+
+    In-place mutation. Idempotent; called from :func:`_refresh_in_place`
+    so any plan touched by a re-capture migrates piecemeal alongside
+    its body. ``step_status_updated`` is a single ISO timestamp string
+    (not keyed by step ID) and does not need migration.
+    """
+    canonical.migrate_legacy_step_status(fm)
 
 
 def _render_markdown(fm: dict[str, Any], body: str) -> str:

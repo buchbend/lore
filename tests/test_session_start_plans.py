@@ -119,19 +119,19 @@ def test_fresh_plan_renders_next_pending(wiki_root: Path) -> None:
     text = "\n".join(lines)
     assert "## Resume:" in text
     assert "0/4 done" in text
-    assert "Next pending: s1" in text
+    assert "Next pending: step-1" in text
     # Wikilink line targets s1 because no in-progress yet.
-    assert f"[[plan/{slug}#s1]]" in text
+    assert f"[[plan/{slug}#step-1]]" in text
 
 
 def test_in_progress_step_appears_in_card(wiki_root: Path) -> None:
     slug = _make_plan(wiki_root, n_steps=4)
-    set_step(wiki_root=wiki_root, slug=slug, step_id="s2", status=StepStatus.IN_PROGRESS)
+    set_step(wiki_root=wiki_root, slug=slug, step_id="step-2", status=StepStatus.IN_PROGRESS)
     lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
     text = "\n".join(lines)
     assert "1 in-progress" in text
-    assert "In progress: s2" in text
-    assert f"[[plan/{slug}#s2]]" in text
+    assert "In progress: step-2" in text
+    assert f"[[plan/{slug}#step-2]]" in text
 
 
 def test_resume_block_surfaces_literal_commit_trailer(wiki_root: Path) -> None:
@@ -141,11 +141,11 @@ def test_resume_block_surfaces_literal_commit_trailer(wiki_root: Path) -> None:
     in-progress step (or first pending). The model has the exact
     string in context whenever it considers a commit."""
     slug = _make_plan(wiki_root, n_steps=3)
-    set_step(wiki_root=wiki_root, slug=slug, step_id="s1", status=StepStatus.IN_PROGRESS)
+    set_step(wiki_root=wiki_root, slug=slug, step_id="step-1", status=StepStatus.IN_PROGRESS)
     lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
     text = "\n".join(lines)
     # Trailer literal anchored to the in-progress step.
-    assert f"Commit trailer: `Plan: {slug}#s1`" in text
+    assert f"Commit trailer: `Plan: {slug}#step-1`" in text
 
 
 def test_resume_block_trailer_falls_back_to_next_pending(wiki_root: Path) -> None:
@@ -154,22 +154,22 @@ def test_resume_block_trailer_falls_back_to_next_pending(wiki_root: Path) -> Non
     slug = _make_plan(wiki_root, n_steps=3)
     lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
     text = "\n".join(lines)
-    assert f"Commit trailer: `Plan: {slug}#s1`" in text
+    assert f"Commit trailer: `Plan: {slug}#step-1`" in text
 
 
 def test_multi_in_progress_lists_all(wiki_root: Path) -> None:
     slug = _make_plan(wiki_root, n_steps=4)
-    set_step(wiki_root=wiki_root, slug=slug, step_id="s2", status=StepStatus.IN_PROGRESS)
-    set_step(wiki_root=wiki_root, slug=slug, step_id="s4", status=StepStatus.IN_PROGRESS)
+    set_step(wiki_root=wiki_root, slug=slug, step_id="step-2", status=StepStatus.IN_PROGRESS)
+    set_step(wiki_root=wiki_root, slug=slug, step_id="step-4", status=StepStatus.IN_PROGRESS)
     lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
     text = "\n".join(lines)
     assert "2 in-progress" in text
-    assert "s2" in text and "s4" in text
+    assert "step-2" in text and "step-4" in text
 
 
 def test_blocked_step_appears_in_summary(wiki_root: Path) -> None:
     slug = _make_plan(wiki_root, n_steps=3)
-    set_step(wiki_root=wiki_root, slug=slug, step_id="s2", status=StepStatus.BLOCKED)
+    set_step(wiki_root=wiki_root, slug=slug, step_id="step-2", status=StepStatus.BLOCKED)
     lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
     text = "\n".join(lines)
     assert "1 blocked" in text
@@ -184,7 +184,7 @@ def test_auto_closed_plan_drops_out_of_active_resume_block(
     suggestion needed because the state no longer exists.
     """
     slug = _make_plan(wiki_root, n_steps=2)
-    for sid in ("s1", "s2"):
+    for sid in ("step-1", "step-2"):
         set_step(wiki_root=wiki_root, slug=slug, step_id=sid, status=StepStatus.DONE)
     # Auto-close fired — plan is no longer active.
     from lore_core.schema import parse_frontmatter
@@ -202,7 +202,7 @@ def test_all_done_active_plan_still_offers_complete(wiki_root: Path) -> None:
     hand, the SessionStart prompt becomes useful again).
     """
     slug = _make_plan(wiki_root, n_steps=2)
-    for sid in ("s1", "s2"):
+    for sid in ("step-1", "step-2"):
         set_step(wiki_root=wiki_root, slug=slug, step_id=sid, status=StepStatus.DONE)
     # Manually re-open the plan as if a user reverted the auto-close.
     plan_file = wiki_root / "plans" / f"{slug}.md"
@@ -305,23 +305,23 @@ def test_nudge_fires_when_commit_references_unset_step(
     wiki_root: Path, fresh_repo: Path
 ) -> None:
     slug = _make_plan(wiki_root, n_steps=4)
-    # No step_status set → s2 is still pending. Commit references s2.
-    _commit(fresh_repo, f"work\n\nPlan: {slug}#s2")
+    # No step_status set → s2 is still pending. Commit references step-2.
+    _commit(fresh_repo, f"work\n\nPlan: {slug}#step-2")
 
     lines, _ = _active_plans_resume_block(
         wiki_root, repo="lore", repo_root=fresh_repo
     )
     text = "\n".join(lines)
     assert "⚠ commit" in text
-    assert "references s2" in text
+    assert "references step-2" in text
 
 
 def test_nudge_does_not_fire_when_step_already_done(
     wiki_root: Path, fresh_repo: Path
 ) -> None:
     slug = _make_plan(wiki_root, n_steps=4)
-    set_step(wiki_root=wiki_root, slug=slug, step_id="s2", status=StepStatus.DONE)
-    _commit(fresh_repo, f"work\n\nPlan: {slug}#s2")
+    set_step(wiki_root=wiki_root, slug=slug, step_id="step-2", status=StepStatus.DONE)
+    _commit(fresh_repo, f"work\n\nPlan: {slug}#step-2")
     lines, _ = _active_plans_resume_block(
         wiki_root, repo="lore", repo_root=fresh_repo
     )
@@ -402,7 +402,7 @@ def test_nudge_renders_as_bullet_with_blank_separator(
     wiki_root: Path, fresh_repo: Path
 ) -> None:
     slug = _make_plan(wiki_root, n_steps=4)
-    _commit(fresh_repo, f"work\n\nPlan: {slug}#s2")
+    _commit(fresh_repo, f"work\n\nPlan: {slug}#step-2")
     lines, _ = _active_plans_resume_block(
         wiki_root, repo="lore", repo_root=fresh_repo
     )

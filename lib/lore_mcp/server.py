@@ -844,6 +844,61 @@ def handle_plan_active(
     }
 
 
+def handle_plan_file(
+    envelope: dict | None = None,
+    wiki: str | None = None,
+    repo: str | None = None,
+) -> dict[str, Any]:
+    """File a plan via the structured envelope path (envelope-only by design).
+
+    Markdown filing remains hook-only (Claude Code's PostToolUse:ExitPlanMode);
+    agents that want to file a plan via MCP must produce a
+    ``lore.plan.envelope/1`` dict — no markdown shape detection happens
+    here. That asymmetry is deliberate: the MCP surface is a contract,
+    and agents producing structured input is the right enforcement
+    mechanism.
+    """
+    import json as _json
+
+    from lore_core.plans.envelope import EnvelopeError
+    from lore_core.plans.ingest import IngestSource, ingest_plan
+    from lore_core.plans.writer import compute_source_hash, write_plan_note
+
+    if not isinstance(envelope, dict):
+        return _mcp_error(
+            "envelope_invalid",
+            "envelope must be a `lore.plan.envelope/1` dict",
+        )
+
+    wiki_path = _resolve_wiki(wiki)
+    if wiki_path is None:
+        return _mcp_error("no_wiki", "no wiki resolved")
+
+    try:
+        result = ingest_plan(
+            IngestSource(kind="envelope", payload=envelope, producer="mcp")
+        )
+    except EnvelopeError as e:
+        return _mcp_error("envelope_invalid", str(e))
+
+    canonical_text = _json.dumps(envelope, sort_keys=True, ensure_ascii=False)
+    write_result = write_plan_note(
+        wiki_root=wiki_path,
+        plan=result.plan,
+        source_hash=compute_source_hash(canonical_text),
+        source_adapter="envelope-mcp",
+        repo=repo,
+    )
+    return {
+        "slug": write_result.slug,
+        "path": str(write_result.path),
+        "outcome": write_result.outcome,
+        "step_count": write_result.step_count,
+        "confidence": result.confidence,
+        "adapter": result.adapter_name,
+    }
+
+
 def handle_plan_status(
     slug: str, wiki: str | None = None, repo_root: str | None = None
 ) -> dict[str, Any]:
@@ -874,13 +929,18 @@ def handle_plan_status(
     step_ids = extract_step_ids_from_body(text)
 
     # Derive per-step records (id, title, status). Title pulled from headings.
+    # Pattern matches both canonical (``step-<N>``) and legacy (``s<N>``) forms
+    # so MCP output stays consistent during the migration window.
     import re as _re
-    title_re = _re.compile(r"^###\s+(s\d+):\s*(.+?)\s*$", _re.MULTILINE | _re.IGNORECASE)
-    step_titles = {m.group(1): m.group(2).strip() for m in title_re.finditer(text)}
+    title_re = _re.compile(
+        r"^###\s+(step-\d+|s\d+):\s*(.+?)\s*$",
+        _re.MULTILINE | _re.IGNORECASE,
+    )
+    step_titles = {m.group(1).lower(): m.group(2).strip() for m in title_re.finditer(text)}
     steps = [
         {
             "id": sid,
-            "title": step_titles.get(sid, ""),
+            "title": step_titles.get(sid.lower(), ""),
             "status": card.step_status.get(sid, "pending"),
         }
         for sid in step_ids
@@ -1161,6 +1221,33 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
+            "name": "lore_plan_file",
+            "description": (
+                "File a plan via the structured envelope path "
+                "(`lore.plan.envelope/1` JSON). Skips markdown shape "
+                "detection entirely — producers construct the canonical "
+                "IR directly. Required: `envelope` dict with `schema`, "
+                "`title`, `steps` (≥1, each with `title`). Optional: "
+                "`description`, `body_intro`, `slug`, `repo`, per-step "
+                "`id`/`body`/`group`. Returns the written plan's slug, "
+                "path, outcome (filed/deduped/updated/collision-suffixed), "
+                "and step count. Markdown plan filing remains hook-only "
+                "(Claude Code's PostToolUse:ExitPlanMode)."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "envelope": {
+                        "type": "object",
+                        "description": "A `lore.plan.envelope/1` dict.",
+                    },
+                    "wiki": {"type": "string"},
+                    "repo": {"type": "string"},
+                },
+                "required": ["envelope"],
+            },
+        },
+        {
             "name": "lore_plan_status",
             "description": (
                 "Full status for one plan slug: title, status, step_status "
@@ -1273,6 +1360,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_surface_validate(**args)
         case "lore_plan_active":
             return handle_plan_active(**args)
+        case "lore_plan_file":
+            return handle_plan_file(**args)
         case "lore_plan_status":
             return handle_plan_status(**args)
         case "lore_journal_write":

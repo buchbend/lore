@@ -103,6 +103,39 @@ def test_scan_recent_commits_returns_empty_on_non_git_dir(tmp_path: Path) -> Non
     assert crumbs == []
 
 
+def test_scan_recent_commits_canonical_trailer(fresh_repo: Path) -> None:
+    """``Plan: <slug>#step-<N>`` (canonical form) parses identically to legacy."""
+    _commit(fresh_repo, "Land OIDC verify\n\nPlan: refactor-auth#step-2")
+    crumbs = scan_recent_commits(fresh_repo, "refactor-auth")
+    assert len(crumbs) == 1
+    assert crumbs[0].step_id == "step-2"
+    assert crumbs[0].source == "commit"
+
+
+def test_scan_recent_commits_mixed_trailer_forms(fresh_repo: Path) -> None:
+    """A repo with both legacy and canonical trailers reports each verbatim."""
+    _commit(fresh_repo, "Old\n\nPlan: refactor-auth#s1")
+    _commit(fresh_repo, "New\n\nPlan: refactor-auth#step-2")
+    crumbs = scan_recent_commits(fresh_repo, "refactor-auth")
+    step_ids = sorted(c.step_id for c in crumbs)
+    # Reported verbatim — `s1` from the legacy commit, `step-2` from the canonical.
+    assert step_ids == ["s1", "step-2"]
+
+
+def test_session_link_accepts_canonical_anchor(tmp_path: Path) -> None:
+    """``[[plan/<slug>#step-<N>]]`` (canonical form) is recognized."""
+    wiki = tmp_path / "wiki"
+    sessions = wiki / "sessions"
+    sessions.mkdir(parents=True)
+    (sessions / "2026-04-28-x.md").write_text(
+        "---\ntype: session\ncreated: 2026-04-28\n---\n\n"
+        "Working on [[plan/refactor-auth#step-2]]\n"
+    )
+    crumbs = scan_recent_session_links(wiki, "refactor-auth", days=30)
+    assert len(crumbs) == 1
+    assert crumbs[0].step_id == "step-2"
+
+
 def test_scan_recent_commits_newest_first(fresh_repo: Path) -> None:
     _commit(fresh_repo, "first\n\nPlan: x#s1")
     _commit(fresh_repo, "second\n\nPlan: x#s2")

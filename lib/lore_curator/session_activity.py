@@ -211,11 +211,17 @@ def render_issue_section(issues: list[dict], *, repo: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-# Body wikilink form: ``[[plan/<slug>]]`` or ``[[plan/<slug>#sN]]``.
-_PLAN_WIKILINK_RE = re.compile(r"\[\[plan/([A-Za-z0-9][\w-]*)(?:#s(\d+))?\]\]")
-# Trailer form: ``Plan: <slug>#s<N>`` on its own line.
+# Body wikilink form: ``[[plan/<slug>]]``, ``[[plan/<slug>#step-N]]``, or
+# legacy ``[[plan/<slug>#sN]]``. The anchor (``step-N`` / ``sN`` / empty) is
+# captured in group 2 verbatim so the emitted ref matches whatever the user
+# wrote; canonicalization happens at the writer boundary, not here.
+_PLAN_WIKILINK_RE = re.compile(
+    r"\[\[plan/([A-Za-z0-9][\w-]*)(?:#(step-\d+|s\d+))?\]\]"
+)
+# Trailer form: ``Plan: <slug>#step-<N>`` (canonical) or ``Plan: <slug>#s<N>``
+# (legacy). Group 2 captures the full anchor verbatim.
 _PLAN_TRAILER_RE = re.compile(
-    r"^Plan:\s*([A-Za-z0-9][\w-]*)#s(\d+)\s*$",
+    r"^Plan:\s*([A-Za-z0-9][\w-]*)#(step-\d+|s\d+)\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
 
@@ -232,18 +238,18 @@ def collect_plans_advanced(
     """Collect plan refs this chunk advanced.
 
     Sources:
-    - Git ``Plan: <slug>#s<N>`` trailers in commits within ``[since, until]``.
-      Without a window the trailer scan is skipped — a windowless walk
-      would attribute long-lived trailers (e.g. a recent feature commit)
-      to every later session that happens to share the last-200-commit
-      slice with it.
-    - ``[[plan/<slug>(#sN)?]]`` wikilinks in the chunk's body text
+    - Git ``Plan: <slug>#step-<N>`` trailers (or legacy ``#s<N>``) in commits
+      within ``[since, until]``. Without a window the trailer scan is
+      skipped — a windowless walk would attribute long-lived trailers
+      (e.g. a recent feature commit) to every later session that happens
+      to share the last-200-commit slice with it.
+    - ``[[plan/<slug>(#step-N)?]]`` wikilinks in the chunk's body text
       (Curator A may have emitted them in narrative bullets).
 
     Refs are validated against ``wiki_root/plans/<slug>.md``. Hallucinated
     plans (slug doesn't exist) are silently dropped. Step-less wikilinks
     (``[[plan/foo]]``) become ``"foo"`` (no anchor); step-bearing become
-    ``"foo#s2"``. Deduped; insertion order preserved.
+    ``"foo#step-2"``. Deduped; insertion order preserved.
     """
     plans_dir = wiki_root / "plans"
     refs: list[str] = []
@@ -258,7 +264,7 @@ def collect_plans_advanced(
     ):
         known_slugs = {p.stem.lower() for p in plans_dir.glob("*.md")}
         if known_slugs:
-            for slug, step_num in _scan_window_trailers(
+            for slug, anchor in _scan_window_trailers(
                 Path(repo_root),
                 since=since,
                 until=until,
@@ -266,16 +272,17 @@ def collect_plans_advanced(
             ):
                 if slug.lower() not in known_slugs:
                     continue
-                ref = f"{slug}#s{step_num}"
+                ref = f"{slug}#{anchor}"
                 if ref not in seen:
                     seen.add(ref)
                     refs.append(ref)
 
-    # Body wikilinks — accept step-less form too.
-    for slug, step_num in _PLAN_WIKILINK_RE.findall(body_text or ""):
+    # Body wikilinks — accept step-less form too. ``anchor`` is the
+    # full step ID (``step-N`` or legacy ``sN``) or "" when absent.
+    for slug, anchor in _PLAN_WIKILINK_RE.findall(body_text or ""):
         if not (plans_dir / f"{slug}.md").exists():
             continue
-        ref = f"{slug}#s{step_num}" if step_num else slug
+        ref = f"{slug}#{anchor}" if anchor else slug
         if ref not in seen:
             seen.add(ref)
             refs.append(ref)
@@ -290,11 +297,13 @@ def _scan_window_trailers(
     until: datetime,
     timeout_seconds: float,
 ) -> list[tuple[str, str]]:
-    """Yield ``(slug, step_num)`` from ``Plan:`` trailers in window commits.
+    """Yield ``(slug, anchor)`` from ``Plan:`` trailers in window commits.
 
-    Single ``git log --since/--until`` call (vs. one per slug previously),
-    so cost is independent of how many plans the wiki has. Returns ``[]``
-    on any subprocess error — Curator A must never block on git.
+    ``anchor`` is the full step ID verbatim (canonical ``step-N`` or
+    legacy ``sN``). Single ``git log --since/--until`` call (vs. one per
+    slug previously), so cost is independent of how many plans the wiki
+    has. Returns ``[]`` on any subprocess error — Curator A must never
+    block on git.
     """
     since_iso = (since.replace(tzinfo=UTC) if since.tzinfo is None else since).isoformat()
     until_iso = (until.replace(tzinfo=UTC) if until.tzinfo is None else until).isoformat()

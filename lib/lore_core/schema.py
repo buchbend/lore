@@ -114,7 +114,7 @@ OPTIONAL_FIELDS: set[str] = {
     # cross-note linkage fields landed with the session-note revision
     "title",  # str — content-named slug source for sessions; H1 of the body
     "projects",  # list[str] — wikilinks to project notes this session touched
-    "plans",  # list[str] — plan slug refs this session advanced (e.g. "<slug>#s2")
+    "plans",  # list[str] — plan slug refs this session advanced (e.g. "<slug>#step-2")
 }
 
 
