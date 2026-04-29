@@ -107,6 +107,138 @@ def test_collect_commits_returns_empty_when_repo_root_is_none():
 
 
 # ---------------------------------------------------------------------------
+# collect_commits_by_sha — SHA-bound resolver (Step 2)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_sha(repo_root: Path, ref: str = "HEAD") -> str:
+    """Get the SHA for a ref; helper for resolver tests."""
+    out = subprocess.run(
+        ["git", "rev-parse", ref],
+        cwd=repo_root, capture_output=True, text=True, check=True,
+    )
+    return out.stdout.strip()
+
+
+def test_resolver_t_empty_sha_list(tmp_path):
+    """Empty SHAs MUST short-circuit — bare `git show` defaults to HEAD."""
+    from lore_curator.session_activity import collect_commits_by_sha
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _commit(repo, subject="should-not-appear")
+    # If the resolver naively passes [] to git show, git shows HEAD and
+    # the list comes back non-empty. This is the architect-flagged
+    # silent regression we MUST guard.
+    assert collect_commits_by_sha(repo, []) == []
+
+
+def test_resolver_t_repo_root_none():
+    from lore_curator.session_activity import collect_commits_by_sha
+    assert collect_commits_by_sha(None, ["abc1234"]) == []
+
+
+def test_resolver_t_repo_root_does_not_exist(tmp_path):
+    from lore_curator.session_activity import collect_commits_by_sha
+    assert collect_commits_by_sha(tmp_path / "nope", ["abc1234"]) == []
+
+
+def test_resolver_t_single_resolvable(tmp_path):
+    from lore_curator.session_activity import collect_commits_by_sha
+
+    repo = tmp_path / "repo"
+    _init_repo(repo, remote_url="https://github.com/test/repo.git")
+    _commit(repo, subject="add ledger")
+    sha = _resolve_sha(repo)
+
+    commits = collect_commits_by_sha(repo, [sha])
+    assert len(commits) == 1
+    c = commits[0]
+    assert sha.startswith(c.short_hash)
+    assert c.subject == "add ledger"
+    assert c.branch == "main"
+    assert c.repo == "test/repo"
+
+
+def test_resolver_t_all_unresolvable(tmp_path):
+    from lore_curator.session_activity import collect_commits_by_sha
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _commit(repo, subject="x")
+
+    # 7-char hex strings unlikely to exist as real SHAs.
+    assert collect_commits_by_sha(repo, ["deadbe0", "deadbe1", "deadbe2"]) == []
+
+
+def test_resolver_t_mixed_resolvable_unresolvable(tmp_path):
+    from lore_curator.session_activity import collect_commits_by_sha
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _commit(repo, subject="real one")
+    real = _resolve_sha(repo)
+
+    commits = collect_commits_by_sha(repo, ["badf00d", real, "deadbe1"])
+    assert len(commits) == 1
+    assert commits[0].subject == "real one"
+
+
+def test_resolver_t_short_sha_resolves(tmp_path):
+    from lore_curator.session_activity import collect_commits_by_sha
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _commit(repo, subject="prefix test")
+    full = _resolve_sha(repo)
+
+    commits = collect_commits_by_sha(repo, [full[:7]])
+    assert len(commits) == 1
+    assert commits[0].subject == "prefix test"
+
+
+def test_resolver_t_subject_with_tab(tmp_path):
+    """Commit subject containing a literal tab — must round-trip without
+    field-separator confusion."""
+    from lore_curator.session_activity import collect_commits_by_sha
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "f.txt").write_text("x")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "subj with\ttab", "--no-verify"],
+        cwd=repo, check=True,
+    )
+    sha = _resolve_sha(repo)
+
+    commits = collect_commits_by_sha(repo, [sha])
+    assert len(commits) == 1
+    assert commits[0].subject == "subj with\ttab"
+
+
+def test_resolver_t_body_with_plan_trailer(tmp_path):
+    """Commit bodies are exposed via CommitRef.body so Step 3 can scan
+    them for ``Plan: <slug>#step-N`` trailers without a second git query."""
+    from lore_curator.session_activity import collect_commits_by_sha
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _commit_with_body(
+        repo,
+        subject="work",
+        body="Some explanation\n\nPlan: foo#step-1",
+        filename="x.txt",
+        when=datetime(2026, 4, 29, 6, 50, tzinfo=UTC),
+    )
+    sha = _resolve_sha(repo)
+
+    commits = collect_commits_by_sha(repo, [sha])
+    assert len(commits) == 1
+    assert "Plan: foo#step-1" in commits[0].body
+
+
+# ---------------------------------------------------------------------------
 # extract_issue_refs
 # ---------------------------------------------------------------------------
 
