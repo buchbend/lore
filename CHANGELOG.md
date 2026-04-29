@@ -10,6 +10,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Fixed
+
+- **Per-session commit attribution** (`lore_curator/session_activity.py`,
+  `lore_curator/session_filer.py`). Replace the time-window
+  `git log --since/--until` query with SHA capture from this chunk's own
+  Bash `git commit` tool-results. Fixes two failure modes from one root
+  cause: the **inter-chunk gap** (commits whose committer-date falls
+  between Curator A's chunk windows were silently dropped) and
+  **parallel-session bleed** (commits in the same repo fanned out to
+  every session whose chunk window happened to overlap). The transcript
+  is now the authoritative source for session ↔ commit identity. New
+  helper `_commit_shas_from_bash_results` extracts SHAs via tokenised
+  `git commit` detection and `tool_call_id`-keyed result pairing
+  (parallel `tool_use` blocks return results in arbitrary order, so
+  adjacency is not enough). New `collect_commits_by_sha` resolves SHAs
+  via `git cat-file --batch-check` then `git log --no-walk -z`, dropping
+  unresolvable SHAs silently. New telemetry event `commit-shas-captured`
+  in run logs.
+
 ## [0.33.0] - 2026-04-29
 
 ### Added
