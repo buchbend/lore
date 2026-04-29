@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -1145,22 +1144,19 @@ def _start_reindex_watcher() -> None:
 
 
 def start_server() -> int:
-    """Start the MCP STDIO server.
+    """Start the MCP STDIO server using the official ``mcp`` Python SDK.
 
-    Uses the official `mcp` Python SDK if installed; otherwise falls back
-    to a minimal JSON-RPC-over-stdio loop that's compatible with the
-    MCP core protocol for tool listing and invocation.
+    The SDK is a hard dependency (declared in ``pyproject.toml``); if the
+    import fails the install is broken and we propagate the ImportError
+    rather than silently degrading to a half-implemented fallback.
     """
     _start_reindex_watcher()
 
-    try:
-        from mcp.server import Server  # type: ignore[import-untyped]
-        from mcp.server.stdio import stdio_server  # type: ignore[import-untyped]
-        from mcp.types import TextContent, Tool  # type: ignore[import-untyped]
-    except ImportError:
-        return _run_minimal_server()
-
     import asyncio
+
+    from mcp.server import Server  # type: ignore[import-untyped]
+    from mcp.server.stdio import stdio_server  # type: ignore[import-untyped]
+    from mcp.types import TextContent, Tool  # type: ignore[import-untyped]
 
     server = Server("lore")
     schema = _tool_schema()
@@ -1186,85 +1182,4 @@ def start_server() -> int:
             await server.run(read, write, server.create_initialization_options())
 
     asyncio.run(_run())
-    return 0
-
-
-def _run_minimal_server() -> int:
-    """Fallback minimal JSON-RPC STDIO loop when mcp SDK isn't installed.
-
-    Handles enough of the MCP surface (`initialize`, `tools/list`,
-    `tools/call`) to be useful for testing. Production use should pip
-    install `mcp`.
-    """
-    sys.stderr.write(
-        "lore_mcp: `mcp` package not installed; running minimal fallback.\n"
-        "Install with: pip install 'lore[mcp]' or pip install mcp\n"
-    )
-    schema = _tool_schema()
-
-    def _send(obj: dict) -> None:
-        sys.stdout.write(json.dumps(obj) + "\n")
-        sys.stdout.flush()
-
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            req = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        rid = req.get("id")
-        method = req.get("method")
-        params = req.get("params") or {}
-
-        if method == "initialize":
-            _send(
-                {
-                    "jsonrpc": "2.0",
-                    "id": rid,
-                    "result": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {"tools": {}},
-                        "serverInfo": {"name": "lore", "version": "0.1.0"},
-                    },
-                }
-            )
-        elif method == "tools/list":
-            _send({"jsonrpc": "2.0", "id": rid, "result": {"tools": schema}})
-        elif method == "tools/call":
-            name = params.get("name", "")
-            args = params.get("arguments", {}) or {}
-            try:
-                result = _dispatch(name, args)
-                _send(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": rid,
-                        "result": {
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": json.dumps(result, indent=2, default=str),
-                                }
-                            ]
-                        },
-                    }
-                )
-            except Exception as exc:  # noqa: BLE001
-                _send(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": rid,
-                        "error": {"code": -32603, "message": str(exc)},
-                    }
-                )
-        else:
-            _send(
-                {
-                    "jsonrpc": "2.0",
-                    "id": rid,
-                    "error": {"code": -32601, "message": f"method not found: {method}"},
-                }
-            )
     return 0
