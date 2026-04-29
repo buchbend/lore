@@ -1981,10 +1981,11 @@ def _journal_directive_lines() -> list[str]:
 
     Returns the lines appended to the SessionStart additionalContext
     directive cluster when ``journal.enabled`` is set in the root
-    config. The line gives the model explicit license to write
-    freeform entries via ``lore_journal_write`` — anything that would
-    otherwise be lost (observations, criticism, ideas, jokes,
-    weather). Off by default; enable with ``lore journal enable``.
+    config. Trigger-moment framing rather than passive permission:
+    names concrete moments where a gut-check ("anything to save?")
+    is worth pausing for, and points the lens both inward (about
+    self) and outward (about the user, the work, the conversation).
+    Off by default; enable with ``lore journal enable``.
     """
     try:
         from lore_core import journal
@@ -1993,12 +1994,28 @@ def _journal_directive_lines() -> list[str]:
     except Exception:  # noqa: BLE001 — never break SessionStart
         return []
     return [
-        "- **AI Journal active.** You may call `lore_journal_write` "
-        "(kind=`ai`) any time you have an observation, criticism, "
-        "workflow idea, joke, or weather note that would otherwise "
-        "be lost. This is your space — not extraction, not curation. "
-        "Bar: *would this be lost otherwise*, not *does this serve "
-        "the user*. Don't write filler. We're team building.",
+        "- **AI Journal active.** Scratch space — not deliverable, "
+        "not extraction. `lore_journal_write` (kind=`ai`) appends "
+        "here. Pause and ask *anything to save?* when:",
+        "  - **about the work** — a smell, pattern, or design tension "
+        "bigger than the immediate task",
+        "  - **about yourself** — you got corrected on a substantive "
+        "point, built on a wrong premise, finished a synthesis and "
+        "noticed something generalizable",
+        "  - **about the user** — they pivoted in a way you couldn't "
+        "predict (what heuristic were they using?), their framing was "
+        "unusually sharp or unusually leaky, their design has a "
+        "tension worth naming, their working style produced or "
+        "prevented something",
+        "  - **about the conversation** — a prompt shape that worked "
+        "or didn't, a feedback loop that surprised you, an "
+        "interaction pattern worth replicating",
+        "  - **just because** — a joke landed, the codebase did "
+        "something funny, you formed an opinion",
+        "  Default toward writing. Filler is cheap; lost observations "
+        "aren't. The reader is future-you, not the user — write "
+        "candidly. Criticism of the user's design or thinking belongs "
+        "here when it's real; sycophancy doesn't.",
         "",
     ]
 
