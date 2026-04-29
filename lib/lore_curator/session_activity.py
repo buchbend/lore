@@ -345,21 +345,18 @@ _PLAN_TRAILER_RE = re.compile(
 
 def collect_plans_advanced(
     *,
-    repo_root: Path | None,
     body_text: str,
     wiki_root: Path,
-    since: datetime | None = None,
-    until: datetime | None = None,
-    timeout_seconds: float = 5.0,
+    commit_bodies: list[str] | None = None,
 ) -> list[str]:
     """Collect plan refs this chunk advanced.
 
     Sources:
-    - Git ``Plan: <slug>#step-<N>`` trailers (or legacy ``#s<N>``) in commits
-      within ``[since, until]``. Without a window the trailer scan is
-      skipped — a windowless walk would attribute long-lived trailers
-      (e.g. a recent feature commit) to every later session that happens
-      to share the last-200-commit slice with it.
+    - ``Plan: <slug>#step-<N>`` trailers (or legacy ``#s<N>``) inside
+      ``commit_bodies`` — i.e. the bodies of commits this chunk's Bash
+      tool_results already attributed via SHA. No separate ``git log``
+      call: SHA-bound coherence by construction. Without ``commit_bodies``
+      the trailer scan yields nothing.
     - ``[[plan/<slug>(#step-N)?]]`` wikilinks in the chunk's body text
       (Curator A may have emitted them in narrative bullets).
 
@@ -372,27 +369,21 @@ def collect_plans_advanced(
     refs: list[str] = []
     seen: set[str] = set()
 
-    have_window = since is not None and until is not None
-    if (
-        plans_dir.is_dir()
-        and repo_root is not None
-        and Path(repo_root).exists()
-        and have_window
-    ):
+    if plans_dir.is_dir() and commit_bodies:
         known_slugs = {p.stem.lower() for p in plans_dir.glob("*.md")}
         if known_slugs:
-            for slug, anchor in _scan_window_trailers(
-                Path(repo_root),
-                since=since,
-                until=until,
-                timeout_seconds=timeout_seconds,
-            ):
-                if slug.lower() not in known_slugs:
+            for body in commit_bodies:
+                if not body:
                     continue
-                ref = f"{slug}#{anchor}"
-                if ref not in seen:
-                    seen.add(ref)
-                    refs.append(ref)
+                for m in _PLAN_TRAILER_RE.finditer(body):
+                    slug = m.group(1)
+                    anchor = m.group(2)
+                    if slug.lower() not in known_slugs:
+                        continue
+                    ref = f"{slug}#{anchor}"
+                    if ref not in seen:
+                        seen.add(ref)
+                        refs.append(ref)
 
     # Body wikilinks — accept step-less form too. ``anchor`` is the
     # full step ID (``step-N`` or legacy ``sN``) or "" when absent.

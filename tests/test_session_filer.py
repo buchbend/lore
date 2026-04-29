@@ -486,12 +486,18 @@ def _patch_collectors(monkeypatch, *, commits=None, issues=None, repo=None):
     """Stub the Phase-3 collectors at the names session_filer imports them by.
 
     session_filer pulls the symbols into its namespace at import time
-    (``from lore_curator.session_activity import collect_commits_in_window``)
+    (``from lore_curator.session_activity import collect_commits_by_sha``)
     so monkeypatching the source module doesn't intercept the filer's
     references — patch ``lore_curator.session_filer.<name>`` instead.
+
+    The new SHA-bound resolver takes ``shas`` instead of ``since``/``until``.
+    Tests that want to assert "these specific commits show up in the note"
+    pass them via ``commits=`` and the stub returns them verbatim, ignoring
+    whatever SHAs the extractor emitted (which is fine — these tests
+    don't construct turn fixtures, they construct note shapes).
     """
     monkeypatch.setattr(
-        "lore_curator.session_filer.collect_commits_in_window",
+        "lore_curator.session_filer.collect_commits_by_sha",
         lambda *a, **kw: list(commits or []),
     )
     monkeypatch.setattr(

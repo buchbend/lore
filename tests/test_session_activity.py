@@ -386,9 +386,7 @@ def test_collect_plans_advanced_validates_against_wiki_plans_dir(tmp_path):
         "[[plan/ghost-plan#s1]] which is hallucinated. And "
         "[[plan/real-plan]] without a step too."
     )
-    refs = collect_plans_advanced(
-        repo_root=None, body_text=body, wiki_root=wiki,
-    )
+    refs = collect_plans_advanced(body_text=body, wiki_root=wiki)
     assert "real-plan#s2" in refs
     assert "real-plan" in refs  # step-less form preserved
     assert all("ghost-plan" not in r for r in refs)
@@ -400,7 +398,7 @@ def test_collect_plans_advanced_dedupes(tmp_path):
     (wiki / "plans" / "p.md").write_text("---\ntype: plan\n---\n")
 
     body = "[[plan/p#s1]] and [[plan/p#s1]] again"
-    refs = collect_plans_advanced(repo_root=None, body_text=body, wiki_root=wiki)
+    refs = collect_plans_advanced(body_text=body, wiki_root=wiki)
     assert refs == ["p#s1"]
 
 
@@ -409,7 +407,7 @@ def test_collect_plans_advanced_empty_when_no_plans_dir(tmp_path):
     wiki = tmp_path / "wiki"
     wiki.mkdir()
     body = "[[plan/foo#s1]]"
-    refs = collect_plans_advanced(repo_root=None, body_text=body, wiki_root=wiki)
+    refs = collect_plans_advanced(body_text=body, wiki_root=wiki)
     assert refs == []
 
 
@@ -430,12 +428,15 @@ def _commit_with_body(repo_root: Path, *, subject: str, body: str, filename: str
     )
 
 
-def test_collect_plans_advanced_trailer_only_within_window(tmp_path):
-    """Trailers from commits OUTSIDE the chunk window must not bleed in.
+def test_collect_plans_advanced_trailers_from_session_commit_bodies_only(tmp_path):
+    """Trailers come ONLY from this session's commit_bodies — no separate
+    git log query, so the ``out-of-window trailer must not bleed`` regression
+    intent (originally tested against ``--since/--until``) becomes
+    ``out-of-session trailer must not bleed`` against the SHA-bound list.
 
-    Regression: previously the trailer scan walked the last 200 commits
-    unconditionally, so a long-lived ``Plan: <slug>#sN`` trailer tagged
-    every later session even when the session had nothing to do with it.
+    A trailer from an unrelated commit body that wasn't passed in MUST NOT
+    appear in the result. Equivalently: only the bodies the session
+    actually attributed feed the trailer scan.
     """
     wiki = tmp_path / "wiki"
     plans = wiki / "plans"
@@ -443,36 +444,17 @@ def test_collect_plans_advanced_trailer_only_within_window(tmp_path):
     (plans / "old-plan.md").write_text("---\ntype: plan\n---\n")
     (plans / "new-plan.md").write_text("---\ntype: plan\n---\n")
 
-    repo = tmp_path / "repo"
-    _init_repo(repo)
-    # Old commit BEFORE the window: trailer for old-plan.
-    _commit_with_body(
-        repo,
-        subject="legacy work",
-        body="Plan: old-plan#s1\nPlan: old-plan#s2",
-        filename="legacy.txt",
-        when=datetime(2026, 4, 28, 23, 48, tzinfo=UTC),
-    )
-    # In-window commit: trailer for new-plan.
-    _commit_with_body(
-        repo,
-        subject="this session's work",
-        body="Plan: new-plan#s1",
-        filename="now.txt",
-        when=datetime(2026, 4, 29, 6, 50, tzinfo=UTC),
-    )
-
+    # Only new-plan's body is passed in. old-plan's body is in the repo's
+    # history (or some other unrelated session) but NOT in this list.
     refs = collect_plans_advanced(
-        repo_root=repo,
         body_text="",
         wiki_root=wiki,
-        since=datetime(2026, 4, 29, 6, 30, tzinfo=UTC),
-        until=datetime(2026, 4, 29, 7, 0, tzinfo=UTC),
+        commit_bodies=["Plan: new-plan#s1"],
     )
 
     assert "new-plan#s1" in refs
     assert all(not r.startswith("old-plan") for r in refs), (
-        f"old-plan trailer leaked across window boundary: {refs}"
+        f"old-plan trailer leaked across session boundary: {refs}"
     )
 
 
@@ -483,22 +465,10 @@ def test_collect_plans_advanced_trailer_drops_unknown_slugs(tmp_path):
     plans.mkdir(parents=True)
     (plans / "real.md").write_text("---\ntype: plan\n---\n")
 
-    repo = tmp_path / "repo"
-    _init_repo(repo)
-    _commit_with_body(
-        repo,
-        subject="work",
-        body="Plan: real#s1\nPlan: ghost#s2",
-        filename="x.txt",
-        when=datetime(2026, 4, 29, 6, 50, tzinfo=UTC),
-    )
-
     refs = collect_plans_advanced(
-        repo_root=repo,
         body_text="",
         wiki_root=wiki,
-        since=datetime(2026, 4, 29, 6, 30, tzinfo=UTC),
-        until=datetime(2026, 4, 29, 7, 0, tzinfo=UTC),
+        commit_bodies=["Plan: real#s1\nPlan: ghost#s2"],
     )
 
     assert "real#s1" in refs

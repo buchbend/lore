@@ -33,7 +33,7 @@ from lore_core.session_writer import (
 from lore_core.types import Scope, TranscriptHandle, Turn
 from lore_curator.noteworthy import NoteworthyResult
 from lore_curator.session_activity import (
-    collect_commits_in_window,
+    collect_commits_by_sha,
     collect_issues_in_window,
     collect_plans_advanced,
     collect_projects_for_session,
@@ -179,6 +179,7 @@ def _collect_activity(
     files_touched: list[str],
     body_text_for_plan_scan: str,
     fallback_time: datetime,
+    logger: "RunLogger | None" = None,
 ) -> dict[str, Any]:
     """Run all Phase-3 collectors for a chunk and return the inputs the
     body renderer + frontmatter need.
@@ -186,19 +187,36 @@ def _collect_activity(
     Returns a dict with keys ``commits``, ``issues_opened``,
     ``issues_closed`` (rendered bullet lines), ``plans``, ``projects``
     (ref strings).
+
+    Commit attribution is SHA-bound: extracts SHAs from this chunk's own
+    Bash ``git commit`` tool_results and resolves them against the cwd's
+    repo. No time-window fallback — under-attribution beats wrong
+    attribution. See ``_commit_shas_from_bash_results`` and
+    ``collect_commits_by_sha`` for the rationale.
     """
     from lore_core.git import git_repo_root, current_repo
 
     repo_root = git_repo_root(cwd)
     repo = current_repo(cwd) or ""
-    since, until = _turn_window(turns, fallback=fallback_time)
 
-    raw_commits = collect_commits_in_window(repo_root, since=since, until=until)
+    shas = _commit_shas_from_bash_results(turns)
+    raw_commits = collect_commits_by_sha(repo_root, shas)
 
-    # Issue-reference extraction: union turn text + commit subjects so
-    # `closes #29` lands whether the LLM wrote it in chat or only in a
-    # commit message.
-    commit_text = "\n".join(c.subject for c in raw_commits)
+    if logger is not None:
+        logger.emit(
+            "commit-shas-captured",
+            captured=len(raw_commits),
+            dropped=max(0, len(shas) - len(raw_commits)),
+            shas_seen=len(shas),
+        )
+
+    # Issue-reference extraction: union turn text + commit subjects + bodies
+    # so `closes #29` lands whether the LLM wrote it in chat, in the commit
+    # subject, or in the commit body trailer.
+    commit_text = "\n".join(
+        c.subject + ("\n" + c.body if c.body else "")
+        for c in raw_commits
+    )
     turn_text = _all_turn_text(turns)
     opened_refs, closed_refs = extract_issue_refs(turn_text + "\n" + commit_text)
 
@@ -209,11 +227,9 @@ def _collect_activity(
     )
 
     plans = collect_plans_advanced(
-        repo_root=repo_root,
         body_text=body_text_for_plan_scan,
         wiki_root=wiki_root,
-        since=since,
-        until=until,
+        commit_bodies=[c.body for c in raw_commits],
     )
     projects = collect_projects_for_session(
         cwd=cwd,
