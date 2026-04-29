@@ -189,7 +189,9 @@ def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
     return None
 
 
-def handle_read(path: str, wiki: str | None = None) -> dict[str, Any]:
+def handle_read(
+    path: str, wiki: str | None = None, section: str | None = None
+) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
         return _mcp_error(
@@ -218,11 +220,93 @@ def handle_read(path: str, wiki: str | None = None) -> dict[str, Any]:
     if not target.exists():
         return _mcp_error("path_not_found", f"not found: {path}")
     text = target.read_text(errors="replace")
+
+    if section is not None:
+        section_text, headings = _extract_section(text, section)
+        if section_text is None:
+            if not headings:
+                return _mcp_error(
+                    "section_not_found",
+                    f"section {section!r}: this note has no H2 sections",
+                    next_="omit `section` to read the whole file",
+                )
+            return _mcp_error(
+                "section_not_found",
+                f"section {section!r} not found in {path}",
+                next_=f"available H2 headings: {', '.join(headings)}",
+            )
+        return {
+            "wiki": wiki_path.name,
+            "path": path,
+            "content": section_text,
+            "section": section,
+        }
+
     return {
         "wiki": wiki_path.name,
         "path": path,
         "content": text,
     }
+
+
+def _extract_section(text: str, query: str) -> tuple[str | None, list[str]]:
+    """Return ``(section_text, all_h2_headings)`` for the matched H2.
+
+    Match rule: first H2 in document order whose heading is a
+    case-insensitive substring of ``query`` (or vice-versa: ``query`` is
+    a substring of the heading). Bounds are the ``## `` line through the
+    next ``## `` line (exclusive) or EOF; nested H3+ are included.
+
+    Code-fence aware: lines inside ` ``` ` or ``~~~`` fences are ignored
+    when scanning for headings, so ``## not a heading`` inside a Python
+    docstring example doesn't get treated as a section boundary.
+
+    The returned ``all_h2_headings`` list is the document's full H2
+    inventory (in order) so the MCP error envelope can name the
+    available choices when ``query`` doesn't match.
+    """
+    needle = query.strip().lower()
+    lines = text.splitlines()
+
+    in_fence = False
+    fence_char: str | None = None
+    headings: list[tuple[int, str]] = []  # (line_index, heading_text)
+
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        # Track fence state. Match the opening sequence's char to the
+        # closing sequence so ``` and ~~~ don't cross-terminate.
+        if stripped.startswith(("```", "~~~")):
+            char = "`" if stripped.startswith("```") else "~"
+            if not in_fence:
+                in_fence = True
+                fence_char = char
+            elif fence_char == char:
+                in_fence = False
+                fence_char = None
+            continue
+        if in_fence:
+            continue
+        if line.startswith("## ") and not line.startswith("### "):
+            heading_text = line[3:].strip()
+            headings.append((i, heading_text))
+
+    all_heading_strs = [h for _, h in headings]
+    if not headings:
+        return None, []
+
+    match_idx: int | None = None
+    for idx, (_, heading_text) in enumerate(headings):
+        h_lower = heading_text.lower()
+        if needle in h_lower or h_lower in needle:
+            match_idx = idx
+            break
+    if match_idx is None:
+        return None, all_heading_strs
+
+    start = headings[match_idx][0]
+    end = headings[match_idx + 1][0] if match_idx + 1 < len(headings) else len(lines)
+    return "\n".join(lines[start:end]), all_heading_strs
 
 
 def handle_index(wiki: str | None = None) -> dict[str, Any]:
@@ -859,12 +943,26 @@ def _tool_schema() -> list[dict]:
         },
         {
             "name": "lore_read",
-            "description": "Read one note by relative path, [[wikilink]], or bare slug within a wiki.",
+            "description": (
+                "Read one note by relative path, [[wikilink]], or bare slug "
+                "within a wiki. Optional `section` arg returns just one H2 "
+                "section (first match in document order, case-insensitive "
+                "substring; code-fence aware so ## inside fenced blocks is "
+                "ignored). Use `section` for long surface notes when you only "
+                "need one heading's content."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
                     "wiki": {"type": "string"},
+                    "section": {
+                        "type": "string",
+                        "description": (
+                            "If set, return only the matching H2 section "
+                            "(heading + body to next H2 or EOF)."
+                        ),
+                    },
                 },
                 "required": ["path"],
             },
