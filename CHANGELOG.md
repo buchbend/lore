@@ -10,6 +10,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-04-29
+
 ### Fixed
 
 - **Per-session commit attribution** (`lore_curator/session_activity.py`,
