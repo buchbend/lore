@@ -16,6 +16,7 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from lore_core.config import get_wiki_root
 from lore_core.lint import (
@@ -324,53 +325,131 @@ class FtsBackend:
         for_repo: str | None = None,
         k: int = 5,
     ) -> list[SearchHit]:
+        """Hybrid AND-then-OR ranked search.
+
+        FTS5 with space-separated tokens is implicit AND. Multi-token
+        queries get tighter precision when the corpus supports it; if
+        AND returns zero hits, retry with OR-joined tokens for graceful
+        degradation. Single-token queries reduce to the same scan in
+        both modes.
+
+        Each query writes one record to ``$LORE_CACHE/query-log.jsonl``
+        capturing both the AND and OR hit counts, so the
+        AND-too-tight-vs-corpus-empty distinction is observable.
+        """
+        sanitized_and = _sanitize_fts_query(query)
+        sanitized_or = _sanitize_fts_query_or(query)
+        if not sanitized_and:
+            _log_query(
+                query=query,
+                sanitized_and="",
+                sanitized_or="",
+                wiki=wiki,
+                for_repo=for_repo,
+                k=k,
+                and_hits=0,
+                or_hits=0,
+                mode_final="empty",
+                results=[],
+            )
+            return []
+
         conn = _connect()
         try:
-            sanitized = _sanitize_fts_query(query)
-            if not sanitized:
-                return []
-            params: list = [sanitized]
-            where = ""
-            if wiki:
-                where = " AND n.wiki = ?"
-                params.append(wiki)
-            sql = f"""
-            SELECT n.wiki, n.path, n.filename, n.description, n.tags, n.repos,
-                   bm25(notes_fts,
-                        3.0,  -- title
-                        2.0,  -- description
-                        1.5,  -- tags
-                        1.0   -- body
-                   ) AS score
-            FROM notes_fts
-            JOIN notes n ON n.id = notes_fts.rowid
-            WHERE notes_fts MATCH ?{where}
-            ORDER BY score
-            LIMIT ?
-            """
-            params.append(k * 3)  # over-fetch for repo re-rank
-            rows = conn.execute(sql, params).fetchall()
-            hits: list[SearchHit] = []
-            for r in rows:
-                score = -float(r["score"])  # bm25 returns lower-better
-                if for_repo:
-                    repos = r["repos"].split(",") if r["repos"] else []
-                    if for_repo in repos:
-                        score *= 1.5
-                hits.append(
-                    SearchHit(
-                        path=r["path"],
-                        wiki=r["wiki"],
-                        filename=r["filename"],
-                        score=score,
-                        description=r["description"] or None,
-                        tags=r["tags"].split(",") if r["tags"] else None,
-                    )
+            and_results = self._run(
+                conn, sanitized_and, wiki=wiki, for_repo=for_repo, k=k
+            )
+            if and_results:
+                final = and_results
+                mode_final = "and"
+                or_count = 0
+            else:
+                or_results = self._run(
+                    conn, sanitized_or, wiki=wiki, for_repo=for_repo, k=k
                 )
-            hits.sort(key=lambda h: h.score, reverse=True)
-            return hits[:k]
+                final = or_results
+                mode_final = "or" if or_results else "and"
+                or_count = len(or_results)
         finally:
             conn.close()
+
+        _log_query(
+            query=query,
+            sanitized_and=sanitized_and,
+            sanitized_or=sanitized_or,
+            wiki=wiki,
+            for_repo=for_repo,
+            k=k,
+            and_hits=len(and_results),
+            or_hits=or_count,
+            mode_final=mode_final,
+            results=[
+                {"path": h.path, "wiki": h.wiki, "score": round(h.score, 3)}
+                for h in final
+            ],
+        )
+        return final
+
+    def _run(
+        self,
+        conn: sqlite3.Connection,
+        match_str: str,
+        *,
+        wiki: str | None,
+        for_repo: str | None,
+        k: int,
+    ) -> list[SearchHit]:
+        """Execute one FTS MATCH + over-fetch + repo-boost re-rank pass.
+
+        Shared by the AND attempt and the OR fallback in ``search()`` so
+        the repo-boost (1.5×) is applied consistently in both branches.
+        """
+        params: list = [match_str]
+        where = ""
+        if wiki:
+            where = " AND n.wiki = ?"
+            params.append(wiki)
+        sql = f"""
+        SELECT n.wiki, n.path, n.filename, n.description, n.tags, n.repos,
+               bm25(notes_fts,
+                    3.0,  -- title
+                    2.0,  -- description
+                    1.5,  -- tags
+                    1.0   -- body
+               ) AS score
+        FROM notes_fts
+        JOIN notes n ON n.id = notes_fts.rowid
+        WHERE notes_fts MATCH ?{where}
+        ORDER BY score
+        LIMIT ?
+        """
+        params.append(k * 3)  # over-fetch for repo re-rank
+        try:
+            rows = conn.execute(sql, params).fetchall()
+        except sqlite3.OperationalError:
+            # Quoted tokens should never produce a malformed MATCH, but
+            # if FTS5 ever rejects one (corrupted index, unsupported
+            # tokenizer state), treat as no-hits rather than crash.
+            return []
+        hits: list[SearchHit] = []
+        for r in rows:
+            score = -float(r["score"])  # bm25 returns lower-better
+            if for_repo:
+                repos = r["repos"].split(",") if r["repos"] else []
+                if for_repo in repos:
+                    score *= 1.5
+            hits.append(
+                SearchHit(
+                    path=r["path"],
+                    wiki=r["wiki"],
+                    filename=r["filename"],
+                    score=score,
+                    description=r["description"] or None,
+                    tags=r["tags"].split(",") if r["tags"] else None,
+                )
+            )
+        hits.sort(key=lambda h: h.score, reverse=True)
+        return hits[:k]
 
     def stats(self) -> dict:
         conn = _connect()
@@ -394,15 +473,36 @@ _FTS_SAFE = re.compile(r"[A-Za-z0-9_'\-]+")
 
 
 def _sanitize_fts_query(q: str) -> str:
-    """Build a safe FTS MATCH string by extracting word-like tokens.
+    """Build an AND-style FTS MATCH string with each token quoted.
 
-    FTS5 query syntax is strict about punctuation; user queries may
-    contain colons, parens, quotes, etc. We extract word tokens and
-    OR them together, which matches the intent of a natural-language
-    query without crashing on syntax.
+    Quoting (``"foo"``) neutralises FTS5 keywords (``AND``, ``OR``,
+    ``NOT``, ``NEAR``) — without it, a user query of ``"AND"`` would
+    yield the bareword ``AND`` which FTS5 parses as the operator and
+    raises ``sqlite3.OperationalError: no such column: AND``.
+
+    Tokens are space-joined (FTS5's implicit AND) so ``"foo bar"``
+    matches docs containing both terms. Use :func:`_sanitize_fts_query_or`
+    for the fallback when AND yields zero hits.
     """
     tokens = _FTS_SAFE.findall(q)
     if not tokens:
         return ""
-    # Drop pure stopwords? Keep simple — let FTS rank.
-    return " OR ".join(tokens)
+    return " ".join(f'"{t}"' for t in tokens)
+
+
+def _sanitize_fts_query_or(q: str) -> str:
+    """OR-joined variant — fallback when AND yields zero hits."""
+    tokens = _FTS_SAFE.findall(q)
+    if not tokens:
+        return ""
+    return " OR ".join(f'"{t}"' for t in tokens)
+
+
+def _log_query(**fields: Any) -> None:
+    """Best-effort write to the query log; never raises."""
+    from lore_search.query_log import get_logger
+
+    try:
+        get_logger().emit(**fields)
+    except Exception:  # noqa: BLE001 — telemetry must never break search
+        pass
