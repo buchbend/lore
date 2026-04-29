@@ -1467,3 +1467,149 @@ def test_extractor_t_pipe_or_redirect_before_git():
         output="[main abc1234] x\n",
     )
     assert _commit_shas_from_bash_results(turns) == []
+
+
+# ---------------------------------------------------------------------------
+# _collect_activity — integration regression tests for bleed + gap (Step 3)
+# ---------------------------------------------------------------------------
+
+
+def _init_repo_for_filer(repo_root: Path) -> None:
+    import subprocess as _sp
+    repo_root.mkdir(parents=True, exist_ok=True)
+    _sp.run(["git", "init", "-q", "-b", "main"], cwd=repo_root, check=True)
+    _sp.run(["git", "config", "user.email", "test@example.com"],
+            cwd=repo_root, check=True)
+    _sp.run(["git", "config", "user.name", "Test"], cwd=repo_root, check=True)
+    _sp.run(["git", "config", "commit.gpgsign", "false"],
+            cwd=repo_root, check=True)
+
+
+def _make_real_commit(repo_root: Path, *, subject: str, when: datetime,
+                      filename: str = "f.txt", body: str | None = None) -> str:
+    import subprocess as _sp
+    (repo_root / filename).write_text(filename + "-content")
+    _sp.run(["git", "add", "-A"], cwd=repo_root, check=True)
+    iso = when.isoformat()
+    env = {**__import__("os").environ,
+           "GIT_AUTHOR_DATE": iso, "GIT_COMMITTER_DATE": iso}
+    msg = subject if body is None else f"{subject}\n\n{body}\n"
+    _sp.run(
+        ["git", "commit", "-q", "-F", "-", "--no-verify"],
+        cwd=repo_root, check=True, input=msg, text=True, env=env,
+    )
+    out = _sp.run(["git", "rev-parse", "HEAD"], cwd=repo_root,
+                  capture_output=True, text=True, check=True)
+    return out.stdout.strip()
+
+
+def test_step3_no_bleed_across_parallel_sessions(tmp_path):
+    """Two chunks A and B, same repo, overlapping turn windows.
+    Only chunk A's Bash tool_call invokes ``git commit``; chunk B has
+    no commit tool calls. Under time-window attribution, B's session
+    note would also list X (because B's [min_ts, max_ts] covers the
+    commit's committer-date). Under SHA-bound attribution, B sees
+    nothing — that's the whole point of the rewrite.
+    """
+    from lore_core.types import ToolCall, ToolResult
+    from lore_curator.session_filer import _collect_activity
+
+    repo = tmp_path / "repo"
+    _init_repo_for_filer(repo)
+    commit_time = datetime(2026, 4, 29, 11, 0, tzinfo=UTC)
+    full_sha = _make_real_commit(repo, subject="A's work", when=commit_time)
+    short_sha = full_sha[:7]
+
+    # Both chunks span the commit time.
+    t_pre = datetime(2026, 4, 29, 10, 30, tzinfo=UTC)
+    t_post = datetime(2026, 4, 29, 11, 30, tzinfo=UTC)
+
+    # Chunk A: turns include a Bash tool_call for `git commit` whose
+    # tool_result reports the SHA.
+    chunk_a: list[Turn] = [
+        Turn(index=0, timestamp=t_pre, role="user", text="please commit"),
+        Turn(index=1, timestamp=commit_time, role="assistant",
+             tool_call=ToolCall(name="Bash",
+                                input={"command": "git commit -m \"A's work\""},
+                                id="ta", category="shell_exec")),
+        Turn(index=2, timestamp=commit_time, role="tool_result",
+             tool_result=ToolResult(tool_call_id="ta",
+                                    output=f"[main {short_sha}] A's work\n")),
+        Turn(index=3, timestamp=t_post, role="assistant", text="done"),
+    ]
+
+    # Chunk B: turns span the same window but have NO commit tool calls.
+    chunk_b: list[Turn] = [
+        Turn(index=0, timestamp=t_pre, role="user", text="parallel work"),
+        Turn(index=1, timestamp=t_post, role="assistant", text="ok"),
+    ]
+
+    fallback = datetime(2026, 4, 29, 12, 0, tzinfo=UTC)
+    wiki_root = tmp_path / "wiki" / "private"
+    (wiki_root / "plans").mkdir(parents=True)
+
+    a = _collect_activity(
+        cwd=repo, wiki_root=wiki_root, turns=chunk_a,
+        files_touched=[], body_text_for_plan_scan="",
+        fallback_time=fallback,
+    )
+    b = _collect_activity(
+        cwd=repo, wiki_root=wiki_root, turns=chunk_b,
+        files_touched=[], body_text_for_plan_scan="",
+        fallback_time=fallback,
+    )
+
+    a_blob = "\n".join(a["commits"])
+    b_blob = "\n".join(b["commits"])
+    assert short_sha in a_blob, f"A should attribute its own commit: {a_blob}"
+    assert short_sha not in b_blob, (
+        f"B did not run git commit but inherited A's SHA — bleed regression: {b_blob}"
+    )
+
+
+def test_step3_inter_chunk_gap_captured(tmp_path):
+    """A commit whose committer-date falls OUTSIDE the chunk's
+    (min_turn_ts, max_turn_ts) window must still be attributed when its
+    SHA appears in a Bash tool_result inside the chunk. This proves
+    we no longer rely on time-window filtering and protects against
+    silent reintroduction of `git log --since/--until` as a fallback.
+    """
+    from lore_core.types import ToolCall, ToolResult
+    from lore_curator.session_filer import _collect_activity
+
+    repo = tmp_path / "repo"
+    _init_repo_for_filer(repo)
+    # Commit committer-date is HOURS before the chunk's earliest turn.
+    commit_time = datetime(2026, 4, 29, 5, 0, tzinfo=UTC)
+    full_sha = _make_real_commit(repo, subject="early ghost", when=commit_time)
+    short_sha = full_sha[:7]
+
+    chunk_window_start = datetime(2026, 4, 29, 10, 0, tzinfo=UTC)
+    chunk_window_end = datetime(2026, 4, 29, 10, 30, tzinfo=UTC)
+
+    turns: list[Turn] = [
+        Turn(index=0, timestamp=chunk_window_start, role="user", text="..."),
+        # Bash tool_call timestamp is INSIDE the chunk window even though
+        # the actual git commit's committer-date is far outside.
+        Turn(index=1, timestamp=chunk_window_start, role="assistant",
+             tool_call=ToolCall(name="Bash",
+                                input={"command": "git commit -m x"},
+                                id="tg", category="shell_exec")),
+        Turn(index=2, timestamp=chunk_window_start, role="tool_result",
+             tool_result=ToolResult(tool_call_id="tg",
+                                    output=f"[main {short_sha}] early ghost\n")),
+        Turn(index=3, timestamp=chunk_window_end, role="assistant", text="ok"),
+    ]
+
+    wiki_root = tmp_path / "wiki" / "private"
+    (wiki_root / "plans").mkdir(parents=True)
+    activity = _collect_activity(
+        cwd=repo, wiki_root=wiki_root, turns=turns,
+        files_touched=[], body_text_for_plan_scan="",
+        fallback_time=chunk_window_end,
+    )
+    blob = "\n".join(activity["commits"])
+    assert short_sha in blob, (
+        "commit SHA from tool_result lost despite being inside the chunk's "
+        f"turns; resolver may still depend on time window: {blob}"
+    )
