@@ -42,12 +42,19 @@ class PlanStep:
     leaves into flat ``step-1``, ``step-2`` IDs and stamps each with
     ``group="Phase 1 — Foundation"``. Pure metadata; the canonical IR
     stays flat.
+
+    ``files`` is the authoritative list of file paths this step is
+    expected to touch — written by the plan-authoring LLM as a
+    ``Files:`` line in the step body and parsed via
+    :func:`canonical.extract_step_files`. Used by Stop-hook commit
+    attribution and PostToolUse:Edit pending→in_progress flips.
     """
 
     id: str
     title: str
     body: str  # markdown body of the step (heading content, not including the heading line)
     group: str | None = None
+    files: list[str] = field(default_factory=list)
 
 
 # StepDetectionMode is a string for trivial logging; not an Enum because the

@@ -1,2 +1,3 @@
 ## Directives
 - **Vault first.** Unfamiliar project term, concept, decision, or wikilink? Call `lore_search` (MCP) before asking the user. Asking about a wikilinked term without searching first is a bug.
+- **Plan authoring: declare files per step.** When you author an implementation plan (Plan mode → ExitPlanMode), under each `### step-N:` heading include a `Files:` line listing the file paths that step touches. Two formats accepted: inline `Files: lib/foo.py, tests/test_foo.py` or a bare `Files:` line followed by `- path` bullets. Lore captures these as authoritative `step_files` frontmatter and uses them to attribute commits/edits to plan steps automatically — without it, attribution falls back to manual `Plan:` trailers or `/lore:plan-step --done`.

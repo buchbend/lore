@@ -606,6 +606,7 @@ def _steps_from_atx(
                 id=canonical.step_id_for(idx + 1),
                 title=hit["clean_title"] or hit["raw_title"],
                 body=body,
+                files=canonical.extract_step_files(body),
             )
         )
     return steps
@@ -631,6 +632,7 @@ def _steps_from_hierarchical(
                 title=hit["clean_title"] or hit["raw_title"],
                 body=body,
                 group=hit.get("group"),
+                files=canonical.extract_step_files(body),
             )
         )
     return steps
@@ -661,6 +663,7 @@ def _steps_from_numbered_list(
                 id=canonical.step_id_for(idx + 1),
                 title=hit["title"],
                 body=body,
+                files=canonical.extract_step_files(body),
             )
         )
     return steps
@@ -690,6 +693,7 @@ def _steps_from_checkbox_list(
                 id=canonical.step_id_for(idx + 1),
                 title=hit["title"],
                 body=body,
+                files=canonical.extract_step_files(body),
             )
         )
     return steps

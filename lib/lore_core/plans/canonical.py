@@ -140,6 +140,81 @@ def extract_canonical_step_ids(body: str) -> list[str]:
     return [canonicalize_step_id(sid) for sid in extract_step_ids_verbatim(body)]
 
 
+#: Start-of-line ``Files:`` directive (case-insensitive). Anchored so prose
+#: mentions like *"the Files: section"* don't false-positive. Up to a few
+#: leading spaces tolerated for nested-markdown contexts.
+_STEP_FILES_HEADING_RE = re.compile(
+    r"^[ \t]{0,4}files\s*:\s*(?P<inline>.*?)\s*$",
+    re.IGNORECASE,
+)
+
+#: Bulleted continuation under a ``Files:`` block: ``- path`` or ``* path``.
+#: Captures the path content (backticks stripped by the caller).
+_STEP_FILES_BULLET_RE = re.compile(
+    r"^[ \t]{0,4}[-*+]\s+(?P<path>.+?)\s*$"
+)
+
+
+def _strip_path_decoration(raw: str) -> str:
+    """Strip surrounding backticks/whitespace from a single path token."""
+    s = raw.strip()
+    if s.startswith("`") and s.endswith("`") and len(s) >= 2:
+        s = s[1:-1].strip()
+    return s
+
+
+def extract_step_files(body: str) -> list[str]:
+    """Return the ordered list of file paths declared in a step body.
+
+    Supports two shapes:
+
+    * **Inline comma list** — ``Files: lib/foo.py, lib/bar.py`` on a
+      single line. Comma-separated values are stripped of whitespace
+      and surrounding backticks.
+    * **Bulleted list** — a bare ``Files:`` line followed by ``- path``
+      or ``* path`` bullets, terminated by a blank line or non-bullet
+      content. Same backtick stripping applies.
+
+    The ``Files:`` heading must be at start-of-line (after optional
+    indent) — prose mentions of *"the Files: section"* do not match.
+    Returns an empty list when no ``Files:`` directive is found.
+    """
+    if not body:
+        return []
+    lines = body.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        m = _STEP_FILES_HEADING_RE.match(lines[i])
+        if m is None:
+            i += 1
+            continue
+        inline = m.group("inline")
+        if inline:
+            # Inline form — split on commas, strip decoration, drop empties.
+            for token in inline.split(","):
+                cleaned = _strip_path_decoration(token)
+                if cleaned:
+                    out.append(cleaned)
+            return out
+        # Bulleted form — consume contiguous bullet lines until blank or
+        # non-bullet content.
+        i += 1
+        while i < len(lines):
+            line = lines[i]
+            if not line.strip():
+                break
+            mb = _STEP_FILES_BULLET_RE.match(line)
+            if mb is None:
+                break
+            cleaned = _strip_path_decoration(mb.group("path"))
+            if cleaned:
+                out.append(cleaned)
+            i += 1
+        return out
+    return out
+
+
 def migrate_legacy_body(body: str) -> tuple[str, int]:
     """Rewrite legacy ``### s<N>:`` headings to canonical ``### step-<N>:``.
 

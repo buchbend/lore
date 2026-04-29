@@ -381,6 +381,16 @@ def _build_fresh_frontmatter(
         fm["ingest_confidence"] = plan.confidence
     if plan.warnings:
         fm["parse_warnings"] = list(plan.warnings)
+    # Per-step file lists for commit/edit attribution. Omitted entirely
+    # when no step declared files — a fresh capture should never carry
+    # an empty `step_files: {}` noise field.
+    step_files = {
+        canonical.canonicalize_step_id(s.id): list(s.files)
+        for s in plan.steps
+        if s.files
+    }
+    if step_files:
+        fm["step_files"] = step_files
     return fm
 
 
