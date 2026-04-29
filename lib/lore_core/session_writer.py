@@ -252,15 +252,25 @@ def render_body_sections(sections: BodySections) -> str:
 def merge_body_sections(existing: BodySections, new: BodySections) -> BodySections:
     """Merge a new chunk's sections into an existing note's sections.
 
-    Existing title and summary win — the original framing of the note
-    is the user's anchor and shouldn't churn under accumulating
-    appends. Bullet lists are unioned by appending; exact-match dups
-    drop so a new chunk's collector pass that re-discovers a commit
-    seen in an earlier chunk doesn't double-list it.
+    Title is sticky — it sources the slug/filename, so churning it
+    would orphan wikilinks and rename files mid-session.
+
+    Summary tracks the latest substantive chunk: a non-empty new
+    summary replaces the existing one. With mid-session inline filing
+    and topic-aware merges, the first chunk's framing becomes stale
+    fast — a session described as "started OAuth refactor" should
+    converge on "completed OAuth refactor across 4 services" by the
+    time the work wraps. classify_slice only emits a description for
+    substantive chunks (cascade_trivial returns early before merging),
+    so trivial appends never clobber a real summary.
+
+    Bullet lists are unioned by appending; exact-match dups drop so a
+    new chunk's collector pass that re-discovers a commit seen in an
+    earlier chunk doesn't double-list it.
     """
     return BodySections(
         title=existing.title or new.title,
-        summary=existing.summary or new.summary,
+        summary=new.summary or existing.summary,
         decisions=_dedup_lines(existing.decisions, new.decisions),
         worked_on=_dedup_lines(existing.worked_on, new.worked_on),
         loose_ends=_dedup_lines(existing.loose_ends, new.loose_ends),
@@ -622,6 +632,15 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
     body = _strip_frontmatter(text)
 
     fm["last_reviewed"] = si.work_time.date().isoformat()
+
+    # Refresh description from the latest chunk so the status-line
+    # preview reflects where the session ended up, not just how it
+    # started. Mirrors the body-Summary update in merge_body_sections.
+    # classify_slice only emits a description for substantive chunks
+    # (cascade_trivial returns early without filing), so a tiny mid-
+    # session append never clobbers a real description with "".
+    if si.description:
+        fm["description"] = si.description
 
     if si.transcript is not None:
         from_hash = si.turn_hashes[0] if si.turn_hashes else None

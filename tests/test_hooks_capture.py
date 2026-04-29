@@ -135,6 +135,42 @@ runner = CliRunner()
 # ---------------------------------------------------------------------------
 
 
+def test_user_prompt_submit_registers_missed_transcript(tmp_path: Path, fake_adapter_factory, monkeypatch) -> None:
+    """Mid-session registration closes the SessionStart-vs-transcript-creation
+    race. SessionStart can sample the projects directory in the sub-second
+    window before Claude Code has flushed the new transcript file. Without
+    this path the entry never makes it into the ledger and curator A
+    silently has nothing to digest until the session ends — the symptom
+    that prompted the fix (long step-ca session, no note ever filed)."""
+    project = _make_attached_project(tmp_path)
+    handle = _make_handle(project)
+    adapter = fake_adapter_factory([handle])
+
+    # Confirm baseline: nothing in the ledger yet (the missed-at-SessionStart state).
+    ledger = TranscriptLedger(project)
+    assert ledger.get("fake", "t1") is None
+
+    monkeypatch.setenv("LORE_ROOT", str(project))
+    # Patch the module-level resolver so cmd_user_prompt_submit uses the fake
+    # rather than the real claude-code adapter (which would scan ~/.claude).
+    monkeypatch.setattr("lore_cli.hooks.get_adapter", lambda _i: adapter)
+    # Stop the spawn-gate from forking a curator subprocess in the test.
+    monkeypatch.setattr("lore_cli.hooks._heartbeat_spawn_curator_a", lambda *a, **kw: None)
+
+    from lore_cli.hooks import cmd_user_prompt_submit
+    cmd_user_prompt_submit(cwd=str(project), plain=True)
+
+    # Re-read; cmd_user_prompt_submit should have written the entry.
+    ledger = TranscriptLedger(project)
+    entry = ledger.get("fake", "t1")
+    assert entry is not None, (
+        "user-prompt-submit must register transcripts to close the "
+        "SessionStart-vs-creation race"
+    )
+    assert entry.transcript_id == "t1"
+    assert entry.directory == project
+
+
 def test_capture_session_end_creates_ledger_entry(tmp_path: Path, fake_adapter_factory) -> None:
     """capture --event session-end creates a ledger entry for a new transcript."""
     project = _make_attached_project(tmp_path)

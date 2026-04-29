@@ -38,6 +38,7 @@ import subprocess
 import sys
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 from lore_core import gh as _gh_mod
 from lore_core.config import get_lore_root, get_wiki_root
@@ -2496,6 +2497,18 @@ def cmd_user_prompt_submit(
     lore_root = _infer_lore_root(scope.claude_md_path)
     wiki_cfg = _load_wiki_cfg_from_scope(scope, lore_root)
 
+    # Mid-session transcript discovery + mtime refresh. Closes the
+    # SessionStart-vs-transcript-creation race (sub-second; SessionStart
+    # can sample the projects dir before Claude Code has created the
+    # transcript file) and keeps `last_mtime` fresh so `pending()` /
+    # the spawn-gate see work growing across the session. Without this,
+    # long sessions sit on accumulated turns until SessionEnd.
+    try:
+        adapter = get_adapter("claude-code")
+        _register_pending_transcripts(lore_root, cwd_resolved, adapter=adapter)
+    except Exception:
+        pass  # never break the prompt path on a registration hiccup
+
     sys_msg, ctx = _heartbeat(lore_root, cwd_resolved, wiki_cfg)
 
     # Mid-session snappy spawn — evaluate the turn-aware gate every prompt
@@ -2549,6 +2562,76 @@ def _resolve_cwd_capture() -> Path:
     """Resolve CWD for capture: $CLAUDE_PROJECT_DIR → os.getcwd()."""
     env = os.environ.get("CLAUDE_PROJECT_DIR")
     return Path(env) if env else Path(os.getcwd())
+
+
+def _register_pending_transcripts(
+    lore_root: Path,
+    cwd: Path,
+    *,
+    adapter: Any,
+    transcript: Path | None = None,
+) -> None:
+    """List transcripts for ``cwd`` and upsert into the ledger.
+
+    Shared by ``capture`` (SessionStart/End/PreCompact) and
+    ``user-prompt-submit`` (mid-session). Closes the SessionStart-vs-
+    transcript-creation race for sessions whose transcript file did not
+    exist when SessionStart sampled the directory: any subsequent
+    UserPromptSubmit picks the missing entry up. mtime updates also
+    propagate so ``pending()`` sees work growing across a long session
+    and the heartbeat spawn-gate can fire mid-session for semantic
+    capture rather than waiting for SessionEnd.
+
+    Attach-time watermark: transcripts older than the attachment's
+    ``attached_at`` are pre-stamped as already seen so only future
+    sessions are pending. Use ``lore backfill`` to opt in to history.
+
+    Bulk-upserted in one ledger serialisation regardless of how many
+    handles change — keeps the call well within the hook budget.
+    """
+    from lore_core.state.attachments import AttachmentsFile
+
+    if transcript is not None:
+        handles = [h for h in adapter.list_transcripts(cwd) if h.path == transcript]
+    else:
+        handles = adapter.list_transcripts(cwd)
+
+    if not handles:
+        return
+
+    tledger = TranscriptLedger(lore_root)
+    af = AttachmentsFile(lore_root)
+    af.load()
+    attachment = af.longest_prefix_match(cwd)
+
+    to_write: list[TranscriptLedgerEntry] = []
+    for h in handles:
+        entry = tledger.get(h.integration, h.id)
+        if entry is None:
+            is_historical = (
+                attachment is not None
+                and h.mtime < attachment.attached_at
+            )
+            to_write.append(
+                TranscriptLedgerEntry(
+                    integration=h.integration,
+                    transcript_id=h.id,
+                    path=h.path,
+                    directory=h.cwd,
+                    digested_hash=None,
+                    digested_index_hint=None,
+                    synthesised_hash=None,
+                    last_mtime=h.mtime,
+                    curator_a_run=attachment.attached_at if is_historical else None,
+                    noteworthy=None,
+                    session_note=None,
+                )
+            )
+        elif entry.last_mtime != h.mtime:
+            entry.last_mtime = h.mtime
+            to_write.append(entry)
+    if to_write:
+        tledger.bulk_upsert(to_write)
 
 
 def _nudge_unattached(cwd: Path, out: str) -> None:
@@ -3175,51 +3258,9 @@ def capture(
             )
             raise typer.Exit(code=1)
 
-        if transcript is not None:
-            handles = [h for h in adapter.list_transcripts(cwd) if h.path == transcript]
-        else:
-            handles = adapter.list_transcripts(cwd)
-
-        # Collect new + mtime-changed entries into a single bulk_upsert so
-        # the 180KB+ ledger is serialised once per hook, not once per
-        # transcript. Keeps the capture path well under its <500ms budget.
-        #
-        # Attach-time watermark: transcripts older than the attachment's
-        # attached_at are pre-stamped as already seen so only future
-        # sessions are pending. Use `lore backfill` to opt in to history.
-        from lore_core.state.attachments import AttachmentsFile
-        af = AttachmentsFile(lore_root)
-        af.load()
-        attachment = af.longest_prefix_match(cwd)
-
-        to_write: list[TranscriptLedgerEntry] = []
-        for h in handles:
-            entry = tledger.get(h.integration, h.id)
-            if entry is None:
-                is_historical = (
-                    attachment is not None
-                    and h.mtime < attachment.attached_at
-                )
-                to_write.append(
-                    TranscriptLedgerEntry(
-                        integration=h.integration,
-                        transcript_id=h.id,
-                        path=h.path,
-                        directory=h.cwd,
-                        digested_hash=None,
-                        digested_index_hint=None,
-                        synthesised_hash=None,
-                        last_mtime=h.mtime,
-                        curator_a_run=attachment.attached_at if is_historical else None,
-                        noteworthy=None,
-                        session_note=None,
-                    )
-                )
-            elif entry.last_mtime != h.mtime:
-                entry.last_mtime = h.mtime
-                to_write.append(entry)
-        if to_write:
-            tledger.bulk_upsert(to_write)
+        _register_pending_transcripts(
+            lore_root, cwd, adapter=adapter, transcript=transcript
+        )
 
         pending = tledger.pending()
         pending_after = len(pending)

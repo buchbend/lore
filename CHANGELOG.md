@@ -10,6 +10,38 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-04-29
+
+### Fixed
+
+- **Mid-session transcript registration closes a SessionStart race.**
+  When `SessionStart` sampled the projects directory in the sub-second
+  window before Claude Code had created the transcript file, the
+  transcript was never registered in the ledger and curator A had
+  nothing to digest until `SessionEnd` fired. Long sessions could run
+  for hours without ever filing a note (real symptom: a 5-hour
+  step-ca session with a 7 MB transcript and zero session note).
+  `cmd_user_prompt_submit` now re-lists transcripts on every prompt
+  and `bulk_upsert`s into the ledger via the shared
+  `_register_pending_transcripts` helper (also used by `capture`).
+  `last_mtime` updates propagate so `pending()` / the heartbeat
+  spawn-gate see work growing across the session, enabling true
+  semantic mid-session capture rather than waiting for session
+  boundaries.
+
+### Changed
+
+- **Session-note merges refresh summary + description.** Previously
+  the first chunk's `## Summary` paragraph and frontmatter
+  `description` were frozen forever — subsequent appends only added
+  bullets. With mid-session inline filing this leaves the note framed
+  as "started X" long after the work converged on "completed X across
+  N services". `merge_body_sections` now takes the latest non-empty
+  summary; `_append_to_note` mirrors the update for frontmatter
+  `description`. Title (and thus slug/filename) stays sticky to avoid
+  orphaning wikilinks. Empty-summary chunks are defensively ignored,
+  so cascade-trivial appends never clobber a real summary with `""`.
+
 ## [0.29.0] - 2026-04-29
 
 ### Added

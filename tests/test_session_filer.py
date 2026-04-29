@@ -779,9 +779,12 @@ def test_append_merges_bullets_into_existing_sections(tmp_path):
     assert "**B**" in body
 
 
-def test_append_keeps_summary_paragraph_of_first_chunk(tmp_path):
-    """First chunk wins on ``## Summary``. Subsequent chunks contribute to
-    bullet sections only — the narrative stays the original framing."""
+def test_append_refreshes_summary_to_latest_chunk(tmp_path):
+    """Latest chunk's narrative wins. With mid-session inline filing the
+    first chunk's framing ("started OAuth refactor") becomes stale fast
+    and should converge on where the work actually ended up
+    ("completed OAuth refactor across 4 services"). Both ``## Summary``
+    in the body and ``description`` in frontmatter must update."""
     sessions_dir = tmp_path / "sessions"
     body_md = (
         "# Morning\n\n"
@@ -791,6 +794,7 @@ def test_append_keeps_summary_paragraph_of_first_chunk(tmp_path):
     existing = _write_session_note(
         sessions_dir, "19-morning.md",
         scope_str="proj:feature", created="2026-04-19",
+        description="The morning framing.",
         body=body_md,
     )
 
@@ -805,8 +809,30 @@ def test_append_keeps_summary_paragraph_of_first_chunk(tmp_path):
     )
 
     body = _body(existing)
-    assert "The morning framing." in body
-    assert "The afternoon framing." not in body
+    assert "The afternoon framing." in body
+    assert "The morning framing." not in body
+    fm = parse_frontmatter(existing.read_text())
+    assert fm["description"] == "The afternoon framing."
+
+
+def test_merge_body_sections_empty_new_summary_keeps_existing():
+    """Defensive: an empty ``new.summary`` must not blank out the
+    existing one. (At the file_session_note level si.description
+    falls back to title so this can only happen when a body parses
+    to a Summary-less BodySections — e.g., a legacy note shape — but
+    the merge primitive must still hold the invariant.)"""
+    from lore_core.session_writer import BodySections, merge_body_sections
+
+    existing = BodySections(
+        title="t", summary="kept", decisions=[], worked_on=["a"],
+        loose_ends=[], commits=[], issues_opened=[], issues_closed=[],
+    )
+    new = BodySections(
+        title="t", summary="", decisions=[], worked_on=["b"],
+        loose_ends=[], commits=[], issues_opened=[], issues_closed=[],
+    )
+    merged = merge_body_sections(existing, new)
+    assert merged.summary == "kept"
 
 
 # ---------------------------------------------------------------------------
