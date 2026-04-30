@@ -1700,6 +1700,285 @@ def _missing_trailer_nudges_for_stop(cwd_path: Path) -> list[str]:
         return []
 
 
+#: Below this confidence, even a "done" verdict is parked into
+#: pending-attributions instead of being acted on. Tunable; 0.6 is the
+#: hand-picked starting point — closure_judgment's prompt nudges the
+#: model to use ≥0.7 for done verdicts, so the threshold rejects
+#: visibly-uncertain calls.
+_JUDGMENT_CONFIDENCE_FLOOR = 0.6
+
+#: Default model for the closure judgment call. Resolved at call time
+#: from `LORE_CLOSURE_JUDGMENT_MODEL` env var; this is the fallback.
+_DEFAULT_CLOSURE_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _commit_diff_summary(repo_root: Path, sha: str) -> str:
+    """Return ``git show --stat`` output for ``sha`` (truncated)."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "show", "--stat", "--format=", sha],
+            capture_output=True, text=True, timeout=5.0, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if result.returncode != 0:
+        return ""
+    text = result.stdout.strip()
+    # Cap to keep the prompt small — diff stats over a few KB are rare
+    # and the model only needs the file list + line counts.
+    if len(text) > 4000:
+        text = text[:4000] + "\n... (truncated)"
+    return text
+
+
+def _commit_message_full(repo_root: Path, sha: str) -> str:
+    """Return the full commit message body for ``sha``."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "show", "-s", "--format=%B", sha],
+            capture_output=True, text=True, timeout=5.0, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def _append_pending_attribution(
+    *,
+    sid: str,
+    commit_sha: str,
+    plan_slug: str,
+    step_id: str,
+    decision: str,
+    confidence: float,
+    reason: str,
+) -> None:
+    """Persist one attribution row to the per-session pending-attr cache.
+
+    Read-modify-write under best-effort error handling — the cache is
+    a hint surface for the next session, not authoritative state, so
+    a malformed file falls back to "start fresh."
+    """
+    from datetime import UTC, datetime as _dt
+
+    cache_path = (
+        Path.home() / ".cache" / "lore" / "sessions" / sid
+        / "pending-attributions.json"
+    )
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        existing: list[dict] = []
+        if cache_path.exists():
+            try:
+                loaded = json.loads(cache_path.read_text())
+                if isinstance(loaded, list):
+                    existing = [e for e in loaded if isinstance(e, dict)]
+            except (json.JSONDecodeError, OSError):
+                existing = []
+        existing.append({
+            "commit_sha": commit_sha,
+            "plan_slug": plan_slug,
+            "step_id": step_id,
+            "decision": decision,
+            "confidence": float(confidence),
+            "reason": reason,
+            "judged_at": _dt.now(UTC).isoformat(),
+        })
+        cache_path.write_text(json.dumps(existing, indent=2))
+    except OSError:
+        return
+
+
+def _attribute_commits_with_judgment(cwd_path: Path) -> list[str]:
+    """LLM-gated commit→step attribution at Stop.
+
+    For each recent commit since this session began:
+
+    * If it carries a ``Plan:`` trailer, the existing
+      :func:`_plan_trailer_nudges_for_stop` path handles it — skip.
+    * Otherwise, intersect the commit's changed files against each
+      active plan's ``step_files``. For each non-empty overlap on a
+      not-yet-done step, ask :func:`closure_judgment.judge_closure`.
+    * ``done`` + confidence ≥ ``_JUDGMENT_CONFIDENCE_FLOOR`` →
+      :func:`set_step` ``DONE`` and emit a confirmation line.
+    * ``in_progress`` + confidence ≥ floor →
+      :func:`set_step` ``IN_PROGRESS`` (idempotent on already-in-progress).
+    * Anything else (low confidence, ``skip``, no client, LLM error)
+      → write the row to ``pending-attributions.json`` for the next
+      session to surface.
+
+    Per-session seen-set at
+    ``~/.cache/lore/sessions/<sid>/plan-judgment.seen`` keeps each
+    ``(sha, slug, step)`` triple from re-firing. ``set_step`` is itself
+    idempotent so the seen-set is belt-and-braces.
+
+    Returns a (possibly empty) list of confirmation lines for the user.
+    Always best-effort: any uncaught exception → ``[]``.
+    """
+    try:
+        from lore_core.drain import resolve_session_id
+        from lore_core.git import git_repo_root
+        from lore_core.plans.registry import list_active
+        from lore_core.plans.step_status import set_step
+        from lore_core.plans.types import StepStatus
+        from lore_curator.closure_judgment import judge_closure
+        from lore_curator.llm_client import LlmClientError, make_llm_client
+
+        scope = resolve_scope(cwd_path)
+        if scope is None:
+            return []
+        wiki_root = get_wiki_root() / scope.wiki
+        if not wiki_root.exists():
+            return []
+        repo_slug = current_repo(cwd_path)
+        repo_root = git_repo_root(cwd_path)
+        if repo_root is None:
+            return []
+
+        cards = list_active(wiki_root, repo=repo_slug)
+        if not cards:
+            return []
+
+        # Pre-build (slug, step_id, file-set) targets for cards with
+        # any step_files declared. Cards without step_files contribute
+        # nothing — by design (no signal, no auto-attribution).
+        plan_targets: list[tuple[Any, str, set[str]]] = []
+        for card in cards:
+            for step_id, files in card.step_files.items():
+                if not files:
+                    continue
+                plan_targets.append((card, step_id, set(files)))
+        if not plan_targets:
+            return []
+
+        sid, _ = resolve_session_id(cwd_path)
+        seen_path = (
+            Path.home() / ".cache" / "lore" / "sessions" / sid
+            / "plan-judgment.seen"
+        )
+        seen = _read_nudge_seen_set(seen_path)
+        session_floor = _session_started_at(sid, cwd_path)
+
+        # Resolve LLM client lazily; None = graceful degradation path.
+        llm_client = make_llm_client()
+        model = os.environ.get(
+            "LORE_CLOSURE_JUDGMENT_MODEL", _DEFAULT_CLOSURE_MODEL
+        )
+
+        confirmations: list[str] = []
+        new_keys: list[str] = []
+        for sha, ct in _recent_commits_with_time(repo_root, n=20):
+            if session_floor is not None and ct < session_floor:
+                continue
+            if _commit_has_plan_trailer(repo_root, sha):
+                continue
+            commit_files = _commit_files(repo_root, sha)
+            if not commit_files:
+                continue
+            for card, step_id, step_files in plan_targets:
+                if not (commit_files & step_files):
+                    continue
+                # Skip already-done steps.
+                if card.step_status.get(step_id) == "done":
+                    continue
+                key = f"{sha}!judged#{card.slug}#{step_id}"
+                if key in seen:
+                    continue
+
+                # Decide path: LLM available → ask; otherwise park to pending.
+                if llm_client is None:
+                    _append_pending_attribution(
+                        sid=sid,
+                        commit_sha=sha,
+                        plan_slug=card.slug,
+                        step_id=step_id,
+                        decision="skip",
+                        confidence=0.0,
+                        reason="no LLM client available",
+                    )
+                    new_keys.append(key)
+                    continue
+
+                # Run the LLM judgment.
+                try:
+                    judgment = judge_closure(
+                        commit_sha=sha,
+                        commit_msg=_commit_message_full(repo_root, sha),
+                        diff_summary=_commit_diff_summary(repo_root, sha),
+                        plan_slug=card.slug,
+                        step_id=step_id,
+                        step_title=step_id,  # registry doesn't carry titles
+                        step_body="",         # body lookup is heavy; skip for now
+                        current_status=card.step_status.get(step_id, "pending"),
+                        llm_client=llm_client,
+                        model=model,
+                    )
+                except (LlmClientError, ValueError) as exc:
+                    _append_pending_attribution(
+                        sid=sid,
+                        commit_sha=sha,
+                        plan_slug=card.slug,
+                        step_id=step_id,
+                        decision="skip",
+                        confidence=0.0,
+                        reason=f"LLM error: {exc}",
+                    )
+                    new_keys.append(key)
+                    continue
+
+                # Apply decision.
+                if (
+                    judgment.decision in ("done", "in_progress")
+                    and judgment.confidence >= _JUDGMENT_CONFIDENCE_FLOOR
+                ):
+                    target_status = (
+                        StepStatus.DONE if judgment.decision == "done"
+                        else StepStatus.IN_PROGRESS
+                    )
+                    # Idempotency: don't regress in_progress to in_progress
+                    # noisily; set_step is fast-path on identical writes.
+                    try:
+                        set_step(
+                            wiki_root=wiki_root,
+                            slug=card.slug,
+                            step_id=step_id,
+                            status=target_status,
+                        )
+                        if judgment.decision == "done":
+                            confirmations.append(
+                                f"✓ marked plan/{card.slug}#{step_id} done "
+                                f"from commit {sha} (LLM: {judgment.reason})"
+                            )
+                        else:
+                            confirmations.append(
+                                f"→ marked plan/{card.slug}#{step_id} "
+                                f"in_progress from commit {sha}"
+                            )
+                    except (FileNotFoundError, ValueError, OSError):
+                        # Plan vanished or step ID unknown — never break Stop.
+                        pass
+                else:
+                    # Low confidence or skip → park for the next session.
+                    _append_pending_attribution(
+                        sid=sid,
+                        commit_sha=sha,
+                        plan_slug=card.slug,
+                        step_id=step_id,
+                        decision=judgment.decision,
+                        confidence=judgment.confidence,
+                        reason=judgment.reason,
+                    )
+                new_keys.append(key)
+
+        if new_keys:
+            _append_nudge_seen_set(seen_path, new_keys)
+        return confirmations
+    except Exception:  # noqa: BLE001 — never break Stop
+        return []
+
+
 def _suggested_step_for_card(card) -> str | None:
     """Best-guess step ID for a missing-trailer prompt on this plan.
 
@@ -2315,14 +2594,14 @@ def cmd_stop(
     # Two complementary passes:
     #   1. Trailer-action: commits WITH `Plan:` trailers → auto-advance
     #      the step (writes step_status, may flip plan to status: done).
-    #   2. Missing-trailer: commits WITHOUT trailers that touch files
-    #      mentioned in active plan step bodies → soft prompt asking
-    #      the model to add the trailer to a follow-up commit.
+    #   2. Judgment-action: commits WITHOUT trailers whose files overlap
+    #      a plan's step_files → LLM judgment closes the step (or parks
+    #      the case to pending-attributions for the next session).
     # Both share the seen-set namespace prefix scheme so neither
     # re-fires on subsequent Stops.
     action_msgs = _plan_trailer_nudges_for_stop(cwd_path)
-    missing_msgs = _missing_trailer_nudges_for_stop(cwd_path)
-    plan_lines = action_msgs + missing_msgs
+    judgment_msgs = _attribute_commits_with_judgment(cwd_path)
+    plan_lines = action_msgs + judgment_msgs
     if plan_lines:
         if out:
             out = out.rstrip() + "\n\n"
