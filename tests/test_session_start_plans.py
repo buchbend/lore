@@ -134,27 +134,30 @@ def test_in_progress_step_appears_in_card(wiki_root: Path) -> None:
     assert f"[[plan/{slug}#step-2]]" in text
 
 
-def test_resume_block_surfaces_literal_commit_trailer(wiki_root: Path) -> None:
-    """The auto-advance pipeline (Layer A) only fires when commits
-    carry `Plan: <slug>#sN` trailers. To make that discipline reliable
-    we put the canonical literal in the resume block, anchored to the
-    in-progress step (or first pending). The model has the exact
-    string in context whenever it considers a commit."""
+def test_resume_block_surfaces_trailer_as_override(wiki_root: Path) -> None:
+    """As of v0.35 the trailer is demoted to an override. Auto-attribution
+    rides `step_files` (PostToolUse:Edit + Stop LLM judgment); the
+    Resume block still surfaces the trailer literal so the model has
+    the canonical string in context for the explicit short-circuit case
+    — but framed as override, not the primary path."""
     slug = _make_plan(wiki_root, n_steps=3)
     set_step(wiki_root=wiki_root, slug=slug, step_id="step-1", status=StepStatus.IN_PROGRESS)
     lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
     text = "\n".join(lines)
-    # Trailer literal anchored to the in-progress step.
-    assert f"Commit trailer: `Plan: {slug}#step-1`" in text
+    # Trailer literal anchored to the in-progress step, framed as override.
+    assert f"`Plan: {slug}#step-1`" in text
+    assert "Override" in text or "override" in text
+    # The new informational framing must mention the auto-attribution path.
+    assert "edits" in text and "in_progress" in text
 
 
 def test_resume_block_trailer_falls_back_to_next_pending(wiki_root: Path) -> None:
-    """When no step is in-progress, the trailer literal anchors to the
+    """When no step is in-progress, the override trailer anchors to the
     first pending step — the most likely target of the next commit."""
     slug = _make_plan(wiki_root, n_steps=3)
     lines, _ = _active_plans_resume_block(wiki_root, repo="lore")
     text = "\n".join(lines)
-    assert f"Commit trailer: `Plan: {slug}#step-1`" in text
+    assert f"`Plan: {slug}#step-1`" in text
 
 
 def test_multi_in_progress_lists_all(wiki_root: Path) -> None:

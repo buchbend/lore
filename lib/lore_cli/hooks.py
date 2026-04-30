@@ -842,12 +842,16 @@ def _render_one_plan_card(
     anchor = in_prog[0] if in_prog else next_pending
     if anchor:
         body.append(f"[[plan/{card.slug}#{anchor}]]")
-        # Surface the canonical commit trailer literal so the executing
-        # model has the exact string in context — auto-advance Layer A
-        # only fires when commits carry this trailer, and "remember the
-        # convention" is the most reliable failure mode for LLMs unless
-        # the literal is on screen at decision time.
-        body.append(f"Commit trailer: `Plan: {card.slug}#{anchor}`")
+        # Trailer demoted to override (v0.35+). Auto-attribution rides
+        # `step_files`: PostToolUse:Edit flips pending → in_progress on
+        # first matching edit; Stop's LLM judgment closes the step on
+        # high-confidence commit overlap. The trailer is the explicit
+        # short-circuit and `/lore:plan-step --done` is the manual one.
+        body.append(
+            f"Step status: edits → in_progress; commits → LLM-judged. "
+            f"Override: `Plan: {card.slug}#{anchor}` trailer or "
+            f"`/lore:plan-step {card.slug} --done`."
+        )
     else:
         body.append(f"[[plan/{card.slug}]]")
 
@@ -1056,6 +1060,13 @@ def _session_start_from_lore(
     # wikilink + step anchor on its own line.
     if plan_resume_block:
         out_parts.extend(plan_resume_block)
+        out_parts.append("")
+    # Pending-attribution bridge: surface low-confidence / skip / no-LLM
+    # cases parked by Stop in prior sessions for any currently-active plan
+    # in this repo. Closes the loop the user-terminal nudge couldn't.
+    pending_block = _pending_attributions_block(wiki, repo=repo)
+    if pending_block:
+        out_parts.extend(pending_block)
         out_parts.append("")
     if project_entry is not None:
         out_parts.append(f"## Focus: [[{project_entry['name']}]]")
@@ -1789,6 +1800,99 @@ def _append_pending_attribution(
         cache_path.write_text(json.dumps(existing, indent=2))
     except OSError:
         return
+
+
+def _pending_attributions_block(
+    wiki_root: Path, *, repo: str | None
+) -> list[str]:
+    """Render unresolved attributions from prior sessions as a SessionStart block.
+
+    Reads every ``pending-attributions.json`` under
+    ``~/.cache/lore/sessions/*/`` and surfaces the entries whose
+    ``plan_slug`` is currently active and matches ``repo`` (or is a
+    repo-less wiki-general plan). Dedups across sessions on the
+    ``(commit_sha, plan_slug, step_id)`` key — a triple parked twice
+    is one issue, not two.
+
+    Returns the rendered lines (no trailing blank). Empty list when
+    nothing actionable remains. Always best-effort: malformed cache
+    files are skipped silently.
+    """
+    try:
+        from lore_core.plans.registry import list_active
+
+        cache_root = Path.home() / ".cache" / "lore" / "sessions"
+        if not cache_root.exists():
+            return []
+
+        cards = list_active(wiki_root, repo=repo)
+        if not cards:
+            return []
+        active_slugs = {c.slug for c in cards}
+
+        seen: set[tuple[str, str, str]] = set()
+        rows: list[dict] = []
+        for sid_dir in sorted(cache_root.iterdir()):
+            if not sid_dir.is_dir():
+                continue
+            cache_path = sid_dir / "pending-attributions.json"
+            if not cache_path.exists():
+                continue
+            try:
+                payload = json.loads(cache_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, list):
+                continue
+            for entry in payload:
+                if not isinstance(entry, dict):
+                    continue
+                slug = entry.get("plan_slug")
+                if not isinstance(slug, str) or slug not in active_slugs:
+                    continue
+                sha = str(entry.get("commit_sha") or "")
+                step_id = str(entry.get("step_id") or "")
+                if not sha or not step_id:
+                    continue
+                key = (sha, slug, step_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append(entry)
+
+        if not rows:
+            return []
+
+        out = [
+            "## ⚠ Unresolved plan attributions from recent sessions",
+            "",
+        ]
+        for entry in rows[:10]:  # cap to keep banner bounded
+            sha = str(entry.get("commit_sha") or "")
+            slug = str(entry.get("plan_slug") or "")
+            step_id = str(entry.get("step_id") or "")
+            decision = str(entry.get("decision") or "")
+            reason = str(entry.get("reason") or "")
+            try:
+                conf = float(entry.get("confidence") or 0.0)
+            except (TypeError, ValueError):
+                conf = 0.0
+            out.append(
+                f"- commit `{sha}` ↔ [[plan/{slug}#{step_id}]]: "
+                f"{decision} ({conf:.1f}) — {reason}"
+            )
+        if len(rows) > 10:
+            out.append(f"- … +{len(rows) - 10} more")
+        out.append("")
+        out.append(
+            "Resolve: `git commit --amend` adding "
+            "`Plan: <slug>#<step>` (closes), or run "
+            "`/lore:plan-step --done` for the right anchor. "
+            "Each entry will clear once acted on."
+        )
+        return out
+    except Exception:  # noqa: BLE001 — never break SessionStart
+        return []
 
 
 def _attribute_commits_with_judgment(cwd_path: Path) -> list[str]:
