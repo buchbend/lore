@@ -517,6 +517,14 @@ def _process_chunk(
         logger=logger,
         transcript_id=entry.transcript_id,
         scope_redirected_from=scope_redirected_from,
+        # LLM-merged summary on append: same client + tier as
+        # noteworthy classification. Reusing ``middle`` keeps the
+        # quality bar consistent — both calls are short, structured,
+        # and benefit from the same tier-budget tuning. The writer
+        # short-circuits on new-note path (no merge needed) so the
+        # extra round-trip only fires when there's an actual append.
+        llm_client=llm_client,
+        summary_merge_model=cfg.models.middle,
     )
     tledger.advance(
         integration=entry.integration,

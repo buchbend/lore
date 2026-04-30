@@ -10,6 +10,50 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-04-30
+
+### Added
+
+- **LLM-merged summary on Curator A appends**
+  (`lore_curator/summary_merge.py`,
+  `lore_core/session_writer.SessionInput.summary_merger`,
+  `lore_curator/session_filer._make_summary_merger`). When a chunk
+  merges into an existing same-day note, Curator A now asks the LLM
+  via `merge_descriptions` to compose a 1-2 sentence summary that
+  anchors on the existing framing and works the new chunk's context
+  in. The merged value drives BOTH the body `## Summary` paragraph
+  and the frontmatter `description`. Prior behaviour either clobbered
+  the existing summary with the latest chunk's framing (Frankenstein
+  fusion of unrelated topics) or, in the interim sticky-existing fix,
+  silently dropped the new chunk's progress. The merger short-circuits
+  without an LLM call when `existing` or `new` is empty (legacy notes,
+  cascade-trivial chunks) and falls back to `existing` on any LLM
+  failure — additive contract, never blanks an existing summary.
+  Reuses the `cfg.models.middle` tier the noteworthy classifier uses
+  so quality bar / cost are aligned. Test coverage in
+  `tests/test_summary_merge.py` (12 cases) +
+  `tests/test_session_filer.py::test_append_with_llm_client_*`.
+
+### Changed
+
+- **Topic-merge Jaccard threshold raised: 0.3 → 0.5**
+  (`lore_core/session_writer._TOPIC_OVERLAP_MIN_JACCARD`). A real-world
+  Frankenstein merge fused a GitHub-issue-curation session and a
+  step_files plan session that incidentally shared one helper module
+  (`hooks.py`) — Jaccard 1/3 ≈ 0.33 cleared the old gate. The new
+  threshold preserves the two-of-three continuation case (`auth.py +
+  auth_test.py + a` ↔ `auth.py + auth_test.py + b`, Jaccard 0.5) but
+  rejects single-shared-file false-positives. Tests:
+  `tests/test_session_filer.py::test_phase_c_single_shared_file_does_not_merge`
+  and the updated overlap-merge case.
+- **No-LLM filing path: summary stays sticky-existing on append**
+  (`lore_core/session_writer.merge_body_sections`,
+  `_append_to_note`). When `file_session_note` is called without an
+  `llm_client` (tests, dry-runs, the explicit `/lore:session` path),
+  the writer falls back to keeping the existing body Summary and only
+  backfills frontmatter `description` on legacy notes that never had
+  one. Previous behaviour clobbered both with each substantive append.
+
 ## [0.36.0] - 2026-04-30
 
 ### Added

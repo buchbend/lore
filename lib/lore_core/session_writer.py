@@ -41,7 +41,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, date as _date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple
 
 import yaml
 
@@ -66,12 +66,15 @@ from lore_core.topic_files import (
 )
 
 # Jaccard threshold above which two file-sets are "the same topic" and
-# the new chunk merges into the open note. Hand-picked: 0.3 means the
-# overlap covers about a third of the union — enough to indicate
-# continuation, low enough to avoid spurious links from e.g. one shared
-# helper module. Tunable later via root config if calibration shows
-# false-positives or false-negatives.
-_TOPIC_OVERLAP_MIN_JACCARD = 0.3
+# the new chunk merges into the open note. Raised from 0.3 → 0.5 after
+# a real-world Frankenstein merge: two semantically-distinct sessions
+# (GitHub-issue curation vs. a step_files plan) shared a single
+# incidentally-touched helper module (`hooks.py`) and cleared 0.3 with
+# 1/3 ≈ 0.33, then collided their summaries. 0.5 keeps the two-of-three
+# continuation case (auth.py + auth_test.py / auth.py + helpers.py
+# fails; auth.py + auth_test.py + a / auth.py + auth_test.py + b
+# passes) but rejects the single-shared-file false-positive class.
+_TOPIC_OVERLAP_MIN_JACCARD = 0.5
 
 
 def _dedup_preserving_order(items: list[str] | None) -> list[str]:
@@ -252,17 +255,18 @@ def render_body_sections(sections: BodySections) -> str:
 def merge_body_sections(existing: BodySections, new: BodySections) -> BodySections:
     """Merge a new chunk's sections into an existing note's sections.
 
-    Title is sticky — it sources the slug/filename, so churning it
-    would orphan wikilinks and rename files mid-session.
+    Default rule: Title and Summary are sticky — the existing values
+    win. This is the safe deterministic primitive: an empty new chunk
+    must never blank out an existing summary, and without an LLM in the
+    loop a later chunk's framing is no more authoritative than the
+    earlier one.
 
-    Summary tracks the latest substantive chunk: a non-empty new
-    summary replaces the existing one. With mid-session inline filing
-    and topic-aware merges, the first chunk's framing becomes stale
-    fast — a session described as "started OAuth refactor" should
-    converge on "completed OAuth refactor across 4 services" by the
-    time the work wraps. classify_slice only emits a description for
-    substantive chunks (cascade_trivial returns early before merging),
-    so trivial appends never clobber a real summary.
+    Curator A overrides the summary via an LLM merge in
+    ``_append_to_note`` when ``SessionInput.summary_merger`` is set —
+    that path composes a 1-2 sentence summary that anchors on the
+    existing framing and weaves in the new chunk's context. The merge
+    function lives in ``lore_curator.summary_merge`` so the writer
+    stays free of LLM dependencies; the writer just calls the closure.
 
     Bullet lists are unioned by appending; exact-match dups drop so a
     new chunk's collector pass that re-discovers a commit seen in an
@@ -270,7 +274,7 @@ def merge_body_sections(existing: BodySections, new: BodySections) -> BodySectio
     """
     return BodySections(
         title=existing.title or new.title,
-        summary=new.summary or existing.summary,
+        summary=existing.summary or new.summary,
         decisions=_dedup_lines(existing.decisions, new.decisions),
         worked_on=_dedup_lines(existing.worked_on, new.worked_on),
         loose_ends=_dedup_lines(existing.loose_ends, new.loose_ends),
@@ -278,6 +282,10 @@ def merge_body_sections(existing: BodySections, new: BodySections) -> BodySectio
         issues_opened=_dedup_lines(existing.issues_opened, new.issues_opened),
         issues_closed=_dedup_lines(existing.issues_closed, new.issues_closed),
     )
+
+
+# (existing_summary, new_summary, new_worked_on_bullets, new_decisions) -> merged_summary
+SummaryMerger = Callable[[str, str, list[str], list[str]], str]
 
 
 def _dedup_lines(*sources: list[str]) -> list[str]:
@@ -365,6 +373,16 @@ class SessionInput:
     activity_commits: list[str] = field(default_factory=list)
     activity_issues_opened: list[str] = field(default_factory=list)
     activity_issues_closed: list[str] = field(default_factory=list)
+
+    # Optional LLM-backed summary merger. When set AND this call ends
+    # up appending to an existing note, ``_append_to_note`` invokes the
+    # closure with the existing+new summaries (and the new chunk's
+    # bullets/decisions for context) to compose a merged 1-2 sentence
+    # summary. The result drives both the body ``## Summary`` and
+    # frontmatter ``description``. None (the default) preserves the
+    # deterministic sticky-existing fallback used by tests, the
+    # explicit /lore:session path, and dry-run / no-LLM curator runs.
+    summary_merger: SummaryMerger | None = None
 
 
 @dataclass
@@ -633,15 +651,6 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
 
     fm["last_reviewed"] = si.work_time.date().isoformat()
 
-    # Refresh description from the latest chunk so the status-line
-    # preview reflects where the session ended up, not just how it
-    # started. Mirrors the body-Summary update in merge_body_sections.
-    # classify_slice only emits a description for substantive chunks
-    # (cascade_trivial returns early without filing), so a tiny mid-
-    # session append never clobbers a real description with "".
-    if si.description:
-        fm["description"] = si.description
-
     if si.transcript is not None:
         from_hash = si.turn_hashes[0] if si.turn_hashes else None
         to_hash = si.turn_hashes[1] if si.turn_hashes else None
@@ -701,25 +710,78 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
         )
 
     # Phase 2 append rule: parse both bodies into the locked section
-    # shape and merge bullet lists. The existing note's title and
-    # ``## Summary`` paragraph win — they are the user's anchor and
-    # shouldn't churn under accumulating appends. New chunk's bullets
-    # append to the corresponding section.
+    # shape and merge bullet lists. The new chunk's bullets append to
+    # the corresponding sections (additive, deterministic).
     #
-    # Fallback: when the existing note pre-dates the locked shape (no
-    # recognisable H2 sections), the parser returns an empty
-    # BodySections and the merge result will be effectively the new
-    # chunk on its own — which is the right behaviour given the
-    # invariant that only Curator A appends, and Curator A always emits
-    # the new shape.
+    # Summary/description, by contrast, are *not* additive — naively
+    # concatenating two paragraphs makes the note unreadable. Curator A
+    # passes a ``summary_merger`` closure that asks the LLM to compose a
+    # 1-2 sentence summary anchored on the existing framing with the
+    # new chunk's context worked in. That output drives BOTH the body
+    # ``## Summary`` and the frontmatter ``description`` (passive
+    # capture mirrors the two — see session_filer). When no merger is
+    # supplied (tests, dry-run, explicit /lore:session path), fall back
+    # to the deterministic sticky-existing rule: existing summary wins,
+    # description backfills only when the existing note has none.
+    #
+    # Legacy-shape fallback: when the existing note pre-dates the
+    # locked shape (no recognisable H2 sections), the parser returns
+    # an empty BodySections. The summary merger short-circuits when
+    # existing is empty (see summary_merge.merge_descriptions), so the
+    # new chunk's framing is preserved without an LLM round-trip.
     existing_sections = parse_body_sections(body)
     new_sections = parse_body_sections(si.body_markdown)
     merged = merge_body_sections(existing_sections, new_sections)
+
+    if si.summary_merger is not None:
+        # Anchor on the body ``## Summary`` if present; otherwise fall
+        # back to frontmatter ``description``. In current notes the two
+        # are mirrored (body Summary is set from noteworthy.description),
+        # but legacy notes may have description-only or summary-only —
+        # prefer whichever is non-empty as the anchor so the merger
+        # always sees the truest framing of earlier work.
+        existing_anchor = existing_sections.summary or str(fm.get("description") or "")
+        new_worked_on = [_strip_bullet_marker(b) for b in new_sections.worked_on]
+        new_decisions = [_strip_bullet_marker(d) for d in new_sections.decisions]
+        merged_summary = si.summary_merger(
+            existing_anchor,
+            new_sections.summary,
+            new_worked_on,
+            new_decisions,
+        )
+        if merged_summary:
+            merged = merged._replace(summary=merged_summary)
+            fm["description"] = merged_summary
+        elif si.description and not fm.get("description"):
+            # Defensive: empty merger output on a legacy description-less
+            # note. Backfill from the new chunk so the note ends up with
+            # SOME framing rather than nothing.
+            fm["description"] = si.description
+    elif si.description and not fm.get("description"):
+        # No merger → backfill description only on legacy notes that
+        # never had one. Existing description wins otherwise; the body
+        # Summary follows the sticky rule in merge_body_sections.
+        fm["description"] = si.description
+
     from lore_core.wikilinks import sanitize_for_write
 
     text_new = _render_markdown(fm, render_body_sections(merged))
     text_new = sanitize_for_write(text_new, si.wiki_root)
     atomic_write_text(path, text_new)
+
+
+def _strip_bullet_marker(line: str) -> str:
+    """Drop the leading ``- `` (or ``* ``) from a bullet line for prompts.
+
+    Bullet sections store raw lines including their marker so the renderer
+    can round-trip them losslessly. The merge prompt wants the bullet
+    *content* without the marker noise.
+    """
+    stripped = line.lstrip()
+    for marker in ("- ", "* "):
+        if stripped.startswith(marker):
+            return stripped[len(marker):]
+    return stripped
 
 
 from lore_core.schema import strip_frontmatter as _strip_frontmatter  # noqa: E402, F401

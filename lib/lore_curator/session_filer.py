@@ -31,6 +31,7 @@ from lore_core.session_writer import (
     render_body_sections,
 )
 from lore_core.types import Scope, TranscriptHandle, Turn
+from lore_curator.llm_client import LlmClient
 from lore_curator.noteworthy import NoteworthyResult
 from lore_curator.session_activity import (
     collect_commits_by_sha,
@@ -41,6 +42,7 @@ from lore_curator.session_activity import (
     render_commits_section,
     render_issue_section,
 )
+from lore_curator.summary_merge import merge_descriptions
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -244,6 +246,8 @@ def file_session_note(
     logger: "RunLogger | None" = None,
     transcript_id: str | None = None,
     scope_redirected_from: str | None = None,
+    llm_client: LlmClient | None = None,
+    summary_merge_model: str | None = None,
 ) -> FiledNote:
     """Passive-capture entry point. Synthesize SessionInput, delegate.
 
@@ -251,6 +255,15 @@ def file_session_note(
     work in the turns actually happened — drives filename date and
     frontmatter `created` / `last_reviewed`. When omitted, falls back
     to `now`.
+
+    ``llm_client`` + ``summary_merge_model`` enable Curator A's
+    LLM-merged summary on append: when this filing ends up appending to
+    an existing same-day note, the writer's merger closure asks the LLM
+    to compose a merged summary that anchors on the existing framing
+    and works the new chunk's context in (rather than clobbering or
+    going sticky). When either is omitted, the writer falls back to its
+    deterministic sticky-existing rule — fine for tests, dry-runs, and
+    the explicit /lore:session path.
     """
     from datetime import UTC, datetime
 
@@ -291,6 +304,13 @@ def file_session_note(
     if noteworthy.llm_model:
         extra_fm["llm_model"] = noteworthy.llm_model
 
+    summary_merger = _make_summary_merger(
+        llm_client=llm_client,
+        model=summary_merge_model,
+        logger=logger,
+        transcript_id=transcript_id,
+    )
+
     si = SessionInput(
         scope=scope,
         wiki_root=wiki_root,
@@ -327,8 +347,46 @@ def file_session_note(
         activity_issues_opened=activity["issues_opened"],
         activity_issues_closed=activity["issues_closed"],
         extra_frontmatter=extra_fm,
+        summary_merger=summary_merger,
     )
     return file_or_merge(si, logger=logger, transcript_id=transcript_id)
+
+
+def _make_summary_merger(
+    *,
+    llm_client: LlmClient | None,
+    model: str | None,
+    logger: "RunLogger | None",
+    transcript_id: str | None,
+):
+    """Build the closure the writer invokes when an append happens.
+
+    Returns ``None`` when LLM merge isn't available — the writer's
+    sticky-existing fallback handles that case. Otherwise returns a
+    callable matching ``SessionWriter.SummaryMerger`` that delegates
+    to :func:`merge_descriptions`.
+    """
+    if llm_client is None or not model:
+        return None
+
+    def _merger(
+        existing_summary: str,
+        new_summary: str,
+        new_worked_on: list[str],
+        new_decisions: list[str],
+    ) -> str:
+        return merge_descriptions(
+            existing=existing_summary,
+            new=new_summary,
+            new_bullets=new_worked_on,
+            new_decisions=new_decisions,
+            llm_client=llm_client,
+            model=model,
+            logger=logger,
+            transcript_id=transcript_id,
+        )
+
+    return _merger
 
 
 # Each host names the file argument differently:

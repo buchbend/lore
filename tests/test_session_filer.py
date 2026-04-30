@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import yaml
 import pytest
@@ -42,6 +43,42 @@ def _make_turns() -> list[Turn]:
         Turn(index=0, timestamp=None, role="user", text="start"),
         Turn(index=1, timestamp=None, role="assistant", text="end"),
     ]
+
+
+class _FakeContentBlock:
+    """Minimal anthropic.types.ToolUseBlock shape for summary-merge tests."""
+
+    def __init__(self, type_: str, input_: dict | None = None) -> None:
+        self.type = type_
+        self.input = input_ or {}
+
+
+class _FakeResponse:
+    def __init__(self, content: list[_FakeContentBlock]) -> None:
+        self.content = content
+
+
+class _FakeMessagesAPI:
+    def __init__(self, response: _FakeResponse) -> None:
+        self._response = response
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs: Any) -> _FakeResponse:
+        self.calls.append(kwargs)
+        return self._response
+
+
+class _FakeLlmClient:
+    def __init__(self, response: _FakeResponse) -> None:
+        self.messages = _FakeMessagesAPI(response)
+
+
+def _make_summary_merge_client(merged: str) -> _FakeLlmClient:
+    """A fake LlmClient whose ``messages.create`` returns a tool_use
+    block with ``{"merged": <merged>}``. Mirrors the shape
+    ``summary_merge.merge_descriptions`` walks."""
+    block = _FakeContentBlock(type_="tool_use", input_={"merged": merged})
+    return _FakeLlmClient(_FakeResponse([block]))
 
 
 def _make_noteworthy(
@@ -88,20 +125,24 @@ def _write_session_note(
     *,
     scope_str: str = "proj:feature",
     created: str | None = None,
-    description: str = "Some existing session",
+    description: str | None = "Some existing session",
     body: str = "",
     year: int = 2026,
     month: int = 4,
 ) -> Path:
-    """Helper to plant a fake session note in the YYYY/MM/ hierarchy."""
+    """Helper to plant a fake session note in the YYYY/MM/ hierarchy.
+
+    ``description=None`` simulates a legacy note that pre-dates the
+    description frontmatter field — used by tests covering the
+    backfill-on-append path.
+    """
     if created is None:
         created = datetime.now(UTC).date().isoformat()
-    fm = {
+    fm: dict[str, Any] = {
         "schema_version": 2,
         "type": "session",
         "created": created,
         "last_reviewed": created,
-        "description": description,
         "scope": scope_str,
         "draft": True,
         "curator_a_run": datetime.now(UTC).isoformat(),
@@ -110,6 +151,8 @@ def _write_session_note(
         ],
         "tags": [],
     }
+    if description is not None:
+        fm["description"] = description
     dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
     text = f"---\n{dumped}\n---\n\n{body}\n"
     month_dir = sessions_dir / str(year) / f"{month:02d}"
@@ -785,12 +828,15 @@ def test_append_merges_bullets_into_existing_sections(tmp_path):
     assert "**B**" in body
 
 
-def test_append_refreshes_summary_to_latest_chunk(tmp_path):
-    """Latest chunk's narrative wins. With mid-session inline filing the
-    first chunk's framing ("started OAuth refactor") becomes stale fast
-    and should converge on where the work actually ended up
-    ("completed OAuth refactor across 4 services"). Both ``## Summary``
-    in the body and ``description`` in frontmatter must update."""
+def test_append_without_llm_client_keeps_summary_sticky(tmp_path):
+    """No-LLM fallback: when ``file_session_note`` is called without an
+    ``llm_client`` (tests, dry-runs, the explicit /lore:session path),
+    the writer's ``summary_merger`` is None and summary/description are
+    sticky-existing. This guarantees that an automated pipeline missing
+    its LLM never silently overwrites a real summary with a later
+    chunk's framing.
+
+    Bullet sections still union — that's additive, not destructive."""
     sessions_dir = tmp_path / "sessions"
     body_md = (
         "# Morning\n\n"
@@ -815,10 +861,157 @@ def test_append_refreshes_summary_to_latest_chunk(tmp_path):
     )
 
     body = _body(existing)
-    assert "The afternoon framing." in body
-    assert "The morning framing." not in body
+    assert "The morning framing." in body
+    assert "The afternoon framing." not in body
+    # Bullets still union — append is destructive only on replace-style
+    # fields, not additive ones.
+    assert "- afternoon slice" in body
+    fm = parse_frontmatter(existing.read_text())
+    assert fm["description"] == "The morning framing."
+
+
+def test_append_with_llm_client_merges_summary_and_description(tmp_path):
+    """Curator A path: with an ``llm_client`` + ``summary_merge_model``
+    available, the writer asks the LLM to compose a merged 1-2-sentence
+    summary that anchors on the existing framing and weaves in the new
+    chunk's context. Both the body ``## Summary`` AND the frontmatter
+    ``description`` receive the merged value.
+
+    This is the production path — the Frankenstein-merge fix was the
+    Jaccard threshold raise (single-shared-file no longer bridges); when
+    a merge legitimately happens, the summary should reflect the
+    combined arc rather than being clobbered by the later chunk OR
+    frozen on the earlier one."""
+    sessions_dir = tmp_path / "sessions"
+    body_md = (
+        "# Morning\n\n"
+        "## Summary\nMorning: started OAuth refactor in auth.py.\n\n"
+        "## What we worked on\n- morning slice\n"
+    )
+    existing = _write_session_note(
+        sessions_dir, "19-morning.md",
+        scope_str="proj:feature", created="2026-04-19",
+        description="Morning: started OAuth refactor in auth.py.",
+        body=body_md,
+    )
+
+    merged_text = (
+        "Started the OAuth refactor in auth.py and continued through the "
+        "afternoon refining the token-exchange path."
+    )
+    fake_client = _make_summary_merge_client(merged_text)
+
+    file_session_note(
+        scope=_make_scope("proj:feature"),
+        handle=_make_handle(),
+        noteworthy=NoteworthyResult(
+            noteworthy=True, reason="r",
+            title="Afternoon", description="Afternoon: refined token-exchange path.",
+            bullets=["refined token-exchange"],
+        ),
+        turns=_make_turns(),
+        wiki_root=tmp_path,
+        now=_NOW,
+        llm_client=fake_client,
+        summary_merge_model="claude-sonnet-4-6",
+    )
+
+    body = _body(existing)
+    assert merged_text in body, "merged summary must land in body ## Summary"
+    # Original morning framing is fully replaced by the merged version
+    # (which still anchors on it, per the merger's contract).
+    assert body.count("Morning: started OAuth refactor in auth.py.") == 0
+
+    fm = parse_frontmatter(existing.read_text())
+    assert fm["description"] == merged_text, (
+        "merged summary must also drive frontmatter description"
+    )
+
+    # Merger was actually called once.
+    assert len(fake_client.messages.calls) == 1
+    sent = fake_client.messages.calls[0]
+    prompt = sent["messages"][0]["content"]
+    assert "Morning: started OAuth refactor" in prompt, (
+        "prompt must include the existing summary as anchor"
+    )
+    assert "Afternoon: refined token-exchange" in prompt, (
+        "prompt must include the new chunk's summary"
+    )
+
+
+def test_append_with_llm_client_does_not_merge_when_existing_empty(tmp_path):
+    """Short-circuit: when the existing note has no body Summary (legacy
+    pre-Phase-2 shape) AND no frontmatter description, the merger
+    short-circuits without an LLM call and the new chunk's framing
+    becomes the note's summary/description. This preserves the
+    description-backfill behaviour without spending an LLM call."""
+    sessions_dir = tmp_path / "sessions"
+    body_md = (
+        "# Morning\n\n"
+        "## What we worked on\n- morning slice\n"
+    )
+    existing = _write_session_note(
+        sessions_dir, "19-morning.md",
+        scope_str="proj:feature", created="2026-04-19",
+        description=None,
+        body=body_md,
+    )
+
+    fake_client = _make_summary_merge_client("never-called-marker")
+
+    file_session_note(
+        scope=_make_scope("proj:feature"),
+        handle=_make_handle(),
+        noteworthy=NoteworthyResult(
+            noteworthy=True, reason="r",
+            title="Afternoon", description="The afternoon framing.",
+            bullets=["afternoon slice"],
+        ),
+        turns=_make_turns(),
+        wiki_root=tmp_path,
+        now=_NOW,
+        llm_client=fake_client,
+        summary_merge_model="claude-sonnet-4-6",
+    )
+
     fm = parse_frontmatter(existing.read_text())
     assert fm["description"] == "The afternoon framing."
+    body = _body(existing)
+    assert "The afternoon framing." in body
+    # No LLM call should have fired — there was nothing to merge against.
+    assert len(fake_client.messages.calls) == 0
+
+
+def test_append_backfills_missing_description_on_legacy_note(tmp_path):
+    """A legacy note pre-dating the ``description`` field gets one on
+    first append — backfill is additive, not a clobber. Exercises the
+    no-LLM path (sticky fallback's backfill rule)."""
+    sessions_dir = tmp_path / "sessions"
+    body_md = (
+        "# Morning\n\n"
+        "## What we worked on\n- morning slice\n"
+    )
+    existing = _write_session_note(
+        sessions_dir, "19-morning.md",
+        scope_str="proj:feature", created="2026-04-19",
+        description=None,
+        body=body_md,
+    )
+    fm_before = parse_frontmatter(existing.read_text())
+    assert "description" not in fm_before or not fm_before.get("description")
+
+    _file_note(
+        tmp_path,
+        noteworthy=NoteworthyResult(
+            noteworthy=True, reason="r",
+            title="Afternoon", description="The afternoon framing.",
+            bullets=["afternoon slice"],
+        ),
+        scope=_make_scope("proj:feature"),
+    )
+
+    fm_after = parse_frontmatter(existing.read_text())
+    assert fm_after["description"] == "The afternoon framing."
 
 
 def test_merge_body_sections_empty_new_summary_keeps_existing():
@@ -996,23 +1189,51 @@ def test_phase_c_disjoint_files_create_new_note_same_day(tmp_path):
 def test_phase_c_overlapping_files_merge_same_day(tmp_path):
     """Same-day, same-scope, OVERLAPPING files → merge (continuation of work).
 
-    Morning: started auth refactor on auth.py + auth_test.py.
-    Afternoon: continued auth.py + helpers.py. Overlap on auth.py
-    triggers merge — same topic continuing."""
+    Morning: started auth refactor on auth.py + auth_test.py + helpers.py.
+    Afternoon: continued auth.py + auth_test.py + utils.py.
+    Two shared files of three on each side → Jaccard 2/4 = 0.5,
+    clearing the 0.5 threshold. Same topic continuing."""
     morning = _file_note(
         tmp_path,
         noteworthy=_make_noteworthy("Auth Refactor"),
-        turns=_make_turns_with_files("auth.py", "auth_test.py"),
+        turns=_make_turns_with_files("auth.py", "auth_test.py", "helpers.py"),
     )
 
     afternoon = _file_note(
         tmp_path,
         noteworthy=_make_noteworthy("Auth Refactor — More"),
-        turns=_make_turns_with_files("auth.py", "helpers.py"),
+        turns=_make_turns_with_files("auth.py", "auth_test.py", "utils.py"),
     )
 
     assert morning.path == afternoon.path
     assert afternoon.was_merge is True
+
+
+def test_phase_c_single_shared_file_does_not_merge(tmp_path):
+    """One incidentally-shared file is not enough to merge two
+    semantically-distinct sessions on the same day.
+
+    Real-world failure mode (2026-04-29): a GitHub-issue-curation
+    session and a step_files plan session both touched
+    ``lib/lore_cli/hooks.py`` and merged at Jaccard 1/3 ≈ 0.33,
+    fusing two unrelated topics in one note. Threshold raised to 0.5
+    so single-shared-file overlap can no longer bridge."""
+    morning = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("GitHub issue curation"),
+        turns=_make_turns_with_files("hooks.py", "issue_state.py"),
+    )
+
+    afternoon = _file_note(
+        tmp_path,
+        noteworthy=_make_noteworthy("Plan: step_files automation"),
+        turns=_make_turns_with_files("hooks.py", "plan_files.py"),
+    )
+
+    assert morning.path != afternoon.path, (
+        "Single shared file should not bridge unrelated topics"
+    )
+    assert afternoon.was_merge is False
 
 
 @pytest.mark.parametrize("boilerplate_file", [
