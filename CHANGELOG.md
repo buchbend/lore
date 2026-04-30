@@ -10,6 +10,58 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-04-30
+
+### Added
+
+- **LLM-gated commit→step attribution at Stop**
+  (`lore_curator/closure_judgment.py`,
+  `lore_cli/hooks.py:_attribute_commits_with_judgment`).
+  New `closure_judgment` module asks the LLM via structured tool-use
+  whether a single commit completes a plan step or merely touches its
+  files. Returns `done`/`in_progress`/`skip` + confidence + reason.
+  The Stop hook scans recent untrailed commits, intersects changed
+  files with each active plan's `step_files`, and feeds non-trivial
+  matches through `judge_closure`. On `done`/`in_progress` with
+  confidence ≥ `_JUDGMENT_CONFIDENCE_FLOOR` (0.6) it auto-closes the
+  step via `set_step` and emits a confirmation line. Trailer-bearing
+  commits short-circuit the LLM via the existing path. Reuses the
+  curator `LlmClient` infrastructure (subscription / SDK / OpenAI-
+  compatible backends; configurable via `LORE_CLOSURE_JUDGMENT_MODEL`,
+  default `claude-haiku-4-5-20251001`).
+- **Stop → next-session pending-attributions bridge**
+  (`lore_cli/hooks.py:_append_pending_attribution`,
+  `_pending_attributions_block`). When LLM judgment returns `skip`,
+  low confidence, or no client is available, the row is persisted to
+  `~/.cache/lore/sessions/<sid>/pending-attributions.json`. The next
+  SessionStart in the same repo reads every session's cache, filters
+  to attributions referencing currently-active plans for the current
+  repo, dedups across sessions, and surfaces them as a
+  `## ⚠ Unresolved plan attributions from recent sessions` block in
+  the SessionStart additionalContext. Closes the loop the user-
+  terminal Stop warning couldn't — the *next* implementing model sees
+  the attribution and can amend or `/lore:plan-step --done` to clear.
+
+### Changed
+
+- **Trailer demoted to override in Resume block**
+  (`lore_cli/hooks.py:_render_one_plan_card`). The literal
+  `Commit trailer: \`Plan: <slug>#<step>\`` line is replaced with
+  `Step status: edits → in_progress; commits → LLM-judged. Override:
+  \`Plan: <slug>#<step>\` trailer or \`/lore:plan-step --done\`.`
+  The trailer literal stays in context (the override is still useful
+  signal) but framed correctly: auto-attribution rides `step_files`,
+  not "Claude must remember the trailer convention."
+
+### Removed
+
+- **Dead code from the prose-regex era**: `_FILE_PATH_RE`,
+  `_extract_paths_from_text`, `_missing_trailer_nudges_for_stop`,
+  `_suggested_step_for_card`, and the 11 tests that exercised them.
+  Replaced wholesale by the `step_files` + LLM-judgment path. Lore's
+  young; we don't carry the prose-regex fallback alongside the new
+  path.
+
 ## [0.35.0] - 2026-04-29
 
 ### Added
