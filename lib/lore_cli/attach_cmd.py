@@ -297,6 +297,23 @@ def _print_post_attach_guidance(
 
 
 @dataclass(frozen=True)
+class AncestorSuggestion:
+    """Pre-fillable wiki/scope derived from an attached ancestor directory.
+
+    When the user runs `lore attach` inside a child of an already-attached
+    directory (e.g. a repo under ``~/orgs/ccat/`` where ``~/orgs/ccat/`` is
+    attached as wiki=ccat, scope=ccat), we propose ``{ancestor.scope}:{cwd.name}``
+    so the child gets a sensible nested scope by default instead of starting
+    from a blank slate.
+    """
+
+    wiki: str
+    scope: str
+    ancestor_path: Path
+    ancestor_scope: str
+
+
+@dataclass(frozen=True)
 class StubOutcome:
     """Three states `_print_post_attach_guidance` distinguishes.
 
@@ -355,6 +372,33 @@ def _maybe_stub_project_note(
 
 def _is_interactive() -> bool:
     return sys.stdin.isatty()
+
+
+def _ancestor_attachment_suggestion(
+    cwd: Path,
+    attachments: "AttachmentsFile",  # noqa: F821 — forward ref, imported lazily
+) -> AncestorSuggestion | None:
+    """Walk up from ``cwd`` and propose a child scope under the closest
+    attached ancestor directory.
+
+    Returns ``None`` when no strict ancestor (parent or higher) is attached.
+    The suggestion uses ``{ancestor.scope}:{cwd.name}``; the leaf segment
+    is just the directory name, not anything derived from a git remote —
+    keeps the wizard offline and matches what the user can see in their
+    shell prompt.
+    """
+    parent = cwd.parent
+    if parent == cwd:
+        return None
+    match = attachments.longest_prefix_match(parent)
+    if match is None:
+        return None
+    return AncestorSuggestion(
+        wiki=match.wiki,
+        scope=f"{match.scope}:{cwd.name}",
+        ancestor_path=match.path,
+        ancestor_scope=match.scope,
+    )
 
 def _pick_from_list(
     label: str,
@@ -431,6 +475,7 @@ def _config_wizard(
     lore_root: Path,
     *,
     defaults: object | None = None,  # lore_core.offer.Offer | None
+    ancestor_suggestion: AncestorSuggestion | None = None,
 ) -> None:
     from lore_core.config import get_wiki_root
     from lore_core.state.scopes import ScopesFile
@@ -438,8 +483,22 @@ def _config_wizard(
     wiki_root = get_wiki_root()
     wikis = sorted(d.name for d in wiki_root.iterdir() if d.is_dir()) if wiki_root.exists() else []
 
+    # Surface the ancestor-derived suggestion once, up front, so the
+    # subsequent "default" markers in the pickers have an obvious origin.
+    # Skip when an offer's defaults won — the offer is the louder signal.
+    if ancestor_suggestion is not None and defaults is None:
+        console.print(
+            f"\n[dim]Suggested from parent attachment[/dim] "
+            f"{ancestor_suggestion.ancestor_path}: "
+            f"wiki [cyan]{ancestor_suggestion.wiki}[/cyan], "
+            f"scope [magenta]{ancestor_suggestion.scope}[/magenta]"
+        )
+
     # Step A: Wiki
-    default_wiki = defaults.wiki if defaults else None
+    default_wiki = (
+        defaults.wiki if defaults
+        else (ancestor_suggestion.wiki if ancestor_suggestion else None)
+    )
     if wikis:
         wiki = _pick_from_list("Wiki", wikis, default=default_wiki, allow_custom=True)
     elif default_wiki:
@@ -457,7 +516,16 @@ def _config_wizard(
     scopes.load()
     all_ids = scopes.all_ids()
     matching = [sid for sid in all_ids if scopes.resolve_wiki(sid) == wiki]
-    default_scope = defaults.scope if defaults else None
+
+    default_scope: str | None = None
+    if defaults:
+        default_scope = defaults.scope
+    elif ancestor_suggestion is not None and ancestor_suggestion.wiki == wiki:
+        default_scope = ancestor_suggestion.scope
+        # Prepend so the suggestion is selectable as choice [1] even
+        # when it isn't already a registered scope ID.
+        if default_scope not in matching:
+            matching = [default_scope, *matching]
 
     if matching:
         scope = _pick_from_list(
@@ -542,6 +610,8 @@ def _interactive_wizard(cwd_path: Path, lore_root: Path) -> None:
             f"scope [magenta]{existing.scope}[/magenta]"
         )
 
+    ancestor_suggestion = _ancestor_attachment_suggestion(resolved, attachments)
+
     found = find_lore_yml(cwd_path)
     if found is not None:
         offer_path, offer = found
@@ -550,7 +620,7 @@ def _interactive_wizard(cwd_path: Path, lore_root: Path) -> None:
         _config_detected_flow(offer, offer_path, cwd_path, lore_root)
         return
 
-    _config_wizard(cwd_path, lore_root)
+    _config_wizard(cwd_path, lore_root, ancestor_suggestion=ancestor_suggestion)
 
 
 # ---- Interactive callback ----

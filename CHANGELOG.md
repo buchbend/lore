@@ -10,6 +10,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-05-01
+
+### Added
+
+- **Attach wizard suggests a child scope when a parent dir is attached**
+  (`lore_cli/attach_cmd._ancestor_attachment_suggestion`,
+  `AncestorSuggestion`). Running `lore attach` inside a nested directory
+  whose ancestor is already attached (e.g. a repo under `~/orgs/ccat/`
+  where `~/orgs/ccat/` is wiki=ccat, scope=ccat) now pre-fills wiki=ccat
+  and proposes scope `ccat:<dirname>` as the default scope-picker choice.
+  Walks up via `AttachmentsFile.longest_prefix_match` against `cwd.parent`
+  (strict ancestor only); leaf segment uses `cwd.name` to keep the wizard
+  offline. Suggestion is suppressed when an `.lore.yml` offer is present
+  (offer wins) or when the user picks a wiki different from the
+  ancestor's. Two new tests in `tests/test_attach_interactive.py`.
+
 ## [0.37.2] - 2026-05-01
 
 ### Added

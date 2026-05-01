@@ -171,6 +171,54 @@ def test_already_attached_decline_reattach(lore_env: Path, tmp_path: Path) -> No
     assert "Already attached" in result.output
 
 
+def test_ancestor_attachment_suggests_child_scope(
+    lore_env: Path, tmp_path: Path,
+) -> None:
+    """Wizard pre-fills wiki + child scope when a parent dir is attached.
+
+    Repros the ``~/orgs/ccat/<repo>`` case: parent ``ccat`` dir is attached
+    as wiki=ccat, scope=ccat; running `lore attach` in a nested repo should
+    propose ``ccat:<repo-name>`` so the user can accept with just Enters.
+    """
+    parent = tmp_path / "ccat"
+    parent.mkdir()
+    runner.invoke(
+        app,
+        ["attach", "manual", "--wiki", "ccat", "--scope", "ccat", "--cwd", str(parent)],
+    )
+
+    repo = parent / "deep" / "myrepo"
+    repo.mkdir(parents=True)
+
+    # All Enters: wiki picker default (ccat, since suggestion matches),
+    # scope picker default (ccat:myrepo, the prepended suggestion),
+    # backend default, no .lore.yml, proceed.
+    input_lines = "\n\n\nn\ny\n"
+    result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
+    assert result.exit_code == 0, result.output
+    assert "Suggested from parent attachment" in result.output
+
+    af = AttachmentsFile(lore_env)
+    af.load()
+    rows = [a for a in af.all() if a.path == repo.resolve()]
+    assert len(rows) == 1
+    assert rows[0].wiki == "ccat"
+    assert rows[0].scope == "ccat:myrepo"
+
+
+def test_no_suggestion_when_no_ancestor_attached(
+    lore_env: Path, tmp_path: Path,
+) -> None:
+    """Wizard stays generic when there's no ancestor attachment."""
+    repo = tmp_path / "lonely"
+    repo.mkdir()
+    # 1=ccat wiki, custom scope, default backend, no .lore.yml, proceed
+    input_lines = "1\nccat:lonely\n\nn\ny\n"
+    result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
+    assert result.exit_code == 0, result.output
+    assert "Suggested from parent attachment" not in result.output
+
+
 def test_parent_attached_shows_info_but_continues(lore_env: Path, tmp_path: Path) -> None:
     parent = tmp_path / "parent"
     parent.mkdir()
