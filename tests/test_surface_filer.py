@@ -419,3 +419,61 @@ def test_file_surface_no_slug_format_uses_title_slug(tmp_path):
         surfaces_doc=doc,
     )
     assert filed.path.name == "hot-load-standing-waves.md"
+
+
+def test_file_surface_refuses_curator_a_authored_surface(tmp_path):
+    """Defensive guard: filing into ``authored_by: curator_a`` raises.
+
+    Even if the abstract step's vocab filter regresses, surface_filer
+    must refuse to write into Curator A's territory rather than dump
+    notes flat into ``sessions/`` next to the date-sharded layout.
+    """
+    doc = SurfacesDoc(
+        schema_version=2,
+        surfaces=[
+            SurfaceDef(
+                name="session",
+                description="Work session log.",
+                required=["type", "created", "last_reviewed", "description"],
+                authored_by="curator_a",
+            ),
+        ],
+        path=tmp_path / "SURFACES.md",
+    )
+    with pytest.raises(ValueError, match="authored by Curator A"):
+        file_surface(
+            surface_name="session",
+            title="Session-shaped output",
+            body="Body",
+            sources=["[[s1]]"],
+            wiki_root=tmp_path,
+            surfaces_doc=doc,
+        )
+    # And nothing should have been written.
+    assert not (tmp_path / "sessions").exists()
+
+
+def test_file_surface_refuses_unmarked_legacy_session_surface(tmp_path):
+    """Backward-compat: an unmarked ``session`` surface (legacy SURFACES.md
+    predating the ``authored_by`` flag) is also rejected — same rule
+    Curator B's vocab filter applies."""
+    doc = SurfacesDoc(
+        schema_version=2,
+        surfaces=[
+            SurfaceDef(
+                name="session",
+                description="Work session log.",
+                required=["type", "created", "last_reviewed", "description"],
+            ),
+        ],
+        path=tmp_path / "SURFACES.md",
+    )
+    with pytest.raises(ValueError, match="authored by Curator A"):
+        file_surface(
+            surface_name="session",
+            title="Legacy session leak",
+            body="Body",
+            sources=[],
+            wiki_root=tmp_path,
+            surfaces_doc=doc,
+        )

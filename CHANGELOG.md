@@ -10,6 +10,31 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.38.1] - 2026-05-01
+
+### Fixed
+
+- **Curator B no longer files session-shaped notes into `sessions/`** when
+  `SURFACES.md` declares `session` with `authored_by: curator_a`. The
+  `_extractable_surfaces` filter (now public `extractable_surfaces`) was
+  applied at the cluster step and merge-inventory step but missed in
+  `lore_curator.abstract` — the high-tier LLM was offered `session` in
+  its tool enum and naturally picked it for clusters of session notes,
+  bypassing `session_writer`'s date-sharded layout. Surfaced on the ccat
+  wiki. Fix:
+  - `lore_core.surfaces.extractable_surfaces` / `is_curator_a_surface`
+    promoted to public helpers.
+  - `lore_curator.abstract` filters vocab, prompt, and tool-schema enum
+    via `extractable_surfaces`.
+  - `lore_curator.surface_filer.file_surface` raises `ValueError` when
+    asked to file into a Curator-A-authored surface — defensive guard
+    against future consumers missing the filter.
+  - 3 new regression tests in `tests/test_abstract.py` and
+    `tests/test_surface_filer.py`.
+
+  Tracked in #43 (deeper question of dropping `session` from user-facing
+  `SURFACES.md` entirely).
+
 ## [0.38.0] - 2026-05-01
 
 ### Added

@@ -65,6 +65,32 @@ def load_surfaces_or_default(wiki_dir: Path) -> SurfacesDoc:
     return doc if doc is not None else _load_packaged_standard()
 
 
+def is_curator_a_surface(s: SurfaceDef) -> bool:
+    """True when ``s`` is filed by Curator A (and so off-limits to Curator B).
+
+    Surfaces tagged ``authored_by: curator_a`` are filed by a dedicated
+    writer with its own path layout (e.g. ``session_writer`` shards by
+    date) — Curator B must not extract into them.
+
+    Backward compat: an unmarked ``session`` surface (legacy SURFACES.md
+    predating the flag) is treated as Curator A territory regardless,
+    so vaults that haven't yet migrated SURFACES.md don't regress.
+    """
+    if s.authored_by == "curator_a":
+        return True
+    return s.authored_by is None and s.name == "session"
+
+
+def extractable_surfaces(doc: SurfacesDoc) -> list[SurfaceDef]:
+    """Return surfaces Curator B may extract into.
+
+    Filters out surfaces owned by Curator A. Other ``authored_by`` values
+    pass through so future writers don't silently disappear from the
+    extraction vocabulary.
+    """
+    return [s for s in doc.surfaces if not is_curator_a_surface(s)]
+
+
 def _parse(text: str, path: Path) -> SurfacesDoc:
     """Internal — split into preamble + sections, parse each."""
     schema_version = _parse_top_level_schema_version(text)

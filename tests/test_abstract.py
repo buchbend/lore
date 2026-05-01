@@ -570,3 +570,103 @@ def test_abstract_merge_into_defaults_to_none_when_absent():
         model_resolver=_resolver,
     )
     assert result[0].merge_into is None
+
+
+# ---------------------------------------------------------------------------
+# Curator-A surfaces are filtered out of vocab, prompt, and tool enum.
+# ---------------------------------------------------------------------------
+
+
+def _doc_with_session() -> SurfacesDoc:
+    """Mirrors ccat-style SURFACES.md: concept + decision + session(curator_a)."""
+    return SurfacesDoc(
+        schema_version=2,
+        surfaces=[
+            SurfaceDef(
+                name="concept",
+                description="Cross-cutting idea or pattern.",
+                extract_when="pattern appears across sessions",
+            ),
+            SurfaceDef(
+                name="decision",
+                description="A trade-off made.",
+                extract_when="session records a trade-off",
+            ),
+            SurfaceDef(
+                name="session",
+                description="Work session log filed by Curator A.",
+                authored_by="curator_a",
+            ),
+        ],
+        path=Path("/x"),
+    )
+
+
+def test_abstract_drops_curator_a_surface_from_tool_enum():
+    """If the LLM hallucinates surface_name='session', the result is filtered."""
+    data = {"surfaces": [{"surface_name": "session", "title": "T", "body": "B"}]}
+    client = _make_client(data)
+    result = abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_doc_with_session(),
+        source_notes_by_wikilink={},
+        llm_client=client,
+        model_resolver=_resolver,
+    )
+    # The tool-schema enum should not contain 'session', and
+    # _parse_surfaces drops names that aren't in valid_surfaces.
+    assert result == []
+    # Belt-and-braces: confirm the enum sent to the LLM never offered it.
+    call = client.messages.calls[0]
+    enum_in_schema = call["tools"][0]["input_schema"]["properties"]["surfaces"][
+        "items"
+    ]["properties"]["surface_name"]["enum"]
+    assert "session" not in enum_in_schema
+    assert set(enum_in_schema) == {"concept", "decision"}
+
+
+def test_abstract_prompt_omits_curator_a_surfaces():
+    """The high-tier prompt must not list curator-A surfaces under AVAILABLE."""
+    data = {"surfaces": []}
+    client = _make_client(data)
+    abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=_doc_with_session(),
+        source_notes_by_wikilink={"[[note1]]": "x", "[[note2]]": "y"},
+        llm_client=client,
+        model_resolver=_resolver,
+    )
+    prompt = client.messages.calls[0]["messages"][0]["content"]
+    # The "AVAILABLE SURFACES:" block lists each surface as
+    # "  - <name>: <description>". Assert the session entry isn't there
+    # — substring-match on "session" alone gives false positives because
+    # the word appears in extract_when text ("across sessions").
+    assert "  - session:" not in prompt
+    assert "  - concept:" in prompt
+    assert "  - decision:" in prompt
+
+
+def test_abstract_returns_empty_when_only_curator_a_surfaces_declared():
+    """Edge case: a SURFACES.md with only curator_a-authored surfaces yields
+    no extractable vocab — abstract_cluster short-circuits with no LLM call."""
+    doc = SurfacesDoc(
+        schema_version=2,
+        surfaces=[
+            SurfaceDef(
+                name="session",
+                description="Work session log.",
+                authored_by="curator_a",
+            ),
+        ],
+        path=Path("/x"),
+    )
+    client = _make_client({"surfaces": [{"surface_name": "session", "title": "T", "body": "B"}]})
+    result = abstract_cluster(
+        cluster=_simple_cluster(),
+        surfaces_doc=doc,
+        source_notes_by_wikilink={},
+        llm_client=client,
+        model_resolver=_resolver,
+    )
+    assert result == []
+    assert client.messages.calls == []  # short-circuit, no LLM call

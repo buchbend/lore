@@ -13,7 +13,13 @@ from lore_core.ledger import WikiLedger, WikiLedgerEntry
 from lore_core.lockfile import LockContendedError, curator_lock
 from lore_core.run_log import RunLogger
 from lore_core.schema import parse_frontmatter
-from lore_core.surfaces import SurfaceDef, SurfacesDoc, load_surfaces, load_surfaces_or_default
+from lore_core.surfaces import (
+    SurfaceDef,
+    SurfacesDoc,
+    extractable_surfaces,
+    load_surfaces,
+    load_surfaces_or_default,
+)
 from lore_core.wiki_config import WikiConfig, load_wiki_config
 from lore_curator.abstract import abstract_cluster
 from lore_curator.cluster import cluster_session_notes
@@ -125,7 +131,7 @@ def run_curator_b(
                     result.duration_seconds = time.monotonic() - start
                     return result
 
-                surface_names = [s.name for s in _extractable_surfaces(surfaces_doc)]
+                surface_names = [s.name for s in extractable_surfaces(surfaces_doc)]
                 clusters = cluster_session_notes(
                     notes=notes,
                     surfaces=surface_names,
@@ -306,28 +312,6 @@ def _maybe_auto_push(lore_root: Path, wiki: str, *, llm_client: Any) -> None:
 
 # ---------- helpers ----------
 
-def _extractable_surfaces(surfaces_doc: SurfacesDoc) -> list[SurfaceDef]:
-    """Return surfaces Curator B may extract into.
-
-    Surfaces marked ``authored_by: curator_a`` are filed by a dedicated
-    writer with its own path layout (e.g. ``session_writer`` shards by
-    date) — Curator B must not target them. Other ``authored_by`` values
-    pass through so future writers don't silently disappear from
-    clustering.
-
-    Backward compat: an unmarked ``session`` surface (legacy SURFACES.md
-    predating the flag) is treated as Curator A territory regardless. A
-    user's existing vault must not regress while they migrate
-    SURFACES.md to add the explicit flag.
-    """
-    def _is_curator_a(s: SurfaceDef) -> bool:
-        if s.authored_by == "curator_a":
-            return True
-        return s.authored_by is None and s.name == "session"
-
-    return [s for s in surfaces_doc.surfaces if not _is_curator_a(s)]
-
-
 def _load_recent_session_notes(sessions_dir: Path, *, cutoff: datetime) -> list[dict]:
     """Return list of {path, frontmatter, summary} for session notes touched since cutoff.
 
@@ -490,7 +474,7 @@ def _load_existing_surfaces(
     from lore_core.lint import SKIP_FILES
 
     out: dict[str, list[dict]] = {}
-    for surface_def in _extractable_surfaces(surfaces_doc):
+    for surface_def in extractable_surfaces(surfaces_doc):
         plural = surface_def.plural or (
             surface_def.name if surface_def.name.endswith("s") else f"{surface_def.name}s"
         )

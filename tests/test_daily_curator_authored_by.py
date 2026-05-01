@@ -11,8 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lore_core.surfaces import SurfaceDef, SurfacesDoc
-from lore_curator.daily_curator import _extractable_surfaces
+from lore_core.surfaces import SurfaceDef, SurfacesDoc, extractable_surfaces
 
 
 def _doc(surfaces: list[SurfaceDef]) -> SurfacesDoc:
@@ -28,7 +27,7 @@ def test_extractable_surfaces_excludes_curator_a_authored() -> None:
         ),
         SurfaceDef(name="decision", description="", required=[], optional=[]),
     ])
-    names = [s.name for s in _extractable_surfaces(doc)]
+    names = [s.name for s in extractable_surfaces(doc)]
     assert names == ["concept", "decision"]
 
 
@@ -37,7 +36,7 @@ def test_extractable_surfaces_includes_unmarked_surfaces() -> None:
         SurfaceDef(name="concept", description="", required=[], optional=[]),
         SurfaceDef(name="decision", description="", required=[], optional=[]),
     ])
-    names = [s.name for s in _extractable_surfaces(doc)]
+    names = [s.name for s in extractable_surfaces(doc)]
     assert names == ["concept", "decision"]
 
 
@@ -52,7 +51,7 @@ def test_extractable_surfaces_keeps_other_authored_by_values() -> None:
         ),
         SurfaceDef(name="concept", description="", required=[], optional=[]),
     ])
-    names = [s.name for s in _extractable_surfaces(doc)]
+    names = [s.name for s in extractable_surfaces(doc)]
     assert names == ["thread", "concept"]
 
 
@@ -65,5 +64,5 @@ def test_extractable_surfaces_skips_unmarked_session_surface() -> None:
         SurfaceDef(name="session", description="", required=[], optional=[]),
         SurfaceDef(name="decision", description="", required=[], optional=[]),
     ])
-    names = [s.name for s in _extractable_surfaces(doc)]
+    names = [s.name for s in extractable_surfaces(doc)]
     assert names == ["concept", "decision"]

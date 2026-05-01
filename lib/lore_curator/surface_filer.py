@@ -16,7 +16,7 @@ import yaml
 
 from lore_core.io import atomic_write_text
 from lore_core.schema import required_fields_for
-from lore_core.surfaces import SurfaceDef, SurfacesDoc
+from lore_core.surfaces import SurfaceDef, SurfacesDoc, is_curator_a_surface
 
 
 @dataclass
@@ -51,6 +51,16 @@ def file_surface(
         raise ValueError(
             f"surface_filer: '{surface_name}' is not declared in SURFACES.md "
             f"({wiki_root}); declared: {[s.name for s in surfaces_doc.surfaces]}"
+        )
+    # Defensive: refuse to file into surfaces owned by Curator A (e.g.
+    # ``session``). Those have a dedicated writer with its own path
+    # layout — Curator B writing here would dump notes flat into the
+    # wrong tree. The abstract step's vocabulary filter is the primary
+    # defense; this is a last-line guard against future regressions.
+    if is_curator_a_surface(surface_def):
+        raise ValueError(
+            f"surface_filer: refusing to file into '{surface_name}' — "
+            f"this surface is authored by Curator A; use the dedicated writer"
         )
 
     subdir = wiki_root / _directory_for(surface_def)

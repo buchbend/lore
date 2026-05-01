@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from lore_curator.cluster import Cluster
-from lore_core.surfaces import SurfacesDoc
+from lore_core.surfaces import SurfacesDoc, extractable_surfaces
 
 
 _HIGH_OFF_WARNING_ID = "abstract-high-tier-off-v1"
@@ -69,13 +69,21 @@ def abstract_cluster(
         tier = "high"
 
     model = model_resolver(tier)
-    surfaces_vocab = [s.name for s in surfaces_doc.surfaces]
+    # Curator B may only extract into non-Curator-A surfaces. Building the
+    # vocab from extractable_surfaces keeps Curator-A-owned surfaces (e.g.
+    # ``session``) out of the prompt and out of the tool enum, so the LLM
+    # can't pick one. Without this filter the high-tier LLM — handed
+    # session notes as input — naturally chose ``session`` and Curator B
+    # ended up filing flat notes under ``sessions/`` next to Curator A's
+    # date-sharded layout.
+    extractable = extractable_surfaces(surfaces_doc)
+    surfaces_vocab = [s.name for s in extractable]
     if not surfaces_vocab:
         return []
 
     prompt = _build_prompt(
         cluster,
-        surfaces_doc,
+        extractable,
         source_notes_by_wikilink,
         high_tier_off=high_tier_off,
         existing_surfaces=existing_surfaces or {},
@@ -95,7 +103,7 @@ def abstract_cluster(
 
 def _build_prompt(
     cluster: Cluster,
-    surfaces_doc: SurfacesDoc,
+    surfaces: list,  # list[SurfaceDef], pre-filtered by caller to extractable surfaces
     source_notes_by_wikilink: dict[str, str],
     *,
     high_tier_off: bool,
@@ -121,7 +129,7 @@ def _build_prompt(
         lines.append(f"  (clustering step suggested surface: {cluster.suggested_surface})")
     lines.append("")
     lines.append("AVAILABLE SURFACES:")
-    for s in surfaces_doc.surfaces:
+    for s in surfaces:
         lines.append(f"  - {s.name}: {s.description}")
         if s.extract_when:
             lines.append(f"    extract when: {s.extract_when}")
