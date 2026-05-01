@@ -89,6 +89,43 @@ def test_stale_lock_reclaimed_after_timeout(tmp_path: Path) -> None:
     assert not lock_dir.exists()
 
 
+def test_stale_lock_with_owner_json_reclaimed(tmp_path: Path) -> None:
+    """Stale lock dir containing an orphaned owner.json must still be reclaimed.
+
+    Regression for the ~90% CPU spin loop seen in the wild: a SIGKILL'd
+    holder leaves owner.json inside the lock dir, ``os.rmdir`` requires the
+    directory to be empty, and the bare-except cleanup path used to swallow
+    the resulting OSError and ``continue`` — looping forever on
+    mkdir → exists → stale → rmdir-fails → mkdir → ...
+    """
+    lock_dir = tmp_path / ".lore" / "curator.lock"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    (lock_dir / "owner.json").write_text(
+        '{"pid": 999999, "host": "ghost", "run_id": "stale-run"}'
+    )
+
+    # Stale by mtime
+    past = time.time() - 7200
+    os.utime(lock_dir, (past, past))
+
+    # Bound the acquire so a regression times out instead of hanging the
+    # whole test session at 100% CPU.
+    deadline = time.monotonic() + 5.0
+
+    def _attempt() -> None:
+        with curator_lock(tmp_path, timeout=0, stale_after=60):
+            assert lock_dir.exists()
+            # Stale owner.json was wiped before the new acquirer wrote its own.
+            assert (lock_dir / "owner.json").read_text() != \
+                '{"pid": 999999, "host": "ghost", "run_id": "stale-run"}'
+
+    thread = threading.Thread(target=_attempt, daemon=True)
+    thread.start()
+    thread.join(timeout=max(0.1, deadline - time.monotonic()))
+    assert not thread.is_alive(), "stale lock with owner.json caused acquire to spin"
+    assert not lock_dir.exists()
+
+
 def test_lock_unaffected_by_parent_dir_mtime_change(tmp_path: Path) -> None:
     """Acquire lock; touch parent .lore/ dir; lock's mtime unchanged."""
     lock_dir = tmp_path / ".lore" / "curator.lock"

@@ -10,6 +10,26 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-05-01
+
+### Fixed
+
+- **Stale curator lock with orphaned `owner.json` no longer spins forever**
+  (`lore_core/lockfile.curator_lock`). When a Curator A holder was killed
+  by signal, its `finally:` cleanup never ran and `owner.json` survived
+  inside the lock dir. The next acquirer detected the dir as stale by
+  mtime, called `os.rmdir(lock_dir)` — which raises `OSError: Directory
+  not empty` — and the bare-except + `continue` swallowed the failure
+  into a tight `mkdir → exists → stale → rmdir-fails → continue` loop
+  at ~90% CPU. Process pile-up followed (every 60s of spawn cooldown,
+  another Curator A joined the spin), wiki pending buckets stayed
+  unprocessed, and run jsonls truncated at `run-start`. Fix unlinks
+  `owner.json` before `rmdir` in the stale-cleanup branch. New
+  regression test
+  (`tests/test_lockfile.py::test_stale_lock_with_owner_json_reclaimed`)
+  uses a thread + bounded `join` so a future regression times out
+  instead of hanging the test session.
+
 ## [0.37.0] - 2026-04-30
 
 ### Added

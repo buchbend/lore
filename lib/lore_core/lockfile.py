@@ -145,7 +145,14 @@ def curator_lock(
             if age > stale_after:
                 # Stale — remove and retry. Another contender may race here;
                 # the worst case is one extra iteration.
+                #
+                # ``owner.json`` lives inside the lock dir; ``os.rmdir`` only
+                # removes empty dirs, so unlink it first. Without this, a
+                # SIGKILL'd holder leaves an orphaned owner.json and every
+                # future acquirer spins forever in this loop at ~90% CPU
+                # (mkdir → exists → stale → rmdir-fails-silently → continue).
                 try:
+                    (lock_dir / "owner.json").unlink(missing_ok=True)
                     os.rmdir(lock_dir)
                 except (FileNotFoundError, OSError):
                     pass
