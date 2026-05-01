@@ -54,6 +54,23 @@ def test_curator_noteworthy_mode_can_be_overridden_in_config(tmp_path: Path):
     assert cfg.curator.noteworthy_mode == "llm_only"
 
 
+def test_use_buffer_flush_defaults_false(tmp_path: Path):
+    """Buffer-and-flush feature flag is opt-in until the plan's PR 3."""
+    cfg = load_root_config(tmp_path)
+    assert cfg.curator.use_buffer_flush is False
+
+
+def test_use_buffer_flush_can_be_enabled_in_config(tmp_path: Path):
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    (lore_dir / "config.yml").write_text(
+        "curator:\n"
+        "  use_buffer_flush: true\n"
+    )
+    cfg = load_root_config(tmp_path)
+    assert cfg.curator.use_buffer_flush is True
+
+
 def test_unknown_key_warns(tmp_path: Path, recwarn):
     warnings.simplefilter("always")
     lore_dir = tmp_path / ".lore"

@@ -38,6 +38,18 @@ class CuratorConfig:
     curator_a_cooldown_s: int = 60
     curator_b_cooldown_s: int = 300
     curator_c: CuratorCConfig = field(default_factory=CuratorCConfig)
+    # Buffer-and-flush curator (per the very-good-thats-the-mossy-lobster plan).
+    # All knobs land here so a wiki using a low-capacity local LLM can shrink
+    # the cap without touching the global flag (which lives in root_config).
+    # Defaults are tuned for a middle-tier cloud LLM; local-LLM users override
+    # synthesis_buffer_cap_turns / _chars downward in .lore-wiki.yml.
+    synthesis_buffer_cap_turns: int = 120
+    synthesis_buffer_cap_chars: int = 240_000
+    synthesis_flush_timeout_s: int = 25
+    synthesis_model_tier: str = "middle"   # resolves via models.<tier>
+    reaper_max_per_pass: int = 5
+    buffer_done_retention_days: int = 14
+    liveness_stale_threshold_s: int = 1800   # 30 min
 
 
 @dataclass

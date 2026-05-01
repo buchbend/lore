@@ -63,6 +63,16 @@ class RunLogger:
         "transcript-start", "redaction", "noteworthy",
         "cascade-verdict",  # shadow-run feature-based classifier
         "merge-check", "session-note",
+        # Buffer-and-flush curator (plan: very-good-thats-the-mossy-lobster).
+        # Lifecycle: opened -> appended* -> (cap-tripped|requested) -> spawned
+        #   -> deterministic-completed -> llm-completed | degraded
+        # Reaper / handover events are siblings.
+        "buffer-opened", "buffer-appended", "buffer-cap-tripped",
+        "flush-requested", "flush-spawned",
+        "flush-deterministic-completed", "flush-llm-completed",
+        "flush-degraded", "flush-handover-timeout",
+        "reaper-scanned", "reaper-force-flushed",
+        "dangling-ref",
         # Curator B
         "cluster-formed", "surface-filed", "threads-regenerated",
         "merge-suggested",

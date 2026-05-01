@@ -80,6 +80,11 @@ class CuratorBackendConfig:
     openai: OpenAIBackendConfig = field(default_factory=OpenAIBackendConfig)
     noteworthy_mode: str = "cascade"
 
+    # Buffer-and-flush curator feature flag. Default false; the legacy
+    # per-chunk synthesise-and-merge path stays load-bearing until the
+    # plan's PR 3 stage flips this true. Env override: LORE_BUFFER_FLUSH=1.
+    use_buffer_flush: bool = False
+
 
 @dataclass
 class JournalConfig:

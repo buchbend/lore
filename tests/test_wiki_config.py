@@ -29,6 +29,34 @@ class TestWikiConfigDefaults:
         assert cfg.briefing.sinks == []
         assert cfg.breadcrumb.mode == "normal"
         assert cfg.breadcrumb.scope_filter is True
+        # Buffer-and-flush curator defaults (plan: very-good-thats-the-mossy-lobster).
+        assert cfg.curator.synthesis_buffer_cap_turns == 120
+        assert cfg.curator.synthesis_buffer_cap_chars == 240_000
+        assert cfg.curator.synthesis_flush_timeout_s == 25
+        assert cfg.curator.synthesis_model_tier == "middle"
+        assert cfg.curator.reaper_max_per_pass == 5
+        assert cfg.curator.buffer_done_retention_days == 14
+        assert cfg.curator.liveness_stale_threshold_s == 1800
+
+
+class TestBufferFlushOverrides:
+    """Local-LLM users will shrink the cap downward; verify the override path."""
+
+    def test_local_llm_cap_override(self, tmp_path: Path):
+        config_file = tmp_path / ".lore-wiki.yml"
+        config_file.write_text(
+            "curator:\n"
+            "  synthesis_buffer_cap_turns: 40\n"
+            "  synthesis_buffer_cap_chars: 80000\n"
+            "  synthesis_model_tier: simple\n"
+        )
+        cfg = load_wiki_config(tmp_path)
+        assert cfg.curator.synthesis_buffer_cap_turns == 40
+        assert cfg.curator.synthesis_buffer_cap_chars == 80_000
+        assert cfg.curator.synthesis_model_tier == "simple"
+        # Other curator defaults preserved.
+        assert cfg.curator.threshold_pending_turns == 30
+        assert cfg.curator.reaper_max_per_pass == 5
 
 
 class TestWikiConfigPartialMerge:
