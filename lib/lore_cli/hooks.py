@@ -3139,6 +3139,73 @@ def _rotate_meta_sidecar(proc_dir: Path, role: str, *, keep: int = 3) -> None:
             os.replace(str(current), str(proc_dir / f"{role}.meta.json.1"))
 
 
+def _process_is_ours(pid: int) -> bool:
+    """True if ``pid`` is alive AND looks like a lore_cli process.
+
+    On Linux the cmdline check via ``/proc/<pid>/cmdline`` dodges PID-recycle
+    false positives — the kernel reuses PIDs aggressively, so a bare
+    ``os.kill(pid, 0)`` on a stale meta.json could match an unrelated
+    process. On non-Linux the cmdline file isn't present and we fall back
+    to the liveness probe alone (the rare false positive self-heals once
+    the next successful spawn rewrites meta.json).
+    """
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError, OSError):
+        return False
+    cmdline_path = Path(f"/proc/{pid}/cmdline")
+    if not cmdline_path.exists():
+        return True  # non-Linux fallback
+    try:
+        cmdline = cmdline_path.read_bytes().replace(b"\x00", b" ")
+    except OSError:
+        return True  # alive but unreadable; assume ours
+    return b"lore_cli" in cmdline
+
+
+def _prior_spawn_runaway(
+    lore_root: Path, role: str, *, runaway_age_s: int
+) -> dict | None:
+    """Return runaway-process info if the prior spawn for ``role`` is hung.
+
+    "Hung" = sidecar meta.json says ``exit_code is None`` AND its recorded
+    ``pid`` is still alive on this host AND ``start_ts`` is older than
+    ``runaway_age_s`` seconds.
+
+    Returns ``None`` (safe to spawn) when meta.json is absent, malformed,
+    already exited, or the prior process is young/dead. The returned dict
+    carries ``pid``, ``age_s``, ``start_ts`` for telemetry.
+
+    Final gate before ``_spawn_detached`` commits a fresh subprocess —
+    catches the pile-up pattern where a child hangs (e.g. the v0.37.0 lock
+    spin) and the cooldown stamp keeps green-lighting new spawns on the
+    same broken state. See issue #42 for the related lockfile silent-
+    cleanup follow-up.
+    """
+    import json as _json
+    import time as _time
+
+    meta_path = lore_root / ".lore" / "proc" / f"{role}.meta.json"
+    try:
+        meta = _json.loads(meta_path.read_text())
+    except (OSError, ValueError):
+        return None
+    if meta.get("exit_code") is not None:
+        return None
+    pid = meta.get("pid")
+    start_ts = meta.get("start_ts")
+    if not isinstance(pid, int) or not isinstance(start_ts, (int, float)):
+        return None
+    age_s = _time.time() - start_ts
+    if age_s < runaway_age_s:
+        return None
+    if not _process_is_ours(pid):
+        return None
+    return {"pid": pid, "age_s": int(age_s), "start_ts": start_ts}
+
+
 def _spawn_detached(
     lore_root: Path,
     role: str,
@@ -3146,20 +3213,59 @@ def _spawn_detached(
     *,
     cooldown_s: int,
     migrate_stamp: bool = False,
+    runaway_age_s: int | None = None,
 ) -> bool:
     """Fire-and-forget a subprocess under a spawn lock + cooldown stamp.
 
     Acquires a non-blocking flock on the per-role spawn lock. Returns False
-    if another process holds the lock OR the cooldown stamp is still fresh.
+    if another process holds the lock OR the cooldown stamp is still fresh
+    OR the prior spawn for this role is still alive past the runaway
+    threshold (default ``cooldown_s * 5``).
+
+    The runaway gate is the safety net for "child hangs and cooldown keeps
+    green-lighting fresh spawns" — once tripped, a single warning event is
+    appended to ``hook-events.jsonl`` per ``cooldown_s * 10`` window
+    (throttled via ``curator-<role>.runaway.stamp``) so users running
+    ``lore status`` / grepping the log can see the issue without it
+    spamming on every UserPromptSubmit.
     """
     import contextlib
     import subprocess
     from lore_core.lockfile import try_acquire_spawn_lock
 
+    effective_runaway = (
+        runaway_age_s if runaway_age_s is not None else cooldown_s * 5
+    )
+
     with try_acquire_spawn_lock(lore_root, role) as (held, stamp):
         if not held:
             return False
         if _stamp_within_cooldown(stamp, cooldown_s):
+            return False
+        runaway = _prior_spawn_runaway(
+            lore_root, role, runaway_age_s=effective_runaway
+        )
+        if runaway is not None:
+            warn_stamp = (
+                lore_root / ".lore" / f"curator-{role}.runaway.stamp"
+            )
+            if not _stamp_within_cooldown(warn_stamp, cooldown_s * 10):
+                try:
+                    HookEventLogger(lore_root).emit(
+                        event="spawn-throttle",
+                        outcome="prior-runaway",
+                        role=role,
+                        error={
+                            "type": "PriorSpawnAlive",
+                            "pid": runaway["pid"],
+                            "age_s": runaway["age_s"],
+                            "runaway_threshold_s": effective_runaway,
+                        },
+                    )
+                except Exception:
+                    pass
+                with contextlib.suppress(OSError):
+                    _write_stamp(warn_stamp)
             return False
         if migrate_stamp:
             _migrate_legacy_spawn_stamp(lore_root, role)

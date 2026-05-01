@@ -10,6 +10,29 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.37.2] - 2026-05-01
+
+### Added
+
+- **Spawn pile-up detector — refuse fresh `_spawn_detached` while a prior
+  child of the same role is still hung** (`lore_cli/hooks._prior_spawn_runaway`,
+  `_process_is_ours`). The 60s cooldown stamp gates *new* spawns but
+  doesn't notice that the previous child is still alive, so any future
+  child-hangs bug (the v0.37.0 lock spin was one) re-creates the same
+  pile-up pattern: every minute another child joins the broken state.
+  The detector reads `<role>.meta.json` (written by `_proc_wrapper`),
+  refuses the spawn when `exit_code is None` AND `start_ts` older than
+  `cooldown_s * 5` AND the pid is still alive AND its `/proc/<pid>/cmdline`
+  contains `lore_cli` (PID-recycle dodge). On detection a single
+  `spawn-throttle outcome=prior-runaway` record is appended to
+  `hook-events.jsonl`, throttled to once per `cooldown_s * 10` window
+  via `curator-<role>.runaway.stamp` to avoid log spam on every
+  UserPromptSubmit. Surfaces hung curators to `lore status` /
+  `hook-events.jsonl` greps without auto-killing the orphan (too much
+  foot-gun risk). 11 unit + integration tests in
+  `tests/test_spawn_runaway_detector.py`. Related follow-up: issue #42
+  (lockfile silent-cleanup hardening).
+
 ## [0.37.1] - 2026-05-01
 
 ### Fixed
