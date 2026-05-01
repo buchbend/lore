@@ -171,15 +171,12 @@ def test_already_attached_decline_reattach(lore_env: Path, tmp_path: Path) -> No
     assert "Already attached" in result.output
 
 
-def test_ancestor_attachment_suggests_child_scope(
+def test_one_click_accept_uses_parent_suggestion(
     lore_env: Path, tmp_path: Path,
 ) -> None:
-    """Wizard pre-fills wiki + child scope when a parent dir is attached.
-
-    Repros the ``~/orgs/ccat/<repo>`` case: parent ``ccat`` dir is attached
-    as wiki=ccat, scope=ccat; running `lore attach` in a nested repo should
-    propose ``ccat:<repo-name>`` so the user can accept with just Enters.
-    """
+    """Ancestor attached → wizard offers a one-click [A]ccept that
+    finalises with parent.wiki, parent.scope:dirname, backend=github,
+    and writes .lore.yml. Single Enter should be enough."""
     parent = tmp_path / "ccat"
     parent.mkdir()
     runner.invoke(
@@ -190,13 +187,12 @@ def test_ancestor_attachment_suggests_child_scope(
     repo = parent / "deep" / "myrepo"
     repo.mkdir(parents=True)
 
-    # All Enters: wiki picker default (ccat, since suggestion matches),
-    # scope picker default (ccat:myrepo, the prepended suggestion),
-    # backend default, no .lore.yml, proceed.
-    input_lines = "\n\n\nn\ny\n"
-    result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
+    # Single Enter on the [A]ccept prompt — that's the whole UX.
+    result = runner.invoke(app, ["attach", "--cwd", str(repo)], input="\n")
     assert result.exit_code == 0, result.output
-    assert "Suggested from parent attachment" in result.output
+    assert "Proposed config" in result.output
+    assert "Wrote" in result.output
+    assert (repo / ".lore.yml").exists()
 
     af = AttachmentsFile(lore_env)
     af.load()
@@ -206,17 +202,99 @@ def test_ancestor_attachment_suggests_child_scope(
     assert rows[0].scope == "ccat:myrepo"
 
 
+def test_one_click_no_drift_after_writing_offer(
+    lore_env: Path, tmp_path: Path,
+) -> None:
+    """Regression: freshly-written .lore.yml must match attachment fp.
+
+    Before the fix, the row was created with offer_fingerprint=None
+    while the wizard wrote a new .lore.yml — classify_state then
+    reported DRIFT on the very next SessionStart. The user can't fix
+    that themselves because they just created the file. After the fix,
+    the wizard stamps the row with the file's fingerprint."""
+    from lore_core.consent import ConsentState, classify_state
+
+    parent = tmp_path / "ccat"
+    parent.mkdir()
+    runner.invoke(
+        app,
+        ["attach", "manual", "--wiki", "ccat", "--scope", "ccat", "--cwd", str(parent)],
+    )
+    repo = parent / "myrepo"
+    repo.mkdir()
+
+    runner.invoke(app, ["attach", "--cwd", str(repo)], input="\n")
+
+    af = AttachmentsFile(lore_env)
+    af.load()
+    state = classify_state(repo.resolve(), af).state
+    assert state is ConsentState.ATTACHED, f"expected ATTACHED, got {state}"
+
+
+def test_step_through_overrides_suggestion(
+    lore_env: Path, tmp_path: Path,
+) -> None:
+    """`s` at the one-click prompt drops into per-field flow with the
+    suggestion still surfaced as defaults; user can override."""
+    parent = tmp_path / "ccat"
+    parent.mkdir()
+    runner.invoke(
+        app,
+        ["attach", "manual", "--wiki", "ccat", "--scope", "ccat", "--cwd", str(parent)],
+    )
+
+    repo = parent / "myrepo"
+    repo.mkdir()
+
+    # s = step through, then: Enter (wiki=ccat default), c=custom scope,
+    # "ccat:custom"=custom value, Enter (backend=github default),
+    # n (no .lore.yml), y (proceed).
+    input_lines = "s\n\nc\nccat:custom\n\nn\ny\n"
+    result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
+    assert result.exit_code == 0, result.output
+    assert "Proposed config" in result.output
+    assert "Stepping through" in result.output
+
+    af = AttachmentsFile(lore_env)
+    af.load()
+    rows = [a for a in af.all() if a.path == repo.resolve()]
+    assert len(rows) == 1
+    assert rows[0].scope == "ccat:custom"
+
+
+def test_one_click_cancel_aborts(lore_env: Path, tmp_path: Path) -> None:
+    """`c` at the one-click prompt aborts cleanly."""
+    parent = tmp_path / "ccat"
+    parent.mkdir()
+    runner.invoke(
+        app,
+        ["attach", "manual", "--wiki", "ccat", "--scope", "ccat", "--cwd", str(parent)],
+    )
+    repo = parent / "myrepo"
+    repo.mkdir()
+
+    result = runner.invoke(app, ["attach", "--cwd", str(repo)], input="c\n")
+    assert result.exit_code == 0, result.output
+    assert "Aborted" in result.output
+
+    af = AttachmentsFile(lore_env)
+    af.load()
+    assert not any(a.path == repo.resolve() for a in af.all())
+
+
 def test_no_suggestion_when_no_ancestor_attached(
     lore_env: Path, tmp_path: Path,
 ) -> None:
-    """Wizard stays generic when there's no ancestor attachment."""
+    """Wizard stays generic (no one-click, no suggestion line) when
+    there's no ancestor attachment."""
     repo = tmp_path / "lonely"
     repo.mkdir()
-    # 1=ccat wiki, custom scope, default backend, no .lore.yml, proceed
+    # 1=ccat wiki, custom scope, default backend (now github), no .lore.yml, proceed
     input_lines = "1\nccat:lonely\n\nn\ny\n"
     result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
     assert result.exit_code == 0, result.output
     assert "Suggested from parent attachment" not in result.output
+    assert "Proposed config" not in result.output
 
 
 def test_parent_attached_shows_info_but_continues(lore_env: Path, tmp_path: Path) -> None:

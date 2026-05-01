@@ -12,7 +12,33 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [0.38.1] - 2026-05-01
 
+### Added
+
+- **Attach wizard: one-click accept of parent-derived defaults** when
+  the cwd is under an attached ancestor (`lore_cli/attach_cmd._config_wizard`,
+  `_execute_attach`). Previously the wizard required 5 keystrokes to
+  attach a child of an attached parent (Enter wiki → Enter scope → type
+  backend → type y for offer file → Enter to proceed). Now it shows a
+  single `[A]ccept / [s]tep through / [c]ancel` prompt with the proposed
+  config (wiki=parent.wiki, scope=parent.scope:dirname, backend=github,
+  write .lore.yml). Bare Enter accepts. Step-through preserves the old
+  per-field flow with the suggestion still surfaced as defaults.
+- **Default backend is now `github`** in the wizard's manual flow
+  (was `none`). Offer-driven flows still inherit the offer's choice.
+
 ### Fixed
+
+- **No phantom DRIFT immediately after the wizard writes a `.lore.yml`**
+  (`lore_cli/attach_cmd._stamp_offer_fingerprint`). The wizard called
+  `_do_manual` (which records `offer_fingerprint=None`) and then wrote
+  the offer file, so the very next SessionStart reported "the offer for
+  this repo has changed since you attached" — confusing noise the user
+  couldn't reconcile because they'd just created the file. Fix: after
+  writing the offer, parse it, compute its fingerprint, and re-add the
+  attachment row with `source="accepted-offer"` and the matching `fp`.
+  Best-effort: a parse failure leaves the row alone so a real DRIFT can
+  still surface. Regression test in
+  `tests/test_attach_interactive.py::test_one_click_no_drift_after_writing_offer`.
 
 - **Curator B no longer files session-shaped notes into `sessions/`** when
   `SURFACES.md` declares `session` with `authored_by: curator_a`. The

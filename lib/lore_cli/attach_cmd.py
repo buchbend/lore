@@ -263,6 +263,43 @@ def _do_manual(lore_root: Path, cwd_path: Path, wiki: str, scope: str) -> None:
     _print_post_attach_guidance(lore_root, wiki, stub=stub)
 
 
+def _stamp_offer_fingerprint(
+    lore_root: Path, attachment_path: Path, offer_path: Path,
+) -> None:
+    """Sync the just-attached row's fingerprint to a freshly-written
+    ``.lore.yml``.
+
+    Without this, the row created by :func:`_do_manual` carries
+    ``offer_fingerprint=None``, so the next SessionStart sees
+    ``fp(offer-on-disk) ≠ None`` and reports DRIFT — telling the user the
+    offer has "changed since you attached" even though the wizard wrote
+    the offer milliseconds ago. Best-effort: a parse failure leaves the
+    row alone so DRIFT can surface the bad file.
+    """
+    from lore_core.offer import offer_fingerprint, parse_lore_yml
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
+    offer = parse_lore_yml(offer_path)
+    if offer is None:
+        return
+    fp = offer_fingerprint(offer)
+
+    af = AttachmentsFile(lore_root)
+    af.load()
+    existing = af.get(attachment_path)
+    if existing is None:
+        return
+    af.add(Attachment(
+        path=existing.path,
+        wiki=existing.wiki,
+        scope=existing.scope,
+        attached_at=existing.attached_at,
+        source="accepted-offer",
+        offer_fingerprint=fp,
+    ))
+    af.save()
+
+
 def _print_post_attach_guidance(
     lore_root: Path, wiki: str, *, stub: "StubOutcome | None" = None
 ) -> None:
@@ -470,6 +507,31 @@ def _config_detected_flow(
         console.print("  [red]Invalid choice.[/red] Enter u, c, or s.")
 
 
+def _execute_attach(
+    lore_root: Path,
+    resolved: Path,
+    *,
+    wiki: str,
+    scope: str,
+    backend: str,
+    write_offer: bool,
+) -> None:
+    """Shared executor: register the attachment, optionally write a
+    ``.lore.yml`` and stamp its fingerprint onto the row so the very
+    next session doesn't see it as DRIFT."""
+    from lore_core.offer import FILENAME
+
+    _do_manual(lore_root, resolved, wiki, scope)
+
+    if write_offer:
+        import yaml
+        target = resolved / FILENAME
+        payload: dict = {"wiki": wiki, "scope": scope, "backend": backend}
+        target.write_text(yaml.safe_dump(payload, sort_keys=False))
+        console.print(f"[green]Wrote[/green] {target}")
+        _stamp_offer_fingerprint(lore_root, resolved, target)
+
+
 def _config_wizard(
     cwd_path: Path,
     lore_root: Path,
@@ -478,21 +540,49 @@ def _config_wizard(
     ancestor_suggestion: AncestorSuggestion | None = None,
 ) -> None:
     from lore_core.config import get_wiki_root
+    from lore_core.offer import FILENAME
     from lore_core.state.scopes import ScopesFile
 
     wiki_root = get_wiki_root()
     wikis = sorted(d.name for d in wiki_root.iterdir() if d.is_dir()) if wiki_root.exists() else []
+    resolved = cwd_path.resolve() if cwd_path.exists() else cwd_path.absolute()
 
-    # Surface the ancestor-derived suggestion once, up front, so the
-    # subsequent "default" markers in the pickers have an obvious origin.
-    # Skip when an offer's defaults won — the offer is the louder signal.
+    # One-click accept: when the parent suggested a full config, present
+    # it as a single A/s/c prompt before drilling through each field.
+    # Most attachments to a child of an attached parent want the obvious
+    # defaults (wiki=parent.wiki, scope=parent.scope:dirname, backend=github,
+    # write .lore.yml so other contributors / other hosts inherit cleanly).
+    # Skip when an offer's defaults won — `_config_detected_flow` already
+    # offers [u]se as-is for that case.
     if ancestor_suggestion is not None and defaults is None:
+        proposed_wiki = ancestor_suggestion.wiki
+        proposed_scope = ancestor_suggestion.scope
+        proposed_backend = "github"
+        proposed_write = not (cwd_path / FILENAME).exists()
+
         console.print(
-            f"\n[dim]Suggested from parent attachment[/dim] "
-            f"{ancestor_suggestion.ancestor_path}: "
-            f"wiki [cyan]{ancestor_suggestion.wiki}[/cyan], "
-            f"scope [magenta]{ancestor_suggestion.scope}[/magenta]"
+            f"\n[bold]Proposed config[/bold] (from parent attachment "
+            f"{ancestor_suggestion.ancestor_path}):"
         )
+        console.print(f"  Wiki:       [cyan]{proposed_wiki}[/cyan]")
+        console.print(f"  Scope:      [magenta]{proposed_scope}[/magenta]")
+        console.print(f"  Backend:    {proposed_backend}")
+        if proposed_write:
+            console.print(f"  .lore.yml:  will be written")
+        console.print()
+        choice = input("  [A]ccept   [s]tep through   [c]ancel: ").strip().lower()
+        if choice in ("", "a", "y", "yes", "accept"):
+            _execute_attach(
+                lore_root, resolved,
+                wiki=proposed_wiki, scope=proposed_scope,
+                backend=proposed_backend, write_offer=proposed_write,
+            )
+            return
+        if choice in ("c", "n", "no", "cancel", "abort"):
+            console.print("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(0)
+        # Anything else (notably "s") falls through to step-through.
+        console.print("\n[dim]Stepping through fields…[/dim]")
 
     # Step A: Wiki
     default_wiki = (
@@ -542,8 +632,9 @@ def _config_wizard(
                 break
             console.print("  [red]Scope cannot be empty.[/red]")
 
-    # Step C: Backend
-    default_backend = defaults.backend if defaults else "none"
+    # Step C: Backend (default github — covers >99% of attached repos;
+    # offer-driven flows still inherit the offer's choice).
+    default_backend = defaults.backend if defaults else "github"
     raw = input(f"\n  Backend [github/none] ({default_backend}): ").strip().lower()
     backend = raw if raw in ("github", "none") else default_backend
 
@@ -552,14 +643,12 @@ def _config_wizard(
     # be overwriting a local file. Inheriting parent offers don't
     # block writing a child override; the user is here precisely to
     # configure this directory.
-    from lore_core.offer import FILENAME
     write_offer = False
     if not (cwd_path / FILENAME).exists():
         raw = input("\n  Write .lore.yml so other contributors get this config? [y/N]: ").strip().lower()
         write_offer = raw in ("y", "yes")
 
     # Step E: Summary + confirm
-    resolved = cwd_path.resolve() if cwd_path.exists() else cwd_path.absolute()
     console.print("\n[bold]─── Attach summary ───[/bold]")
     console.print(f"  Directory:  {resolved}")
     console.print(f"  Wiki:       [cyan]{wiki}[/cyan]")
@@ -574,15 +663,10 @@ def _config_wizard(
         console.print("[yellow]Aborted.[/yellow]")
         raise typer.Exit(0)
 
-    # Execute
-    _do_manual(lore_root, resolved, wiki, scope)
-
-    if write_offer:
-        import yaml
-        target = resolved / FILENAME
-        payload: dict = {"wiki": wiki, "scope": scope, "backend": backend}
-        target.write_text(yaml.safe_dump(payload, sort_keys=False))
-        console.print(f"[green]Wrote[/green] {target}")
+    _execute_attach(
+        lore_root, resolved,
+        wiki=wiki, scope=scope, backend=backend, write_offer=write_offer,
+    )
 
 
 def _interactive_wizard(cwd_path: Path, lore_root: Path) -> None:
