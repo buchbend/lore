@@ -1041,7 +1041,14 @@ def _session_start_from_lore(
             injected_bits.append(f"{plan_count} plans ({_PLAN_INLINE_CAP} shown)")
         else:
             injected_bits.append(f"{plan_count} plans")
-    if project_entry is not None:
+    # Prefer scope (the routing identity the user typed at attach time)
+    # over the project-note wikilink — `ccat:ops-db-api-client` tells the
+    # user where they are in the scope tree; `[[ops-db-api-client]]` only
+    # tells them a project note exists. Fall back to the wikilink when
+    # scope is empty (legacy attachments, edge cases).
+    if scope:
+        injected_bits.append(scope)
+    elif project_entry is not None:
         injected_bits.append(f"[[{project_entry['name']}]]")
     if session_hints:
         _, first_summary = session_hints[0]

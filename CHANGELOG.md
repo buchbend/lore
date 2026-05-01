@@ -10,6 +10,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.38.2] - 2026-05-01
+
+### Changed
+
+- **SessionStart status line shows the scope, not a project wikilink**
+  (`lore_cli/hooks._session_start_from_lore`). The identity bit between
+  `lore <ver>: active` and `last note: …` was rendering
+  `[[<repo-name>]]` (the project note's filename) — readable as a wiki
+  citation but semantically wrong: it's the routing identity that
+  matters at the top of a session. Status line now reads e.g.
+  `lore 0.38.2: active · ccat:ops-db-api-client · last note: …`.
+  Wikilink fallback preserved for legacy attachments where the offer
+  has no `scope`. Regression test:
+  `tests/test_hooks_v2.py::test_status_line_shows_scope_not_project_wikilink`.
+
 ## [0.38.1] - 2026-05-01
 
 ### Added

@@ -291,6 +291,39 @@ def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
     )
 
 
+def test_status_line_shows_scope_not_project_wikilink(
+    fake_vault, tmp_path, monkeypatch,
+) -> None:
+    """The status line's identity bit should be the scope (routing
+    identity the user typed at attach), not `[[project-name]]`. The
+    wikilink reads as a wiki citation; the scope tells the user where
+    they are in the scope tree.
+    """
+    vault, wiki = fake_vault
+    repo_dir = tmp_path / "data-transfer"
+    repo_dir.mkdir()
+    _register_attachment(
+        vault, repo_dir, wiki="ccat", scope="ccat:data-center:data-transfer",
+    )
+    (repo_dir / ".lore.yml").write_text(
+        "wiki: ccat\nscope: ccat:data-center:data-transfer\nbackend: github\n"
+    )
+    # Drop a project note so project_entry would otherwise win the slot.
+    (wiki / "data-transfer.md").write_text(
+        "---\ntype: project\nrepo: ccatobs/data-transfer\n---\n\nbody\n"
+    )
+    monkeypatch.setattr(hooks, "current_repo", lambda _cwd: "ccatobs/data-transfer")
+    monkeypatch.setattr(hooks, "_run_gh", lambda *a, **kw: [])
+
+    out = hooks._session_start(str(repo_dir))
+    status_line = out.splitlines()[0]
+    assert "ccat:data-center:data-transfer" in status_line, status_line
+    # Project wikilink must not appear as the identity bit on the
+    # status line — only `[[data-transfer]]` would (the project note's
+    # name). The "## Focus: [[…]]" block is a separate, deeper section.
+    assert "· [[data-transfer]]" not in status_line, status_line
+
+
 def test_session_start_from_lore_falls_back_when_gh_fails(fake_vault, tmp_path, monkeypatch):
     vault, wiki = fake_vault
     repo_dir = tmp_path / "data-transfer"
