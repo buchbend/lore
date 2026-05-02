@@ -1,8 +1,10 @@
 """Curator B pipeline — cluster → abstract → file surfaces per wiki."""
 from __future__ import annotations
 
+import dataclasses
 import os
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -132,12 +134,52 @@ def run_curator_b(
                     return result
 
                 surface_names = [s.name for s in extractable_surfaces(surfaces_doc)]
-                clusters = cluster_session_notes(
-                    notes=notes,
-                    surfaces=surface_names,
-                    llm_client=llm_client,
-                    model_resolver=model_resolver,
-                )
+
+                # Phase 2: strict scope partitioning. Group input notes
+                # by exact ``scope:`` value before clustering so each
+                # ``cluster_session_notes`` call sees a scope-uniform
+                # batch. The LLM cannot drift cluster scope across
+                # project boundaries because it never sees mixed-scope
+                # input. Notes with empty/missing ``scope:`` form their
+                # own "unscoped" group and emit a hook event so the
+                # user can fix them.
+                notes_by_scope: dict[str, list[dict]] = defaultdict(list)
+                for note in notes:
+                    fm = note.get("frontmatter") or {}
+                    scope_value = fm.get("scope") or ""
+                    notes_by_scope[scope_value].append(note)
+
+                clusters: list = []
+                for scope_value, scope_notes in sorted(notes_by_scope.items()):
+                    if not scope_value:
+                        logger.emit(
+                            "unscoped-notes",
+                            wiki=wiki,
+                            count=len(scope_notes),
+                            note_paths=[
+                                str(n.get("path", "?")) for n in scope_notes[:10]
+                            ],
+                        )
+                    scope_clusters = cluster_session_notes(
+                        notes=scope_notes,
+                        surfaces=surface_names,
+                        llm_client=llm_client,
+                        model_resolver=model_resolver,
+                    )
+                    # Enforce scope-uniformity in the output. The LLM
+                    # may emit a different scope (or none); override to
+                    # keep the input partition's scope authoritative.
+                    for c in scope_clusters:
+                        if c.scope != scope_value:
+                            logger.emit(
+                                "cluster-scope-overridden",
+                                topic=c.topic,
+                                expected=scope_value,
+                                emitted=c.scope,
+                            )
+                            c = dataclasses.replace(c, scope=scope_value)
+                        clusters.append(c)
+
                 result.clusters_formed = len(clusters)
                 for cluster in clusters:
                     logger.emit(

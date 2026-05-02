@@ -76,6 +76,8 @@ class RunLogger:
         # Curator B
         "cluster-formed", "surface-filed", "threads-regenerated",
         "merge-suggested",
+        # Curator B Phase 2: strict scope partitioning telemetry.
+        "unscoped-notes", "cluster-scope-overridden",
         # Curator C
         "action-applied", "action-skipped", "defrag-pass",
         "wiki-start", "wiki-skip",
