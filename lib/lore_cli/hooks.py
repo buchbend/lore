@@ -212,9 +212,12 @@ def _gc_sessions_cache(max_age_days: int = 14) -> None:
         except OSError:
             pass
 
-# Keep auto-injected context bounded. ~500 tokens ≈ ~2000 characters for
-# prose; we cap at 2000 to stay tight.
-MAX_CONTEXT_CHARS = 2000
+# Keep auto-injected context bounded. Phase 6 expands the budget so a
+# short project orientation (AGENTS.md-flavor) can ride alongside the
+# banner. Per-orientation cap is ``ORIENTATION_BUDGET_CHARS``; total
+# context cap stays small enough to not derail token-economy.
+MAX_CONTEXT_CHARS = 5000
+ORIENTATION_BUDGET_CHARS = 3000
 RECENT_SESSION_DAYS = 14
 MAX_OPEN_ITEMS_INLINE = 5
 
@@ -2515,7 +2518,71 @@ def cmd_session_start(
         except Exception:
             pass
 
+    # Phase 6: project orientation auto-injection. When SessionStart
+    # fires inside an attached scope and a project orientation note
+    # exists at ``projects/<slug>/<slug>.md`` (folder layout, post-
+    # migration) OR legacy flat ``projects/<slug>.md``, append its
+    # body (frontmatter stripped, capped at ORIENTATION_BUDGET_CHARS)
+    # to the LLM context block. Concepts/decisions/threads/plans/
+    # sessions stay pull-on-demand — only the short orientation auto-
+    # loads. User-facing status line is unchanged.
+    if scope is not None and not probe:
+        try:
+            orientation_block = _render_project_orientation(
+                scope, get_wiki_root(),
+            )
+            if orientation_block:
+                out = out + "\n\n" + orientation_block
+        except Exception:  # noqa: BLE001 - orientation must never crash SessionStart
+            pass
+
     _emit("SessionStart", out, plain=plain)
+
+
+def _render_project_orientation(scope: "Scope", wiki_root: Path) -> str | None:
+    """Read the project orientation note for ``scope`` and return a
+    formatted block for SessionStart context injection.
+
+    Lookup order (Phase 6 + dual-mode tolerance):
+      1. ``projects/<slug>/<slug>.md`` (folder layout, post-migration)
+      2. ``projects/<slug>.md``        (legacy flat)
+
+    Slug = scope's last colon-separated segment (e.g.
+    ``ccat:data-center:ops-db`` → ``ops-db``). Frontmatter is stripped.
+    Body is capped at :data:`ORIENTATION_BUDGET_CHARS`.
+
+    Returns None when no orientation note exists, the scope chain has
+    no last segment, or the wiki root is missing.
+    """
+    if not wiki_root.exists():
+        return None
+    if not scope or not scope.scope:
+        return None
+    slug = scope.scope.rsplit(":", 1)[-1]
+    if not slug:
+        return None
+    wiki_path = wiki_root / scope.wiki
+    candidates = [
+        wiki_path / "projects" / slug / f"{slug}.md",
+        wiki_path / "projects" / f"{slug}.md",
+    ]
+    for path in candidates:
+        if path.is_file():
+            try:
+                from lore_core.schema import strip_frontmatter
+
+                text = path.read_text(errors="replace")
+                body = strip_frontmatter(text).strip()
+            except OSError:
+                return None
+            if not body:
+                return None
+            if len(body) > ORIENTATION_BUDGET_CHARS:
+                suffix = "\n... (orientation truncated — /lore:context for full)"
+                body = body[: ORIENTATION_BUDGET_CHARS - len(suffix)] + suffix
+            header = f"## Project: [[{slug}]]\n"
+            return header + body
+    return None
 
 
 @hook_app.command("pre-compact")
