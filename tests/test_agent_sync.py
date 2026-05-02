@@ -76,6 +76,36 @@ def test_replace_substitutes_existing_section():
     assert "type: project" in out
 
 
+def test_replace_preserves_frontmatter_with_yaml_strings_resembling_body():
+    """Regression: ``rfind(body)`` produced wrong cuts when YAML contained
+    a tail matching the body. The fix uses ``split_frontmatter`` instead.
+    """
+    text = (
+        "---\n"
+        "type: project\n"
+        "description: 'see ## Overview'\n"  # YAML string mentions body markers
+        "scope: lore\n"
+        "---\n\n"
+        "# foo\n\n"
+        "## Overview\n\nover\n"
+    )
+    out = replace_agent_guidance(text, "fresh guidance")
+    assert "type: project" in out
+    assert "description: 'see ## Overview'" in out
+    assert "scope: lore" in out
+    assert "## Agent guidance" in out
+    assert "fresh guidance" in out
+
+
+def test_replace_handles_no_frontmatter_at_all():
+    """Documents without frontmatter still get the section appended."""
+    text = "# foo\n\n## Overview\n\nover\n"
+    out = replace_agent_guidance(text, "fresh guidance")
+    assert out.startswith("# foo")
+    assert "## Agent guidance" in out
+    assert "fresh guidance" in out
+
+
 def test_replace_appends_when_section_missing():
     text = (
         "---\ntype: project\n---\n\n"

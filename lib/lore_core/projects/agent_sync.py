@@ -84,18 +84,21 @@ def replace_agent_guidance(orientation_text: str, new_body: str) -> str:
     If the section is missing, appends it at the end of the body.
     Frontmatter is preserved verbatim.
     """
+    from lore_core.schema import split_frontmatter
+
     new_body = (new_body or "").strip("\n").rstrip()
 
-    # Split text into ``frontmatter_block`` (with delimiters) and ``body``.
-    # ``strip_frontmatter`` returns body only; we compute the split point.
-    body = strip_frontmatter(orientation_text)
-    if body == orientation_text:
+    # Use the canonical splitter so we don't reverse-search for the body
+    # text (which fails on empty bodies, repeated substrings, or YAML
+    # whose tail happens to match the body start). When there's no
+    # frontmatter, prefix is empty and ``body == orientation_text``.
+    split = split_frontmatter(orientation_text)
+    if split is None:
         prefix = ""
+        body = orientation_text
     else:
-        # The frontmatter ends just before ``body`` starts. Find that
-        # cut by anchoring on the end of the second ``---`` delimiter.
-        cut = orientation_text.rfind(body)
-        prefix = orientation_text[:cut] if cut >= 0 else ""
+        fm_yaml, body = split
+        prefix = f"---\n{fm_yaml}\n---\n\n"
 
     lines = body.splitlines()
     out: list[str] = []

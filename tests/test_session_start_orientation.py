@@ -130,3 +130,28 @@ def test_missing_wiki_root_returns_none(tmp_path):
     nonexistent = tmp_path / "no-such-wiki-root"
     result = _render_project_orientation(_scope("private", "lore"), nonexistent)
     assert result is None
+
+
+def test_path_traversal_segments_rejected(tmp_path):
+    """Defense-in-depth: a malformed scope value with ``..`` or other
+    path-traversal characters in the slug is rejected, even if the
+    file system happens to have a matching path.
+    """
+    wiki = tmp_path / "private"
+    (wiki / "projects" / "ops-db").mkdir(parents=True)
+    (wiki / "projects" / "ops-db" / "ops-db.md").write_text(
+        "---\ntype: project\n---\n\n# ops-db\n\nlegit content.\n"
+    )
+
+    # Slugs we should reject — anything outside [A-Za-z0-9._-].
+    for hostile in (
+        "..",
+        "../etc",
+        "ops/db",
+        "ops db",  # space
+        "",
+    ):
+        result = _render_project_orientation(
+            _scope("private", f"ccat:{hostile}" if hostile else ""), tmp_path,
+        )
+        assert result is None, f"hostile slug {hostile!r} should be rejected"

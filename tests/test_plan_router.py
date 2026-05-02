@@ -119,3 +119,38 @@ def test_iter_plan_paths_empty_wiki(tmp_path):
     """No plans/ and no projects/ — yields nothing without erroring."""
     paths = list(iter_plan_paths(tmp_path))
     assert paths == []
+
+
+def test_find_existing_plan_path_skips_project_folders_when_toggle_off(
+    tmp_path, monkeypatch,
+):
+    """Regression: with ``LORE_PROJECT_FOLDERS=off`` the existing-plan
+    finder must NOT scan project folders. Stray content under
+    ``projects/<x>/plans/`` (legacy migrations, manual moves) gets
+    ignored so the off-path is byte-for-byte identical to pre-rollout
+    behaviour.
+    """
+    monkeypatch.delenv("LORE_PROJECT_FOLDERS", raising=False)
+    proj_plans = tmp_path / "projects" / "ops-db" / "plans"
+    proj_plans.mkdir(parents=True)
+    (proj_plans / "2026-05-01-my-feature.md").write_text("---\ntype: plan\n---\n")
+
+    # Legacy flat is empty.
+    (tmp_path / "plans").mkdir()
+
+    from lore_core.plans.router import find_existing_plan_path
+    assert find_existing_plan_path(tmp_path, "my-feature") is None
+
+
+def test_find_existing_plan_path_finds_project_folders_when_toggle_on(
+    tmp_path, monkeypatch,
+):
+    """With the toggle on, the same setup IS found."""
+    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
+    proj_plans = tmp_path / "projects" / "ops-db" / "plans"
+    proj_plans.mkdir(parents=True)
+    target = proj_plans / "2026-05-01-my-feature.md"
+    target.write_text("---\ntype: plan\n---\n")
+
+    from lore_core.plans.router import find_existing_plan_path
+    assert find_existing_plan_path(tmp_path, "my-feature") == target

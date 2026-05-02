@@ -2559,7 +2559,13 @@ def _render_project_orientation(scope: "Scope", wiki_root: Path) -> str | None:
     if not scope or not scope.scope:
         return None
     slug = scope.scope.rsplit(":", 1)[-1]
-    if not slug:
+    # Defense-in-depth: only allow conservative slug shapes. The scope
+    # value should already come from a curated source (`_scopes.yml`
+    # via the registry), but a malformed entry could otherwise put
+    # path-traversal segments into the slug we feed straight into a
+    # ``Path()`` join.
+    import re
+    if not slug or not re.fullmatch(r"[A-Za-z0-9._-]+", slug):
         return None
     wiki_path = wiki_root / scope.wiki
     candidates = [

@@ -96,8 +96,23 @@ def find_existing_plan_path(wiki_root: Path, slug: str) -> Path | None:
     Used by the writer's idempotence check so a re-capture on a later
     day still resolves to the original plan instead of writing a
     duplicate at a new date-prefixed path.
+
+    When ``LORE_PROJECT_FOLDERS=off`` the search is restricted to the
+    legacy flat ``plans/`` directory so the off-path is byte-for-byte
+    identical to pre-rollout behaviour. Stray content under
+    ``projects/<x>/plans/`` (e.g. legacy migrations) is ignored in the
+    off-mode.
     """
-    for p in iter_plan_paths(wiki_root):
+    if project_folders_enabled():
+        for p in iter_plan_paths(wiki_root):
+            if slug_from_filename(p.stem) == slug:
+                return p
+        return None
+
+    flat = wiki_root / "plans"
+    if not flat.is_dir():
+        return None
+    for p in sorted(flat.glob("*.md")):
         if slug_from_filename(p.stem) == slug:
             return p
     return None
