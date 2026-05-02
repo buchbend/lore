@@ -399,3 +399,97 @@ def validate_draft(draft: dict, *, wiki_dir: Path) -> list[dict]:
             "message": f"draft.operation must be 'append' or 'init' (got {op!r})",
         })
     return issues
+
+
+def rewrite_scopes_in_frontmatter(
+    wiki_root: Path,
+    mapping: dict[str, str],
+) -> int:
+    """Rewrite ``scope:`` and ``scopes: [...]`` frontmatter values across
+    every Markdown note under ``wiki_root``.
+
+    Phase 8 sibling primitive to ``state.attachments.rewrite_scopes``.
+    Walks ``wiki_root.rglob("*.md")``, parses frontmatter, and applies
+    ``mapping`` (old_id → new_id) to:
+
+      - ``scope:`` (string field)
+      - ``scopes:`` (list field)
+
+    Subtree-aware: when an exact-match isn't in ``mapping``, also
+    rewrites entries that *start with* a mapped prefix plus ``:``. This
+    matches how attachments are rewritten — renaming ``ccat:data-center``
+    cascades to ``ccat:data-center:ops-db``.
+
+    Returns the number of files changed. Atomic per-file via
+    :func:`lore_core.io.atomic_write_text`. Cross-file atomicity is
+    *not* guaranteed; the caller orders writes (see Phase 8 spec).
+    """
+    from lore_core.io import atomic_write_text
+    from lore_core.schema import parse_frontmatter, strip_frontmatter
+
+    if not wiki_root.is_dir():
+        return 0
+    if not mapping:
+        return 0
+
+    def _apply(value: str) -> str:
+        if value in mapping:
+            return mapping[value]
+        for old, new in mapping.items():
+            prefix = old + ":"
+            if value.startswith(prefix):
+                return new + value[len(old):]
+        return value
+
+    changed = 0
+    for path in wiki_root.rglob("*.md"):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        fm = parse_frontmatter(text)
+        if not fm:
+            continue
+
+        new_fm: dict = dict(fm)
+        dirty = False
+
+        scope_val = fm.get("scope")
+        if isinstance(scope_val, str) and scope_val:
+            replacement = _apply(scope_val)
+            if replacement != scope_val:
+                new_fm["scope"] = replacement
+                dirty = True
+
+        scopes_val = fm.get("scopes")
+        if isinstance(scopes_val, list):
+            new_list = [
+                _apply(s) if isinstance(s, str) else s
+                for s in scopes_val
+            ]
+            if new_list != scopes_val:
+                new_fm["scopes"] = new_list
+                dirty = True
+
+        if not dirty:
+            continue
+
+        body = strip_frontmatter(text)
+        try:
+            import yaml
+
+            dumped = yaml.safe_dump(
+                new_fm, sort_keys=False, allow_unicode=True
+            ).strip()
+        except Exception:  # noqa: BLE001 - never block on YAML edge cases
+            continue
+        new_text = f"---\n{dumped}\n---\n\n{body.lstrip()}"
+        try:
+            atomic_write_text(path, new_text)
+            changed += 1
+        except OSError:
+            continue
+
+    return changed

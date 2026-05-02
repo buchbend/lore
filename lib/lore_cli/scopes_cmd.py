@@ -167,6 +167,14 @@ def cmd_rename(
     _apply_scope_rewrites(sf, af, preview["scope_rewrites"])
     sf.save()
     af.save()
+    counts = _apply_frontmatter_and_log(
+        preview["scope_rewrites"], _lore_root_or_die(),
+    )
+    if counts:
+        for wiki, n in counts.items():
+            if wiki == "_log_path":
+                continue
+            console.print(f"  [dim]rewrote {n} note(s) in {wiki}[/dim]")
     console.print("[green]Rename applied.[/green]")
 
 
@@ -202,7 +210,64 @@ def cmd_reparent(
     _apply_scope_rewrites(sf, af, preview["scope_rewrites"])
     sf.save()
     af.save()
+    counts = _apply_frontmatter_and_log(
+        preview["scope_rewrites"], _lore_root_or_die(),
+    )
+    if counts:
+        for wiki, n in counts.items():
+            if wiki == "_log_path":
+                continue
+            console.print(f"  [dim]rewrote {n} note(s) in {wiki}[/dim]")
     console.print("[green]Reparent applied.[/green]")
+
+
+@app.command("reconcile")
+def cmd_reconcile() -> None:
+    """Apply any rename events from ``_scope_renames.txt`` not yet applied
+    on this host.
+
+    Phase 8 v1: prints the log entries and the host's per-rename apply
+    state. Reconcile only re-applies frontmatter rewrites + attachments
+    rewriting; the wiki repo's ``_scopes.yml`` is the source of truth
+    and gets pulled separately via the wiki's git remote.
+
+    Idempotent: re-running after a clean catch-up is a no-op.
+    """
+    from lore_core.state.scope_renames import read_log
+    from lore_core.surfaces import rewrite_scopes_in_frontmatter
+    from lore_core.config import get_wiki_root
+
+    lore_root = _lore_root_or_die()
+    events = read_log(lore_root)
+    if not events:
+        console.print("[dim]No rename events on file.[/dim]")
+        return
+
+    af = _load_attachments()
+    sf = _load_scopes()
+
+    mapping: dict[str, str] = {}
+    for e in events:
+        # Treat the log as authoritative — apply every event idempotently.
+        mapping[e.old_scope] = e.new_scope
+
+    if not mapping:
+        return
+
+    af.rewrite_scopes(mapping)
+    af.save()
+
+    wiki_root = get_wiki_root()
+    if wiki_root.is_dir():
+        for wiki_dir in sorted(wiki_root.iterdir()):
+            if not wiki_dir.is_dir():
+                continue
+            n = rewrite_scopes_in_frontmatter(wiki_dir, mapping)
+            if n:
+                console.print(
+                    f"  [dim]rewrote {n} note(s) in {wiki_dir.name}[/dim]"
+                )
+    console.print("[green]Reconcile complete.[/green]")
 
 
 @app.command("rm")
@@ -283,6 +348,41 @@ def _apply_scope_rewrites(
     old_root, new_root = rewrites[0]
     sf.rename(old_root, new_root)
     af.rewrite_scopes(dict(rewrites))
+
+
+def _apply_frontmatter_and_log(
+    rewrites: list[tuple[str, str]],
+    lore_root: Path,
+) -> dict[str, int]:
+    """Phase 8 cascade: rewrite ``scope:`` frontmatter across every wiki
+    + append the rename event to the vault-wide ``_scope_renames.txt``
+    log.
+
+    Returns ``{wiki_name: notes_changed}`` plus a synthetic
+    ``"_log_path"`` entry pointing at the rename log.
+    """
+    from lore_core.config import get_wiki_root
+    from lore_core.state.scope_renames import append_rename
+    from lore_core.surfaces import rewrite_scopes_in_frontmatter
+
+    if not rewrites:
+        return {}
+
+    mapping = dict(rewrites)
+    counts: dict[str, int] = {}
+    wiki_root = get_wiki_root()
+    if wiki_root.is_dir():
+        for wiki_dir in sorted(wiki_root.iterdir()):
+            if not wiki_dir.is_dir():
+                continue
+            count = rewrite_scopes_in_frontmatter(wiki_dir, mapping)
+            if count:
+                counts[wiki_dir.name] = count
+
+    old_root, new_root = rewrites[0]
+    log_path = append_rename(lore_root, old_root, new_root)
+    counts["_log_path"] = 1  # sentinel — actual path returned via stdout
+    return counts
 
 
 main = argv_main(app)
