@@ -10,6 +10,50 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-05-02
+
+### Added — Projects-as-canonical surface rollout (8 phases)
+
+Reshapes the vault around scope-aware project folders. Every change
+ships behind `LORE_PROJECT_FOLDERS=on|off` (default off) so existing
+vaults stay untouched until the migration session runs.
+
+- **Phase 1** — Lint generates `_concepts.txt` / `_decisions.txt` /
+  per-type collection files at the wiki root. Existing
+  `sessions/_recent.md` / `plans/_recent.md` / `threads.md` migrated
+  to `_recent.txt` / `_threads.txt`. Universal `_<name>.txt`
+  convention for generated leaves keeps them out of the wikilink
+  graph.
+- **Phase 2** — Curator B strict scope partitioning. Session notes
+  are grouped by exact `scope:` value before clustering. New
+  `unscoped-notes` / `cluster-scope-overridden` telemetry events.
+- **Phase 3** — Dual-mode schema substrate. New
+  `lore_core.projects.router` resolves surface paths through
+  `projects/<slug>/<surface-dir>/` when toggle is on AND the project
+  folder exists. `stub_project_note(bare=True)` for hoist auto-stubs.
+- **Phase 4** — Curator C cross-scope concept hoist proposal pass.
+  Title-slug fuzz ≥0.6 across ≥2 sibling project folders; auto-stubs
+  the parent project; proposal-only.
+- **Phase 5** — Plans co-locate at
+  `projects/<slug>/plans/YYYY-MM-DD-<slug>.md` when toggle is on.
+  Toggle-off path stays byte-for-byte identical to pre-rollout.
+- **Phase 6** — SessionStart auto-injects project orientation note
+  body (capped at 3000 chars). Slug validated against
+  `[A-Za-z0-9._-]+` before path join.
+- **Phase 7** — AGENTS.md ↔ orientation `## Agent guidance` sync.
+  New lint check + `lore project sync SLUG --to-repo|--from-repo`.
+- **Phase 8** — `lore scopes rename` cascade rewrites frontmatter
+  across wikis (`lore_core.surfaces.rewrite_scopes_in_frontmatter`)
+  and appends to `$LORE_ROOT/_scope_renames.txt`. New
+  `lore scopes reconcile` for multi-host catch-up.
+
+### Migration
+
+Existing flat `concepts/`, `decisions/`, `threads/`, `plans/` notes
+are not auto-relocated — that's a one-off Claude Code session
+rather than built tooling. Until then, `LORE_PROJECT_FOLDERS=off`
+(the default) keeps everything where it is.
+
 ## [0.39.0] - 2026-05-02
 
 ### Changed
