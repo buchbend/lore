@@ -419,6 +419,113 @@ def check_hierarchy(
     return issues
 
 
+def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
+    """Phase 7: surface drift between project orientation and the
+    attached repo's AGENTS.md / CLAUDE.md.
+
+    For each project orientation note carrying a ``## Agent guidance``
+    H2 section, locate the attached repo path via ``attachments.json``
+    and compare normalised content. Drift → ``WARNING`` issue.
+
+    Best-effort: missing attachments file, missing repos, malformed
+    notes, etc. all skip silently rather than fail the lint. The check
+    targets the user-visible action ("here's a drift, run sync") not
+    consistency enforcement.
+    """
+    issues: list[Issue] = []
+
+    try:
+        from lore_core.config import resolve_lore_root
+        from lore_core.projects.agent_sync import compute_sync_status
+        from lore_core.state.attachments import AttachmentsFile
+    except ImportError:
+        return issues
+
+    lore_root = resolve_lore_root()
+    if lore_root is None or not lore_root.exists():
+        return issues
+    af = AttachmentsFile(lore_root)
+    af.load()
+
+    # Map: project slug → attached repo path (last scope segment).
+    repo_by_slug: dict[str, Path] = {}
+    for a in af.all():
+        if a.wiki != wiki_name:
+            continue
+        if not a.scope:
+            continue
+        slug = a.scope.rsplit(":", 1)[-1]
+        if slug:
+            repo_by_slug[slug] = a.path
+
+    projects_dir_path = wiki_path / "projects"
+    if not projects_dir_path.is_dir():
+        return issues
+
+    for project_dir in sorted(projects_dir_path.iterdir()):
+        if not project_dir.is_dir():
+            # Legacy flat ``projects/<slug>.md`` — covered below.
+            continue
+        slug = project_dir.name
+        orientation = project_dir / f"{slug}.md"
+        if not orientation.is_file():
+            continue
+        repo_root = repo_by_slug.get(slug)
+        if repo_root is None or not repo_root.exists():
+            continue
+        try:
+            status = compute_sync_status(orientation, repo_root)
+        except Exception:  # noqa: BLE001 - never fail lint on sync drift
+            continue
+        if status.orientation_has_section and not status.in_sync:
+            issues.append(
+                Issue(
+                    severity="WARNING",
+                    wiki=wiki_name,
+                    file=str(orientation.relative_to(wiki_path)),
+                    check="agent_guidance_drift",
+                    message=(
+                        f"`## Agent guidance` in orientation differs from "
+                        f"repo's AGENTS.md/CLAUDE.md. Run "
+                        f"`lore project sync {slug} --to-repo` "
+                        f"or `--from-repo` to reconcile."
+                    ),
+                )
+            )
+
+    # Legacy flat ``projects/<slug>.md`` — same check, no project subfolder.
+    for legacy in sorted(projects_dir_path.glob("*.md")):
+        if legacy.parent != projects_dir_path:
+            continue
+        if legacy.name.startswith("_"):
+            continue
+        slug = legacy.stem
+        repo_root = repo_by_slug.get(slug)
+        if repo_root is None or not repo_root.exists():
+            continue
+        try:
+            status = compute_sync_status(legacy, repo_root)
+        except Exception:  # noqa: BLE001
+            continue
+        if status.orientation_has_section and not status.in_sync:
+            issues.append(
+                Issue(
+                    severity="WARNING",
+                    wiki=wiki_name,
+                    file=str(legacy.relative_to(wiki_path)),
+                    check="agent_guidance_drift",
+                    message=(
+                        f"`## Agent guidance` in orientation differs from "
+                        f"repo's AGENTS.md/CLAUDE.md. Run "
+                        f"`lore project sync {slug} --to-repo` "
+                        f"or `--from-repo` to reconcile."
+                    ),
+                )
+            )
+
+    return issues
+
+
 def check_wikilinks(
     all_notes: dict[str, NoteInfo],
     scoped_wikis: set[str] | None = None,
@@ -895,6 +1002,7 @@ def run_lint(
             all_issues.extend(note_issues)
             note.issues = [f"{i.check}: {i.message}" for i in note_issues]
         all_issues.extend(check_hierarchy(notes_by_wiki, wiki_name, wiki_path))
+        all_issues.extend(check_agent_guidance_sync(wiki_path, wiki_name))
 
     scoped_wiki_names = {w.name for w in wikis}
     all_issues.extend(check_wikilinks(all_notes, scoped_wiki_names))
