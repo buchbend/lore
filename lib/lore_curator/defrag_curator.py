@@ -632,8 +632,14 @@ def _all_defrag_passes() -> list:
     """
     from lore_curator.c_adjacent_merge import adjacent_merge_pass
     from lore_curator.c_auto_supersede import auto_supersede_pass
+    from lore_curator.c_cross_scope_hoist import cross_scope_hoist_pass
     from lore_curator.c_orphan_links import orphan_links_pass
-    return [adjacent_merge_pass, auto_supersede_pass, orphan_links_pass]
+    return [
+        adjacent_merge_pass,
+        auto_supersede_pass,
+        orphan_links_pass,
+        cross_scope_hoist_pass,
+    ]
 
 
 def _run_defrag_passes(
