@@ -526,12 +526,15 @@ def test_find_todays_open_note_respects_work_time_not_now(tmp_path):
 
 
 def _patch_collectors(monkeypatch, *, commits=None, issues=None, repo=None):
-    """Stub the Phase-3 collectors at the names session_filer imports them by.
+    """Stub the Phase-3 collectors at the names ``_collect_activity`` calls
+    them by.
 
-    session_filer pulls the symbols into its namespace at import time
-    (``from lore_curator.session_activity import collect_commits_by_sha``)
-    so monkeypatching the source module doesn't intercept the filer's
-    references — patch ``lore_curator.session_filer.<name>`` instead.
+    ``_collect_activity`` lives in ``lore_curator.session_activity`` (it
+    used to live in ``session_filer``; the buffer-and-flush curator
+    needed it to be reachable from the heartbeat path without dragging
+    the LLM merger surface). It calls ``collect_commits_by_sha`` /
+    ``collect_issues_in_window`` from its own module namespace, so we
+    patch them there.
 
     The new SHA-bound resolver takes ``shas`` instead of ``since``/``until``.
     Tests that want to assert "these specific commits show up in the note"
@@ -540,11 +543,11 @@ def _patch_collectors(monkeypatch, *, commits=None, issues=None, repo=None):
     don't construct turn fixtures, they construct note shapes).
     """
     monkeypatch.setattr(
-        "lore_curator.session_filer.collect_commits_by_sha",
+        "lore_curator.session_activity.collect_commits_by_sha",
         lambda *a, **kw: list(commits or []),
     )
     monkeypatch.setattr(
-        "lore_curator.session_filer.collect_issues_in_window",
+        "lore_curator.session_activity.collect_issues_in_window",
         lambda *a, **kw: ((issues or {}).get("opened", []), (issues or {}).get("closed", [])),
     )
     if repo is not None:

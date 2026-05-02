@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -13,14 +14,18 @@ from lore_core.ledger import (
     WikiLedger,
 )
 from lore_core.lockfile import curator_lock, LockContendedError, read_lock_holder
+from lore_core.root_config import load_root_config
 from lore_core.run_log import RecordCallback, RunLogger
 from lore_core.scope_resolver import resolve_scope
 from lore_core.state.attachments import AttachmentsFile
 from lore_core.types import Scope, Turn, TranscriptHandle
 from lore_core.wiki_config import WikiConfig, load_wiki_config
+from lore_curator import stub_note
+from lore_curator._auto_commit import maybe_auto_commit as _maybe_auto_commit
+from lore_curator.buffer_append import append_chunk
 from lore_curator.llm_client import LlmClientError
 from lore_curator.noteworthy import classify_slice
-from lore_curator.session_filer import FiledNote, file_session_note
+from lore_curator.session_filer import FiledNote, _resolve_handle_for, file_session_note
 
 
 Resolver = Callable[[Path], "Scope | None"]
@@ -83,6 +88,10 @@ class CuratorAResult:
     transcript — a 3-day transcript yields 3 chunks). The per-decision
     counters (``noteworthy_count``, ``skipped_reasons``, ``new_notes``,
     ``merged_notes``) increment per chunk, not per transcript.
+
+    ``buffers_appended`` / ``buffers_flushed`` cover the buffer-and-flush
+    path (``curator.use_buffer_flush``); they stay 0 under the legacy
+    classify-per-chunk path.
     """
 
     transcripts_considered: int = 0
@@ -92,6 +101,164 @@ class CuratorAResult:
     merged_notes: list[Path] = field(default_factory=list)
     skipped_reasons: dict[str, int] = field(default_factory=dict)
     duration_seconds: float = 0.0
+    buffers_appended: int = 0
+    buffers_flushed: int = 0
+
+
+def _buffer_flush_enabled(lore_root: Path) -> bool:
+    """Return True when the buffer-and-flush curator should drive heartbeats.
+
+    Honours ``LORE_BUFFER_FLUSH=1`` env override (truthy values: ``1``,
+    ``true``, ``yes`` — case-insensitive); otherwise falls back to
+    ``$LORE_ROOT/.lore/config.yml`` ``curator.use_buffer_flush``.
+    Default false until the plan's PR 3 stage flips the config.
+    """
+    env = os.environ.get("LORE_BUFFER_FLUSH", "")
+    if env.strip().lower() in ("1", "true", "yes"):
+        return True
+    if env.strip().lower() in ("0", "false", "no"):
+        return False
+    try:
+        return bool(load_root_config(lore_root).curator.use_buffer_flush)
+    except Exception:  # noqa: BLE001 — never let config trip the curator
+        return False
+
+
+def _dispatch_flush_requested(
+    lore_root: Path,
+    *,
+    llm_client: Any,
+    logger: RunLogger,
+    max_per_pass: int = 20,
+) -> int:
+    """Walk live buffers, run :func:`flush_buffer` for each ``flush_requested``.
+
+    Called at the start of :func:`run_curator_a` (when buffer-flush is
+    enabled) so SessionEnd / cap-trip / reaper handover unblocks before
+    the curator-A pass touches the regular pending queue.
+
+    Bounded by ``max_per_pass`` to keep one curator run from getting
+    stuck on a runaway buffer queue. Each flush takes the per-buffer
+    flock; runs are serialised within this process. Returns the count
+    of flushes actually attempted.
+    """
+    from lore_curator.buffer_store import iter_all
+    from lore_curator.synthesis import flush_buffer
+
+    flushed = 0
+    scanned = 0
+    for buf in iter_all(lore_root):
+        if scanned >= max_per_pass:
+            break
+        scanned += 1
+        sidecar = buf.read_sidecar()
+        if sidecar is None:
+            continue
+        if sidecar.state == "closed":
+            continue
+        if sidecar.flush_requested is None:
+            continue
+        wiki_dir = lore_root / "wiki" / sidecar.wiki
+        try:
+            cfg = load_wiki_config(wiki_dir)
+        except Exception:  # noqa: BLE001
+            continue
+        tier = cfg.curator.synthesis_model_tier
+        model = {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}.get(
+            tier, cfg.models.middle,
+        )
+        try:
+            outcome = flush_buffer(
+                buf.sidecar_path,
+                lore_root=lore_root,
+                wiki_root=wiki_dir,
+                llm_client=llm_client,
+                model=model,
+                logger=logger,
+            )
+            flushed += 1
+            logger.emit(
+                "flush-requested-dispatched",
+                buffer_stem=buf.stem,
+                trigger=sidecar.flush_requested.trigger if sidecar.flush_requested else "",
+                phase1=outcome.phase1_completed,
+                phase2=outcome.phase2_completed,
+                degraded=outcome.degraded,
+            )
+        except Exception as exc:  # noqa: BLE001 - never abort curator-A on a flush failure
+            logger.emit(
+                "warning",
+                call="flush-requested-dispatch",
+                buffer_stem=buf.stem,
+                message=f"{type(exc).__name__}: {exc}",
+            )
+    return flushed
+
+
+def _resolve_active_part(
+    lore_root: Path,
+    *,
+    transcript_id: str,
+    local_date: str,
+) -> tuple[int, str | None]:
+    """Pick the ``part_index`` and (if continuing) the prior part's stem.
+
+    Algorithm:
+    1. If any live (non-_done) sidecar exists for this
+       ``(transcript_id, local_date)`` and is still ``accumulating``,
+       reuse its ``part_index`` (we're appending into the active part).
+    2. Otherwise find the highest ``part_index`` seen for this pair —
+       across any state — and return ``(highest + 1,
+       <highest's stem>)``. This is the cap-trip continuation case.
+    3. Fresh pair: ``(1, None)``.
+    """
+    from lore_curator.buffer_store import iter_all
+
+    compact = local_date.replace("-", "")
+    prefix = f"{transcript_id}__{compact}"
+    candidates: list[tuple[int, str, str]] = []  # (part_index, state, stem)
+    for buf in iter_all(lore_root):
+        if not buf.stem.startswith(prefix):
+            continue
+        sidecar = buf.read_sidecar()
+        if sidecar is None:
+            continue
+        if sidecar.transcript_id != transcript_id or sidecar.local_date != local_date:
+            continue
+        candidates.append((sidecar.part_index, sidecar.state, buf.stem))
+
+    if not candidates:
+        return 1, None
+
+    # Active part: still accumulating.
+    accumulating = [c for c in candidates if c[1] == "accumulating"]
+    if accumulating:
+        # Defensive: pick the highest part_index in case multiple exist
+        # (shouldn't happen — cap-trip flips the prior to ready before
+        # opening a new one).
+        accumulating.sort(reverse=True)
+        return accumulating[0][0], None
+
+    # Continuation case: open Part-(highest + 1).
+    candidates.sort(reverse=True)
+    highest_part, _state, highest_stem = candidates[0]
+    return highest_part + 1, highest_stem
+
+
+def _chunk_local_date(chunk_turns: list[Turn]) -> str:
+    """Return the chunk's local date as ``YYYY-MM-DD``.
+
+    Chunks are produced by ``_split_turns_by_local_date``, so every
+    timestamped turn within one chunk shares the same local date. The
+    fallback for an all-untimestamped chunk is "today" (local) — matches
+    the legacy filer's ``work_time = handle.mtime or now`` shape.
+    """
+    for t in chunk_turns:
+        if t.timestamp is None:
+            continue
+        ts = t.timestamp if t.timestamp.tzinfo is not None else t.timestamp.replace(tzinfo=UTC)
+        return ts.astimezone().date().isoformat()
+    return datetime.now().astimezone().date().isoformat()
 
 
 def run_curator_a(
@@ -194,7 +361,42 @@ def run_curator_a(
         else:
             try:
                 with curator_lock(lore_root, timeout=lock_timeout, run_id=logger.run_id):
+                    # Buffer-and-flush handover dispatch first so a
+                    # SessionEnd / PreCompact / cap-trip flush_requested
+                    # marker unblocks before the regular pending loop.
+                    if _buffer_flush_enabled(lore_root):
+                        try:
+                            _dispatch_flush_requested(
+                                lore_root,
+                                llm_client=llm_client,
+                                logger=logger,
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.emit(
+                                "warning",
+                                call="flush-dispatch",
+                                message=f"{type(exc).__name__}: {exc}",
+                            )
                     _iterate_pending()
+                    # Inline reaper pass — bounded so the spawn overhead
+                    # stays sub-100ms even with many orphan buffers.
+                    # Behind the same flag as the heartbeat path so
+                    # non-buffer-flush deployments stay untouched.
+                    if _buffer_flush_enabled(lore_root):
+                        try:
+                            from lore_curator.reaper import reap_once
+
+                            reap_once(
+                                lore_root,
+                                max_per_pass=5,
+                                logger=logger,
+                            )
+                        except Exception as exc:  # noqa: BLE001 — reaper must never abort curator-A
+                            logger.emit(
+                                "warning",
+                                call="reaper-inline",
+                                message=f"{type(exc).__name__}: {exc}",
+                            )
                 # Only update last_curator_a on successful run completion.
                 # On dry-run: skip (telemetry is only for real runs).
                 # On mid-run exception: this line is unreachable, prior value
@@ -399,21 +601,37 @@ def _process_entry(
     chunks = _split_turns_by_local_date(turns)
     outcomes: list[_Outcome] = []
     for chunk_turns in chunks:
-        outcome = _process_chunk(
-            chunk_turns,
-            entry=entry,
-            tledger=tledger,
-            attached=attached,
-            wiki_dir=wiki_dir,
-            cfg=cfg,
-            llm_client=llm_client,
-            handle=handle,
-            now=now,
-            dry_run=dry_run,
-            logger=logger,
-            lore_root=lore_root,
-            scope_redirected_from=scope_redirected_from,
-        )
+        if _buffer_flush_enabled(lore_root):
+            outcome = _process_chunk_buffer_flush(
+                chunk_turns,
+                entry=entry,
+                tledger=tledger,
+                attached=attached,
+                wiki_dir=wiki_dir,
+                cfg=cfg,
+                handle=handle,
+                now=now,
+                dry_run=dry_run,
+                logger=logger,
+                lore_root=lore_root,
+                scope_redirected_from=scope_redirected_from,
+            )
+        else:
+            outcome = _process_chunk(
+                chunk_turns,
+                entry=entry,
+                tledger=tledger,
+                attached=attached,
+                wiki_dir=wiki_dir,
+                cfg=cfg,
+                llm_client=llm_client,
+                handle=handle,
+                now=now,
+                dry_run=dry_run,
+                logger=logger,
+                lore_root=lore_root,
+                scope_redirected_from=scope_redirected_from,
+            )
         outcomes.append(outcome)
         # Per-chunk failure isolation: if classify_slice failed for THIS
         # chunk we must not process later chunks. A later chunk that
@@ -556,67 +774,168 @@ def _process_chunk(
     return _Outcome(filed=filed, was_noteworthy=True, wiki_name=attached.wiki)
 
 
-def _maybe_auto_commit(
-    wiki_dir: Path,
-    filed: "FiledNote",
-    logger: "RunLogger | None" = None,
+def _process_chunk_buffer_flush(
+    chunk_turns: list[Turn],
     *,
-    llm_client: Any = None,
-) -> None:
-    """Git-add + commit (and optionally push) the filed note per wiki config.
+    entry: TranscriptLedgerEntry,
+    tledger: TranscriptLedger,
+    attached: Scope,
+    wiki_dir: Path,
+    cfg: WikiConfig,
+    handle: TranscriptHandle,
+    now: datetime,
+    dry_run: bool,
+    logger: RunLogger | None,
+    lore_root: Path,
+    scope_redirected_from: str | None,
+) -> _Outcome:
+    """Buffer-and-flush variant of :func:`_process_chunk`.
 
-    Sequence on a configured wiki:
-      1. ``auto_commit=true``  → add + commit the filed note
-      2. ``auto_push=true``    → push (with LLM-merge on surface conflicts
-                                   if ``llm_client`` is provided)
+    No ``classify_slice``, no per-chunk LLM call. Each heartbeat:
 
-    All failures are logged via ``logger.emit("warning", ...)`` and never
-    raise — auto-commit/push is opportunistic; the curator's correctness
-    contract is the ledger update, not the git state.
+    1. Open / load the ``(transcript_id, local_date)`` buffer and append
+       a deterministic event (slice pointers + Activity bullets +
+       files_touched / plans / projects deltas).
+    2. Write or rewrite the live stub note at the canonical session
+       path. Body shows the running deterministic accumulator;
+       ``state: stub`` frontmatter marks it as in-flight.
+    3. Advance the transcript ledger to the chunk's last hash so the
+       next heartbeat picks up where this one left off.
+
+    The flush worker (synthesis.py — Step 4) finalises the stub at
+    SessionEnd / cap-trip / reaper. This function never invokes it
+    inline — handover beats optimisation at the heartbeat path.
     """
-    import subprocess
-    from lore_core.wiki_config import load_wiki_config
+    if dry_run:
+        return _Outcome(was_noteworthy=True, wiki_name=attached.wiki)
 
-    cfg = load_wiki_config(wiki_dir)
-    if not cfg.git.auto_commit:
-        return
-    if not (wiki_dir / ".git").exists():
-        return
-    try:
-        rel = filed.path.resolve().relative_to(wiki_dir.resolve())
-        subprocess.run(
-            ["git", "add", str(rel)],
-            cwd=str(wiki_dir), capture_output=True, timeout=10, check=True,
+    work_time = chunk_turns[-1].timestamp or handle.mtime or now
+    local_date = _chunk_local_date(chunk_turns)
+    handle_label = _resolve_handle_for(wiki_dir, handle)
+    part_index, continuation_of = _resolve_active_part(
+        lore_root,
+        transcript_id=entry.transcript_id,
+        local_date=local_date,
+    )
+
+    outcome = append_chunk(
+        lore_root=lore_root,
+        chunk_turns=chunk_turns,
+        local_date=local_date,
+        transcript_id=entry.transcript_id,
+        integration=entry.integration,
+        wiki=attached.wiki,
+        scope=attached.scope,
+        cwd=handle.cwd,
+        wiki_root=wiki_dir,
+        cfg=cfg,
+        handle_label=handle_label,
+        owner_run_id=getattr(logger, "run_id", "") or "",
+        owner_claude_session_id=os.environ.get("CLAUDE_SESSION_ID", ""),
+        logger=logger,
+        part_index=part_index,
+        continuation_of=continuation_of,
+    )
+
+    if outcome.skipped_no_op:
+        # Empty chunk — advance the ledger anyway so the entry doesn't
+        # re-surface as pending forever.
+        last_hash = chunk_turns[-1].content_hash() if chunk_turns else (entry.digested_hash or "")
+        last_hint = chunk_turns[-1].index if chunk_turns else (entry.digested_index_hint or 0)
+        tledger.advance(
+            integration=entry.integration,
+            transcript_id=entry.transcript_id,
+            digested_hash=last_hash,
+            digested_index_hint=last_hint,
+            noteworthy=bool(entry.noteworthy),
+            session_note=entry.session_note,
+            curator_a_run=now,
         )
-        subprocess.run(
-            ["git", "commit", "-m", f"lore: {filed.path.stem}"],
-            cwd=str(wiki_dir), capture_output=True, timeout=10, check=False,
+        return _Outcome(was_noteworthy=False, wiki_name=attached.wiki)
+
+    chunk_from_hash = chunk_turns[0].content_hash()
+    chunk_to_hash = chunk_turns[-1].content_hash()
+
+    stub_result = stub_note.write_or_update(
+        outcome=outcome,
+        scope=attached,
+        transcript=handle,
+        wiki_root=wiki_dir,
+        work_time=work_time,
+        now=now,
+        integration=entry.integration,
+        handle_label=handle_label,
+        chunk_from_hash=chunk_from_hash,
+        chunk_to_hash=chunk_to_hash,
+        logger=logger,
+    )
+
+    wikilink: str | None = stub_result.wikilink if stub_result is not None else None
+
+    tledger.advance(
+        integration=entry.integration,
+        transcript_id=entry.transcript_id,
+        digested_hash=outcome.last_hash,
+        digested_index_hint=outcome.last_index,
+        noteworthy=True,
+        session_note=wikilink,
+        curator_a_run=now,
+    )
+
+    if outcome.cap_tripped:
+        # Spawn the flush worker for the just-tripped part. The next
+        # heartbeat for this transcript+date will land in Part-N+1
+        # (resolved via _resolve_active_part). We don't open Part-N+1
+        # eagerly — cap-trip flipped the current buffer to ``ready``,
+        # so the next call hitting _resolve_active_part skips it and
+        # falls into the continuation branch.
+        from lore_curator.synthesis import spawn_detached_flush
+
+        spawned = spawn_detached_flush(
+            outcome.buffer.sidecar_path, lore_root=lore_root,
         )
-    except (subprocess.SubprocessError, OSError) as exc:
         if logger is not None:
-            logger.emit("warning", message=f"auto-commit failed: {exc}")
-        return
+            logger.emit(
+                "flush-spawned",
+                trigger="cap-trip",
+                transcript_id=entry.transcript_id,
+                buffer_stem=outcome.buffer.stem,
+                spawned=spawned,
+            )
 
-    if cfg.git.auto_push:
+    if stub_result is not None:
+        filed = FiledNote(
+            path=stub_result.path,
+            wikilink=stub_result.wikilink,
+            was_merge=not stub_result.is_first_write,
+        )
+        _maybe_auto_commit(wiki_dir, filed, logger, llm_client=None)
+
         try:
-            from lore_core.git_sync import SyncStatus, auto_push
+            from lore_core.drain import DrainStore, resolve_session_id
 
-            result = auto_push(wiki_dir, llm_client=llm_client)
-            if logger is not None:
-                if result.status is SyncStatus.MERGE_BLOCKED:
-                    logger.emit(
-                        "warning",
-                        message=f"auto-push merge blocked: {result.message}",
-                        blocked_paths=result.blocked_paths,
-                    )
-                elif result.status not in (SyncStatus.OK, SyncStatus.NOOP, SyncStatus.MERGED):
-                    logger.emit(
-                        "warning",
-                        message=f"auto-push skipped: {result.status.value} ({result.message})",
-                    )
-        except Exception as exc:  # noqa: BLE001 — push must never abort the curator
-            if logger is not None:
-                logger.emit("warning", message=f"auto-push failed: {exc}")
+            sid, _ = resolve_session_id(entry.directory)
+            DrainStore(lore_root, sid).emit(
+                "note-appended" if not stub_result.is_first_write else "note-filed",
+                wiki=attached.wiki,
+                wikilink=stub_result.wikilink,
+                path=str(stub_result.path),
+                transcript_id=entry.transcript_id,
+            )
+        except Exception:  # noqa: BLE001 — drain emit must never abort a successful append
+            pass
+
+        if scope_redirected_from is not None and logger is not None:
+            logger.emit(
+                "scope-redirected-stub",
+                transcript_id=entry.transcript_id,
+                from_scope=scope_redirected_from,
+                to_scope=attached.scope,
+            )
+
+        return _Outcome(filed=filed, was_noteworthy=True, wiki_name=attached.wiki)
+
+    return _Outcome(was_noteworthy=True, wiki_name=attached.wiki)
 
 
 def _record_outcome(result: CuratorAResult, outcome: _Outcome) -> None:

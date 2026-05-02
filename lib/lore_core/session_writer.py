@@ -410,6 +410,7 @@ def file_or_merge(
     today_note = _find_todays_open_note(
         sessions_base, scope=si.scope, work_date=si.work_time.date(),
         new_files_touched=si.files_touched,
+        new_transcript_id=si.transcript.id if si.transcript is not None else None,
     )
     if today_note is not None:
         if logger is not None:
@@ -514,6 +515,7 @@ def _find_todays_open_note(
     scope: Scope,
     work_date: _date,
     new_files_touched: list[str] | None = None,
+    new_transcript_id: str | None = None,
 ) -> Path | None:
     """Find a same-day same-scope open note that the new chunk should
     merge into.
@@ -522,6 +524,15 @@ def _find_todays_open_note(
     its own ``files_touched`` frontmatter, require a Jaccard overlap of
     at least :data:`_TOPIC_OVERLAP_MIN_JACCARD` (boilerplate-stripped)
     so disjoint topics on the same day end up in different notes.
+
+    Buffer-flush rollout: when a candidate carries ``state: stub``, it
+    is owned by an in-flight buffer-and-flush curator. Any legacy
+    (flag-false) chunk whose ``new_transcript_id`` doesn't appear in the
+    stub's ``transcripts:`` frontmatter list must steer clear — merging
+    in would let an unrelated transcript's content land in someone
+    else's live stub during staged rollout. Same-transcript callers
+    (the rare case where the buffer's stub_path was lost but the file
+    is still on disk) can still match the stub.
 
     Backward compat: if either side has no ``files_touched`` info
     (legacy notes pre-Phase-C, or talk-only chunks with no tool calls),
@@ -548,6 +559,12 @@ def _find_todays_open_note(
             continue
         if fm.get("closed"):
             continue
+        if fm.get("state") == "stub":
+            stub_transcripts = fm.get("transcripts") or []
+            if not isinstance(stub_transcripts, list):
+                stub_transcripts = []
+            if new_transcript_id is None or new_transcript_id not in stub_transcripts:
+                continue
         try:
             mtime = p.stat().st_mtime
         except OSError:

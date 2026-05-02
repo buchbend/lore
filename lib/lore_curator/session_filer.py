@@ -19,7 +19,6 @@ hashes for each append; it is NOT capped.
 from __future__ import annotations
 
 import re
-import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -33,14 +32,21 @@ from lore_core.session_writer import (
 from lore_core.types import Scope, TranscriptHandle, Turn
 from lore_curator.llm_client import LlmClient
 from lore_curator.noteworthy import NoteworthyResult
+# Turn-deterministic activity extraction lives in session_activity. The
+# leading-underscore re-exports preserve the legacy import paths used
+# throughout the test suite; new code (buffer_append, stub_note) should
+# import from session_activity directly.
 from lore_curator.session_activity import (
-    collect_commits_by_sha,
-    collect_issues_in_window,
-    collect_plans_advanced,
-    collect_projects_for_session,
-    extract_issue_refs,
-    render_commits_section,
-    render_issue_section,
+    _COMMIT_SHA_LINE_RE,  # noqa: F401  (test back-compat)
+    _FILE_PATH_INPUT_KEYS,  # noqa: F401  (test back-compat)
+    _all_turn_text,  # noqa: F401  (test back-compat)
+    _collect_activity,
+    _commit_shas_from_bash_results,  # noqa: F401  (test back-compat)
+    _file_path_from_tool_input,  # noqa: F401  (test back-compat)
+    _files_touched_from_turns,
+    _is_git_commit_command,  # noqa: F401  (test back-compat)
+    collect_commits_by_sha,  # noqa: F401  (monkeypatch surface for test_session_filer)
+    collect_issues_in_window,  # noqa: F401  (monkeypatch surface for test_session_filer)
 )
 from lore_curator.summary_merge import merge_descriptions
 
@@ -143,95 +149,6 @@ def _render_body(
         noteworthy,
         commits=commits, issues_opened=issues_opened, issues_closed=issues_closed,
     ))
-
-
-def _all_turn_text(turns: list[Turn]) -> str:
-    """Concatenate the user/assistant text content of a chunk's turns.
-
-    Used for free-text issue-reference extraction (``opened #42`` /
-    ``closes #29``). Tool-result text is intentionally skipped — it's
-    high-volume and rarely contains genuine issue actions; including
-    it would add false-positives without much recall.
-    """
-    parts: list[str] = []
-    for t in turns:
-        if t.text:
-            parts.append(t.text)
-    return "\n".join(parts)
-
-
-def _collect_activity(
-    *,
-    cwd: Path,
-    wiki_root: Path,
-    turns: list[Turn],
-    files_touched: list[str],
-    body_text_for_plan_scan: str,
-    logger: "RunLogger | None" = None,
-) -> dict[str, Any]:
-    """Run all Phase-3 collectors for a chunk and return the inputs the
-    body renderer + frontmatter need.
-
-    Returns a dict with keys ``commits``, ``issues_opened``,
-    ``issues_closed`` (rendered bullet lines), ``plans``, ``projects``
-    (ref strings).
-
-    Commit attribution is SHA-bound: extracts SHAs from this chunk's own
-    Bash ``git commit`` tool_results and resolves them against the cwd's
-    repo. No time-window fallback — under-attribution beats wrong
-    attribution. See ``_commit_shas_from_bash_results`` and
-    ``collect_commits_by_sha`` for the rationale.
-    """
-    from lore_core.git import git_repo_root, current_repo
-
-    repo_root = git_repo_root(cwd)
-    repo = current_repo(cwd) or ""
-
-    shas = _commit_shas_from_bash_results(turns)
-    raw_commits = collect_commits_by_sha(repo_root, shas)
-
-    if logger is not None:
-        logger.emit(
-            "commit-shas-captured",
-            captured=len(raw_commits),
-            dropped=max(0, len(shas) - len(raw_commits)),
-            shas_seen=len(shas),
-        )
-
-    # Issue-reference extraction: union turn text + commit subjects + bodies
-    # so `closes #29` lands whether the LLM wrote it in chat, in the commit
-    # subject, or in the commit body trailer.
-    commit_text = "\n".join(
-        c.subject + ("\n" + c.body if c.body else "")
-        for c in raw_commits
-    )
-    turn_text = _all_turn_text(turns)
-    opened_refs, closed_refs = extract_issue_refs(turn_text + "\n" + commit_text)
-
-    issues_opened, issues_closed = collect_issues_in_window(
-        repo,
-        referenced_opened=opened_refs,
-        referenced_closed=closed_refs,
-    )
-
-    plans = collect_plans_advanced(
-        body_text=body_text_for_plan_scan,
-        wiki_root=wiki_root,
-        commit_bodies=[c.body for c in raw_commits],
-    )
-    projects = collect_projects_for_session(
-        cwd=cwd,
-        files_touched=files_touched,
-        wiki_root=wiki_root,
-    )
-
-    return {
-        "commits": render_commits_section(raw_commits),
-        "issues_opened": render_issue_section(issues_opened, repo=repo),
-        "issues_closed": render_issue_section(issues_closed, repo=repo),
-        "plans": plans,
-        "projects": projects,
-    }
 
 
 def file_session_note(
@@ -389,180 +306,10 @@ def _make_summary_merger(
     return _merger
 
 
-# Each host names the file argument differently:
-# - Claude Code:  Edit/Read/Write → ``file_path``
-# - Cursor:       edit_file       → ``target_file``;  read_file → ``target_file``
-# - VSCode/MCP:   applyEdit       → ``uri``;  many use generic ``path``
-# - Older shapes: ``filename`` is occasionally seen in MCP server tools.
-# Order matters — we return the first matching key — so prefer the most
-# specific names first.
-_FILE_PATH_INPUT_KEYS: tuple[str, ...] = (
-    "file_path", "target_file", "path", "uri", "filename",
-)
-
-
-def _file_path_from_tool_input(inp: object) -> str | None:
-    """Return the first non-empty string under any known file-path key."""
-    if not isinstance(inp, dict):
-        return None
-    for key in _FILE_PATH_INPUT_KEYS:
-        value = inp.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return None
-
-
-# Anchored-at-line-start SHA line: ``[<branch-or-paren-label> <sha>] <subject>``.
-# The label can be a plain branch (``main``), a multi-token parenthesised marker
-# (``(root-commit)``, ``(detached from origin/foo)``, ``(no branch, rebasing onto X)``),
-# or a paren-prefixed combination. We accept anything between the opening ``[`` and
-# the SHA's leading space (``[^\]]+\s``) so all real git output forms match while
-# pre-commit-hook chatter that prints similar shapes mid-line is rejected by the
-# ``^`` line anchor.
-_COMMIT_SHA_LINE_RE = re.compile(
-    r"^\[[^\]]+\s+([0-9a-f]{7,40})\]",
-    re.MULTILINE,
-)
-
-
-def _is_git_commit_command(command: str) -> bool:
-    """Return True when ``command`` is a real ``git commit`` invocation.
-
-    Filters out:
-    - substring matches (``git log --grep='git commit'``, ``echo 'git commit' | …``)
-    - plumbing variants (``git commit-tree``)
-    - pipelines / redirects ahead of git (``echo x | git commit -F -``) —
-      these reposition git relative to its input/output stream so we can't
-      trust the regex match against tool_result. Rejected.
-    - ``;`` / ``&&`` / ``||`` chains ARE accepted: they don't reposition
-      git relative to its own arguments, and the regex against output still
-      lands on git's own ``[branch sha]`` line. The
-      ``t_chained_commits_one_call`` test exercises this deliberately.
-    """
-    if not command or not command.strip():
-        return False
-    # Reject pipelines / redirects outright. Bash subshells (``$()``) and
-    # heredocs (``<<``) also disqualify; heredoc check uses ``<<`` which is
-    # caught by the ``<`` member of the reject set.
-    if any(ch in command for ch in ("|", "<", ">")):
-        return False
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        return False
-    if not tokens:
-        return False
-    # Skip leading ``VAR=value`` env assigns.
-    i = 0
-    while i < len(tokens) and "=" in tokens[i] and not tokens[i].startswith("="):
-        # crude env-assign check: ``KEY=value`` (no leading ``=``)
-        head = tokens[i].split("=", 1)[0]
-        if head and head.replace("_", "").isalnum():
-            i += 1
-            continue
-        break
-    if i >= len(tokens) or tokens[i] != "git":
-        return False
-    i += 1
-    # Skip global flags. Two forms each: bare-arg (``-C path``) and
-    # ``=``-suffixed (``--git-dir=/repo/.git``). shlex preserves the
-    # latter as a single token, so a membership check would silently
-    # miss them — and `git --git-dir=/repo/.git commit -m x` would be
-    # rejected as not-a-commit. Handle both.
-    _COMBINED_FLAGS = ("--git-dir=", "--work-tree=", "--namespace=", "--super-prefix=")
-    while i < len(tokens):
-        tok = tokens[i]
-        if tok in ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix"):
-            i += 2
-        elif tok.startswith(_COMBINED_FLAGS):
-            i += 1
-        else:
-            break
-    if i >= len(tokens):
-        return False
-    return tokens[i] == "commit"
-
-
-def _commit_shas_from_bash_results(turns: list[Turn]) -> list[str]:
-    """Extract commit SHAs the model itself produced via Bash ``git commit``
-    tool calls, in tool_call order, deduplicated.
-
-    Why this exists: a time-window ``git log --since/--until`` query (the
-    previous attribution path) cannot tell two parallel sessions apart and
-    drops commits that land between chunk windows. The transcript is the
-    only place where session identity, commit identity, and ordering coexist
-    authoritatively — the SHA the model saw in the tool_result IS the SHA
-    the model made.
-
-    Pairing strategy: tool_call and tool_result Turns are NOT necessarily
-    adjacent (parallel tool_use blocks return their results in a single
-    user message, in arbitrary order). Build a single ``{tool_call_id:
-    ToolResult}`` map in one pass, then walk the tool_call Turns in order
-    and look each up.
-
-    Out of scope (silent drop, documented):
-    - Bash commands that ``cd`` into another repo — SHA still captured
-      but resolution scope downstream is ``handle.cwd``'s repo only.
-    - Non-Bash MCP git tools (e.g. a hypothetical ``mcp__git__commit``) —
-      different ``category`` so the regex never fires.
-    - ``git cherry-pick`` / ``git revert`` / ``git commit-tree`` — only
-      ``git commit`` is recognised; cherry-pick/revert produce the same
-      ``[branch sha]`` line and would match if we widened the gate.
-    """
-    # 1. Index tool_results by tool_call_id (skip None — unmappable).
-    results: dict[str, Any] = {}
-    for t in turns:
-        tr = t.tool_result
-        if tr is None or tr.tool_call_id is None:
-            continue
-        results[tr.tool_call_id] = tr
-
-    seen: set[str] = set()
-    out: list[str] = []
-    # 2. Walk tool_call Turns in index order; preserves call-order regardless
-    #    of result-arrival order.
-    for t in turns:
-        tc = t.tool_call
-        if tc is None or tc.category != "shell_exec" or tc.id is None:
-            continue
-        command = tc.input.get("command") if isinstance(tc.input, dict) else None
-        if not isinstance(command, str) or not _is_git_commit_command(command):
-            continue
-        result = results.get(tc.id)
-        if result is None or not isinstance(result.output, str):
-            continue
-        # Last anchored match per result handles --amend / hook-auto-amend
-        # (two SHA lines: original + amended; we want the amended one).
-        matches = _COMMIT_SHA_LINE_RE.findall(result.output)
-        if not matches:
-            continue
-        sha = matches[-1]
-        if sha in seen:
-            continue
-        seen.add(sha)
-        out.append(sha)
-    return out
-
-
-def _files_touched_from_turns(turns: list[Turn]) -> list[str]:
-    """Extract de-duplicated, ordered file paths from ``file_edit`` and
-    ``file_read`` tool calls in the slice.
-
-    Order is first-seen so frontmatter diffs stay readable; we don't sort.
-    Uses canonical ToolCall.category so this works for any host whose
-    adapter populates the field — Claude Code's Edit, Cursor's edit_file,
-    Copilot's applyEdit all surface here uniformly. Each host names the
-    path argument differently; :func:`_file_path_from_tool_input` walks
-    a small list of known keys.
-    """
-    seen: set[str] = set()
-    out: list[str] = []
-    for t in turns:
-        tc = t.tool_call
-        if tc is None or tc.category not in ("file_edit", "file_read"):
-            continue
-        path = _file_path_from_tool_input(tc.input)
-        if path and path not in seen:
-            seen.add(path)
-            out.append(path)
-    return out
+# Turn-deterministic helpers (``_files_touched_from_turns``,
+# ``_commit_shas_from_bash_results``, ``_collect_activity`` and the
+# regex/keys/parser primitives behind them) live in
+# ``lore_curator.session_activity`` so the buffer-and-flush heartbeat
+# path can call them without dragging the LLM-summary-merge surface
+# along. Imports above re-export them under the legacy underscore names
+# for tests that pre-date the move.

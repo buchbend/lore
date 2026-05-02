@@ -2379,6 +2379,22 @@ def cmd_session_start(
         except Exception:  # noqa: BLE001 — pull must never crash SessionStart
             auto_pull_warning = None
 
+    # Buffer-and-flush handover-poll: when a sibling session ended
+    # mid-flush, wait briefly for ``state=closed`` so the resulting
+    # wikilink lands in this SessionStart's context rather than only in
+    # the next heartbeat. Phase 1 of flush is sub-1s by construction; a
+    # 5s budget covers worst-case I/O. Phase 2 (LLM rewrite) happens
+    # transparently after the handover unblocks.
+    if scope is not None and lore_root is not None and not probe:
+        try:
+            handover_lines = _poll_buffer_handover(
+                lore_root, cwd_resolved, timeout_s=5.0,
+            )
+            if handover_lines:
+                out = out + "\n\n" + "\n".join(handover_lines)
+        except Exception:  # noqa: BLE001 - handover must never crash SessionStart
+            pass
+
     # Attempt to append capture-state breadcrumb banner
     try:
         from datetime import UTC, datetime as dt
@@ -3323,6 +3339,157 @@ def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
     )
 
 
+_HANDOVER_RECENT_S = 3600   # 60 min — "the same Claude project recently"
+_HANDOVER_POLL_INTERVAL_S = 0.1
+
+
+def _poll_buffer_handover(
+    lore_root: Path,
+    cwd: Path,
+    *,
+    timeout_s: float = 5.0,
+) -> list[str]:
+    """Wait briefly for in-flight buffer flushes that match this cwd to close.
+
+    Returns a list of context lines to inject into the SessionStart
+    output. Each line is either ``> Picked up [[<slug>]]`` for a freshly
+    closed buffer or ``> Previous session being synthesised...`` for the
+    timeout case.
+    """
+    import time as _t
+    from datetime import UTC, datetime as _dt
+
+    from lore_curator.buffer_store import iter_all
+
+    cwd_str = str(cwd)
+    deadline = _t.monotonic() + timeout_s
+
+    candidates: dict[str, dict[str, Any]] = {}
+    now = _dt.now(UTC)
+    for buf in iter_all(lore_root):
+        sidecar = buf.read_sidecar()
+        if sidecar is None or sidecar.flush_requested is None:
+            continue
+        if sidecar.cwd == cwd_str:
+            candidates[buf.stem] = {"buf": buf, "matched_via": "cwd"}
+            continue
+        last = sidecar.last_appended_at
+        try:
+            ts = _dt.fromisoformat(last.replace("Z", "+00:00")) if last else None
+        except ValueError:
+            ts = None
+        if ts is not None and (now - ts).total_seconds() < _HANDOVER_RECENT_S:
+            candidates[buf.stem] = {"buf": buf, "matched_via": "recent"}
+
+    if not candidates:
+        return []
+
+    closed_wikilinks: list[str] = []
+    pending_stems: set[str] = set(candidates.keys())
+
+    while _t.monotonic() < deadline and pending_stems:
+        for stem in list(pending_stems):
+            entry = candidates[stem]
+            buf = entry["buf"]
+            sidecar = buf.read_sidecar()
+            # Buffer relocated to _done/ -> read the moved sidecar.
+            if sidecar is None:
+                done_sidecar = lore_root / ".lore" / "buffers" / "_done" / f"{stem}.state.json"
+                if done_sidecar.exists():
+                    try:
+                        raw = json.loads(done_sidecar.read_text())
+                        from lore_curator.buffer_store import Sidecar as _SC
+                        sidecar = _SC.from_dict(raw)
+                    except (OSError, json.JSONDecodeError, ValueError):
+                        sidecar = None
+            if sidecar is None:
+                pending_stems.discard(stem)
+                continue
+            if sidecar.state == "closed":
+                if sidecar.stub_path:
+                    stub = Path(sidecar.stub_path)
+                    closed_wikilinks.append(f"[[{stub.stem}]]")
+                pending_stems.discard(stem)
+        if pending_stems:
+            _t.sleep(_HANDOVER_POLL_INTERVAL_S)
+
+    lines: list[str] = []
+    for wikilink in closed_wikilinks:
+        lines.append(f"> Picked up {wikilink} from a prior session.")
+    if pending_stems:
+        try:
+            HookEventLogger(lore_root).emit(
+                event="session-start",
+                outcome="flush-handover-timeout",
+                cwd=str(cwd),
+                pending=sorted(pending_stems),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        lines.append(
+            "> Previous session note still being synthesised — it will appear "
+            "in a subsequent heartbeat."
+        )
+    return lines
+
+
+def _request_flush_for_my_buffers(
+    lore_root: Path,
+    *,
+    trigger: str,
+    max_scan: int = 20,
+) -> int:
+    """Stamp ``flush_requested`` on every live buffer owned by this PID.
+
+    Walks ``.lore/buffers/*.state.json`` (sidecar-only, bounded by
+    ``max_scan``); for each match, takes the per-buffer flock and CASes
+    ``accumulating -> ready`` while writing ``flush_requested``. Returns
+    the count of buffers stamped.
+
+    Buffers already in ``ready`` / ``flushing`` / ``closed`` states are
+    untouched — another path (cap-trip, prior session-end) already
+    routed them.
+    """
+    from datetime import UTC, datetime as _datetime
+
+    from lore_curator.buffer_store import (
+        BufferTransitionError,
+        FlushRequest,
+        iter_for_pid,
+    )
+
+    stamped = 0
+    pid = os.getpid()
+    now_iso = _datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    scanned = 0
+    for buf in iter_for_pid(lore_root, pid):
+        scanned += 1
+        if scanned > max_scan:
+            break
+        try:
+            with buf.with_lock(blocking=False) as held:
+                if not held:
+                    continue
+                sidecar = buf.read_sidecar()
+                if sidecar is None or sidecar.state in ("flushing", "closed"):
+                    continue
+                if sidecar.flush_requested is not None and sidecar.state == "ready":
+                    # Already routed; nothing to do.
+                    continue
+                req = FlushRequest(trigger=trigger, requested_at=now_iso, by_pid=pid)
+                if sidecar.state == "accumulating":
+                    try:
+                        buf.transition("ready", flush_requested=req)
+                    except BufferTransitionError:
+                        continue
+                else:  # "ready" without flush_requested
+                    buf.patch(flush_requested=req)
+                stamped += 1
+        except OSError:
+            continue
+    return stamped
+
+
 def _wiki_should_spawn(
     entries: "list[TranscriptLedgerEntry]",
     wiki_cfg: "WikiConfig",
@@ -3631,6 +3798,27 @@ def capture(
         _register_pending_transcripts(
             lore_root, cwd, adapter=adapter, transcript=transcript
         )
+
+        # Buffer-and-flush: at session-end / pre-compact, walk this
+        # session's live buffers and stamp ``flush_requested`` so the
+        # detached curator-A spawn (or a manual ``lore curator flush``)
+        # routes them to ``synthesis.flush_buffer``. Bounded sidecar
+        # reads keep the hook inside its sub-100ms contract.
+        if event in ("session-end", "pre-compact"):
+            try:
+                _request_flush_for_my_buffers(
+                    lore_root, trigger=event, max_scan=20,
+                )
+            except Exception as exc:  # noqa: BLE001 - hook must never fail on this
+                logger.emit(
+                    event=event, integration=integration, scope=scope_payload,
+                    duration_ms=int((_time.monotonic() - start) * 1000),
+                    outcome="warning",
+                    error={"type": type(exc).__name__, "message": str(exc)},
+                    cwd=str(cwd),
+                    pid=_capture_pid,
+                    ppid_cmd=_capture_ppid_cmd,
+                )
 
         pending = tledger.pending()
         pending_after = len(pending)

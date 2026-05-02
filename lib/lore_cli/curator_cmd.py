@@ -316,6 +316,122 @@ def run_command(
             console.print(f"  took: {b_result.duration_seconds:.2f}s")
 
 
+@app.command("flush")
+def flush_command(
+    buffer_path: Path = typer.Argument(..., help="Path to <stem>.state.json sidecar."),
+    config_from_buffer: bool = typer.Option(
+        False,
+        "--config-from-buffer",
+        help=(
+            "Read wiki / scope / model from the buffer's sidecar (recommended "
+            "when the live caller's config may differ — reaper / cap-trip)."
+        ),
+    ),
+    backend: str = typer.Option(None, "--backend", help="LLM backend override."),
+) -> None:
+    """Run the two-phase flush worker for one buffer.
+
+    Phase 1 (deterministic) finalises the live stub at the buffer's
+    ``stub_path``, drops ``state: stub``, transitions the buffer to
+    ``closed``, and moves the sidecar+log to ``.lore/buffers/_done/``.
+
+    Phase 2 (LLM, in-process) composes the narrative (title, description,
+    summary, decisions, worked_on, loose_ends) and rewrites the
+    finalised stub in place. Up to 3 retries; on exhaustion the
+    Activity-only Phase 1 note remains intact (``flush-degraded``).
+    """
+    import os
+    from lore_cli._cli_helpers import lore_root_or_die
+    from lore_core.run_log import RunLogger
+    from lore_core.wiki_config import load_wiki_config
+    from lore_curator.buffer_store import Buffer
+    from lore_curator.llm_client import LlmClientError, make_llm_client
+    from lore_curator.synthesis import flush_buffer
+
+    err_console = Console(stderr=True)
+    lore_root = lore_root_or_die(err_console)
+
+    try:
+        buffer = Buffer.from_sidecar_path(buffer_path)
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        sys.exit(2)
+    sidecar = buffer.read_sidecar()
+    if sidecar is None:
+        err_console.print(f"[red]Error:[/red] no sidecar at {buffer_path}")
+        sys.exit(2)
+
+    wiki_dir = lore_root / "wiki" / sidecar.wiki
+    cfg = load_wiki_config(wiki_dir)
+    effective_backend = _resolve_backend(backend, lore_root)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or None
+    try:
+        llm_client = make_llm_client(
+            backend=effective_backend,
+            api_key=api_key,
+            lore_root=lore_root,
+        )
+    except LlmClientError as exc:
+        err_console.print(f"[yellow]Warning:[/yellow] {exc}")
+        llm_client = None
+
+    tier = cfg.curator.synthesis_model_tier
+    model = {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}.get(
+        tier, cfg.models.middle,
+    )
+
+    with RunLogger(
+        lore_root,
+        trigger="flush",
+        pending_count=1,
+        config_snapshot={"buffer_stem": buffer.stem},
+    ) as logger:
+        outcome = flush_buffer(
+            buffer_path,
+            lore_root=lore_root,
+            wiki_root=wiki_dir,
+            llm_client=llm_client,
+            model=model,
+            logger=logger,
+        )
+
+    console.print(
+        f"[bold]flush[/bold] {outcome.buffer_stem} — "
+        f"phase1={'ok' if outcome.phase1_completed else 'skipped'}, "
+        f"phase2={'ok' if outcome.phase2_completed else 'degraded' if outcome.degraded else 'skipped'}, "
+        f"attempts={outcome.phase2_attempts}"
+    )
+    if outcome.wikilink:
+        console.print(f"  wikilink: {outcome.wikilink}")
+
+
+@app.command("reap")
+def reap_command(
+    apply: bool = typer.Option(True, "--apply/--dry-run", help="Spawn flush workers vs. just reporting."),
+) -> None:
+    """Scan live buffers for crashed-owner sessions and force-flush.
+
+    See ``lore_curator.reaper`` for the liveness contract: stale
+    last_heartbeat AND (host mismatch OR pid dead) AND start_ts mismatch
+    must all hold before a buffer is force-flushed under spawn role
+    ``a-flush``.
+    """
+    from lore_cli._cli_helpers import lore_root_or_die
+    from lore_curator.reaper import reap_once
+
+    err_console = Console(stderr=True)
+    lore_root = lore_root_or_die(err_console)
+    report = reap_once(lore_root, dry_run=not apply)
+    console.print(
+        f"[bold]reap[/bold] — scanned={report.scanned}, "
+        f"force_flushed={report.force_flushed}, alive={report.alive}, "
+        f"already_done={report.already_done}"
+    )
+    for stem, reason in report.skipped:
+        console.print(f"  [dim]skipped[/dim] {stem}: {reason}")
+
+
 main = argv_main(app)
 
 
