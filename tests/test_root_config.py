@@ -54,13 +54,29 @@ def test_curator_noteworthy_mode_can_be_overridden_in_config(tmp_path: Path):
     assert cfg.curator.noteworthy_mode == "llm_only"
 
 
-def test_use_buffer_flush_defaults_false(tmp_path: Path):
-    """Buffer-and-flush feature flag is opt-in until the plan's PR 3."""
+def test_use_buffer_flush_defaults_true(tmp_path: Path):
+    """Buffer-and-flush is the default heartbeat path as of PR 3.
+
+    Escape hatch lives in :func:`test_use_buffer_flush_can_be_disabled_in_config`.
+    """
+    cfg = load_root_config(tmp_path)
+    assert cfg.curator.use_buffer_flush is True
+
+
+def test_use_buffer_flush_can_be_disabled_in_config(tmp_path: Path):
+    """Operators can opt out of the new path via ``.lore/config.yml``."""
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    (lore_dir / "config.yml").write_text(
+        "curator:\n"
+        "  use_buffer_flush: false\n"
+    )
     cfg = load_root_config(tmp_path)
     assert cfg.curator.use_buffer_flush is False
 
 
 def test_use_buffer_flush_can_be_enabled_in_config(tmp_path: Path):
+    """Explicit ``true`` round-trips even though it now matches the default."""
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
     (lore_dir / "config.yml").write_text(

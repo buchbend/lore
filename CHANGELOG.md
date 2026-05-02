@@ -10,6 +10,63 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-05-02
+
+### Changed
+
+- **Buffer-and-flush is now the default heartbeat path**
+  (`lore_core/root_config.CuratorBackendConfig.use_buffer_flush=True`).
+  Each Curator A heartbeat now appends deterministic chunk deltas
+  (slice pointers, files_touched, plans, projects, commit SHAs,
+  pre-rendered Activity bullets) to a per-`(transcript_id, local_date)`
+  buffer under `.lore/buffers/` and writes a live stub note at the
+  canonical session path with frontmatter `state: stub`. The narrative
+  (title, description, Summary, Decisions made, What we worked on,
+  Loose ends) is composed by **one** Phase-2 LLM call at flush time —
+  triggered by SessionEnd, PreCompact, cap-trip, or the liveness
+  reaper — instead of one classify-per-chunk + one anchored
+  summary-merge call per heartbeat. Outcome targets: ~70 % LLM-call
+  reduction, one note per transcript per day baseline, sub-5 s
+  perceived handover latency, zero lost work under any LLM failure
+  mode (Phase 1 of flush always lands an Activity-only note before
+  Phase 2 runs).
+- **Escape hatch:** set `LORE_BUFFER_FLUSH=0` (env, takes precedence)
+  or `curator.use_buffer_flush: false` in `$LORE_ROOT/.lore/config.yml`
+  to fall back to the legacy classify-per-chunk path. The legacy path
+  stays compiled in (and tested via `tests/conftest.py`'s autouse
+  grandfather fixture) until PR 4 of the
+  `very-good-thats-the-mossy-lobster` plan deletes it.
+
+### Deprecated
+
+- **`lore_curator.summary_merge`** is deprecated. The buffer-and-flush
+  path's Phase-2 LLM call (`lore_curator.synthesis.compose_session_note`)
+  covers the same responsibility in one shot per session note. The
+  module emits a one-shot `DeprecationWarning` on first call to
+  `merge_descriptions` and stays load-bearing only when
+  `LORE_BUFFER_FLUSH=0` keeps the legacy path active. Removal
+  scheduled for PR 4.
+
+### Migration notes
+
+- Operators running on a low-capacity local LLM that struggled with
+  the old anchored-merge prompt should observe a meaningful drop in
+  per-heartbeat LLM load — but Phase 2 still uses a cloud-tier model
+  by default (`curator.synthesis_model_tier="middle"`); shrink via
+  `curator.synthesis_model_tier="simple"` per wiki in
+  `.lore-wiki.yml` if local-only is required.
+- The first heartbeat after upgrade in an active session writes a
+  stub at `sessions/.../<slug>.md` that only carries Activity until
+  Phase 2 finalises it. SessionStart polls up to 5 s for the close
+  before injecting the wikilink — beyond that the banner reads
+  "previous session note still being synthesised" and the wikilink
+  appears in the next heartbeat.
+- Half-rolled-back state is safe: an orphan buffer left behind by a
+  v0.38.x crash gets picked up by the v0.39.0 reaper on the next
+  curator pass; legacy notes already filed remain valid. One
+  transcript may produce both a legacy note and a buffer-flushed
+  note for the same day during cutover — acceptable.
+
 ## [0.38.2] - 2026-05-01
 
 ### Changed

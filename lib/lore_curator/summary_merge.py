@@ -1,5 +1,17 @@
 """LLM-driven summary/description merge for Curator A appends.
 
+.. deprecated:: 0.39.0
+   The buffer-and-flush curator (PR 3 of the
+   ``very-good-thats-the-mossy-lobster`` plan) replaces the
+   per-chunk synthesise-and-merge path with a single Phase-2 LLM
+   call at flush time (see :mod:`lore_curator.synthesis`). This
+   module stays load-bearing only when the legacy path is
+   explicitly re-enabled via ``LORE_BUFFER_FLUSH=0`` or
+   ``curator.use_buffer_flush: false``. PR 4 (next minor release)
+   will delete it outright.
+
+Original purpose
+----------------
 When a chunk merges into an existing session note, the writer needs to
 update the body ``## Summary`` paragraph and the frontmatter
 ``description`` so they reflect the *combined* arc of the session — not
@@ -15,6 +27,7 @@ additive contract, never blank out what's already there.
 from __future__ import annotations
 
 import time
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from lore_curator.llm_client import LlmClient, LlmClientError
@@ -24,6 +37,35 @@ if TYPE_CHECKING:
 
 
 _MAX_OUTPUT_TOKENS = 512
+
+
+_DEPRECATION_EMITTED = False
+
+
+def _emit_deprecation_once() -> None:
+    """Emit a DeprecationWarning at most once per process.
+
+    The legacy classify-per-chunk path keeps invoking this on every
+    merge; without the latch we'd flood logs while the user has
+    already opted out via ``LORE_BUFFER_FLUSH=0``. ``warnings`` itself
+    de-dupes by ``(filename, lineno)`` but the warning we want is
+    aimed at *operators*, not callers — emit once, loud, then quiet.
+    """
+    global _DEPRECATION_EMITTED
+    if _DEPRECATION_EMITTED:
+        return
+    _DEPRECATION_EMITTED = True
+    warnings.warn(
+        "lore_curator.summary_merge.merge_descriptions is deprecated as "
+        "of v0.39.0; the buffer-and-flush curator's Phase-2 LLM call "
+        "(lore_curator.synthesis.compose_session_note) covers the same "
+        "responsibility in one shot per session note. This module will "
+        "be removed in PR 4 of the very-good-thats-the-mossy-lobster "
+        "plan. Set LORE_BUFFER_FLUSH=0 to keep the legacy path while "
+        "you migrate.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 def merge_descriptions(
@@ -58,6 +100,7 @@ def merge_descriptions(
     not treat a returned-existing as a signal that merging happened —
     it's the safe fallback that preserves the additive contract.
     """
+    _emit_deprecation_once()
     if not new:
         return existing
     if not existing:

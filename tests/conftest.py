@@ -42,6 +42,27 @@ def _default_noteworthy_mode_llm_only(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _default_buffer_flush_off(monkeypatch):
+    """Grandfather pre-PR-3 tests onto the legacy classify-per-chunk path.
+
+    PR 3 of the very-good-thats-the-mossy-lobster plan flipped the
+    production default of ``curator.use_buffer_flush`` to ``True``.
+    Tests that drive ``run_curator_a`` end-to-end were written against
+    the legacy synthesise-on-append path; they keep the legacy default
+    via this autouse fixture (matches the noteworthy_mode pattern
+    above).
+
+    Tests that exercise the buffer-and-flush path itself — buffer_store
+    primitives, buffer_append, stub_note, synthesis, the reaper, the
+    SessionEnd / SessionStart wiring — call those modules directly and
+    aren't affected by this flag. Tests that want the buffer path
+    inside ``run_curator_a`` set ``monkeypatch.setenv("LORE_BUFFER_FLUSH", "1")``
+    inline (precedence rule guarantees per-test wins).
+    """
+    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_user_config(tmp_path_factory, monkeypatch):
     """Fake ``$HOME`` and wipe ``$XDG_CONFIG_HOME`` for every test so the
     LORE_ROOT resolver never reads the developer's real
