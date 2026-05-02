@@ -1,4 +1,4 @@
-"""Tests for _recent.md generation in the linter."""
+"""Tests for _recent.txt generation in the linter."""
 
 from __future__ import annotations
 
@@ -7,15 +7,15 @@ from pathlib import Path
 import pytest
 from lore_core.lint import (
     SKIP_FILES,
-    generate_plan_recent_md,
-    generate_recent_md,
+    generate_plan_recent_txt,
+    generate_recent_txt,
     run_lint,
 )
 from lore_core.session_writer import session_path_sort_key
 
 
 # ---------------------------------------------------------------------------
-# Unit tests for generate_recent_md
+# Unit tests for generate_recent_txt
 # ---------------------------------------------------------------------------
 
 
@@ -37,35 +37,35 @@ def wiki_without_sessions(tmp_path) -> Path:
     return w
 
 
-def test_recent_md_contains_wikilinks(wiki_with_sessions):
-    content = generate_recent_md(wiki_with_sessions)
+def test_recent_txt_contains_wikilinks(wiki_with_sessions):
+    content = generate_recent_txt(wiki_with_sessions)
     assert content is not None
     assert "# Recent Sessions" in content
     assert "[[05-session-5]]" in content
     assert "[[01-session-1]]" in content
 
 
-def test_recent_md_newest_first(wiki_with_sessions):
-    content = generate_recent_md(wiki_with_sessions)
+def test_recent_txt_newest_first(wiki_with_sessions):
+    content = generate_recent_txt(wiki_with_sessions)
     assert content is not None
     lines = [l for l in content.splitlines() if l.startswith("- ")]
     assert lines[0] == "- [[05-session-5]]"
     assert lines[-1] == "- [[01-session-1]]"
 
 
-def test_recent_md_none_without_sessions_dir(wiki_without_sessions):
-    result = generate_recent_md(wiki_without_sessions)
+def test_recent_txt_none_without_sessions_dir(wiki_without_sessions):
+    result = generate_recent_txt(wiki_without_sessions)
     assert result is None
 
 
-def test_recent_md_caps_at_max_entries(tmp_path):
+def test_recent_txt_caps_at_max_entries(tmp_path):
     w = tmp_path / "wiki"
     sessions = w / "sessions" / "2026" / "04"
     sessions.mkdir(parents=True)
     for day in range(1, 31):
         slug = f"{day:02d}-session-{day}.md"
         (sessions / slug).write_text("---\ntype: session\n---\n")
-    content = generate_recent_md(w, max_entries=20)
+    content = generate_recent_txt(w, max_entries=20)
     assert content is not None
     wikilink_lines = [l for l in content.splitlines() if l.startswith("- ")]
     assert len(wikilink_lines) == 20
@@ -73,21 +73,21 @@ def test_recent_md_caps_at_max_entries(tmp_path):
     assert "[[30-session-30]]" in wikilink_lines[0]
 
 
-def test_recent_md_excludes_skip_files(tmp_path):
+def test_recent_txt_excludes_skip_files(tmp_path):
     w = tmp_path / "wiki"
     sessions = w / "sessions" / "2026" / "04"
     sessions.mkdir(parents=True)
     (sessions / "01-real.md").write_text("---\ntype: session\n---\n")
     (sessions / "_recent.md").write_text("should be ignored")
     (sessions / "_index.txt").write_text("should be ignored")
-    content = generate_recent_md(w)
+    content = generate_recent_txt(w)
     assert content is not None
     assert "[[01-real]]" in content
     assert "_recent" not in content
     assert "_index" not in content
 
 
-def test_recent_md_spans_months(tmp_path):
+def test_recent_txt_spans_months(tmp_path):
     w = tmp_path / "wiki"
     for month in ["03", "04"]:
         d = w / "sessions" / "2026" / month
@@ -98,7 +98,7 @@ def test_recent_md_spans_months(tmp_path):
     (w / "sessions" / "2026" / "04" / "02-april-session.md").write_text(
         "---\ntype: session\n---\n"
     )
-    content = generate_recent_md(w)
+    content = generate_recent_txt(w)
     assert content is not None
     lines = [l for l in content.splitlines() if l.startswith("- ")]
     # April (2026/04) sorts after March (2026/03) → newest first
@@ -106,17 +106,21 @@ def test_recent_md_spans_months(tmp_path):
     assert "[[28-march-session]]" in lines[1]
 
 
-def test_recent_md_in_skip_files():
+def test_recent_txt_in_skip_files():
+    # ``_recent.txt`` is the live skip target; ``_recent.md`` is kept
+    # in SKIP_FILES as a legacy entry so daily_curator and lint still
+    # ignore it on vaults that haven't been re-linted post-upgrade.
+    assert "_recent.txt" in SKIP_FILES
     assert "_recent.md" in SKIP_FILES
 
 
 # ---------------------------------------------------------------------------
-# Integration: run_lint writes sessions/_recent.md
+# Integration: run_lint writes sessions/_recent.txt
 # ---------------------------------------------------------------------------
 
 
-def test_run_lint_creates_recent_md(tmp_path, monkeypatch):
-    """run_lint writes sessions/_recent.md for wikis with a sessions/ dir."""
+def test_run_lint_creates_recent_txt(tmp_path, monkeypatch):
+    """run_lint writes sessions/_recent.txt for wikis with a sessions/ dir."""
     wiki_root = tmp_path / "wiki"
     w = wiki_root / "mywiki"
     sessions = w / "sessions" / "2026" / "04"
@@ -133,8 +137,8 @@ def test_run_lint_creates_recent_md(tmp_path, monkeypatch):
 
     run_lint(json_output=True)
 
-    recent = w / "sessions" / "_recent.md"
-    assert recent.exists(), "sessions/_recent.md was not created"
+    recent = w / "sessions" / "_recent.txt"
+    assert recent.exists(), "sessions/_recent.txt was not created"
     text = recent.read_text()
     assert "# Recent Sessions" in text
     assert "[[12-test-12]]" in text
@@ -181,15 +185,15 @@ def test_sort_key_unparseable_filename_sinks():
     assert files[0] == good
 
 
-def test_recent_md_intra_day_ordering(tmp_path):
-    """generate_recent_md respects HHMM ordering within a single day."""
+def test_recent_txt_intra_day_ordering(tmp_path):
+    """generate_recent_txt respects HHMM ordering within a single day."""
     w = tmp_path / "wiki"
     sessions = w / "sessions" / "2026" / "04"
     sessions.mkdir(parents=True)
     (sessions / "28-0900-morning.md").write_text("---\ntype: session\n---\n")
     (sessions / "28-1432-afternoon.md").write_text("---\ntype: session\n---\n")
     (sessions / "28-old.md").write_text("---\ntype: session\n---\n")
-    content = generate_recent_md(w)
+    content = generate_recent_txt(w)
     assert content is not None
     lines = [l for l in content.splitlines() if l.startswith("- ")]
     assert lines[0] == "- [[28-1432-afternoon]]"
@@ -198,14 +202,14 @@ def test_recent_md_intra_day_ordering(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# generate_plan_recent_md — recency by last_reviewed / step_status_updated
+# generate_plan_recent_txt — recency by last_reviewed / step_status_updated
 # ---------------------------------------------------------------------------
 
 
 def test_plan_recent_md_none_without_plans_dir(tmp_path):
     w = tmp_path / "wiki"
     (w / "concepts").mkdir(parents=True)
-    assert generate_plan_recent_md(w) is None
+    assert generate_plan_recent_txt(w) is None
 
 
 def test_plan_recent_md_orders_by_last_reviewed(tmp_path):
@@ -220,7 +224,7 @@ def test_plan_recent_md_orders_by_last_reviewed(tmp_path):
         "---\ntype: plan\nstatus: active\n"
         "last_reviewed: '2026-04-28'\n---\n# new\n"
     )
-    content = generate_plan_recent_md(w)
+    content = generate_plan_recent_txt(w)
     assert content is not None
     assert "# Recent Plans" in content
     lines = [l for l in content.splitlines() if l.startswith("- ")]
@@ -242,7 +246,7 @@ def test_plan_recent_md_step_status_updated_overrides_last_reviewed(tmp_path):
         "---\ntype: plan\nstatus: active\n"
         "last_reviewed: '2026-04-15'\n---\n"
     )
-    content = generate_plan_recent_md(w)
+    content = generate_plan_recent_txt(w)
     assert content is not None
     lines = [l for l in content.splitlines() if l.startswith("- ")]
     assert lines[0] == "- [[stale-review]] · active"
@@ -258,7 +262,7 @@ def test_plan_recent_md_renders_status_badge(tmp_path):
     (plans / "running.md").write_text(
         "---\ntype: plan\nstatus: active\nlast_reviewed: '2026-04-27'\n---\n"
     )
-    content = generate_plan_recent_md(w)
+    content = generate_plan_recent_txt(w)
     assert content is not None
     assert "- [[shipped]] · done" in content
     assert "- [[running]] · active" in content
@@ -273,7 +277,7 @@ def test_plan_recent_md_skips_lockfiles(tmp_path):
     )
     # Lockfile sentinels live alongside notes — must not be parsed.
     (plans / ".real.lock").write_text("")
-    content = generate_plan_recent_md(w)
+    content = generate_plan_recent_txt(w)
     assert content is not None
     assert "real" in content
     # Lockfiles aren't markdown so the glob already skips them, but
@@ -290,7 +294,7 @@ def test_plan_recent_md_skips_non_plan_files(tmp_path):
         "---\ntype: plan\nstatus: active\nlast_reviewed: '2026-04-28'\n---\n"
     )
     (plans / "stray.md").write_text("---\ntype: note\n---\nnot a plan\n")
-    content = generate_plan_recent_md(w)
+    content = generate_plan_recent_txt(w)
     assert content is not None
     assert "[[real]]" in content
     assert "[[stray]]" not in content
@@ -310,7 +314,7 @@ def test_run_lint_creates_plan_recent_md(tmp_path, monkeypatch):
     monkeypatch.setattr("lore_core.lint.get_wiki_root", lambda: wiki_root)
     run_lint(json_output=True)
 
-    recent = plans / "_recent.md"
+    recent = plans / "_recent.txt"
     assert recent.exists()
     text = recent.read_text()
     assert "# Recent Plans" in text
@@ -328,11 +332,11 @@ def test_run_lint_skips_plan_recent_md_without_plans_dir(tmp_path, monkeypatch):
     run_lint(json_output=True)
 
     assert not (w / "plans").exists()
-    assert not (w / "plans" / "_recent.md").exists()
+    assert not (w / "plans" / "_recent.txt").exists()
 
 
 def test_run_lint_skips_recent_md_without_sessions(tmp_path, monkeypatch):
-    """run_lint does NOT create sessions/_recent.md for wikis without sessions/."""
+    """run_lint does NOT create sessions/_recent.txt for wikis without sessions/."""
     wiki_root = tmp_path / "wiki"
     w = wiki_root / "mywiki"
     (w / "concepts").mkdir(parents=True)
@@ -345,4 +349,4 @@ def test_run_lint_skips_recent_md_without_sessions(tmp_path, monkeypatch):
     run_lint(json_output=True)
 
     assert not (w / "sessions").exists()
-    assert not (w / "sessions" / "_recent.md").exists()
+    assert not (w / "sessions" / "_recent.txt").exists()

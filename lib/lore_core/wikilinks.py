@@ -36,7 +36,10 @@ def existing_slugs(wiki_path: Path) -> set[str]:
 
     Considers ``.md`` files only; files whose name starts with ``_``
     (``_index.md``, ``_recent.md``, etc.) are excluded since they're
-    derived/regenerable, not link targets.
+    derived/regenerable, not link targets. Generated collection files
+    use ``.txt`` (``_concepts.txt``, ``_decisions.txt``, ``_threads.txt``,
+    ``_recent.txt``) and are naturally excluded by the ``.md``-only glob —
+    that's the whole point of the ``.txt`` convention.
 
     Wikilink resolution in Lore is **per-wiki**. Wikis are portable
     units (shareable across vaults / teams); a wikilink that only

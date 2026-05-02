@@ -53,12 +53,17 @@ class ConflictKind(str, Enum):
 _REGENERABLE_FILENAMES = {
     "_catalog.json",
     "_index.txt",
-    "threads.md",
+    "_threads.txt",
+    "_concepts.txt",
+    "_decisions.txt",
+    "_recent.txt",
     # Legacy filenames — kept regenerable so a peer pushing from a
     # vault that hasn't run lint after upgrade still auto-resolves.
     # Drop once all clients have re-linted.
     "_index.md",
     "llms.txt",
+    "threads.md",
+    "_recent.md",
 }
 
 

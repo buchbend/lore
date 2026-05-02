@@ -4,7 +4,9 @@ A *thread* is a connected component of session notes that share at least
 one non-boilerplate file in their ``files_touched`` frontmatter. The
 algorithm runs entirely on the wiki's own metadata — no LLM, no
 back-patching of older notes — and the entire output is a single
-regenerated ``threads.md`` at the wiki root.
+regenerated ``_threads.txt`` at the wiki root. The ``.txt`` extension
+keeps the file out of the wikilink graph (``wikilinks.py:49`` globs
+``.md`` only) so it can't become a god-node.
 
 Why this shape (per Phase D architect review):
 - Continuation linking computed at *write* time means every new note
@@ -83,7 +85,7 @@ def compute_threads(notes: list[NoteRef]) -> list[Thread]:
 
     Singleton components (notes connected to nothing) are dropped: a
     thread is a *connection*, not a list of unrelated solo notes. The
-    rendered ``threads.md`` then lists only multi-note threads, which
+    rendered ``_threads.txt`` then lists only multi-note threads, which
     is the form a reader actually wants ("which days continue this
     work?").
     """
@@ -289,7 +291,7 @@ def render_threads_markdown(
     """Render a single Markdown index of all threads.
 
     The file is fully regenerated on each run — no stable IDs, no
-    handwritten content preserved. Treat ``threads.md`` as a derived
+    handwritten content preserved. Treat ``_threads.txt`` as a derived
     view, like ``_recent.md``.
 
     ``notes_scanned`` is optional; when given, the empty-state copy
@@ -350,7 +352,7 @@ def scan_session_notes(wiki_root: Path) -> list[NoteRef]:
     out: list[NoteRef] = []
     for md_path in sessions_dir.rglob("*.md"):
         if md_path.name.startswith("_"):
-            continue  # skip _recent.md and the like
+            continue  # skip _recent.md / _recent.txt and the like
         # Defensive belt-and-suspenders: the function MUST tolerate any
         # corrupt note (bad UTF-8, surprise YAML edge case, race with a
         # concurrent writer) without aborting the scan. One malformed

@@ -669,7 +669,19 @@ def _regenerate_threads_md(
         text = render_threads_markdown(
             threads, generated_at=now, notes_scanned=len(notes),
         )
-        atomic_write_text(wiki_root / "threads.md", text)
+        # Write to ``_threads.txt`` (underscore-prefixed, ``.txt`` so it
+        # stays out of the wikilink graph — see ``wikilinks.py:49``).
+        # Also clean up legacy ``threads.md`` so the vault self-heals on
+        # upgrade. Lint also removes it; this belt-and-suspenders means
+        # a Curator B run that pre-empts lint still removes the stale
+        # file in the same regen cycle.
+        atomic_write_text(wiki_root / "_threads.txt", text)
+        legacy_threads_md = wiki_root / "threads.md"
+        if legacy_threads_md.exists():
+            try:
+                legacy_threads_md.unlink()
+            except OSError:
+                pass
         if logger is not None:
             logger.emit(
                 "threads-regenerated",

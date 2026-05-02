@@ -321,10 +321,15 @@ def test_is_diverged_false_for_non_repo(tmp_path: Path) -> None:
         ("decisions/2026-04-26-pivot.md", ConflictKind.SURFACE),
         ("sessions/alice/2026/04/26-foo.md", ConflictKind.SESSION),
         ("_catalog.json", ConflictKind.REGENERABLE),
-        ("threads.md", ConflictKind.REGENERABLE),
+        ("_threads.txt", ConflictKind.REGENERABLE),
+        ("_concepts.txt", ConflictKind.REGENERABLE),
+        ("_decisions.txt", ConflictKind.REGENERABLE),
+        ("_recent.txt", ConflictKind.REGENERABLE),
         ("_index.txt", ConflictKind.REGENERABLE),
         # Legacy filenames still classified as regenerable during the
         # rollout window — see _REGENERABLE_FILENAMES in git_sync.py.
+        ("threads.md", ConflictKind.REGENERABLE),
+        ("_recent.md", ConflictKind.REGENERABLE),
         ("llms.txt", ConflictKind.REGENERABLE),
         ("_index.md", ConflictKind.REGENERABLE),
         ("CLAUDE.md", ConflictKind.UNKNOWN),

@@ -240,9 +240,9 @@ def test_curator_b_regenerates_threads_md_even_with_no_recent_notes(tmp_path):
     )
 
     assert result.notes_considered == 0  # confirm we hit the early-return path
-    threads_md = wiki_dir / "threads.md"
+    threads_md = wiki_dir / "_threads.txt"
     assert threads_md.exists(), \
-        "threads.md must regenerate even when no recent notes triggered clustering"
+        "_threads.txt must regenerate even when no recent notes triggered clustering"
     text = threads_md.read_text()
     assert "[[01-auth-day1]]" in text
     assert "[[02-auth-day2]]" in text
@@ -292,8 +292,8 @@ def test_curator_b_writes_threads_md_at_wiki_root(tmp_path):
         since=_NOW - timedelta(days=30),
     )
 
-    threads_md = wiki_dir / "threads.md"
-    assert threads_md.exists(), "Curator B must regenerate threads.md"
+    threads_md = wiki_dir / "_threads.txt"
+    assert threads_md.exists(), "Curator B must regenerate _threads.txt"
     text = threads_md.read_text()
     # Both auth-day notes appear (the thread); the schema solo note
     # does NOT appear because it has no peer to thread with.
