@@ -99,13 +99,11 @@ def list_active(
     timestamps, and missing fields all skip silently rather than
     failing the SessionStart hot path.
     """
-    pdir = plans_dir(wiki_root)
-    if not pdir.exists():
-        return []
+    from lore_core.plans.router import iter_plan_paths
 
     repo_matched: list[ActivePlanCard] = []
     wiki_general: list[ActivePlanCard] = []
-    for path in sorted(pdir.glob("*.md")):
+    for path in iter_plan_paths(wiki_root):
         card = _read_card(path)
         if card is None:
             continue
@@ -124,8 +122,21 @@ def list_active(
 
 
 def read_one(wiki_root: Path, slug: str) -> ActivePlanCard | None:
-    """Read a single plan by slug. Returns None if absent or malformed."""
-    return _read_card(plan_path(wiki_root, slug))
+    """Read a single plan by slug. Returns None if absent or malformed.
+
+    Searches both legacy flat ``plans/`` and project-folder
+    ``projects/*/plans/`` layouts, plus date-prefixed filenames.
+    """
+    from lore_core.plans.router import find_existing_plan_path
+
+    found = find_existing_plan_path(wiki_root, slug)
+    if found is None:
+        # Backward compat: caller may have a slug for a plan that doesn't
+        # exist yet — fall through to the legacy plan_path so the
+        # returned None has a stable Path-shaped traceback for callers
+        # that test for None vs. ActivePlanCard.
+        return _read_card(plan_path(wiki_root, slug))
+    return _read_card(found)
 
 
 def scan_incoming_wikilinks(

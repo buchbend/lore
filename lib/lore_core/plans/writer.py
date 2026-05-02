@@ -119,25 +119,48 @@ def write_plan_note(
     source_hash: str,
     source_adapter: str,
     repo: str | None = None,
+    scope: str | None = None,
     today: _date | None = None,
     description: str | None = None,
     extra_tags: list[str] | None = None,
 ) -> WriteResult:
-    """Materialize a :class:`StructuredPlan` to ``wiki/plans/<slug>.md``.
+    """Materialize a :class:`StructuredPlan` to disk.
+
+    Path resolution (Phase 5 dual-mode, see ``plans/router.py``):
+      - ``LORE_PROJECT_FOLDERS=on`` + matching project folder →
+        ``projects/<project-slug>/plans/YYYY-MM-DD-<slug>.md``
+      - ``LORE_PROJECT_FOLDERS=on`` + no matching project folder →
+        ``plans/YYYY-MM-DD-<slug>.md``
+      - Toggle off (default) → legacy ``plans/<slug>.md``
 
     The slug-level flock serializes concurrent invocations on the same
     plan; cross-plan writes proceed in parallel.
 
     ``description`` defaults to the plan title when not supplied.
     """
+    from lore_core.plans.router import (
+        find_existing_plan_path,
+        plan_target_path,
+    )
+
     today = today or _date.today()
-    plans_dir_path = plans_dir(wiki_root)
+
+    # Idempotence across the date-prefix change: re-captures on a
+    # later day must resolve to the original plan path, not write a
+    # duplicate at a new date-prefixed path.
+    existing = find_existing_plan_path(wiki_root, plan.slug)
+    if existing is not None:
+        target_path = existing
+    else:
+        target_path = plan_target_path(
+            wiki_root, plan.slug, today, repo=repo, scope=scope,
+        )
+    plans_dir_path = target_path.parent
     # Critical: create the dir BEFORE the flock open so an empty
     # ``plans/`` doesn't ENOENT the first-plan-in-fresh-wiki case.
     plans_dir_path.mkdir(parents=True, exist_ok=True)
 
     target_slug = plan.slug
-    target_path = plan_path(wiki_root, target_slug)
 
     with _slug_lock(plans_dir_path, target_slug):
         return _write_under_lock(
