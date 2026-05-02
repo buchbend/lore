@@ -257,6 +257,7 @@ def run_curator_b(
                                 surfaces_doc=surfaces_doc,
                                 extra_frontmatter=ab_extra,
                                 now=now,
+                                scope=cluster.scope,
                             )
                             result.surfaces_emitted.append(filed.path)
                             logger.emit(

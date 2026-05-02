@@ -35,10 +35,17 @@ def file_surface(
     surfaces_doc: SurfacesDoc,
     extra_frontmatter: dict[str, Any] | None = None,
     now: datetime | None = None,
+    scope: str | None = None,
 ) -> FiledSurface:
     """Write a curator-authored surface note. Always draft:true.
 
-    Path: <wiki_root>/<plural-of-surface-name>/<slug>.md
+    Path resolution (Phase 3 dual-mode):
+      - When ``LORE_PROJECT_FOLDERS=on`` AND a ``projects/<slug>/`` exists
+        for ``scope`` (last segment of the colon-separated chain), the
+        note lands at ``<wiki_root>/projects/<slug>/<surface-plural>/<slug>.md``.
+      - Otherwise (legacy flat path):
+        ``<wiki_root>/<plural-of-surface-name>/<slug>.md``
+
     Frontmatter: required fields from SURFACES.md (via required_fields_for)
                  + caller-supplied extras + draft:true + synthesis_sources.
 
@@ -63,7 +70,11 @@ def file_surface(
             f"this surface is authored by Curator A; use the dedicated writer"
         )
 
-    subdir = wiki_root / _directory_for(surface_def)
+    from lore_core.projects.router import resolve_surface_dir
+
+    subdir = resolve_surface_dir(
+        wiki_root, _directory_for(surface_def), scope=scope,
+    )
     subdir.mkdir(parents=True, exist_ok=True)
 
     slug_ctx: dict[str, Any] = {

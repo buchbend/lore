@@ -53,6 +53,15 @@ CANONICAL_SECTIONS: tuple[str, ...] = (
     "Key decisions",
 )
 
+# Bare-mode (Phase 3 hoist auto-stub) skips the "Key decisions" section
+# because decisions live under the project folder's ``decisions/``
+# subdirectory, not in the orientation body.
+BARE_CANONICAL_SECTIONS: tuple[str, ...] = (
+    "Overview",
+    "Conventions",
+    "Architecture",
+)
+
 
 # Files we look for in the repo root. Order matters only for documentation —
 # extraction is independent per file.
@@ -75,10 +84,11 @@ _HARNESS_FILES = (
 def stub_project_note(
     *,
     wiki_root: Path,
-    repo_root: Path,
+    repo_root: Path | None = None,
     repo_slug: str,
     scope: str | None = None,
     today: _date | None = None,
+    bare: bool = False,
 ) -> StubResult:
     """Compose and write the project note for ``repo_slug`` into ``wiki_root``.
 
@@ -88,8 +98,61 @@ def stub_project_note(
     Idempotent on re-call: if the note exists, its canonical-heading
     sections refresh; user content under any other heading is
     preserved.
+
+    ``bare`` mode (Phase 3, Curator C hoist auto-stub):
+      - ``repo_root`` is ignored (callers may pass ``None``).
+      - No harness file reads.
+      - Writes the folder-shaped layout
+        ``projects/<slug>/<slug>.md`` (orientation index for the project
+        folder) with a minimal Overview/Conventions/Architecture
+        skeleton. The "Key decisions" canonical section is dropped —
+        decisions live under ``projects/<slug>/decisions/`` now.
+      - Used by Curator C to materialise a parent project folder when
+        a hoist needs a home and no human attached the parent scope.
     """
     today = today or _date.today()
+
+    if bare:
+        slug = _safe_slug(repo_slug)
+        # Folder-shaped layout: projects/<slug>/<slug>.md as the
+        # orientation index. The folder doubles as home for the
+        # project's concepts/, decisions/, threads/, plans/ subdirs.
+        project_folder = projects_dir(wiki_root) / slug
+        target_path = project_folder / f"{slug}.md"
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        description = (
+            f"Project folder for scope `{scope}`."
+            if scope else f"Project folder for `{repo_slug}`."
+        )
+        sections = HarnessSections(
+            description=description,
+            overview="",
+            conventions="",
+            architecture="",
+        )
+        if target_path.exists():
+            return _refresh_in_place(
+                target_path=target_path,
+                repo_slug=repo_slug,
+                scope=scope,
+                sections=sections,
+                today=today,
+                bare=True,
+            )
+        return _file_fresh(
+            target_path=target_path,
+            repo_slug=repo_slug,
+            scope=scope,
+            sections=sections,
+            today=today,
+            bare=True,
+        )
+
+    if repo_root is None:
+        raise ValueError(
+            "stub_project_note: repo_root is required when bare=False"
+        )
 
     # Read whichever harness files are present in the repo.
     sources = _read_harness_sources(repo_root)
@@ -155,14 +218,18 @@ def _file_fresh(
     scope: str | None,
     sections: HarnessSections,
     today: _date,
+    bare: bool = False,
 ) -> StubResult:
     fm = _build_fresh_frontmatter(
         repo_slug=repo_slug,
         scope=scope,
         sections=sections,
         today=today,
+        bare=bare,
     )
-    body, written = _render_body(repo_slug=repo_slug, sections=sections)
+    body, written = _render_body(
+        repo_slug=repo_slug, sections=sections, bare=bare,
+    )
     text = _render_markdown(fm, body)
     atomic_write_text(target_path, text)
     return StubResult(
@@ -179,21 +246,26 @@ def _refresh_in_place(
     scope: str | None,
     sections: HarnessSections,
     today: _date,
+    bare: bool = False,
 ) -> StubResult:
     existing_text = target_path.read_text()
     existing_fm = parse_frontmatter(existing_text)
     existing_body = strip_frontmatter(existing_text)
 
     # Build new section bodies; merge into the existing body by canonical heading.
-    new_section_bodies = _section_bodies_map(sections)
-    merged_body = _merge_canonical_sections(existing_body, new_section_bodies)
+    new_section_bodies = _section_bodies_map(sections, bare=bare)
+    canonical = BARE_CANONICAL_SECTIONS if bare else CANONICAL_SECTIONS
+    merged_body = _merge_canonical_sections(
+        existing_body, new_section_bodies, canonical=canonical,
+    )
 
     # Frontmatter: refresh last_reviewed + system fields; preserve user
     # additions (description if user edited it, custom tags, scope).
     fm = dict(existing_fm)
     fm["schema_version"] = 2
     fm["type"] = "project"
-    fm["repo"] = repo_slug
+    if not bare:
+        fm["repo"] = repo_slug
     fm["last_reviewed"] = today.isoformat()
     if scope is not None:
         fm.setdefault("scope", scope)
@@ -208,7 +280,7 @@ def _refresh_in_place(
     return StubResult(
         path=target_path,
         was_new=False,
-        sections_written=[s for s in CANONICAL_SECTIONS if new_section_bodies.get(s)],
+        sections_written=[s for s in canonical if new_section_bodies.get(s)],
     )
 
 
@@ -218,31 +290,37 @@ def _build_fresh_frontmatter(
     scope: str | None,
     sections: HarnessSections,
     today: _date,
+    bare: bool = False,
 ) -> dict:
     fm: dict = {
         "schema_version": 2,
         "type": "project",
-        "repo": repo_slug,
         "created": today.isoformat(),
         "last_reviewed": today.isoformat(),
         "description": sections.description,
         "tags": ["project"],
     }
+    # Bare-mode stubs (Curator C hoist) don't have a single repo behind
+    # them — the parent scope may aggregate multiple sub-projects. Skip
+    # the ``repo:`` field; the user can fill it in if appropriate.
+    if not bare:
+        fm["repo"] = repo_slug
     if scope is not None:
         fm["scope"] = scope
     return fm
 
 
 def _render_body(
-    *, repo_slug: str, sections: HarnessSections
+    *, repo_slug: str, sections: HarnessSections, bare: bool = False,
 ) -> tuple[str, list[str]]:
     """Render fresh project-note body. Returns ``(body, written_section_names)``."""
-    section_bodies = _section_bodies_map(sections)
+    section_bodies = _section_bodies_map(sections, bare=bare)
+    canonical = BARE_CANONICAL_SECTIONS if bare else CANONICAL_SECTIONS
     written: list[str] = []
     parts: list[str] = []
     parts.append(f"# Project: {_display_name(repo_slug)}")
     parts.append("")
-    for heading in CANONICAL_SECTIONS:
+    for heading in canonical:
         body = section_bodies.get(heading, "")
         parts.append(f"## {heading}")
         parts.append("")
@@ -255,14 +333,20 @@ def _render_body(
     return "\n".join(parts).rstrip() + "\n", written
 
 
-def _section_bodies_map(sections: HarnessSections) -> dict[str, str]:
+def _section_bodies_map(
+    sections: HarnessSections, *, bare: bool = False,
+) -> dict[str, str]:
     """Map canonical heading → rendered body string (empty for missing sections)."""
-    return {
+    base: dict[str, str] = {
         "Overview": sections.overview,
         "Conventions": sections.conventions,
         "Architecture": sections.architecture,
-        "Key decisions": "",  # populated by curator passes (Phase 4+); empty for v1
     }
+    if not bare:
+        # populated by curator passes (Phase 4+); empty for v1 unless
+        # bare-mode dropped the section entirely.
+        base["Key decisions"] = ""
+    return base
 
 
 def _placeholder_for(heading: str) -> str:
@@ -278,7 +362,10 @@ def _placeholder_for(heading: str) -> str:
 
 
 def _merge_canonical_sections(
-    existing_body: str, new_section_bodies: dict[str, str]
+    existing_body: str,
+    new_section_bodies: dict[str, str],
+    *,
+    canonical: tuple[str, ...] = CANONICAL_SECTIONS,
 ) -> str:
     """Replace the body of each canonical heading; preserve everything else.
 
@@ -290,6 +377,11 @@ def _merge_canonical_sections(
 
     If a canonical section is *missing* from the existing body, it is
     appended at the end.
+
+    ``canonical`` parameterises which heading set is treated as
+    Lore-owned; bare-mode (Phase 3 hoist) passes the trimmed
+    :data:`BARE_CANONICAL_SECTIONS` so "Key decisions" stays
+    user-editable.
     """
     lines = existing_body.split("\n")
     out_lines: list[str] = []
@@ -299,6 +391,11 @@ def _merge_canonical_sections(
     while i < len(lines):
         line = lines[i]
         canonical_name = _canonical_heading_name(line)
+        # Bare-mode (Phase 3 hoist) passes a trimmed ``canonical`` set;
+        # any heading detected by the global detector but not in the
+        # caller's set is treated as user content (left alone).
+        if canonical_name is not None and canonical_name not in canonical:
+            canonical_name = None
         # Only the FIRST occurrence of a canonical heading is regenerated.
         # Duplicates (user accidentally pasted ``## Overview`` twice) are
         # preserved verbatim as user content — otherwise the second pass
@@ -327,7 +424,7 @@ def _merge_canonical_sections(
         i += 1
 
     # Append any canonical sections that didn't appear in the existing body.
-    for heading in CANONICAL_SECTIONS:
+    for heading in canonical:
         if heading in seen_canonical:
             continue
         if out_lines and out_lines[-1] != "":
