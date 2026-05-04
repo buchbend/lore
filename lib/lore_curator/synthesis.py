@@ -96,7 +96,7 @@ BULLET_CAPS = {
     "worked_on": 8,
     "loose_ends": 5,
 }
-BULLET_LINE_MAX = 120
+BULLET_LINE_MAX = 280
 PHASE2_MAX_ATTEMPTS = 3
 PHASE2_MAX_OUTPUT_TOKENS = 1024
 

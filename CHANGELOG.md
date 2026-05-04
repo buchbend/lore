@@ -10,6 +10,24 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.43.1] - 2026-05-04
+
+### Changed — bullet line cap raised 120 → 280 chars
+
+The Phase 2 ``BULLET_LINE_MAX = 120`` was too aggressive for technical
+session notes. Substantive decisions / loose-ends bullets routinely
+need PR refs, file paths, section numbers, and a clause of reasoning;
+120 chars routinely chopped them mid-word with an ellipsis ("…
+provisioners-add.sh as a thin alias of provisioners-bootstrap.sh (or
+delete) for now, updat…"). Raised to 280 (length of an old tweet,
+two terminal lines) — fits substantive bullets without going
+unbounded. Caps stay defensive: ``decisions <= 5``, ``worked_on
+<= 8``, ``loose_ends <= 5``.
+
+Existing notes whose bullets were already truncated stay as-is on
+disk; rerunning Phase 2 against their buffer (manual flush) would
+regenerate full bullets, but that's a per-note opt-in.
+
 ## [0.43.0] - 2026-05-04
 
 ### Fixed — synthesis no longer fabricates from boilerplate
