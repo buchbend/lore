@@ -122,6 +122,13 @@ class ManualSendAdapter:
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         return []
 
+    def transcript_path_for_id(self, session_id: str, cwd: Path) -> Path | None:
+        """Manual-send transcripts are user-supplied paths; no canonical
+        layout to resolve. Phase 2 synthesis falls back to deterministic
+        flush when this returns None, which is the right behaviour here.
+        """
+        return None
+
     def read_slice(self, handle: TranscriptHandle, from_index: int = 0) -> Iterator[Turn]:
         """Read from the path encoded in `handle.path`. Same parser as read_from."""
         for t in self.read_from(handle.path, handle.cwd, declared_integration=handle.integration):

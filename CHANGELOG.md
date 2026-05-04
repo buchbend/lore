@@ -10,6 +10,48 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-05-04
+
+### Fixed — synthesis no longer fabricates from boilerplate
+
+Phase 2 has been operating without ANY conversation content since
+buffer-and-flush shipped (PR 2 of the very-good-thats-the-mossy-lobster
+plan). ``synthesis._read_slice_text`` calls
+``adapter.transcript_path_for_id(session_id, cwd)`` to rebuild a
+TranscriptHandle from the buffer sidecar — but the method was added in
+that PR and **never implemented on any adapter**. Every call hit the
+silent ``tx_path is None: return ""`` branch, so the LLM prompt always
+ended with ``Conversation slice:\n`` (empty).
+
+Symptoms in user vaults: prompts capped at ~1.2K chars (boilerplate +
+comma-joined files-touched list), and mid-tier models confabulated
+confident-but-fictional narratives — e.g. a session about lore attach
+work was filed as ``Storage Engine Disk Identifier Tests Located``,
+and ccat HSM playbook work was filed under unrelated dockerfile
+basenames.
+
+- **Adapter Protocol** — adds ``transcript_path_for_id(session_id,
+  cwd) -> Path | None`` as a required method. Implementations:
+  ``ClaudeCodeAdapter`` (path math via ``_session_file_path``),
+  ``CursorAgentAdapter`` (per-uuid agent dir + glob fallback),
+  ``VSCodeCopilotAdapter`` (walks every VSCode-family user dir for the
+  workspace hash), ``ManualSendAdapter`` (returns None — no canonical
+  layout, Phase 2 falls back to deterministic flush).
+- **Empty-signal guard** — ``flush_buffer`` now skips the LLM entirely
+  when ``turns_text`` is empty AND the activity has no commits / plans
+  / projects to anchor on. The flush is marked degraded; the
+  deterministic Phase 1 stub stays. Prevents fabrication when the
+  conversation slice can't be retrieved (deleted transcript, adapter
+  returning None, etc.) and the file list alone is too thin to write
+  a substantive narrative.
+- **Prompt hardening** — when ``turns_text`` is empty (rare, but
+  possible: stub note for an issues-only session, etc.), the prompt
+  explicitly instructs the model to stay strictly on the activity
+  bullets and produce a terse factual summary rather than padding.
+- **Telemetry** — the ``llm-prompt`` event now includes
+  ``turns_text_chars`` and ``activity_summary_chars`` so this class of
+  regression is visible in run-log review.
+
 ## [0.42.0] - 2026-05-04
 
 ### Changed — session-note slugs follow the synthesised title

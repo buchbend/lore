@@ -117,6 +117,35 @@ def test_list_transcripts_returns_empty_when_projects_dir_missing(fake_home, tmp
     assert adapter.list_transcripts(cwd) == []
 
 
+def test_transcript_path_for_id_resolves_existing_session(fake_home, tmp_path):
+    """Phase 2 synthesis re-builds a TranscriptHandle from cwd + id; the
+    adapter must hand back the .jsonl path so the slice reader can stream
+    turns. Without this, the LLM is fed an empty conversation slice and
+    confabulates from the file-list alone.
+    """
+    cwd = tmp_path / "proj"
+    cwd.mkdir()
+    _write_session(fake_home, cwd, "abc-123", [_msg_event("user", "hi", session_id="abc-123")])
+
+    from lore_adapters.claude_code import ClaudeCodeAdapter
+
+    adapter = ClaudeCodeAdapter()
+    path = adapter.transcript_path_for_id("abc-123", cwd)
+    assert path is not None
+    assert path.exists()
+    assert path.name == "abc-123.jsonl"
+
+
+def test_transcript_path_for_id_returns_none_for_missing_session(fake_home, tmp_path):
+    cwd = tmp_path / "proj"
+    cwd.mkdir()
+
+    from lore_adapters.claude_code import ClaudeCodeAdapter
+
+    adapter = ClaudeCodeAdapter()
+    assert adapter.transcript_path_for_id("does-not-exist", cwd) is None
+
+
 # ---------------------------------------------------------------------------
 # _iter_turns normalisation
 # ---------------------------------------------------------------------------

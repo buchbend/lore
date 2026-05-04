@@ -105,7 +105,19 @@ def lore_root(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def patch_collectors(monkeypatch):
-    monkeypatch.setattr("lore_curator.session_activity.collect_commits_by_sha", lambda *a, **kw: [])
+    # Seed *some* commit signal so the Phase 2 empty-signal guard
+    # doesn't kick in for tests that exercise the LLM compose path.
+    # The guard skips the LLM when turns_text is empty AND there are no
+    # commits / plans / projects to anchor on — without this the unit
+    # tests would (rightly) be considered too thin to flush.
+    from lore_curator.session_activity import CommitRef
+
+    monkeypatch.setattr(
+        "lore_curator.session_activity.collect_commits_by_sha",
+        lambda *a, **kw: [
+            CommitRef(short_hash="abc1234", subject="fix: seeded commit", branch="main", repo="x"),
+        ],
+    )
     monkeypatch.setattr("lore_curator.session_activity.collect_issues_in_window", lambda *a, **kw: ([], []))
     monkeypatch.setattr("lore_curator.session_activity.collect_plans_advanced", lambda **kw: [])
     monkeypatch.setattr("lore_curator.session_activity.collect_projects_for_session", lambda **kw: [])
@@ -387,8 +399,8 @@ def test_phase2_renames_stub_to_slug_from_title(lore_root, patch_collectors, mon
     assert not stub_path.exists()  # old slug gone
     fm = parse_frontmatter(outcome.stub_path.read_text())
     # The aliased old stem must be the full filename stem (with date /
-    # time prefix), so existing [[01-1432-auth]] wikilinks still resolve.
-    assert "01-1432-auth" in (fm.get("aliases") or [])
+    # time prefix), so existing [[<old-stem>]] wikilinks still resolve.
+    assert stub_path.stem in (fm.get("aliases") or [])
 
 
 def test_phase2_skips_rename_for_continuation_part(lore_root, patch_collectors, monkeypatch):
@@ -420,8 +432,11 @@ def test_phase2_skips_rename_for_continuation_part(lore_root, patch_collectors, 
 
 def test_phase2_skips_rename_when_slug_equals_existing(lore_root, patch_collectors, monkeypatch):
     # Seed a stub whose existing slug already matches the title-derived slug.
+    # ``patch_collectors`` seeds a commit "fix: seeded commit" → slug
+    # "fix-seeded-commit". A title that hashes to the same slug should
+    # leave the path alone.
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
-    composed = {"title": "auth", "description": "d", "summary": "s"}
+    composed = {"title": "fix seeded commit", "description": "d", "summary": "s"}
     llm = _FakeLlmClient(_ok_responder(composed))
     outcome = flush_buffer(
         sidecar_path,
@@ -432,6 +447,41 @@ def test_phase2_skips_rename_when_slug_equals_existing(lore_root, patch_collecto
     )
     assert outcome.phase2_completed is True
     assert outcome.stub_path == stub_path  # same slug, no rename
+
+
+def test_phase2_skipped_when_signal_is_empty(lore_root, monkeypatch):
+    """No turns_text and no commits / plans / projects → skip the LLM.
+
+    Why: mid-tier models confabulate confidently when the prompt is just
+    boilerplate + a comma-joined files-touched list. We'd rather keep
+    the deterministic Phase 1 stub than fabricate a plausible-looking
+    fictional narrative.
+    """
+    # Replicate ``patch_collectors`` minus the commit seed — leaves
+    # commits / plans / projects empty.
+    monkeypatch.setattr("lore_curator.session_activity.collect_commits_by_sha", lambda *a, **kw: [])
+    monkeypatch.setattr("lore_curator.session_activity.collect_issues_in_window", lambda *a, **kw: ([], []))
+    monkeypatch.setattr("lore_curator.session_activity.collect_plans_advanced", lambda **kw: [])
+    monkeypatch.setattr("lore_curator.session_activity.collect_projects_for_session", lambda **kw: [])
+    monkeypatch.setattr("lore_core.git.git_repo_root", lambda cwd: None)
+    monkeypatch.setattr("lore_core.git.current_repo", lambda cwd: "")
+
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    composed = {"title": "fabricated", "description": "d", "summary": "s"}
+    fake = _FakeLlmClient(_ok_responder(composed))
+
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=fake,
+        model="m",
+    )
+    assert outcome.phase1_completed is True
+    assert outcome.phase2_completed is False
+    assert outcome.degraded is True
+    # The LLM was NEVER called — confirms the guard fired.
+    assert fake.messages.calls == []
 
 
 def test_phase2_rename_avoids_collision(lore_root, patch_collectors, monkeypatch):

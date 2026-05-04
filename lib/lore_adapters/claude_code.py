@@ -96,6 +96,15 @@ class ClaudeCodeAdapter:
 
     integration = "claude-code"
 
+    def transcript_path_for_id(self, session_id: str, cwd: Path) -> Path | None:
+        """Return the .jsonl path for ``session_id`` under ``cwd``'s project dir.
+
+        Claude Code's deterministic layout means we can derive the path
+        without listing — pure path math.
+        """
+        path = _session_file_path(Path(cwd), session_id)
+        return path if path.exists() else None
+
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         projects = _projects_dir_for(Path(directory))
         if not projects.exists():

@@ -204,6 +204,35 @@ def test_list_transcripts_empty_when_no_workspace_json(tmp_home, tmp_path) -> No
     not sys.platform.startswith("linux") and sys.platform != "darwin",
     reason="probe paths only exercised on linux/darwin",
 )
+def test_transcript_path_for_id_resolves_existing_session(tmp_home, tmp_path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    _seed_workspace(tmp_home, project, jsonl_lines=[json.dumps({
+        "kind": 0, "v": {"version": 3, "requests": [
+            {"requestId": "r1", "message": "hi", "response": "hello"}
+        ]},
+    })], session_id="my-session")
+
+    path = VSCodeCopilotAdapter().transcript_path_for_id("my-session", project)
+    assert path is not None
+    assert path.exists()
+    assert path.name == "my-session.jsonl"
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux") and sys.platform != "darwin",
+    reason="probe paths only exercised on linux/darwin",
+)
+def test_transcript_path_for_id_returns_none_for_unknown_session(tmp_home, tmp_path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    assert VSCodeCopilotAdapter().transcript_path_for_id("nope", project) is None
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux") and sys.platform != "darwin",
+    reason="probe paths only exercised on linux/darwin",
+)
 def test_list_transcripts_covers_cursor_variant(tmp_home, tmp_path) -> None:
     """Copilot Chat installed inside Cursor writes to Cursor's user-data dir."""
     project = tmp_path / "proj"

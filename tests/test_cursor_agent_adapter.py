@@ -99,6 +99,26 @@ def test_list_transcripts_finds_jsonl(tmp_home, tmp_path) -> None:
     assert h.path.name == f"{uuid}.jsonl"
 
 
+def test_transcript_path_for_id_resolves_existing_session(tmp_home, tmp_path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    _seed_cursor_tree(tmp_home, project, uuid, [
+        json.dumps({"id": "1", "role": "user", "content": [{"type": "text", "text": "hi"}]}),
+    ])
+
+    path = CursorAgentAdapter().transcript_path_for_id(uuid, project)
+    assert path is not None
+    assert path.exists()
+    assert path.name == f"{uuid}.jsonl"
+
+
+def test_transcript_path_for_id_returns_none_for_missing_session(tmp_home, tmp_path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    assert CursorAgentAdapter().transcript_path_for_id("nope", project) is None
+
+
 def test_list_transcripts_skips_non_jsonl(tmp_home, tmp_path) -> None:
     project = tmp_path / "proj"
     project.mkdir()

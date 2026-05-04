@@ -70,6 +70,24 @@ class CursorAgentAdapter:
 
     integration = "cursor"
 
+    def transcript_path_for_id(self, session_id: str, cwd: Path) -> Path | None:
+        """Return the .jsonl path for ``session_id`` under ``cwd``.
+
+        Cursor stores one ``<uuid>.jsonl`` inside an agent directory
+        named after the same uuid: ``agent-transcripts/<id>/<id>.jsonl``.
+        Falls back to a glob if the conventional layout doesn't match.
+        """
+        slug = _slug_for_cwd(Path(cwd))
+        agent_dir = _cursor_projects_dir() / slug / "agent-transcripts" / session_id
+        if not agent_dir.is_dir():
+            return None
+        candidate = agent_dir / f"{session_id}.jsonl"
+        if candidate.exists():
+            return candidate
+        for jsonl in agent_dir.glob("*.jsonl"):
+            return jsonl
+        return None
+
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         slug = _slug_for_cwd(Path(directory))
         project_dir = _cursor_projects_dir() / slug

@@ -378,6 +378,8 @@ def compose_session_note(
             call="compose-session-note",
             transcript_id=transcript_id,
             prompt_chars=len(prompt),
+            turns_text_chars=len(turns_text),
+            activity_summary_chars=len(activity_summary),
         )
     t0 = time.monotonic()
     try:
@@ -459,11 +461,28 @@ def _phase2_prompt(
             "use it to anchor the narrative):",
             activity_summary,
         ])
-    parts.extend([
-        "",
-        "Conversation slice:",
-        turns_text,
-    ])
+    if turns_text:
+        parts.extend([
+            "",
+            "Conversation slice:",
+            turns_text,
+        ])
+    else:
+        # No transcript content available — make the LLM stay close to
+        # the deterministic activity rather than confabulating a story.
+        # Without this guardrail, mid-tier models reach for generic
+        # engineering narratives that have nothing to do with the work.
+        parts.extend([
+            "",
+            "No conversation slice is available for this flush. Compose "
+            "the narrative *strictly* from the activity bullets above — "
+            "do NOT invent decisions, designs, or details that aren't "
+            "directly evidenced by the file paths, commit subjects, "
+            "plan / project references, or issue numbers shown. If the "
+            "signal is too thin to write a substantive summary, keep "
+            "the summary terse and factual ('Touched X, Y, Z; no "
+            "narrative reconstruction available.') rather than padding.",
+        ])
     return "\n".join(parts)
 
 
@@ -851,6 +870,31 @@ def flush_buffer(
         if sidecar.part_index >= 2 and sidecar.continuation_of
         else None
     )
+
+    # Guard: don't ask the LLM to fabricate a narrative from boilerplate
+    # alone. When the conversation slice is empty AND the activity has
+    # no commits / plans / projects to anchor on, the model confabulates
+    # confidently — silently producing a fictional session note. Better
+    # to keep the deterministic Phase 1 stub and mark the flush degraded.
+    rb_for_signal = rb_post or rb
+    has_signal = bool(turns_text) or bool(
+        rb_for_signal.activity_commits
+        or rb_for_signal.plans
+        or rb_for_signal.projects
+    )
+    if not has_signal:
+        outcome.degraded = True
+        if logger is not None:
+            logger.emit(
+                "flush-degraded",
+                transcript_id=sidecar.transcript_id,
+                buffer_stem=buffer.stem,
+                reason="empty-signal-skipped-llm",
+                turns_text_chars=len(turns_text),
+                files_touched=len(rb_for_signal.files_touched),
+                commits=len(rb_for_signal.activity_commits),
+            )
+        return outcome
 
     composed: dict[str, Any] | None = None
     attempts = 0

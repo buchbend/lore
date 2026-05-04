@@ -66,3 +66,18 @@ class Adapter(Protocol):
     def is_complete(self, handle: TranscriptHandle) -> bool:
         """True if the transcript's session has ended (vs. being actively written)."""
         ...
+
+    def transcript_path_for_id(
+        self,
+        session_id: str,
+        cwd: Path,
+    ) -> Path | None:
+        """Resolve a transcript .jsonl path from ``session_id`` + ``cwd``.
+
+        Used by Phase 2 synthesis to re-build a TranscriptHandle from the
+        buffer sidecar (which only carries cwd + session id, not the
+        full handle). Implementations should return None when the
+        transcript can't be located — the caller falls back to a
+        deterministic-only flush when this happens.
+        """
+        ...

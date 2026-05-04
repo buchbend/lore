@@ -169,6 +169,26 @@ class VSCodeCopilotAdapter:
 
     integration = "copilot"
 
+    def transcript_path_for_id(self, session_id: str, cwd: Path) -> Path | None:
+        """Return the .jsonl path for ``session_id`` under ``cwd``.
+
+        Walks every VSCode-family user dir (Stable, Insiders, Cursor)
+        because the same workspace hash can map to different storage
+        roots; first hit wins.
+        """
+        resolved = Path(cwd).resolve()
+        for user_dir in _vscode_family_user_dirs():
+            ws_hash = _workspace_hash_for_path(resolved, user_dir)
+            if ws_hash is None:
+                continue
+            candidate = (
+                user_dir / "workspaceStorage" / ws_hash
+                / "chatSessions" / f"{session_id}.jsonl"
+            )
+            if candidate.exists():
+                return candidate
+        return None
+
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         cwd = Path(directory).resolve()
         out: list[TranscriptHandle] = []
