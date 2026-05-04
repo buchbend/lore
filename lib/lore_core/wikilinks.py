@@ -41,6 +41,11 @@ def existing_slugs(wiki_path: Path) -> set[str]:
     ``_recent.txt``) and are naturally excluded by the ``.md``-only glob —
     that's the whole point of the ``.txt`` convention.
 
+    Frontmatter ``aliases:`` (Obsidian convention) are also included so
+    that a renamed note can leave an ``aliases: [old-stem]`` breadcrumb
+    and existing ``[[old-stem]]`` references keep resolving without a
+    vault-wide rewrite.
+
     Wikilink resolution in Lore is **per-wiki**. Wikis are portable
     units (shareable across vaults / teams); a wikilink that only
     resolves via a sibling wiki breaks the moment the wiki is
@@ -53,7 +58,38 @@ def existing_slugs(wiki_path: Path) -> set[str]:
         if p.name.startswith("_"):
             continue
         slugs.add(p.stem)
+        slugs.update(_aliases_from_file(p))
     return slugs
+
+
+def _aliases_from_file(path: Path) -> set[str]:
+    """Read ``aliases:`` from a note's frontmatter, if any.
+
+    Cheap pre-filter: peek the first 2KB and bail out unless both a
+    YAML fence and the literal substring ``aliases`` are present. Avoids
+    a full YAML parse on the vast majority of notes that don't use
+    aliases.
+    """
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            head = fh.read(2048)
+    except OSError:
+        return set()
+    if not head.startswith("---") or "aliases" not in head:
+        return set()
+    from lore_core.schema import parse_frontmatter
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    fm = parse_frontmatter(text)
+    raw = fm.get("aliases")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return set()
+    return {str(a).strip() for a in raw if str(a).strip()}
 
 
 def sanitize_for_write(text: str, wiki_root: Path) -> str:

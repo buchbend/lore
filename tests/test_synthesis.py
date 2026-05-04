@@ -258,9 +258,14 @@ def test_phase2_rewrites_title_and_summary(lore_root, patch_collectors, monkeypa
     )
     assert outcome.phase2_completed is True
     assert outcome.phase2_attempts == 1
-    fm = parse_frontmatter(stub_path.read_text())
+    # Phase 2 may rename the stub from the deterministic basename slug
+    # ("auth") to one derived from the synthesised title.
+    final_path = outcome.stub_path
+    assert final_path is not None
+    assert final_path.exists()
+    fm = parse_frontmatter(final_path.read_text())
     assert fm["title"] == "auth handler refactor"
-    text = stub_path.read_text()
+    text = final_path.read_text()
     assert "## Summary" in text
     assert "## Decisions made" in text
     assert "## What we worked on" in text
@@ -323,14 +328,14 @@ def test_phase2_truncates_overlong_bullets(lore_root, patch_collectors, monkeypa
         "loose_ends": [],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
-    flush_buffer(
+    outcome = flush_buffer(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
         llm_client=llm,
         model="m",
     )
-    text = stub_path.read_text()
+    text = outcome.stub_path.read_text()
     # Only the cap'd count of decision lines.
     decision_count = text.count("- d-")
     assert decision_count == BULLET_CAPS["decisions"]
@@ -353,3 +358,101 @@ def test_phase2_skipped_without_llm_client(lore_root, patch_collectors, monkeypa
     assert outcome.phase1_completed is True
     assert outcome.phase2_completed is False
     assert outcome.degraded is False
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 rename — slug-from-title takes over from the deterministic stub
+# ---------------------------------------------------------------------------
+
+
+def test_phase2_renames_stub_to_slug_from_title(lore_root, patch_collectors, monkeypatch):
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    composed = {
+        "title": "auth handler refactor",
+        "description": "d", "summary": "s",
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert outcome.phase2_completed is True
+    assert outcome.stub_path is not None
+    assert outcome.stub_path.name == "01-1432-auth-handler-refactor.md"
+    assert outcome.wikilink == "[[01-1432-auth-handler-refactor]]"
+    assert not stub_path.exists()  # old slug gone
+    fm = parse_frontmatter(outcome.stub_path.read_text())
+    # The aliased old stem must be the full filename stem (with date /
+    # time prefix), so existing [[01-1432-auth]] wikilinks still resolve.
+    assert "01-1432-auth" in (fm.get("aliases") or [])
+
+
+def test_phase2_skips_rename_for_continuation_part(lore_root, patch_collectors, monkeypatch):
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    # Mark the stub as part 2 of a continuation chain — rename would
+    # orphan ``continued_by:`` / ``continues:`` cross-references on the
+    # prior part.
+    buf = Buffer.from_sidecar_path(sidecar_path)
+    with buf.with_lock():
+        buf.patch(part_index=2, continuation_of="01-0900-prior-stub")
+
+    composed = {"title": "completely different title", "description": "d", "summary": "s"}
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert outcome.phase2_completed is True
+    # Path unchanged — same as the seeded stub.
+    assert outcome.stub_path == stub_path
+    assert stub_path.exists()
+    fm = parse_frontmatter(stub_path.read_text())
+    # No alias added, since we didn't rename.
+    assert "aliases" not in fm or not fm["aliases"]
+
+
+def test_phase2_skips_rename_when_slug_equals_existing(lore_root, patch_collectors, monkeypatch):
+    # Seed a stub whose existing slug already matches the title-derived slug.
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    composed = {"title": "auth", "description": "d", "summary": "s"}
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert outcome.phase2_completed is True
+    assert outcome.stub_path == stub_path  # same slug, no rename
+
+
+def test_phase2_rename_avoids_collision(lore_root, patch_collectors, monkeypatch):
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    # Place a pre-existing note at the target name so the rename has to
+    # bump the collision counter.
+    target_dir = stub_path.parent
+    pre_existing = target_dir / "01-1432-auth-handler-refactor.md"
+    pre_existing.write_text("---\ntype: session\n---\nsomeone else\n")
+
+    composed = {"title": "auth handler refactor", "description": "d", "summary": "s"}
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert outcome.phase2_completed is True
+    assert outcome.stub_path == target_dir / "01-1432-auth-handler-refactor-2.md"
+    # Pre-existing collision sibling untouched.
+    assert pre_existing.exists()
+    assert "someone else" in pre_existing.read_text()

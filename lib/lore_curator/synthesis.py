@@ -69,6 +69,7 @@ from lore_curator.buffer_store import (
     _now_iso,
     done_dir,
 )
+from lore_curator.session_filer import _slug
 from lore_curator.stub_note import (
     STUB_DESCRIPTION_PLACEHOLDER,
     STUB_FRONTMATTER_STATE,
@@ -614,8 +615,17 @@ def _phase2_apply(
     wiki_root: Path,
     rb: ReplayedBuffer,
     sidecar: Sidecar,
-) -> None:
-    """Rewrite the finalised stub with the LLM-composed narrative."""
+    logger: "RunLogger | None" = None,
+) -> Path:
+    """Rewrite the finalised stub with the LLM-composed narrative.
+
+    Returns the final stub path. Phase 2 may rename the file from the
+    deterministic-slug stub (often a fallback like ``session-<scope>-<HHMM>``
+    or a generic basename) to one derived from the synthesised title —
+    the title is the most authoritative naming signal we ever get for
+    the note. Old stem is preserved as a frontmatter ``aliases:`` entry
+    so existing ``[[old-stem]]`` references keep resolving.
+    """
     text = stub_path.read_text()
     fm = parse_frontmatter(text)
     body_text = strip_frontmatter(text)  # noqa: F841 - body re-rendered from scratch
@@ -635,6 +645,19 @@ def _phase2_apply(
     fm["title"] = title
     fm["description"] = description
     fm["last_reviewed"] = datetime.now(UTC).date().isoformat()
+
+    # Pick the final path. May rename when the synthesised title yields
+    # a richer slug than the deterministic stub.
+    final_path = _resolve_phase2_path(stub_path=stub_path, title=title, sidecar=sidecar)
+    if final_path != stub_path:
+        old_stem = stub_path.stem
+        existing_aliases = fm.get("aliases") or []
+        if isinstance(existing_aliases, str):
+            existing_aliases = [existing_aliases]
+        if old_stem not in existing_aliases:
+            existing_aliases = [*existing_aliases, old_stem]
+        fm["aliases"] = existing_aliases
+
     body = render_body_sections(BodySections(
         title=title,
         summary=summary,
@@ -647,6 +670,79 @@ def _phase2_apply(
     ))
     new_text = _render_markdown(fm, body, wiki_root=wiki_root)
     atomic_write_text(stub_path, new_text)
+
+    if final_path != stub_path:
+        # Rename in place. ``os.replace`` is atomic on POSIX; on a
+        # collision we fall back to incrementing the slug counter.
+        import os
+
+        try:
+            os.replace(stub_path, final_path)
+        except OSError as exc:
+            # Rename failed (e.g., cross-device) — keep the old path,
+            # drop the alias we added since the rename didn't happen.
+            if logger is not None:
+                logger.emit(
+                    "warning",
+                    call="phase2-rename",
+                    message=f"rename {stub_path.name} → {final_path.name} failed: {exc}",
+                )
+            return stub_path
+        if logger is not None:
+            logger.emit(
+                "stub-renamed-on-synthesis",
+                transcript_id=sidecar.transcript_id,
+                buffer_stem=sidecar.buffer_stem if hasattr(sidecar, "buffer_stem") else "",
+                old_path=str(stub_path),
+                new_path=str(final_path),
+            )
+        return final_path
+    return stub_path
+
+
+# Pattern for the canonical session filename: "<DD>-<HHMM>-<slug>.md".
+# The slug-portion can itself contain hyphens; we use a maxsplit=2 split
+# on the stem to peel off the date and time prefixes safely.
+_SESSION_STEM_PARTS = 3
+
+
+def _resolve_phase2_path(
+    *, stub_path: Path, title: str, sidecar: Sidecar,
+) -> Path:
+    """Return the path the Phase 2 note should live at.
+
+    Equal to ``stub_path`` when:
+    * the note is part 2+ of a continuation chain (renaming would
+      orphan ``continued_by`` / ``continues`` cross-references);
+    * the synthesised title is empty / equals the placeholder;
+    * the title-derived slug already matches the stub's slug-portion;
+    * the stub path doesn't conform to ``<DD>-<HHMM>-<slug>.md``.
+
+    Otherwise: the same directory and ``<DD>-<HHMM>-`` prefix with the
+    slug-portion replaced by ``_slug(title)``, suffixed with a collision
+    counter when needed.
+    """
+    if sidecar.part_index >= 2 or sidecar.continuation_of:
+        return stub_path
+    if not title.strip():
+        return stub_path
+    new_slug = _slug(title)
+    if not new_slug or new_slug == "session":
+        return stub_path
+    parts = stub_path.stem.split("-", _SESSION_STEM_PARTS - 1)
+    if len(parts) < _SESSION_STEM_PARTS:
+        return stub_path
+    current_slug = parts[_SESSION_STEM_PARTS - 1]
+    if new_slug == current_slug:
+        return stub_path
+    prefix = f"{parts[0]}-{parts[1]}-"
+    parent = stub_path.parent
+    candidate = parent / f"{prefix}{new_slug}.md"
+    counter = 1
+    while candidate.exists() and candidate != stub_path:
+        counter += 1
+        candidate = parent / f"{prefix}{new_slug}-{counter}.md"
+    return candidate
 
 
 # ---------------------------------------------------------------------------
@@ -786,12 +882,13 @@ def flush_buffer(
         return outcome
 
     try:
-        _phase2_apply(
+        final_path = _phase2_apply(
             stub_path=outcome.stub_path,
             composed=composed,
             wiki_root=wiki_root,
             rb=rb_post or rb,
             sidecar=sidecar,
+            logger=logger,
         )
     except OSError as exc:
         outcome.degraded = True
@@ -803,6 +900,9 @@ def flush_buffer(
             )
         return outcome
 
+    if final_path != outcome.stub_path:
+        outcome.stub_path = final_path
+        outcome.wikilink = f"[[{final_path.stem}]]"
     outcome.phase2_completed = True
     outcome.composed = composed
     if logger is not None:

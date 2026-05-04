@@ -10,6 +10,45 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-05-04
+
+### Changed — session-note slugs follow the synthesised title
+
+The deterministic stub slug (set at first heartbeat from a commit
+subject / files-touched basename / `session-<scope>-<HHMM>` fallback)
+was never re-derived after Phase 2 wrote a real title. Filenames like
+`04-1101-session-lore-1101.md` and `04-1318-attach.md` lingered
+forever, even though the in-content title was meaningful.
+
+- **Phase 2 rename.** `_phase2_apply` now derives a slug from the
+  composed title and renames the stub when it differs from the seed.
+  Skips part-2+ continuation chains (renaming would orphan
+  `continued_by:` cross-refs on the prior part) and notes whose new
+  slug matches the existing one. The old stem is written into
+  `aliases:` so existing `[[old-stem]]` references resolve.
+- **Wikilink resolver follows aliases.** `existing_slugs` now reads
+  frontmatter `aliases:` (cheap pre-filter — only files containing
+  literal `aliases` get a YAML parse) so the alias trail is honoured
+  by `sanitize_for_write` and `strip_broken_wikilinks`.
+- **Backfill CLI.** `lore curator backfill-slugs [--wiki <name>]
+  [--apply]` walks the historical backlog and applies the same
+  rename retroactively. Skips stubs awaiting synthesis, continuation
+  chains, placeholder-title notes, and already-canonical names.
+
+### Changed — reaper reaps known-dead owners immediately
+
+The reaper required `staleness_threshold_s` (30 min default, doubled
+on macOS) to elapse before reaping any buffer. Short Claude sessions
+that died without `SessionEnd` would leave stub notes stuck in
+`synthesis pending` for the full window, even though the owner pid
+was already gone.
+
+- **`reaper._judge`.** When `is_owner_alive` returns `False`
+  (unambiguous: host mismatch, `ProcessLookupError`, or start-ts
+  mismatch indicating PID reuse), reap immediately. The uncertain
+  branch (`alive_verdict is None` — no `/proc`, network fs, macOS)
+  still falls back on staleness to avoid false positives.
+
 ## [0.41.0] - 2026-05-04
 
 ### Changed — Step-9: migration session + flip default

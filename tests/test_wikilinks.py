@@ -129,3 +129,38 @@ def test_existing_slugs_collects_md_stems(tmp_path: Path):
     (tmp_path / "concepts" / "gamma.txt").write_text("x")  # non-md → skip
     slugs = existing_slugs(tmp_path)
     assert slugs == {"alpha", "beta"}
+
+
+def test_existing_slugs_includes_frontmatter_aliases(tmp_path: Path):
+    """Notes with ``aliases:`` in frontmatter contribute extra entries.
+
+    Required so that when a note is renamed and leaves an alias trail,
+    pre-existing ``[[old-stem]]`` references still resolve.
+    """
+    (tmp_path / "sessions").mkdir()
+    (tmp_path / "sessions" / "01-1432-auth-handler-refactor.md").write_text(
+        "---\n"
+        "type: session\n"
+        "aliases:\n"
+        "  - 01-1432-auth\n"
+        "  - 01-1432-session-lore-1432\n"
+        "---\n"
+        "body\n"
+    )
+    (tmp_path / "sessions" / "no-aliases.md").write_text(
+        "---\ntype: session\n---\nbody\n"
+    )
+    slugs = existing_slugs(tmp_path)
+    assert "01-1432-auth-handler-refactor" in slugs
+    assert "01-1432-auth" in slugs  # alias resolves
+    assert "01-1432-session-lore-1432" in slugs  # alias resolves
+    assert "no-aliases" in slugs
+
+
+def test_existing_slugs_handles_string_alias_form(tmp_path: Path):
+    """Frontmatter ``aliases: foo`` (string, not list) also works."""
+    (tmp_path / "n.md").write_text(
+        "---\ntype: session\naliases: legacy-stem\n---\nbody\n"
+    )
+    slugs = existing_slugs(tmp_path)
+    assert slugs == {"n", "legacy-stem"}

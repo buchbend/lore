@@ -120,11 +120,34 @@ def test_dead_owner_and_stale_is_reaped(lore_root, monkeypatch):
     assert spawned and spawned[0][0] == buf.sidecar_path
 
 
-def test_dead_owner_but_fresh_heartbeat_not_reaped(lore_root, monkeypatch):
+def test_dead_owner_reaped_immediately_even_with_fresh_heartbeat(lore_root, monkeypatch):
+    """Owner pid unambiguously dead → reap regardless of heartbeat freshness.
+
+    Why: short Claude sessions that die without a clean SessionEnd would
+    otherwise leave stub notes in 'synthesis pending' for the full
+    staleness window (30+ min). Once the PID is provably gone, waiting
+    buys nothing.
+    """
     buf, _ = _seed(lore_root)
     monkeypatch.setattr("lore_curator.reaper.is_owner_alive", lambda s, **kw: False)
+
+    spawned: list[Path] = []
+    monkeypatch.setattr(
+        "lore_curator.reaper.spawn_detached_flush",
+        lambda buffer_path, lore_root: spawned.append(buffer_path) or True,
+    )
     report = reap_once(lore_root)
-    # Fresh last_heartbeat protects it.
+    assert report.force_flushed == 1
+    assert spawned == [buf.sidecar_path]
+
+
+def test_uncertain_liveness_with_fresh_heartbeat_not_reaped(lore_root, monkeypatch):
+    """``alive_verdict is None`` (uncertain — no /proc) keeps the
+    staleness floor: don't false-positive reap on macOS / network-fs
+    when the heartbeat is fresh."""
+    buf, _ = _seed(lore_root)
+    monkeypatch.setattr("lore_curator.reaper.is_owner_alive", lambda s, **kw: None)
+    report = reap_once(lore_root)
     assert report.force_flushed == 0
     assert report.alive == 1
 

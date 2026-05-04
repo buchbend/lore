@@ -412,10 +412,10 @@ def reap_command(
 ) -> None:
     """Scan live buffers for crashed-owner sessions and force-flush.
 
-    See ``lore_curator.reaper`` for the liveness contract: stale
-    last_heartbeat AND (host mismatch OR pid dead) AND start_ts mismatch
-    must all hold before a buffer is force-flushed under spawn role
-    ``a-flush``.
+    See ``lore_curator.reaper`` for the liveness contract: an
+    unambiguously-dead owner pid is reaped immediately; uncertain
+    liveness (no /proc, network fs, macOS) falls back on the staleness
+    threshold. Force-flushes run under spawn role ``a-flush``.
     """
     from lore_cli._cli_helpers import lore_root_or_die
     from lore_curator.reaper import reap_once
@@ -430,6 +430,75 @@ def reap_command(
     )
     for stem, reason in report.skipped:
         console.print(f"  [dim]skipped[/dim] {stem}: {reason}")
+
+
+@app.command("backfill-slugs")
+def backfill_slugs_command(
+    wiki: str = typer.Option(
+        None, "--wiki", help="Scope to one wiki. Default: every wiki under lore_root.",
+    ),
+    apply: bool = typer.Option(
+        False,
+        "--apply/--dry-run",
+        help="Actually rename + write aliases. Default: dry-run that prints the plan.",
+    ),
+) -> None:
+    """One-shot rename of session notes whose slug is cryptic.
+
+    Walks ``wiki/<name>/sessions/`` and renames any non-stub session
+    note whose filename slug differs from ``_slug(title)``. The old
+    stem is preserved as a frontmatter ``aliases:`` entry so existing
+    ``[[old-stem]]`` references keep resolving.
+
+    Skips:
+
+    * stubs awaiting Phase 2 synthesis (``state: stub``)
+    * continuation chains (``part >= 2`` or ``continues:``)
+    * notes without a real title (placeholder or empty)
+    * notes whose filename already matches the title-derived slug
+    """
+    from lore_cli._cli_helpers import lore_root_or_die
+    from lore_curator.backfill_slugs import backfill_wiki
+
+    err_console = Console(stderr=True)
+    lore_root = lore_root_or_die(err_console)
+    wikis = [wiki] if wiki else _discover_wikis(lore_root)
+    if not wikis:
+        err_console.print("[yellow]no wikis found under lore_root[/yellow]")
+        raise typer.Exit(code=1)
+
+    grand_planned = 0
+    grand_renamed = 0
+    for w in wikis:
+        wiki_path = lore_root / "wiki" / w
+        if not wiki_path.exists():
+            err_console.print(f"[yellow]skip[/yellow] {w}: not found at {wiki_path}")
+            continue
+        report = backfill_wiki(wiki_path, apply=apply)
+        verb = "would rename" if not apply else "renamed"
+        console.print(
+            f"[bold]{w}[/bold] — scanned={report.scanned}, "
+            f"{verb}={len(report.planned) if not apply else len(report.renamed)}, "
+            f"skipped(stub={report.skipped_stub}, "
+            f"chain={report.skipped_chain}, "
+            f"no-title={report.skipped_no_title}, "
+            f"canonical={report.skipped_already_canonical})"
+        )
+        for plan in report.planned:
+            arrow = "→" if not apply else "✓"
+            console.print(
+                f"  {arrow} {plan.old_path.name} → {plan.new_path.name}"
+                f"  [dim]({plan.title})[/dim]"
+            )
+        for path, reason in report.failed:
+            console.print(f"  [red]fail[/red] {path.name}: {reason}")
+        grand_planned += len(report.planned)
+        grand_renamed += len(report.renamed)
+
+    if not apply and grand_planned:
+        console.print(
+            f"\n[dim]dry-run; pass --apply to rename {grand_planned} note(s).[/dim]"
+        )
 
 
 main = argv_main(app)

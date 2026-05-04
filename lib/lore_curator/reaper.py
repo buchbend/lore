@@ -6,19 +6,20 @@ a clean SessionEnd hook firing" and "long heartbeat gap with no
 activity". Cap-trip is the floor for size; the reaper is the floor for
 time.
 
-Liveness verdict (all THREE must say "dead" before reap fires):
+Liveness verdict:
 
-1. ``last_heartbeat`` older than ``liveness_stale_threshold_s`` (default
-   30 min, configurable per-wiki).
-2. Owner host mismatches the local host, OR ``os.kill(pid, 0)`` raises
-   ``ProcessLookupError`` (PID is gone).
-3. ``/proc/<pid>/stat`` field 22 (start time in clock ticks since boot)
-   no longer matches ``owner.start_ts`` (within +/- 2 s) — guards
-   against PID reuse on a host whose pids cycle quickly.
-
-macOS fallback: ``/proc`` doesn't exist; drop the start_ts check and
-double the staleness threshold (60 min) to compensate. PID-reuse on
-macOS is real but rare in that window.
+* If the owner PID is unambiguously **dead** (host mismatch,
+  ``ProcessLookupError`` from ``os.kill(pid, 0)``, or
+  ``/proc/<pid>/stat`` start-ts mismatch indicating PID reuse) →
+  **reap immediately**, regardless of heartbeat freshness. Waiting on
+  a confirmed-dead owner buys nothing; short Claude sessions that die
+  without SessionEnd would otherwise leave stub notes pending for the
+  full staleness window.
+* If the owner is unambiguously **alive** → keep waiting.
+* If liveness is **uncertain** (no ``/proc`` access — macOS, network
+  fs, sandbox) → fall back on the staleness threshold
+  (``liveness_stale_threshold_s``, default 30 min, per-wiki
+  configurable; doubled on macOS).
 
 Concurrency:
 
@@ -263,13 +264,15 @@ def _judge(
             # Owner is unambiguously alive on this host — keep waiting.
             return "alive", "owner-alive"
 
-        # alive_verdict in (False, None). Fall back on staleness.
+        if alive_verdict is False:
+            # Owner is unambiguously dead — reap regardless of staleness.
+            # Why: short Claude sessions that die without SessionEnd leave
+            # stub notes "synthesis pending" for the full staleness window
+            # (30+ min); waiting buys nothing once the PID is provably gone.
+            return "reap", "owner-dead"
+
+        # alive_verdict is None: uncertain (no /proc / network-fs / macOS).
+        # Fall back on staleness threshold to avoid false-positive reaps.
         if not _is_stale(sidecar, threshold_s=threshold, now=now):
             return "alive", "fresh-heartbeat"
-
-        if alive_verdict is False:
-            return "reap", "owner-dead+stale"
-
-        # alive_verdict is None: uncertain (no /proc). Stale + uncertain
-        # is the macOS / network-fs reap path.
         return "reap", "stale+owner-uncertain"
