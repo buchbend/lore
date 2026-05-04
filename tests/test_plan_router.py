@@ -45,7 +45,7 @@ _TODAY = date(2026, 5, 1)
 
 
 def test_legacy_path_when_toggle_off(tmp_path, monkeypatch):
-    monkeypatch.delenv("LORE_PROJECT_FOLDERS", raising=False)
+    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
     p = plan_target_path(tmp_path, "my-feature", _TODAY,
                           repo="ccatobs/ops-db", scope="ccat:ops-db")
     assert p == tmp_path / "plans" / "my-feature.md"
@@ -130,7 +130,7 @@ def test_find_existing_plan_path_skips_project_folders_when_toggle_off(
     ignored so the off-path is byte-for-byte identical to pre-rollout
     behaviour.
     """
-    monkeypatch.delenv("LORE_PROJECT_FOLDERS", raising=False)
+    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
     proj_plans = tmp_path / "projects" / "ops-db" / "plans"
     proj_plans.mkdir(parents=True)
     (proj_plans / "2026-05-01-my-feature.md").write_text("---\ntype: plan\n---\n")

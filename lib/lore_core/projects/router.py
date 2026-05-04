@@ -26,15 +26,22 @@ from pathlib import Path
 
 _TOGGLE_ENV = "LORE_PROJECT_FOLDERS"
 _TRUTHY = {"on", "1", "true", "yes"}
+_FALSY = {"off", "0", "false", "no"}
 
 
 def project_folders_enabled() -> bool:
     """Return True when the ``LORE_PROJECT_FOLDERS`` toggle is on.
 
-    Default: off. Truthy values: ``on``, ``1``, ``true``, ``yes``
-    (case-insensitive). Anything else → off.
+    Default (post step-9 flip): on. Pass ``LORE_PROJECT_FOLDERS=off`` to
+    revert to legacy flat paths (emergency-rollback escape hatch).
+    Truthy values: ``on``, ``1``, ``true``, ``yes`` (case-insensitive).
     """
-    return os.environ.get(_TOGGLE_ENV, "").lower() in _TRUTHY
+    val = os.environ.get(_TOGGLE_ENV, "").lower()
+    if val in _FALSY:
+        return False
+    if val in _TRUTHY:
+        return True
+    return True
 
 
 def project_slug_for_scope(scope: str | None) -> str | None:

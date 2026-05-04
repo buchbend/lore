@@ -42,7 +42,7 @@ def _surfaces_doc() -> SurfacesDoc:
 
 
 def test_file_surface_legacy_flat_when_toggle_off(tmp_path, monkeypatch):
-    monkeypatch.delenv("LORE_PROJECT_FOLDERS", raising=False)
+    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
     # A project folder exists, but the toggle is off — must use flat.
     (tmp_path / "projects" / "ops-db").mkdir(parents=True)
 

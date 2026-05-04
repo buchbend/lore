@@ -10,6 +10,29 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-05-04
+
+### Changed — Step-9: migration session + flip default
+
+Closes the projects-as-canonical-surface plan.
+
+- **`LORE_PROJECT_FOLDERS` default flipped to on.** The env var is now
+  an off-switch (set `LORE_PROJECT_FOLDERS=off` for emergency rollback
+  to flat paths) rather than an opt-in. Empty / unknown values default
+  to on.
+- **Vault migration.** One-off Claude Code session re-homed flat
+  `concepts/`, `decisions/`, `plans/` notes into `projects/<slug>/...`
+  under both private (single `lore` scope) and ccat (14 project
+  orientations promoted to folders, plus auto-stubs for `telescope` and
+  `primecam` scopes). Cross-wiki re-homing of one note from ccat to
+  private. Promoted `concepts/ccat-observatory.md` to a project
+  orientation. Stripped bare `project` tag from `tags:` lists where
+  present.
+- **Tests.** Added `tests/conftest.py::_default_project_folders_off`
+  autouse fixture grandfathering pre-flip tests onto the legacy flat
+  layout (matches the `LORE_BUFFER_FLUSH` and `LORE_NOTEWORTHY_MODE`
+  patterns). Dual-mode tests opt-in via inline `monkeypatch.setenv(...)`.
+
 ## [0.40.0] - 2026-05-02
 
 ### Added — Projects-as-canonical surface rollout (8 phases)

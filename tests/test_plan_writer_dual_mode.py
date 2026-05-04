@@ -26,7 +26,7 @@ def _make_plan(slug: str = "my-feature") -> StructuredPlan:
 
 
 def test_write_plan_legacy_path_when_toggle_off(tmp_path, monkeypatch):
-    monkeypatch.delenv("LORE_PROJECT_FOLDERS", raising=False)
+    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
     plan = _make_plan()
     result = write_plan_note(
         wiki_root=tmp_path,

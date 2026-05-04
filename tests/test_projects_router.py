@@ -26,9 +26,10 @@ from lore_core.projects.router import (
 # ---------------------------------------------------------------------------
 
 
-def test_toggle_off_by_default(monkeypatch):
+def test_toggle_on_by_default(monkeypatch):
+    """Step-9 flipped the default to on; the env var is now an off-switch."""
     monkeypatch.delenv("LORE_PROJECT_FOLDERS", raising=False)
-    assert project_folders_enabled() is False
+    assert project_folders_enabled() is True
 
 
 def test_toggle_on_truthy(monkeypatch):
@@ -37,10 +38,17 @@ def test_toggle_on_truthy(monkeypatch):
         assert project_folders_enabled() is True, f"value {value!r} should be truthy"
 
 
-def test_toggle_off_for_garbage(monkeypatch):
-    for value in ("", "off", "false", "no", "0", "maybe"):
+def test_toggle_off_for_explicit_falsy(monkeypatch):
+    for value in ("off", "false", "no", "0"):
         monkeypatch.setenv("LORE_PROJECT_FOLDERS", value)
         assert project_folders_enabled() is False, f"value {value!r} should be off"
+
+
+def test_toggle_on_for_unknown_value(monkeypatch):
+    """Unknown / empty values fall through to the new on-default."""
+    for value in ("", "maybe"):
+        monkeypatch.setenv("LORE_PROJECT_FOLDERS", value)
+        assert project_folders_enabled() is True, f"value {value!r} should default-on"
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +77,7 @@ def test_project_slug_for_scope(scope, expected):
 
 
 def test_project_dir_returns_none_when_toggle_off(tmp_path, monkeypatch):
-    monkeypatch.delenv("LORE_PROJECT_FOLDERS", raising=False)
+    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
     (tmp_path / "projects" / "ops-db").mkdir(parents=True)
     # Even with the folder present, toggle off → None.
     assert project_dir_for_scope(tmp_path, "ccat:ops-db") is None
@@ -102,7 +110,7 @@ def test_project_dir_returns_none_for_empty_scope(tmp_path, monkeypatch):
 
 
 def test_resolve_surface_dir_legacy_flat_when_toggle_off(tmp_path, monkeypatch):
-    monkeypatch.delenv("LORE_PROJECT_FOLDERS", raising=False)
+    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
     (tmp_path / "projects" / "ops-db").mkdir(parents=True)
     assert resolve_surface_dir(
         tmp_path, "concepts", scope="ccat:ops-db",

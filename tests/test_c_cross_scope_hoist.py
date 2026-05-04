@@ -70,7 +70,7 @@ def _scope_for_project(wiki: Path, project_slug: str) -> str:
 
 
 def test_hoist_pass_skipped_when_toggle_off(tmp_path, monkeypatch):
-    monkeypatch.delenv("LORE_PROJECT_FOLDERS", raising=False)
+    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
     _write_concept(tmp_path, "ops-db", "event-sourcing-pattern")

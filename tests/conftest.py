@@ -42,6 +42,24 @@ def _default_noteworthy_mode_llm_only(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _default_project_folders_off(monkeypatch):
+    """Grandfather pre step-9 tests onto the legacy flat-path layout.
+
+    Step-9 of the projects-as-canonical-surface plan flipped the
+    production default of ``LORE_PROJECT_FOLDERS`` from off to on. Tests
+    written before the flip assume flat ``plans/<slug>.md``,
+    ``concepts/<slug>.md`` etc. and would break under the new default.
+    They keep the legacy default via this autouse fixture (matches the
+    ``LORE_BUFFER_FLUSH`` and ``LORE_NOTEWORTHY_MODE`` patterns).
+
+    Dual-mode tests that want the on-path set
+    ``monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")`` inline; the
+    monkeypatch precedence rule guarantees the per-test override wins.
+    """
+    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
+
+
+@pytest.fixture(autouse=True)
 def _default_buffer_flush_off(monkeypatch):
     """Grandfather pre-PR-3 tests onto the legacy classify-per-chunk path.
 
