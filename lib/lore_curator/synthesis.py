@@ -874,6 +874,7 @@ def _phase2_apply(
     rb: ReplayedBuffer,
     sidecar: Sidecar,
     logger: "RunLogger | None" = None,
+    shape: NarrativeShape | None = None,
 ) -> Path:
     """Rewrite the finalised stub with the LLM-composed narrative.
 
@@ -883,6 +884,13 @@ def _phase2_apply(
     the title is the most authoritative naming signal we ever get for
     the note. Old stem is preserved as a frontmatter ``aliases:`` entry
     so existing ``[[old-stem]]`` references keep resolving.
+
+    ``shape`` (added in step-8 of the conditional-Decisions plan) drives
+    a small frontmatter surfacing: when ``shape.adr_flagged`` is True
+    (the user explicitly invoked ADR vocabulary), ``adr_flagged: true``
+    is written to frontmatter so a future ``lore curator promote-adr``
+    flow can find candidates without re-scanning transcripts. No
+    auto-stub creation: the regex cue alone never mutates the vault.
     """
     text = stub_path.read_text()
     fm = parse_frontmatter(text)
@@ -906,6 +914,8 @@ def _phase2_apply(
 
     fm["title"] = title
     fm["description"] = description
+    if shape is not None and shape.adr_flagged:
+        fm["adr_flagged"] = True
     fm["last_reviewed"] = datetime.now(UTC).date().isoformat()
 
     # Pick the final path. May rename when the synthesised title yields
@@ -1200,6 +1210,7 @@ def flush_buffer(
             rb=rb_post or rb,
             sidecar=sidecar,
             logger=logger,
+            shape=shape,
         )
     except OSError as exc:
         outcome.degraded = True

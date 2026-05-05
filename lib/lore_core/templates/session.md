@@ -17,6 +17,21 @@ project: ""
 
 # Session: <descriptive title>
 
+<!--
+Body shape is conditional. Two canonical layouts:
+
+  Work shape (the session contained file edits):
+    ## Summary / ## Decisions made (when allowed) / ## What we worked on
+    / ## Activity / ## Loose ends
+
+  Discussion shape (exploration / brainstorm / no edits):
+    ## Summary / ## Discussion / ## Loose ends
+    Title leads with Discussed: / Explored: / Sketched: / Reviewed:
+    or a noun phrase — never with a deliverable verb.
+
+See lib/lore_core/session_templates/standard.md for the full norms.
+-->
+
 ## What we worked on
 
 -

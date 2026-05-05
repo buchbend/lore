@@ -747,6 +747,68 @@ def test_title_coerce_truncates_already_discussion_led_titles():
     assert coerced.startswith("Discussed:")
 
 
+def test_phase2_surfaces_adr_flagged_in_frontmatter(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """step-8 of yes-do-that-keen-yeti: when the user explicitly invoked
+    ADR vocabulary in the slice (e.g. 'ADR this' / 'let's record this
+    as an ADR'), surface the flag in frontmatter so a future ``lore
+    curator promote-adr`` flow can find candidates without re-scanning
+    transcripts. No auto-stub creation — pure frontmatter signal."""
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    # Inject an ADR-flagged shape — the model emits a normal work-shape
+    # response; the flag is shape-driven, not LLM-driven.
+    monkeypatch.setattr(
+        "lore_curator.synthesis.select_shape",
+        lambda turns, files_modified: NarrativeShape(
+            has_edits=True,
+            decisions_allowed=True,
+            no_edit_intent=False,
+            adr_flagged=True,
+        ),
+    )
+    composed = {
+        "title": "Auth rewrite",
+        "description": "d",
+        "summary": "s",
+        "decisions": ["**chose option B**"],
+        "worked_on": ["**auth.py** — touched"],
+        "loose_ends": [],
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert outcome.phase2_completed is True
+    fm = parse_frontmatter(outcome.stub_path.read_text())
+    assert fm.get("adr_flagged") is True
+
+
+def test_phase2_omits_adr_flagged_when_not_set(
+    lore_root, patch_collectors, monkeypatch,
+):
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    composed = {
+        "title": "Auth rewrite", "description": "d", "summary": "s",
+        "decisions": [], "worked_on": ["**auth.py** — touched"], "loose_ends": [],
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert outcome.phase2_completed is True
+    fm = parse_frontmatter(outcome.stub_path.read_text())
+    assert "adr_flagged" not in fm
+
+
 def test_phase2_e2e_05_1212_pattern_yields_discussion_shape(
     lore_root, patch_collectors, monkeypatch,
 ):

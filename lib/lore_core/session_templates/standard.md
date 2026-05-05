@@ -54,14 +54,20 @@ is the status-line preview SessionStart shows in the next session.
 
 ## Body shape (locked)
 
+The session-note layout is *conditional* — Phase-2 selects a
+``NarrativeShape`` from edit activity + user assent (see
+`lore_core.narrative_kind`) and the renderer omits empty sections.
+Two canonical shapes:
+
+**Work shape** (the slice contains real file edits):
+
 ```markdown
 # <title>
 
 ## Summary
-<4-5 sentence narrative paragraph — what was done and why. The
-rationale-rich anchor that Curator B's prefix window lands on.>
+<4-5 sentence narrative paragraph — what was done and why.>
 
-## Decisions made
+## Decisions made                    ← only when allowed (see below)
 - **<substance phrase>**: <rationale + outcome>
 
 ## What we worked on
@@ -75,10 +81,59 @@ rationale-rich anchor that Curator B's prefix window lands on.>
 ### Issues closed                    ← omit if empty
 - #<N> <title> (<repo>)
 
-## Loose ends                        ← past-tense / stative grammar; never TODOs
+## Loose ends                        ← past-tense / stative grammar
 - <X was discussed but not pursued.>
 - <Y remains untested.>
 ```
+
+**Discussion shape** (no edits in the slice — exploration / brainstorm
+/ design conversation):
+
+```markdown
+# Discussed: <title> (or noun phrase)
+
+## Summary
+<4-5 sentence narrative paragraph — what was talked through and why.>
+
+## Discussion
+- **<substance phrase>**: <what was considered>
+
+## Activity                          ← rare in discussion shape
+...
+
+## Loose ends
+- <X was raised but not pursued.>
+```
+
+Key differences:
+
+- **Title verbs** in discussion shape MUST NOT promise work that did
+  not happen. Lead with ``Discussed:`` / ``Explored:`` / ``Sketched:``
+  / ``Reviewed:`` / ``Considered:`` or use a noun phrase. The Phase-2
+  schema strips deliverable verbs (``Refactor``, ``Add``, ``Fix``,
+  ``Implement``, …) and prepends ``Discussed:`` automatically as a
+  safety net.
+- **``## Decisions made``** is structurally gated. The Phase-2 schema
+  omits the field entirely when ``NarrativeShape.decisions_allowed`` is
+  False (no edits + no strong user assent in the slice). This means a
+  bullet in ``## Decisions made`` is now high-signal by construction —
+  Curator B's surface extraction can lighten its rejection rules.
+- **``## What we worked on``** is omitted in discussion shape — the
+  Phase-2 schema does not advertise it. ``## Discussion`` carries the
+  narrative instead (model-proposed options, considered trade-offs,
+  lines of reasoning the user did not explicitly ratify).
+
+### Continuation across kinds (mixed-shape merge)
+
+When a session is split across parts (cap-trip continuation) and the
+parts have different shapes — e.g. part-1 was discussion-shape and
+part-2 added real edits and merged into the same note via append —
+the rendered output contains the **union** of section types
+(``## Discussion``, ``## Decisions made``, ``## What we worked on``
+all present). This is documented behaviour, not a bug; see plan
+``yes-do-that-keen-yeti`` step-7. Each part is normally its own note
+via the ``continues:`` / ``continued_by:`` wikilink chain; cross-part
+merge is rare.
 
 The Activity section and its subheadings are mechanically populated
 from git log + gh issue refs — no LLM authoring there.
@@ -131,7 +186,26 @@ fights the human's scan.
 
 Activity narrative — what got changed and what happened. Same bold-
 phrase-first style. This is where tactical choices, edits, and
-discoveries land.
+discoveries land. **Work-shape only.** Discussion-shape notes use
+``## Discussion`` instead.
+
+### `## Discussion` — narrative for non-work sessions
+
+Same bold-phrase-first style as ``## What we worked on``, but for
+sessions where no file edits happened. Captures what was talked
+through: model-proposed options, considered trade-offs, architecture
+sketches, lines of reasoning the user did not explicitly ratify.
+
+A bullet here is **not a decision** — even when the user said "this
+sounds good" mid-discussion. Real ratifications (assent between named
+alternatives, override of a model proposal, or commitment-by-action
+in the form of edits) are what unlock ``## Decisions made``. Without
+those signals, what looks like a decision belongs in Discussion: a
+direction the conversation tilted, but not yet pinned.
+
+Discussion-shape sessions naturally lead to follow-up work-shape
+sessions; the right cross-link is a wikilink in the next session's
+Summary or Decisions, not a premature decision bullet here.
 
 ### Wikilink discipline — what goes inside `[[ ]]`
 

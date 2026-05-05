@@ -54,10 +54,12 @@ extract_prompt: |-
   - The decision has lasting force — future work will be informed by it, not merely affected by it.
 
   Anchor on RATIONALE PRESENCE, not section headings. A bullet in a session note's
-  ``## Decisions made`` section is a CANDIDATE — it satisfies the "decision was made"
-  bar but you must still apply the rejection rules below. Do NOT treat presence in
-  Decisions made as license to extract; the section often carries tactical bullets
-  the author noted for completeness rather than for permanent record.
+  ``## Decisions made`` section is a strong candidate — Phase-2 schema gating now
+  ensures that section is structurally absent unless ``decisions_allowed`` was True
+  at flush time (i.e. real edits OR strong user assent in the slice), so the
+  bar to even appear there has tightened. Apply the rejection rules below regardless
+  to catch tactical bullets that still slip through; ``## Decisions made`` is
+  high-signal-by-construction now, not noise-by-default.
 
   Body should follow this structure (omit empty sections):
   - **Context** — the problem that prompted the choice

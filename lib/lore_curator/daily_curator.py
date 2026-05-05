@@ -425,31 +425,46 @@ def _load_recent_session_notes(sessions_dir: Path, *, cutoff: datetime) -> list[
 # Summary doesn't fully consume the window.
 _BUDGET_SUMMARY_CHARS = 500
 _BUDGET_DECISIONS_CHARS = 300
+_BUDGET_DISCUSSION_CHARS = 300
 _BUDGET_FALLBACK_CHARS = 800
 
 
 def _section_aware_summary(body: str) -> str:
-    """Extract ``## Summary`` + start of ``## Decisions made`` from a
-    revised session-note body. Falls back to ``body[:800]`` for legacy
-    notes that lack the new sections.
+    """Extract Summary + (Decisions or Discussion) from a session note.
 
-    Returns a string suitable for cluster topic-discrimination + the
-    abstract prompt's per-note context: rationale-rich, low-noise.
+    Fallback chain: ``## Summary`` + ``## Decisions made`` (work shape) OR
+    ``## Summary`` + ``## Discussion`` (discussion shape) → ``## Summary``
+    alone → ``body[:800]`` (legacy notes pre-revision).
+
+    Per plan ``yes-do-that-keen-yeti`` step-8: with Decisions now
+    structurally gated (only present when ``decisions_allowed`` was
+    True), discussion-shape notes need their narrative bucket included
+    for cluster topic-discrimination — otherwise B's prefix window
+    collapses to Summary alone for the entire discussion-shape corpus,
+    losing rationale signal.
     """
     summary = _extract_section_text(body, "## Summary", _BUDGET_SUMMARY_CHARS)
     decisions = _extract_section_text(
         body, "## Decisions made", _BUDGET_DECISIONS_CHARS
     )
-    if not summary and not decisions:
+    discussion = _extract_section_text(
+        body, "## Discussion", _BUDGET_DISCUSSION_CHARS
+    )
+    if not summary and not decisions and not discussion:
         # Legacy note (or a freshly-filed note where the LLM emitted
-        # nothing for either section) — fall back to the flat prefix
+        # nothing for any section) — fall back to the flat prefix
         # so cluster behaviour stays consistent until we re-curate.
         return body[:_BUDGET_FALLBACK_CHARS]
     parts: list[str] = []
     if summary:
         parts.append(summary)
+    # Prefer Decisions (work shape); fall through to Discussion when
+    # absent (discussion shape). They're never both present — Phase-2
+    # schema gating guarantees the renderer emits one or the other.
     if decisions:
         parts.append(decisions)
+    elif discussion:
+        parts.append(discussion)
     return "\n\n".join(parts)
 
 

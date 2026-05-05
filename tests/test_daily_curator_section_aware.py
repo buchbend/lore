@@ -121,6 +121,41 @@ def test_section_aware_summary_handles_decisions_only():
     assert "**A**" in extract
 
 
+def test_section_aware_summary_uses_discussion_when_decisions_absent():
+    """step-8 of yes-do-that-keen-yeti: discussion-shape notes have no
+    ``## Decisions made`` (it's structurally gated). B's prefix window
+    should fall through to ``## Discussion`` so cluster topic-discrimination
+    keeps a rationale-rich anchor for non-work sessions."""
+    body = (
+        "# Discussed: docs Diátaxis spine\n\n"
+        "## Summary\n\nExplored a four-quadrant restructure for the data-transfer docs.\n\n"
+        "## Discussion\n\n"
+        "- **Diátaxis spine** — split tutorials/how-to/reference/explanation\n"
+        "- **ADR extraction** — promote philosophy.md essays into 7 ADRs\n\n"
+        "## Loose ends\n\n- ADR backlog was not validated.\n"
+    )
+    extract = _section_aware_summary(body)
+    assert "four-quadrant restructure" in extract
+    assert "Diátaxis spine" in extract
+    # Loose ends remains out of B's prefix window.
+    assert "not validated" not in extract
+
+
+def test_section_aware_summary_prefers_decisions_over_discussion_when_both_present():
+    """Mixed-shape continuation merge (step-7 limitation): a note with
+    BOTH ``## Decisions made`` and ``## Discussion`` is rare but valid.
+    Decisions wins for B's prefix — it's the higher-signal section."""
+    body = (
+        "## Summary\n\nMixed-shape part-1 + part-2 merged note.\n\n"
+        "## Discussion\n\n- **option A** — considered\n\n"
+        "## Decisions made\n\n- **chose option B** because rationale\n"
+    )
+    extract = _section_aware_summary(body)
+    assert "chose option B" in extract
+    # Discussion content drops out — Decisions wins the slot.
+    assert "option A" not in extract
+
+
 # ---------------------------------------------------------------------------
 # Integration: _load_recent_session_notes feeds the section-aware extract
 # ---------------------------------------------------------------------------
