@@ -10,6 +10,79 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-05-05
+
+### Added — conditional Decisions / discussion-aware narrative shape
+
+Session notes now render a narrative shape (work / discussion) that's
+deterministically chosen at flush time from edit activity + user assent
+signals. This fixes a class of bug where exploration / brainstorm
+sessions filed notes claiming Decisions and "What we worked on" for
+work that never happened (motivating case:
+``05-1212-refactor-ccat-transfer-docs-into-di-taxis-spine``: 0 Edit
+calls, 12 Reads, user said "no code change just exploration" twice —
+note declared 5 decisions and 8 worked-on bullets).
+
+Plan: ``yes-do-that-keen-yeti``, 9 steps shipped:
+
+- **``files_modified`` split from ``files_touched``.** The deterministic
+  primitive that biases narrative tense. ``_files_touched_from_turns``
+  used to merge ``file_edit`` and ``file_read`` categories; the new
+  ``_files_modified_from_turns`` filters to edits only. Buffer events
+  carry both fields; old v1 buffers replay without mis-classifying.
+  Frontmatter writes ``files_modified`` alongside any pre-existing
+  ``files_touched`` (vault-edit policy: never delete a frontmatter
+  field on append-merge).
+- **``decision_signals.py`` deterministic prefilter.** Four regex banks
+  (no-edit-intent, hedge, assent, override, ADR cue) operating on
+  user-turn text. Hedge-in-same-sentence downgrades assent confidence
+  to ``weak`` rather than suppressing globally; question-form sentences
+  drop matches entirely.
+- **``NarrativeShape`` selector.** Frozen dataclass of booleans
+  (``has_edits``, ``decisions_allowed``, ``no_edit_intent``,
+  ``adr_flagged``) composed from the prefilter signals plus
+  ``files_modified``. The renderer and Phase-2 schema gate switch on
+  bits, not on a string — adding a future shape is a one-bit change.
+- **Phase-2 schema + prompt gating.** The ``compose`` tool schema is
+  now a function of ``NarrativeShape``: discussion shape strips
+  ``decisions[]`` and ``worked_on[]`` entirely and offers
+  ``discussion[]``; ``additionalProperties: false`` plus caller-side
+  filtering close the gate structurally rather than instructionally.
+  Prompt grows a kind-specific clause that explains the schema
+  narrowing and the title-shape rule.
+- **Renderer adds ``## Discussion`` section.** Conditional, omitted
+  when empty, slots between Summary and Decisions. ``BodySections``,
+  ``parse_body_sections``, ``render_body_sections``,
+  ``merge_body_sections`` extended additively — no merge-semantics
+  changes. Mixed-kind continuation merge produces the union of section
+  types (documented limitation).
+- **Title-verb gate.** Post-LLM coercion in discussion shape: leading
+  deliverable verbs (Refactor, Add, Fix, Implement, Migrate, Build,
+  Ship, Create, Delete, Remove, Update, Replace, Land, Rewrite +
+  tense variants) are stripped and ``Discussed:`` is prepended.
+  Already-discussion-led titles and noun-phrase titles pass through.
+- **Curator B Discussion fallback.** ``daily_curator._section_aware_summary``
+  falls through Decisions → Discussion → Summary alone → ``body[:800]``
+  so cluster topic-discrimination keeps a rationale anchor for
+  discussion-shape notes.
+- **``adr_flagged`` frontmatter.** When the user explicitly invoked
+  ADR vocabulary ("ADR this", "let's record this as an ADR"), the
+  frontmatter carries ``adr_flagged: true``. **No vault mutation** —
+  promotion to a real ADR note is a future workflow.
+- **Norms doc + golden-file prompt regression.**
+  ``session_templates/standard.md`` rewritten with the conditional
+  taxonomy; ``surface_templates/standard.md`` lightens the "CANDIDATE
+  — not license" warning since Decisions is now high-signal-by-
+  construction. ``tests/fixtures/prompts/phase2_{work,discussion}.txt``
+  pin the prompts as golden files so silent regressions diff loudly.
+
+The bad note's failure mode is regression-pinned in
+``test_phase2_e2e_05_1212_pattern_yields_discussion_shape``.
+
+Deferred (tracked as issues): Stage-2 LLM judge for ambiguous
+prefilter candidates, ADR promotion flow that reads ``adr_flagged``,
+``lore curator repair`` for re-flushing pre-existing bad notes.
+
 ## [0.43.1] - 2026-05-04
 
 ### Changed — bullet line cap raised 120 → 280 chars
