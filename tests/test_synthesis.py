@@ -809,6 +809,56 @@ def test_phase2_omits_adr_flagged_when_not_set(
     assert "adr_flagged" not in fm
 
 
+def _golden_path(name: str) -> Path:
+    return Path(__file__).parent / "fixtures" / "prompts" / name
+
+
+def _golden_prompt_inputs() -> dict[str, Any]:
+    """Fixed inputs for golden-file regression. Any change to the prompt
+    text — including reordering, rewording, adding clauses — diffs the
+    golden file and forces explicit acknowledgement. Prevents silent
+    regressions of the load-bearing Phase-2 prompt."""
+    return {
+        "turns_text": "[user@0] short fixture turn",
+        "activity_summary": "1 commit, 0 issues",
+        "is_continuation": False,
+        "continues_wikilink": None,
+    }
+
+
+def test_phase2_prompt_work_shape_matches_golden():
+    """Golden-file diff for the work-shape prompt. To intentionally
+    update: regenerate the fixture and commit explicitly."""
+    prompt = _phase2_prompt(
+        **_golden_prompt_inputs(),
+        shape=_make_shape(has_edits=True),
+    )
+    golden = _golden_path("phase2_work.txt")
+    if not golden.exists():
+        golden.write_text(prompt)
+        # First run writes the fixture; subsequent runs compare.
+    assert prompt == golden.read_text(), (
+        "Phase-2 work-shape prompt drifted. If intentional, regenerate:\n"
+        f"  python -c 'from tests.test_synthesis import *; "
+        f"open({str(golden)!r}, \"w\").write(_phase2_prompt(**_golden_prompt_inputs(), "
+        f"shape=NarrativeShape(True, True, False, False)))'"
+    )
+
+
+def test_phase2_prompt_discussion_shape_matches_golden():
+    """Golden-file diff for the discussion-shape prompt."""
+    prompt = _phase2_prompt(
+        **_golden_prompt_inputs(),
+        shape=_make_shape(has_edits=False, no_edit_intent=True),
+    )
+    golden = _golden_path("phase2_discussion.txt")
+    if not golden.exists():
+        golden.write_text(prompt)
+    assert prompt == golden.read_text(), (
+        "Phase-2 discussion-shape prompt drifted. If intentional, regenerate."
+    )
+
+
 def test_phase2_e2e_05_1212_pattern_yields_discussion_shape(
     lore_root, patch_collectors, monkeypatch,
 ):

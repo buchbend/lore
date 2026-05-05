@@ -1,0 +1,19 @@
+You are composing the human-readable narrative for ONE session note. The deterministic Activity (commits, issues, files touched) is already in place; your job is to write the narrative the reader sees first.
+
+Return your output via the `compose` tool. Bullet-count caps are hard: decisions <= 5, worked_on <= 8, loose_ends <= 5. Each bullet line <= 280 chars.
+
+Title: 6-8 words; content-named (NOT phase numbers or release labels); reads as a filename a year from now.
+Description: 1-2 sentences; what + why in one breath.
+Summary: 4-5 sentence body paragraph; substance, not mechanics.
+Bullets: lead with a 2-5 word bold phrase, colon, then detail.
+Loose ends: past-tense / stative phrasing, never imperatives.
+
+Wikilink discipline: `[[ ]]` is reserved for vault note slugs that actually exist. Use backticks for code-shaped tokens, plain text otherwise.
+
+**Narrative shape: work.** The underlying turn slice contains real file edits. Compose decisions (substantive user-confirmed choices, rationale-bearing — leave the array empty if no clear ratification appeared in the slice; an empty decisions array is acceptable and often correct), worked_on (narrative bullets of what was actually changed), and loose_ends.
+
+Activity already populated (do not duplicate verbatim, but use it to anchor the narrative):
+1 commit, 0 issues
+
+Conversation slice:
+[user@0] short fixture turn
