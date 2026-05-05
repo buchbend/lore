@@ -10,6 +10,47 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-05-05
+
+### Added — `lore plan migrate-step-files` (deterministic + LLM)
+
+New CLI for backfilling ``step_files`` frontmatter on plans authored
+before the ``Files:`` convention shipped. Two-tier extraction:
+
+- **Deterministic** — re-runs the canonical parser; conservative merge
+  (never overwrites non-empty existing entries).
+- **LLM-judged** (``--llm``) — falls back to one
+  ``step_files_inference`` tool-use call per plan when the parser
+  leaves gaps. Per-step confidence below ``--confidence-floor``
+  (default 0.5) is dropped; high-confidence empty lists are recorded
+  explicitly so the migrate is idempotent.
+
+The companion module is ``lore_curator/step_files_inference.py``,
+following the ``closure_judgment`` pattern (frozen dataclass +
+``tool_choice`` + structured-output schema with
+``additionalProperties: false``).
+
+This unblocks the closure pipeline (commit attribution, edit-flip
+writeback) for plans whose bodies don't carry ``Files:`` directives —
+without that backfill, the Stop-hook attributor short-circuits at the
+``step_files`` empty-set check and plans never auto-close.
+
+### Fixed — `Files:` parser handles backtick-wrapped directives
+
+Plan-authoring LLMs commonly render the directive as inline code
+(``` `Files:` ```) when the surrounding step body is heavy on
+backticked identifiers. The previous regex anchored on the literal
+``files`` keyword and silently failed to match — so
+``2026-05-05-plan-conditional-decisions-discussion-aware-session-note-nar``
+filed with empty ``step_files`` despite every step body carrying a
+``Files:`` block.
+
+The parser now also handles annotated-bullet style
+(``- `lib/foo.py` — explanation``) including multiple backticked
+paths per bullet line. Em-dash slicing happens before backtick
+extraction so identifiers in the explanation (``_helper``,
+``MyClass``) aren't mis-detected as paths.
+
 ## [0.44.0] - 2026-05-05
 
 ### Added — conditional Decisions / discussion-aware narrative shape

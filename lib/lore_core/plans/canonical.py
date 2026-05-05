@@ -142,9 +142,11 @@ def extract_canonical_step_ids(body: str) -> list[str]:
 
 #: Start-of-line ``Files:`` directive (case-insensitive). Anchored so prose
 #: mentions like *"the Files: section"* don't false-positive. Up to a few
-#: leading spaces tolerated for nested-markdown contexts.
+#: leading spaces tolerated for nested-markdown contexts. Optional
+#: backticks before the keyword and after the colon tolerate the markdown
+#: idiom of rendering the directive as inline code, e.g. ``` `Files:` ```.
 _STEP_FILES_HEADING_RE = re.compile(
-    r"^[ \t]{0,4}files\s*:\s*(?P<inline>.*?)\s*$",
+    r"^[ \t]{0,4}`?files\s*:`?\s*(?P<inline>.*?)\s*$",
     re.IGNORECASE,
 )
 
@@ -163,6 +165,48 @@ def _strip_path_decoration(raw: str) -> str:
     return s
 
 
+#: Backticked tokens inside a bullet body (annotation style).
+_BACKTICK_PATH_RE = re.compile(r"`([^`\n]+)`")
+
+#: Bullet annotation separators in priority order. The plan-authoring
+#: LLM frequently writes ``- `path` — explanation``; we slice on the
+#: separator and keep the LHS.
+_BULLET_ANNOTATION_SEPS = (" — ", " -- ")
+
+
+def _extract_paths_from_token(content: str) -> list[str]:
+    """Pull file paths out of one inline-or-bullet token.
+
+    Handles four real-world shapes seen in plan bodies:
+
+    * ``path`` (bare)
+    * ```path``` (markdown-quoted)
+    * ```path` — annotation`` (annotated bullet)
+    * ```a`, `b` — annotation`` (multiple paths in one bullet)
+
+    Backticked tokens take precedence — when any are present, they
+    define the path set and surrounding prose is ignored. Otherwise we
+    slice on the em-dash annotation separator and split the LHS on
+    commas.
+    """
+    s = content.strip()
+    if not s:
+        return []
+    # Slice on the em-dash annotation separator first so backticked
+    # identifiers in the explanation (`_helper`, `MyClass`) don't get
+    # mistaken for paths.
+    for sep in _BULLET_ANNOTATION_SEPS:
+        if sep in s:
+            s = s.split(sep, 1)[0].strip()
+            break
+    if not s:
+        return []
+    backticked = _BACKTICK_PATH_RE.findall(s)
+    if backticked:
+        return [p.strip() for p in backticked if p.strip()]
+    return [p.strip() for p in s.split(",") if p.strip()]
+
+
 def extract_step_files(body: str) -> list[str]:
     """Return the ordered list of file paths declared in a step body.
 
@@ -173,10 +217,15 @@ def extract_step_files(body: str) -> list[str]:
       and surrounding backticks.
     * **Bulleted list** — a bare ``Files:`` line followed by ``- path``
       or ``* path`` bullets, terminated by a blank line or non-bullet
-      content. Same backtick stripping applies.
+      content. Same backtick stripping applies; bullets may carry an
+      em-dash annotation (``- `lib/foo.py` — explanation``)
+      whose RHS is ignored.
 
     The ``Files:`` heading must be at start-of-line (after optional
     indent) — prose mentions of *"the Files: section"* do not match.
+    The directive itself may be wrapped in backticks (```Files:```)
+    to render it as inline code.
+
     Returns an empty list when no ``Files:`` directive is found.
     """
     if not body:
@@ -191,11 +240,9 @@ def extract_step_files(body: str) -> list[str]:
             continue
         inline = m.group("inline")
         if inline:
-            # Inline form — split on commas, strip decoration, drop empties.
-            for token in inline.split(","):
-                cleaned = _strip_path_decoration(token)
-                if cleaned:
-                    out.append(cleaned)
+            # Inline form — annotation-aware extraction handles
+            # `Files: a, b` and `Files: \`a\` — annotation` alike.
+            out.extend(_extract_paths_from_token(inline))
             return out
         # Bulleted form — consume contiguous bullet lines until blank or
         # non-bullet content.
@@ -207,9 +254,7 @@ def extract_step_files(body: str) -> list[str]:
             mb = _STEP_FILES_BULLET_RE.match(line)
             if mb is None:
                 break
-            cleaned = _strip_path_decoration(mb.group("path"))
-            if cleaned:
-                out.append(cleaned)
+            out.extend(_extract_paths_from_token(mb.group("path")))
             i += 1
         return out
     return out

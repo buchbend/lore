@@ -147,6 +147,56 @@ class TestExtractStepFiles:
         )
         assert extract_step_files(body) == ["lib/foo.py", "tests/test_foo.py"]
 
+    def test_directive_wrapped_in_backticks_bulleted(self) -> None:
+        # Markdown idiom: render the directive itself as inline code.
+        # The plan-authoring LLM picks this up when the body is heavy
+        # on backtick-quoted identifiers around it.
+        body = (
+            "`Files:`\n"
+            "- `lib/foo.py`\n"
+            "- `lib/bar.py`\n"
+        )
+        assert extract_step_files(body) == ["lib/foo.py", "lib/bar.py"]
+
+    def test_directive_wrapped_in_backticks_inline_paths_preserved(self) -> None:
+        # Leading-backtick on the directive must not eat the leading
+        # backtick of the first inline path.
+        body = "`Files: `lib/foo.py`, `lib/bar.py`"
+        assert extract_step_files(body) == ["lib/foo.py", "lib/bar.py"]
+
+    def test_bulleted_with_em_dash_annotation(self) -> None:
+        # Real plan-authoring style: each bullet carries a path
+        # followed by an em-dash explanation. Path comes from the
+        # backticked token; annotation is discarded.
+        body = (
+            "`Files:`\n"
+            "- `lib/foo.py` — replace `_helper` with the new path\n"
+            "- `tests/test_foo.py` — assertions for the new behaviour\n"
+        )
+        assert extract_step_files(body) == ["lib/foo.py", "tests/test_foo.py"]
+
+    def test_bulleted_with_multiple_backticked_paths_per_line(self) -> None:
+        # One bullet, multiple paths in the same line — the LLM does
+        # this when files share an explanation.
+        body = (
+            "Files:\n"
+            "- `tests/test_a.py`, `tests/test_b.py`, `tests/test_c.py` — assertion sweep\n"
+        )
+        assert extract_step_files(body) == [
+            "tests/test_a.py",
+            "tests/test_b.py",
+            "tests/test_c.py",
+        ]
+
+    def test_bulleted_path_with_new_marker(self) -> None:
+        # `(NEW)` marker in the annotation; the path is still pulled
+        # cleanly from the backticked token.
+        body = (
+            "Files:\n"
+            "- `lib/lore_core/decision_signals.py` (NEW) — frozen dataclass + extractors\n"
+        )
+        assert extract_step_files(body) == ["lib/lore_core/decision_signals.py"]
+
 
 # ---------------------------------------------------------------------------
 # Parser populates PlanStep.files end-to-end

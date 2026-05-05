@@ -548,6 +548,329 @@ def cmd_migrate_ids(
 
 
 # ---------------------------------------------------------------------------
+# `lore plan migrate-step-files` — re-extract step_files from plan bodies
+# ---------------------------------------------------------------------------
+
+
+_INFERENCE_CONFIDENCE_FLOOR = 0.5
+_DEFAULT_INFERENCE_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _write_step_files(path: Path, fm: dict, body: str, merged: dict[str, list[str]]) -> None:
+    """Atomically rewrite a plan's frontmatter with new step_files."""
+    from lore_core.io import atomic_write_text
+    import yaml as _yaml
+
+    fm_new = dict(fm)
+    fm_new["step_files"] = merged
+    new_text = (
+        "---\n"
+        + _yaml.safe_dump(
+            fm_new, default_flow_style=False, sort_keys=False, allow_unicode=True
+        ).strip()
+        + "\n---\n\n"
+        + body.lstrip("\n")
+    )
+    atomic_write_text(path, new_text)
+
+
+def _extract_step_files_one_plan(
+    path: Path,
+    *,
+    dry_run: bool,
+    use_llm: bool = False,
+    confidence_floor: float = _INFERENCE_CONFIDENCE_FLOOR,
+    model: str | None = None,
+) -> dict:
+    """Re-extract ``step_files`` from a single plan's body.
+
+    Two-tier extraction:
+
+    1. **Deterministic** — runs the canonical parser, which honours
+       ``Files:`` directives in any supported shape (backtick-wrapped,
+       annotated bullets, comma-list inline).
+    2. **LLM-judged** (when ``use_llm=True``) — falls back to one
+       :func:`infer_step_files` call when the parser returns nothing
+       *or* the existing ``step_files`` frontmatter has gaps. Per-step
+       confidence below ``confidence_floor`` is dropped.
+
+    Merges the result conservatively: a step that already has a
+    non-empty file list in frontmatter is left alone; only missing or
+    empty entries are populated.
+    """
+    from lore_core.plans.parser import parse
+    from lore_core.schema import parse_frontmatter, strip_frontmatter
+
+    report: dict = {
+        "path": str(path),
+        "steps_total": 0,
+        "steps_with_files": 0,
+        "frontmatter_steps_added": 0,
+        "frontmatter_steps_kept": 0,
+        "changed": False,
+        "skipped": False,
+        "skip_reason": None,
+        "source": None,  # "parser" | "llm" | None
+        "llm_low_confidence_dropped": 0,
+    }
+
+    try:
+        text = path.read_text()
+        fm = parse_frontmatter(text)
+    except (OSError, ValueError, Exception) as e:  # noqa: BLE001
+        report["skipped"] = True
+        report["skip_reason"] = f"parse_failed: {type(e).__name__}"
+        return report
+
+    if not isinstance(fm, dict) or fm.get("type") != "plan":
+        report["skipped"] = True
+        report["skip_reason"] = "not_a_plan"
+        return report
+
+    try:
+        plan = parse(text)
+    except Exception as e:  # noqa: BLE001
+        report["skipped"] = True
+        report["skip_reason"] = f"parser_failed: {type(e).__name__}"
+        return report
+
+    report["steps_total"] = len(plan.steps)
+    report["steps_with_files"] = sum(1 for s in plan.steps if s.files)
+
+    existing_step_files = fm.get("step_files") or {}
+    if not isinstance(existing_step_files, dict):
+        existing_step_files = {}
+
+    merged: dict[str, list[str]] = {}
+    added = 0
+    kept = 0
+    needs_llm: list[str] = []
+    for step in plan.steps:
+        prior = existing_step_files.get(step.id)
+        # An explicitly-recorded entry (even empty list) means a prior
+        # run resolved this step — preserve it. Only steps with no
+        # entry at all count as gaps that need filling.
+        if isinstance(prior, list) and step.id in existing_step_files:
+            merged[step.id] = list(prior)
+            kept += 1
+        elif step.files:
+            merged[step.id] = list(step.files)
+            added += 1
+        else:
+            needs_llm.append(step.id)
+
+    report["frontmatter_steps_added"] = added
+    report["frontmatter_steps_kept"] = kept
+
+    # If parser found everything (no gaps), we're done deterministically.
+    if not needs_llm:
+        if added == 0:
+            return report
+        report["source"] = "parser"
+        report["changed"] = True
+        if not dry_run:
+            body = strip_frontmatter(text)
+            _write_step_files(path, fm, body, merged)
+        return report
+
+    # Parser left gaps. If --llm not requested, report and skip.
+    if not use_llm:
+        if added > 0:
+            # Partial deterministic gain — still write the parser-derived rows.
+            report["source"] = "parser"
+            report["changed"] = True
+            if not dry_run:
+                body = strip_frontmatter(text)
+                _write_step_files(path, fm, body, merged)
+            return report
+        report["skipped"] = True
+        report["skip_reason"] = "no_files_in_body"
+        return report
+
+    # LLM path — one call per plan, fills the gaps.
+    try:
+        from lore_curator.llm_client import LlmClientError, make_llm_client
+        from lore_curator.step_files_inference import infer_step_files
+    except ImportError as e:
+        report["skipped"] = True
+        report["skip_reason"] = f"llm_import_failed: {e}"
+        return report
+
+    client = make_llm_client()
+    if client is None:
+        report["skipped"] = True
+        report["skip_reason"] = "no_llm_client"
+        return report
+
+    body = strip_frontmatter(text)
+    try:
+        inference = infer_step_files(
+            plan_slug=plan.slug,
+            plan_title=plan.title,
+            plan_body=body,
+            step_ids=needs_llm,
+            llm_client=client,
+            model=model or _DEFAULT_INFERENCE_MODEL,
+        )
+    except (LlmClientError, ValueError) as e:
+        report["skipped"] = True
+        report["skip_reason"] = f"llm_failed: {type(e).__name__}: {e}"
+        return report
+
+    llm_added = 0
+    low_conf_dropped = 0
+    for step_id in needs_llm:
+        files = inference.step_files.get(step_id, [])
+        conf = inference.confidence.get(step_id, 0.0)
+        if conf < confidence_floor:
+            low_conf_dropped += 1
+            continue
+        if not files:
+            # High-confidence empty list — record explicitly so we
+            # don't re-LLM on next migrate run.
+            merged[step_id] = []
+            llm_added += 1
+            continue
+        merged[step_id] = files
+        llm_added += 1
+
+    report["llm_low_confidence_dropped"] = low_conf_dropped
+    report["frontmatter_steps_added"] = added + llm_added
+
+    if added + llm_added == 0:
+        report["skipped"] = True
+        report["skip_reason"] = "llm_returned_no_high_confidence"
+        return report
+
+    report["source"] = "llm" if llm_added > 0 else "parser"
+    report["changed"] = True
+    if not dry_run:
+        _write_step_files(path, fm, body, merged)
+    return report
+
+
+@app.command("migrate-step-files")
+def cmd_migrate_step_files(
+    slug: str | None = typer.Argument(
+        None, help="Plan slug to migrate. Omit to walk every plan in the vault."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report changes without writing."
+    ),
+    use_llm: bool = typer.Option(
+        False, "--llm",
+        help="When the deterministic parser leaves gaps, fall back to "
+             "one LLM call per plan to infer step_files from prose.",
+    ),
+    model: str | None = typer.Option(
+        None, "--model",
+        help="Model ID for --llm (defaults to claude-haiku-4-5).",
+    ),
+    confidence_floor: float = typer.Option(
+        _INFERENCE_CONFIDENCE_FLOOR, "--confidence-floor",
+        min=0.0, max=1.0,
+        help="Drop LLM-inferred entries below this confidence.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit a JSON report."),
+) -> None:
+    """Re-extract ``step_files`` from plan bodies into frontmatter.
+
+    Plans authored before the ``Files:`` convention (or filed under
+    older parser versions that mis-handled certain markdown idioms,
+    such as backtick-wrapped directives) carry empty ``step_files``
+    frontmatter. This command re-parses each plan's body with the
+    current canonical extractor and writes back any newly-resolved
+    ``step_files`` entries — without touching the body, and without
+    overwriting non-empty existing entries.
+
+    With ``--llm``, plans whose body has no parseable ``Files:``
+    directive are sent to one LLM call that infers per-step paths
+    from prose mentions. Per-step confidence below
+    ``--confidence-floor`` is dropped.
+    """
+    from lore_core.config import get_lore_root
+    from lore_core.plans.router import iter_plan_paths
+
+    lore_root = get_lore_root()
+    if lore_root is None or not lore_root.exists():
+        typer.echo("lore: $LORE_ROOT not configured", err=True)
+        raise typer.Exit(code=1)
+
+    wiki_root = lore_root / "wiki"
+    if not wiki_root.is_dir():
+        typer.echo(f"lore: no wikis under {wiki_root}", err=True)
+        raise typer.Exit(code=1)
+
+    candidates: list[Path] = []
+    for wiki_dir in sorted(wiki_root.iterdir()):
+        if not wiki_dir.is_dir():
+            continue
+        for plan_path in iter_plan_paths(wiki_dir):
+            if slug is not None and plan_path.stem != slug and not plan_path.stem.endswith(f"-{slug}"):
+                continue
+            candidates.append(plan_path)
+
+    if slug is not None and not candidates:
+        typer.echo(f"lore: no plan matching slug {slug!r}", err=True)
+        raise typer.Exit(code=1)
+
+    reports = [
+        _extract_step_files_one_plan(
+            p,
+            dry_run=dry_run,
+            use_llm=use_llm,
+            confidence_floor=confidence_floor,
+            model=model,
+        )
+        for p in candidates
+    ]
+    changed = [r for r in reports if r["changed"]]
+    skipped = [r for r in reports if r.get("skipped")]
+
+    if json_out:
+        _emit_json({
+            "schema": "lore.plan.migrate-step-files/1",
+            "data": {
+                "dry_run": dry_run,
+                "use_llm": use_llm,
+                "confidence_floor": confidence_floor,
+                "scanned": len(reports),
+                "changed": len(changed),
+                "skipped": len(skipped),
+                "reports": reports,
+            },
+        })
+        return
+
+    verb = "would update" if dry_run else "updated"
+    if not changed and not skipped:
+        typer.echo(f"lore: scanned {len(reports)} plans — nothing to migrate")
+        return
+    for r in changed:
+        plan_slug = Path(r["path"]).stem
+        suffix = ""
+        if r.get("source") == "llm":
+            dropped = r.get("llm_low_confidence_dropped", 0)
+            suffix = f" [llm{f', {dropped} low-confidence dropped' if dropped else ''}]"
+        typer.echo(
+            f"  {verb} {plan_slug}: "
+            f"+{r['frontmatter_steps_added']} step_files entries "
+            f"(kept {r['frontmatter_steps_kept']}){suffix}"
+        )
+    for r in skipped:
+        plan_slug = Path(r["path"]).stem
+        typer.echo(f"  skipped {plan_slug}: {r['skip_reason']}")
+    summary_parts: list[str] = []
+    if changed:
+        summary_parts.append(f"{verb} {len(changed)}")
+    if skipped:
+        summary_parts.append(f"skipped {len(skipped)}")
+    typer.echo(
+        f"lore: {' / '.join(summary_parts)} of {len(reports)} plans scanned"
+    )
+
+
+# ---------------------------------------------------------------------------
 # `lore plan step`
 # ---------------------------------------------------------------------------
 
