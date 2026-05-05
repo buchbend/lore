@@ -53,13 +53,14 @@ import yaml
 
 from lore_adapters import Adapter, get_adapter
 from lore_core.io import atomic_write_text
+from lore_core.narrative_kind import NarrativeShape, select_shape
 from lore_core.schema import parse_frontmatter, strip_frontmatter
 from lore_core.session_writer import (
     BodySections,
     FiledNote,
     render_body_sections,
 )
-from lore_core.types import TranscriptHandle
+from lore_core.types import TranscriptHandle, Turn
 from lore_core.wikilinks import sanitize_for_write
 from lore_curator._auto_commit import maybe_auto_commit
 from lore_curator.buffer_store import (
@@ -358,12 +359,18 @@ def compose_session_note(
     model: str,
     logger: "RunLogger | None" = None,
     transcript_id: str = "",
+    shape: NarrativeShape | None = None,
 ) -> dict[str, Any] | None:
     """One-shot composition: ``turns_text`` -> ``{title, summary, ...}``.
 
     Returns ``None`` on any failure (LLM exception, malformed tool_use,
     empty output). The caller increments ``flush_attempts`` and retries
     up to :data:`PHASE2_MAX_ATTEMPTS`.
+
+    ``shape`` (added in step-3 of the conditional-Decisions plan) is used
+    by step-4 to gate the Phase-2 schema and prompt. ``None`` preserves
+    the existing work-shape behaviour for tests and callers that haven't
+    been migrated.
     """
     prompt = _phase2_prompt(
         turns_text=turns_text,
@@ -570,26 +577,26 @@ def _activity_summary_text(rb: ReplayedBuffer) -> str:
     return "\n".join(lines)
 
 
-def _read_slice_text(
+def _read_slice_turns(
     *,
     sidecar: Sidecar,
     rb: ReplayedBuffer,
     adapter_lookup,
-) -> str:
-    """Best-effort: reconstruct the conversation text the buffer pointed at.
+) -> list[Turn]:
+    """Best-effort: reconstruct the ``Turn`` list the buffer pointed at.
 
     Uses the adapter's ``read_slice(from_index)`` API, capped to the
-    buffer's slice pointers. Returns an empty string when the adapter
+    buffer's slice pointers. Returns an empty list when the adapter
     can't be loaded or the transcript file no longer exists — Phase 2
-    falls back to "<no slice>" prompting which still produces a usable
-    note from the activity summary alone.
+    callers degrade gracefully (text-only path uses ``""``; shape-
+    selection path treats empty as "no signal").
     """
     if not rb.slices:
-        return ""
+        return []
     try:
         adapter: Adapter = adapter_lookup(sidecar.integration)
     except Exception:  # noqa: BLE001
-        return ""
+        return []
     try:
         # Sidecar lacks a full TranscriptHandle (only cwd + integration).
         # Re-build a minimal handle; ``read_slice`` only uses ``path``,
@@ -601,7 +608,7 @@ def _read_slice_text(
         else:
             tx_path = None
         if tx_path is None:
-            return ""
+            return []
         handle = TranscriptHandle(
             integration=sidecar.integration,
             id=sidecar.transcript_id,
@@ -610,21 +617,36 @@ def _read_slice_text(
             mtime=datetime.now(_UTC),
         )
     except Exception:  # noqa: BLE001
-        return ""
+        return []
     first_idx = min(s.from_index for s in rb.slices)
     last_idx = max(s.to_index for s in rb.slices)
-    out: list[str] = []
+    out: list[Turn] = []
     try:
         for turn in adapter.read_slice(handle, from_index=first_idx):
             if turn.index > last_idx:
                 break
-            text = turn.text or ""
-            if not text:
-                continue
-            out.append(f"[{turn.role}@{turn.index}] {text}")
+            out.append(turn)
     except Exception:  # noqa: BLE001 - never crash a flush on adapter failures
-        return "\n".join(out)
-    return "\n".join(out)
+        return out
+    return out
+
+
+def _read_slice_text(
+    *,
+    sidecar: Sidecar,
+    rb: ReplayedBuffer,
+    adapter_lookup,
+) -> str:
+    """Format the slice's turns into the prompt-friendly text Phase 2
+    consumes. Wraps :func:`_read_slice_turns` so the two paths agree on
+    adapter loading + slice bounds.
+    """
+    turns = _read_slice_turns(
+        sidecar=sidecar, rb=rb, adapter_lookup=adapter_lookup,
+    )
+    return "\n".join(
+        f"[{t.role}@{t.index}] {t.text}" for t in turns if t.text
+    )
 
 
 def _phase2_apply(
@@ -861,9 +883,32 @@ def flush_buffer(
     rb_post = buffer.replay()
     if not rb_post.slices and rb.slices:
         rb_post = rb  # buffer was moved to _done; replay() now returns empty
-    turns_text = _read_slice_text(
+    turns_list = _read_slice_turns(
         sidecar=sidecar, rb=rb_post or rb, adapter_lookup=adapter_lookup,
     )
+    turns_text = "\n".join(
+        f"[{t.role}@{t.index}] {t.text}" for t in turns_list if t.text
+    )
+    # Narrative shape drives Phase-2 schema + prompt gating in step-4.
+    # Recompute ``files_modified`` from the actual turns rather than
+    # trusting the buffer's accumulator: archived v1 buffers don't carry
+    # ``files_modified`` in their event log (it stays empty), but the
+    # transcript adapter still has the truth.
+    from lore_curator.session_activity import _files_modified_from_turns
+    files_modified = _files_modified_from_turns(turns_list)
+    shape = select_shape(turns_list, files_modified)
+    if logger is not None:
+        logger.emit(
+            "narrative-shape",
+            transcript_id=sidecar.transcript_id,
+            buffer_stem=buffer.stem,
+            kind=shape.kind,
+            has_edits=shape.has_edits,
+            decisions_allowed=shape.decisions_allowed,
+            no_edit_intent=shape.no_edit_intent,
+            adr_flagged=shape.adr_flagged,
+            files_modified_count=len(files_modified),
+        )
     activity_summary = _activity_summary_text(rb_post or rb)
     continues_wikilink = (
         f"[[{sidecar.continuation_of}]]"
@@ -909,6 +954,7 @@ def flush_buffer(
             model=model,
             logger=logger,
             transcript_id=sidecar.transcript_id,
+            shape=shape,
         )
         if composed:
             break
