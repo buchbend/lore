@@ -99,6 +99,43 @@ BULLET_CAPS = {
     "loose_ends": 5,
     "discussion": 8,  # mirrors worked_on cap; discussion replaces it in non-work shape
 }
+
+
+# Title-verb gate (step-6 of yes-do-that-keen-yeti). In discussion shape
+# the title MUST NOT lead with a verb that promises work the session
+# didn't deliver. The Phase-2 prompt steers the LLM toward
+# "Discussed:" / "Explored:" / "Sketched:" / "Reviewed:" or a noun-
+# phrase title; this set + the coercion below enforce it deterministically.
+_DELIVERABLE_VERBS = frozenset({
+    "refactor", "refactored", "refactoring",
+    "add", "added", "adding",
+    "fix", "fixed", "fixing",
+    "implement", "implemented", "implementing",
+    "migrate", "migrated", "migrating",
+    "build", "built", "building",
+    "ship", "shipped", "shipping",
+    "create", "created", "creating",
+    "delete", "deleted", "deleting",
+    "remove", "removed", "removing",
+    "update", "updated", "updating",
+    "replace", "replaced", "replacing",
+    "land", "landed", "landing",
+    "rewrite", "rewrote", "rewriting",
+})
+
+
+_DISCUSSION_LEADS = frozenset({
+    "discussed", "discussed:",
+    "explored", "explored:",
+    "sketched", "sketched:",
+    "reviewed", "reviewed:",
+    "considered", "considered:",
+    "drafted", "drafted:",
+    "proposed", "proposed:",
+})
+
+
+_TITLE_WORD_CAP = 8
 BULLET_LINE_MAX = 280
 PHASE2_MAX_ATTEMPTS = 3
 PHASE2_MAX_OUTPUT_TOKENS = 1024
@@ -434,6 +471,22 @@ def compose_session_note(
             extra_keys=extra_keys,
         )
     data = {k: v for k, v in data.items() if k in allowed_keys}
+    # Title-verb coercion: in discussion shape, strip leading deliverable
+    # verbs and prepend ``Discussed:``. Pure post-LLM safety net for the
+    # cases the prompt didn't catch.
+    title_in = data.get("title", "")
+    title_out = _coerce_title_for_shape(title_in, shape)
+    if title_out != title_in:
+        data["title"] = title_out
+        if logger is not None:
+            logger.emit(
+                "warning",
+                call="compose-title-coerced",
+                transcript_id=transcript_id,
+                shape_kind=shape.kind if shape is not None else "unspecified",
+                title_in=title_in,
+                title_out=title_out,
+            )
     if logger is not None:
         logger.emit(
             "llm-response",
@@ -443,6 +496,56 @@ def compose_session_note(
             keys=sorted(data.keys()),
         )
     return data
+
+
+def _coerce_title_for_shape(title: str, shape: NarrativeShape | None) -> str:
+    """Enforce the no-deliverable-verb rule for discussion-shape titles.
+
+    Work shape: untouched. Discussion shape: if the title leads with a
+    deliverable verb (``Refactor``, ``Add``, ``Fix``, …) the verb is
+    stripped and ``Discussed:`` is prepended. Already-discussion-led
+    titles (``Discussed:``, ``Explored:``, ``Sketched:``, ``Reviewed:``,
+    …) and noun-phrase titles pass through unchanged.
+
+    The 6-8 word cap is enforced by truncating trailing words rather
+    than the prefix — the rewritten title's framing is more important
+    than its tail.
+    """
+    if shape is None or shape.has_edits:
+        return title
+    title = title.strip()
+    if not title:
+        return title
+    words = title.split()
+    if not words:
+        return title
+    first_norm = words[0].lower().rstrip(":,")
+    if first_norm in _DISCUSSION_LEADS:
+        # Already discussion-shaped (or has a recognised lead). Honour
+        # the model's framing and just enforce the word cap.
+        return _truncate_title_words(title)
+    if first_norm not in _DELIVERABLE_VERBS:
+        # Not a deliverable verb — could be a noun phrase or a less-
+        # suspect verb. Leave alone; the prompt does most of the
+        # steering, and over-coercing would replace legitimate framings
+        # with a generic ``Discussed:`` prefix.
+        return _truncate_title_words(title)
+    # Strip the deliverable verb and prepend ``Discussed:``. If the
+    # remainder is empty (one-word title like "Refactor"), fall back to
+    # a placeholder so the slug isn't degenerate.
+    rest = " ".join(words[1:]).strip()
+    coerced = f"Discussed: {rest}" if rest else "Discussed: session"
+    return _truncate_title_words(coerced)
+
+
+def _truncate_title_words(title: str, cap: int = _TITLE_WORD_CAP) -> str:
+    """Drop trailing words past ``cap``. Keeps the leading ``Discussed:``
+    style prefix so the framing of the title is preserved at the cost
+    of the tail."""
+    words = title.split()
+    if len(words) <= cap:
+        return title
+    return " ".join(words[:cap])
 
 
 def _phase2_prompt(

@@ -18,6 +18,7 @@ from lore_curator.synthesis import (
     BULLET_CAPS,
     BULLET_LINE_MAX,
     FlushOutcome,
+    _coerce_title_for_shape,
     _phase2_prompt,
     _phase2_tool_schema,
     compose_session_note,
@@ -652,6 +653,98 @@ def test_phase2_drops_decisions_in_discussion_shape_response():
     extra_events = [(n, kw) for n, kw in events if kw.get("call") == "compose-extra-key"]
     assert len(extra_events) == 1
     assert sorted(extra_events[0][1]["extra_keys"]) == ["decisions", "worked_on"]
+
+
+# ---------------------------------------------------------------------------
+# Title-verb gate (step-6). Pure post-LLM coercion: in discussion shape
+# the title MUST NOT lead with a deliverable verb that promises work
+# the session didn't deliver.
+# ---------------------------------------------------------------------------
+
+
+def test_title_coerce_work_shape_passes_through_unchanged():
+    shape = _make_shape(has_edits=True)
+    assert _coerce_title_for_shape("Refactor auth handler chain", shape) \
+        == "Refactor auth handler chain"
+
+
+def test_title_coerce_none_shape_passes_through_unchanged():
+    """``shape=None`` (legacy callers) must not coerce anything — the
+    behaviour matches pre-step-4 fixtures."""
+    assert _coerce_title_for_shape("Refactor auth", None) == "Refactor auth"
+
+
+def test_title_coerce_discussion_strips_deliverable_verb():
+    shape = _make_shape(has_edits=False)
+    assert _coerce_title_for_shape("Refactor docs into Diátaxis spine", shape) \
+        == "Discussed: docs into Diátaxis spine"
+
+
+def test_title_coerce_discussion_handles_each_deliverable_verb():
+    shape = _make_shape(has_edits=False)
+    cases = [
+        ("Add new auth endpoint", "Discussed: new auth endpoint"),
+        ("Fix race in scheduler", "Discussed: race in scheduler"),
+        ("Implement webhook receiver", "Discussed: webhook receiver"),
+        ("Migrate to PostgreSQL", "Discussed: to PostgreSQL"),
+        ("Build the new pipeline", "Discussed: the new pipeline"),
+        ("Ship release candidate", "Discussed: release candidate"),
+        ("Land the auth refactor", "Discussed: the auth refactor"),
+    ]
+    for title_in, expected in cases:
+        assert _coerce_title_for_shape(title_in, shape) == expected, title_in
+
+
+def test_title_coerce_already_discussion_led_passes_through():
+    shape = _make_shape(has_edits=False)
+    cases = [
+        "Discussed: Diátaxis docs spine",
+        "Explored docs structure tradeoffs",
+        "Sketched: new auth model",
+        "Reviewed migration plan",
+        "Considered options for caching",
+    ]
+    for title in cases:
+        assert _coerce_title_for_shape(title, shape) == title, title
+
+
+def test_title_coerce_noun_phrase_passes_through():
+    """Non-deliverable-verb leads (noun phrases, less suspect verbs)
+    are not coerced. Over-coercing would replace legitimate framings
+    with a generic ``Discussed:`` prefix."""
+    shape = _make_shape(has_edits=False)
+    cases = [
+        "Investigation of standing waves",
+        "Notes on ccat docs structure",
+        "ccat data-transfer architecture review",
+    ]
+    for title in cases:
+        assert _coerce_title_for_shape(title, shape) == title
+
+
+def test_title_coerce_empty_or_one_word_handled():
+    shape = _make_shape(has_edits=False)
+    assert _coerce_title_for_shape("", shape) == ""
+    assert _coerce_title_for_shape("Refactor", shape) == "Discussed: session"
+
+
+def test_title_coerce_truncates_to_8_words():
+    shape = _make_shape(has_edits=False)
+    long_title = "Refactor the very long title that exceeds the eight word cap"
+    coerced = _coerce_title_for_shape(long_title, shape)
+    # ``Discussed:`` + 7 trailing words (the original first word is
+    # stripped as the deliverable verb)
+    assert len(coerced.split()) == 8
+    assert coerced.startswith("Discussed:")
+
+
+def test_title_coerce_truncates_already_discussion_led_titles():
+    """Word cap applies even to already-shaped titles."""
+    shape = _make_shape(has_edits=False)
+    long_title = "Discussed: the entire roadmap for the next quarter and beyond"
+    coerced = _coerce_title_for_shape(long_title, shape)
+    assert len(coerced.split()) <= 8
+    assert coerced.startswith("Discussed:")
 
 
 def test_phase2_e2e_05_1212_pattern_yields_discussion_shape(
