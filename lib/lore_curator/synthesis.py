@@ -96,6 +96,7 @@ BULLET_CAPS = {
     "decisions": 5,
     "worked_on": 8,
     "loose_ends": 5,
+    "discussion": 8,  # mirrors worked_on cap; discussion replaces it in non-work shape
 }
 BULLET_LINE_MAX = 280
 PHASE2_MAX_ATTEMPTS = 3
@@ -682,6 +683,10 @@ def _phase2_apply(
     decisions = _truncate_bullets(composed.get("decisions"), cap=BULLET_CAPS["decisions"])
     worked_on = _truncate_bullets(composed.get("worked_on"), cap=BULLET_CAPS["worked_on"])
     loose_ends = _truncate_bullets(composed.get("loose_ends"), cap=BULLET_CAPS["loose_ends"])
+    discussion = _truncate_bullets(
+        composed.get("discussion"),
+        cap=BULLET_CAPS.get("discussion", BULLET_CAPS["worked_on"]),
+    )
 
     fm["title"] = title
     fm["description"] = description
@@ -708,6 +713,7 @@ def _phase2_apply(
         commits=rb.activity_commits,
         issues_opened=rb.activity_issues_opened,
         issues_closed=rb.activity_issues_closed,
+        discussion=_bulletise(discussion),
     ))
     new_text = _render_markdown(fm, body, wiki_root=wiki_root)
     atomic_write_text(stub_path, new_text)

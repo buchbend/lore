@@ -128,12 +128,21 @@ class BodySections(NamedTuple):
     commits: list[str]     # under ### Commits
     issues_opened: list[str]
     issues_closed: list[str]
+    # discussion-shape companion to ``worked_on``: narrative bullets of
+    # what was talked through when no edits happened. Conditional —
+    # rendered only when non-empty (the renderer omits empty sections).
+    # Plan ``yes-do-that-keen-yeti`` step-5. Defaults to ``()`` (an
+    # immutable empty sentinel) at the NamedTuple level so existing
+    # constructor sites stay positional-compatible without re-typing
+    # an empty list literal at each call.
+    discussion: list[str] = ()  # type: ignore[assignment]
 
 
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
 _KNOWN_H2: dict[str, str] = {
     "Summary": "summary",
     "Decisions made": "decisions",
+    "Discussion": "discussion",
     "What we worked on": "worked_on",
     "Activity": "activity",
     "Loose ends": "loose_ends",
@@ -160,6 +169,7 @@ def parse_body_sections(body: str) -> BodySections:
     title = ""
     summary_lines: list[str] = []
     decisions: list[str] = []
+    discussion: list[str] = []
     worked_on: list[str] = []
     loose_ends: list[str] = []
     commits: list[str] = []
@@ -189,6 +199,8 @@ def parse_body_sections(body: str) -> BodySections:
             summary_lines.append(line)
         elif current_h2 == "decisions" and line.lstrip().startswith("-"):
             decisions.append(line)
+        elif current_h2 == "discussion" and line.lstrip().startswith("-"):
+            discussion.append(line)
         elif current_h2 == "worked_on" and line.lstrip().startswith("-"):
             worked_on.append(line)
         elif current_h2 == "loose_ends" and line.lstrip().startswith("-"):
@@ -211,6 +223,7 @@ def parse_body_sections(body: str) -> BodySections:
         commits=commits,
         issues_opened=issues_opened,
         issues_closed=issues_closed,
+        discussion=discussion,
     )
 
 
@@ -223,6 +236,10 @@ def render_body_sections(sections: BodySections) -> str:
     if sections.summary:
         parts.append("\n## Summary\n\n")
         parts.append(sections.summary.rstrip() + "\n")
+
+    if sections.discussion:
+        parts.append("\n## Discussion\n\n")
+        parts.extend(line + "\n" for line in sections.discussion)
 
     if sections.decisions:
         parts.append("\n## Decisions made\n\n")
@@ -281,6 +298,7 @@ def merge_body_sections(existing: BodySections, new: BodySections) -> BodySectio
         commits=_dedup_lines(existing.commits, new.commits),
         issues_opened=_dedup_lines(existing.issues_opened, new.issues_opened),
         issues_closed=_dedup_lines(existing.issues_closed, new.issues_closed),
+        discussion=_dedup_lines(existing.discussion, new.discussion),
     )
 
 
