@@ -39,6 +39,7 @@ from lore_curator.buffer_store import (
 )
 from lore_curator.session_activity import (
     _collect_activity,
+    _files_modified_from_turns,
     _files_touched_from_turns,
 )
 
@@ -71,6 +72,8 @@ class AppendOutcome:
     sidecar_after: Sidecar | None = None
     skipped_no_op: bool = False
     new_files_touched: list[str] = field(default_factory=list)
+    new_files_modified: list[str] = field(default_factory=list)
+    files_modified: list[str] = field(default_factory=list)
     new_plans: list[str] = field(default_factory=list)
     new_projects: list[str] = field(default_factory=list)
     new_commit_shas: list[str] = field(default_factory=list)
@@ -208,6 +211,7 @@ def append_chunk(
             is_new_buffer=False,
             activity={},
             files_touched=[],
+            files_modified=[],
             last_hash="",
             last_index=-1,
             skipped_no_op=True,
@@ -222,6 +226,7 @@ def append_chunk(
     )
 
     files_touched = _files_touched_from_turns(chunk_turns)
+    files_modified = _files_modified_from_turns(chunk_turns)
 
     plan_scan_text = "\n".join(
         (t.text or "") for t in chunk_turns if t.text
@@ -254,6 +259,7 @@ def append_chunk(
         "turn_count_delta": turn_count_delta,
         "prompt_chars_delta": prompt_chars_delta,
         "files_touched": files_touched,
+        "files_modified": files_modified,
         "plans": list(activity.get("plans") or []),
         "projects": list(activity.get("projects") or []),
         "commit_shas": list(activity.get("commit_shas") or []),
@@ -327,10 +333,12 @@ def append_chunk(
         # the pre-append log and compare deduped-extend against it.
         pre = buffer.replay()
         pre_files = set(pre.files_touched)
+        pre_files_modified = set(pre.files_modified)
         pre_plans = set(pre.plans)
         pre_projects = set(pre.projects)
         pre_shas = set(pre.commit_shas)
         new_files = [f for f in files_touched if f not in pre_files]
+        new_files_modified = [f for f in files_modified if f not in pre_files_modified]
         new_plans = [p for p in (activity.get("plans") or []) if p not in pre_plans]
         new_projects = [p for p in (activity.get("projects") or []) if p not in pre_projects]
         new_commit_shas = [
@@ -365,6 +373,7 @@ def append_chunk(
             turn_count=post.turn_count,
             prompt_chars=post.prompt_chars,
             files_touched_count=len(post.files_touched),
+            files_modified_count=len(post.files_modified),
         )
         last_seen = LastSeen(content_hash=to_hash, index_hint=to_index)
 
@@ -430,6 +439,7 @@ def append_chunk(
         is_new_buffer=is_new,
         activity=activity,
         files_touched=files_touched,
+        files_modified=files_modified,
         last_hash=to_hash,
         last_index=to_index,
         cap_tripped=cap_tripped,
@@ -437,6 +447,7 @@ def append_chunk(
         accumulators_unchanged=accumulators_unchanged,
         sidecar_after=sidecar_after,
         new_files_touched=new_files,
+        new_files_modified=new_files_modified,
         new_plans=new_plans,
         new_projects=new_projects,
         new_commit_shas=new_commit_shas,

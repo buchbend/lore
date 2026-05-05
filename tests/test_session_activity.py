@@ -494,6 +494,79 @@ def test_collect_projects_picks_up_repo_prefixes_from_files_touched(tmp_path, mo
     assert "data-transfer" in refs
 
 
+# ---------------------------------------------------------------------------
+# files_modified / files_read / files_touched split (step-1 of
+# yes-do-that-keen-yeti). The narrative-shape gate that fixes the bad
+# 05-1212 note depends on edits and reads being distinguishable at the
+# helper layer.
+# ---------------------------------------------------------------------------
+
+
+def _turn_with_tool(idx: int, name: str, category: str, path: str):
+    from lore_core.types import ToolCall, Turn
+    return Turn(
+        index=idx, timestamp=None, role="assistant",
+        tool_call=ToolCall(name=name, input={"file_path": path}, id=f"tc{idx}", category=category),
+    )
+
+
+def test_files_modified_returns_edits_only():
+    from lore_curator.session_activity import _files_modified_from_turns
+
+    turns = [
+        _turn_with_tool(0, "Read", "file_read", "a.py"),
+        _turn_with_tool(1, "Edit", "file_edit", "b.py"),
+        _turn_with_tool(2, "Read", "file_read", "c.py"),
+        _turn_with_tool(3, "Write", "file_edit", "d.py"),
+    ]
+    assert _files_modified_from_turns(turns) == ["b.py", "d.py"]
+
+
+def test_files_read_returns_reads_only():
+    from lore_curator.session_activity import _files_read_from_turns
+
+    turns = [
+        _turn_with_tool(0, "Read", "file_read", "a.py"),
+        _turn_with_tool(1, "Edit", "file_edit", "b.py"),
+        _turn_with_tool(2, "Read", "file_read", "c.py"),
+    ]
+    assert _files_read_from_turns(turns) == ["a.py", "c.py"]
+
+
+def test_files_touched_legacy_helper_returns_union():
+    """The legacy union helper stays backward-compatible — buffer events
+    archived under v1 still fold cleanly into ``rb.files_touched``."""
+    from lore_curator.session_activity import _files_touched_from_turns
+
+    turns = [
+        _turn_with_tool(0, "Read", "file_read", "a.py"),
+        _turn_with_tool(1, "Edit", "file_edit", "b.py"),
+    ]
+    assert _files_touched_from_turns(turns) == ["a.py", "b.py"]
+
+
+def test_files_modified_dedupes_and_preserves_first_seen_order():
+    from lore_curator.session_activity import _files_modified_from_turns
+
+    turns = [
+        _turn_with_tool(0, "Edit", "file_edit", "b.py"),
+        _turn_with_tool(1, "Edit", "file_edit", "a.py"),
+        _turn_with_tool(2, "Edit", "file_edit", "b.py"),
+    ]
+    assert _files_modified_from_turns(turns) == ["b.py", "a.py"]
+
+
+def test_files_modified_ignores_non_file_categories():
+    from lore_curator.session_activity import _files_modified_from_turns
+
+    turns = [
+        _turn_with_tool(0, "Bash", "shell_exec", "cmd"),
+        _turn_with_tool(1, "Edit", "file_edit", "a.py"),
+        _turn_with_tool(2, "Agent", "agent_spawn", "subagent"),
+    ]
+    assert _files_modified_from_turns(turns) == ["a.py"]
+
+
 def test_collect_projects_dedupes(tmp_path, monkeypatch):
     wiki = tmp_path / "wiki"
     (wiki / "projects").mkdir(parents=True)

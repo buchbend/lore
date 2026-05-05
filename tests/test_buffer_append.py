@@ -267,6 +267,94 @@ def test_idempotent_replay_dedups_files_touched(lore_root, patch_collectors, mon
     assert rb.turn_count == 4
 
 
+def test_append_event_carries_files_modified_alongside_files_touched(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """step-1: every new append event emits ``files_modified`` (edits-only)
+    next to the legacy ``files_touched`` (union). Replay folds both into
+    distinct accumulators on the ReplayedBuffer."""
+    import json
+
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_touched_from_turns",
+        lambda turns: ["/repo/a.py", "/repo/r.py"],  # union
+    )
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_modified_from_turns",
+        lambda turns: ["/repo/a.py"],  # edits only
+    )
+
+    o1 = append_chunk(
+        lore_root=lore_root, chunk_turns=_make_turns(2), local_date="2026-05-01",
+        transcript_id="abc", integration="claude-code", wiki="private", scope="proj:x",
+        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=_make_cfg(),
+    )
+
+    log_text = (lore_root / ".lore" / "buffers" / f"{o1.buffer.stem}.jsonl").read_text()
+    event = json.loads(log_text.splitlines()[0])
+    assert event["files_touched"] == ["/repo/a.py", "/repo/r.py"]
+    assert event["files_modified"] == ["/repo/a.py"]
+
+    rb = o1.buffer.replay()
+    assert rb.files_touched == ["/repo/a.py", "/repo/r.py"]
+    assert rb.files_modified == ["/repo/a.py"]
+
+    sidecar = o1.buffer.read_sidecar()
+    assert sidecar.counters.files_touched_count == 2
+    assert sidecar.counters.files_modified_count == 1
+
+    assert o1.files_modified == ["/repo/a.py"]
+    assert o1.new_files_modified == ["/repo/a.py"]
+
+
+def test_legacy_event_without_files_modified_replays_clean(lore_root, patch_collectors):
+    """A v1-shaped event log (no ``files_modified`` key) must still fold
+    without exception; ``rb.files_modified`` stays empty for that buffer
+    rather than mis-classifying reads as edits."""
+    import json
+
+    # Hand-craft a v1-shaped sidecar + event log under .lore/buffers/_done/
+    # to simulate an archived buffer the new code is asked to read.
+    buffers = lore_root / ".lore" / "buffers"
+    buffers.mkdir(parents=True, exist_ok=True)
+    stem = "abc__20260501"
+    sidecar_path = buffers / f"{stem}.state.json"
+    log_path = buffers / f"{stem}.jsonl"
+
+    sidecar_payload = {
+        "schema_version": 1,
+        "transcript_id": "abc",
+        "local_date": "2026-05-01",
+        "integration": "claude-code",
+        "wiki": "private",
+        "scope": "proj:x",
+        "state": "closed",
+        "counters": {
+            "turn_count": 2,
+            "prompt_chars": 10,
+            "files_touched_count": 2,
+            # files_modified_count absent — defaults to 0
+        },
+    }
+    sidecar_path.write_text(json.dumps(sidecar_payload))
+    legacy_event = {
+        "type": "append",
+        "files_touched": ["/r/a.py", "/r/b.py"],
+        # files_modified absent (v1 shape)
+        "turn_count_delta": 2,
+        "prompt_chars_delta": 10,
+    }
+    log_path.write_text(json.dumps(legacy_event) + "\n")
+
+    buf = Buffer(lore_root, stem)
+    rb = buf.replay()
+    assert rb.files_touched == ["/r/a.py", "/r/b.py"]
+    assert rb.files_modified == []  # v1 default; no mis-classification
+
+    sidecar = buf.read_sidecar()
+    assert sidecar.counters.files_modified_count == 0  # v1 default
+
+
 def test_accumulators_unchanged_when_chunk_repeats(lore_root, patch_collectors, monkeypatch):
     monkeypatch.setattr(
         "lore_curator.buffer_append._files_touched_from_turns",

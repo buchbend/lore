@@ -356,7 +356,13 @@ class SessionInput:
     # Persisted in frontmatter so future chunks can decide topic-merge
     # via file-set overlap. Already-stripped of boilerplate before being
     # handed in is fine but not required — the merge logic strips again.
+    # ``files_touched`` is the union of edits + reads (legacy semantics);
+    # ``files_modified`` is the edits-only subset used for narrative-shape
+    # gating. Both are persisted so existing topic-merge logic (which
+    # reads ``files_touched``) keeps working while new readers can rely
+    # on the cleaner signal.
     files_touched: list[str] = field(default_factory=list)
+    files_modified: list[str] = field(default_factory=list)
 
     # Phase 3 — auto-populated cross-note linkage. ``plans`` are
     # ``<slug>#s<N>`` refs (or bare ``<slug>``); ``projects`` are
@@ -645,6 +651,8 @@ def _build_frontmatter(si: SessionInput) -> dict[str, Any]:
         fm["plans"] = _dedup_preserving_order(si.plans)
     if si.files_touched:
         fm["files_touched"] = _dedup_preserving_order(si.files_touched)
+    if si.files_modified:
+        fm["files_modified"] = _dedup_preserving_order(si.files_modified)
     for k, v in si.extra_frontmatter.items():
         fm.setdefault(k, v)
     if si.scope_redirected_from:
@@ -704,6 +712,17 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
             existing_files = []
         fm["files_touched"] = _dedup_preserving_order(
             list(existing_files) + list(si.files_touched)
+        )
+    # Mirror for the edits-only subset. Vault-edit policy: never delete
+    # an existing field, so notes that were filed under the old code
+    # (only ``files_touched``) keep that field; we add ``files_modified``
+    # alongside it on the next append.
+    if si.files_modified:
+        existing_modified = fm.get("files_modified") or []
+        if not isinstance(existing_modified, list):
+            existing_modified = []
+        fm["files_modified"] = _dedup_preserving_order(
+            list(existing_modified) + list(si.files_modified)
         )
 
     # Phase 3: union projects/plans across appends. These are the

@@ -43,6 +43,8 @@ from lore_curator.session_activity import (
     _collect_activity,
     _commit_shas_from_bash_results,  # noqa: F401  (test back-compat)
     _file_path_from_tool_input,  # noqa: F401  (test back-compat)
+    _files_modified_from_turns,
+    _files_read_from_turns,  # noqa: F401  (re-export for callers needing read-only paths)
     _files_touched_from_turns,
     _is_git_commit_command,  # noqa: F401  (test back-compat)
     collect_commits_by_sha,  # noqa: F401  (monkeypatch surface for test_session_filer)
@@ -191,6 +193,7 @@ def file_session_note(
     to_hash = turns[-1].content_hash() if turns else None
 
     files_touched = _files_touched_from_turns(turns)
+    files_modified = _files_modified_from_turns(turns)
 
     # Plan-wikilink scan looks at the noteworthy body content (bullets +
     # decisions + loose ends + description) rather than the rendered
@@ -255,6 +258,11 @@ def file_session_note(
         # decisions in session_writer. We trust the structural extraction
         # over noteworthy.files_touched (which the LLM can hallucinate).
         files_touched=files_touched,
+        # Edits-only subset, used by narrative-shape selection. A slice
+        # with empty ``files_modified`` (e.g. exploration / brainstorm)
+        # cannot honestly carry "what we worked on" — the gate that
+        # enforces this lives in synthesis.compose_session_note.
+        files_modified=files_modified,
         # Phase 3: cross-note linkage (frontmatter) + Activity bullets
         # (already rendered into body_markdown above; copies live here so
         # append-mode can re-derive without re-running collectors).

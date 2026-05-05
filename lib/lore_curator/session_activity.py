@@ -599,16 +599,52 @@ def _commit_shas_from_bash_results(turns: list[Turn]) -> list[str]:
     return out
 
 
-def _files_touched_from_turns(turns: list[Turn]) -> list[str]:
-    """Extract de-duplicated, ordered file paths from ``file_edit`` and
-    ``file_read`` tool calls in the slice.
+def _files_modified_from_turns(turns: list[Turn]) -> list[str]:
+    """Extract de-duplicated, ordered file paths from ``file_edit`` tool
+    calls in the slice — i.e. files actually written/edited, not read.
 
-    Order is first-seen so frontmatter diffs stay readable; we don't sort.
-    Uses canonical ToolCall.category so this works for any host whose
-    adapter populates the field — Claude Code's Edit, Cursor's edit_file,
-    Copilot's applyEdit all surface here uniformly. Each host names the
-    path argument differently; :func:`_file_path_from_tool_input` walks
-    a small list of known keys.
+    This is the load-bearing primitive for narrative-shape selection:
+    a slice with zero edits cannot honestly carry a "what we worked on"
+    section. Order is first-seen so frontmatter diffs stay readable;
+    we don't sort.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in turns:
+        tc = t.tool_call
+        if tc is None or tc.category != "file_edit":
+            continue
+        path = _file_path_from_tool_input(tc.input)
+        if path and path not in seen:
+            seen.add(path)
+            out.append(path)
+    return out
+
+
+def _files_read_from_turns(turns: list[Turn]) -> list[str]:
+    """Extract de-duplicated, ordered file paths from ``file_read`` tool
+    calls in the slice. Symmetric to :func:`_files_modified_from_turns`."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in turns:
+        tc = t.tool_call
+        if tc is None or tc.category != "file_read":
+            continue
+        path = _file_path_from_tool_input(tc.input)
+        if path and path not in seen:
+            seen.add(path)
+            out.append(path)
+    return out
+
+
+def _files_touched_from_turns(turns: list[Turn]) -> list[str]:
+    """Union of edits + reads (the historic v1 buffer-event semantics).
+
+    Kept for backward compatibility with already-archived buffers in
+    ``_done/`` whose JSONL events carry the union under ``files_touched``.
+    New callers should prefer :func:`_files_modified_from_turns` because
+    "touched" conflates two different intents and biases narrative tense
+    toward edits even when only reads occurred.
     """
     seen: set[str] = set()
     out: list[str] = []
