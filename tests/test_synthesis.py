@@ -18,8 +18,12 @@ from lore_curator.synthesis import (
     BULLET_CAPS,
     BULLET_LINE_MAX,
     FlushOutcome,
+    _phase2_prompt,
+    _phase2_tool_schema,
+    compose_session_note,
     flush_buffer,
 )
+from lore_core.narrative_kind import NarrativeShape
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +134,22 @@ def _seed_stub(lore_root: Path, monkeypatch, *, files=None, transcript_id: str =
     files = files if files is not None else ["/repo/auth.py"]
     monkeypatch.setattr(
         "lore_curator.buffer_append._files_touched_from_turns",
+        lambda turns: list(files),
+    )
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_modified_from_turns",
+        lambda turns: list(files),
+    )
+    # Synthesis recomputes files_modified at flush time from the
+    # transcript turns the adapter returns. The test fixture's
+    # ``_make_turns`` produces text-only turns (no tool_calls), so the
+    # honest re-read yields ``[]`` — which would force discussion shape
+    # for every Phase-2 test. Patch the flush-side helper to mirror
+    # the buffer-side ``files`` so these tests keep exercising
+    # work-shape behaviour. Tests that explicitly want discussion shape
+    # override this monkeypatch.
+    monkeypatch.setattr(
+        "lore_curator.synthesis._files_modified_from_turns",
         lambda turns: list(files),
     )
     work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
@@ -506,3 +526,174 @@ def test_phase2_rename_avoids_collision(lore_root, patch_collectors, monkeypatch
     # Pre-existing collision sibling untouched.
     assert pre_existing.exists()
     assert "someone else" in pre_existing.read_text()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — narrative-shape gating (step-4 of yes-do-that-keen-yeti).
+# Schema becomes a function of NarrativeShape; the work shape preserves
+# the existing fields, the discussion shape strips ``decisions[]`` and
+# ``worked_on[]`` entirely and adds ``discussion[]``. additionalProperties
+# is locked to false on every variant.
+# ---------------------------------------------------------------------------
+
+
+def _make_shape(*, has_edits: bool, decisions_allowed: bool | None = None,
+                no_edit_intent: bool = False, adr_flagged: bool = False) -> NarrativeShape:
+    """NarrativeShape constructor with sane defaults for Phase-2 tests."""
+    if decisions_allowed is None:
+        decisions_allowed = has_edits
+    return NarrativeShape(
+        has_edits=has_edits,
+        decisions_allowed=decisions_allowed,
+        no_edit_intent=no_edit_intent,
+        adr_flagged=adr_flagged,
+    )
+
+
+def test_phase2_schema_work_shape_has_decisions_and_worked_on():
+    schema = _phase2_tool_schema(_make_shape(has_edits=True))
+    props = schema["input_schema"]["properties"]
+    assert "decisions" in props
+    assert "worked_on" in props
+    assert "loose_ends" in props
+    # discussion is the discussion-shape companion — absent in work shape.
+    assert "discussion" not in props
+    assert schema["input_schema"]["additionalProperties"] is False
+
+
+def test_phase2_schema_discussion_shape_strips_work_fields():
+    schema = _phase2_tool_schema(_make_shape(has_edits=False))
+    props = schema["input_schema"]["properties"]
+    assert "discussion" in props
+    assert "loose_ends" in props
+    # Structural gate — these fields are NOT advertised, so the LLM has
+    # no slot to emit them. ``additionalProperties: false`` is the
+    # belt-and-braces.
+    assert "decisions" not in props
+    assert "worked_on" not in props
+    assert schema["input_schema"]["additionalProperties"] is False
+
+
+def test_phase2_schema_default_shape_preserves_legacy_behavior():
+    """``shape=None`` (no migration yet) yields the work-shape schema —
+    so test fixtures and any caller that hasn't migrated keep working."""
+    schema = _phase2_tool_schema(None)
+    props = schema["input_schema"]["properties"]
+    assert "decisions" in props
+    assert "worked_on" in props
+    assert "discussion" not in props
+
+
+def test_phase2_prompt_carries_discussion_clause():
+    prompt = _phase2_prompt(
+        turns_text="some user text",
+        activity_summary="",
+        is_continuation=False,
+        continues_wikilink=None,
+        shape=_make_shape(has_edits=False, no_edit_intent=True),
+    )
+    assert "discussion" in prompt.lower()
+    # The prompt explicitly tells the model decisions/worked_on are not
+    # in its schema for this shape.
+    assert "decisions[]" in prompt or "decisions[]`" in prompt or "decisions" in prompt
+    assert "no code change" in prompt.lower() or "disclaimed" in prompt.lower()
+
+
+def test_phase2_prompt_work_clause_when_edits_present():
+    prompt = _phase2_prompt(
+        turns_text="some user text",
+        activity_summary="",
+        is_continuation=False,
+        continues_wikilink=None,
+        shape=_make_shape(has_edits=True),
+    )
+    assert "work" in prompt.lower()
+    # Empty decisions array is acceptable in work shape — the prompt
+    # makes that explicit (without it, the model fills decisions even
+    # when no real ratification happened).
+    assert "empty decisions" in prompt.lower() or "leave the array empty" in prompt.lower()
+
+
+def test_phase2_drops_decisions_in_discussion_shape_response():
+    """End-to-end: even if the LLM emits ``decisions[]`` or ``worked_on[]``
+    in discussion shape (against the schema), the caller-side filter
+    strips them and emits a ``compose-extra-key`` warning."""
+    composed = {
+        "title": "Sketched docs",
+        "description": "d",
+        "summary": "s",
+        "discussion": ["- considered Diátaxis"],
+        "decisions": ["- this should not survive"],
+        "worked_on": ["- nor this"],
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+    events: list[tuple[str, dict]] = []
+
+    class _Logger:
+        run_id = "test"
+
+        def emit(self, name, **kw):
+            events.append((name, kw))
+
+    out = compose_session_note(
+        turns_text="some text",
+        activity_summary="",
+        is_continuation=False,
+        continues_wikilink=None,
+        llm_client=llm,
+        model="m",
+        logger=_Logger(),
+        shape=_make_shape(has_edits=False),
+    )
+    assert out is not None
+    assert "discussion" in out
+    assert "decisions" not in out  # stripped by the schema-key filter
+    assert "worked_on" not in out  # stripped by the schema-key filter
+    extra_events = [(n, kw) for n, kw in events if kw.get("call") == "compose-extra-key"]
+    assert len(extra_events) == 1
+    assert sorted(extra_events[0][1]["extra_keys"]) == ["decisions", "worked_on"]
+
+
+def test_phase2_e2e_05_1212_pattern_yields_discussion_shape(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """End-to-end regression. Seed a buffer with ``files_modified=[]``
+    (the bad-note transcript pattern), let synthesis pick the shape,
+    and assert the rendered note omits Decisions / What we worked on
+    and surfaces the Discussion section. This is the primary fix
+    target for plan ``yes-do-that-keen-yeti``."""
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    # Override the seed's default files: this session is the bad
+    # discussion-shape case — no edits.
+    monkeypatch.setattr(
+        "lore_curator.synthesis._files_modified_from_turns",
+        lambda turns: [],
+    )
+
+    # The LLM emits a discussion-shape response. In the real failing
+    # transcript the model would have been steered by the prompt + the
+    # narrowed schema; here we just simulate the well-shaped response.
+    composed = {
+        "title": "Discussed: ccat docs Diátaxis spine",
+        "description": "Sketched a Diátaxis-style refactor of the data-transfer docs; no changes made.",
+        "summary": "We talked through the existing Sphinx docs and considered a four-quadrant restructure. No edits — exploration only.",
+        "discussion": [
+            "**Diátaxis spine** — explored how to split tutorials/how-to/reference/explanation",
+            "**ADR extraction** — considered promoting philosophy.md essays into 7 ADRs",
+        ],
+        "loose_ends": ["**ADR backlog** — not yet validated with stakeholders"],
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert outcome.phase2_completed is True
+    text = outcome.stub_path.read_text()
+    assert "## Decisions made" not in text
+    assert "## What we worked on" not in text
+    assert "## Discussion" in text
+    assert "Diátaxis" in text

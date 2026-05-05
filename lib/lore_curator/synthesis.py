@@ -70,6 +70,7 @@ from lore_curator.buffer_store import (
     _now_iso,
     done_dir,
 )
+from lore_curator.session_activity import _files_modified_from_turns
 from lore_curator.session_filer import _slug
 from lore_curator.stub_note import (
     STUB_DESCRIPTION_PLACEHOLDER,
@@ -378,8 +379,9 @@ def compose_session_note(
         activity_summary=activity_summary,
         is_continuation=is_continuation,
         continues_wikilink=continues_wikilink,
+        shape=shape,
     )
-    schema = _phase2_tool_schema()
+    schema = _phase2_tool_schema(shape)
     if logger is not None:
         logger.emit(
             "llm-prompt",
@@ -416,6 +418,22 @@ def compose_session_note(
                 message="no tool_use block in response",
             )
         return None
+    # Defensive: even with ``additionalProperties: false`` set, the
+    # Anthropic SDK does not validate tool_use responses against the
+    # schema we sent. Strip any keys that aren't in the schema we built
+    # for this shape and log them — an LLM emitting ``decisions[]`` in
+    # discussion shape would otherwise silently slip past the gate.
+    allowed_keys = set(schema["input_schema"]["properties"].keys())
+    extra_keys = sorted(k for k in data.keys() if k not in allowed_keys)
+    if extra_keys and logger is not None:
+        logger.emit(
+            "warning",
+            call="compose-extra-key",
+            transcript_id=transcript_id,
+            shape_kind=shape.kind if shape is not None else "unspecified",
+            extra_keys=extra_keys,
+        )
+    data = {k: v for k, v in data.items() if k in allowed_keys}
     if logger is not None:
         logger.emit(
             "llm-response",
@@ -433,17 +451,31 @@ def _phase2_prompt(
     activity_summary: str,
     is_continuation: bool,
     continues_wikilink: str | None,
+    shape: NarrativeShape | None = None,
 ) -> str:
+    is_discussion = shape is not None and not shape.has_edits
+    if is_discussion:
+        bullet_line = (
+            f"Bullet-count caps are hard: discussion <= "
+            f"{BULLET_CAPS.get('discussion', 8)}, loose_ends <= "
+            f"{BULLET_CAPS['loose_ends']}. Each bullet line <= "
+            f"{BULLET_LINE_MAX} chars."
+        )
+    else:
+        bullet_line = (
+            f"Bullet-count caps are hard: decisions <= {BULLET_CAPS['decisions']}, "
+            f"worked_on <= {BULLET_CAPS['worked_on']}, loose_ends <= "
+            f"{BULLET_CAPS['loose_ends']}. Each bullet line <= "
+            f"{BULLET_LINE_MAX} chars."
+        )
+
     parts: list[str] = [
         "You are composing the human-readable narrative for ONE session "
         "note. The deterministic Activity (commits, issues, files touched) "
         "is already in place; your job is to write the narrative the reader "
         "sees first.",
         "",
-        "Return your output via the `compose` tool. Bullet-count caps are "
-        f"hard: decisions <= {BULLET_CAPS['decisions']}, worked_on <= "
-        f"{BULLET_CAPS['worked_on']}, loose_ends <= {BULLET_CAPS['loose_ends']}. "
-        f"Each bullet line <= {BULLET_LINE_MAX} chars.",
+        f"Return your output via the `compose` tool. {bullet_line}",
         "",
         "Title: 6-8 words; content-named (NOT phase numbers or release "
         "labels); reads as a filename a year from now.",
@@ -456,6 +488,50 @@ def _phase2_prompt(
         "actually exist. Use backticks for code-shaped tokens, plain text "
         "otherwise.",
     ]
+
+    # Shape-specific clause. The schema has already been narrowed for
+    # this shape (see ``_phase2_tool_schema``); the prompt makes the
+    # narrowing explicit so the model doesn't waste output budget
+    # trying to emit fields that aren't in its tool spec.
+    if is_discussion:
+        intent_note = ""
+        if shape is not None and shape.no_edit_intent:
+            intent_note = (
+                " The user explicitly disclaimed intent to change code "
+                "('no code change', 'just exploration', 'brainstorming') —"
+                " honour that framing in the title and summary."
+            )
+        parts.extend([
+            "",
+            "**Narrative shape: discussion.** The underlying turn slice "
+            "contains no file edits. Compose Discussion bullets (what "
+            "was talked through — model-proposed options, considered "
+            "trade-offs, lines of reasoning the user did NOT explicitly "
+            "ratify) and Loose ends (open threads, past-tense). The "
+            "schema does NOT include `decisions[]` or `worked_on[]` for "
+            "this shape — do not attempt to emit them; they would be "
+            "rejected." + intent_note,
+            "",
+            "Title shape: title MUST NOT promise work that did not "
+            "happen. If you are reaching for a deliverable verb "
+            "('Refactor', 'Add', 'Fix', 'Implement', 'Migrate', 'Build', "
+            "'Ship', 'Create', 'Delete', 'Replace'), prefix it with "
+            "'Discussed:' / 'Explored:' / 'Sketched:' / 'Reviewed:' OR "
+            "rephrase as a noun phrase. The deliverable verb on its own "
+            "lies about what the session produced.",
+        ])
+    elif shape is not None:
+        parts.extend([
+            "",
+            "**Narrative shape: work.** The underlying turn slice "
+            "contains real file edits. Compose decisions (substantive "
+            "user-confirmed choices, rationale-bearing — leave the "
+            "array empty if no clear ratification appeared in the "
+            "slice; an empty decisions array is acceptable and often "
+            "correct), worked_on (narrative bullets of what was "
+            "actually changed), and loose_ends.",
+        ])
+
     if is_continuation and continues_wikilink:
         parts.extend([
             "",
@@ -494,32 +570,69 @@ def _phase2_prompt(
     return "\n".join(parts)
 
 
-def _phase2_tool_schema() -> dict[str, Any]:
+def _phase2_tool_schema(shape: NarrativeShape | None = None) -> dict[str, Any]:
+    """Build the ``compose`` tool schema for the given narrative shape.
+
+    Two variants:
+
+    - **work** (``shape.has_edits`` or ``shape is None``): existing
+      fields — ``decisions[]``, ``worked_on[]``, ``loose_ends[]``.
+    - **discussion** (``not shape.has_edits``): replaces ``worked_on``
+      with ``discussion`` and OMITS ``decisions`` entirely. The
+      schema's ``additionalProperties: false`` is what makes this gate
+      structural rather than instructional.
+
+    ``shape=None`` preserves the work-shape behaviour for tests and
+    callers that haven't migrated.
+    """
+    is_discussion = shape is not None and not shape.has_edits
+
+    common: dict[str, Any] = {
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "summary": {"type": "string"},
+        "loose_ends": {
+            "type": "array",
+            "maxItems": BULLET_CAPS["loose_ends"],
+            "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
+        },
+    }
+
+    if is_discussion:
+        properties: dict[str, Any] = {
+            **common,
+            "discussion": {
+                "type": "array",
+                "maxItems": BULLET_CAPS.get("discussion", BULLET_CAPS["worked_on"]),
+                "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
+            },
+        }
+    else:
+        properties = {
+            **common,
+            "decisions": {
+                "type": "array",
+                "maxItems": BULLET_CAPS["decisions"],
+                "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
+            },
+            "worked_on": {
+                "type": "array",
+                "maxItems": BULLET_CAPS["worked_on"],
+                "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
+            },
+        }
+
     return {
         "name": "compose",
         "description": "Emit the narrative for the session note.",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "title": {"type": "string"},
-                "description": {"type": "string"},
-                "summary": {"type": "string"},
-                "decisions": {
-                    "type": "array",
-                    "maxItems": BULLET_CAPS["decisions"],
-                    "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
-                },
-                "worked_on": {
-                    "type": "array",
-                    "maxItems": BULLET_CAPS["worked_on"],
-                    "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
-                },
-                "loose_ends": {
-                    "type": "array",
-                    "maxItems": BULLET_CAPS["loose_ends"],
-                    "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
-                },
-            },
+            "properties": properties,
+            # Structural gate, not instructional. Without this, an LLM
+            # that decides to emit ``decisions[]`` in discussion shape
+            # would silently pass through — the SDK doesn't validate
+            # tool_use responses against the schema we sent.
+            "additionalProperties": False,
             "required": ["title", "description", "summary"],
         },
     }
@@ -900,7 +1013,6 @@ def flush_buffer(
     # trusting the buffer's accumulator: archived v1 buffers don't carry
     # ``files_modified`` in their event log (it stays empty), but the
     # transcript adapter still has the truth.
-    from lore_curator.session_activity import _files_modified_from_turns
     files_modified = _files_modified_from_turns(turns_list)
     shape = select_shape(turns_list, files_modified)
     if logger is not None:
