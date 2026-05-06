@@ -10,6 +10,66 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.45.3] - 2026-05-06
+
+### Added — `lore config show / get / set / schema` (one-stop config UX)
+
+`lore config` now grows four typed-configuration subcommands so users
+don't have to hand-edit ``$LORE_ROOT/.lore/config.yml`` (and never
+have to wonder which file a knob lives in).
+
+- ``lore config show [path] [--changed]`` — render the resolved
+  ``RootConfig`` as a table with value, default, and provenance
+  (``file`` if set in YAML, ``default`` otherwise). Optional
+  positional ``path`` filters by dotted prefix; ``--changed`` shows
+  only fields whose value differs from the schema default.
+- ``lore config get <path>`` — print one value (e.g. ``true``,
+  ``openai``). Group paths (``curator``) raise a clear error.
+- ``lore config set <path> <value>`` — persist a value to
+  ``$LORE_ROOT/.lore/config.yml`` with type validation. Bool fields
+  accept ``true/false/yes/no/on/off/1/0`` (case-insensitive); ints
+  and floats parse strictly. Unknown paths and bad values fail with
+  exit-2 and a typed error message. Existing siblings in the YAML
+  are preserved.
+- ``lore config schema`` — print the full ``RootConfig`` tree
+  (paths, types, defaults, group docstrings) from dataclass
+  introspection. Single source of truth for "what can I configure?"
+
+Bare ``lore config`` (no subcommand) keeps the existing vault-layout
+view. The footer of that view now points users at the new
+subcommands.
+
+### Added — Public introspection helpers in ``lore_core.root_config``
+
+``walk_fields(lore_root)`` → list of ``FieldInfo``;
+``get_field(lore_root, path)`` → single FieldInfo;
+``set_field(lore_root, path, value_str)`` → write-back with type
+coercion + path validation; ``schema_tree()`` → schema rows.
+
+These are the seam adapters / external tools should use rather than
+re-parsing YAML or duplicating ``RootConfig``'s defaults. 19 unit
+tests covering provenance, write-back round-trip, type validation,
+unknown-path errors, and bool spelling tolerance.
+
+### Known limitations (tracked in #51)
+
+- PyYAML round-trip in ``set`` does not preserve inline comments;
+  they will be stripped when the file is written back. Migration to
+  ``ruamel.yaml`` for comment preservation is a follow-up.
+- Provenance distinguishes ``file`` vs ``default`` only;
+  env-variable overrides (``LORE_LLM_BACKEND``, ``LORE_BUFFER_FLUSH``,
+  ``LORE_DISABLE_LLM_JUDGMENT``, etc.) are not yet surfaced as a
+  distinct source — the per-call resolver functions
+  (``_resolve_backend``) interpret env vars and would need
+  registration to bubble up. Tracked for the next iteration.
+- ``lore config schema`` doc column shows the parent dataclass'
+  docstring; per-field descriptions live as inline comments in
+  ``root_config.py`` and aren't reachable via ``inspect``. Source
+  parsing / docstring conventions are a follow-up.
+- ``secrets_env.load_into_environ`` still injects any key it finds
+  into ``os.environ``; the deprecation warning for toggle-shaped
+  keys is part of the broader #51 work, not this release.
+
 ## [0.45.2] - 2026-05-06
 
 ### Added — ``curator.closure_judgment_enabled`` config flag
