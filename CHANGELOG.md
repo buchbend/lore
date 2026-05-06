@@ -10,6 +10,32 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.45.2] - 2026-05-06
+
+### Added — ``curator.closure_judgment_enabled`` config flag
+
+The Stop-hook closure-judgment kill switch lives in
+``$LORE_ROOT/.lore/config.yml`` now, alongside ``curator.backend``
+and the other curator settings. Default ``true`` (preserves
+existing behaviour). Set to ``false`` to skip
+``_attribute_commits_with_judgment`` entirely and fall back to
+trailer-only nudges:
+
+```yaml
+curator:
+  backend: openai
+  closure_judgment_enabled: false
+```
+
+The env var ``LORE_DISABLE_LLM_JUDGMENT=1`` from v0.45.1 is retained
+as an ops override (CI, debugging) but is no longer the primary
+user knob — putting feature toggles in ``.lore/secrets.env`` was
+the wrong shape (that file is for credentials). Config-level
+schema, validated by ``CuratorBackendConfig``, surfaced by
+``lore config``.
+
+(Tracked in #51 for the broader "one-stop-shop config UX" work.)
+
 ## [0.45.1] - 2026-05-06
 
 ### Fixed — closure-judgment fork bomb at Stop hook

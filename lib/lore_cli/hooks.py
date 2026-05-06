@@ -1788,10 +1788,10 @@ def _attribute_commits_with_judgment(cwd_path: Path) -> list[str]:
     Returns a (possibly empty) list of confirmation lines for the user.
     Always best-effort: any uncaught exception → ``[]``.
     """
-    # Kill switch for the closure-judgment path (regression b873843):
-    # set LORE_DISABLE_LLM_JUDGMENT=1 to fall back to trailer-only
-    # nudges. Provided so users can re-enable Lore safely while a
-    # backend-resolution fix ships.
+    # Env-var ops override: LORE_DISABLE_LLM_JUDGMENT=1 wins over config.
+    # Primary user knob is ``curator.closure_judgment_enabled`` in
+    # ``$LORE_ROOT/.lore/config.yml`` — checked below once we have a
+    # resolved scope/lore_root.
     if os.environ.get("LORE_DISABLE_LLM_JUDGMENT") == "1":
         return []
     try:
@@ -1800,6 +1800,7 @@ def _attribute_commits_with_judgment(cwd_path: Path) -> list[str]:
         from lore_core.plans.registry import list_active
         from lore_core.plans.step_status import set_step
         from lore_core.plans.types import StepStatus
+        from lore_core.root_config import load_root_config
         from lore_curator.closure_judgment import judge_closure
         from lore_curator.defrag_curator import _resolve_backend
         from lore_curator.llm_client import LlmClientError, make_llm_client
@@ -1807,6 +1808,15 @@ def _attribute_commits_with_judgment(cwd_path: Path) -> list[str]:
         scope = resolve_scope(cwd_path)
         if scope is None:
             return []
+        # Config-level kill switch — primary user knob. Read once;
+        # also reused below for backend resolution to avoid double
+        # config loads on the hot Stop-hook path.
+        _lore_root_for_llm = _infer_lore_root(scope.claude_md_path)
+        try:
+            if not load_root_config(_lore_root_for_llm).curator.closure_judgment_enabled:
+                return []
+        except Exception:  # noqa: BLE001 — never break the hook on config load
+            pass
         wiki_root = get_wiki_root() / scope.wiki
         if not wiki_root.exists():
             return []
@@ -1845,7 +1855,6 @@ def _attribute_commits_with_judgment(cwd_path: Path) -> list[str]:
         # whenever `claude` is on PATH, which then spawns claude -p whose
         # own Stop hook recurses back into this function (b873843).
         try:
-            _lore_root_for_llm = _infer_lore_root(scope.claude_md_path)
             llm_client = make_llm_client(
                 backend=_resolve_backend(None, _lore_root_for_llm),
                 lore_root=_lore_root_for_llm,
