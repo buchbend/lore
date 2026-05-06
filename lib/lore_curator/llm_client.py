@@ -130,6 +130,11 @@ class _SubprocessMessagesAPI:
         if schema is not None:
             cmd += ["--json-schema", json.dumps(schema)]
 
+        # Propagate LORE_CURATOR_MODE=1 so the spawned `claude -p`'s
+        # plugin hooks short-circuit via _in_curator_mode() instead of
+        # recursing into another make_llm_client() → claude -p chain
+        # (closure-judgment fork bomb, regression b873843).
+        env = {**os.environ, "LORE_CURATOR_MODE": "1"}
         try:
             completed = self._runner(
                 cmd,
@@ -138,6 +143,7 @@ class _SubprocessMessagesAPI:
                 timeout=self._timeout_s,
                 check=False,
                 input=prompt,
+                env=env,
             )
         except FileNotFoundError as exc:
             raise LlmClientError(f"claude binary not found: {exc}") from exc

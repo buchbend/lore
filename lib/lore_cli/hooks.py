@@ -1788,6 +1788,12 @@ def _attribute_commits_with_judgment(cwd_path: Path) -> list[str]:
     Returns a (possibly empty) list of confirmation lines for the user.
     Always best-effort: any uncaught exception → ``[]``.
     """
+    # Kill switch for the closure-judgment path (regression b873843):
+    # set LORE_DISABLE_LLM_JUDGMENT=1 to fall back to trailer-only
+    # nudges. Provided so users can re-enable Lore safely while a
+    # backend-resolution fix ships.
+    if os.environ.get("LORE_DISABLE_LLM_JUDGMENT") == "1":
+        return []
     try:
         from lore_core.drain import resolve_session_id
         from lore_core.git import git_repo_root
@@ -1795,6 +1801,7 @@ def _attribute_commits_with_judgment(cwd_path: Path) -> list[str]:
         from lore_core.plans.step_status import set_step
         from lore_core.plans.types import StepStatus
         from lore_curator.closure_judgment import judge_closure
+        from lore_curator.defrag_curator import _resolve_backend
         from lore_curator.llm_client import LlmClientError, make_llm_client
 
         scope = resolve_scope(cwd_path)
@@ -1833,7 +1840,18 @@ def _attribute_commits_with_judgment(cwd_path: Path) -> list[str]:
         session_floor = _session_started_at(sid, cwd_path)
 
         # Resolve LLM client lazily; None = graceful degradation path.
-        llm_client = make_llm_client()
+        # Honour curator.backend in .lore/config.yml — without this, a
+        # no-arg make_llm_client() auto-probes and returns SubprocessClient
+        # whenever `claude` is on PATH, which then spawns claude -p whose
+        # own Stop hook recurses back into this function (b873843).
+        try:
+            _lore_root_for_llm = _infer_lore_root(scope.claude_md_path)
+            llm_client = make_llm_client(
+                backend=_resolve_backend(None, _lore_root_for_llm),
+                lore_root=_lore_root_for_llm,
+            )
+        except LlmClientError:
+            llm_client = None
         model = os.environ.get(
             "LORE_CLOSURE_JUDGMENT_MODEL", _DEFAULT_CLOSURE_MODEL
         )

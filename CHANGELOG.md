@@ -10,6 +10,57 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-05-06
+
+### Fixed — closure-judgment fork bomb at Stop hook
+
+Critical hotfix for a regression introduced in commit `b873843`
+(`feat(plans): LLM-gated commit attribution at Stop`, step-3b).
+
+**Symptom.** With an active plan that has ``step_files`` declared and
+recent commits whose changed files overlap them, every ``Stop`` hook
+fired ``claude -p`` via ``_attribute_commits_with_judgment``. The
+spawned ``claude -p`` ran the Lore plugin and fired its *own* Stop
+hook, which spawned another ``claude -p``. Because the per-session
+seen-set is keyed by ``sid`` and each spawned ``claude -p`` has a
+fresh ``sid``, idempotency didn't carry across the recursion. The
+result: a runaway tree of ``claude -p`` processes, each writing
+extractor JSONLs that the capture pipeline then enrolled as new
+sessions (and Curator A confabulated session notes from).
+
+**Root cause.** Two compounding bugs at the same call site
+(``hooks.py:1836``):
+
+1. ``_attribute_commits_with_judgment`` called ``make_llm_client()``
+   with no arguments. The factory only consults ``LORE_LLM_BACKEND``
+   from the env, never ``curator.backend`` from ``.lore/config.yml``.
+   So users on the OpenAI backend silently fell through to the
+   subscription path whenever ``claude`` was on PATH.
+2. ``SubprocessClient.create`` invoked ``subprocess.run`` without
+   propagating ``LORE_CURATOR_MODE=1`` — the spawned ``claude -p``'s
+   plugin hooks did not see the re-entry guard and recursed.
+
+**Fixes (both in this release).**
+
+- ``hooks.py`` now resolves the backend via
+  ``defrag_curator._resolve_backend(None, lore_root)`` and passes
+  ``backend=`` and ``lore_root=`` to ``make_llm_client``. Same path
+  the curator commands have always used; hooks just forgot to copy
+  it.
+- ``llm_client._SubprocessMessagesAPI.create`` now sets
+  ``env={**os.environ, "LORE_CURATOR_MODE": "1"}`` on the
+  ``subprocess.run`` call. Defense in depth: even if a future call
+  site requests the subscription backend explicitly, the spawned
+  ``claude -p`` cannot recurse via plugin hooks.
+
+### Added — ``LORE_DISABLE_LLM_JUDGMENT`` kill switch
+
+Set ``LORE_DISABLE_LLM_JUDGMENT=1`` to skip
+``_attribute_commits_with_judgment`` entirely and fall back to the
+trailer-only nudges. Provided as a safe re-enable knob for users
+who hit the runaway during the v0.42.0–v0.45.0 window and want a
+belt-and-braces guarantee while migrating to v0.45.1+.
+
 ## [0.45.0] - 2026-05-05
 
 ### Added — `lore plan migrate-step-files` (deterministic + LLM)
