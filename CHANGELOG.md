@@ -33,12 +33,17 @@ sessions (and Curator A confabulated session notes from).
 
 1. ``_attribute_commits_with_judgment`` called ``make_llm_client()``
    with no arguments. The factory only consults ``LORE_LLM_BACKEND``
-   from the env, never ``curator.backend`` from ``.lore/config.yml``.
-   So users on the OpenAI backend silently fell through to the
-   subscription path whenever ``claude`` was on PATH.
+   from the env, never ``curator.backend`` from ``.lore/config.yml`` —
+   so the user's explicit choice was ignored and the call fell
+   through to auto-probe. Subscription / ``claude -p`` is a
+   first-class backend (and stays one — many users have no
+   non-Claude LLM API on hand); the bug was using it as a *fallback*
+   that overrode the user's configured backend.
 2. ``SubprocessClient.create`` invoked ``subprocess.run`` without
    propagating ``LORE_CURATOR_MODE=1`` — the spawned ``claude -p``'s
-   plugin hooks did not see the re-entry guard and recursed.
+   plugin hooks did not see the re-entry guard and recursed back
+   into ``_attribute_commits_with_judgment`` with a fresh per-session
+   seen-set, fanning out across (recent_commits × plan.step_files).
 
 **Fixes (both in this release).**
 
