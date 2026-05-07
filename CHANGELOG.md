@@ -10,6 +10,66 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-05-07
+
+### Fixed — Curator A: one note per `(transcript_id, local_date)` (#52)
+
+Pre-compact and session-end no longer fragment a long-running
+conversation into multiple session notes. Both events now route through
+a new `synth_in_place` path that runs Phase 1 + Phase 2 against the
+*live* buffer, refreshes the on-disk note with merged narrative, and
+leaves the buffer in `accumulating` so the next chunk on the same
+transcript continues into the same stub. Cap-trip and the reaper remain
+the only paths that close a buffer (and legitimately produce a Part-N
+continuation linked via `continues:` / `continued_by:`); they go through
+`synth_and_close`.
+
+The companion bug behind the user-visible "three split notes for one
+transcript" symptom is also fixed:
+
+- `_resolve_active_part` now scans `.lore/buffers/_done/` in addition to
+  live buffers, so a closed Part-N legitimately yields Part-(N+1) on
+  the next heartbeat instead of silently re-opening Part-1.
+- `Buffer.close` raises rather than silently overwriting an existing
+  `_done/<stem>.state.json`. Silent overwrite was masking the
+  part-resolution failure; making it loud surfaces remaining bugs.
+
+### Changed — Honest `files_modified` / `files_read` schema (#52)
+
+New session notes write `files_modified` (writes only — load-bearing
+for merge-gate Jaccard, retrieval, and narrative tense) and
+`files_read` (reads NOT subsumed by edits — interview / code-tour
+provenance). `files_touched` (the legacy union of edits + reads) is
+no longer written by any new buffer-flush path.
+
+- New helper: `lore_curator.stub_note.file_lists_for_frontmatter` —
+  single source of truth for the "suppress reads when subsumed" rule.
+- Merge gate (`_find_todays_open_note`) prefers `files_modified` over
+  `files_touched`; legacy notes filed under the old schema still match
+  via the `files_touched` fallback.
+- `lore_core.threads` reads `files_modified` first, falls back to
+  `files_touched` for legacy notes.
+- Activity-summary text fed to Phase 2 surfaces `Files modified:` /
+  `Files read:` rather than the old `Files touched:` line, so the LLM
+  doesn't conflate reads with edits in the narrative tense.
+
+Legacy `files_touched` on already-filed notes stays valid as an opaque
+union; no migration. Read-side back-compat at every consumer.
+
+### Added — Buffer state-machine `mode` field
+
+`FlushRequest.mode` discriminates `"close"` (cap-trip / reaper —
+existing behaviour, transitions through `ready -> flushing -> closed`
+and archives) from `"in_place"` (session-end / pre-compact —
+synthesises against the live buffer without closing). Default is
+`"close"` for back-compat with sidecars written before the field
+existed.
+
+`state: stub` in frontmatter widens to mean "buffer is live": set on
+first stub write, retained by `synth_in_place`, cleared only on
+`synth_and_close`. The merge gate's stub-protection branch keeps
+working under the new semantic.
+
 ## [0.46.0] - 2026-05-07
 
 ### Removed — Plan tracking infrastructure (clean slate)

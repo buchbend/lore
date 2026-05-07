@@ -370,7 +370,12 @@ def scan_session_notes(wiki_root: Path) -> list[NoteRef]:
         created = fm.get("created")
         if not created:
             continue
-        files = fm.get("files_touched") or []
+        # Prefer the new ``files_modified`` (edits only — load-bearing
+        # signal for thread overlap). Fall back to ``files_touched`` for
+        # legacy notes filed before the schema split.
+        files = fm.get("files_modified")
+        if not isinstance(files, list) or not files:
+            files = fm.get("files_touched") or []
         if not isinstance(files, list):
             files = []
         # Title: revised notes carry an explicit ``title`` (content-named,

@@ -81,14 +81,30 @@ def patch_collectors(monkeypatch):
 
 
 def _do_append(lore_root: Path, transcript_id: str = "abc", *,
-               turns=None, files_touched=None, monkeypatch=None,
+               turns=None, files_touched=None, files_read=None,
+               monkeypatch=None,
                local_date: str = "2026-05-01") -> tuple:
-    """Run one heartbeat; return (outcome, chunk_from_hash, chunk_to_hash)."""
+    """Run one heartbeat; return (outcome, chunk_from_hash, chunk_to_hash).
+
+    ``files_touched`` drives both the legacy-union mock and the new
+    edits-only mock (``files_modified``) — every path is treated as an
+    edit by default, which is the dominant test case. Pass ``files_read``
+    explicitly to exercise the read-only / interview-style code paths.
+    """
     turns = turns if turns is not None else _make_turns(2)
     if files_touched is not None and monkeypatch is not None:
         monkeypatch.setattr(
             "lore_curator.buffer_append._files_touched_from_turns",
             lambda _turns: list(files_touched),
+        )
+        monkeypatch.setattr(
+            "lore_curator.buffer_append._files_modified_from_turns",
+            lambda _turns: list(files_touched),
+        )
+    if files_read is not None and monkeypatch is not None:
+        monkeypatch.setattr(
+            "lore_curator.buffer_append._files_read_from_turns",
+            lambda _turns: list(files_read),
         )
     outcome = append_chunk(
         lore_root=lore_root,
@@ -216,6 +232,10 @@ def test_subsequent_heartbeat_rewrites_in_place_with_same_path(
         "lore_curator.buffer_append._files_touched_from_turns",
         lambda _turns: ["/repo/b.py"],
     )
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_modified_from_turns",
+        lambda _turns: ["/repo/b.py"],
+    )
     turns_b = [Turn(index=2, timestamp=None, role="user", text="more")]
     outcome2 = append_chunk(
         lore_root=lore_root, chunk_turns=turns_b, local_date="2026-05-01",
@@ -235,7 +255,11 @@ def test_subsequent_heartbeat_rewrites_in_place_with_same_path(
     assert r2.skipped is False
 
     fm = parse_frontmatter(r2.path.read_text())
-    assert sorted(fm["files_touched"]) == ["/repo/a.py", "/repo/b.py"]
+    # New schema: edits land in ``files_modified``; ``files_touched`` is
+    # no longer written by buffer-flush stubs (kept only as a legacy
+    # read-side fallback in the merge gate).
+    assert sorted(fm["files_modified"]) == ["/repo/a.py", "/repo/b.py"]
+    assert "files_touched" not in fm
     # source_transcripts grew per-chunk
     assert len(fm["source_transcripts"]) == 2
 
@@ -297,6 +321,10 @@ def test_slug_never_changes_across_heartbeats(
     # New chunk introduces a different filename — should NOT change the slug.
     monkeypatch.setattr(
         "lore_curator.buffer_append._files_touched_from_turns",
+        lambda _turns: ["/repo/totally/different/payments.py"],
+    )
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_modified_from_turns",
         lambda _turns: ["/repo/totally/different/payments.py"],
     )
     turns_b = [Turn(index=2, timestamp=None, role="user", text="payments work")]
@@ -386,6 +414,7 @@ def test_stub_state_filter_blocks_legacy_merge(
         scope=_make_scope(),
         work_date=work_time.date(),
         new_files_touched=["/repo/auth.py"],
+        new_files_modified=["/repo/auth.py"],
         new_transcript_id="transcript-B",
     )
     assert other is None
@@ -396,6 +425,7 @@ def test_stub_state_filter_blocks_legacy_merge(
         scope=_make_scope(),
         work_date=work_time.date(),
         new_files_touched=["/repo/auth.py"],
+        new_files_modified=["/repo/auth.py"],
         new_transcript_id="transcript-A",
     )
     assert same == result.path
@@ -427,6 +457,7 @@ def test_stub_state_filter_blocks_legacy_when_transcript_id_unknown(
         scope=_make_scope(),
         work_date=work_time.date(),
         new_files_touched=["/repo/auth.py"],
+        new_files_modified=["/repo/auth.py"],
         new_transcript_id=None,
     )
     assert blocked is None

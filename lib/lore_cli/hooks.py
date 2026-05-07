@@ -2490,9 +2490,20 @@ def _request_flush_for_my_buffers(
     """Stamp ``flush_requested`` on every live buffer owned by this PID.
 
     Walks ``.lore/buffers/*.state.json`` (sidecar-only, bounded by
-    ``max_scan``); for each match, takes the per-buffer flock and CASes
-    ``accumulating -> ready`` while writing ``flush_requested``. Returns
-    the count of buffers stamped.
+    ``max_scan``); for each match, takes the per-buffer flock and stamps
+    a ``FlushRequest`` payload. Returns the count of buffers stamped.
+
+    Mode routing:
+
+    - ``trigger in {"session-end", "pre-compact"}`` → ``mode="in_place"``.
+      The buffer stays in ``accumulating`` and the worker runs
+      :func:`synth_in_place`, which refreshes the on-disk note without
+      closing or archiving. This is what keeps a long-running
+      conversation as one note per ``(transcript_id, local_date)``
+      across infrastructure boundaries.
+    - Other triggers (``cap-trip``, ``reaper``) → ``mode="close"`` plus
+      the legacy ``accumulating -> ready`` CAS so the worker runs
+      :func:`synth_and_close` and archives to ``_done/``.
 
     Buffers already in ``ready`` / ``flushing`` / ``closed`` states are
     untouched — another path (cap-trip, prior session-end) already
@@ -2505,6 +2516,9 @@ def _request_flush_for_my_buffers(
         FlushRequest,
         iter_for_pid,
     )
+
+    in_place_triggers = {"session-end", "pre-compact"}
+    mode = "in_place" if trigger in in_place_triggers else "close"
 
     stamped = 0
     pid = os.getpid()
@@ -2521,17 +2535,30 @@ def _request_flush_for_my_buffers(
                 sidecar = buf.read_sidecar()
                 if sidecar is None or sidecar.state in ("flushing", "closed"):
                     continue
-                if sidecar.flush_requested is not None and sidecar.state == "ready":
-                    # Already routed; nothing to do.
+                # Skip if a request is already stamped — another path
+                # already routed this buffer.
+                if sidecar.flush_requested is not None:
                     continue
-                req = FlushRequest(trigger=trigger, requested_at=now_iso, by_pid=pid)
-                if sidecar.state == "accumulating":
-                    try:
-                        buf.transition("ready", flush_requested=req)
-                    except BufferTransitionError:
+                req = FlushRequest(
+                    trigger=trigger,
+                    requested_at=now_iso,
+                    by_pid=pid,
+                    mode=mode,
+                )
+                if mode == "in_place":
+                    # Stay in ``accumulating`` — the buffer remains live
+                    # and may absorb more chunks before the next close.
+                    if sidecar.state != "accumulating":
                         continue
-                else:  # "ready" without flush_requested
                     buf.patch(flush_requested=req)
+                else:  # close
+                    if sidecar.state == "accumulating":
+                        try:
+                            buf.transition("ready", flush_requested=req)
+                        except BufferTransitionError:
+                            continue
+                    else:  # "ready" without flush_requested
+                        buf.patch(flush_requested=req)
                 stamped += 1
         except OSError:
             continue
