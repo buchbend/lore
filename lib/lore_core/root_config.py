@@ -93,22 +93,6 @@ class CuratorBackendConfig:
     # it.
     use_buffer_flush: bool = True
 
-    # LLM-gated commit attribution at the Stop hook
-    # (``_attribute_commits_with_judgment`` in ``lore_cli/hooks.py``).
-    # When True (default) Lore asks the configured backend to judge,
-    # for each recent commit without a ``Plan:`` trailer that touches
-    # an active plan's ``step_files``, whether the commit completes
-    # the step. Bounded per-session by a seen-set, but it does issue
-    # one LLM call per matching ``(commit, plan-step)`` triple.
-    #
-    # Set ``curator.closure_judgment_enabled: false`` in
-    # ``$LORE_ROOT/.lore/config.yml`` to skip the path entirely and
-    # fall back to trailer-only nudges (commits with ``Plan:`` trailers
-    # still auto-advance their steps; only LLM-judged attribution for
-    # un-trailered commits is parked). Env var ``LORE_DISABLE_LLM_JUDGMENT=1``
-    # is an ops override that wins over config.
-    closure_judgment_enabled: bool = True
-
 
 @dataclass
 class JournalConfig:

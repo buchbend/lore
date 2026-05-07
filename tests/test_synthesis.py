@@ -124,7 +124,6 @@ def patch_collectors(monkeypatch):
         ],
     )
     monkeypatch.setattr("lore_curator.session_activity.collect_issues_in_window", lambda *a, **kw: ([], []))
-    monkeypatch.setattr("lore_curator.session_activity.collect_plans_advanced", lambda **kw: [])
     monkeypatch.setattr("lore_curator.session_activity.collect_projects_for_session", lambda **kw: [])
     monkeypatch.setattr("lore_core.git.git_repo_root", lambda cwd: None)
     monkeypatch.setattr("lore_core.git.current_repo", lambda cwd: "")
@@ -225,43 +224,6 @@ def test_phase1_handles_missing_stub_gracefully(lore_root, patch_collectors, mon
     # Buffer still gets closed -- handover gates on state, not stub presence.
     moved = lore_root / ".lore" / "buffers" / "_done" / sidecar_path.name
     assert moved.exists()
-
-
-def test_phase1_strips_dangling_plan_refs(lore_root, patch_collectors, monkeypatch):
-    monkeypatch.setattr(
-        "lore_curator.buffer_append._files_touched_from_turns",
-        lambda turns: ["/repo/x.py"],
-    )
-    monkeypatch.setattr(
-        "lore_curator.session_activity.collect_plans_advanced",
-        lambda **kw: ["real-plan", "ghost-plan"],
-    )
-    (lore_root / "wiki" / "private" / "plans").mkdir(parents=True)
-    (lore_root / "wiki" / "private" / "plans" / "real-plan.md").write_text("---\ntype: plan\n---\n")
-
-    work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
-    outcome = append_chunk(
-        lore_root=lore_root, chunk_turns=_make_turns(2), local_date="2026-05-01",
-        transcript_id="abc", integration="claude-code", wiki="private", scope="proj:feature",
-        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
-    )
-    write_or_update(
-        outcome=outcome, scope=_make_scope(), transcript=_make_handle(),
-        wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time, integration="claude-code",
-        chunk_from_hash="h0", chunk_to_hash="h1",
-    )
-    flush_outcome = flush_buffer(
-        outcome.buffer.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=lore_root / "wiki" / "private",
-    )
-    assert flush_outcome.dangling_plans == ["ghost-plan"]
-    fm = parse_frontmatter(Path(outcome.buffer.read_sidecar() and "ignored").parent.absolute()) if False else parse_frontmatter(
-        # Read the (now Phase-1-finalised) stub.
-        next((lore_root / "wiki" / "private" / "sessions").rglob("*.md")).read_text()
-    )
-    assert fm.get("plans") == ["real-plan"]
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +444,6 @@ def test_phase2_skipped_when_signal_is_empty(lore_root, monkeypatch):
     # commits / plans / projects empty.
     monkeypatch.setattr("lore_curator.session_activity.collect_commits_by_sha", lambda *a, **kw: [])
     monkeypatch.setattr("lore_curator.session_activity.collect_issues_in_window", lambda *a, **kw: ([], []))
-    monkeypatch.setattr("lore_curator.session_activity.collect_plans_advanced", lambda **kw: [])
     monkeypatch.setattr("lore_curator.session_activity.collect_projects_for_session", lambda **kw: [])
     monkeypatch.setattr("lore_core.git.git_repo_root", lambda cwd: None)
     monkeypatch.setattr("lore_core.git.current_repo", lambda cwd: "")

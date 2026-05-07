@@ -5,7 +5,7 @@ hand-extract "what commits did I make?" / "what issues did I touch?"
 (error-prone, expensive, redundant), Curator A scans the cwd repo's
 git log and the GitHub issue state directly and renders the result
 into the body's ``## Activity`` parent section plus the frontmatter
-``plans:`` / ``projects:`` lists.
+``projects:`` list.
 
 Each collector is best-effort and silent on failure: missing git,
 unauthenticated gh, network outage — return empty lists and let the
@@ -274,81 +274,6 @@ def render_issue_section(issues: list[dict], *, repo: str) -> list[str]:
         suffix = f" ({repo})" if repo else ""
         lines.append(f"- #{number} {title}{suffix}".rstrip())
     return lines
-
-
-# ---------------------------------------------------------------------------
-# Plans — frontmatter plans: list
-# ---------------------------------------------------------------------------
-
-
-# Body wikilink form: ``[[plan/<slug>]]``, ``[[plan/<slug>#step-N]]``, or
-# legacy ``[[plan/<slug>#sN]]``. The anchor (``step-N`` / ``sN`` / empty) is
-# captured in group 2 verbatim so the emitted ref matches whatever the user
-# wrote; canonicalization happens at the writer boundary, not here.
-_PLAN_WIKILINK_RE = re.compile(
-    r"\[\[plan/([A-Za-z0-9][\w-]*)(?:#(step-\d+|s\d+))?\]\]"
-)
-# Trailer form: ``Plan: <slug>#step-<N>`` (canonical) or ``Plan: <slug>#s<N>``
-# (legacy). Group 2 captures the full anchor verbatim.
-_PLAN_TRAILER_RE = re.compile(
-    r"^Plan:\s*([A-Za-z0-9][\w-]*)#(step-\d+|s\d+)\s*$",
-    re.MULTILINE | re.IGNORECASE,
-)
-
-
-def collect_plans_advanced(
-    *,
-    body_text: str,
-    wiki_root: Path,
-    commit_bodies: list[str] | None = None,
-) -> list[str]:
-    """Collect plan refs this chunk advanced.
-
-    Sources:
-    - ``Plan: <slug>#step-<N>`` trailers (or legacy ``#s<N>``) inside
-      ``commit_bodies`` — i.e. the bodies of commits this chunk's Bash
-      tool_results already attributed via SHA. No separate ``git log``
-      call: SHA-bound coherence by construction. Without ``commit_bodies``
-      the trailer scan yields nothing.
-    - ``[[plan/<slug>(#step-N)?]]`` wikilinks in the chunk's body text
-      (Curator A may have emitted them in narrative bullets).
-
-    Refs are validated against ``wiki_root/plans/<slug>.md``. Hallucinated
-    plans (slug doesn't exist) are silently dropped. Step-less wikilinks
-    (``[[plan/foo]]``) become ``"foo"`` (no anchor); step-bearing become
-    ``"foo#step-2"``. Deduped; insertion order preserved.
-    """
-    plans_dir = wiki_root / "plans"
-    refs: list[str] = []
-    seen: set[str] = set()
-
-    if plans_dir.is_dir() and commit_bodies:
-        known_slugs = {p.stem.lower() for p in plans_dir.glob("*.md")}
-        if known_slugs:
-            for body in commit_bodies:
-                if not body:
-                    continue
-                for m in _PLAN_TRAILER_RE.finditer(body):
-                    slug = m.group(1)
-                    anchor = m.group(2)
-                    if slug.lower() not in known_slugs:
-                        continue
-                    ref = f"{slug}#{anchor}"
-                    if ref not in seen:
-                        seen.add(ref)
-                        refs.append(ref)
-
-    # Body wikilinks — accept step-less form too. ``anchor`` is the
-    # full step ID (``step-N`` or legacy ``sN``) or "" when absent.
-    for slug, anchor in _PLAN_WIKILINK_RE.findall(body_text or ""):
-        if not (plans_dir / f"{slug}.md").exists():
-            continue
-        ref = f"{slug}#{anchor}" if anchor else slug
-        if ref not in seen:
-            seen.add(ref)
-            refs.append(ref)
-
-    return refs
 
 
 # ---------------------------------------------------------------------------
@@ -665,14 +590,13 @@ def _collect_activity(
     wiki_root: Path,
     turns: list[Turn],
     files_touched: list[str],
-    body_text_for_plan_scan: str,
     logger: "RunLogger | None" = None,
 ) -> dict[str, Any]:
     """Run all Phase-3 collectors for a chunk and return the inputs the
     body renderer + frontmatter need.
 
     Returns a dict with keys ``commits``, ``issues_opened``,
-    ``issues_closed`` (rendered bullet lines), ``plans``, ``projects``
+    ``issues_closed`` (rendered bullet lines), ``projects``
     (ref strings), and ``commit_shas`` (the raw SHAs Curator-A's buffer
     needs to fold into its accumulator across heartbeats).
 
@@ -714,11 +638,6 @@ def _collect_activity(
         referenced_closed=closed_refs,
     )
 
-    plans = collect_plans_advanced(
-        body_text=body_text_for_plan_scan,
-        wiki_root=wiki_root,
-        commit_bodies=[c.body for c in raw_commits],
-    )
     projects = collect_projects_for_session(
         cwd=cwd,
         files_touched=files_touched,
@@ -729,7 +648,6 @@ def _collect_activity(
         "commits": render_commits_section(raw_commits),
         "issues_opened": render_issue_section(issues_opened, repo=repo),
         "issues_closed": render_issue_section(issues_closed, repo=repo),
-        "plans": plans,
         "projects": projects,
         "commit_shas": shas,
     }

@@ -258,7 +258,6 @@ class ReplayedBuffer:
 
     files_touched: list[str] = field(default_factory=list)   # union (legacy)
     files_modified: list[str] = field(default_factory=list)  # edits only
-    plans: list[str] = field(default_factory=list)
     projects: list[str] = field(default_factory=list)
     commit_shas: list[str] = field(default_factory=list)
     activity_commits: list[str] = field(default_factory=list)
@@ -532,7 +531,6 @@ class Buffer:
         if etype == "append":
             _dedup_extend(rb.files_touched, event.get("files_touched") or [])
             _dedup_extend(rb.files_modified, event.get("files_modified") or [])
-            _dedup_extend(rb.plans, event.get("plans") or [])
             _dedup_extend(rb.projects, event.get("projects") or [])
             _dedup_extend(rb.commit_shas, event.get("commit_shas") or [])
             _dedup_extend(rb.activity_commits, event.get("activity_commits") or [])

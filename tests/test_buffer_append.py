@@ -69,10 +69,6 @@ def patch_collectors(monkeypatch):
         lambda *a, **kw: ([], []),
     )
     monkeypatch.setattr(
-        "lore_curator.session_activity.collect_plans_advanced",
-        lambda **kw: [],
-    )
-    monkeypatch.setattr(
         "lore_curator.session_activity.collect_projects_for_session",
         lambda **kw: [],
     )

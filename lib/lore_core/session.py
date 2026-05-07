@@ -8,7 +8,7 @@ That writer owns layout, frontmatter, and the append-to-today merge rule.
 This module keeps only the pieces other modules still need:
 
 * :func:`_resolve_attach_block` — attach lookup used by hooks/doctor
-* :func:`slugify` — used by ``lore_core.plans.parser``
+* :func:`slugify` — slug derivation
 * :func:`commit_note` — used by ``lore session commit`` (also called by
   the inbox + briefing skills to commit non-session files inside a wiki)
 """

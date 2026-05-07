@@ -176,7 +176,6 @@ def _build_first_write_frontmatter(
     chunk_from_hash: str,
     chunk_to_hash: str,
     files_touched: list[str],
-    plans: list[str],
     projects: list[str],
     title_placeholder: str,
     buffer_stem: str,
@@ -205,8 +204,6 @@ def _build_first_write_frontmatter(
     fm["transcripts"] = [transcript_id]
     if projects:
         fm["projects"] = _dedup_preserving_order(projects)
-    if plans:
-        fm["plans"] = _dedup_preserving_order(plans)
     if files_touched:
         fm["files_touched"] = _dedup_preserving_order(files_touched)
     fm["buffer_stem"] = buffer_stem
@@ -324,7 +321,6 @@ def write_or_update(
             chunk_from_hash=chunk_from_hash,
             chunk_to_hash=chunk_to_hash,
             files_touched=rb.files_touched,
-            plans=rb.plans,
             projects=rb.projects,
             title_placeholder=title_placeholder,
             buffer_stem=buffer.stem,
@@ -375,7 +371,6 @@ def write_or_update(
             chunk_from_hash=chunk_from_hash,
             chunk_to_hash=chunk_to_hash,
             files_touched=rb.files_touched,
-            plans=rb.plans,
             projects=rb.projects,
             title_placeholder=title_placeholder,
             buffer_stem=buffer.stem,
@@ -444,8 +439,6 @@ def write_or_update(
     # Frontmatter accumulator union — replay is authoritative.
     if rb.files_touched:
         fm["files_touched"] = _dedup_preserving_order(rb.files_touched)
-    if rb.plans:
-        fm["plans"] = _dedup_preserving_order(rb.plans)
     if rb.projects:
         fm["projects"] = _dedup_preserving_order(rb.projects)
 

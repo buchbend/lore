@@ -158,7 +158,6 @@ class FlushOutcome:
     stub_path: Path | None = None
     wikilink: str = ""
     composed: dict[str, Any] | None = None
-    dangling_plans: list[str] = field(default_factory=list)
     dangling_projects: list[str] = field(default_factory=list)
 
 
@@ -204,19 +203,16 @@ def _strip_dangles(
     wiki_root: Path,
     logger: "RunLogger | None",
     transcript_id: str,
-) -> tuple[list[str], list[str], list[str], list[str]]:
-    """Return ``(valid_plans, valid_projects, dangling_plans, dangling_projects)``.
+) -> tuple[list[str], list[str]]:
+    """Return ``(valid_projects, dangling_projects)``.
 
     Emits ``dangling-ref`` telemetry per dropped ref.
     """
-    plans, dangling_plans = _validate_refs(rb.plans, subdir=wiki_root / "plans")
     projects, dangling_projects = _validate_refs(rb.projects, subdir=wiki_root / "projects")
     if logger is not None:
-        for d in dangling_plans:
-            logger.emit("dangling-ref", kind="plan", ref=d, transcript_id=transcript_id)
         for d in dangling_projects:
             logger.emit("dangling-ref", kind="project", ref=d, transcript_id=transcript_id)
-    return plans, projects, dangling_plans, dangling_projects
+    return projects, dangling_projects
 
 
 # ---------------------------------------------------------------------------
@@ -237,11 +233,10 @@ def _phase1_finalise(
         state_before=sidecar.state,
     )
 
-    plans, projects, dpl, dpr = _strip_dangles(
+    projects, dpr = _strip_dangles(
         rb, wiki_root=wiki_root,
         logger=logger, transcript_id=sidecar.transcript_id,
     )
-    out.dangling_plans = dpl
     out.dangling_projects = dpr
 
     stub_path = Path(sidecar.stub_path) if sidecar.stub_path else None
@@ -275,14 +270,11 @@ def _phase1_finalise(
     fm.setdefault("scope", sidecar.scope)
     if rb.files_touched:
         fm["files_touched"] = rb.files_touched
-    if plans:
-        fm["plans"] = plans
-    elif "plans" in fm and dpl:
-        fm.pop("plans", None)
     if projects:
         fm["projects"] = projects
     elif "projects" in fm and dpr:
         fm.pop("projects", None)
+    fm.pop("plans", None)
     if sidecar.part_index >= 2:
         fm["part"] = sidecar.part_index
         if sidecar.continuation_of:
@@ -787,8 +779,6 @@ def _activity_summary_text(rb: ReplayedBuffer) -> str:
         lines.extend(rb.activity_issues_closed)
     if rb.files_touched:
         lines.append("Files touched: " + ", ".join(rb.files_touched[:30]))
-    if rb.plans:
-        lines.append("Plans referenced: " + ", ".join(rb.plans))
     if rb.projects:
         lines.append("Projects referenced: " + ", ".join(rb.projects))
     return "\n".join(lines)
@@ -1149,13 +1139,12 @@ def flush_buffer(
 
     # Guard: don't ask the LLM to fabricate a narrative from boilerplate
     # alone. When the conversation slice is empty AND the activity has
-    # no commits / plans / projects to anchor on, the model confabulates
+    # no commits / projects to anchor on, the model confabulates
     # confidently — silently producing a fictional session note. Better
     # to keep the deterministic Phase 1 stub and mark the flush degraded.
     rb_for_signal = rb_post or rb
     has_signal = bool(turns_text) or bool(
         rb_for_signal.activity_commits
-        or rb_for_signal.plans
         or rb_for_signal.projects
     )
     if not has_signal:

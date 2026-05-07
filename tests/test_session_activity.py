@@ -15,7 +15,6 @@ import pytest
 from lore_curator.session_activity import (
     CommitRef,
     collect_issues_in_window,
-    collect_plans_advanced,
     collect_projects_for_session,
     extract_issue_refs,
     render_commits_section,
@@ -171,27 +170,6 @@ def test_resolver_t_subject_with_tab(tmp_path):
     assert commits[0].subject == "subj with\ttab"
 
 
-def test_resolver_t_body_with_plan_trailer(tmp_path):
-    """Commit bodies are exposed via CommitRef.body so Step 3 can scan
-    them for ``Plan: <slug>#step-N`` trailers without a second git query."""
-    from lore_curator.session_activity import collect_commits_by_sha
-
-    repo = tmp_path / "repo"
-    _init_repo(repo)
-    _commit_with_body(
-        repo,
-        subject="work",
-        body="Some explanation\n\nPlan: foo#step-1",
-        filename="x.txt",
-        when=datetime(2026, 4, 29, 6, 50, tzinfo=UTC),
-    )
-    sha = _resolve_sha(repo)
-
-    commits = collect_commits_by_sha(repo, [sha])
-    assert len(commits) == 1
-    assert "Plan: foo#step-1" in commits[0].body
-
-
 # ---------------------------------------------------------------------------
 # extract_issue_refs
 # ---------------------------------------------------------------------------
@@ -320,113 +298,6 @@ def test_render_issue_section_includes_repo_suffix():
     issues = [{"number": 29, "title": "fix the thing", "state": "CLOSED"}]
     lines = render_issue_section(issues, repo="org/lore")
     assert lines == ["- #29 fix the thing (org/lore)"]
-
-
-# ---------------------------------------------------------------------------
-# collect_plans_advanced
-# ---------------------------------------------------------------------------
-
-
-def test_collect_plans_advanced_validates_against_wiki_plans_dir(tmp_path):
-    """Only wikilinks pointing to real plan files in the wiki are kept."""
-    wiki = tmp_path / "wiki"
-    plans = wiki / "plans"
-    plans.mkdir(parents=True)
-    (plans / "real-plan.md").write_text("---\ntype: plan\n---\n")
-    # ``ghost-plan`` does not exist on disk → should be dropped.
-
-    body = (
-        "Worked on [[plan/real-plan#s2]] today, also touched "
-        "[[plan/ghost-plan#s1]] which is hallucinated. And "
-        "[[plan/real-plan]] without a step too."
-    )
-    refs = collect_plans_advanced(body_text=body, wiki_root=wiki)
-    assert "real-plan#s2" in refs
-    assert "real-plan" in refs  # step-less form preserved
-    assert all("ghost-plan" not in r for r in refs)
-
-
-def test_collect_plans_advanced_dedupes(tmp_path):
-    wiki = tmp_path / "wiki"
-    (wiki / "plans").mkdir(parents=True)
-    (wiki / "plans" / "p.md").write_text("---\ntype: plan\n---\n")
-
-    body = "[[plan/p#s1]] and [[plan/p#s1]] again"
-    refs = collect_plans_advanced(body_text=body, wiki_root=wiki)
-    assert refs == ["p#s1"]
-
-
-def test_collect_plans_advanced_empty_when_no_plans_dir(tmp_path):
-    """Wiki without a plans/ dir → no plans regardless of body."""
-    wiki = tmp_path / "wiki"
-    wiki.mkdir()
-    body = "[[plan/foo#s1]]"
-    refs = collect_plans_advanced(body_text=body, wiki_root=wiki)
-    assert refs == []
-
-
-def _commit_with_body(repo_root: Path, *, subject: str, body: str, filename: str, when: datetime) -> None:
-    """Commit with a multi-line message (subject + trailer body)."""
-    (repo_root / filename).write_text(filename)
-    subprocess.run(["git", "add", "-A"], cwd=repo_root, check=True)
-    iso = when.isoformat()
-    env = {
-        **__import__("os").environ,
-        "GIT_AUTHOR_DATE": iso,
-        "GIT_COMMITTER_DATE": iso,
-    }
-    msg = f"{subject}\n\n{body}\n"
-    subprocess.run(
-        ["git", "commit", "-q", "-F", "-", "--no-verify"],
-        cwd=repo_root, check=True, input=msg, text=True, env=env,
-    )
-
-
-def test_collect_plans_advanced_trailers_from_session_commit_bodies_only(tmp_path):
-    """Trailers come ONLY from this session's commit_bodies — no separate
-    git log query, so the ``out-of-window trailer must not bleed`` regression
-    intent (originally tested against ``--since/--until``) becomes
-    ``out-of-session trailer must not bleed`` against the SHA-bound list.
-
-    A trailer from an unrelated commit body that wasn't passed in MUST NOT
-    appear in the result. Equivalently: only the bodies the session
-    actually attributed feed the trailer scan.
-    """
-    wiki = tmp_path / "wiki"
-    plans = wiki / "plans"
-    plans.mkdir(parents=True)
-    (plans / "old-plan.md").write_text("---\ntype: plan\n---\n")
-    (plans / "new-plan.md").write_text("---\ntype: plan\n---\n")
-
-    # Only new-plan's body is passed in. old-plan's body is in the repo's
-    # history (or some other unrelated session) but NOT in this list.
-    refs = collect_plans_advanced(
-        body_text="",
-        wiki_root=wiki,
-        commit_bodies=["Plan: new-plan#s1"],
-    )
-
-    assert "new-plan#s1" in refs
-    assert all(not r.startswith("old-plan") for r in refs), (
-        f"old-plan trailer leaked across session boundary: {refs}"
-    )
-
-
-def test_collect_plans_advanced_trailer_drops_unknown_slugs(tmp_path):
-    """Trailers that name a slug with no plans/<slug>.md are dropped."""
-    wiki = tmp_path / "wiki"
-    plans = wiki / "plans"
-    plans.mkdir(parents=True)
-    (plans / "real.md").write_text("---\ntype: plan\n---\n")
-
-    refs = collect_plans_advanced(
-        body_text="",
-        wiki_root=wiki,
-        commit_bodies=["Plan: real#s1\nPlan: ghost#s2"],
-    )
-
-    assert "real#s1" in refs
-    assert all("ghost" not in r for r in refs)
 
 
 # ---------------------------------------------------------------------------

@@ -26,7 +26,6 @@ _HOOK_TYPER_EVENT = {
     "user-prompt-submit": "UserPromptSubmit",
     "session-end": "SessionEnd",
     "capture": "Capture",
-    "plan-capture": "PlanCapture",
 }
 
 
@@ -82,7 +81,6 @@ def _build_app() -> typer.Typer:
         news_cmd,
         off_cmd,
         on_cmd,
-        plan_cmd,
         proc_cmd,
         project_cmd,
         registry_cmd,
@@ -120,7 +118,6 @@ def _build_app() -> typer.Typer:
     app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
     app.add_typer(drill_cmd.app, name="drill", rich_help_panel=_KN)
     app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
-    app.add_typer(plan_cmd.app, name="plan", rich_help_panel=_KN)
     app.add_typer(project_cmd.app, name="project", rich_help_panel=_KN)
     app.add_typer(surface_cmd.app, name="surface", rich_help_panel=_KN)
     app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)

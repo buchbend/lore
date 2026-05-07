@@ -180,7 +180,7 @@ def cmd_show(
 
 @app.command("get")
 def cmd_get(
-    path: str = typer.Argument(..., help="Dotted config path (e.g. `curator.closure_judgment_enabled`)."),
+    path: str = typer.Argument(..., help="Dotted config path (e.g. `curator.backend`)."),
 ) -> None:
     """Print one config value."""
     from lore_core.root_config import get_field

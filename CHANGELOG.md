@@ -10,7 +10,72 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-## [0.45.3] - 2026-05-06
+## [0.46.0] - 2026-05-07
+
+### Removed — Plan tracking infrastructure (clean slate)
+
+The plan-as-tracked-artifact subsystem is gone. Plan-mode wrapping was
+the wrong abstraction: every IDE has its own plan-mode shape, and lore's
+attempt to mirror their state introduced fragile machinery (LLM-judged
+commit closure, step-file frontmatter, `Plan:` trailers, attribution
+bridge) that didn't deliver phase handover — it duplicated a signal
+session notes already carry, and degraded loudly when the protocol
+slipped (timeouts, low-confidence skips piling up in SessionStart).
+
+Removed end-to-end:
+
+- `lore plan` CLI subtree (filing, advance, migrate-step-files, status).
+- `lore_plan_active` / `lore_plan_file` / `lore_plan_status` MCP tools.
+- `/lore:plan-resume` and `/lore:plan-advance` skills.
+- `PostToolUse:ExitPlanMode → lore hook plan-capture` hook.
+- `PostToolUse:Edit/Write/MultiEdit/NotebookEdit → lore hook
+  plan-edit-writeback` hooks.
+- `Stop` hook plan-trailer-nudges + LLM-judged commit attribution.
+- SessionStart Resume block + Pending Attributions block.
+- `lore_core.plans/` module (parser, registry, writer, ingest, envelope,
+  step_status, breadcrumbs, classifier, etc. — the full subtree).
+- `lore_curator.closure_judgment` + `lore_curator.step_files_inference`.
+- `curator.closure_judgment_enabled` config knob.
+- `plans:` frontmatter on session notes + `[[plan/<slug>]]` wikilink
+  validation in curator A.
+- `Plan-authoring: declare files per step` directive from SessionStart.
+- 21 plan-specific test modules.
+
+Phase handover now rides exclusively on session notes (`lore_resume`,
+last-session hints in SessionStart) + the journal. Plan files written by
+external tools (Ultraplan, claude-code Plan mode) can still live in the
+vault as ordinary notes — `lore_search` finds them — but lore no longer
+parses, classifies, tracks step status, or judges commits against them.
+
+### Changed — SessionStart minimisation
+
+The injected context block trimmed from ~50 lines to ~10 in the typical
+attached-repo case. Specifically:
+
+- AI Journal directive collapsed from a 4-bullet sub-bulleted block to
+  a single sentence (still behaviour-shaping; just compressed).
+- Issue/PR title list dropped — status line still shows the count;
+  agents fetch the actual list via `gh issue list` on demand.
+- Linked-notes 6-name preview dropped (use `lore_search`).
+- "+N more" tails removed from issues/PRs.
+- Subtree-issue aggregation removed.
+- `_subtree_issues` / fallback "no issues matched filters" line removed.
+- Last-session hints capped at 2.
+- Override-syntax instructions and Resume-block trailer hints removed
+  (they were reference, not actionable signal).
+
+### Migration
+
+- Plan files stored under `<wiki>/plans/` are no longer special; they
+  remain as files but are not catalogued, indexed differently, or
+  surfaced via SessionStart. `lore lint` no longer manages
+  `plans/_recent.txt`.
+- Existing `Plan:` trailers in commits are inert; remove them at your
+  leisure.
+- Existing `plans:` frontmatter on session notes is preserved on
+  read but no longer written or consumed.
+
+
 
 ### Added — `lore config show / get / set / schema` (one-stop config UX)
 

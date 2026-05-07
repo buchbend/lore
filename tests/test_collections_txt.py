@@ -226,8 +226,8 @@ def test_run_lint_removes_legacy_threads_md(tmp_path, monkeypatch):
 
 
 def test_run_lint_removes_legacy_recent_md(tmp_path, monkeypatch):
-    """Legacy ``sessions/_recent.md`` and ``plans/_recent.md`` cleaned
-    up so they don't drift alongside the new ``.txt`` versions."""
+    """Legacy ``sessions/_recent.md`` cleaned up so it doesn't drift
+    alongside the new ``.txt`` version."""
     wiki_root = tmp_path / "wiki"
     w = wiki_root / "mywiki"
     sessions = w / "sessions" / "2026" / "04"
@@ -235,21 +235,12 @@ def test_run_lint_removes_legacy_recent_md(tmp_path, monkeypatch):
     (sessions / "01-session-1.md").write_text(
         "---\ntype: session\n---\n"
     )
-    plans = w / "plans"
-    plans.mkdir()
-    (plans / "p1.md").write_text(
-        "---\ntype: plan\nstatus: active\nlast_reviewed: '2026-04-28'\n---\n"
-    )
     legacy_session_recent = w / "sessions" / "_recent.md"
     legacy_session_recent.write_text("legacy")
-    legacy_plan_recent = w / "plans" / "_recent.md"
-    legacy_plan_recent.write_text("legacy")
 
     monkeypatch.setattr("lore_core.lint.get_wiki_root", lambda: wiki_root)
     run_lint(json_output=True)
 
     assert not legacy_session_recent.exists()
-    assert not legacy_plan_recent.exists()
-    # New .txt versions exist.
+    # New .txt version exists.
     assert (w / "sessions" / "_recent.txt").exists()
-    assert (w / "plans" / "_recent.txt").exists()

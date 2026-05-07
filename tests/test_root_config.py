@@ -119,11 +119,11 @@ def _fresh_root(tmp_path: Path, body: str) -> Path:
 def test_walk_fields_marks_file_vs_default(tmp_path: Path) -> None:
     from lore_core.root_config import walk_fields
 
-    root = _fresh_root(tmp_path, "curator:\n  closure_judgment_enabled: false\n")
+    root = _fresh_root(tmp_path, "curator:\n  use_buffer_flush: false\n")
     fields_by_path = {fi.path: fi for fi in walk_fields(root)}
 
-    assert fields_by_path["curator.closure_judgment_enabled"].source == "file"
-    assert fields_by_path["curator.closure_judgment_enabled"].value is False
+    assert fields_by_path["curator.use_buffer_flush"].source == "file"
+    assert fields_by_path["curator.use_buffer_flush"].value is False
     # backend was not set in YAML — should be default "auto"
     assert fields_by_path["curator.backend"].source == "default"
     assert fields_by_path["curator.backend"].value == "auto"
@@ -133,7 +133,7 @@ def test_get_field_returns_leaf_info(tmp_path: Path) -> None:
     from lore_core.root_config import get_field
 
     root = _fresh_root(tmp_path, "")
-    fi = get_field(root, "curator.closure_judgment_enabled")
+    fi = get_field(root, "curator.use_buffer_flush")
     assert fi.value is True
     assert fi.default is True
     assert fi.source == "default"
@@ -160,11 +160,11 @@ def test_set_field_persists_and_round_trips(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, set_field
 
     root = _fresh_root(tmp_path, "curator:\n  backend: openai\njournal:\n  enabled: false\n")
-    fi = set_field(root, "curator.closure_judgment_enabled", "false")
+    fi = set_field(root, "curator.use_buffer_flush", "false")
     assert fi.value is False
     assert fi.source == "file"
     # Re-read; siblings preserved.
-    assert get_field(root, "curator.closure_judgment_enabled").value is False
+    assert get_field(root, "curator.use_buffer_flush").value is False
     assert get_field(root, "curator.backend").value == "openai"
     assert get_field(root, "journal.enabled").value is False
 
@@ -183,7 +183,7 @@ def test_set_field_rejects_bad_type(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(ValueError, match="cannot parse"):
-        set_field(root, "curator.closure_judgment_enabled", "notabool")
+        set_field(root, "curator.use_buffer_flush", "notabool")
 
 
 def test_set_field_rejects_unknown_path(tmp_path: Path) -> None:
@@ -199,11 +199,11 @@ def test_set_field_bool_accepts_common_spellings(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     for spelling in ("true", "TRUE", "yes", "on", "1"):
-        set_field(root, "curator.closure_judgment_enabled", spelling)
-        assert get_field(root, "curator.closure_judgment_enabled").value is True
+        set_field(root, "curator.use_buffer_flush", spelling)
+        assert get_field(root, "curator.use_buffer_flush").value is True
     for spelling in ("false", "FALSE", "no", "off", "0"):
-        set_field(root, "curator.closure_judgment_enabled", spelling)
-        assert get_field(root, "curator.closure_judgment_enabled").value is False
+        set_field(root, "curator.use_buffer_flush", spelling)
+        assert get_field(root, "curator.use_buffer_flush").value is False
 
 
 def test_schema_tree_covers_all_leaves() -> None:
@@ -213,7 +213,7 @@ def test_schema_tree_covers_all_leaves() -> None:
     paths = {p for p, _, _, _ in rows}
     # Spot-check leaves we ship today.
     assert "curator.backend" in paths
-    assert "curator.closure_judgment_enabled" in paths
+    assert "curator.use_buffer_flush" in paths
     assert "curator.use_buffer_flush" in paths
     assert "journal.enabled" in paths
     assert "observability.runs.keep" in paths

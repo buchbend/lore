@@ -382,12 +382,10 @@ class SessionInput:
     files_touched: list[str] = field(default_factory=list)
     files_modified: list[str] = field(default_factory=list)
 
-    # Phase 3 — auto-populated cross-note linkage. ``plans`` are
-    # ``<slug>#s<N>`` refs (or bare ``<slug>``); ``projects`` are
-    # bare project-note slugs. Both are validated against the wiki's
-    # plans/ and projects/ dirs by the filer; hallucinated refs are
-    # dropped before they reach SessionInput.
-    plans: list[str] = field(default_factory=list)
+    # Phase 3 — auto-populated cross-note linkage. ``projects`` are
+    # bare project-note slugs validated against the wiki's projects/
+    # dir by the filer; hallucinated refs are dropped before they
+    # reach SessionInput.
     projects: list[str] = field(default_factory=list)
 
     # Phase 3 — pre-rendered Activity bullets. These flow into the body
@@ -665,8 +663,6 @@ def _build_frontmatter(si: SessionInput) -> dict[str, Any]:
         fm["tags"] = si.tags
     if si.projects:
         fm["projects"] = _dedup_preserving_order(si.projects)
-    if si.plans:
-        fm["plans"] = _dedup_preserving_order(si.plans)
     if si.files_touched:
         fm["files_touched"] = _dedup_preserving_order(si.files_touched)
     if si.files_modified:
@@ -743,24 +739,16 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
             list(existing_modified) + list(si.files_modified)
         )
 
-    # Phase 3: union projects/plans across appends. These are the
-    # cross-note linkage fields that Curator A re-derives per chunk
-    # from cwd repo / files_touched / Plan: trailers / body wikilinks.
-    # On append we keep prior-chunk refs in case the new chunk's
-    # collectors miss a previously-seen plan or project.
+    # Phase 3: union projects across appends. The cross-note linkage
+    # field that Curator A re-derives per chunk from cwd repo /
+    # files_touched. On append we keep prior-chunk refs in case the
+    # new chunk's collectors miss a previously-seen project.
     if si.projects:
         existing_projects = fm.get("projects") or []
         if not isinstance(existing_projects, list):
             existing_projects = []
         fm["projects"] = _dedup_preserving_order(
             list(existing_projects) + list(si.projects)
-        )
-    if si.plans:
-        existing_plans = fm.get("plans") or []
-        if not isinstance(existing_plans, list):
-            existing_plans = []
-        fm["plans"] = _dedup_preserving_order(
-            list(existing_plans) + list(si.plans)
         )
 
     # Phase 2 append rule: parse both bodies into the locked section

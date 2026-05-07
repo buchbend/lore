@@ -33,7 +33,6 @@ def lore_root(tmp_path: Path) -> Path:
 def patch_collectors(monkeypatch):
     monkeypatch.setattr("lore_curator.session_activity.collect_commits_by_sha", lambda *a, **kw: [])
     monkeypatch.setattr("lore_curator.session_activity.collect_issues_in_window", lambda *a, **kw: ([], []))
-    monkeypatch.setattr("lore_curator.session_activity.collect_plans_advanced", lambda **kw: [])
     monkeypatch.setattr("lore_curator.session_activity.collect_projects_for_session", lambda **kw: [])
     monkeypatch.setattr("lore_core.git.git_repo_root", lambda cwd: None)
     monkeypatch.setattr("lore_core.git.current_repo", lambda cwd: "")

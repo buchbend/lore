@@ -268,26 +268,17 @@ def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
     )
 
     out = hooks._session_start(str(repo_dir))
+    # Status line carries the counts; issue/PR titles no longer ride inline
+    # as part of the SessionStart minimisation — agents fetch via gh on demand.
     assert ": active" in out
     assert "2 issues" in out
     assert "1 PR" in out
-    assert "#47 retry cap missing" in out
-    assert "#52 stale docs" in out
-    assert "#31 [draft] atm-table v2" in out
-    # Subtree aggregation: 1 sibling issue
-    assert "+1 from `ccat:data-center` subtree" in out
-    assert "/lore:resume ccat:data-center" in out
 
-    # Phase 5 ordering: status line first, directive postscript last.
-    # Status appears before issues; the "## Directives" header appears
-    # AFTER the issue/PR content so the user sees what Lore loaded
-    # before the rule reasserts itself.
+    # Status line first, directive postscript last.
     status_pos = out.find(": active")
-    issues_pos = out.find("#47 retry cap missing")
     directives_pos = out.find("## Directives")
-    assert status_pos < issues_pos, "status line should precede issues"
-    assert issues_pos < directives_pos, (
-        "directive should be a postscript, after the user-context payload"
+    assert status_pos < directives_pos, (
+        "directive should be a postscript, after the status line"
     )
 
 
@@ -337,10 +328,12 @@ def test_session_start_from_lore_falls_back_when_gh_fails(fake_vault, tmp_path, 
     monkeypatch.setattr(hooks, "_run_gh", lambda *a, **kw: [])
 
     out = hooks._session_start(str(repo_dir))
-    # Status line still renders
+    # Status line still renders even when gh fails entirely.
     assert ": active" in out
-    # No issues → placeholder line
-    assert "No open issues matched your filters" in out
+    # No issue/PR counts in the status line when gh returned nothing.
+    status_line = out.splitlines()[0]
+    assert "issue" not in status_line
+    assert "PR" not in status_line
 
 
 def test_session_start_no_lore_config_uses_legacy_path(fake_vault, tmp_path, monkeypatch):

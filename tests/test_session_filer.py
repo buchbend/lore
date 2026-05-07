@@ -559,30 +559,6 @@ def _patch_collectors(monkeypatch, *, commits=None, issues=None, repo=None):
         )
 
 
-def test_phase_3_plans_frontmatter_populated_from_body_wikilinks(tmp_path, monkeypatch):
-    """Body wikilinks ``[[plan/<slug>(#sN)?]]`` validated against
-    wiki/<wiki>/plans/ feed the frontmatter ``plans:`` list.
-    Hallucinated plan slugs (no matching plan note) are dropped."""
-    wiki_root = tmp_path / "wiki" / "private"
-    (wiki_root / "plans").mkdir(parents=True)
-    (wiki_root / "plans" / "real-plan.md").write_text("---\ntype: plan\n---\n")
-
-    nw = NoteworthyResult(
-        noteworthy=True, reason="r",
-        title="Plan work",
-        description="Worked on [[plan/real-plan#s2]] and touched [[plan/ghost#s1]] which is hallucinated.",
-        bullets=["did the thing"],
-    )
-    _patch_collectors(monkeypatch)  # no commits, no issues
-
-    result = _file_note(
-        wiki_root, noteworthy=nw, scope=_make_scope("private:lore"),
-    )
-    fm = parse_frontmatter(result.path.read_text())
-    assert "real-plan#s2" in (fm.get("plans") or [])
-    assert all("ghost" not in p for p in (fm.get("plans") or []))
-
-
 def test_phase_3_projects_frontmatter_populated_from_cwd_repo(tmp_path, monkeypatch):
     """Cwd repo's project note (when present) lands in ``projects:``."""
     wiki_root = tmp_path / "wiki" / "private"
@@ -1801,11 +1777,11 @@ def test_step3_no_bleed_across_parallel_sessions(tmp_path):
 
     a = _collect_activity(
         cwd=repo, wiki_root=wiki_root, turns=chunk_a,
-        files_touched=[], body_text_for_plan_scan="",
+        files_touched=[],
     )
     b = _collect_activity(
         cwd=repo, wiki_root=wiki_root, turns=chunk_b,
-        files_touched=[], body_text_for_plan_scan="",
+        files_touched=[],
     )
 
     a_blob = "\n".join(a["commits"])
@@ -1854,7 +1830,7 @@ def test_step3_inter_chunk_gap_captured(tmp_path):
     (wiki_root / "plans").mkdir(parents=True)
     activity = _collect_activity(
         cwd=repo, wiki_root=wiki_root, turns=turns,
-        files_touched=[], body_text_for_plan_scan="",
+        files_touched=[],
     )
     blob = "\n".join(activity["commits"])
     assert short_sha in blob, (

@@ -40,7 +40,7 @@ OVERSIZED_LINES = 150
 INDEX_MAX_LINES = 80
 TODAY = date.today()
 
-KNOWLEDGE_DIRS = ["projects", "concepts", "decisions", "papers", "plans"]
+KNOWLEDGE_DIRS = ["projects", "concepts", "decisions", "papers"]
 SKIP_DIRS = {"templates", "inbox", ".processed", ".obsidian"}
 SKIP_FILES = {
     "CLAUDE.md",
@@ -715,7 +715,7 @@ def generate_index_txt(wiki_name: str, notes: list[NoteInfo]) -> str:
             return f" `SUPERSEDED → {targets}`" if targets else " `SUPERSEDED`"
         return ""
 
-    for section_name in ["projects", "concepts", "decisions", "papers", "plans"]:
+    for section_name in ["projects", "concepts", "decisions", "papers"]:
         if section_name not in sections:
             continue
         folders = sections[section_name]
@@ -788,61 +788,6 @@ def generate_recent_txt(wiki_path: Path, max_entries: int = 20) -> str | None:
     lines = ["# Recent Sessions", ""]
     for sf in recent:
         lines.append(f"- [[{sf.stem}]]")
-    lines.append("")  # trailing newline
-    return "\n".join(lines)
-
-
-def generate_plan_recent_txt(wiki_path: Path, max_entries: int = 20) -> str | None:
-    """Generate a plans/_recent.txt listing the most recently active plans.
-
-    Returns the file content, or None if the wiki has no plans/ directory.
-
-    Recency = ``max(last_reviewed, step_status_updated)`` parsed from
-    frontmatter, with file mtime as a tie-breaker. Status appears as
-    ``· <status>`` on every line (including ``· active``) so the reader
-    can see at a glance which plans are still in flight.
-
-    Skips lockfiles (``.<slug>.lock``) and any file we don't recognize
-    as a plan note (no ``type: plan`` in frontmatter).
-    """
-    plans_dir = wiki_path / "plans"
-    if not plans_dir.is_dir():
-        return None
-
-    candidates: list[tuple[tuple, Path, str]] = []
-    for md in plans_dir.glob("*.md"):
-        if md.name.startswith(".") or md.name in SKIP_FILES:
-            continue
-        try:
-            text = md.read_text(errors="replace")
-        except OSError:
-            continue
-        fm = parse_frontmatter(text)
-        if fm.get("type") != "plan":
-            continue
-
-        last_reviewed = str(fm.get("last_reviewed") or "")
-        step_updated = str(fm.get("step_status_updated") or "")
-        recency_date = max(last_reviewed, step_updated)
-        try:
-            mtime = md.stat().st_mtime
-        except OSError:
-            mtime = 0.0
-        status = str(fm.get("status") or "active")
-
-        # Sort key: (date_str, mtime). Ascending; reverse for newest-first.
-        # Empty date_str sinks to the bottom.
-        candidates.append(((recency_date, mtime), md, status))
-
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda t: t[0], reverse=True)
-    recent = candidates[:max_entries]
-
-    lines = ["# Recent Plans", ""]
-    for _key, path, status in recent:
-        lines.append(f"- [[{path.stem}]] · {status}")
     lines.append("")  # trailing newline
     return "\n".join(lines)
 
@@ -1030,29 +975,21 @@ def run_lint(
             #
             # Also clean legacy ``threads.md`` (replaced by ``_threads.txt``,
             # written by Curator B at daily_curator.py) and
-            # ``sessions/_recent.md`` / ``plans/_recent.md`` (replaced by
-            # the ``.txt`` siblings). These ``.md`` collections used to
-            # be wikilink-graph nodes; the ``.txt`` versions are not.
+            # ``sessions/_recent.md`` (replaced by the ``.txt`` sibling).
+            # These ``.md`` collections used to be wikilink-graph nodes;
+            # the ``.txt`` version is not.
             for legacy in ("_index.md", "llms.txt", "threads.md"):
                 stale = wiki_path / legacy
                 if stale.exists():
                     stale.unlink()
-            for legacy_recent in (
-                wiki_path / "sessions" / "_recent.md",
-                wiki_path / "plans" / "_recent.md",
-            ):
-                if legacy_recent.exists():
-                    legacy_recent.unlink()
+            legacy_recent = wiki_path / "sessions" / "_recent.md"
+            if legacy_recent.exists():
+                legacy_recent.unlink()
 
             # sessions/_recent.txt — last 20 session notes as wikilinks
             recent_txt = generate_recent_txt(wiki_path)
             if recent_txt is not None:
                 atomic_write_text(wiki_path / "sessions" / "_recent.txt", recent_txt)
-
-            # plans/_recent.txt — last 20 plans by recency, with status badge
-            plan_recent_txt = generate_plan_recent_txt(wiki_path)
-            if plan_recent_txt is not None:
-                atomic_write_text(wiki_path / "plans" / "_recent.txt", plan_recent_txt)
 
             # _concepts.txt, _decisions.txt — flat per-type collections at
             # wiki root. ``.txt`` extension excludes them from the wikilink

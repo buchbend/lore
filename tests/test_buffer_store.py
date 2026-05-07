@@ -290,7 +290,6 @@ def test_append_and_replay_basic(tmp_path: Path) -> None:
             "type": "append",
             "files_touched": ["a.py", "b.py"],
             "commit_shas": ["abc1234"],
-            "plans": ["plan-x#step-1"],
             "projects": ["proj-y"],
             "activity_commits": ["- abc1234 fix"],
             "turn_count_delta": 3,
@@ -311,7 +310,6 @@ def test_append_and_replay_basic(tmp_path: Path) -> None:
     rb = buf.replay()
     assert rb.files_touched == ["a.py", "b.py", "c.py"]  # first-seen order, no dups
     assert rb.commit_shas == ["abc1234", "def5678"]
-    assert rb.plans == ["plan-x#step-1"]
     assert rb.projects == ["proj-y"]
     assert rb.activity_commits == ["- abc1234 fix"]
     assert rb.turn_count == 5

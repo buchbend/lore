@@ -55,9 +55,9 @@ class AppendOutcome:
     """What ``append_chunk`` reports back to the caller.
 
     ``activity`` carries the same dict shape ``_collect_activity`` returns
-    (commits / issues_opened / issues_closed / plans / projects /
-    commit_shas) so the caller can render the stub body without a second
-    collector pass.
+    (commits / issues_opened / issues_closed / projects / commit_shas)
+    so the caller can render the stub body without a second collector
+    pass.
     """
 
     buffer: Buffer
@@ -74,7 +74,6 @@ class AppendOutcome:
     new_files_touched: list[str] = field(default_factory=list)
     new_files_modified: list[str] = field(default_factory=list)
     files_modified: list[str] = field(default_factory=list)
-    new_plans: list[str] = field(default_factory=list)
     new_projects: list[str] = field(default_factory=list)
     new_commit_shas: list[str] = field(default_factory=list)
 
@@ -228,15 +227,11 @@ def append_chunk(
     files_touched = _files_touched_from_turns(chunk_turns)
     files_modified = _files_modified_from_turns(chunk_turns)
 
-    plan_scan_text = "\n".join(
-        (t.text or "") for t in chunk_turns if t.text
-    )
     activity = _collect_activity(
         cwd=cwd,
         wiki_root=wiki_root,
         turns=chunk_turns,
         files_touched=files_touched,
-        body_text_for_plan_scan=plan_scan_text,
         logger=logger,
     )
 
@@ -260,7 +255,6 @@ def append_chunk(
         "prompt_chars_delta": prompt_chars_delta,
         "files_touched": files_touched,
         "files_modified": files_modified,
-        "plans": list(activity.get("plans") or []),
         "projects": list(activity.get("projects") or []),
         "commit_shas": list(activity.get("commit_shas") or []),
         "activity_commits": list(activity.get("commits") or []),
@@ -274,7 +268,6 @@ def append_chunk(
     is_new = False
     sidecar_after: Sidecar | None = None
     new_files: list[str] = []
-    new_plans: list[str] = []
     new_projects: list[str] = []
     new_commit_shas: list[str] = []
 
@@ -334,21 +327,19 @@ def append_chunk(
         pre = buffer.replay()
         pre_files = set(pre.files_touched)
         pre_files_modified = set(pre.files_modified)
-        pre_plans = set(pre.plans)
         pre_projects = set(pre.projects)
         pre_shas = set(pre.commit_shas)
         new_files = [f for f in files_touched if f not in pre_files]
         new_files_modified = [f for f in files_modified if f not in pre_files_modified]
-        new_plans = [p for p in (activity.get("plans") or []) if p not in pre_plans]
         new_projects = [p for p in (activity.get("projects") or []) if p not in pre_projects]
         new_commit_shas = [
             s for s in (activity.get("commit_shas") or []) if s not in pre_shas
         ]
         # Activity bullets follow the same accumulator semantics — when
-        # files/plans/projects/commits are all duplicates and no new
-        # Activity content appeared, the heartbeat hasn't changed the
-        # stub's body. ``last_heartbeat`` still moves; that's a sidecar
-        # patch, not a body rewrite.
+        # files/projects/commits are all duplicates and no new Activity
+        # content appeared, the heartbeat hasn't changed the stub's
+        # body. ``last_heartbeat`` still moves; that's a sidecar patch,
+        # not a body rewrite.
         pre_activity_commits = set(pre.activity_commits)
         pre_activity_issues_opened = set(pre.activity_issues_opened)
         pre_activity_issues_closed = set(pre.activity_issues_closed)
@@ -359,7 +350,6 @@ def append_chunk(
         )
         accumulators_unchanged = (
             not new_files
-            and not new_plans
             and not new_projects
             and not new_commit_shas
             and new_activity_total == 0
@@ -448,7 +438,6 @@ def append_chunk(
         sidecar_after=sidecar_after,
         new_files_touched=new_files,
         new_files_modified=new_files_modified,
-        new_plans=new_plans,
         new_projects=new_projects,
         new_commit_shas=new_commit_shas,
     )

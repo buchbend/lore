@@ -195,22 +195,11 @@ def file_session_note(
     files_touched = _files_touched_from_turns(turns)
     files_modified = _files_modified_from_turns(turns)
 
-    # Plan-wikilink scan looks at the noteworthy body content (bullets +
-    # decisions + loose ends + description) rather than the rendered
-    # markdown — same source material, no parser round-trip.
-    plan_scan_text = "\n".join([
-        noteworthy.description or "",
-        *noteworthy.bullets,
-        *noteworthy.decisions,
-        *noteworthy.loose_ends,
-    ])
-
     activity = _collect_activity(
         cwd=handle.cwd,
         wiki_root=wiki_root,
         turns=turns,
         files_touched=files_touched,
-        body_text_for_plan_scan=plan_scan_text,
         logger=logger,
     )
 
@@ -266,7 +255,6 @@ def file_session_note(
         # Phase 3: cross-note linkage (frontmatter) + Activity bullets
         # (already rendered into body_markdown above; copies live here so
         # append-mode can re-derive without re-running collectors).
-        plans=activity["plans"],
         projects=activity["projects"],
         activity_commits=activity["commits"],
         activity_issues_opened=activity["issues_opened"],
