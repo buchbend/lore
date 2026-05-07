@@ -44,15 +44,31 @@ def _seed(lore_root: Path, *, transcript_id: str = "abc") -> tuple:
     return outcome.buffer
 
 
-def test_request_flush_marks_my_buffers_ready(lore_root):
+def test_request_flush_marks_my_buffers_in_place_for_session_end(lore_root):
+    """session-end / pre-compact route to in_place mode and leave the
+    buffer in ``accumulating`` so the same transcript-id+date keeps a
+    single note across infrastructure boundaries."""
     buf = _seed(lore_root)
     stamped = _request_flush_for_my_buffers(lore_root, trigger="session-end")
     assert stamped == 1
     sidecar = buf.read_sidecar()
-    assert sidecar.state == "ready"
+    # State stays at ``accumulating`` — the buffer is still live and may
+    # absorb more chunks if the session continues. Only cap-trip and the
+    # reaper transition to ``ready``/``closed``.
+    assert sidecar.state == "accumulating"
     assert sidecar.flush_requested is not None
     assert sidecar.flush_requested.trigger == "session-end"
+    assert sidecar.flush_requested.mode == "in_place"
     assert sidecar.flush_requested.by_pid == os.getpid()
+
+
+def test_request_flush_pre_compact_routes_in_place(lore_root):
+    buf = _seed(lore_root)
+    stamped = _request_flush_for_my_buffers(lore_root, trigger="pre-compact")
+    assert stamped == 1
+    sidecar = buf.read_sidecar()
+    assert sidecar.state == "accumulating"
+    assert sidecar.flush_requested.mode == "in_place"
 
 
 def test_request_flush_skips_other_pid(lore_root):
@@ -80,9 +96,9 @@ def test_request_flush_skips_closed_buffers(lore_root):
     assert stamped == 0
 
 
-def test_request_flush_idempotent_on_already_ready(lore_root):
+def test_request_flush_idempotent_when_request_already_stamped(lore_root):
     buf = _seed(lore_root)
-    # First call -> ready+flush_requested.
+    # First call stamps in_place flush_requested.
     _request_flush_for_my_buffers(lore_root, trigger="session-end")
     # Second call -> short-circuits without touching state.
     stamped = _request_flush_for_my_buffers(lore_root, trigger="pre-compact")
@@ -90,6 +106,7 @@ def test_request_flush_idempotent_on_already_ready(lore_root):
     sidecar = buf.read_sidecar()
     assert sidecar.flush_requested is not None
     assert sidecar.flush_requested.trigger == "session-end"  # original trigger preserved
+    assert sidecar.flush_requested.mode == "in_place"
 
 
 def test_request_flush_max_scan_bound(lore_root):

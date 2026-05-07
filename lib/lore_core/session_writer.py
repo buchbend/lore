@@ -432,6 +432,7 @@ def file_or_merge(
     today_note = _find_todays_open_note(
         sessions_base, scope=si.scope, work_date=si.work_time.date(),
         new_files_touched=si.files_touched,
+        new_files_modified=si.files_modified,
         new_transcript_id=si.transcript.id if si.transcript is not None else None,
     )
     if today_note is not None:
@@ -537,15 +538,22 @@ def _find_todays_open_note(
     scope: Scope,
     work_date: _date,
     new_files_touched: list[str] | None = None,
+    new_files_modified: list[str] | None = None,
     new_transcript_id: str | None = None,
 ) -> Path | None:
     """Find a same-day same-scope open note that the new chunk should
     merge into.
 
-    Phase C: when ``new_files_touched`` is given AND any candidate has
-    its own ``files_touched`` frontmatter, require a Jaccard overlap of
-    at least :data:`_TOPIC_OVERLAP_MIN_JACCARD` (boilerplate-stripped)
-    so disjoint topics on the same day end up in different notes.
+    Topic-overlap Jaccard now prefers ``files_modified`` (edits only) over
+    ``files_touched`` (legacy union of edits + reads). Disjoint *reads*
+    in distinct chunks shouldn't hold a topic-merge open; only shared
+    *edits* are honest topic evidence. The new chunk's signal is taken
+    from ``new_files_modified`` when supplied and non-empty; the
+    candidate's signal is taken from its ``files_modified`` frontmatter
+    when present and falls back to ``files_touched`` for legacy notes
+    filed before the schema split. ``new_files_touched`` remains
+    accepted (and used as a fallback) so callers that haven't migrated
+    keep working.
 
     Buffer-flush rollout: when a candidate carries ``state: stub``, it
     is owned by an in-flight buffer-and-flush curator. Any legacy
@@ -556,17 +564,23 @@ def _find_todays_open_note(
     (the rare case where the buffer's stub_path was lost but the file
     is still on disk) can still match the stub.
 
-    Backward compat: if either side has no ``files_touched`` info
-    (legacy notes pre-Phase-C, or talk-only chunks with no tool calls),
-    fall through to the pre-Phase-C "most recent same-day same-scope
-    note" rule. This preserves existing behaviour for anything filed
-    before the upgrade.
+    Backward compat: if either side has no file-list info (legacy notes
+    pre-Phase-C, or talk-only chunks with no tool calls), fall through
+    to the pre-Phase-C "most recent same-day same-scope note" rule.
+    This preserves existing behaviour for anything filed before the
+    upgrade.
     """
     month = sessions_base / str(work_date.year) / f"{work_date.month:02d}"
     if not month.exists():
         return None
     day_prefix = f"{work_date.day:02d}"
-    new_set = _strip_boilerplate(new_files_touched)
+    # Prefer the new ``files_modified`` signal when supplied. When only
+    # ``files_touched`` is given (legacy callers / explicit /lore:session
+    # path that hasn't been migrated), use it as a fallback.
+    if new_files_modified is not None and new_files_modified:
+        new_set = _strip_boilerplate(new_files_modified)
+    else:
+        new_set = _strip_boilerplate(new_files_touched)
 
     # (-jaccard, -mtime, path) — best topic match first; ties break on
     # most-recent. Negative values let us sort ascending.
@@ -592,7 +606,13 @@ def _find_todays_open_note(
         except OSError:
             continue
 
-        candidate_files = fm.get("files_touched") or []
+        # Prefer the new ``files_modified`` signal on candidates;
+        # fall back to ``files_touched`` for legacy notes filed under
+        # the old schema. Both are kept additive on append, so a note
+        # may carry both — the more specific edits-only field wins.
+        candidate_files = fm.get("files_modified")
+        if not isinstance(candidate_files, list) or not candidate_files:
+            candidate_files = fm.get("files_touched") or []
         candidate_set = _strip_boilerplate(
             candidate_files if isinstance(candidate_files, list) else []
         )

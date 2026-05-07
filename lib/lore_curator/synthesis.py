@@ -76,6 +76,7 @@ from lore_curator.stub_note import (
     STUB_DESCRIPTION_PLACEHOLDER,
     STUB_FRONTMATTER_STATE,
     STUB_SUMMARY_PLACEHOLDER,
+    file_lists_for_frontmatter,
 )
 
 if TYPE_CHECKING:
@@ -86,6 +87,8 @@ __all__ = [
     "FlushOutcome",
     "compose_session_note",
     "flush_buffer",
+    "synth_in_place",
+    "synth_and_close",
     "spawn_detached_flush",
     "BULLET_CAPS",
     "BULLET_LINE_MAX",
@@ -227,7 +230,21 @@ def _phase1_finalise(
     rb: ReplayedBuffer,
     wiki_root: Path,
     logger: "RunLogger | None",
+    in_place: bool = False,
 ) -> FlushOutcome:
+    """Run Phase 1 (deterministic) over ``buffer``'s replayed state.
+
+    ``in_place`` toggles between two behaviours:
+
+    - ``False`` (default — ``synth_and_close``): drops the
+      ``state: stub`` frontmatter marker so the handover treats the note
+      as filed. Used by cap-trip / reaper paths that will close the
+      buffer immediately after.
+    - ``True`` (``synth_in_place``): retains ``state: stub`` because the
+      buffer remains live and may receive more chunks. The merge gate
+      and stub-protection branch read ``state: stub`` to mean "buffer
+      is live"; popping it under in-place would orphan that semantic.
+    """
     out = FlushOutcome(
         buffer_stem=buffer.stem,
         state_before=sidecar.state,
@@ -250,6 +267,7 @@ def _phase1_finalise(
                 transcript_id=sidecar.transcript_id,
                 buffer_stem=buffer.stem,
                 stub_present=False,
+                in_place=in_place,
             )
         return out
 
@@ -257,10 +275,15 @@ def _phase1_finalise(
     fm = parse_frontmatter(text)
     body_text = strip_frontmatter(text)  # noqa: F841 - body is re-rendered
 
-    # Clear stub marker; preserve title / description placeholders for
-    # Phase 2 to rewrite. The Activity-only note is now "final" enough
-    # that the handover treats it as filed.
-    fm.pop("state", None)
+    # Stub marker semantics:
+    # - synth_and_close (in_place=False): drop the marker — the note is
+    #   final from the merge gate's POV.
+    # - synth_in_place (in_place=True): keep the marker — buffer is
+    #   still alive and may absorb more chunks before close.
+    if in_place:
+        fm.setdefault("state", STUB_FRONTMATTER_STATE)
+    else:
+        fm.pop("state", None)
     fm["last_reviewed"] = datetime.now(UTC).date().isoformat()
     fm["curator_a_run"] = datetime.now(UTC).isoformat()
     fm.setdefault("title", fm.get("title", "session"))
@@ -268,8 +291,14 @@ def _phase1_finalise(
     fm.setdefault("type", "session")
     fm.setdefault("schema_version", 2)
     fm.setdefault("scope", sidecar.scope)
-    if rb.files_touched:
-        fm["files_touched"] = rb.files_touched
+    # New schema: ``files_modified`` (edits only — load-bearing for the
+    # merge-gate Jaccard, retrieval, and narrative tense) + ``files_read``
+    # (reads not subsumed by edits — kept for interview / code-tour
+    # provenance). ``files_touched`` is no longer written by any new path;
+    # we pop any stale value the stub carried so the new shape is the
+    # single source of truth on this curator-owned note.
+    fm.pop("files_touched", None)
+    fm.update(file_lists_for_frontmatter(rb.files_modified, rb.files_read))
     if projects:
         fm["projects"] = projects
     elif "projects" in fm and dpr:
@@ -315,7 +344,8 @@ def _phase1_finalise(
             buffer_stem=buffer.stem,
             stub_path=str(stub_path),
             wikilink=out.wikilink,
-            files_touched_count=len(rb.files_touched),
+            files_modified_count=len(rb.files_modified),
+            files_read_count=len(rb.files_read),
             commit_count=len(rb.activity_commits),
         )
     return out
@@ -766,7 +796,16 @@ def _bulletise(items: list[str]) -> list[str]:
 
 
 def _activity_summary_text(rb: ReplayedBuffer) -> str:
-    """Render the deterministic Activity into prompt-friendly bullets."""
+    """Render the deterministic Activity into prompt-friendly bullets.
+
+    Surfaces ``files_modified`` (edits only — what the session actually
+    changed) and, when distinct, ``files_read`` (browsed but not edited).
+    Falls back to the legacy ``files_touched`` union for archived v1
+    buffers whose JSONL events predate the split. The legacy
+    ``Files touched:`` framing has been retired everywhere except as a
+    last-resort fallback so the LLM doesn't conflate reads with edits
+    in the narrative tense.
+    """
     lines: list[str] = []
     if rb.activity_commits:
         lines.append("Commits:")
@@ -777,7 +816,14 @@ def _activity_summary_text(rb: ReplayedBuffer) -> str:
     if rb.activity_issues_closed:
         lines.append("Issues closed:")
         lines.extend(rb.activity_issues_closed)
-    if rb.files_touched:
+    modified_set = set(rb.files_modified)
+    if rb.files_modified:
+        lines.append("Files modified: " + ", ".join(rb.files_modified[:30]))
+    read_extra = [f for f in rb.files_read if f not in modified_set]
+    if read_extra:
+        lines.append("Files read: " + ", ".join(read_extra[:30]))
+    if not rb.files_modified and not read_extra and rb.files_touched:
+        # Legacy v1 archive fallback — no split data on disk.
         lines.append("Files touched: " + ", ".join(rb.files_touched[:30]))
     if rb.projects:
         lines.append("Projects referenced: " + ", ".join(rb.projects))
@@ -865,6 +911,7 @@ def _phase2_apply(
     sidecar: Sidecar,
     logger: "RunLogger | None" = None,
     shape: NarrativeShape | None = None,
+    in_place: bool = False,
 ) -> Path:
     """Rewrite the finalised stub with the LLM-composed narrative.
 
@@ -907,10 +954,21 @@ def _phase2_apply(
     if shape is not None and shape.adr_flagged:
         fm["adr_flagged"] = True
     fm["last_reviewed"] = datetime.now(UTC).date().isoformat()
+    if in_place:
+        # Retain the stub marker so the merge gate keeps the
+        # "buffer is live" semantic across the title rewrite.
+        fm.setdefault("state", STUB_FRONTMATTER_STATE)
 
     # Pick the final path. May rename when the synthesised title yields
-    # a richer slug than the deterministic stub.
-    final_path = _resolve_phase2_path(stub_path=stub_path, title=title, sidecar=sidecar)
+    # a richer slug than the deterministic stub. In-place mode allows
+    # the rename only when no prior rename has happened (signal:
+    # ``aliases:`` is empty / absent). Subsequent in-place syntheses
+    # update the title in frontmatter but never rename the file again,
+    # so existing ``[[<title-slug>]]`` references keep resolving.
+    final_path = _resolve_phase2_path(
+        stub_path=stub_path, title=title, sidecar=sidecar,
+        allow_rename=(not in_place) or not fm.get("aliases"),
+    )
     if final_path != stub_path:
         old_stem = stub_path.stem
         existing_aliases = fm.get("aliases") or []
@@ -971,10 +1029,14 @@ _SESSION_STEM_PARTS = 3
 
 def _resolve_phase2_path(
     *, stub_path: Path, title: str, sidecar: Sidecar,
+    allow_rename: bool = True,
 ) -> Path:
     """Return the path the Phase 2 note should live at.
 
     Equal to ``stub_path`` when:
+    * ``allow_rename`` is False (caller has decided the rename slot is
+      already used — e.g., a prior in-place synth has already renamed
+      and stamped ``aliases:``);
     * the note is part 2+ of a continuation chain (renaming would
       orphan ``continued_by`` / ``continues`` cross-references);
     * the synthesised title is empty / equals the placeholder;
@@ -985,6 +1047,8 @@ def _resolve_phase2_path(
     slug-portion replaced by ``_slug(title)``, suffixed with a collision
     counter when needed.
     """
+    if not allow_rename:
+        return stub_path
     if sidecar.part_index >= 2 or sidecar.continuation_of:
         return stub_path
     if not title.strip():
@@ -1013,6 +1077,75 @@ def _resolve_phase2_path(
 # ---------------------------------------------------------------------------
 
 
+def synth_and_close(
+    buffer_path: Path,
+    *,
+    lore_root: Path,
+    wiki_root: Path,
+    llm_client: Any = None,
+    model: str | None = None,
+    adapter_lookup=None,
+    logger: "RunLogger | None" = None,
+    auto_commit: bool = True,
+) -> FlushOutcome:
+    """Phase 1 + Phase 2, then transition to ``closed`` and archive.
+
+    Used by cap-trip and the reaper — paths where the buffer should
+    legitimately close (cap-trip honours an LLM-context limit; the
+    reaper has decided the conversation is over). The note ends with
+    ``state: stub`` removed, the sidecar+log moved to ``_done/``, and
+    Phase 2's narrative applied if an LLM client was provided.
+    """
+    return _synthesize(
+        buffer_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=llm_client,
+        model=model,
+        adapter_lookup=adapter_lookup,
+        logger=logger,
+        auto_commit=auto_commit,
+        close=True,
+    )
+
+
+def synth_in_place(
+    buffer_path: Path,
+    *,
+    lore_root: Path,
+    wiki_root: Path,
+    llm_client: Any = None,
+    model: str | None = None,
+    adapter_lookup=None,
+    logger: "RunLogger | None" = None,
+    auto_commit: bool = True,
+) -> FlushOutcome:
+    """Phase 1 + Phase 2 against the live buffer, leave it accumulating.
+
+    Pre-compact and session-end fire this so the user-visible note is
+    up-to-date for handover *without* fragmenting the transcript into
+    multiple notes. The buffer stays in ``accumulating``; ``state: stub``
+    is retained on the note's frontmatter so the merge gate's
+    stub-protection branch keeps treating it as "buffer is live".
+
+    Idempotent across multiple calls within the same buffer's lifetime:
+    the first call may rename the file from a deterministic-slug stem to
+    a title-derived stem (and stamp ``aliases:``); subsequent calls
+    update the title in frontmatter but never rename the file again.
+    """
+    return _synthesize(
+        buffer_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=llm_client,
+        model=model,
+        adapter_lookup=adapter_lookup,
+        logger=logger,
+        auto_commit=auto_commit,
+        close=False,
+    )
+
+
 def flush_buffer(
     buffer_path: Path,
     *,
@@ -1024,16 +1157,47 @@ def flush_buffer(
     logger: "RunLogger | None" = None,
     auto_commit: bool = True,
 ) -> FlushOutcome:
+    """Backwards-compatible alias for :func:`synth_and_close`.
+
+    ``buffer_path`` is the sidecar path (``<stem>.state.json``). New
+    callers should pick :func:`synth_and_close` (cap-trip / reaper) or
+    :func:`synth_in_place` (session-end / pre-compact) explicitly so
+    the buffer state-machine intent stays visible at the call site.
+    """
+    return synth_and_close(
+        buffer_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=llm_client,
+        model=model,
+        adapter_lookup=adapter_lookup,
+        logger=logger,
+        auto_commit=auto_commit,
+    )
+
+
+def _synthesize(
+    buffer_path: Path,
+    *,
+    lore_root: Path,
+    wiki_root: Path,
+    llm_client: Any = None,
+    model: str | None = None,
+    adapter_lookup=None,
+    logger: "RunLogger | None" = None,
+    auto_commit: bool = True,
+    close: bool = True,
+) -> FlushOutcome:
     """Drive Phase 1 + (optionally) Phase 2 to completion.
 
-    ``buffer_path`` is the sidecar path (``<stem>.state.json``).
-    ``llm_client`` / ``model`` are required for Phase 2; without them
-    the worker stops after Phase 1 (Activity-only) and returns.
+    ``close=True`` (``synth_and_close``): CAS through
+    ``ready -> flushing -> closed`` and archive to ``_done/``.
+    ``close=False`` (``synth_in_place``): keep the buffer in
+    ``accumulating`` and never archive — Phase 1 just refreshes the
+    on-disk stub and Phase 2's LLM narrative replaces the placeholder
+    title / summary in place.
 
-    Returns a :class:`FlushOutcome` even on partial success — Phase 1
-    always runs through to ``state=closed`` once it acquires the lock,
-    so callers can rely on the buffer being finalised regardless of
-    Phase 2 outcome.
+    Returns a :class:`FlushOutcome` even on partial success.
     """
     buffer = Buffer.from_sidecar_path(buffer_path)
     sidecar = buffer.read_sidecar()
@@ -1047,7 +1211,7 @@ def flush_buffer(
             skipped_reason="already-closed",
         )
 
-    # Phase 1 (deterministic) under flock + state CAS.
+    # Phase 1 (deterministic) under flock.
     with buffer.with_lock():
         sidecar = buffer.read_sidecar()
         if sidecar is None or sidecar.state == "closed":
@@ -1056,31 +1220,47 @@ def flush_buffer(
                 state_before="closed",
                 skipped_reason="closed-during-acquire",
             )
-        # accumulating -> ready -> flushing (CAS) — accept either entry point.
-        if sidecar.state == "accumulating":
-            sidecar = buffer.transition("ready")
-        if sidecar.state == "ready":
-            sidecar = buffer.transition("flushing")
+        if close:
+            # accumulating -> ready -> flushing (CAS) — accept either entry.
+            if sidecar.state == "accumulating":
+                sidecar = buffer.transition("ready")
+            if sidecar.state == "ready":
+                sidecar = buffer.transition("flushing")
+        # In-place mode: do NOT transition state. Phase 1 / Phase 2 run
+        # against the live ``accumulating`` buffer; subsequent heartbeats
+        # continue to fold into it.
         rb = buffer.replay()
         outcome = _phase1_finalise(
             buffer=buffer, sidecar=sidecar, rb=rb,
             wiki_root=wiki_root, logger=logger,
+            in_place=not close,
         )
-        # Drain emit (note-filed) before closing.
-        if outcome.phase1_completed and outcome.stub_path is not None:
+        # Drain emit (note-filed) before closing — only on close path.
+        # In-place writes don't promote handover state; the note is still
+        # owned by the live buffer.
+        if close and outcome.phase1_completed and outcome.stub_path is not None:
             _drain_emit_filed(
                 lore_root=lore_root, sidecar=sidecar, outcome=outcome, logger=logger,
             )
-        # Close the buffer regardless of Phase 1 stub presence — handover
-        # gates on state=closed, not on stub presence.
-        buffer.transition("closed")
+        if close:
+            # Close the buffer regardless of Phase 1 stub presence — handover
+            # gates on state=closed, not on stub presence.
+            buffer.transition("closed")
+        else:
+            # In-place: clear the request marker so the next heartbeat /
+            # CLI run doesn't loop on the same accumulating buffer. Done
+            # under the existing flock; the buffer is still alive.
+            sc_after = buffer.read_sidecar()
+            if sc_after is not None and sc_after.flush_requested is not None:
+                buffer.patch(flush_requested=None)
 
-    # Move to _done/ outside the flock (the file moves; lockfile cleanup
-    # is best-effort and idempotent under concurrent reapers).
-    try:
-        buffer.close()
-    except OSError:
-        pass
+    if close:
+        # Move to _done/ outside the flock (the file moves; lockfile cleanup
+        # is best-effort and idempotent under concurrent reapers).
+        try:
+            buffer.close()
+        except OSError:
+            pass
     if outcome.phase1_completed and outcome.stub_path and auto_commit:
         try:
             filed = FiledNote(
@@ -1156,7 +1336,8 @@ def flush_buffer(
                 buffer_stem=buffer.stem,
                 reason="empty-signal-skipped-llm",
                 turns_text_chars=len(turns_text),
-                files_touched=len(rb_for_signal.files_touched),
+                files_modified=len(rb_for_signal.files_modified),
+                files_read=len(rb_for_signal.files_read),
                 commits=len(rb_for_signal.activity_commits),
             )
         return outcome
@@ -1200,6 +1381,7 @@ def flush_buffer(
             sidecar=sidecar,
             logger=logger,
             shape=shape,
+            in_place=not close,
         )
     except OSError as exc:
         outcome.degraded = True
@@ -1222,7 +1404,11 @@ def flush_buffer(
             transcript_id=sidecar.transcript_id,
             buffer_stem=buffer.stem,
             attempts=attempts,
+            in_place=not close,
         )
+    # ``flush_requested`` was cleared inside the flock above on the
+    # in-place path; close path archives to ``_done/`` so the sidecar
+    # is gone either way.
     return outcome
 
 

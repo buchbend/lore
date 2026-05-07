@@ -143,6 +143,16 @@ class FlushRequest:
     trigger: str = ""              # session-end | pre-compact | cap-trip | reaper
     requested_at: str = ""         # ISO-Z UTC
     by_pid: int = 0
+    # Synthesis mode. ``"close"`` runs the full Phase 1 + Phase 2 path
+    # ending in ``state=closed`` and archive to ``_done/`` — used by
+    # cap-trip and the reaper. ``"in_place"`` runs Phase 1 + Phase 2
+    # against the *live* buffer, leaves the buffer in ``accumulating``,
+    # retains ``state: stub`` on the note's frontmatter, and never
+    # archives — used by session-end and pre-compact so that infra
+    # boundaries don't fragment one transcript into multiple notes.
+    # Default is ``"close"`` for back-compat with sidecars written
+    # before this field existed.
+    mode: str = "close"
 
 
 @dataclass
@@ -151,6 +161,7 @@ class Counters:
     prompt_chars: int = 0
     files_touched_count: int = 0     # union of edits + reads (legacy)
     files_modified_count: int = 0    # edits only (canonical for narrative gating)
+    files_read_count: int = 0        # reads only (provenance for interview / code-tour notes)
 
 
 @dataclass
@@ -258,6 +269,7 @@ class ReplayedBuffer:
 
     files_touched: list[str] = field(default_factory=list)   # union (legacy)
     files_modified: list[str] = field(default_factory=list)  # edits only
+    files_read: list[str] = field(default_factory=list)      # reads only
     projects: list[str] = field(default_factory=list)
     commit_shas: list[str] = field(default_factory=list)
     activity_commits: list[str] = field(default_factory=list)
@@ -531,6 +543,7 @@ class Buffer:
         if etype == "append":
             _dedup_extend(rb.files_touched, event.get("files_touched") or [])
             _dedup_extend(rb.files_modified, event.get("files_modified") or [])
+            _dedup_extend(rb.files_read, event.get("files_read") or [])
             _dedup_extend(rb.projects, event.get("projects") or [])
             _dedup_extend(rb.commit_shas, event.get("commit_shas") or [])
             _dedup_extend(rb.activity_commits, event.get("activity_commits") or [])
@@ -566,12 +579,28 @@ class Buffer:
 
         MUST hold :meth:`with_lock`. Idempotent: if files are already gone
         (a parallel reaper closed first), returns ``None``.
+
+        Refuses to silently clobber an existing ``_done/<stem>.state.json``
+        (or its companion ``.jsonl``). A pre-existing archived sidecar
+        with the same stem means part-resolution misfired — opening a
+        duplicate Part-1 stub for an already-archived buffer — and
+        clobbering it would erase the prior part's archived state. We
+        raise instead so the underlying bug surfaces loudly rather than
+        corrupting history.
         """
         if not self._sidecar_path.exists() and not self._log_path.exists():
             return None
         target_dir = done_dir(self._lore_root)
         new_sidecar = target_dir / self._sidecar_path.name
         new_log = target_dir / self._log_path.name
+        if new_sidecar.exists() or new_log.exists():
+            raise BufferTransitionError(
+                f"refusing to overwrite existing _done/ archive for stem "
+                f"{self._stem!r}: an archived sidecar / log already exists "
+                "at the target path. This usually means part-resolution "
+                "misfired and a duplicate Part-1 buffer was opened for an "
+                "already-archived (transcript_id, local_date) pair."
+            )
         # Use os.replace for cross-FS atomicity within the same FS (which is
         # guaranteed since done_dir() lives inside .lore/buffers/ on the same
         # mount as the source).

@@ -44,6 +44,7 @@ from lore_core.io import atomic_write_text
 from lore_core.schema import parse_frontmatter, strip_frontmatter
 from lore_core.session_writer import (
     BodySections,
+    parse_body_sections,
     render_body_sections,
 )
 from lore_core.types import Scope, TranscriptHandle
@@ -56,7 +57,12 @@ if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
 
 
-__all__ = ["write_or_update", "STUB_SUMMARY_PLACEHOLDER", "STUB_DESCRIPTION_PLACEHOLDER"]
+__all__ = [
+    "write_or_update",
+    "STUB_SUMMARY_PLACEHOLDER",
+    "STUB_DESCRIPTION_PLACEHOLDER",
+    "file_lists_for_frontmatter",
+]
 
 
 STUB_SUMMARY_PLACEHOLDER = "_synthesis pending_"
@@ -164,6 +170,35 @@ def _dedup_preserving_order(items: list[str] | None) -> list[str]:
     return out
 
 
+def file_lists_for_frontmatter(
+    files_modified: list[str] | None,
+    files_read: list[str] | None,
+) -> dict[str, list[str]]:
+    """Return the ``files_modified`` / ``files_read`` frontmatter pair.
+
+    Single source of truth for the "suppress reads when subsumed" rule:
+
+    - ``files_modified`` is included verbatim (deduped) when non-empty.
+    - ``files_read`` is included only for paths that were NOT also
+      modified — keeps editing-session frontmatter tidy in the dominant
+      case where every edited file was read first.
+    - Both lists are uncapped (load-bearing for retrieval recall on
+      file-name queries in read-heavy interview sessions).
+
+    Returns ``{}`` when both inputs are empty.
+    """
+    out: dict[str, list[str]] = {}
+    modified_dedup = _dedup_preserving_order(list(files_modified or []))
+    if modified_dedup:
+        out["files_modified"] = modified_dedup
+    modified_set = set(modified_dedup)
+    read_extra = [f for f in (files_read or []) if f not in modified_set]
+    read_dedup = _dedup_preserving_order(read_extra)
+    if read_dedup:
+        out["files_read"] = read_dedup
+    return out
+
+
 def _build_first_write_frontmatter(
     *,
     scope: Scope,
@@ -175,7 +210,8 @@ def _build_first_write_frontmatter(
     integration: str,
     chunk_from_hash: str,
     chunk_to_hash: str,
-    files_touched: list[str],
+    files_modified: list[str],
+    files_read: list[str],
     projects: list[str],
     title_placeholder: str,
     buffer_stem: str,
@@ -204,8 +240,7 @@ def _build_first_write_frontmatter(
     fm["transcripts"] = [transcript_id]
     if projects:
         fm["projects"] = _dedup_preserving_order(projects)
-    if files_touched:
-        fm["files_touched"] = _dedup_preserving_order(files_touched)
+    fm.update(file_lists_for_frontmatter(files_modified, files_read))
     fm["buffer_stem"] = buffer_stem
     return fm
 
@@ -320,7 +355,8 @@ def write_or_update(
             integration=integration,
             chunk_from_hash=chunk_from_hash,
             chunk_to_hash=chunk_to_hash,
-            files_touched=rb.files_touched,
+            files_modified=rb.files_modified,
+            files_read=rb.files_read,
             projects=rb.projects,
             title_placeholder=title_placeholder,
             buffer_stem=buffer.stem,
@@ -370,7 +406,8 @@ def write_or_update(
             integration=integration,
             chunk_from_hash=chunk_from_hash,
             chunk_to_hash=chunk_to_hash,
-            files_touched=rb.files_touched,
+            files_modified=rb.files_modified,
+            files_read=rb.files_read,
             projects=rb.projects,
             title_placeholder=title_placeholder,
             buffer_stem=buffer.stem,
@@ -397,10 +434,15 @@ def write_or_update(
 
     text = path.read_text()
     fm = parse_frontmatter(text)
-    body_text = strip_frontmatter(text)  # noqa: F841 — kept for parity with _append_to_note;
-    # we intentionally re-render the body from the replay rather than
-    # parse-merge it. Stub bodies are deterministic snapshots of the
-    # buffer; the replay IS the source of truth.
+    body_text = strip_frontmatter(text)
+    # ``synth_in_place`` may have applied a Phase-2 narrative against a
+    # live (still-accumulating) buffer. We must NOT clobber that
+    # narrative on the next heartbeat: parse the existing body and
+    # reuse its narrative sections (title, summary, decisions, worked_on,
+    # discussion, loose_ends). Activity sub-sections (commits / issues)
+    # always refresh from the deterministic replay — they're the
+    # whole point of the heartbeat rewrite.
+    existing_body = parse_body_sections(body_text)
 
     fm["last_reviewed"] = work_time.date().isoformat()
     fm["curator_a_run"] = now.isoformat()
@@ -437,17 +479,28 @@ def write_or_update(
     fm["transcripts"] = uuid_list
 
     # Frontmatter accumulator union — replay is authoritative.
-    if rb.files_touched:
-        fm["files_touched"] = _dedup_preserving_order(rb.files_touched)
+    # New schema: ``files_modified`` (edits only) + ``files_read`` (reads
+    # not subsumed by edits). Drops ``files_touched`` from new writes;
+    # legacy notes filed before this change keep theirs as an opaque
+    # union (read-side fallback in the merge gate handles them).
+    fm.pop("files_touched", None)
+    fm.update(file_lists_for_frontmatter(rb.files_modified, rb.files_read))
     if rb.projects:
         fm["projects"] = _dedup_preserving_order(rb.projects)
 
-    body = _render_body(
-        title_placeholder=fm.get("title", title_placeholder),
-        activity_commits=rb.activity_commits,
-        activity_issues_opened=rb.activity_issues_opened,
-        activity_issues_closed=rb.activity_issues_closed,
-    )
+    body_title = existing_body.title or fm.get("title") or title_placeholder
+    body_summary = existing_body.summary or STUB_SUMMARY_PLACEHOLDER
+    body = render_body_sections(BodySections(
+        title=body_title,
+        summary=body_summary,
+        decisions=existing_body.decisions,
+        worked_on=existing_body.worked_on,
+        loose_ends=existing_body.loose_ends,
+        commits=rb.activity_commits,
+        issues_opened=rb.activity_issues_opened,
+        issues_closed=rb.activity_issues_closed,
+        discussion=existing_body.discussion,
+    ))
     new_text = _render_markdown(fm, body, wiki_root=wiki_root)
     atomic_write_text(path, new_text)
 

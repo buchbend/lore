@@ -346,7 +346,7 @@ def flush_command(
     from lore_core.wiki_config import load_wiki_config
     from lore_curator.buffer_store import Buffer
     from lore_curator.llm_client import LlmClientError, make_llm_client
-    from lore_curator.synthesis import flush_buffer
+    from lore_curator.synthesis import synth_and_close, synth_in_place
 
     err_console = Console(stderr=True)
     lore_root = lore_root_or_die(err_console)
@@ -381,13 +381,21 @@ def flush_command(
         tier, cfg.models.middle,
     )
 
+    # Dispatch on the request mode stamped by the hook. Default is
+    # ``close`` for back-compat with sidecars written before the field
+    # existed and for direct CLI invocation without a request marker.
+    mode = "close"
+    if sidecar.flush_requested is not None:
+        mode = getattr(sidecar.flush_requested, "mode", "close") or "close"
+    synth_fn = synth_in_place if mode == "in_place" else synth_and_close
+
     with RunLogger(
         lore_root,
         trigger="flush",
         pending_count=1,
-        config_snapshot={"buffer_stem": buffer.stem},
+        config_snapshot={"buffer_stem": buffer.stem, "mode": mode},
     ) as logger:
-        outcome = flush_buffer(
+        outcome = synth_fn(
             buffer_path,
             lore_root=lore_root,
             wiki_root=wiki_dir,

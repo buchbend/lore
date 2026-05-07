@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -143,7 +144,7 @@ def _dispatch_flush_requested(
     of flushes actually attempted.
     """
     from lore_curator.buffer_store import iter_all
-    from lore_curator.synthesis import flush_buffer
+    from lore_curator.synthesis import synth_and_close, synth_in_place
 
     flushed = 0
     scanned = 0
@@ -167,8 +168,14 @@ def _dispatch_flush_requested(
         model = {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}.get(
             tier, cfg.models.middle,
         )
+        # Mode dispatch: ``in_place`` (session-end / pre-compact) keeps the
+        # buffer alive; ``close`` (cap-trip / reaper) closes and archives.
+        # Defaults to ``close`` for sidecars written before the field
+        # existed.
+        mode = getattr(sidecar.flush_requested, "mode", "close") or "close"
+        synth_fn = synth_in_place if mode == "in_place" else synth_and_close
         try:
-            outcome = flush_buffer(
+            outcome = synth_fn(
                 buf.sidecar_path,
                 lore_root=lore_root,
                 wiki_root=wiki_dir,
@@ -181,10 +188,15 @@ def _dispatch_flush_requested(
                 "flush-requested-dispatched",
                 buffer_stem=buf.stem,
                 trigger=sidecar.flush_requested.trigger if sidecar.flush_requested else "",
+                mode=mode,
                 phase1=outcome.phase1_completed,
                 phase2=outcome.phase2_completed,
                 degraded=outcome.degraded,
             )
+            # In-place mode: ``synth_in_place`` clears its own
+            # ``flush_requested`` marker on success, so the next
+            # heartbeat doesn't loop. Close mode archives to ``_done/``
+            # so the sidecar is gone.
         except Exception as exc:  # noqa: BLE001 - never abort curator-A on a flush failure
             logger.emit(
                 "warning",
@@ -208,15 +220,25 @@ def _resolve_active_part(
        ``(transcript_id, local_date)`` and is still ``accumulating``,
        reuse its ``part_index`` (we're appending into the active part).
     2. Otherwise find the highest ``part_index`` seen for this pair —
-       across any state — and return ``(highest + 1,
-       <highest's stem>)``. This is the cap-trip continuation case.
+       across any state, including ``_done/`` archive entries — and
+       return ``(highest + 1, <highest's stem>)``. This is the cap-trip
+       continuation case.
     3. Fresh pair: ``(1, None)``.
+
+    Both the live buffers directory and the ``_done/`` archive are
+    consulted so that a closed Part-N (cap-trip / reaper) correctly
+    leads to Part-(N+1) on the next heartbeat. Without scanning
+    ``_done/``, the resolver would silently return ``(1, None)`` and
+    open a duplicate Part-1 stub for the same ``(transcript_id,
+    local_date)`` — the bug behind today's three-split symptom.
     """
     from lore_curator.buffer_store import iter_all
 
     compact = local_date.replace("-", "")
     prefix = f"{transcript_id}__{compact}"
     candidates: list[tuple[int, str, str]] = []  # (part_index, state, stem)
+
+    seen_stems: set[str] = set()
     for buf in iter_all(lore_root):
         if not buf.stem.startswith(prefix):
             continue
@@ -226,6 +248,38 @@ def _resolve_active_part(
         if sidecar.transcript_id != transcript_id or sidecar.local_date != local_date:
             continue
         candidates.append((sidecar.part_index, sidecar.state, buf.stem))
+        seen_stems.add(buf.stem)
+
+    # Scan ``_done/`` for archived parts. Filter by stem prefix to keep
+    # the directory walk bounded — only entries that match this
+    # ``(transcript_id, local_date)`` pair are considered.
+    done = lore_root / ".lore" / "buffers" / "_done"
+    if done.exists():
+        for entry in sorted(done.iterdir()):
+            if entry.is_dir():
+                continue
+            if not entry.name.endswith(".state.json"):
+                continue
+            stem = entry.name[: -len(".state.json")]
+            if not stem.startswith(prefix):
+                continue
+            if stem in seen_stems:
+                continue
+            try:
+                raw = json.loads(entry.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(raw, dict):
+                continue
+            from lore_curator.buffer_store import Sidecar as _Sidecar
+            try:
+                sidecar = _Sidecar.from_dict(raw)
+            except (TypeError, ValueError):
+                continue
+            if sidecar.transcript_id != transcript_id or sidecar.local_date != local_date:
+                continue
+            candidates.append((sidecar.part_index, sidecar.state, stem))
+            seen_stems.add(stem)
 
     if not candidates:
         return 1, None
