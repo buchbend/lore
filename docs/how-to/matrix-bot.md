@@ -1,8 +1,8 @@
 # How to publish briefings to Matrix
 
-End-to-end recipe for a wiki briefing landing in a Matrix room. Works
-from the `/lore:briefing` skill or directly from `lore briefing
-publish` on the CLI.
+End-to-end recipe for a wiki briefing landing in a Matrix room. Run
+via `lore briefing --wiki <wiki>` (the CLI does gather + render +
+publish + ledger update in one shot).
 
 ---
 
@@ -80,14 +80,13 @@ them. Commit the file like any other wiki note.
 
 ## Step 3 — publish
 
-### From the `/lore:briefing` skill
+### From the CLI
 
-```
-/lore:briefing <wiki>
+```bash
+lore briefing --wiki <wiki>
 ```
 
-The skill calls `lore_briefing_gather`, composes the prose, then
-shells out to:
+Or, for the publish step alone:
 
 ```bash
 lore briefing publish --sink matrix --wiki <wiki>
@@ -166,6 +165,6 @@ homeserver doesn't currently auto-refresh tokens.
 
 - `docs/architecture/config.md` — full precedence table for every
   Lore config source.
-- `skills/briefing/SKILL.md` — the `/lore:briefing` skill workflow.
+- `lore briefing --help` — CLI reference for the gather + publish flow.
 - `lib/lore_core/briefing/sinks/matrix.py` — the sink itself; module
   docstring reiterates the resolution order.

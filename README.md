@@ -191,10 +191,11 @@ capture path knows which wiki / scope to file notes under:
 cd /path/to/your/repo
 ```
 
-Then in a Claude Code session in that repo:
+Then in a Claude Code session in that repo, ask Claude to run
+`lore attach` (or run it from a shell):
 
 ```
-/lore:attach
+lore attach
 ```
 
 Interactive — asks for wiki + scope, writes the managed block to
@@ -213,24 +214,20 @@ lore new-wiki product --surfaces design      # + artefact + critique
 lore new-wiki scratch --surfaces custom      # skeleton you fill yourself
 ```
 
-`SURFACES.md` is human-editable markdown with embedded YAML. Three ways
+`SURFACES.md` is human-editable markdown with embedded YAML. Two ways
 to author and maintain it:
 
-- **Design a wiki's vocabulary (interactive, LLM-guided):**
-  `lore surface init --wiki <name>` drops into the `/lore:surface-init`
-  skill in Claude Code. Guided holistic design — one open question,
-  full synthesis, per-surface refinement, hybrid commit.
-- **Add one new surface (interactive, LLM-guided):**
-  `lore surface add --wiki <name>` drops into `/lore:surface-add`.
-  Proposes a full draft from one open question with semantic-overlap
-  detection against existing surfaces.
-- **Scripted / automation / no-LLM:** write a `draft.json`
-  (schema: `lore.surface.draft/1`) and run
-  `lore surface commit <path>`. This is also how the skill paths write
-  under the hood. `lore new-wiki <name> --surfaces <template>` (above)
-  remains the fastest way to seed a wiki headlessly.
+- **Interactive, LLM-guided:** `/lore:surface <wiki>` opens with one
+  dispatch question — *add* a new surface or *redesign* the full set —
+  and routes to either flow. Both commit through
+  `lore surface commit <path>`.
+- **Scripted / automation / no-LLM:** write a `draft.json` (schema:
+  `lore.surface.draft/1`) and run `lore surface commit <path>`. This
+  is also how the skill writes under the hood.
+  `lore new-wiki <name> --surfaces <template>` (above) remains the
+  fastest way to seed a wiki headlessly.
 
-Both interactive flows require `claude` on PATH. The `commit` primitive
+The interactive flow requires `claude` on PATH. The `commit` primitive
 does not. Run `lore surface lint` anytime to validate the file.
 
 See `docs/superpowers/specs/2026-04-20-surface-authoring-design.md` for
@@ -363,7 +360,7 @@ ln -s ~/git/research/knowledge research
 # personal wiki lives inline at ~/lore/wiki/personal/
 ```
 
-Then `/lore:init` to write the root CLAUDE.md and you're set.
+Then run `lore init` to write the root CLAUDE.md and you're set.
 
 ### 2. Single-wiki — one team's knowledge only
 
