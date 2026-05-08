@@ -35,7 +35,7 @@ from typing import Any
 
 from lore_core.config import get_wiki_root
 from lore_core.errors import mcp_error as _mcp_error
-from lore_core.freshness import compute_freshness, signal_to_dict
+from lore_core.freshness import compute_freshness, load_orphan_set, signal_to_dict
 from lore_core.freshness_filter import apply_search_filter
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
@@ -182,23 +182,33 @@ def handle_search(
     backend = FtsBackend()
     _maybe_reindex(backend, wiki)
     hits = backend.search(query, wiki=wiki, for_repo=for_repo, k=k)
-    # Cache one wiki-path resolution per (wiki-name) to avoid re-walking
-    # ``$LORE_ROOT/wiki`` per hit.
+    # Cache one wiki-path resolution per (wiki-name) and one orphan-set
+    # load per wiki-path to avoid re-walking ``$LORE_ROOT/wiki`` and
+    # re-reading ``_catalog.json`` on every hit.
     wiki_path_cache: dict[str, Path | None] = {}
+    orphan_cache: dict[str, set[Path]] = {}
 
     def _wp(name: str) -> Path | None:
         if name not in wiki_path_cache:
             wiki_path_cache[name] = _resolve_wiki(name)
         return wiki_path_cache[name]
 
+    def _orphans(name: str, wp: Path) -> set[Path]:
+        if name not in orphan_cache:
+            orphan_cache[name] = load_orphan_set(wp)
+        return orphan_cache[name]
+
     out: list[dict[str, Any]] = []
     for h in hits:
         wp = _wp(h.wiki)
-        freshness = (
-            _freshness_block_for(wp, h.path)
-            if wp is not None
-            else signal_to_dict(compute_freshness({}, Path(h.path), Path("/"), None, set()))
-        )
+        if wp is not None:
+            freshness = _freshness_block_for(
+                wp, h.path, orphan_set=_orphans(h.wiki, wp)
+            )
+        else:
+            freshness = signal_to_dict(
+                compute_freshness({}, Path(h.path), Path("/"), None, set())
+            )
         out.append({
             "path": h.path,
             "wiki": h.wiki,
@@ -281,7 +291,9 @@ def handle_read(
         return _mcp_error("path_not_found", f"not found: {path}")
     text = target.read_text(errors="replace")
 
-    freshness = _freshness_block_for(wiki_path, path)
+    freshness = _freshness_block_for(
+        wiki_path, path, orphan_set=load_orphan_set(wiki_path)
+    )
 
     if section is not None:
         section_text, headings = _extract_section(text, section)

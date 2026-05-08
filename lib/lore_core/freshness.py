@@ -205,3 +205,42 @@ def signal_to_dict(signal: FreshnessSignal) -> dict:
         "reason": signal.reason,
         "confirmed_at": signal.confirmed_at.isoformat() if signal.confirmed_at else None,
     }
+
+
+def load_orphan_set(wiki_path: Path) -> set[Path]:
+    """Load the cached orphan set for a wiki.
+
+    Slice 4 of PRD #65: ``lore lint`` writes a list of wiki-relative
+    paths under ``_catalog.json`` → ``orphan_set``. Computing orphans
+    on every retrieval would be too expensive (rglob over the wiki +
+    one frontmatter parse per note). The cache is refreshed on each
+    lint run; eventual-consistency is acceptable per the PRD — the
+    worst case is a brief window where a fresh-but-not-yet-linted
+    note is incorrectly flagged or unflagged.
+
+    Returns absolute paths so callers can use plain ``in`` membership
+    against the same paths they pass to :func:`compute_freshness`.
+
+    Cache miss (no catalog, no ``orphan_set`` key, malformed JSON)
+    degrades gracefully to an empty set — the freshness signal stays
+    ``confirmed`` for any note that would otherwise have been
+    orphan-flagged, with no error.
+    """
+    import json as _json
+
+    cat = wiki_path / "_catalog.json"
+    if not cat.exists():
+        return set()
+    try:
+        data = _json.loads(cat.read_text(errors="replace"))
+    except (OSError, _json.JSONDecodeError):
+        return set()
+    raw = data.get("orphan_set")
+    if not isinstance(raw, list):
+        return set()
+    out: set[Path] = set()
+    for rel in raw:
+        if not isinstance(rel, str) or not rel:
+            continue
+        out.add((wiki_path / rel).resolve())
+    return out
