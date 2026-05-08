@@ -53,17 +53,26 @@ def test_verdict_stale_without_reason_returns_error(tmp_path, monkeypatch):
     assert result["error"]["code"] == "reason_required"
 
 
-def test_verdict_confirm_returns_not_implemented(tmp_path, monkeypatch):
+def test_verdict_confirm_writes_personal_sidecar(tmp_path, monkeypatch):
+    """Slice 6 replaced slice 5's `confirm` stub with the sidecar write."""
     body = dedent("""\
         ---
         type: concept
+        supersede_candidate: "[[newer]]"
         ---
         body
         """)
     _setup(tmp_path, monkeypatch, body)
-    result = handle_verdict(wiki="demo", note="concepts/n.md", verdict="confirm")
-    assert "error" in result
-    assert result["error"]["code"] == "not_implemented"
+    result = handle_verdict(
+        wiki="demo", note="concepts/n.md", verdict="confirm"
+    )
+    assert "error" not in result
+    assert result.get("verdict") == "confirm"
+    assert "confirmed_at" in result
+    # Sidecar suppression of soft markers fires immediately (mtime is "now",
+    # but the mtime guard in compute_freshness compares mtime <= today's
+    # confirmed_at — both are today, so the >= check passes).
+    assert result["freshness"]["status"] == "confirmed"
 
 
 def test_verdict_unknown_value_returns_error(tmp_path, monkeypatch):

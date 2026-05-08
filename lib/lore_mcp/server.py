@@ -65,20 +65,40 @@ def _resolve_wiki(wiki: str | None) -> Path | None:
     return wikis[0] if len(wikis) == 1 else None
 
 
+def _resolve_current_handle(wiki_path: Path) -> str:
+    """Best-effort current-user handle for personal-sidecar lookups.
+
+    Empty string in solo wikis without `_users.yml` and without a
+    configured git author is acceptable — callers treat ``""`` as
+    "no personal record" and skip the sidecar lookup.
+    """
+    from lore_core.git import git_user_email
+    from lore_core.identity import resolve_handle
+
+    email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
+    return resolve_handle(wiki_path, email) if email else ""
+
+
 def _freshness_block_for(
     wiki_path: Path,
     rel_path: str,
     *,
     orphan_set: set[Path] | None = None,
     sidecar_confirmed_at=None,
+    handle: str | None = None,
 ) -> dict:
     """Compute the freshness block for a note hit.
 
     Centralised helper used by every retrieval surface so the wiring
     stays uniform. Returns a JSON-friendly dict with the four
-    :class:`lore_core.freshness.FreshnessSignal` fields. Slice 1 always
-    passes an empty orphan set and ``None`` sidecar — slice 4 wires the
-    cached orphan set, slice 6 wires the personal sidecar.
+    :class:`lore_core.freshness.FreshnessSignal` fields.
+
+    Sidecar lookup precedence:
+        1. ``sidecar_confirmed_at`` (caller already resolved it).
+        2. Otherwise read from
+           :func:`lore_core.verdicts_sidecar.get_confirmed` using
+           ``handle`` (or the best-effort current handle when
+           ``handle is None``).
 
     Best-effort: if the note can't be read (path-escape, missing file,
     etc.), returns a default ``confirmed`` block so callers never fail
@@ -96,11 +116,23 @@ def _freshness_block_for(
         fm = parse_frontmatter(target.read_text(errors="replace"))
     except OSError:
         pass
+
+    confirmed_at = sidecar_confirmed_at
+    if confirmed_at is None:
+        from lore_core.verdicts_sidecar import get_confirmed
+
+        eff_handle = handle if handle is not None else _resolve_current_handle(wiki_path)
+        if eff_handle:
+            try:
+                confirmed_at = get_confirmed(wiki_path, eff_handle, rel_path)
+            except (OSError, ValueError):
+                confirmed_at = None
+
     sig = compute_freshness(
         fm,
         target,
         wiki_path,
-        sidecar_confirmed_at,
+        confirmed_at,
         orphan_set or set(),
     )
     return signal_to_dict(sig)
@@ -894,12 +926,35 @@ def handle_verdict(
         return _mcp_error("path_not_found", f"not found: {rel_path}")
 
     if verdict == "confirm":
-        # Slice 6 wires the personal sidecar; slice 5 stub.
-        return _mcp_error(
-            "not_implemented",
-            "confirm verdict is not yet implemented",
-            next_="track in slice 6 (personal confirms — sidecar + confirm branch)",
+        from lore_core.verdicts_sidecar import set_confirmed
+
+        email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
+        handle = resolve_handle(wiki_path, email) if email else ""
+        if not handle:
+            return _mcp_error(
+                "no_handle",
+                "could not resolve current handle for personal confirm",
+                next_="set GIT_AUTHOR_EMAIL or configure git user.email",
+            )
+        try:
+            written = set_confirmed(wiki_path, handle, rel_path)
+        except (OSError, ValueError) as e:
+            return _mcp_error("confirm_write_failed", str(e))
+        freshness = _freshness_block_for(
+            wiki_path,
+            rel_path,
+            orphan_set=load_orphan_set(wiki_path),
+            sidecar_confirmed_at=written,
+            handle=handle,
         )
+        return {
+            "schema": "lore.verdict/1",
+            "wiki": wiki_path.name,
+            "path": rel_path,
+            "verdict": "confirm",
+            "confirmed_at": written.isoformat(),
+            "freshness": freshness,
+        }
 
     if verdict == "stale":
         if not reason or not str(reason).strip():
