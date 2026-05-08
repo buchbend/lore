@@ -294,7 +294,12 @@ def test_phase2_rewrites_title_and_summary(lore_root, patch_collectors, monkeypa
         "title": "auth handler refactor",
         "description": "Rebuilt auth.py to align with the new policy decorator.",
         "summary_lede": "We pulled the legacy callbacks out and slotted a tidy decorator chain in their place.",
-        "decisions": ["**Decorator chain** — sticks with the new shape"],
+        "adr_candidates": [{
+            "choice": "decorator chain over callbacks",
+            "rationale": "decorator chain is explicit and testable",
+            "evidence": "user confirmed at turn 4",
+            "alternative_rejected": "legacy callback pattern",
+        }],
         "worked_on": ["**auth.py** — pulled callbacks", "**tests** — green"],
         "loose_ends": ["**docs** — the migration note remained unwritten"],
     }
@@ -318,7 +323,7 @@ def test_phase2_rewrites_title_and_summary(lore_root, patch_collectors, monkeypa
     assert fm["title"] == "auth handler refactor"
     text = final_path.read_text()
     assert "## Summary" in text
-    assert "## Decisions made" in text
+    assert "## ADR candidates" in text
     assert "## What we worked on" in text
     assert "## Loose ends" in text
 
@@ -372,9 +377,18 @@ def test_phase2_exhausts_and_degrades(lore_root, patch_collectors, monkeypatch):
 def test_phase2_truncates_overlong_bullets(lore_root, patch_collectors, monkeypatch):
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
 
+    def _adr(i: int) -> dict:
+        return {
+            "choice": f"choice-{i}",
+            "rationale": "some reason",
+            "evidence": "user confirmed",
+            "alternative_rejected": "the other way",
+        }
+
     composed = {
         "title": "t", "description": "d", "summary_lede": "s",
-        "decisions": [f"d-{i}" for i in range(BULLET_CAPS["decisions"] + 5)],
+        # More candidates than cap — only BULLET_CAPS["adr_candidates"] should survive.
+        "adr_candidates": [_adr(i) for i in range(BULLET_CAPS["adr_candidates"] + 5)],
         "worked_on": ["X" * (BULLET_LINE_MAX + 50)],
         "loose_ends": [],
     }
@@ -387,12 +401,12 @@ def test_phase2_truncates_overlong_bullets(lore_root, patch_collectors, monkeypa
         model="m",
     )
     text = outcome.stub_path.read_text()
-    # Only the cap'd count of decision lines.
-    decision_count = text.count("- d-")
-    assert decision_count == BULLET_CAPS["decisions"]
+    # Only the cap'd count of ADR candidate top-level bullets.
+    candidate_count = text.count("- **choice-")
+    assert candidate_count == BULLET_CAPS["adr_candidates"]
     # Worked-on line truncated.
     for line in text.splitlines():
-        if line.startswith("- "):
+        if line.startswith("- ") and not line.startswith("- **"):
             assert len(line) <= BULLET_LINE_MAX + 2  # "- " prefix + capped content
 
 
@@ -568,22 +582,26 @@ def _make_shape(*, has_edits: bool, decisions_allowed: bool | None = None,
     )
 
 
-def test_phase2_schema_work_shape_has_decisions_and_worked_on():
+def test_phase2_schema_work_shape_has_adr_candidates_and_worked_on():
     schema = _phase2_tool_schema(_make_shape(has_edits=True))
     props = schema["input_schema"]["properties"]
-    assert "decisions" in props
+    assert "adr_candidates" in props
     assert "worked_on" in props
     assert "loose_ends" in props
     # discussion is the discussion-shape companion — absent in work shape.
     assert "discussion" not in props
+    # decisions (old field) is gone — replaced by the four-field adr_candidates.
+    assert "decisions" not in props
     assert schema["input_schema"]["additionalProperties"] is False
 
 
-def test_phase2_schema_discussion_shape_strips_work_fields():
+def test_phase2_schema_discussion_shape_has_adr_candidates_no_worked_on():
     schema = _phase2_tool_schema(_make_shape(has_edits=False))
     props = schema["input_schema"]["properties"]
     assert "discussion" in props
     assert "loose_ends" in props
+    # adr_candidates IS in discussion shape — real forks happen in talk sessions.
+    assert "adr_candidates" in props
     # Structural gate — these fields are NOT advertised, so the LLM has
     # no slot to emit them. ``additionalProperties: false`` is the
     # belt-and-braces.
@@ -592,14 +610,24 @@ def test_phase2_schema_discussion_shape_strips_work_fields():
     assert schema["input_schema"]["additionalProperties"] is False
 
 
-def test_phase2_schema_default_shape_preserves_legacy_behavior():
+def test_phase2_schema_adr_candidates_in_both_shapes():
+    """``adr_candidates`` is present in BOTH work and discussion schemas —
+    real architectural forks happen in pure-talk sessions too."""
+    work = _phase2_tool_schema(_make_shape(has_edits=True))
+    disc = _phase2_tool_schema(_make_shape(has_edits=False))
+    assert "adr_candidates" in work["input_schema"]["properties"]
+    assert "adr_candidates" in disc["input_schema"]["properties"]
+
+
+def test_phase2_schema_default_shape_preserves_work_shape_behavior():
     """``shape=None`` (no migration yet) yields the work-shape schema —
     so test fixtures and any caller that hasn't migrated keep working."""
     schema = _phase2_tool_schema(None)
     props = schema["input_schema"]["properties"]
-    assert "decisions" in props
+    assert "adr_candidates" in props
     assert "worked_on" in props
     assert "discussion" not in props
+    assert "decisions" not in props
 
 
 # ---------------------------------------------------------------------------
@@ -848,9 +876,9 @@ def test_phase2_prompt_carries_discussion_clause():
         shape=_make_shape(has_edits=False, no_edit_intent=True),
     )
     assert "discussion" in prompt.lower()
-    # The prompt explicitly tells the model decisions/worked_on are not
-    # in its schema for this shape.
-    assert "decisions[]" in prompt or "decisions[]`" in prompt or "decisions" in prompt
+    # worked_on is excluded from discussion shape; adr_candidates IS available.
+    assert "worked_on" in prompt
+    assert "adr_candidates" in prompt
     assert "no code change" in prompt.lower() or "disclaimed" in prompt.lower()
 
 
@@ -863,10 +891,9 @@ def test_phase2_prompt_work_clause_when_edits_present():
         shape=_make_shape(has_edits=True),
     )
     assert "work" in prompt.lower()
-    # Empty decisions array is acceptable in work shape — the prompt
-    # makes that explicit (without it, the model fills decisions even
-    # when no real ratification happened).
-    assert "empty decisions" in prompt.lower() or "leave the array empty" in prompt.lower()
+    # Empty adr_candidates array is the expected default — the prompt
+    # makes that explicit (without it, the model over-emits candidates).
+    assert "leave the array empty" in prompt.lower() or "zero is the expected" in prompt.lower()
 
 
 def test_phase2_drops_decisions_in_discussion_shape_response():
@@ -1025,7 +1052,12 @@ def test_phase2_surfaces_adr_flagged_in_frontmatter(
         "title": "Auth rewrite",
         "description": "d",
         "summary_lede": "s",
-        "decisions": ["**chose option B**"],
+        "adr_candidates": [{
+            "choice": "option B over option A",
+            "rationale": "B is simpler",
+            "evidence": "user chose B at turn 8",
+            "alternative_rejected": "option A",
+        }],
         "worked_on": ["**auth.py** — touched"],
         "loose_ends": [],
     }
@@ -1048,7 +1080,7 @@ def test_phase2_omits_adr_flagged_when_not_set(
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
     composed = {
         "title": "Auth rewrite", "description": "d", "summary_lede": "s",
-        "decisions": [], "worked_on": ["**auth.py** — touched"], "loose_ends": [],
+        "adr_candidates": [], "worked_on": ["**auth.py** — touched"], "loose_ends": [],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
     outcome = flush_buffer(

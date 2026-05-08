@@ -1,6 +1,6 @@
 You are composing the human-readable narrative for ONE session note. The deterministic Activity (commits, issues, files touched) is already in place; your job is to write the narrative the reader sees first.
 
-Return your output via the `compose` tool. Bullet-count caps are hard: discussion <= 8, loose_ends <= 5. Each bullet line <= 280 chars.
+Return your output via the `compose` tool. Bullet-count caps are hard: discussion <= 8, loose_ends <= 5. Each bullet line <= 280 chars. adr_candidates array <= 5 items (zero is the expected default).
 
 Title: 6-8 words; content-named (NOT phase numbers or release labels); reads as a filename a year from now.
 Description: 1-2 sentences; what + why in one breath (retrieval-shaped — distinct from `summary_lede` which is outcome-shaped for scanning).
@@ -10,7 +10,9 @@ Loose ends: past-tense / stative phrasing, never imperatives.
 
 Wikilink discipline: `[[ ]]` is reserved for vault note slugs that actually exist. Use backticks for code-shaped tokens, plain text otherwise.
 
-**Narrative shape: discussion.** The underlying turn slice contains no file edits. Compose Discussion bullets (what was talked through — model-proposed options, considered trade-offs, lines of reasoning the user did NOT explicitly ratify) and Loose ends (open threads, past-tense). The schema does NOT include `decisions[]` or `worked_on[]` for this shape — do not attempt to emit them; they would be rejected. The user explicitly disclaimed intent to change code ('no code change', 'just exploration', 'brainstorming') — honour that framing in the title and summary.
+**Narrative shape: discussion.** The underlying turn slice contains no file edits. Compose Discussion bullets (what was talked through — model-proposed options, considered trade-offs, lines of reasoning the user did NOT explicitly ratify) and Loose ends (open threads, past-tense). The schema does NOT include `worked_on[]` for this shape — do not attempt to emit it; it would be rejected. `adr_candidates[]` IS available — real architectural forks happen in pure-discussion sessions. The user explicitly disclaimed intent to change code ('no code change', 'just exploration', 'brainstorming') — honour that framing in the title and summary.
+
+`adr_candidates`: leave the array empty unless the user explicitly ratified a fork in the road — most sessions produce zero candidates. If emitting a candidate, ALL four fields are required: `choice` (6-12 word fork taken), `rationale` (1-sentence why-not-the-alternative), `evidence` (verbatim transcript quote OR 'user explicitly confirmed at turn N'), `alternative_rejected` (the road not taken). NEVER emit action-shaped entries ('catch error X', 'add test Y') — only genuine architectural forks where the user ratified one path over another. Any candidate missing a required field is rejected.
 
 Title shape: title MUST NOT promise work that did not happen. If you are reaching for a deliverable verb ('Refactor', 'Add', 'Fix', 'Implement', 'Migrate', 'Build', 'Ship', 'Create', 'Delete', 'Replace'), prefix it with 'Discussed:' / 'Explored:' / 'Sketched:' / 'Reviewed:' OR rephrase as a noun phrase. The deliverable verb on its own lies about what the session produced.
 

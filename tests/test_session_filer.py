@@ -652,8 +652,8 @@ def test_body_h1_is_bare_title_no_session_prefix(tmp_path):
 
 
 def test_body_section_order_is_rationale_first(tmp_path):
-    """Locked section order: Summary → Decisions made → What we worked on
-    → Activity → Loose ends. Rationale-first puts Decisions ahead of
+    """Locked section order: Summary → ADR candidates → What we worked on
+    → Activity → Loose ends. Rationale-first puts ADR candidates ahead of
     activity bullets so a 6-month-future reader (and Curator B's prefix
     window) lands on the durable layer first.
     """
@@ -661,16 +661,16 @@ def test_body_section_order_is_rationale_first(tmp_path):
     body = _body(result.path)
     # Each section's offset must strictly increase down the locked order.
     summary_at = body.find("## Summary")
-    decisions_at = body.find("## Decisions made")
+    adr_at = body.find("## ADR candidates")
     worked_on_at = body.find("## What we worked on")
     loose_at = body.find("## Loose ends")
     assert summary_at != -1
-    assert decisions_at != -1
+    assert adr_at != -1
     assert worked_on_at != -1
-    # Decisions must appear before "What we worked on".
-    assert decisions_at < worked_on_at
+    # ADR candidates must appear before "What we worked on".
+    assert adr_at < worked_on_at
     # Summary must come first.
-    assert summary_at < decisions_at
+    assert summary_at < adr_at
     # Loose ends comes last (when present); _make_noteworthy doesn't set
     # any loose_ends so it's omitted — guard the assertion.
     if loose_at != -1:
@@ -764,11 +764,12 @@ def test_body_drops_legacy_entities_line(tmp_path):
 
 def test_append_merges_bullets_into_existing_sections(tmp_path):
     """The canonical Phase 2 append rule: a second chunk's bullets merge
-    into the existing note's ``## What we worked on`` and ``## Decisions
-    made`` sections — no new ``## <chunk title>`` H2 wrapper, no nested
+    into the existing note's ``## What we worked on`` and ``## ADR candidates``
+    sections — no new ``## <chunk title>`` H2 wrapper, no nested
     duplicate ``## What we worked on`` block."""
     sessions_dir = tmp_path / "sessions"
-    # Plant an open note already in the new shape.
+    # Plant an open note already in the new shape. Using legacy heading to
+    # also verify the legacy-parse → re-render path works.
     body_md = (
         "# Morning\n\n"
         "## Summary\nMorning narrative.\n\n"
@@ -801,8 +802,8 @@ def test_append_merges_bullets_into_existing_sections(tmp_path):
     assert body.count("## What we worked on") == 1
     assert "- morning slice" in body
     assert "- afternoon slice" in body
-    # Same for Decisions made.
-    assert body.count("## Decisions made") == 1
+    # Same for ADR candidates (legacy heading re-rendered as new heading).
+    assert body.count("## ADR candidates") == 1
     assert "**A**" in body
     assert "**B**" in body
 
@@ -1002,11 +1003,11 @@ def test_merge_body_sections_empty_new_summary_keeps_existing():
     from lore_core.session_writer import BodySections, merge_body_sections
 
     existing = BodySections(
-        title="t", summary="kept", decisions=[], worked_on=["a"],
+        title="t", summary="kept", adr_candidates=[], worked_on=["a"],
         loose_ends=[], commits=[], issues_opened=[], issues_closed=[],
     )
     new = BodySections(
-        title="t", summary="", decisions=[], worked_on=["b"],
+        title="t", summary="", adr_candidates=[], worked_on=["b"],
         loose_ends=[], commits=[], issues_opened=[], issues_closed=[],
     )
     merged = merge_body_sections(existing, new)

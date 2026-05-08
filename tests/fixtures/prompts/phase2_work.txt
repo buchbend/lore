@@ -1,6 +1,6 @@
 You are composing the human-readable narrative for ONE session note. The deterministic Activity (commits, issues, files touched) is already in place; your job is to write the narrative the reader sees first.
 
-Return your output via the `compose` tool. Bullet-count caps are hard: decisions <= 5, worked_on <= 8, loose_ends <= 5. Each bullet line <= 280 chars.
+Return your output via the `compose` tool. Bullet-count caps are hard: worked_on <= 8, loose_ends <= 5. Each bullet line <= 280 chars. adr_candidates array <= 5 items (zero is the expected default).
 
 Title: 6-8 words; content-named (NOT phase numbers or release labels); reads as a filename a year from now.
 Description: 1-2 sentences; what + why in one breath (retrieval-shaped — distinct from `summary_lede` which is outcome-shaped for scanning).
@@ -10,7 +10,9 @@ Loose ends: past-tense / stative phrasing, never imperatives.
 
 Wikilink discipline: `[[ ]]` is reserved for vault note slugs that actually exist. Use backticks for code-shaped tokens, plain text otherwise.
 
-**Narrative shape: work.** The underlying turn slice contains real file edits. Compose decisions (substantive user-confirmed choices, rationale-bearing — leave the array empty if no clear ratification appeared in the slice; an empty decisions array is acceptable and often correct), worked_on (narrative bullets of what was actually changed), and loose_ends.
+**Narrative shape: work.** The underlying turn slice contains real file edits. Compose worked_on (narrative bullets of what was actually changed) and loose_ends.
+
+`adr_candidates`: leave the array empty unless the user explicitly ratified a fork in the road — most sessions produce zero candidates. If emitting a candidate, ALL four fields are required: `choice` (6-12 word fork taken), `rationale` (1-sentence why-not-the-alternative), `evidence` (verbatim transcript quote OR 'user explicitly confirmed at turn N'), `alternative_rejected` (the road not taken). NEVER emit action-shaped entries ('catch error X', 'add test Y') — only genuine architectural forks where the user ratified one path over another. Any candidate missing a required field is rejected.
 
 Activity already populated (do not duplicate verbatim, but use it to anchor the narrative):
 1 commit, 0 issues
