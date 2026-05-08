@@ -102,5 +102,5 @@ the keyboard shortcut and the renderer. Token-economy by construction.
 
 - `/lore:context` — show what SessionStart already cached (no fresh
   gather)
-- `/lore:search` — direct FTS query without the open-items / recency
-  framing
+- For raw ranked paths without the resume framing, use `lore search
+  <query>` in the shell or the `lore_search` MCP tool directly.
