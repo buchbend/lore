@@ -76,9 +76,11 @@ from lore_curator.session_filer import _slug
 from lore_curator.stub_note import (
     STUB_DESCRIPTION_PLACEHOLDER,
     STUB_FRONTMATTER_STATE,
+    STUB_NARRATIVE_SENTINEL,
     STUB_SUMMARY_PLACEHOLDER,
     file_lists_for_frontmatter,
 )
+from lore_curator import adr_candidate, summary_block
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
@@ -98,11 +100,21 @@ __all__ = [
 
 # Phase-2 caps. Phrased as a tool-schema constraint AND post-validated.
 BULLET_CAPS = {
-    "decisions": 5,
+    "adr_candidates": 5,  # per-session cap; four-field friction does the real filtering
     "worked_on": 8,
     "loose_ends": 5,
     "discussion": 8,  # mirrors worked_on cap; discussion replaces it in non-work shape
+    # Summary lede + bullet shape (PRD #61 / slice #62). Caps are friction
+    # shape — prompt discipline does the real filtering; cap is the safety
+    # net. ``summary_outcomes`` (work shape) and ``summary_takeaways``
+    # (discussion shape) share the same maxItems.
+    "summary_outcomes": 4,
+    "summary_takeaways": 4,
 }
+
+# Lede-line cap. Distinct from BULLET_LINE_MAX — the lede is one
+# sentence answering "what is this note", not a bullet body.
+SUMMARY_LEDE_MAX = 160
 
 
 # Title-verb gate (step-6 of yes-do-that-keen-yeti). In discussion shape
@@ -285,6 +297,14 @@ def _phase1_finalise(
         fm.setdefault("state", STUB_FRONTMATTER_STATE)
     else:
         fm.pop("state", None)
+        # Closing the buffer ends the live-stub lifecycle: drop the
+        # preview sentinel and reset the description to the deterministic
+        # placeholder so the closed-but-unsynthesised note doesn't carry
+        # a "Live stub …" framing that's no longer accurate. Phase 2
+        # overwrites both fields if it runs.
+        if fm.get("narrative") == STUB_NARRATIVE_SENTINEL:
+            fm.pop("narrative", None)
+            fm["description"] = STUB_DESCRIPTION_PLACEHOLDER
     fm["last_reviewed"] = datetime.now(UTC).date().isoformat()
     fm["curator_a_run"] = datetime.now(UTC).isoformat()
     fm.setdefault("title", fm.get("title", "session"))
@@ -314,7 +334,7 @@ def _phase1_finalise(
     body = render_body_sections(BodySections(
         title=fm.get("title", "session"),
         summary=fm.get("description", STUB_SUMMARY_PLACEHOLDER) or STUB_SUMMARY_PLACEHOLDER,
-        decisions=[],
+        adr_candidates=[],
         worked_on=[],
         loose_ends=[],
         commits=rb.activity_commits,
@@ -580,19 +600,45 @@ def _phase2_prompt(
     shape: NarrativeShape | None = None,
 ) -> str:
     is_discussion = shape is not None and not shape.has_edits
+    adr_cap = BULLET_CAPS["adr_candidates"]
     if is_discussion:
         bullet_line = (
             f"Bullet-count caps are hard: discussion <= "
             f"{BULLET_CAPS.get('discussion', 8)}, loose_ends <= "
             f"{BULLET_CAPS['loose_ends']}. Each bullet line <= "
-            f"{BULLET_LINE_MAX} chars."
+            f"{BULLET_LINE_MAX} chars. adr_candidates array <= {adr_cap} "
+            f"items (zero is the expected default)."
         )
     else:
         bullet_line = (
-            f"Bullet-count caps are hard: decisions <= {BULLET_CAPS['decisions']}, "
-            f"worked_on <= {BULLET_CAPS['worked_on']}, loose_ends <= "
-            f"{BULLET_CAPS['loose_ends']}. Each bullet line <= "
-            f"{BULLET_LINE_MAX} chars."
+            f"Bullet-count caps are hard: worked_on <= {BULLET_CAPS['worked_on']}, "
+            f"loose_ends <= {BULLET_CAPS['loose_ends']}. Each bullet line <= "
+            f"{BULLET_LINE_MAX} chars. adr_candidates array <= {adr_cap} "
+            f"items (zero is the expected default)."
+        )
+
+    if is_discussion:
+        summary_clause = (
+            "Summary: emit `summary_lede` — ONE sentence (<= 160 chars) "
+            "answering 'what is this note about' — plus 0-4 "
+            "`summary_takeaways` bullets naming what was understood, "
+            "weighed, or framed (no outcome shipped). Frame the "
+            "takeaways distinctly from `discussion` (process narrative): "
+            "takeaways = state-of-understanding, discussion = what was "
+            "talked through. If the signal is thin, emit just the lede "
+            "and leave takeaways empty."
+        )
+    else:
+        summary_clause = (
+            "Summary: emit `summary_lede` — ONE sentence (<= 160 chars) "
+            "answering 'what is this note about' — plus 0-4 "
+            "`summary_outcomes` bullets naming what changed, in "
+            "state-of-world / present-tense framing (e.g. 'auth.py now "
+            "uses the policy decorator'). Frame outcomes distinctly "
+            "from `worked_on` (process narrative): outcomes = "
+            "state-of-world result, worked_on = what was actually "
+            "changed. If the signal is thin, emit just the lede and "
+            "leave outcomes empty."
         )
 
     parts: list[str] = [
@@ -605,8 +651,10 @@ def _phase2_prompt(
         "",
         "Title: 6-8 words; content-named (NOT phase numbers or release "
         "labels); reads as a filename a year from now.",
-        "Description: 1-2 sentences; what + why in one breath.",
-        "Summary: 4-5 sentence body paragraph; substance, not mechanics.",
+        "Description: 1-2 sentences; what + why in one breath (retrieval-"
+        "shaped — distinct from `summary_lede` which is outcome-shaped "
+        "for scanning).",
+        summary_clause,
         "Bullets: lead with a 2-5 word bold phrase, colon, then detail.",
         "Loose ends: past-tense / stative phrasing, never imperatives.",
         "",
@@ -619,6 +667,19 @@ def _phase2_prompt(
     # this shape (see ``_phase2_tool_schema``); the prompt makes the
     # narrowing explicit so the model doesn't waste output budget
     # trying to emit fields that aren't in its tool spec.
+    adr_guidance = (
+        "`adr_candidates`: leave the array empty unless the user explicitly "
+        "ratified a fork in the road — most sessions produce zero candidates. "
+        "If emitting a candidate, ALL four fields are required: `choice` "
+        "(6-12 word fork taken), `rationale` (1-sentence why-not-the-"
+        "alternative), `evidence` (verbatim transcript quote OR 'user "
+        "explicitly confirmed at turn N'), `alternative_rejected` (the road "
+        "not taken). NEVER emit action-shaped entries ('catch error X', "
+        "'add test Y') — only genuine architectural forks where the user "
+        "ratified one path over another. Any candidate missing a required "
+        "field is rejected."
+    )
+
     if is_discussion:
         intent_note = ""
         if shape is not None and shape.no_edit_intent:
@@ -634,9 +695,12 @@ def _phase2_prompt(
             "was talked through — model-proposed options, considered "
             "trade-offs, lines of reasoning the user did NOT explicitly "
             "ratify) and Loose ends (open threads, past-tense). The "
-            "schema does NOT include `decisions[]` or `worked_on[]` for "
-            "this shape — do not attempt to emit them; they would be "
-            "rejected." + intent_note,
+            "schema does NOT include `worked_on[]` for this shape — do "
+            "not attempt to emit it; it would be rejected. "
+            "`adr_candidates[]` IS available — real architectural forks "
+            "happen in pure-discussion sessions." + intent_note,
+            "",
+            adr_guidance,
             "",
             "Title shape: title MUST NOT promise work that did not "
             "happen. If you are reaching for a deliverable verb "
@@ -650,12 +714,10 @@ def _phase2_prompt(
         parts.extend([
             "",
             "**Narrative shape: work.** The underlying turn slice "
-            "contains real file edits. Compose decisions (substantive "
-            "user-confirmed choices, rationale-bearing — leave the "
-            "array empty if no clear ratification appeared in the "
-            "slice; an empty decisions array is acceptable and often "
-            "correct), worked_on (narrative bullets of what was "
-            "actually changed), and loose_ends.",
+            "contains real file edits. Compose worked_on (narrative "
+            "bullets of what was actually changed) and loose_ends.",
+            "",
+            adr_guidance,
         ])
 
     if is_continuation and continues_wikilink:
@@ -701,12 +763,11 @@ def _phase2_tool_schema(shape: NarrativeShape | None = None) -> dict[str, Any]:
 
     Two variants:
 
-    - **work** (``shape.has_edits`` or ``shape is None``): existing
-      fields — ``decisions[]``, ``worked_on[]``, ``loose_ends[]``.
+    - **work** (``shape.has_edits`` or ``shape is None``): includes
+      ``adr_candidates[]``, ``worked_on[]``, ``loose_ends[]``.
     - **discussion** (``not shape.has_edits``): replaces ``worked_on``
-      with ``discussion`` and OMITS ``decisions`` entirely. The
-      schema's ``additionalProperties: false`` is what makes this gate
-      structural rather than instructional.
+      with ``discussion``; ``adr_candidates[]`` is present in BOTH
+      shapes — real architectural forks happen in pure-talk sessions.
 
     ``shape=None`` preserves the work-shape behaviour for tests and
     callers that haven't migrated.
@@ -716,17 +777,30 @@ def _phase2_tool_schema(shape: NarrativeShape | None = None) -> dict[str, Any]:
     common: dict[str, Any] = {
         "title": {"type": "string"},
         "description": {"type": "string"},
-        "summary": {"type": "string"},
+        # Summary is now structured: a 1-sentence outcome lede plus a
+        # shape-conditional bullet array (outcomes / takeaways). The
+        # applier composes the body Summary string from these fields.
+        "summary_lede": {"type": "string", "maxLength": SUMMARY_LEDE_MAX},
         "loose_ends": {
             "type": "array",
             "maxItems": BULLET_CAPS["loose_ends"],
             "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
         },
+        # ADR candidates available in both shapes — real forks happen in
+        # discussion sessions too. Schema is strict: four required fields
+        # per candidate; the confabulation filter in _phase2_apply drops
+        # any candidate that slips through with empty fields.
+        "adr_candidates": adr_candidate.tool_schema_property(),
     }
 
     if is_discussion:
         properties: dict[str, Any] = {
             **common,
+            "summary_takeaways": {
+                "type": "array",
+                "maxItems": BULLET_CAPS["summary_takeaways"],
+                "items": {"type": "string"},
+            },
             "discussion": {
                 "type": "array",
                 "maxItems": BULLET_CAPS.get("discussion", BULLET_CAPS["worked_on"]),
@@ -736,10 +810,10 @@ def _phase2_tool_schema(shape: NarrativeShape | None = None) -> dict[str, Any]:
     else:
         properties = {
             **common,
-            "decisions": {
+            "summary_outcomes": {
                 "type": "array",
-                "maxItems": BULLET_CAPS["decisions"],
-                "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
+                "maxItems": BULLET_CAPS["summary_outcomes"],
+                "items": {"type": "string"},
             },
             "worked_on": {
                 "type": "array",
@@ -755,11 +829,11 @@ def _phase2_tool_schema(shape: NarrativeShape | None = None) -> dict[str, Any]:
             "type": "object",
             "properties": properties,
             # Structural gate, not instructional. Without this, an LLM
-            # that decides to emit ``decisions[]`` in discussion shape
-            # would silently pass through — the SDK doesn't validate
-            # tool_use responses against the schema we sent.
+            # that decides to emit unexpected fields would silently pass
+            # through — the SDK doesn't validate tool_use responses
+            # against the schema we sent.
             "additionalProperties": False,
-            "required": ["title", "description", "summary"],
+            "required": ["title", "description", "summary_lede"],
         },
     }
 
@@ -940,9 +1014,44 @@ def _phase2_apply(
         or fm.get("description")
         or STUB_DESCRIPTION_PLACEHOLDER
     )
-    summary = (composed.get("summary") or "").strip() or description
+    # Compose body Summary from the new structured fields (PRD #61
+    # slice #62): a 1-sentence ``summary_lede`` + 0-4 outcome /
+    # takeaway bullets, framed differently per shape. Legacy in-flight
+    # tool-call outputs that still emit a single ``summary`` string
+    # are tolerated as a fallback so a buffer flushed across the
+    # rollout boundary doesn't crash the applier.
+    summary_lede = (composed.get("summary_lede") or "").strip()
+    summary_items = composed.get("summary_outcomes") or composed.get(
+        "summary_takeaways"
+    ) or []
+    summary_items = [
+        item.strip() for item in summary_items
+        if isinstance(item, str) and item.strip()
+    ]
+    if summary_lede or summary_items:
+        summary = summary_block.compose(summary_lede, summary_items)
+    else:
+        legacy_summary = (composed.get("summary") or "").strip()
+        summary = legacy_summary or description
 
-    decisions = _truncate_bullets(composed.get("decisions"), cap=BULLET_CAPS["decisions"])
+    # Validate ADR candidates — drop any that are missing required fields.
+    # The JSONSchema cap is maxItems:5; post-validate to also filter
+    # confabulated entries that slipped through with empty-string fields.
+    adr_raw = composed.get("adr_candidates") or []
+    valid_adr: list[adr_candidate.ADRCandidate] = []
+    for raw in adr_raw[: BULLET_CAPS["adr_candidates"]]:
+        c = adr_candidate.validate(raw) if isinstance(raw, dict) else None
+        if c is not None:
+            valid_adr.append(c)
+    # Build the opaque bullet lines for BodySections (heading + gloss are
+    # added by render_body_sections; only the per-candidate lines go here).
+    adr_lines: list[str] = []
+    for c in valid_adr:
+        adr_lines.append(f"- **{c.choice}**")
+        adr_lines.append(f"  - Why: {c.rationale}")
+        adr_lines.append(f"  - Instead of: {c.alternative_rejected}")
+        adr_lines.append(f"  - Evidence: {c.evidence}")
+
     worked_on = _truncate_bullets(composed.get("worked_on"), cap=BULLET_CAPS["worked_on"])
     loose_ends = _truncate_bullets(composed.get("loose_ends"), cap=BULLET_CAPS["loose_ends"])
     discussion = _truncate_bullets(
@@ -952,6 +1061,10 @@ def _phase2_apply(
 
     fm["title"] = title
     fm["description"] = description
+    # Drop the live-stub preview sentinel: the LLM-composed summary,
+    # description, and title are now authoritative. Subsequent
+    # heartbeats during in-place synthesis must preserve them.
+    fm.pop("narrative", None)
     if shape is not None and shape.adr_flagged:
         fm["adr_flagged"] = True
     fm["last_reviewed"] = datetime.now(UTC).date().isoformat()
@@ -982,7 +1095,7 @@ def _phase2_apply(
     body = render_body_sections(BodySections(
         title=title,
         summary=summary,
-        decisions=_bulletise(decisions),
+        adr_candidates=adr_lines,
         worked_on=_bulletise(worked_on),
         loose_ends=_bulletise(loose_ends),
         commits=rb.activity_commits,

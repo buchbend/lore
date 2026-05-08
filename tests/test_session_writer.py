@@ -4,8 +4,8 @@ session_writer is exercised indirectly by test_session_filer.py and
 test_synthesis.py, but the parse/render/merge primitives benefit from
 isolated round-trip coverage — especially after step-5 of plan
 ``yes-do-that-keen-yeti`` adds the conditional ``## Discussion`` section
-that complements ``## Decisions made`` / ``## What we worked on`` for
-discussion-shape notes.
+and after PRD #61 slice #63 renames ``## Decisions made`` to
+``## ADR candidates`` with a strict four-field schema.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def test_render_emits_discussion_section_when_non_empty():
     s = BodySections(
         title="Sketched docs structure",
         summary="A short summary.",
-        decisions=[],
+        adr_candidates=[],
         worked_on=[],
         loose_ends=[],
         commits=[],
@@ -38,7 +38,7 @@ def test_render_emits_discussion_section_when_non_empty():
     assert "## Discussion" in out
     assert "- considered Diátaxis" in out
     # Empty work-shape sections must NOT appear when discussion is present.
-    assert "## Decisions made" not in out
+    assert "## ADR candidates" not in out
     assert "## What we worked on" not in out
 
 
@@ -46,7 +46,7 @@ def test_render_omits_discussion_when_empty():
     s = BodySections(
         title="Fixed something",
         summary="A short summary.",
-        decisions=["- chose A over B"],
+        adr_candidates=["- **chose A over B**", "  - Why: r", "  - Instead of: B", "  - Evidence: e"],
         worked_on=["- patched X"],
         loose_ends=[],
         commits=[],
@@ -56,18 +56,18 @@ def test_render_omits_discussion_when_empty():
     )
     out = render_body_sections(s)
     assert "## Discussion" not in out
-    assert "## Decisions made" in out
+    assert "## ADR candidates" in out
     assert "## What we worked on" in out
 
 
-def test_discussion_renders_between_summary_and_decisions():
-    """Order matters for human reading: Summary → Discussion → Decisions
+def test_discussion_renders_between_summary_and_adr_candidates():
+    """Order matters for human reading: Summary → Discussion → ADR candidates
     → What we worked on → Activity → Loose ends. Discussion sits next
     to Summary because in non-work shape it carries the narrative."""
     s = BodySections(
         title="Mixed shape",
         summary="Summary text.",
-        decisions=["- decision A"],
+        adr_candidates=["- **decision A**", "  - Why: r", "  - Instead of: x", "  - Evidence: e"],
         worked_on=["- work A"],
         loose_ends=[],
         commits=[],
@@ -78,9 +78,9 @@ def test_discussion_renders_between_summary_and_decisions():
     out = render_body_sections(s)
     summary_pos = out.find("## Summary")
     discussion_pos = out.find("## Discussion")
-    decisions_pos = out.find("## Decisions made")
+    adr_pos = out.find("## ADR candidates")
     worked_on_pos = out.find("## What we worked on")
-    assert -1 < summary_pos < discussion_pos < decisions_pos < worked_on_pos
+    assert -1 < summary_pos < discussion_pos < adr_pos < worked_on_pos
 
 
 def test_parse_recovers_discussion_section():
@@ -104,7 +104,7 @@ def test_round_trip_preserves_discussion_bullets():
     original = BodySections(
         title="Round trip",
         summary="One line.",
-        decisions=[],
+        adr_candidates=[],
         worked_on=[],
         loose_ends=["- thread Z left open."],
         commits=[],
@@ -116,6 +116,98 @@ def test_round_trip_preserves_discussion_bullets():
     parsed = parse_body_sections(rendered)
     assert parsed.discussion == ["- alpha", "- beta"]
     assert parsed.loose_ends == ["- thread Z left open."]
+
+
+# ---------------------------------------------------------------------------
+# ADR candidates section round-trip (PRD #61 / slice #63)
+# ---------------------------------------------------------------------------
+
+
+def test_render_emits_adr_candidates_heading_and_gloss():
+    s = BodySections(
+        title="t",
+        summary="",
+        adr_candidates=["- **use lede+bullets**", "  - Why: scannable", "  - Instead of: prose", "  - Evidence: turn 5"],
+        worked_on=[],
+        loose_ends=[],
+        commits=[],
+        issues_opened=[],
+        issues_closed=[],
+    )
+    out = render_body_sections(s)
+    assert "## ADR candidates" in out
+    assert "Architecture Decision Record" in out
+    assert "- **use lede+bullets**" in out
+    assert "  - Why: scannable" in out
+
+
+def test_render_omits_adr_candidates_section_when_empty():
+    s = BodySections(
+        title="t",
+        summary="s",
+        adr_candidates=[],
+        worked_on=["- did stuff"],
+        loose_ends=[],
+        commits=[],
+        issues_opened=[],
+        issues_closed=[],
+    )
+    out = render_body_sections(s)
+    assert "## ADR candidates" not in out
+    assert "Architecture Decision Record" not in out
+
+
+def test_parse_adr_candidates_heading():
+    body = (
+        "# Title\n\n"
+        "## ADR candidates\n\n"
+        "_ADR = Architecture Decision Record._\n\n"
+        "- **chose A**\n"
+        "  - Why: reason A\n"
+        "  - Instead of: B\n"
+        "  - Evidence: confirmed at turn 3\n\n"
+        "## What we worked on\n\n"
+        "- did stuff\n"
+    )
+    parsed = parse_body_sections(body)
+    assert "- **chose A**" in parsed.adr_candidates
+    assert "  - Why: reason A" in parsed.adr_candidates
+    assert "- did stuff" in parsed.worked_on
+
+
+def test_parse_legacy_decisions_made_maps_to_adr_candidates():
+    """Legacy ``## Decisions made`` heading parses into ``adr_candidates``
+    and the renderer re-emits under the new heading on the next write."""
+    body = (
+        "# Title\n\n"
+        "## Decisions made\n\n"
+        "- **chose A over B**\n\n"
+        "## What we worked on\n\n"
+        "- patched X\n"
+    )
+    parsed = parse_body_sections(body)
+    assert "- **chose A over B**" in parsed.adr_candidates
+    # Re-render uses new heading.
+    rendered = render_body_sections(parsed)
+    assert "## ADR candidates" in rendered
+    assert "## Decisions made" not in rendered
+
+
+def test_adr_candidates_round_trip():
+    """parse → render → parse preserves the candidate bullet lines."""
+    lines = [
+        "- **replace prose Summary**",
+        "  - Why: more scannable",
+        "  - Instead of: 4-5 sentence block",
+        "  - Evidence: confirmed at turn 12",
+    ]
+    original = BodySections(
+        title="t", summary="s", adr_candidates=lines,
+        worked_on=[], loose_ends=[], commits=[], issues_opened=[], issues_closed=[],
+    )
+    rendered = render_body_sections(original)
+    parsed = parse_body_sections(rendered)
+    assert parsed.adr_candidates == lines
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +223,7 @@ def test_merge_unions_discussion_with_existing_worked_on():
     existing = BodySections(
         title="Original",
         summary="First framing.",
-        decisions=[],
+        adr_candidates=[],
         worked_on=[],
         loose_ends=[],
         commits=[],
@@ -142,7 +234,7 @@ def test_merge_unions_discussion_with_existing_worked_on():
     new = BodySections(
         title="",
         summary="",
-        decisions=["- chose A over B"],
+        adr_candidates=["- **chose A over B**", "  - Why: r", "  - Instead of: B", "  - Evidence: e"],
         worked_on=["- patched A"],
         loose_ends=[],
         commits=[],
@@ -154,18 +246,18 @@ def test_merge_unions_discussion_with_existing_worked_on():
     out = render_body_sections(merged)
     # All three section types coexist — that's the documented behavior.
     assert "## Discussion" in out
-    assert "## Decisions made" in out
+    assert "## ADR candidates" in out
     assert "## What we worked on" in out
 
 
 def test_merge_dedupes_discussion_lines():
     existing = BodySections(
-        title="x", summary="", decisions=[], worked_on=[], loose_ends=[],
+        title="x", summary="", adr_candidates=[], worked_on=[], loose_ends=[],
         commits=[], issues_opened=[], issues_closed=[],
         discussion=["- alpha", "- beta"],
     )
     new = BodySections(
-        title="", summary="", decisions=[], worked_on=[], loose_ends=[],
+        title="", summary="", adr_candidates=[], worked_on=[], loose_ends=[],
         commits=[], issues_opened=[], issues_closed=[],
         discussion=["- beta", "- gamma"],  # beta is a dup
     )
@@ -187,7 +279,7 @@ def test_default_empty_discussion_omitted_from_render():
     s = BodySections(
         title="Existing call site",
         summary="x",
-        decisions=[],
+        adr_candidates=[],
         worked_on=["- y"],
         loose_ends=[],
         commits=[],

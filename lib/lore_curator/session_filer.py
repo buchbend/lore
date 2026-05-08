@@ -119,13 +119,13 @@ def _sections_from_noteworthy(
     issues closed) flow through as pre-rendered ``- ...`` lines from
     the mechanical collectors.
     """
-    decisions = [f"- {d}" for d in noteworthy.decisions if d]
+    adr_candidates = [f"- {d}" for d in noteworthy.decisions if d]
     worked_on = [f"- {b}" for b in noteworthy.bullets if b]
     loose_ends = [f"- {le}" for le in noteworthy.loose_ends if le]
     return BodySections(
         title=noteworthy.title or "session",
         summary=noteworthy.description or "",
-        decisions=decisions,
+        adr_candidates=adr_candidates,
         worked_on=worked_on,
         loose_ends=loose_ends,
         commits=list(commits or []),

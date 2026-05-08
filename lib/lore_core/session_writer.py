@@ -121,11 +121,11 @@ class BodySections(NamedTuple):
     """Structured view of a session-note body for parse → merge → render."""
 
     title: str
-    summary: str           # paragraph (multiline allowed; no leading "- ")
-    decisions: list[str]   # bullet lines including their leading "- "
+    summary: str               # paragraph (multiline allowed; no leading "- ")
+    adr_candidates: list[str]  # rendered bullet lines (top-level + sub-bullets)
     worked_on: list[str]
     loose_ends: list[str]
-    commits: list[str]     # under ### Commits
+    commits: list[str]         # under ### Commits
     issues_opened: list[str]
     issues_closed: list[str]
     # discussion-shape companion to ``worked_on``: narrative bullets of
@@ -141,12 +141,20 @@ class BodySections(NamedTuple):
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
 _KNOWN_H2: dict[str, str] = {
     "Summary": "summary",
-    "Decisions made": "decisions",
+    # New heading (slice #63) — canonical.
+    "ADR candidates": "adr_candidates",
+    # Legacy alias — maps to the same field; renderer always emits the new heading.
+    "Decisions made": "adr_candidates",
     "Discussion": "discussion",
     "What we worked on": "worked_on",
     "Activity": "activity",
     "Loose ends": "loose_ends",
 }
+
+_ADR_GLOSS = (
+    "_ADR = Architecture Decision Record. Proposals worth promoting later; "
+    "most sessions have none._"
+)
 _KNOWN_H3_UNDER_ACTIVITY: dict[str, str] = {
     "Commits": "commits",
     "Issues opened": "issues_opened",
@@ -168,7 +176,7 @@ def parse_body_sections(body: str) -> BodySections:
     """
     title = ""
     summary_lines: list[str] = []
-    decisions: list[str] = []
+    adr_candidates: list[str] = []
     discussion: list[str] = []
     worked_on: list[str] = []
     loose_ends: list[str] = []
@@ -197,8 +205,8 @@ def parse_body_sections(body: str) -> BodySections:
 
         if current_h2 == "summary":
             summary_lines.append(line)
-        elif current_h2 == "decisions" and line.lstrip().startswith("-"):
-            decisions.append(line)
+        elif current_h2 == "adr_candidates" and line.lstrip().startswith("-"):
+            adr_candidates.append(line)
         elif current_h2 == "discussion" and line.lstrip().startswith("-"):
             discussion.append(line)
         elif current_h2 == "worked_on" and line.lstrip().startswith("-"):
@@ -217,7 +225,7 @@ def parse_body_sections(body: str) -> BodySections:
     return BodySections(
         title=title,
         summary="\n".join(summary_lines).strip(),
-        decisions=decisions,
+        adr_candidates=adr_candidates,
         worked_on=worked_on,
         loose_ends=loose_ends,
         commits=commits,
@@ -241,9 +249,9 @@ def render_body_sections(sections: BodySections) -> str:
         parts.append("\n## Discussion\n\n")
         parts.extend(line + "\n" for line in sections.discussion)
 
-    if sections.decisions:
-        parts.append("\n## Decisions made\n\n")
-        parts.extend(line + "\n" for line in sections.decisions)
+    if sections.adr_candidates:
+        parts.append(f"\n## ADR candidates\n\n{_ADR_GLOSS}\n")
+        parts.extend(line + "\n" for line in sections.adr_candidates)
 
     if sections.worked_on:
         parts.append("\n## What we worked on\n\n")
@@ -292,7 +300,7 @@ def merge_body_sections(existing: BodySections, new: BodySections) -> BodySectio
     return BodySections(
         title=existing.title or new.title,
         summary=existing.summary or new.summary,
-        decisions=_dedup_lines(existing.decisions, new.decisions),
+        adr_candidates=_dedup_lines(existing.adr_candidates, new.adr_candidates),
         worked_on=_dedup_lines(existing.worked_on, new.worked_on),
         loose_ends=_dedup_lines(existing.loose_ends, new.loose_ends),
         commits=_dedup_lines(existing.commits, new.commits),
@@ -804,7 +812,7 @@ def _append_to_note(path: Path, si: SessionInput) -> None:
         # always sees the truest framing of earlier work.
         existing_anchor = existing_sections.summary or str(fm.get("description") or "")
         new_worked_on = [_strip_bullet_marker(b) for b in new_sections.worked_on]
-        new_decisions = [_strip_bullet_marker(d) for d in new_sections.decisions]
+        new_decisions = [_strip_bullet_marker(d) for d in new_sections.adr_candidates]
         merged_summary = si.summary_merger(
             existing_anchor,
             new_sections.summary,

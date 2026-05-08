@@ -155,9 +155,14 @@ def test_first_heartbeat_creates_stub_at_canonical_path(
     text = path.read_text()
     fm = parse_frontmatter(text)
     assert fm["state"] == "stub"
-    assert fm["description"] == STUB_DESCRIPTION_PLACEHOLDER
+    assert fm["narrative"] == "pending"
+    assert fm["description"].startswith("Live stub")
     assert fm["scope"] == "proj:feature"
-    assert STUB_SUMMARY_PLACEHOLDER in text
+    # Body carries the live-stub framing + stats line, not the legacy
+    # placeholder.
+    assert STUB_SUMMARY_PLACEHOLDER not in text
+    assert "This is a live stub." in text
+    assert "_So far:" in text
     # Activity-only body — no narrative bullets, no decisions.
     assert "## Decisions made" not in text
     assert "## What we worked on" not in text
@@ -461,3 +466,229 @@ def test_stub_state_filter_blocks_legacy_when_transcript_id_unknown(
         new_transcript_id=None,
     )
     assert blocked is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #60 — live-stub preview replaces "_synthesis pending_"
+# ---------------------------------------------------------------------------
+
+
+def test_first_write_renders_live_stub_preview(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """First-write surfaces the C-phrased framing + a stats line keyed
+    on the deterministic accumulators."""
+    work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
+    outcome, fh, th = _do_append(
+        lore_root,
+        files_touched=["/repo/src/auth.py", "/repo/src/login.py"],
+        monkeypatch=monkeypatch,
+    )
+    result = write_or_update(
+        outcome=outcome, scope=_make_scope(), transcript=_make_handle(),
+        wiki_root=lore_root / "wiki" / "private",
+        work_time=work_time, now=work_time,
+        integration="claude-code",
+        chunk_from_hash=fh, chunk_to_hash=th,
+    )
+    text = result.path.read_text()
+    fm = parse_frontmatter(text)
+
+    assert fm["narrative"] == "pending"
+    assert fm["state"] == "stub"
+    # Description one-liner — not the legacy placeholder.
+    assert fm["description"].startswith("Live stub")
+    assert "files modified" in fm["description"]
+    assert fm["description"].endswith("full narrative written at session end.")
+
+    # Body carries the live-stub framing paragraph + stats line.
+    assert "## Summary" in text
+    assert "_This is a live stub." in text
+    assert "_So far:" in text
+    assert "files modified" in text
+
+
+def test_first_write_preview_includes_project_wikilinks(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """A buffer that observed projects surfaces them as wikilinks in the
+    body stats line + the description prefix."""
+    # Override the no-op projects collector with one that returns a slug.
+    monkeypatch.setattr(
+        "lore_curator.session_activity.collect_projects_for_session",
+        lambda **kw: ["lore"],
+    )
+    work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
+    outcome, fh, th = _do_append(
+        lore_root,
+        files_touched=["/repo/src/auth.py"],
+        monkeypatch=monkeypatch,
+    )
+    result = write_or_update(
+        outcome=outcome, scope=_make_scope(), transcript=_make_handle(),
+        wiki_root=lore_root / "wiki" / "private",
+        work_time=work_time, now=work_time,
+        integration="claude-code",
+        chunk_from_hash=fh, chunk_to_hash=th,
+    )
+    text = result.path.read_text()
+    fm = parse_frontmatter(text)
+    assert "[[lore]]" in fm["description"]
+    assert "[[lore]]" in text
+
+
+def test_heartbeat_refreshes_preview_while_sentinel_set(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """A second heartbeat with new accumulators rewrites the preview."""
+    work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
+    o1, fh1, th1 = _do_append(
+        lore_root,
+        files_touched=["/repo/a.py"],
+        monkeypatch=monkeypatch,
+    )
+    r1 = write_or_update(
+        outcome=o1, scope=_make_scope(), transcript=_make_handle(),
+        wiki_root=lore_root / "wiki" / "private",
+        work_time=work_time, now=work_time,
+        integration="claude-code",
+        chunk_from_hash=fh1, chunk_to_hash=th1,
+    )
+    fm1 = parse_frontmatter(r1.path.read_text())
+    assert "1 file modified" in fm1["description"]
+
+    # Second heartbeat: more files modified.
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_touched_from_turns",
+        lambda _turns: ["/repo/b.py", "/repo/c.py"],
+    )
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_modified_from_turns",
+        lambda _turns: ["/repo/b.py", "/repo/c.py"],
+    )
+    turns_b = [Turn(index=2, timestamp=None, role="user", text="more")]
+    o2 = append_chunk(
+        lore_root=lore_root, chunk_turns=turns_b, local_date="2026-05-01",
+        transcript_id="abc", integration="claude-code", wiki="private",
+        scope="proj:feature", cwd=lore_root,
+        wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
+    )
+    r2 = write_or_update(
+        outcome=o2, scope=_make_scope(), transcript=_make_handle(),
+        wiki_root=lore_root / "wiki" / "private",
+        work_time=work_time, now=work_time,
+        integration="claude-code",
+        chunk_from_hash=turns_b[0].content_hash(),
+        chunk_to_hash=turns_b[-1].content_hash(),
+    )
+    text2 = r2.path.read_text()
+    fm2 = parse_frontmatter(text2)
+    # Sentinel still present; description refreshed with new count.
+    assert fm2["narrative"] == "pending"
+    assert "3 files modified" in fm2["description"]
+    assert "3 files modified" in text2
+
+
+def test_heartbeat_preserves_phase2_summary_when_sentinel_absent(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """Once Phase 2 has popped the sentinel and written an LLM summary,
+    a subsequent heartbeat must NOT clobber the narrative or re-add
+    the sentinel — the preview lifecycle is finished."""
+    work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
+    o1, fh1, th1 = _do_append(
+        lore_root,
+        files_touched=["/repo/a.py"],
+        monkeypatch=monkeypatch,
+    )
+    r1 = write_or_update(
+        outcome=o1, scope=_make_scope(), transcript=_make_handle(),
+        wiki_root=lore_root / "wiki" / "private",
+        work_time=work_time, now=work_time,
+        integration="claude-code",
+        chunk_from_hash=fh1, chunk_to_hash=th1,
+    )
+    # Simulate a Phase-2 in-place rewrite: pop the sentinel, drop a
+    # composed narrative + description on disk.
+    text = r1.path.read_text()
+    import yaml
+    from lore_core.schema import parse_frontmatter, strip_frontmatter
+    fm = parse_frontmatter(text)
+    body = strip_frontmatter(text)
+    fm.pop("narrative", None)
+    fm["description"] = "We rebuilt auth.py to fit the new policy decorator."
+    fm["title"] = "auth handler refactor"
+    body = (
+        "# auth handler refactor\n\n"
+        "## Summary\n\n"
+        "We pulled the legacy callbacks out and slotted a tidy decorator "
+        "chain in their place.\n\n"
+        "## Activity\n\n### Commits\n\n- `abc1234` fix: stuff\n"
+    )
+    new_text = (
+        f"---\n{yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()}\n"
+        f"---\n\n{body}\n"
+    )
+    r1.path.write_text(new_text)
+
+    # Now run a heartbeat with new accumulators.
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_touched_from_turns",
+        lambda _turns: ["/repo/b.py"],
+    )
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_modified_from_turns",
+        lambda _turns: ["/repo/b.py"],
+    )
+    turns_b = [Turn(index=2, timestamp=None, role="user", text="more")]
+    o2 = append_chunk(
+        lore_root=lore_root, chunk_turns=turns_b, local_date="2026-05-01",
+        transcript_id="abc", integration="claude-code", wiki="private",
+        scope="proj:feature", cwd=lore_root,
+        wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
+    )
+    r2 = write_or_update(
+        outcome=o2, scope=_make_scope(), transcript=_make_handle(),
+        wiki_root=lore_root / "wiki" / "private",
+        work_time=work_time, now=work_time,
+        integration="claude-code",
+        chunk_from_hash=turns_b[0].content_hash(),
+        chunk_to_hash=turns_b[-1].content_hash(),
+    )
+    fm2 = parse_frontmatter(r2.path.read_text())
+    text2 = r2.path.read_text()
+
+    # Sentinel must NOT come back; LLM-composed fields preserved.
+    assert "narrative" not in fm2
+    assert fm2["description"] == "We rebuilt auth.py to fit the new policy decorator."
+    assert fm2["title"] == "auth handler refactor"
+    assert "We pulled the legacy callbacks" in text2
+    # Live-stub framing must NOT reappear in the body.
+    assert "_This is a live stub." not in text2
+    # Activity-side accumulators DO refresh deterministically.
+    assert sorted(fm2["files_modified"]) == ["/repo/a.py", "/repo/b.py"]
+
+
+def test_preview_singular_plural_and_no_extras(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """Counts at 1 use the singular form; zero-valued segments are
+    omitted from the stats line."""
+    work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
+    outcome, fh, th = _do_append(
+        lore_root,
+        files_touched=["/repo/x.py"],  # exactly one file → singular
+        monkeypatch=monkeypatch,
+    )
+    result = write_or_update(
+        outcome=outcome, scope=_make_scope(), transcript=_make_handle(),
+        wiki_root=lore_root / "wiki" / "private",
+        work_time=work_time, now=work_time,
+        integration="claude-code",
+        chunk_from_hash=fh, chunk_to_hash=th,
+    )
+    text = result.path.read_text()
+    assert "1 file modified" in text
+    # No commits / issues seeded → those segments must not appear.
+    assert "commits" not in text.lower().split("_so far:", 1)[1].split("_._", 1)[0]
+    assert "issue" not in text.lower().split("_so far:", 1)[1].split("_._", 1)[0]

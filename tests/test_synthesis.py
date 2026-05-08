@@ -293,7 +293,7 @@ def test_phase2_rewrites_title_and_summary(lore_root, patch_collectors, monkeypa
     composed = {
         "title": "auth handler refactor",
         "description": "Rebuilt auth.py to align with the new policy decorator.",
-        "summary": "We pulled the legacy callbacks out and slotted a tidy decorator chain in their place.",
+        "summary_lede": "We pulled the legacy callbacks out and slotted a tidy decorator chain in their place.",
         "decisions": ["**Decorator chain** — sticks with the new shape"],
         "worked_on": ["**auth.py** — pulled callbacks", "**tests** — green"],
         "loose_ends": ["**docs** — the migration note remained unwritten"],
@@ -327,7 +327,7 @@ def test_phase2_retry_then_succeed(lore_root, patch_collectors, monkeypatch):
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
 
     composed_ok = {
-        "title": "title", "description": "desc", "summary": "sum",
+        "title": "title", "description": "desc", "summary_lede": "sum",
     }
 
     state = {"calls": 0}
@@ -373,7 +373,7 @@ def test_phase2_truncates_overlong_bullets(lore_root, patch_collectors, monkeypa
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
 
     composed = {
-        "title": "t", "description": "d", "summary": "s",
+        "title": "t", "description": "d", "summary_lede": "s",
         "decisions": [f"d-{i}" for i in range(BULLET_CAPS["decisions"] + 5)],
         "worked_on": ["X" * (BULLET_LINE_MAX + 50)],
         "loose_ends": [],
@@ -420,7 +420,7 @@ def test_phase2_renames_stub_to_slug_from_title(lore_root, patch_collectors, mon
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
     composed = {
         "title": "auth handler refactor",
-        "description": "d", "summary": "s",
+        "description": "d", "summary_lede": "s",
     }
     llm = _FakeLlmClient(_ok_responder(composed))
 
@@ -451,7 +451,7 @@ def test_phase2_skips_rename_for_continuation_part(lore_root, patch_collectors, 
     with buf.with_lock():
         buf.patch(part_index=2, continuation_of="01-0900-prior-stub")
 
-    composed = {"title": "completely different title", "description": "d", "summary": "s"}
+    composed = {"title": "completely different title", "description": "d", "summary_lede": "s"}
     llm = _FakeLlmClient(_ok_responder(composed))
     outcome = flush_buffer(
         sidecar_path,
@@ -475,7 +475,7 @@ def test_phase2_skips_rename_when_slug_equals_existing(lore_root, patch_collecto
     # "fix-seeded-commit". A title that hashes to the same slug should
     # leave the path alone.
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
-    composed = {"title": "fix seeded commit", "description": "d", "summary": "s"}
+    composed = {"title": "fix seeded commit", "description": "d", "summary_lede": "s"}
     llm = _FakeLlmClient(_ok_responder(composed))
     outcome = flush_buffer(
         sidecar_path,
@@ -505,7 +505,7 @@ def test_phase2_skipped_when_signal_is_empty(lore_root, monkeypatch):
     monkeypatch.setattr("lore_core.git.current_repo", lambda cwd: "")
 
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
-    composed = {"title": "fabricated", "description": "d", "summary": "s"}
+    composed = {"title": "fabricated", "description": "d", "summary_lede": "s"}
     fake = _FakeLlmClient(_ok_responder(composed))
 
     outcome = flush_buffer(
@@ -530,7 +530,7 @@ def test_phase2_rename_avoids_collision(lore_root, patch_collectors, monkeypatch
     pre_existing = target_dir / "01-1432-auth-handler-refactor.md"
     pre_existing.write_text("---\ntype: session\n---\nsomeone else\n")
 
-    composed = {"title": "auth handler refactor", "description": "d", "summary": "s"}
+    composed = {"title": "auth handler refactor", "description": "d", "summary_lede": "s"}
     llm = _FakeLlmClient(_ok_responder(composed))
     outcome = flush_buffer(
         sidecar_path,
@@ -602,6 +602,243 @@ def test_phase2_schema_default_shape_preserves_legacy_behavior():
     assert "discussion" not in props
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 — Summary lede + outcomes/takeaways shape (PRD #61, slice #62).
+# Replaces the old single-string ``summary`` field with a structured
+# lede + bullet-array shape; bullet field name is shape-conditional.
+# ---------------------------------------------------------------------------
+
+
+def test_phase2_schema_work_shape_emits_summary_lede_and_outcomes():
+    schema = _phase2_tool_schema(_make_shape(has_edits=True))
+    props = schema["input_schema"]["properties"]
+    assert "summary_lede" in props
+    assert "summary_outcomes" in props
+    # Old single-string ``summary`` field is gone — body Summary is
+    # composed from the structured fields at apply time.
+    assert "summary" not in props
+    # Discussion-shape companion absent in work shape.
+    assert "summary_takeaways" not in props
+    # Required list reflects the new lede field.
+    assert "summary_lede" in schema["input_schema"]["required"]
+    assert "summary" not in schema["input_schema"]["required"]
+
+
+def test_phase2_schema_discussion_shape_emits_summary_lede_and_takeaways():
+    schema = _phase2_tool_schema(_make_shape(has_edits=False))
+    props = schema["input_schema"]["properties"]
+    assert "summary_lede" in props
+    assert "summary_takeaways" in props
+    assert "summary" not in props
+    assert "summary_outcomes" not in props
+
+
+def test_phase2_schema_summary_lede_has_max_length_cap():
+    """``summary_lede`` is structurally capped at 160 chars — the
+    prompt instruction is doubled-up by the schema so the LLM has
+    no room to drift back into prose paragraphs."""
+    schema = _phase2_tool_schema(_make_shape(has_edits=True))
+    lede_prop = schema["input_schema"]["properties"]["summary_lede"]
+    assert lede_prop["type"] == "string"
+    assert lede_prop["maxLength"] == 160
+
+
+def test_phase2_schema_summary_outcomes_has_max_items_cap():
+    schema = _phase2_tool_schema(_make_shape(has_edits=True))
+    outcomes_prop = schema["input_schema"]["properties"]["summary_outcomes"]
+    assert outcomes_prop["type"] == "array"
+    assert outcomes_prop["maxItems"] == 4
+
+
+def test_phase2_schema_summary_takeaways_has_max_items_cap():
+    schema = _phase2_tool_schema(_make_shape(has_edits=False))
+    takeaways_prop = schema["input_schema"]["properties"]["summary_takeaways"]
+    assert takeaways_prop["type"] == "array"
+    assert takeaways_prop["maxItems"] == 4
+
+
+def test_phase2_prompt_drops_legacy_4_5_sentence_paragraph_clause():
+    prompt = _phase2_prompt(
+        turns_text="some text",
+        activity_summary="",
+        is_continuation=False,
+        continues_wikilink=None,
+        shape=_make_shape(has_edits=True),
+    )
+    # The pre-redesign instruction "4-5 sentence body paragraph" is
+    # gone — that clause is what produced verbose prose summaries.
+    assert "4-5 sentence" not in prompt
+    assert "body paragraph" not in prompt
+
+
+def test_phase2_prompt_work_shape_mentions_summary_lede_and_outcomes():
+    prompt = _phase2_prompt(
+        turns_text="some text",
+        activity_summary="",
+        is_continuation=False,
+        continues_wikilink=None,
+        shape=_make_shape(has_edits=True),
+    )
+    assert "summary_lede" in prompt
+    assert "summary_outcomes" in prompt
+    # Outcomes should be framed as state-of-world, distinct from
+    # worked_on which narrates process.
+    assert "state-of-world" in prompt or "present-tense" in prompt
+
+
+def test_phase2_prompt_discussion_shape_mentions_summary_lede_and_takeaways():
+    prompt = _phase2_prompt(
+        turns_text="some text",
+        activity_summary="",
+        is_continuation=False,
+        continues_wikilink=None,
+        shape=_make_shape(has_edits=False),
+    )
+    assert "summary_lede" in prompt
+    assert "summary_takeaways" in prompt
+
+
+def test_phase2_apply_renders_summary_from_lede_and_outcomes(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """End-to-end: when the LLM emits the new structured Summary fields,
+    the body ``## Summary`` block contains the lede on its own line
+    followed by outcome bullets."""
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+
+    composed = {
+        "title": "auth handler refactor",
+        "description": "Rebuilt auth.py against the policy decorator.",
+        "summary_lede": "auth.py now uses the policy decorator.",
+        "summary_outcomes": [
+            "callbacks pulled out",
+            "tests are green",
+        ],
+        "decisions": [],
+        "worked_on": ["**auth.py** — pulled callbacks"],
+        "loose_ends": [],
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert outcome.phase2_completed is True
+    text = outcome.stub_path.read_text()
+    assert "## Summary" in text
+    # Lede on its own line.
+    assert "auth.py now uses the policy decorator." in text
+    # Outcomes rendered as bullets under the Summary heading.
+    assert "- callbacks pulled out" in text
+    assert "- tests are green" in text
+
+
+def test_phase2_apply_renders_summary_from_lede_only_when_outcomes_empty(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """Thin-signal path: lede with no outcomes produces just the lede,
+    no trailing blank-line / bullet artefact."""
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+
+    composed = {
+        "title": "tiny session",
+        "description": "d",
+        "summary_lede": "tiny touch-up to auth.py.",
+        "summary_outcomes": [],
+        "decisions": [],
+        "worked_on": ["**auth.py** — touched"],
+        "loose_ends": [],
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    text = outcome.stub_path.read_text()
+    # Body Summary is just the lede, immediately followed by the next
+    # H2 heading (no orphan ``- `` bullet line).
+    summary_idx = text.index("## Summary")
+    next_h2_idx = text.index("## ", summary_idx + len("## Summary"))
+    summary_block_text = text[summary_idx:next_h2_idx]
+    assert "tiny touch-up to auth.py." in summary_block_text
+    # No bullets in the Summary block.
+    summary_body_lines = summary_block_text.splitlines()[2:]  # skip heading + blank
+    assert not any(line.lstrip().startswith("- ") for line in summary_body_lines)
+
+
+def test_phase2_apply_renders_summary_from_takeaways_in_discussion_shape(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """Discussion shape uses ``summary_takeaways`` not ``summary_outcomes``."""
+    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    monkeypatch.setattr(
+        "lore_curator.synthesis._files_modified_from_turns",
+        lambda turns: [],
+    )
+
+    composed = {
+        "title": "Discussed: docs spine",
+        "description": "Talked through Diátaxis options.",
+        "summary_lede": "leaned toward a Diátaxis spine for docs; nothing landed.",
+        "summary_takeaways": [
+            "four-quadrant split fits the existing material",
+            "ADR backlog still needs validation",
+        ],
+        "discussion": ["**Diátaxis spine** — explored split options"],
+        "loose_ends": [],
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    text = outcome.stub_path.read_text()
+    assert "leaned toward a Diátaxis spine" in text
+    assert "- four-quadrant split fits the existing material" in text
+    assert "- ADR backlog still needs validation" in text
+
+
+def test_phase2_apply_falls_back_to_legacy_summary_string(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """An in-flight composed dict from an old code path that only set
+    the legacy single-string ``summary`` must not crash the applier;
+    the string is used verbatim as the body Summary. Note: in normal
+    flow, ``compose_session_note`` strips ``summary`` upstream because
+    it isn't in the new schema — so this fallback is purely defensive
+    for direct-apply callers and rollout-boundary edge cases."""
+    from lore_curator.synthesis import _phase2_apply
+
+    buffer, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    sidecar = buffer.read_sidecar()
+    rb = buffer.replay()
+
+    composed_legacy = {
+        "title": "legacy shape",
+        "description": "d",
+        # Old shape: single ``summary`` string, no lede / outcomes.
+        "summary": "the legacy prose summary should still land in the body.",
+    }
+    final_path = _phase2_apply(
+        stub_path=stub_path,
+        composed=composed_legacy,
+        wiki_root=lore_root / "wiki" / "private",
+        rb=rb,
+        sidecar=sidecar,
+    )
+    text = final_path.read_text()
+    assert "the legacy prose summary should still land in the body." in text
+
+
 def test_phase2_prompt_carries_discussion_clause():
     prompt = _phase2_prompt(
         turns_text="some user text",
@@ -639,7 +876,7 @@ def test_phase2_drops_decisions_in_discussion_shape_response():
     composed = {
         "title": "Sketched docs",
         "description": "d",
-        "summary": "s",
+        "summary_lede": "s",
         "discussion": ["- considered Diátaxis"],
         "decisions": ["- this should not survive"],
         "worked_on": ["- nor this"],
@@ -787,7 +1024,7 @@ def test_phase2_surfaces_adr_flagged_in_frontmatter(
     composed = {
         "title": "Auth rewrite",
         "description": "d",
-        "summary": "s",
+        "summary_lede": "s",
         "decisions": ["**chose option B**"],
         "worked_on": ["**auth.py** — touched"],
         "loose_ends": [],
@@ -810,7 +1047,7 @@ def test_phase2_omits_adr_flagged_when_not_set(
 ):
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
     composed = {
-        "title": "Auth rewrite", "description": "d", "summary": "s",
+        "title": "Auth rewrite", "description": "d", "summary_lede": "s",
         "decisions": [], "worked_on": ["**auth.py** — touched"], "loose_ends": [],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
@@ -898,7 +1135,7 @@ def test_phase2_e2e_05_1212_pattern_yields_discussion_shape(
     composed = {
         "title": "Discussed: ccat docs Diátaxis spine",
         "description": "Sketched a Diátaxis-style refactor of the data-transfer docs; no changes made.",
-        "summary": "We talked through the existing Sphinx docs and considered a four-quadrant restructure. No edits — exploration only.",
+        "summary_lede": "We talked through the existing Sphinx docs and considered a four-quadrant restructure. No edits — exploration only.",
         "discussion": [
             "**Diátaxis spine** — explored how to split tutorials/how-to/reference/explanation",
             "**ADR extraction** — considered promoting philosophy.md essays into 7 ADRs",
@@ -919,3 +1156,129 @@ def test_phase2_e2e_05_1212_pattern_yields_discussion_shape(
     assert "## What we worked on" not in text
     assert "## Discussion" in text
     assert "Diátaxis" in text
+
+
+# ---------------------------------------------------------------------------
+# Issue #60 — narrative: pending sentinel lifecycle
+# ---------------------------------------------------------------------------
+
+
+def test_phase2_pops_narrative_pending_sentinel(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """Phase 2 must drop ``narrative: pending`` once the LLM-composed
+    summary, description, and title are in place."""
+    _, _stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+
+    composed = {
+        "title": "auth handler refactor",
+        "description": "Rebuilt auth.py against the policy decorator.",
+        "summary_lede": "We pulled the legacy callbacks out and slotted in a decorator.",
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert outcome.phase2_completed is True
+    fm = parse_frontmatter(outcome.stub_path.read_text())
+    assert "narrative" not in fm
+    assert fm["description"] == composed["description"]
+
+
+def test_synth_and_close_pops_narrative_sentinel_without_llm(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """The cap-trip / reaper close path must leave no
+    ``narrative: pending`` on the closed note even when no LLM ran —
+    Phase 1 (deterministic) is the only writer in that case."""
+    from lore_curator.synthesis import synth_and_close
+
+    _, _stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+    outcome = synth_and_close(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        # No LLM: Phase 2 skipped; Phase 1 owns the popping.
+    )
+    assert outcome.phase1_completed is True
+    fm = parse_frontmatter(outcome.stub_path.read_text())
+    assert "narrative" not in fm
+    # Description reset to the deterministic placeholder so the closed-but-
+    # unsynthesised note doesn't carry a "Live stub" framing.
+    assert fm["description"] == stub_note.STUB_DESCRIPTION_PLACEHOLDER
+
+
+def test_synth_in_place_then_heartbeat_preserves_llm_summary(
+    lore_root, patch_collectors, monkeypatch,
+):
+    """After ``synth_in_place`` lands an LLM narrative, the next heartbeat
+    against the live buffer must preserve the LLM summary / description /
+    title and must NOT re-add ``narrative: pending``."""
+    from lore_curator.synthesis import synth_in_place
+
+    buf, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+
+    # Title that yields the same slug as the deterministic stub
+    # ("fix-seeded-commit" — driven by ``patch_collectors``'s seeded
+    # commit) so Phase 2 keeps the file at sidecar.stub_path. Rename
+    # behaviour is covered by a separate test.
+    composed = {
+        "title": "fix seeded commit",
+        "description": "Rebuilt auth.py against the policy decorator.",
+        "summary_lede": "We pulled the legacy callbacks out and slotted in a decorator.",
+    }
+    llm = _FakeLlmClient(_ok_responder(composed))
+    out = synth_in_place(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=llm,
+        model="m",
+    )
+    assert out.phase2_completed is True
+    final_path = out.stub_path
+    fm_after_phase2 = parse_frontmatter(final_path.read_text())
+    assert "narrative" not in fm_after_phase2
+    assert fm_after_phase2["description"] == composed["description"]
+
+    # Now drive another heartbeat into the still-accumulating buffer.
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_touched_from_turns",
+        lambda _turns: ["/repo/extra.py"],
+    )
+    monkeypatch.setattr(
+        "lore_curator.buffer_append._files_modified_from_turns",
+        lambda _turns: ["/repo/extra.py"],
+    )
+    turns_b = [Turn(index=2, timestamp=None, role="user", text="more work")]
+    o2 = append_chunk(
+        lore_root=lore_root, chunk_turns=turns_b, local_date="2026-05-01",
+        transcript_id="abc", integration="claude-code", wiki="private",
+        scope="proj:feature", cwd=lore_root,
+        wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
+    )
+    write_or_update(
+        outcome=o2, scope=_make_scope(), transcript=_make_handle(),
+        wiki_root=lore_root / "wiki" / "private",
+        work_time=datetime(2026, 5, 1, 14, 32, tzinfo=UTC),
+        now=datetime(2026, 5, 1, 14, 32, tzinfo=UTC),
+        integration="claude-code",
+        chunk_from_hash=turns_b[0].content_hash(),
+        chunk_to_hash=turns_b[-1].content_hash(),
+    )
+    text_after_heartbeat = final_path.read_text()
+    fm_after_heartbeat = parse_frontmatter(text_after_heartbeat)
+
+    # LLM-composed fields preserved.
+    assert "narrative" not in fm_after_heartbeat
+    assert fm_after_heartbeat["description"] == composed["description"]
+    assert fm_after_heartbeat["title"] == composed["title"]
+    # LLM summary text still in body; live-stub framing did NOT come back.
+    assert "We pulled the legacy callbacks" in text_after_heartbeat
+    assert "_This is a live stub." not in text_after_heartbeat
+    # Activity-side accumulators DID refresh (extra.py joined).
+    assert "/repo/extra.py" in (fm_after_heartbeat.get("files_modified") or [])

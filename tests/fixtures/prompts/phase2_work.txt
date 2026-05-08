@@ -3,8 +3,8 @@ You are composing the human-readable narrative for ONE session note. The determi
 Return your output via the `compose` tool. Bullet-count caps are hard: decisions <= 5, worked_on <= 8, loose_ends <= 5. Each bullet line <= 280 chars.
 
 Title: 6-8 words; content-named (NOT phase numbers or release labels); reads as a filename a year from now.
-Description: 1-2 sentences; what + why in one breath.
-Summary: 4-5 sentence body paragraph; substance, not mechanics.
+Description: 1-2 sentences; what + why in one breath (retrieval-shaped — distinct from `summary_lede` which is outcome-shaped for scanning).
+Summary: emit `summary_lede` — ONE sentence (<= 160 chars) answering 'what is this note about' — plus 0-4 `summary_outcomes` bullets naming what changed, in state-of-world / present-tense framing (e.g. 'auth.py now uses the policy decorator'). Frame outcomes distinctly from `worked_on` (process narrative): outcomes = state-of-world result, worked_on = what was actually changed. If the signal is thin, emit just the lede and leave outcomes empty.
 Bullets: lead with a 2-5 word bold phrase, colon, then detail.
 Loose ends: past-tense / stative phrasing, never imperatives.
 

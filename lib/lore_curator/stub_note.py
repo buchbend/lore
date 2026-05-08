@@ -50,7 +50,7 @@ from lore_core.session_writer import (
 from lore_core.types import Scope, TranscriptHandle
 from lore_core.wikilinks import sanitize_for_write
 from lore_curator.buffer_append import AppendOutcome
-from lore_curator.buffer_store import Buffer
+from lore_curator.buffer_store import Buffer, ReplayedBuffer, Sidecar
 from lore_curator.session_filer import _slug
 
 if TYPE_CHECKING:
@@ -61,6 +61,7 @@ __all__ = [
     "write_or_update",
     "STUB_SUMMARY_PLACEHOLDER",
     "STUB_DESCRIPTION_PLACEHOLDER",
+    "STUB_NARRATIVE_SENTINEL",
     "file_lists_for_frontmatter",
 ]
 
@@ -68,6 +69,11 @@ __all__ = [
 STUB_SUMMARY_PLACEHOLDER = "_synthesis pending_"
 STUB_DESCRIPTION_PLACEHOLDER = "_synthesis pending_"
 STUB_FRONTMATTER_STATE = "stub"
+# Frontmatter sentinel: present (`narrative: pending`) whenever the
+# body / description carry the deterministic preview text. Phase 2
+# pops it once the LLM narrative is in place; the heartbeat rewrite
+# branch refreshes the preview only while the sentinel is set.
+STUB_NARRATIVE_SENTINEL = "pending"
 
 _TRANSCRIPTS_CAP = 20
 
@@ -129,6 +135,126 @@ def _derive_slug(
 
 
 # ---------------------------------------------------------------------------
+# Live-stub preview rendering
+# ---------------------------------------------------------------------------
+
+
+def _pluralize(n: int, singular: str, plural: str) -> str:
+    return f"{n} {singular if n == 1 else plural}"
+
+
+def _wikilinks_for_projects(projects: list[str]) -> str:
+    return ", ".join(f"[[{p}]]" for p in projects)
+
+
+def _format_duration(seconds: int) -> str:
+    """Render a human-friendly duration ("12s", "5m", "1h 23m")."""
+    if seconds < 0:
+        seconds = 0
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = minutes // 60
+    rem_minutes = minutes % 60
+    if rem_minutes == 0:
+        return f"{hours}h"
+    return f"{hours}h {rem_minutes}m"
+
+
+def _parse_iso_z(timestamp: str) -> datetime | None:
+    if not timestamp:
+        return None
+    try:
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def _stub_duration_seconds(sidecar: Sidecar) -> int:
+    """Seconds between buffer creation and the most recent heartbeat."""
+    start = _parse_iso_z(sidecar.created_at)
+    end = (
+        _parse_iso_z(sidecar.last_heartbeat)
+        or _parse_iso_z(sidecar.last_appended_at)
+    )
+    if start is None or end is None:
+        return 0
+    return max(0, int((end - start).total_seconds()))
+
+
+def _render_stub_summary_block(rb: ReplayedBuffer, sidecar: Sidecar) -> str:
+    """Render the live-stub ``## Summary`` body block.
+
+    Two italic paragraphs: a fixed framing line ("this is a live stub")
+    followed by a stats line built from the union accumulator + sidecar
+    counters / timestamps. Pure over the inputs — no I/O, no clock read.
+    """
+    intro = (
+        "_This is a live stub. Counts below refresh each heartbeat; "
+        "full narrative is written when the session ends._"
+    )
+
+    turn_count = rb.turn_count or sidecar.counters.turn_count
+    duration = _format_duration(_stub_duration_seconds(sidecar))
+    parts: list[str] = [
+        f"{_pluralize(turn_count, 'turn', 'turns')} over {duration}"
+    ]
+
+    commits = len(rb.activity_commits)
+    if commits:
+        parts.append(_pluralize(commits, "commit", "commits"))
+
+    issues_segments: list[str] = []
+    opened = len(rb.activity_issues_opened)
+    closed = len(rb.activity_issues_closed)
+    if opened:
+        issues_segments.append(_pluralize(opened, "issue opened", "issues opened"))
+    if closed:
+        issues_segments.append(_pluralize(closed, "issue closed", "issues closed"))
+    if issues_segments:
+        parts.append(", ".join(issues_segments))
+
+    files_segments: list[str] = []
+    modified = len(rb.files_modified)
+    read = len(rb.files_read)
+    if modified:
+        files_segments.append(_pluralize(modified, "file modified", "files modified"))
+    if read:
+        files_segments.append(_pluralize(read, "file read", "files read"))
+    if files_segments:
+        parts.append(", ".join(files_segments))
+
+    if rb.projects:
+        parts.append(f"projects {_wikilinks_for_projects(rb.projects)}")
+
+    stats_line = "_So far: " + " · ".join(parts) + "._"
+    return f"{intro}\n\n{stats_line}"
+
+
+def _render_stub_description(rb: ReplayedBuffer, sidecar: Sidecar) -> str:
+    """Render the frontmatter ``description`` one-liner for a live stub."""
+    turn_count = rb.turn_count or sidecar.counters.turn_count
+    parts: list[str] = [_pluralize(turn_count, "turn", "turns")]
+
+    commits = len(rb.activity_commits)
+    if commits:
+        parts.append(_pluralize(commits, "commit", "commits"))
+
+    modified = len(rb.files_modified)
+    if modified:
+        parts.append(_pluralize(modified, "file modified", "files modified"))
+
+    if rb.projects:
+        prefix = f"Live stub in {_wikilinks_for_projects(rb.projects)}"
+    else:
+        prefix = "Live stub"
+
+    return f"{prefix} — {', '.join(parts)}; full narrative written at session end."
+
+
+# ---------------------------------------------------------------------------
 # Body / frontmatter rendering
 # ---------------------------------------------------------------------------
 
@@ -136,14 +262,15 @@ def _derive_slug(
 def _render_body(
     *,
     title_placeholder: str,
+    summary: str,
     activity_commits: list[str],
     activity_issues_opened: list[str],
     activity_issues_closed: list[str],
 ) -> str:
     return render_body_sections(BodySections(
         title=title_placeholder,
-        summary=STUB_SUMMARY_PLACEHOLDER,
-        decisions=[],
+        summary=summary,
+        adr_candidates=[],
         worked_on=[],
         loose_ends=[],
         commits=activity_commits,
@@ -215,15 +342,17 @@ def _build_first_write_frontmatter(
     projects: list[str],
     title_placeholder: str,
     buffer_stem: str,
+    description: str,
 ) -> dict[str, Any]:
     fm: dict[str, Any] = {
         "schema_version": 2,
         "type": "session",
         "state": STUB_FRONTMATTER_STATE,
+        "narrative": STUB_NARRATIVE_SENTINEL,
         "created": work_time.date().isoformat(),
         "last_reviewed": work_time.date().isoformat(),
         "title": title_placeholder,
-        "description": STUB_DESCRIPTION_PLACEHOLDER,
+        "description": description,
         "scope": scope.scope,
     }
     if handle_label:
@@ -341,6 +470,7 @@ def write_or_update(
         )
         body = _render_body(
             title_placeholder=title_placeholder,
+            summary=_render_stub_summary_block(rb, sidecar),
             activity_commits=rb.activity_commits,
             activity_issues_opened=rb.activity_issues_opened,
             activity_issues_closed=rb.activity_issues_closed,
@@ -360,6 +490,7 @@ def write_or_update(
             projects=rb.projects,
             title_placeholder=title_placeholder,
             buffer_stem=buffer.stem,
+            description=_render_stub_description(rb, sidecar),
         )
         text = _render_markdown(fm, body, wiki_root=wiki_root)
         atomic_write_text(path, text)
@@ -392,6 +523,7 @@ def write_or_update(
         # the recorded path with the union accumulator.
         body = _render_body(
             title_placeholder=title_placeholder,
+            summary=_render_stub_summary_block(rb, sidecar),
             activity_commits=rb.activity_commits,
             activity_issues_opened=rb.activity_issues_opened,
             activity_issues_closed=rb.activity_issues_closed,
@@ -411,6 +543,7 @@ def write_or_update(
             projects=rb.projects,
             title_placeholder=title_placeholder,
             buffer_stem=buffer.stem,
+            description=_render_stub_description(rb, sidecar),
         )
         text = _render_markdown(fm, body, wiki_root=wiki_root)
         atomic_write_text(path, text)
@@ -452,9 +585,18 @@ def write_or_update(
     fm.setdefault("schema_version", 2)
     fm.setdefault("scope", scope.scope)
     fm.setdefault("title", title_placeholder)
-    fm.setdefault("description", STUB_DESCRIPTION_PLACEHOLDER)
     if handle_label:
         fm.setdefault("user", handle_label)
+
+    # Refresh the live-stub preview only while the narrative sentinel
+    # is set. Once Phase 2 has run (sentinel popped, LLM summary +
+    # description in place), heartbeats must NOT clobber the narrative
+    # — they only refresh deterministic accumulators below.
+    preview_active = fm.get("narrative") == STUB_NARRATIVE_SENTINEL
+    if preview_active:
+        fm["description"] = _render_stub_description(rb, sidecar)
+    else:
+        fm.setdefault("description", STUB_DESCRIPTION_PLACEHOLDER)
 
     # Per-chunk transcript provenance — append source_transcripts for
     # this heartbeat (matches the legacy _append_to_note shape).
@@ -489,17 +631,28 @@ def write_or_update(
         fm["projects"] = _dedup_preserving_order(rb.projects)
 
     body_title = existing_body.title or fm.get("title") or title_placeholder
-    body_summary = existing_body.summary or STUB_SUMMARY_PLACEHOLDER
+    if preview_active:
+        body_summary = _render_stub_summary_block(rb, sidecar)
+        body_decisions: list[str] = []
+        body_worked_on: list[str] = []
+        body_loose_ends: list[str] = []
+        body_discussion: list[str] = []
+    else:
+        body_summary = existing_body.summary or STUB_SUMMARY_PLACEHOLDER
+        body_decisions = existing_body.adr_candidates
+        body_worked_on = existing_body.worked_on
+        body_loose_ends = existing_body.loose_ends
+        body_discussion = existing_body.discussion
     body = render_body_sections(BodySections(
         title=body_title,
         summary=body_summary,
-        decisions=existing_body.decisions,
-        worked_on=existing_body.worked_on,
-        loose_ends=existing_body.loose_ends,
+        adr_candidates=body_decisions,
+        worked_on=body_worked_on,
+        loose_ends=body_loose_ends,
         commits=rb.activity_commits,
         issues_opened=rb.activity_issues_opened,
         issues_closed=rb.activity_issues_closed,
-        discussion=existing_body.discussion,
+        discussion=body_discussion,
     ))
     new_text = _render_markdown(fm, body, wiki_root=wiki_root)
     atomic_write_text(path, new_text)

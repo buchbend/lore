@@ -3,8 +3,8 @@ You are composing the human-readable narrative for ONE session note. The determi
 Return your output via the `compose` tool. Bullet-count caps are hard: discussion <= 8, loose_ends <= 5. Each bullet line <= 280 chars.
 
 Title: 6-8 words; content-named (NOT phase numbers or release labels); reads as a filename a year from now.
-Description: 1-2 sentences; what + why in one breath.
-Summary: 4-5 sentence body paragraph; substance, not mechanics.
+Description: 1-2 sentences; what + why in one breath (retrieval-shaped — distinct from `summary_lede` which is outcome-shaped for scanning).
+Summary: emit `summary_lede` — ONE sentence (<= 160 chars) answering 'what is this note about' — plus 0-4 `summary_takeaways` bullets naming what was understood, weighed, or framed (no outcome shipped). Frame the takeaways distinctly from `discussion` (process narrative): takeaways = state-of-understanding, discussion = what was talked through. If the signal is thin, emit just the lede and leave takeaways empty.
 Bullets: lead with a 2-5 word bold phrase, colon, then detail.
 Loose ends: past-tense / stative phrasing, never imperatives.
 
