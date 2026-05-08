@@ -507,6 +507,32 @@ def _last_session_hint_with_freshness(
     return results
 
 
+def _pending_verdict_chip(wiki: Path) -> str:
+    """Slice 8 of PRD #65 — `· N pending verdict` chip text or empty.
+
+    Reads the pending count from
+    :func:`lore_core.freshness.count_pending_verdicts` (catalog-based,
+    no fs walk per call). When the soft cap fires, renders ``"9+"``.
+    Zero-state suppressed entirely — most sessions should not see the
+    chip.
+
+    Cadence: refreshed at every SessionStart-like emit (this hook),
+    which is also the only time the status line changes for v1. No
+    live polling.
+    """
+    try:
+        from lore_core.freshness import count_pending_verdicts
+
+        count, capped = count_pending_verdicts(wiki)
+    except Exception:
+        return ""
+    if count <= 0:
+        return ""
+    label = "verdict" if count == 1 else "verdicts"
+    rendered = f"{count}+" if capped else str(count)
+    return f"{rendered} pending {label}"
+
+
 def _filter_session_hints(
     candidates: list[tuple[str, str, dict]], *, max_notes: int = 2
 ) -> tuple[list[tuple[str, str]], list[str]]:
@@ -833,6 +859,9 @@ def _session_start_from_lore(
         injected_bits.append(f"{len(issues)} issue{'s' if len(issues) != 1 else ''}")
     if prs:
         injected_bits.append(f"{len(prs)} PR{'s' if len(prs) != 1 else ''}")
+    pending_chip = _pending_verdict_chip(wiki)
+    if pending_chip:
+        injected_bits.append(pending_chip)
     status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     out_parts: list[str] = [status_line, ""]
@@ -932,6 +961,9 @@ def _session_start(cwd: str | None) -> str:
     if session_hints:
         _, first_summary = session_hints[0]
         injected_bits.append(f"last: {first_summary}")
+    pending_chip = _pending_verdict_chip(wiki)
+    if pending_chip:
+        injected_bits.append(pending_chip)
     status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     parts: list[str] = [status_line, ""]

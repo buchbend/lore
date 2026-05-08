@@ -207,6 +207,60 @@ def signal_to_dict(signal: FreshnessSignal) -> dict:
     }
 
 
+def count_pending_verdicts(
+    wiki_path: Path,
+    *,
+    soft_cap: int = 9,
+) -> tuple[int, bool]:
+    """Count notes in ``wiki_path`` that currently compute to
+    ``stale-candidate`` (slice 8 of PRD #65 — status-line chip).
+
+    Reads the cached ``_catalog.json`` so the per-call cost is one
+    JSON load, not a full wiki walk. Authored markers we can detect
+    from catalog metadata: ``status == 'stale'`` and ``superseded_by:``.
+    Soft markers (``supersede_candidate``) and personal-confirm
+    suppression are NOT considered here — the chip is intentionally
+    a coarse "is there work to do?" signal; the precise per-note
+    classification still flows through :func:`compute_freshness` at
+    retrieval time.
+
+    Returns ``(count, capped)`` where ``capped`` is True iff the soft
+    cap fired. The status-line render uses ``"9+"`` instead of the
+    raw count when ``capped`` is True.
+
+    Cache miss (no catalog) returns ``(0, False)`` — the chip
+    suppresses entirely until the next ``lore lint`` run.
+    """
+    import json as _json
+
+    cat = wiki_path / "_catalog.json"
+    if not cat.exists():
+        return 0, False
+    try:
+        data = _json.loads(cat.read_text(errors="replace"))
+    except (OSError, _json.JSONDecodeError):
+        return 0, False
+
+    orphan_paths = set(data.get("orphan_set") or [])
+    count = 0
+    for entries in (data.get("sections") or {}).values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            path = str(entry.get("path") or "")
+            if (
+                str(entry.get("status") or "").lower() == "stale"
+                or entry.get("superseded_by")
+                or path in orphan_paths
+            ):
+                count += 1
+                if count > soft_cap:
+                    return soft_cap, True
+    return count, False
+
+
 def load_orphan_set(wiki_path: Path) -> set[Path]:
     """Load the cached orphan set for a wiki.
 
