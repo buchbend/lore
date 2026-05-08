@@ -60,4 +60,4 @@ step for diagnosing why — mention it only if the user asks.
 ## Related
 
 - `/lore:resume` — fresh gather (different from showing the cache)
-- `/lore:off` — mute hooks for the session
+- `lore off` — mute hooks for the session

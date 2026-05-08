@@ -3,7 +3,7 @@ name: lore:curator
 description: Mark notes stale by mtime, propagate `supersedes:` and
   `implements:` status flips, backfill missing dates. Judgment calls
   on metadata only — never edits note bodies. Use for routine vault
-  hygiene; pair with /lore:lint when indexes are also stale. Run
+  hygiene; pair with `lore lint` when indexes are also stale. Run
   with "/lore:curator <wiki>".
 user_invocable: true
 ---
