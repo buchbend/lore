@@ -193,6 +193,62 @@ def test_phase1_drops_stub_marker_and_closes_buffer(lore_root, patch_collectors,
     assert moved.exists()
 
 
+def test_close_collision_emits_warning_and_preserves_archive(
+    lore_root, patch_collectors, monkeypatch
+):
+    """When ``_done/<stem>.state.json`` already exists at archive time,
+    ``flush_buffer`` must not crash, must leave the pre-existing archived
+    sidecar byte-for-byte unchanged, and must emit a warning through the
+    curator logger so the failure is visible in diagnostics. Issue #54.
+    """
+    buffer, _stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
+
+    # Pre-seed a _done/ archive sidecar with the same stem, simulating
+    # an upstream part-resolution misfire that opened a duplicate Part-1
+    # buffer for an already-archived (transcript_id, local_date) pair.
+    done = lore_root / ".lore" / "buffers" / "_done"
+    done.mkdir(parents=True, exist_ok=True)
+    pre_existing = done / sidecar_path.name
+    pre_existing.write_text('{"sentinel": "untouched"}')
+    pre_existing_bytes = pre_existing.read_bytes()
+
+    class _RecordingLogger:
+        def __init__(self):
+            self.records: list[tuple[str, dict]] = []
+
+        def emit(self, record_type: str, **fields):
+            self.records.append((record_type, fields))
+
+    logger = _RecordingLogger()
+
+    # Must not raise — the curator continues after a collision.
+    outcome = flush_buffer(
+        sidecar_path,
+        lore_root=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        llm_client=None,
+        model=None,
+        logger=logger,
+    )
+
+    # Pre-existing archived sidecar is byte-for-byte unchanged.
+    assert pre_existing.read_bytes() == pre_existing_bytes
+
+    # A warning record carrying the colliding stem made it into the trace.
+    warnings = [
+        (rt, fields) for (rt, fields) in logger.records if rt == "warning"
+    ]
+    assert warnings, f"expected a warning record, got: {logger.records}"
+    assert any(
+        fields.get("stem") == buffer.stem
+        and fields.get("reason") == "done-archive-collision"
+        for (_rt, fields) in warnings
+    ), f"no done-archive-collision warning for stem {buffer.stem!r}: {warnings}"
+
+    # Phase 1 still ran (note on disk); the buffer just couldn't archive.
+    assert outcome.phase1_completed is True
+
+
 def test_phase1_idempotent_on_already_closed(lore_root, patch_collectors, monkeypatch):
     _, _, sidecar_path = _seed_stub(lore_root, monkeypatch)
 

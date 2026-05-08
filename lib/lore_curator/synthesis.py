@@ -65,6 +65,7 @@ from lore_core.wikilinks import sanitize_for_write
 from lore_curator._auto_commit import maybe_auto_commit
 from lore_curator.buffer_store import (
     Buffer,
+    BufferTransitionError,
     ReplayedBuffer,
     Sidecar,
     _now_iso,
@@ -1261,6 +1262,20 @@ def _synthesize(
             buffer.close()
         except OSError:
             pass
+        except BufferTransitionError as exc:
+            # _done/<stem>.state.json already exists — part-resolution
+            # misfired upstream. Surface loudly via the logger; do NOT
+            # crash the curator. The pre-existing archive is preserved
+            # by Buffer.close itself; we just record the divergence.
+            if logger is not None:
+                logger.emit(
+                    "warning",
+                    reason="done-archive-collision",
+                    stem=buffer.stem,
+                    transcript_id=sidecar.transcript_id,
+                    local_date=sidecar.local_date,
+                    detail=str(exc),
+                )
     if outcome.phase1_completed and outcome.stub_path and auto_commit:
         try:
             filed = FiledNote(
