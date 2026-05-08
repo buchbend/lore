@@ -205,7 +205,11 @@ def test_index_renders_lifecycle_badges(wiki_root: Path):
 # ---------- curator: staleness + supersession ----------
 
 
-def test_curator_staleness_is_review_only(tmp_path: Path, monkeypatch):
+def test_curator_staleness_pass_is_now_a_noop(tmp_path: Path, monkeypatch):
+    """PRD #65: age never flags. The legacy 90-day pass is a no-op now;
+    staleness is positive-evidence-only at read time. Even an ancient
+    `last_reviewed` produces zero actions.
+    """
     root = tmp_path / "vault"
     wiki = root / "wiki" / "w"
     (wiki / "concepts").mkdir(parents=True)
@@ -226,10 +230,7 @@ body
 """
     )
     actions = _pass_staleness(wiki, date.today(), threshold=180)
-    assert len(actions) == 1
-    a = actions[0]
-    assert a.kind == "review_stale"
-    assert a.patch == {}  # review-only, no frontmatter write
+    assert actions == []
 
 
 def test_curator_supersession_writes_only_superseded_by(tmp_path: Path, monkeypatch):

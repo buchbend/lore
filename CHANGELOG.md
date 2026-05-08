@@ -10,6 +10,28 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added — Read-only freshness signal on retrieval (#65, slice 1)
+
+MCP retrieval surfaces (`lore_search`, `lore_read`, `lore_drill`) now
+attach a `freshness` block to every hit/result. Notes are classified
+as `confirmed` (default) or `stale-candidate` based on positive-
+evidence rules: authored frontmatter markers (`status: stale`,
+`superseded_by`, `supersede_candidate`, `supersede_candidate_of`).
+Age never flags. Subsequent slices wire the orphan signal, verdict
+writes, retrieval-time filter/downrank, and the in-passing nudge
+directive.
+
+### Removed — `lore curator --stale-threshold` flag (#65, slice 2)
+
+PRD #65 (positive-evidence-only staleness) replaces the 90-day age
+rule with read-time freshness signals derived from named causes only
+(authored markers, broken wikilinks). The corresponding curator-C
+pass `_pass_staleness` is now a no-op and the `--stale-threshold` CLI
+flag has been removed. Existing notes that already carry
+`status: stale` from prior runs are left untouched (additive-only
+edit policy, #37). Cron-driven `lore curator --stale-threshold N`
+invocations should drop the flag.
+
 ## [0.48.0] - 2026-05-08
 
 ### Changed — Plugin skill set reduced from 19 to 5 (#64)
