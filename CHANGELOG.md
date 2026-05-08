@@ -10,16 +10,38 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-### Added — Read-only freshness signal on retrieval (#65, slice 1)
+## [0.49.0] - 2026-05-08
 
-MCP retrieval surfaces (`lore_search`, `lore_read`, `lore_drill`) now
-attach a `freshness` block to every hit/result. Notes are classified
-as `confirmed` (default) or `stale-candidate` based on positive-
-evidence rules: authored frontmatter markers (`status: stale`,
-`superseded_by`, `supersede_candidate`, `supersede_candidate_of`).
-Age never flags. Subsequent slices wire the orphan signal, verdict
-writes, retrieval-time filter/downrank, and the in-passing nudge
-directive.
+### Added — Freshness verdicts: end-to-end (#65, slices 1–10)
+
+Positive-evidence-only staleness with read-time, in-passing user
+verdicts. Stack of ten vertical slices delivered together:
+
+- Slice 1: read-only `freshness` block on every `lore_search` /
+  `lore_read` / `lore_drill` MCP response.
+- Slice 2: legacy 90-day age rule retired — `_pass_staleness` is now
+  a no-op and the `--stale-threshold` CLI flag is removed.
+- Slice 3: retrieval-time filter — `confirmed` ranks above
+  `stale-candidate` at tied scores; SessionStart inject excludes
+  `status: stale` and downranks soft markers; audit log surfaced via
+  `/lore:context`.
+- Slice 4: orphan-link signal — `lore lint` caches the orphan set
+  in `_catalog.json`; freshness flags it with
+  `cause: orphan_broken`.
+- Slice 5: `lore_verdict` MCP tool with the stale + clear-stale
+  branches; `stale_marker_writer` writes the four-field schema
+  additively.
+- Slice 6: per-user `wiki/<name>/_verdicts/<handle>.json` sidecar
+  for personal confirms; soft-marker suppression with mtime gate +
+  14-day recency window.
+- Slice 7: in-passing nudge + dynamic-escalation directive added to
+  the lore-managed CLAUDE.md template.
+- Slice 8: SessionStart status-line `· N pending verdict[s]` chip
+  with soft cap (`9+`) and zero-state suppression.
+- Slice 9: team-mode disagreement detection — surfaces conflicts
+  between team-stale frontmatter and per-user sidecar confirms.
+- Slice 10: `/lore:verify` slash command for the explicit batch
+  resolver.
 
 ### Removed — `lore curator --stale-threshold` flag (#65, slice 2)
 
@@ -31,6 +53,16 @@ flag has been removed. Existing notes that already carry
 `status: stale` from prior runs are left untouched (additive-only
 edit policy, #37). Cron-driven `lore curator --stale-threshold N`
 invocations should drop the flag.
+
+### Added — `/lore:verify` slash command (#65, slice 10)
+
+Plugin skill registered as `lore:verify`; user-invocable batch
+picker over the freshness backlog. Bare `/lore:verify` lists notes
+flagged in the current session; `/lore:verify --all` lists every
+currently-stale-candidate note in the active wiki. Each entry
+prompts confirm / stale / skip; stale prompts for a one-line reason
+and calls `mcp__lore__lore_verdict` accordingly. Wraps the verdict
+MCP — no new write paths.
 
 ## [0.48.0] - 2026-05-08
 
