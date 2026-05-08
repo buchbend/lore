@@ -463,6 +463,97 @@ def _session_note_date(path: Path) -> date | None:
     return None
 
 
+def _last_session_hint_with_freshness(
+    wiki: Path, max_notes: int = 2
+) -> list[tuple[str, str, dict]]:
+    """Like :func:`_last_session_hint` but also returns the freshness
+    block for each hit.
+
+    Used by the inject filter (slice 3 of PRD #65). The freshness block
+    is computed via :func:`lore_core.freshness.compute_freshness`
+    against the parsed frontmatter; orphan-set is empty in this slice
+    (the orphan cache wires in slice 4) and personal sidecars are out
+    of scope here (slice 6).
+    """
+    from lore_core.freshness import compute_freshness, signal_to_dict
+    from lore_core.schema import parse_frontmatter
+    from lore_core.session_writer import session_path_sort_key
+
+    sessions_dir = wiki / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+
+    candidates = sorted(
+        (p for p in sessions_dir.rglob("*.md") if p.is_file() and not p.name.startswith("_")),
+        key=session_path_sort_key,
+        reverse=True,
+    )
+    results: list[tuple[str, str, dict]] = []
+    for path in candidates:
+        if len(results) >= max_notes:
+            break
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        fm = parse_frontmatter(text)
+        if fm.get("type") != "session":
+            continue
+        hint = fm.get("title") or fm.get("description") or fm.get("summary")
+        if not hint:
+            continue
+        signal = compute_freshness(fm, path, wiki, None, set())
+        results.append((path.stem, hint, signal_to_dict(signal)))
+    return results
+
+
+def _pending_verdict_chip(wiki: Path) -> str:
+    """Slice 8 of PRD #65 — `· N pending verdict` chip text or empty.
+
+    Reads the pending count from
+    :func:`lore_core.freshness.count_pending_verdicts` (catalog-based,
+    no fs walk per call). When the soft cap fires, renders ``"9+"``.
+    Zero-state suppressed entirely — most sessions should not see the
+    chip.
+
+    Cadence: refreshed at every SessionStart-like emit (this hook),
+    which is also the only time the status line changes for v1. No
+    live polling.
+    """
+    try:
+        from lore_core.freshness import count_pending_verdicts
+
+        count, capped = count_pending_verdicts(wiki)
+    except Exception:
+        return ""
+    if count <= 0:
+        return ""
+    label = "verdict" if count == 1 else "verdicts"
+    rendered = f"{count}+" if capped else str(count)
+    return f"{rendered} pending {label}"
+
+
+def _filter_session_hints(
+    candidates: list[tuple[str, str, dict]], *, max_notes: int = 2
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Apply the slice-3 freshness inject filter to session-hint candidates.
+
+    Hard-stale notes are excluded entirely; soft stale-candidates are
+    downranked (kept after confirmed peers). Returns the trimmed
+    ``(slug, hint)`` list and the audit-log lines for /lore:context.
+    """
+    from lore_core.freshness_filter import apply_inject_filter
+
+    result = apply_inject_filter(
+        candidates,
+        freshness_of=lambda c: c[2],
+        path_of=lambda c: c[0],
+        wiki_of=lambda _c: None,
+    )
+    kept = [(slug, hint) for slug, hint, _fr in result.kept[:max_notes]]
+    return kept, result.audit.render_lines()
+
+
 def _last_session_hint(wiki: Path, max_notes: int = 2) -> list[tuple[str, str]]:
     """Return (slug, status-line text) pairs for the most recent session notes.
 
@@ -751,7 +842,10 @@ def _session_start_from_lore(
         prs = results[1]
 
     project_entry = _project_note_for_repo(wiki, repo) if repo else None
-    session_hints = _last_session_hint(wiki)
+    session_hints_full = _last_session_hint_with_freshness(wiki, max_notes=4)
+    session_hints, freshness_audit_lines = _filter_session_hints(
+        session_hints_full, max_notes=2
+    )
 
     injected_bits: list[str] = []
     if scope:
@@ -765,6 +859,9 @@ def _session_start_from_lore(
         injected_bits.append(f"{len(issues)} issue{'s' if len(issues) != 1 else ''}")
     if prs:
         injected_bits.append(f"{len(prs)} PR{'s' if len(prs) != 1 else ''}")
+    pending_chip = _pending_verdict_chip(wiki)
+    if pending_chip:
+        injected_bits.append(pending_chip)
     status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     out_parts: list[str] = [status_line, ""]
@@ -781,6 +878,10 @@ def _session_start_from_lore(
     if session_hints:
         for slug, desc in session_hints[:2]:
             out_parts.append(f"Last: [[{slug}]] — {desc}")
+        out_parts.append("")
+
+    if freshness_audit_lines:
+        out_parts.extend(freshness_audit_lines)
         out_parts.append("")
 
     # Directive last: status + focus + open items show what Lore did for
@@ -849,7 +950,10 @@ def _session_start(cwd: str | None) -> str:
 
     # Project note focused on this repo, if any
     project_entry = _project_note_for_repo(wiki, repo) if repo else None
-    session_hints = _last_session_hint(wiki)
+    session_hints_full = _last_session_hint_with_freshness(wiki, max_notes=4)
+    session_hints, freshness_audit_lines = _filter_session_hints(
+        session_hints_full, max_notes=2
+    )
 
     injected_bits: list[str] = []
     if project_entry is not None:
@@ -857,6 +961,9 @@ def _session_start(cwd: str | None) -> str:
     if session_hints:
         _, first_summary = session_hints[0]
         injected_bits.append(f"last: {first_summary}")
+    pending_chip = _pending_verdict_chip(wiki)
+    if pending_chip:
+        injected_bits.append(pending_chip)
     status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
 
     parts: list[str] = [status_line, ""]
@@ -874,6 +981,10 @@ def _session_start(cwd: str | None) -> str:
     if session_hints:
         for slug, desc in session_hints[:2]:
             parts.append(f"Last: [[{slug}]] — {desc}")
+        parts.append("")
+
+    if freshness_audit_lines:
+        parts.extend(freshness_audit_lines)
         parts.append("")
 
     # Directive last: see _session_start_from_lore for rationale.

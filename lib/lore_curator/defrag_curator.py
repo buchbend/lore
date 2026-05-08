@@ -7,12 +7,15 @@ auto-injection doesn't surface stale or superseded notes.
 
 What Curator C does (frontmatter-only edits — never touches note bodies):
 
-    1. Flag `status: active` + `last_reviewed > 90d` as `status: stale`.
-    2. Detect `supersedes [[X]]` in decision notes; mark X as superseded
+    1. Detect `supersedes [[X]]` in decision notes; mark X as superseded
        and backlink.
-    3. Backfill missing `last_reviewed` / `created` from `git log --follow`.
-    4. Propagate `implements:` status flips.
-    5. Write a `_review.md` summary the hook can surface next session.
+    2. Backfill missing `last_reviewed` / `created` from `git log --follow`.
+    3. Propagate `implements:` status flips.
+    4. Write a `_review.md` summary the hook can surface next session.
+
+(Pre-PRD-#65 the curator also flagged notes by `last_reviewed` age.
+That pass is now a no-op — staleness is read-time and positive-evidence-
+only; see :mod:`lore_core.freshness`.)
 
 Cadence: weekly. Triggered from SessionStart when `now - last_curator_c
 > 7d` and no global curator lock is held (see project_lore_heartbeat.md).
@@ -39,7 +42,7 @@ from lore_core.git import is_obsidian_holding
 from lore_core.identity import distinct_git_authors, team_mode_recommended
 from lore_core.io import atomic_write_text
 from lore_core.ledger import WikiLedger
-from lore_core.lint import STALENESS_DAYS, discover_notes, discover_wikis
+from lore_core.lint import discover_notes, discover_wikis
 from lore_core.run_log import RunLogger
 from lore_core.schema import compute_lifecycle, parse_frontmatter
 from rich.console import Console
@@ -326,39 +329,17 @@ def _apply_patch(text: str, patch: dict) -> str:
 
 
 def _pass_staleness(wiki_path: Path, today: date, threshold: int) -> list[CuratorAction]:
-    """Flag canonical notes whose `last_reviewed` exceeds `threshold` days.
+    """No-op since PRD #65 (positive-evidence-only staleness).
 
-    Review-only: the action carries an empty patch. The user resolves
-    each flagged note interactively (bump `last_reviewed`, add
-    `superseded_by:`, or delete). `_apply_safely` treats empty patches
-    as a no-op.
+    The legacy 90-day age rule is incompatible with the read-time
+    freshness model in :mod:`lore_core.freshness`. Age alone never
+    flags a note now — staleness requires a named cause (authored
+    marker or broken wikilink). The function survives as a hook for
+    future positive-evidence aggregation in Curator C (e.g., rolling
+    up orphan-flagged notes into the report). Arguments are accepted
+    but unused.
     """
-    actions: list[CuratorAction] = []
-    for fpath in discover_notes(wiki_path):
-        text = fpath.read_text(errors="replace")
-        fm = parse_frontmatter(text)
-        if fm.get("type") == "session":
-            continue
-        if compute_lifecycle(fm) != "canonical":
-            continue
-        lr = fm.get("last_reviewed")
-        if not lr:
-            continue
-        try:
-            lr_date = date.fromisoformat(str(lr))
-        except (ValueError, TypeError):
-            continue
-        days = (today - lr_date).days
-        if days > threshold:
-            actions.append(
-                CuratorAction(
-                    kind="review_stale",
-                    path=fpath,
-                    reason=f"last_reviewed {lr} ({days} days ago, > {threshold})",
-                    patch={},
-                )
-            )
-    return actions
+    return []
 
 
 def _pass_supersession(wiki_path: Path) -> list[CuratorAction]:
@@ -676,7 +657,6 @@ def _snapshot_wiki(wiki_path) -> dict:
 def run_curator_c(
     wiki_filter: str | None = None,
     dry_run: bool = True,
-    stale_threshold: int = STALENESS_DAYS,
     *,
     defrag: bool = False,
     llm_client=None,
@@ -717,7 +697,6 @@ def run_curator_c(
                 "wiki_filter": wiki_filter,
                 "defrag": defrag,
                 "dry_run": dry_run,
-                "stale_threshold": stale_threshold,
             },
             dry_run=dry_run,
             run_id=rid,
@@ -756,7 +735,7 @@ def run_curator_c(
                     continue
 
             report = CuratorReport(wiki=wiki_path.name)
-            report.actions.extend(_pass_staleness(wiki_path, today, stale_threshold))
+            report.actions.extend(_pass_staleness(wiki_path, today, 0))
             report.actions.extend(_pass_supersession(wiki_path))
             report.actions.extend(_pass_implements(wiki_path))
             report.actions.extend(_pass_git_backfill(wiki_path))

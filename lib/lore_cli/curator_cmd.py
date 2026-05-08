@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from lore_core.lint import STALENESS_DAYS
 from lore_core.run_render import pick_icon_set, render_flat_log, should_use_color
 from lore_curator.defrag_curator import (
     _resolve_backend,
@@ -45,11 +44,6 @@ def curator(
     apply: bool = typer.Option(
         False, "--apply", help="Actually write changes. Without this, runs dry."
     ),
-    stale_threshold: int = typer.Option(
-        STALENESS_DAYS,
-        "--stale-threshold",
-        help=f"Days after which active notes become stale (default {STALENESS_DAYS}).",
-    ),
     json_out: bool = typer.Option(
         False, "--json", help="Emit machine-readable summary."
     ),
@@ -72,7 +66,6 @@ def curator(
     reports = run_curator_c(
         wiki_filter=wiki,
         dry_run=not apply,
-        stale_threshold=stale_threshold,
     )
 
     if json_out:

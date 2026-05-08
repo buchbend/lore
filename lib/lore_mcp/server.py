@@ -35,6 +35,8 @@ from typing import Any
 
 from lore_core.config import get_wiki_root
 from lore_core.errors import mcp_error as _mcp_error
+from lore_core.freshness import compute_freshness, load_orphan_set, signal_to_dict
+from lore_core.freshness_filter import apply_search_filter
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
@@ -61,6 +63,90 @@ def _resolve_wiki(wiki: str | None) -> Path | None:
     # Single-wiki users: return the only one
     wikis = [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
     return wikis[0] if len(wikis) == 1 else None
+
+
+def _resolve_current_handle(wiki_path: Path) -> str:
+    """Best-effort current-user handle for personal-sidecar lookups.
+
+    Empty string in solo wikis without `_users.yml` and without a
+    configured git author is acceptable — callers treat ``""`` as
+    "no personal record" and skip the sidecar lookup.
+    """
+    from lore_core.git import git_user_email
+    from lore_core.identity import resolve_handle
+
+    email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
+    return resolve_handle(wiki_path, email) if email else ""
+
+
+def _freshness_block_for(
+    wiki_path: Path,
+    rel_path: str,
+    *,
+    orphan_set: set[Path] | None = None,
+    sidecar_confirmed_at=None,
+    handle: str | None = None,
+) -> dict:
+    """Compute the freshness block for a note hit.
+
+    Centralised helper used by every retrieval surface so the wiring
+    stays uniform. Returns a JSON-friendly dict with the four
+    :class:`lore_core.freshness.FreshnessSignal` fields.
+
+    Sidecar lookup precedence:
+        1. ``sidecar_confirmed_at`` (caller already resolved it).
+        2. Otherwise read from
+           :func:`lore_core.verdicts_sidecar.get_confirmed` using
+           ``handle`` (or the best-effort current handle when
+           ``handle is None``).
+
+    Best-effort: if the note can't be read (path-escape, missing file,
+    etc.), returns a default ``confirmed`` block so callers never fail
+    a retrieval over a freshness probe.
+    """
+    target = (wiki_path / rel_path).resolve()
+    try:
+        target.relative_to(wiki_path.resolve())
+    except ValueError:
+        return signal_to_dict(
+            compute_freshness({}, target, wiki_path, None, set())
+        )
+    fm: dict = {}
+    try:
+        fm = parse_frontmatter(target.read_text(errors="replace"))
+    except OSError:
+        pass
+
+    confirmed_at = sidecar_confirmed_at
+    if confirmed_at is None:
+        from lore_core.verdicts_sidecar import get_confirmed
+
+        eff_handle = handle if handle is not None else _resolve_current_handle(wiki_path)
+        if eff_handle:
+            try:
+                confirmed_at = get_confirmed(wiki_path, eff_handle, rel_path)
+            except (OSError, ValueError):
+                confirmed_at = None
+
+    sig = compute_freshness(
+        fm,
+        target,
+        wiki_path,
+        confirmed_at,
+        orphan_set or set(),
+    )
+    block = signal_to_dict(sig)
+
+    # Slice 9: surface team-mode disagreements (someone marked stale,
+    # someone else confirmed after) so the in-passing nudge can ask
+    # for explicit resolution instead of silently overwriting.
+    from lore_core.disagreement import detect_disagreement, disagreement_to_dict
+
+    disagreement = detect_disagreement(fm, confirmed_at)
+    if disagreement is not None:
+        block["disagreement"] = disagreement_to_dict(disagreement)
+
+    return block
 
 
 # Time-based throttle for FTS reindexing in the long-lived MCP server.
@@ -139,17 +225,44 @@ def handle_search(
     backend = FtsBackend()
     _maybe_reindex(backend, wiki)
     hits = backend.search(query, wiki=wiki, for_repo=for_repo, k=k)
-    return [
-        {
+    # Cache one wiki-path resolution per (wiki-name) and one orphan-set
+    # load per wiki-path to avoid re-walking ``$LORE_ROOT/wiki`` and
+    # re-reading ``_catalog.json`` on every hit.
+    wiki_path_cache: dict[str, Path | None] = {}
+    orphan_cache: dict[str, set[Path]] = {}
+
+    def _wp(name: str) -> Path | None:
+        if name not in wiki_path_cache:
+            wiki_path_cache[name] = _resolve_wiki(name)
+        return wiki_path_cache[name]
+
+    def _orphans(name: str, wp: Path) -> set[Path]:
+        if name not in orphan_cache:
+            orphan_cache[name] = load_orphan_set(wp)
+        return orphan_cache[name]
+
+    out: list[dict[str, Any]] = []
+    for h in hits:
+        wp = _wp(h.wiki)
+        if wp is not None:
+            freshness = _freshness_block_for(
+                wp, h.path, orphan_set=_orphans(h.wiki, wp)
+            )
+        else:
+            freshness = signal_to_dict(
+                compute_freshness({}, Path(h.path), Path("/"), None, set())
+            )
+        out.append({
             "path": h.path,
             "wiki": h.wiki,
             "filename": h.filename,
             "score": round(h.score, 3),
             "description": h.description,
             "tags": h.tags or [],
-        }
-        for h in hits
-    ]
+            "freshness": freshness,
+        })
+    sorted_out, _audit = apply_search_filter(out)
+    return sorted_out
 
 
 def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
@@ -221,6 +334,10 @@ def handle_read(
         return _mcp_error("path_not_found", f"not found: {path}")
     text = target.read_text(errors="replace")
 
+    freshness = _freshness_block_for(
+        wiki_path, path, orphan_set=load_orphan_set(wiki_path)
+    )
+
     if section is not None:
         section_text, headings = _extract_section(text, section)
         if section_text is None:
@@ -240,12 +357,14 @@ def handle_read(
             "path": path,
             "content": section_text,
             "section": section,
+            "freshness": freshness,
         }
 
     return {
         "wiki": wiki_path.name,
         "path": path,
         "content": text,
+        "freshness": freshness,
     }
 
 
@@ -759,6 +878,133 @@ def handle_drill(
     return {"trace": trace, "result": {"notes": notes}}
 
 
+def handle_verdict(
+    wiki: str,
+    note: str,
+    verdict: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """Slice 5 + 6: write a freshness verdict for a note.
+
+    Slice 5 wires the ``stale`` branch (frontmatter additive write of
+    the four ``status:stale`` fields). The ``confirm`` branch returns
+    a structured "not yet implemented in this slice" error pointing
+    at slice 6.
+
+    Returns the post-verdict :class:`FreshnessSignal` for the note so
+    the caller can confirm what changed.
+    """
+    from lore_core.identity import resolve_handle
+    from lore_core.git import git_user_email
+    from lore_core.stale_marker_writer import (
+        StaleMarkerError,
+        clear_stale,
+        mark_stale,
+    )
+
+    if verdict not in {"stale", "confirm", "clear-stale"}:
+        return _mcp_error(
+            "invalid_verdict",
+            f"verdict must be one of stale|confirm|clear-stale, got {verdict!r}",
+        )
+
+    wiki_path = _resolve_wiki(wiki)
+    if wiki_path is None:
+        return _mcp_error(
+            "wiki_not_found",
+            f"wiki not found: {wiki}",
+            next_="run `lore status` to list configured wikis",
+        )
+
+    # Resolve note path the same way handle_read does.
+    slug = None
+    if note.startswith("[[") and note.endswith("]]"):
+        slug = note[2:-2]
+    elif "/" not in note and not note.endswith(".md"):
+        slug = note
+    rel_path = note
+    if slug:
+        resolved = _resolve_slug(wiki_path, slug)
+        if resolved is None:
+            return _mcp_error("note_not_found", f"note not found: {slug}")
+        rel_path = resolved
+    target = (wiki_path / rel_path).resolve()
+    try:
+        target.relative_to(wiki_path.resolve())
+    except ValueError:
+        return _mcp_error("path_escape", "path escapes wiki root")
+    if not target.exists():
+        return _mcp_error("path_not_found", f"not found: {rel_path}")
+
+    if verdict == "confirm":
+        from lore_core.verdicts_sidecar import set_confirmed
+
+        email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
+        handle = resolve_handle(wiki_path, email) if email else ""
+        if not handle:
+            return _mcp_error(
+                "no_handle",
+                "could not resolve current handle for personal confirm",
+                next_="set GIT_AUTHOR_EMAIL or configure git user.email",
+            )
+        try:
+            written = set_confirmed(wiki_path, handle, rel_path)
+        except (OSError, ValueError) as e:
+            return _mcp_error("confirm_write_failed", str(e))
+        freshness = _freshness_block_for(
+            wiki_path,
+            rel_path,
+            orphan_set=load_orphan_set(wiki_path),
+            sidecar_confirmed_at=written,
+            handle=handle,
+        )
+        return {
+            "schema": "lore.verdict/1",
+            "wiki": wiki_path.name,
+            "path": rel_path,
+            "verdict": "confirm",
+            "confirmed_at": written.isoformat(),
+            "freshness": freshness,
+        }
+
+    if verdict == "stale":
+        if not reason or not str(reason).strip():
+            return _mcp_error(
+                "reason_required",
+                "verdict=stale requires a non-empty `reason`",
+                next_="describe in one short line why the note is stale",
+            )
+        email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
+        handle = resolve_handle(wiki_path, email) if email else ""
+        try:
+            mark_stale(target, reason=str(reason), handle=handle)
+        except StaleMarkerError as e:
+            return _mcp_error("stale_write_refused", str(e))
+        freshness = _freshness_block_for(
+            wiki_path, rel_path, orphan_set=load_orphan_set(wiki_path)
+        )
+        return {
+            "schema": "lore.verdict/1",
+            "wiki": wiki_path.name,
+            "path": rel_path,
+            "verdict": "stale",
+            "freshness": freshness,
+        }
+
+    # verdict == "clear-stale"
+    clear_stale(target)
+    freshness = _freshness_block_for(
+        wiki_path, rel_path, orphan_set=load_orphan_set(wiki_path)
+    )
+    return {
+        "schema": "lore.verdict/1",
+        "wiki": wiki_path.name,
+        "path": rel_path,
+        "verdict": "clear-stale",
+        "freshness": freshness,
+    }
+
+
 def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
@@ -1073,6 +1319,43 @@ def _tool_schema() -> list[dict]:
                 },
             },
         },
+        {
+            "name": "lore_verdict",
+            "description": (
+                "Record a freshness verdict for a note. Use when the "
+                "user replies to an in-passing freshness nudge with a "
+                "concrete answer: \"yes still good\" → "
+                "verdict=\"confirm\"; \"no, stale because X\" → "
+                "verdict=\"stale\" with a one-line `reason`. The "
+                "stale branch writes the four-field schema "
+                "(`status: stale`, `stale_reason`, `stale_by`, "
+                "`stale_at`) additively to the note's frontmatter; "
+                "never touches the body. The verdict is silent until "
+                "the user actually responds — if the user types past "
+                "the nudge without answering, do NOT call this tool. "
+                "(`clear-stale` removes a prior stale verdict; the "
+                "confirm branch lands in slice 6.)"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "wiki": {"type": "string"},
+                    "note": {
+                        "type": "string",
+                        "description": "Note path, [[wikilink]], or bare slug.",
+                    },
+                    "verdict": {
+                        "type": "string",
+                        "enum": ["confirm", "stale", "clear-stale"],
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Required when verdict=stale.",
+                    },
+                },
+                "required": ["wiki", "note", "verdict"],
+            },
+        },
     ]
 
 
@@ -1116,6 +1399,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_journal_write(**args)
         case "lore_journal_read":
             return handle_journal_read(**args)
+        case "lore_verdict":
+            return handle_verdict(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 

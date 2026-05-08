@@ -959,6 +959,22 @@ def run_lint(
             notes = notes_by_wiki[wiki_name]
 
             catalog = build_catalog(wiki_name, notes, all_issues)
+            # Slice 4 of PRD #65: cache the orphan set so the read-time
+            # freshness check can do an O(1) membership test instead of
+            # walking the whole wiki on every retrieval. Stored as
+            # wiki-relative paths for portability.
+            try:
+                from lore_curator.c_orphan_links import find_orphan_links
+
+                orphan_paths = sorted({
+                    str(p.relative_to(wiki_path))
+                    for p, _slug, _off in find_orphan_links(wiki_path)
+                })
+            except Exception:
+                # Defensive: a broken curator import must not break lint.
+                orphan_paths = []
+            catalog["orphan_set"] = orphan_paths
+
             atomic_write_text(
                 wiki_path / "_catalog.json",
                 json.dumps(catalog, indent=2, default=str),
