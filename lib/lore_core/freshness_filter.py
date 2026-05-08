@@ -88,21 +88,25 @@ class FilterAudit:
 
 def _is_hard_stale(freshness: dict | None) -> bool:
     """Hard-stale = ``status == stale-candidate`` AND the cause is a hard
-    authored marker (``status: stale`` / ``superseded_by``).
+    authored marker (``status: stale`` / ``superseded_by``), OR the
+    block carries a slice-9 ``disagreement`` field — auto-inject must
+    defer to the team-stale signal until the user explicitly resolves
+    the conflict.
 
     The slice-3 inject filter excludes hard-stale notes entirely. Soft
-    markers (``supersede_candidate``) only downrank. Disagreement
-    (slice 9) layers on top by escalating to the hard-stale branch.
+    markers (``supersede_candidate``) only downrank.
     """
     if not freshness:
         return False
+    # Slice 9: any disagreement always counts as hard for inject
+    # purposes — even when the personal confirm has suppressed the
+    # status to "confirmed", we still want to keep it out of inject
+    # until the user resolves the conflict.
+    if freshness.get("disagreement"):
+        return True
     if freshness.get("status") != "stale-candidate":
         return False
     reason = (freshness.get("reason") or "").lower()
-    # The reason text comes from
-    # ``lore_core.freshness._format_marker_reason`` and is the cleanest
-    # disambiguator between hard and soft authored markers without
-    # re-parsing frontmatter on this side.
     if "marked stale" in reason:
         return True
     if reason.startswith("superseded by"):
@@ -221,15 +225,22 @@ def apply_inject_filter(
     for item in items:
         fr = freshness_of(item)
         status = _status_of(fr)
-        if status == "stale-candidate" and _is_hard_stale(fr):
+        # Slice 9: a disagreement always excludes — even if the status
+        # has been suppressed to "confirmed" by a personal sidecar.
+        # Auto-inject defers to team-stale until the user resolves.
+        if _is_hard_stale(fr):
             excluded.append(item)
+            cause = (fr or {}).get("cause")
+            reason = (fr or {}).get("reason")
+            if (fr or {}).get("disagreement") and not reason:
+                reason = "team-stale + personal confirm conflict"
             audit.entries.append(
                 FilterAuditEntry(
                     path=str(path_of(item)),
                     wiki=wiki_of(item),
                     action="excluded",
-                    cause=(fr or {}).get("cause"),
-                    reason=(fr or {}).get("reason"),
+                    cause=cause,
+                    reason=reason,
                 )
             )
             continue

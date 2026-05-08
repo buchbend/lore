@@ -65,6 +65,26 @@ EXPECTED_DIRECTIVE_LINES = [
     "- Topic mismatch (the note discusses an adjacent thing).",
     "- Vibe-level disagreement without two stated claims to compare.",
     "",
+    "### Lore freshness — disagreement nudge",
+    "",
+    (
+        "When the freshness block carries `disagreement` (someone marked "
+        "the note stale, someone else confirmed it after — including the "
+        "same user changing their own mind), use the disagreement-flavored "
+        "nudge instead of the regular one:"
+    ),
+    "",
+    (
+        "`(› [[<note>]] marked stale by <stale_by> on <stale_at> "
+        "(<reason>); you confirmed on <self_confirmed_at> — clarify?)`"
+    ),
+    "",
+    (
+        "Never auto-resolve. The system never auto-clears a stale or "
+        "auto-overrides a confirm; offer the user a fresh `lore_verdict` "
+        "call once they decide which side wins."
+    ),
+    "",
 ]
 
 

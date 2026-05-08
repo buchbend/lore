@@ -135,7 +135,18 @@ def _freshness_block_for(
         confirmed_at,
         orphan_set or set(),
     )
-    return signal_to_dict(sig)
+    block = signal_to_dict(sig)
+
+    # Slice 9: surface team-mode disagreements (someone marked stale,
+    # someone else confirmed after) so the in-passing nudge can ask
+    # for explicit resolution instead of silently overwriting.
+    from lore_core.disagreement import detect_disagreement, disagreement_to_dict
+
+    disagreement = detect_disagreement(fm, confirmed_at)
+    if disagreement is not None:
+        block["disagreement"] = disagreement_to_dict(disagreement)
+
+    return block
 
 
 # Time-based throttle for FTS reindexing in the long-lived MCP server.
