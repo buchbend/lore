@@ -10,6 +10,55 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-05-08
+
+### Changed — Plugin skill set reduced from 19 to 5 (#64)
+
+The lore plugin now ships only 5 skills instead of 19. Every skill's
+name and description is paid into the always-on available-skills
+system reminder on every session start; the previous 19-skill list was
+mostly thin CLI wrappers, deprecated aliases, and one-time admin
+tools. The reduction is **subtractive only** — every removed skill's
+function remains reachable through CLI, MCP, or natural-language ask.
+
+**Surviving skills (judgment-required):** `inbox`, `surface`,
+`resume`, `curator`, `context`. SKILL.md bodies were also trimmed
+(541 → 266 lines total, -50.8%).
+
+**Migration table:**
+
+| Removed | Replacement |
+|---|---|
+| `/lore:loud` | `lore on citations` |
+| `/lore:quiet` | `lore off citations` |
+| `/lore:journal` | `lore journal write [--ai] "<text>"` (or ask Claude); `lore_journal_write` MCP for AI-side |
+| `/lore:init` | `lore init` |
+| `/lore:new-wiki` | `lore new-wiki <name>` |
+| `/lore:import` | symlink the vault under `$LORE_ROOT/wiki/<name>` and run `lore lint`; ask Claude to enrich frontmatter if desired |
+| `/lore:attach` | `lore attach` |
+| `/lore:detach` | `lore detach` |
+| `/lore:briefing` | `lore briefing --wiki <name>` |
+| `/lore:lint` | `lore lint` |
+| `/lore:on` | `lore on` |
+| `/lore:off` | `lore off` |
+| `/lore:search` | `/lore:resume <query>` (keyword mode); raw paths via `lore search <query>` shell or `lore_search` MCP |
+| `/lore:surface-init` | `/lore:surface <wiki>` (answer "redesign" at the dispatch prompt) |
+| `/lore:surface-add` | `/lore:surface <wiki>` (answer "add") |
+
+**Why hard cut and not a deprecation cycle:** the cut surfaces are
+infrequent (init / import / attach are one-time-per-machine; on / off /
+loud / quiet are rare debug verbs; lint / briefing / search are
+CLI-shaped already). A CHANGELOG entry plus clear "command not found"
+errors covers the user impact.
+
+**Plugin version bump is mandatory** for installed caches to invalidate
+and pick up the new manifest. `claude plugin update lore@lore` after
+upgrading.
+
+Tracked in PRD #64; implemented across #67 (delete 12 skills), #68
+(merge surface-init + surface-add), #69 (fold search into resume),
+#70 (body-trim survivors), #71 (this release).
+
 ## [0.47.0] - 2026-05-07
 
 ### Fixed — Curator A: one note per `(transcript_id, local_date)` (#52)
