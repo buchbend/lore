@@ -35,6 +35,7 @@ from typing import Any
 
 from lore_core.config import get_wiki_root
 from lore_core.errors import mcp_error as _mcp_error
+from lore_core.freshness import compute_freshness, signal_to_dict
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
@@ -61,6 +62,47 @@ def _resolve_wiki(wiki: str | None) -> Path | None:
     # Single-wiki users: return the only one
     wikis = [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
     return wikis[0] if len(wikis) == 1 else None
+
+
+def _freshness_block_for(
+    wiki_path: Path,
+    rel_path: str,
+    *,
+    orphan_set: set[Path] | None = None,
+    sidecar_confirmed_at=None,
+) -> dict:
+    """Compute the freshness block for a note hit.
+
+    Centralised helper used by every retrieval surface so the wiring
+    stays uniform. Returns a JSON-friendly dict with the four
+    :class:`lore_core.freshness.FreshnessSignal` fields. Slice 1 always
+    passes an empty orphan set and ``None`` sidecar — slice 4 wires the
+    cached orphan set, slice 6 wires the personal sidecar.
+
+    Best-effort: if the note can't be read (path-escape, missing file,
+    etc.), returns a default ``confirmed`` block so callers never fail
+    a retrieval over a freshness probe.
+    """
+    target = (wiki_path / rel_path).resolve()
+    try:
+        target.relative_to(wiki_path.resolve())
+    except ValueError:
+        return signal_to_dict(
+            compute_freshness({}, target, wiki_path, None, set())
+        )
+    fm: dict = {}
+    try:
+        fm = parse_frontmatter(target.read_text(errors="replace"))
+    except OSError:
+        pass
+    sig = compute_freshness(
+        fm,
+        target,
+        wiki_path,
+        sidecar_confirmed_at,
+        orphan_set or set(),
+    )
+    return signal_to_dict(sig)
 
 
 # Time-based throttle for FTS reindexing in the long-lived MCP server.
@@ -139,17 +181,33 @@ def handle_search(
     backend = FtsBackend()
     _maybe_reindex(backend, wiki)
     hits = backend.search(query, wiki=wiki, for_repo=for_repo, k=k)
-    return [
-        {
+    # Cache one wiki-path resolution per (wiki-name) to avoid re-walking
+    # ``$LORE_ROOT/wiki`` per hit.
+    wiki_path_cache: dict[str, Path | None] = {}
+
+    def _wp(name: str) -> Path | None:
+        if name not in wiki_path_cache:
+            wiki_path_cache[name] = _resolve_wiki(name)
+        return wiki_path_cache[name]
+
+    out: list[dict[str, Any]] = []
+    for h in hits:
+        wp = _wp(h.wiki)
+        freshness = (
+            _freshness_block_for(wp, h.path)
+            if wp is not None
+            else signal_to_dict(compute_freshness({}, Path(h.path), Path("/"), None, set()))
+        )
+        out.append({
             "path": h.path,
             "wiki": h.wiki,
             "filename": h.filename,
             "score": round(h.score, 3),
             "description": h.description,
             "tags": h.tags or [],
-        }
-        for h in hits
-    ]
+            "freshness": freshness,
+        })
+    return out
 
 
 def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
@@ -221,6 +279,8 @@ def handle_read(
         return _mcp_error("path_not_found", f"not found: {path}")
     text = target.read_text(errors="replace")
 
+    freshness = _freshness_block_for(wiki_path, path)
+
     if section is not None:
         section_text, headings = _extract_section(text, section)
         if section_text is None:
@@ -240,12 +300,14 @@ def handle_read(
             "path": path,
             "content": section_text,
             "section": section,
+            "freshness": freshness,
         }
 
     return {
         "wiki": wiki_path.name,
         "path": path,
         "content": text,
+        "freshness": freshness,
     }
 
 
