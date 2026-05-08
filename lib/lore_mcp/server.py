@@ -835,6 +835,110 @@ def handle_drill(
     return {"trace": trace, "result": {"notes": notes}}
 
 
+def handle_verdict(
+    wiki: str,
+    note: str,
+    verdict: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """Slice 5 + 6: write a freshness verdict for a note.
+
+    Slice 5 wires the ``stale`` branch (frontmatter additive write of
+    the four ``status:stale`` fields). The ``confirm`` branch returns
+    a structured "not yet implemented in this slice" error pointing
+    at slice 6.
+
+    Returns the post-verdict :class:`FreshnessSignal` for the note so
+    the caller can confirm what changed.
+    """
+    from lore_core.identity import resolve_handle
+    from lore_core.git import git_user_email
+    from lore_core.stale_marker_writer import (
+        StaleMarkerError,
+        clear_stale,
+        mark_stale,
+    )
+
+    if verdict not in {"stale", "confirm", "clear-stale"}:
+        return _mcp_error(
+            "invalid_verdict",
+            f"verdict must be one of stale|confirm|clear-stale, got {verdict!r}",
+        )
+
+    wiki_path = _resolve_wiki(wiki)
+    if wiki_path is None:
+        return _mcp_error(
+            "wiki_not_found",
+            f"wiki not found: {wiki}",
+            next_="run `lore status` to list configured wikis",
+        )
+
+    # Resolve note path the same way handle_read does.
+    slug = None
+    if note.startswith("[[") and note.endswith("]]"):
+        slug = note[2:-2]
+    elif "/" not in note and not note.endswith(".md"):
+        slug = note
+    rel_path = note
+    if slug:
+        resolved = _resolve_slug(wiki_path, slug)
+        if resolved is None:
+            return _mcp_error("note_not_found", f"note not found: {slug}")
+        rel_path = resolved
+    target = (wiki_path / rel_path).resolve()
+    try:
+        target.relative_to(wiki_path.resolve())
+    except ValueError:
+        return _mcp_error("path_escape", "path escapes wiki root")
+    if not target.exists():
+        return _mcp_error("path_not_found", f"not found: {rel_path}")
+
+    if verdict == "confirm":
+        # Slice 6 wires the personal sidecar; slice 5 stub.
+        return _mcp_error(
+            "not_implemented",
+            "confirm verdict is not yet implemented",
+            next_="track in slice 6 (personal confirms — sidecar + confirm branch)",
+        )
+
+    if verdict == "stale":
+        if not reason or not str(reason).strip():
+            return _mcp_error(
+                "reason_required",
+                "verdict=stale requires a non-empty `reason`",
+                next_="describe in one short line why the note is stale",
+            )
+        email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
+        handle = resolve_handle(wiki_path, email) if email else ""
+        try:
+            mark_stale(target, reason=str(reason), handle=handle)
+        except StaleMarkerError as e:
+            return _mcp_error("stale_write_refused", str(e))
+        freshness = _freshness_block_for(
+            wiki_path, rel_path, orphan_set=load_orphan_set(wiki_path)
+        )
+        return {
+            "schema": "lore.verdict/1",
+            "wiki": wiki_path.name,
+            "path": rel_path,
+            "verdict": "stale",
+            "freshness": freshness,
+        }
+
+    # verdict == "clear-stale"
+    clear_stale(target)
+    freshness = _freshness_block_for(
+        wiki_path, rel_path, orphan_set=load_orphan_set(wiki_path)
+    )
+    return {
+        "schema": "lore.verdict/1",
+        "wiki": wiki_path.name,
+        "path": rel_path,
+        "verdict": "clear-stale",
+        "freshness": freshness,
+    }
+
+
 def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
@@ -1149,6 +1253,43 @@ def _tool_schema() -> list[dict]:
                 },
             },
         },
+        {
+            "name": "lore_verdict",
+            "description": (
+                "Record a freshness verdict for a note. Use when the "
+                "user replies to an in-passing freshness nudge with a "
+                "concrete answer: \"yes still good\" → "
+                "verdict=\"confirm\"; \"no, stale because X\" → "
+                "verdict=\"stale\" with a one-line `reason`. The "
+                "stale branch writes the four-field schema "
+                "(`status: stale`, `stale_reason`, `stale_by`, "
+                "`stale_at`) additively to the note's frontmatter; "
+                "never touches the body. The verdict is silent until "
+                "the user actually responds — if the user types past "
+                "the nudge without answering, do NOT call this tool. "
+                "(`clear-stale` removes a prior stale verdict; the "
+                "confirm branch lands in slice 6.)"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "wiki": {"type": "string"},
+                    "note": {
+                        "type": "string",
+                        "description": "Note path, [[wikilink]], or bare slug.",
+                    },
+                    "verdict": {
+                        "type": "string",
+                        "enum": ["confirm", "stale", "clear-stale"],
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Required when verdict=stale.",
+                    },
+                },
+                "required": ["wiki", "note", "verdict"],
+            },
+        },
     ]
 
 
@@ -1192,6 +1333,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_journal_write(**args)
         case "lore_journal_read":
             return handle_journal_read(**args)
+        case "lore_verdict":
+            return handle_verdict(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 
