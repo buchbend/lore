@@ -36,6 +36,7 @@ from typing import Any
 from lore_core.config import get_wiki_root
 from lore_core.errors import mcp_error as _mcp_error
 from lore_core.freshness import compute_freshness, signal_to_dict
+from lore_core.freshness_filter import apply_search_filter
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
@@ -207,7 +208,8 @@ def handle_search(
             "tags": h.tags or [],
             "freshness": freshness,
         })
-    return out
+    sorted_out, _audit = apply_search_filter(out)
+    return sorted_out
 
 
 def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
