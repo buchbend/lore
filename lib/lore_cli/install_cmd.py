@@ -31,6 +31,8 @@ import json
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -366,11 +368,11 @@ def _print_integration_summary(integration_name: str, fail_count: int, mode: str
 # ---------------------------------------------------------------------------
 
 
-def _build_ctx(args: SimpleNamespace) -> InstallContext:
+def _build_ctx(args: SimpleNamespace, *, mode: str) -> InstallContext:
     return InstallContext(
         lore_repo=Path(args.lore_repo).expanduser() if args.lore_repo else None,
         force=args.force,
-        dry_run=args.cmd == "check",
+        dry_run=mode == "check",
     )
 
 
@@ -611,11 +613,12 @@ def _refresh_claude_plugin_cache(*, quiet: bool) -> None:
         )
 
 
-def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
-    """Shared install / upgrade / uninstall driver. `mode` selects:
+def _cmd_install(args: SimpleNamespace, mode: str) -> int:
+    """Shared install / upgrade / check / uninstall driver. `mode` selects:
         install   → integration.plan(ctx)
         upgrade   → integration.plan(ctx) (same; the dispatcher reports no-op
                     when all actions are no-op kind=check)
+        check     → integration.plan(ctx) (dry-run; never writes)
         uninstall → integration.uninstall_plan(ctx)
     """
     if args.force and args.yes:
@@ -635,7 +638,7 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
     if not integrations:
         console.print("  [yellow]No integrations selected.[/yellow]", markup=True)
         return 0
-    ctx = _build_ctx(args)
+    ctx = _build_ctx(args, mode=mode)
 
     # Legacy artifact detection — only for install / upgrade (and only
     # gates writing modes; `check` shows everything and exits 0).
@@ -650,7 +653,7 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
             if not args.json:
                 _print_legacy_warning(legacy_artifacts)
             # Check mode: print plan too, then exit 0
-            if args.cmd != "check" and not args.force:
+            if mode != "check" and not args.force:
                 if args.json:
                     _emit_json(
                         {
@@ -672,7 +675,7 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
         plans.append((integration_name, actions))
 
     # JSON output mode — emit the plan envelope and exit
-    if args.json or args.cmd == "check":
+    if args.json or mode == "check":
         envelope = {
             "mode": mode,
             "legacy_artifacts": [a.__dict__ for a in legacy_artifacts],
@@ -734,16 +737,7 @@ def _cmd_install(args: SimpleNamespace, mode: str = "install") -> int:
     return 0 if overall_failures == 0 else 1
 
 
-app = typer.Typer(
-    add_completion=False,
-    help=__doc__,
-    no_args_is_help=False,
-    rich_markup_mode="rich",
-)
-
-
 def _make_args(
-    cmd: str,
     *,
     integration: str | None,
     yes: bool,
@@ -752,9 +746,8 @@ def _make_args(
     force: bool,
     lore_repo: str | None,
 ) -> SimpleNamespace:
-    """Adapt typer kwargs into the argparse-Namespace shape `_cmd_install` reads."""
+    """Adapt typer kwargs into the namespace shape `_cmd_install` reads."""
     return SimpleNamespace(
-        cmd=cmd,
         integration=integration,
         yes=yes,
         quiet=quiet,
@@ -769,9 +762,10 @@ def _exit_with(rc: int) -> None:
         raise typer.Exit(code=rc)
 
 
-# Common flag set repeated across subcommands. Typer doesn't share
+# Common flag set shared across the install verbs. Typer doesn't share
 # options between root + subcommands cleanly (Click constraint), so
-# we declare them on each function. ~6 lines × 4 commands.
+# every command takes the same six options via these module-level
+# defaults.
 
 _INTEGRATION = typer.Option(
     None,
@@ -807,6 +801,91 @@ _UPGRADE = typer.Option(
 )
 
 
+def build_install_command(
+    modes: str | tuple[str, ...], docstring: str
+) -> Callable[..., None]:
+    """Build a typer-compatible function that runs `_cmd_install` for one
+    or more sequential modes.
+
+    Single-mode entries (``"check"``, ``"upgrade"``, ``"uninstall"``)
+    drive `_cmd_install` once; the chained form ``("uninstall",
+    "install")`` powers the ``reinstall`` verb. Reused by the top-level
+    ``lore uninstall`` alias in `lore_cli.__main__`.
+    """
+    seq = (modes,) if isinstance(modes, str) else modes
+
+    def _cmd(
+        integration: str = _INTEGRATION,
+        yes: bool = _YES,
+        quiet: bool = _QUIET,
+        json_out: bool = _JSON,
+        force: bool = _FORCE,
+        lore_repo: str = _LORE_REPO,
+    ) -> None:
+        for i, mode in enumerate(seq):
+            args = _make_args(
+                integration=integration,
+                yes=yes,
+                quiet=quiet,
+                json_out=json_out,
+                force=force,
+                lore_repo=lore_repo,
+            )
+            rc = _cmd_install(args, mode=mode)
+            # Abort a chained run (reinstall) on the first failing step.
+            if rc != 0 or i == len(seq) - 1:
+                _exit_with(rc)
+                return
+
+    _cmd.__doc__ = docstring
+    return _cmd
+
+
+@dataclass(frozen=True)
+class _Verb:
+    """One row in the install-verb registry."""
+
+    name: str
+    modes: str | tuple[str, ...]
+    docstring: str
+
+
+_INSTALL_VERBS: tuple[_Verb, ...] = (
+    _Verb("check", "check", "Plan-only — never writes."),
+    _Verb(
+        "upgrade",
+        "upgrade",
+        "Re-install — no-op if managed schema is current.",
+    ),
+    _Verb("uninstall", "uninstall", "Symmetric semantic remove."),
+    _Verb(
+        "reinstall",
+        ("uninstall", "install"),
+        (
+            "Uninstall then install — useful after upgrading the Lore package.\n"
+            "\n"
+            "Equivalent to:\n"
+            "\n"
+            "    lore install uninstall && lore install\n"
+            "\n"
+            "The install pass automatically runs ``claude plugin update lore@lore``\n"
+            "when the Claude integration is part of the run, so the plugin manifest\n"
+            "cache stays in sync. The ``.claude-plugin/plugin.json`` version still\n"
+            "has to be bumped in the source for Claude's update to do anything —\n"
+            "see CHANGELOG.md."
+        ),
+    ),
+)
+
+
+app = typer.Typer(
+    add_completion=False,
+    help=__doc__,
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
+
+
 @app.callback(invoke_without_command=True)
 def root(
     ctx: typer.Context,
@@ -828,7 +907,6 @@ def root(
         _exit_with(_run_self_upgrade(quiet=quiet))
         return
     args = _make_args(
-        "install",
         integration=integration,
         yes=yes,
         quiet=quiet,
@@ -839,117 +917,8 @@ def root(
     _exit_with(_cmd_install(args, mode="install"))
 
 
-@app.command("check")
-def cmd_check(
-    integration: str = _INTEGRATION,
-    yes: bool = _YES,
-    quiet: bool = _QUIET,
-    json_out: bool = _JSON,
-    force: bool = _FORCE,
-    lore_repo: str = _LORE_REPO,
-) -> None:
-    """Plan-only — never writes."""
-    args = _make_args(
-        "check",
-        integration=integration,
-        yes=yes,
-        quiet=quiet,
-        json_out=json_out,
-        force=force,
-        lore_repo=lore_repo,
-    )
-    _exit_with(_cmd_install(args, mode="install"))
-
-
-@app.command("upgrade")
-def cmd_upgrade(
-    integration: str = _INTEGRATION,
-    yes: bool = _YES,
-    quiet: bool = _QUIET,
-    json_out: bool = _JSON,
-    force: bool = _FORCE,
-    lore_repo: str = _LORE_REPO,
-) -> None:
-    """Re-install — no-op if managed schema is current."""
-    args = _make_args(
-        "upgrade",
-        integration=integration,
-        yes=yes,
-        quiet=quiet,
-        json_out=json_out,
-        force=force,
-        lore_repo=lore_repo,
-    )
-    _exit_with(_cmd_install(args, mode="upgrade"))
-
-
-@app.command("uninstall")
-def cmd_uninstall(
-    integration: str = _INTEGRATION,
-    yes: bool = _YES,
-    quiet: bool = _QUIET,
-    json_out: bool = _JSON,
-    force: bool = _FORCE,
-    lore_repo: str = _LORE_REPO,
-) -> None:
-    """Symmetric semantic remove."""
-    args = _make_args(
-        "uninstall",
-        integration=integration,
-        yes=yes,
-        quiet=quiet,
-        json_out=json_out,
-        force=force,
-        lore_repo=lore_repo,
-    )
-    _exit_with(_cmd_install(args, mode="uninstall"))
-
-
-@app.command("reinstall")
-def cmd_reinstall(
-    integration: str = _INTEGRATION,
-    yes: bool = _YES,
-    quiet: bool = _QUIET,
-    json_out: bool = _JSON,
-    force: bool = _FORCE,
-    lore_repo: str = _LORE_REPO,
-) -> None:
-    """Uninstall then install — useful after upgrading the Lore package.
-
-    Equivalent to:
-
-        lore install uninstall && lore install
-
-    The install pass automatically runs ``claude plugin update lore@lore``
-    when the Claude integration is part of the run, so the plugin manifest
-    cache stays in sync. The ``.claude-plugin/plugin.json`` version still
-    has to be bumped in the source for Claude's update to do anything —
-    see CHANGELOG.md.
-    """
-    uninstall_args = _make_args(
-        "reinstall",
-        integration=integration,
-        yes=yes,
-        quiet=quiet,
-        json_out=json_out,
-        force=force,
-        lore_repo=lore_repo,
-    )
-    rc = _cmd_install(uninstall_args, mode="uninstall")
-    if rc != 0:
-        _exit_with(rc)
-
-    install_args = _make_args(
-        "reinstall",
-        integration=integration,
-        yes=yes,
-        quiet=quiet,
-        json_out=json_out,
-        force=force,
-        lore_repo=lore_repo,
-    )
-    rc = _cmd_install(install_args, mode="install")
-    _exit_with(rc)
+for _verb in _INSTALL_VERBS:
+    app.command(_verb.name)(build_install_command(_verb.modes, _verb.docstring))
 
 
 main = argv_main(app)
