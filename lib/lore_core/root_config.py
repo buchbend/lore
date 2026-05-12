@@ -63,22 +63,15 @@ class OpenAIBackendConfig:
 
 @dataclass
 class CuratorBackendConfig:
-    """Curator LLM backend selection + cascade mode.
+    """Curator LLM backend selection.
 
     ``backend`` is one of: ``"auto"`` | ``"subscription"`` | ``"api"`` | ``"openai"``.
     ``auto`` prefers claude-on-PATH → ANTHROPIC_API_KEY → OpenAI (if configured) → None.
     Env var ``LORE_LLM_BACKEND`` and CLI ``--backend`` override this config value.
-
-    ``noteworthy_mode`` controls the feature-based cascade in Curator A:
-    ``"cascade"`` (default) skips the LLM on clearly-trivial slices and
-    only calls it for uncertain/substantive ones; ``"llm_only"`` always
-    calls the LLM (cascade still runs but for telemetry). Env var
-    ``LORE_NOTEWORTHY_MODE`` overrides this config value.
     """
 
     backend: str = "auto"
     openai: OpenAIBackendConfig = field(default_factory=OpenAIBackendConfig)
-    noteworthy_mode: str = "cascade"
 
 
 @dataclass

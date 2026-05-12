@@ -6,7 +6,7 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable
 
 from lore_core.noteworthy_features import classify_cascade
 from lore_core.redaction import redact
@@ -15,43 +15,6 @@ from lore_curator.llm_client import LlmClient
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
-
-
-NoteworthyMode = Literal["llm_only", "cascade"]
-# "offline" (Phase E) deliberately absent — no code path yet honours it,
-# so accepting it from the env var would silently misbehave.
-_VALID_MODES: frozenset[str] = frozenset({"llm_only", "cascade"})
-
-# Default promoted from "llm_only" to "cascade" in v0.6.0 after real-
-# traffic shadow-run agreement showed zero false-positives / false-
-# negatives on a 15-slice sample. Operators can still flip back via
-# LORE_NOTEWORTHY_MODE=llm_only or curator.noteworthy_mode in the
-# root config.
-_DEFAULT_MODE: NoteworthyMode = "cascade"
-
-
-def _resolve_mode(lore_root: Path | None = None) -> NoteworthyMode:
-    """Pick the cascade mode: env var > root config > default.
-
-    Env var wins so operators can flip a single process without editing
-    the config file. Config wins over the default so per-install policy
-    can differ from the shipped default. Invalid values at any layer
-    fall through to the next layer (never crash).
-    """
-    raw = os.environ.get("LORE_NOTEWORTHY_MODE", "").strip().lower()
-    if raw in _VALID_MODES:
-        return raw  # type: ignore[return-value]
-
-    if lore_root is not None:
-        try:
-            from lore_core.root_config import load_root_config
-            configured = load_root_config(lore_root).curator.noteworthy_mode
-            if isinstance(configured, str) and configured.strip().lower() in _VALID_MODES:
-                return configured.strip().lower()  # type: ignore[return-value]
-        except Exception:
-            pass
-
-    return _DEFAULT_MODE
 
 
 _SIMPLE_TIER_WARNING_ID = "noteworthy-simple-tier-v1"
@@ -118,12 +81,10 @@ def classify_slice(
     elif tier != "middle":
         raise ValueError(f"noteworthy: unknown tier {tier!r} (expected 'middle' or 'simple')")
 
-    # Feature cascade always runs — its verdict is emitted for shadow-run
-    # calibration even in llm_only mode. Only in "cascade" mode does a
-    # trivial verdict actually skip the LLM call; substantive and uncertain
-    # still hit the LLM (substantive for summary quality, uncertain for the
-    # verdict itself). Thresholds live in lore_core.noteworthy_features.
-    mode = _resolve_mode(lore_root=lore_root)
+    # Feature cascade gates the LLM call: trivial slices short-circuit
+    # (no LLM); substantive and uncertain hit the LLM (substantive for
+    # summary quality, uncertain for the verdict itself). Thresholds
+    # live in lore_core.noteworthy_features.
     verdict = classify_cascade(turns)
     if logger is not None:
         logger.emit(
@@ -131,13 +92,10 @@ def classify_slice(
             transcript_id=transcript_id,
             label=verdict.label,
             reason=verdict.reason,
-            mode=mode,
             features=asdict(verdict.features),
         )
 
-    if mode == "cascade" and verdict.label == "trivial":
-        # Hard-skip: no LLM call, no description. Ledger advances as not-noteworthy
-        # via the caller's noteworthy=False path.
+    if verdict.label == "trivial":
         return NoteworthyResult(
             noteworthy=False,
             reason=f"cascade_trivial:{verdict.reason}",

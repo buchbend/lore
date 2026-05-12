@@ -22,7 +22,7 @@ import types
 
 import pytest
 
-from lore_core.types import Turn
+from lore_core.types import ToolCall, Turn
 from lore_curator.noteworthy import NoteworthyResult, classify_slice
 
 
@@ -135,21 +135,34 @@ def test_classify_slice_works_end_to_end_with_openai_backend(
     monkeypatch.setenv("LORE_OPENAI_BASE_URL", "https://example.local/v1")
     monkeypatch.setenv("LORE_OPENAI_API_KEY", "sk-smoke-test")
     monkeypatch.setenv("LORE_OPENAI_MODEL_MIDDLE", "test-middle")
-    # Force-skip the cascade so the LLM path actually runs (otherwise a
-    # one-turn "hello" slice would short-circuit as trivial).
-    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
 
     from lore_curator.llm_client import OpenAICompatibleClient, make_llm_client
 
     client = make_llm_client(backend="openai")
     assert isinstance(client, OpenAICompatibleClient)
 
-    turns = [Turn(
-        index=0,
-        timestamp=None,
-        role="user",
-        text="Refactor the curator to drop the redundant Protocol class.",
-    )]
+    # ≥3 edits across ≥2 files trips the cascade's substantive label so
+    # the LLM path actually runs end-to-end.
+    def _edit_turn(idx: int, path: str) -> Turn:
+        return Turn(
+            index=idx, timestamp=None, role="assistant",
+            text=f"editing {path}",
+            tool_call=ToolCall(
+                name="Edit", input={"file_path": path}, category="file_edit"
+            ),
+        )
+
+    turns = [
+        Turn(
+            index=0,
+            timestamp=None,
+            role="user",
+            text="Refactor the curator to drop the redundant Protocol class.",
+        ),
+        _edit_turn(1, "a.py"),
+        _edit_turn(2, "b.py"),
+        _edit_turn(3, "c.py"),
+    ]
     result = classify_slice(
         turns,
         model_resolver=lambda tier: {

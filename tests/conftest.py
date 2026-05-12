@@ -3,12 +3,11 @@
 The three autouse "grandfather" fixtures that pinned the test suite to
 pre-production defaults (``LORE_NOTEWORTHY_MODE=llm_only``,
 ``LORE_PROJECT_FOLDERS=off``, ``LORE_BUFFER_FLUSH=0``) were removed in
-PR 6a of the streamlining track (issue #80). PR 6b then deleted the
+PR 6a of the streamlining track (issue #80). PR 6b deleted the
 buffer-flush legacy code path and the ``LORE_BUFFER_FLUSH`` env var;
-the remaining ``LORE_NOTEWORTHY_MODE=llm_only`` and
-``LORE_PROJECT_FOLDERS=off`` legacies are slated for PRs 6c/6d. Tests
-that genuinely exercise those still-living legacies opt in inline with
-``monkeypatch.setenv``.
+PR 6c deleted the ``LORE_NOTEWORTHY_MODE=llm_only`` branch and env var.
+The remaining ``LORE_PROJECT_FOLDERS=off`` legacy is slated for PR 6d.
+Tests that genuinely exercise it opt in inline with ``monkeypatch.setenv``.
 """
 from __future__ import annotations
 
