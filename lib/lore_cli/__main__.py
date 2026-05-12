@@ -146,29 +146,13 @@ def _build_app() -> typer.Typer:
     app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
     app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
 
-    @app.command(
+    app.command(
         "uninstall",
         help="Symmetric semantic remove (alias for `install uninstall`).",
-    )
-    def cmd_uninstall_alias(
-        integration: str = install_cmd._INTEGRATION,
-        yes: bool = install_cmd._YES,
-        quiet: bool = install_cmd._QUIET,
-        json_out: bool = install_cmd._JSON,
-        force: bool = install_cmd._FORCE,
-        lore_repo: str = install_cmd._LORE_REPO,
-    ) -> None:
-        """Top-level `lore uninstall` — same flags as `lore install uninstall`."""
-        args = install_cmd._make_args(
-            "uninstall",
-            integration=integration,
-            yes=yes,
-            quiet=quiet,
-            json_out=json_out,
-            force=force,
-            lore_repo=lore_repo,
-        )
-        install_cmd._exit_with(install_cmd._cmd_install(args, mode="uninstall"))
+    )(install_cmd.build_install_command(
+        "uninstall",
+        "Top-level `lore uninstall` — same flags as `lore install uninstall`.",
+    ))
 
     return app
 

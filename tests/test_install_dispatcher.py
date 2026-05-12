@@ -52,7 +52,10 @@ def test_json_envelope_for_check_mode(clean_home, capsys):
     install_cmd.main(["check", "--integration", "cursor", "--json"])
     out = capsys.readouterr().out
     envelope = json.loads(out)
-    assert envelope["mode"] == "install"  # check delegates to install plan
+    # `check` is now first-class in the dispatcher (it builds an install
+    # plan but reports its own mode label); previously the envelope said
+    # "install" because the verb was passed through as install + dry_run.
+    assert envelope["mode"] == "check"
     assert any(h["integration"] == "cursor" for h in envelope["integrations"])
 
 
