@@ -231,7 +231,9 @@ def handle_search(
 ) -> list[dict[str, Any]]:
     backend = FtsBackend()
     _maybe_reindex(backend, wiki)
-    hits = backend.search(query, wiki=wiki, for_repo=for_repo, k=k)
+    hits = backend.search(
+        query, wiki=wiki, for_repo=for_repo, k=k, redact_human_only=True
+    )
     # Cache one wiki-path resolution per (wiki-name) and one orphan-set
     # load per wiki-path to avoid re-walking ``$LORE_ROOT/wiki`` and
     # re-reading ``_catalog.json`` on every hit.
