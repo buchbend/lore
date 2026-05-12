@@ -16,10 +16,6 @@ it via :func:`lore_core.projects.stub_generator.stub_project_note` with
 skeleton). Slug-collision against any non-project basename in the wiki
 aborts the auto-stub for that hoist.
 
-Toggle: requires ``LORE_PROJECT_FOLDERS=on`` (uses the same gate as the
-surface filer router). Without the toggle, project folders may not exist
-and the pass returns a "skipped" count.
-
 Threshold rationale: title-slug fuzz at 0.6 matches the existing
 adjacent-merge primitive (``c_adjacent_merge.py:43``). A pair-level
 match is an adjacent-merge candidate; a cross-sibling cluster of ≥2 is
@@ -34,7 +30,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from lore_core.projects.router import project_folders_enabled
 from lore_core.projects.stub_generator import stub_project_note
 from lore_core.schema import parse_frontmatter
 from lore_core.wikilinks import existing_slugs
@@ -187,14 +182,10 @@ def cross_scope_hoist_pass(
 
     Returns counters with keys:
       - ``cross_scope_hoist_proposed`` — new proposal notes written
-      - ``cross_scope_hoist_skipped_toggle_off`` — toggle off, no-op
       - ``cross_scope_hoist_skipped_collision`` — parent slug collides
         with a non-project basename, auto-stub aborted
       - ``cross_scope_hoist_existing`` — proposal already on disk, skipped
     """
-    if not project_folders_enabled():
-        return {"cross_scope_hoist_skipped_toggle_off": 1}
-
     projects = _scan_projects(wiki_path)
     if not projects:
         return {"cross_scope_hoist_proposed": 0}

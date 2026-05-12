@@ -39,10 +39,10 @@ def file_surface(
 ) -> FiledSurface:
     """Write a curator-authored surface note. Always draft:true.
 
-    Path resolution (Phase 3 dual-mode):
-      - When ``LORE_PROJECT_FOLDERS=on`` AND a ``projects/<slug>/`` exists
-        for ``scope`` (last segment of the colon-separated chain), the
-        note lands at ``<wiki_root>/projects/<slug>/<surface-plural>/<slug>.md``.
+    Path resolution:
+      - When a ``projects/<slug>/`` exists for ``scope`` (last segment
+        of the colon-separated chain), the note lands at
+        ``<wiki_root>/projects/<slug>/<surface-plural>/<slug>.md``.
       - Otherwise (legacy flat path):
         ``<wiki_root>/<plural-of-surface-name>/<slug>.md``
 
