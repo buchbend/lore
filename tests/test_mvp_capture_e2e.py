@@ -294,6 +294,7 @@ def test_mvp_e2e_non_noteworthy_slice_produces_no_note(
     lore_root_with_attached_wiki, register_fake_claude_code, monkeypatch
 ):
     """Non-noteworthy classification: no session note, but ledger is advanced."""
+    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
     lore_root, work = lore_root_with_attached_wiki
     turns = _make_turns(3)
     handle = _make_handle(work)

@@ -238,8 +238,9 @@ def test_curator_a_end_to_end_noteworthy_produces_note(tmp_path):
     assert entry.digested_hash == turns[-1].content_hash()
 
 
-def test_curator_a_non_noteworthy_advances_ledger_no_file(tmp_path):
+def test_curator_a_non_noteworthy_advances_ledger_no_file(tmp_path, monkeypatch):
     """Fake LLM returns noteworthy=False; no session note; ledger still advanced."""
+    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
     _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
@@ -578,10 +579,12 @@ def test_curator_a_no_llm_client_records_skip(tmp_path):
     assert not sessions_dir.exists() or list(sessions_dir.rglob("*.md")) == []
 
 
-def test_curator_a_llm_client_error_skips_slice_without_aborting_run(tmp_path):
+def test_curator_a_llm_client_error_skips_slice_without_aborting_run(tmp_path, monkeypatch):
     """Gateway failure (5xx, timeout, oversize prompt) on one slice must not
     abort the whole curator run — the affected slice is skipped with a
     ``classify_failed`` reason so the rest of the queue proceeds."""
+    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
     _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")
@@ -664,13 +667,15 @@ def test_curator_a_result_counts_chunks_separately_from_transcripts(tmp_path):
     assert result.noteworthy_count == 3
 
 
-def test_curator_a_chunk_failure_does_not_advance_past_failed_chunk(tmp_path):
+def test_curator_a_chunk_failure_does_not_advance_past_failed_chunk(tmp_path, monkeypatch):
     """C1 regression: if chunk 0 raises, chunk 1's ledger advance must
     NOT overwrite the ledger past chunk 0 — that would silently lose
     chunk 0 forever on the next run.
 
     Behaviour: on chunk failure, abort the per-chunk loop. Subsequent
     chunks stay pending; next heartbeat retries the failing chunk."""
+    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     from datetime import timedelta
 
     project_dir = tmp_path / "myproject"
@@ -735,11 +740,13 @@ def test_curator_a_chunk_failure_does_not_advance_past_failed_chunk(tmp_path):
     )
 
 
-def test_curator_a_day_split_produces_one_note_per_local_date(tmp_path):
+def test_curator_a_day_split_produces_one_note_per_local_date(tmp_path, monkeypatch):
     """Phase B: a slice spanning two local dates produces two session
     notes, one per day. Each chunk goes through cascade + classify
     independently; ledger advances after each so a mid-run failure
     doesn't lose committed work."""
+    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     from datetime import timedelta
 
     project_dir = tmp_path / "myproject"
@@ -788,9 +795,11 @@ def test_curator_a_day_split_produces_one_note_per_local_date(tmp_path):
     assert entry.digested_hash == turns[-1].content_hash()
 
 
-def test_curator_a_single_day_slice_produces_one_note(tmp_path):
+def test_curator_a_single_day_slice_produces_one_note(tmp_path, monkeypatch):
     """Phase B regression guard: when all turns fall on one local date,
     behaviour is identical to pre-Phase-B (one chunk, one note)."""
+    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
     _write_claude_md(project_dir / "CLAUDE.md", wiki="private", scope="proj:test")

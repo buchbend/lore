@@ -177,9 +177,11 @@ _MERGE_PAYLOAD = {
 
 
 def test_e2e_subprocess_backend_produces_session_note(
-    lore_root_with_attached_wiki, register_fake_claude_code
+    lore_root_with_attached_wiki, register_fake_claude_code, monkeypatch
 ):
     """Full Curator A run using SubprocessClient + fake runner creates a session note."""
+    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     lore_root, work = lore_root_with_attached_wiki
     turns = _make_turns(3)
     handle = _make_handle(work)
