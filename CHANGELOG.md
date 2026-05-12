@@ -10,6 +10,53 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-05-12
+
+### Changed — Streamlining track grandfather kill (issue #80, PRs 6a–6d)
+
+Closes the 9-PR streamlining track of issue #80. Three autouse
+"grandfather" fixtures in `tests/conftest.py` were pinning the test
+suite to pre-production defaults (`LORE_BUFFER_FLUSH=0`,
+`LORE_NOTEWORTHY_MODE=llm_only`, `LORE_PROJECT_FOLDERS=off`) long after
+those defaults flipped on in production, keeping legacy code paths alive
+under fixture protection. PR 6a flipped the fixtures off; 6b/6c/6d
+deleted the now-unprotected legacy code paths one at a time.
+
+- **PR 6a — conftest grandfather flip (#99)**: removed the three autouse
+  fixtures; migrated every failing test to production defaults
+  (preferred) or opted specific tests back into legacy mode inline via
+  `monkeypatch.setenv` (only where the legacy mode itself was under
+  test).
+- **PR 6b — buffer-flush legacy delete (#108)**: deleted
+  `lib/lore_curator/summary_merge.py` (-274 LOC), the
+  `_process_chunk` / `_buffer_flush_enabled` branch in
+  `session_curator.py`, the classify-per-chunk branches in
+  `session_filer.py` and `session_writer.file_or_merge`, the
+  `LORE_BUFFER_FLUSH` env var, and `root_config.use_buffer_flush`. Net
+  ~-3,900 LOC across 18 files (lib + tests). Buffer-flush is now the
+  only curator-A pipeline.
+- **PR 6c — `noteworthy_mode=llm_only` delete (#103)**: removed the
+  `llm_only` branch in `lib/lore_curator/noteworthy.py`, `NoteworthyMode`
+  Literal, `_resolve_mode()`, the `mode` field on cascade-verdict
+  events, the `LORE_NOTEWORTHY_MODE` env var, and the
+  `curator.noteworthy_mode` config field. Net -290 LOC across 8 files.
+  The cascade is now the only noteworthy gate.
+- **PR 6d — `LORE_PROJECT_FOLDERS=off` delete (#106)**: removed
+  `project_folders_enabled()` from
+  `lib/lore_core/projects/router.py`, the toggle gate inside
+  `project_dir_for_scope`, the env var, and the `skipped_toggle_off`
+  bailout in `c_cross_scope_hoist.py`. Net -137 LOC across 7 files.
+  Project-folder routing is now unconditional — folder existence is
+  the only gate.
+
+Grandfather track totals: -4,300 LOC across the four PRs. Combined with
+the structural PRs 1–5 (already in 0.51.0), the full 9-PR streamlining
+track removed ~5,500 LOC (~12% of the codebase) without dropping any
+of the 27 ratified use cases.
+
+`lint.py` split (PR 10 in the PRD) remains contingent on a future lint
+rule / catalog generator expansion; not part of this release.
+
 ## [0.51.0] - 2026-05-12
 
 ### Added — Two-region session notes: reload-safe + human-only (PRD #92, slices #93–#97)
