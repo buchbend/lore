@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from lore_curator.c_cross_scope_hoist import cross_scope_hoist_pass
 
 
@@ -69,19 +67,7 @@ def _scope_for_project(wiki: Path, project_slug: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_hoist_pass_skipped_when_toggle_off(tmp_path, monkeypatch):
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
-    _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
-    _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
-    _write_concept(tmp_path, "ops-db", "event-sourcing-pattern")
-    _write_concept(tmp_path, "data-transfer", "event-sourcing-pattern")
-
-    counts = cross_scope_hoist_pass(tmp_path, llm_client=None, dry_run=False)
-    assert counts.get("cross_scope_hoist_skipped_toggle_off") == 1
-
-
-def test_hoist_pass_proposes_when_two_siblings_share_concept(tmp_path, monkeypatch):
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
+def test_hoist_pass_proposes_when_two_siblings_share_concept(tmp_path):
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
     _write_concept(tmp_path, "ops-db", "event-sourcing-pattern")
@@ -107,9 +93,8 @@ def test_hoist_pass_proposes_when_two_siblings_share_concept(tmp_path, monkeypat
     assert "ccat:data-center" in text
 
 
-def test_hoist_pass_skips_when_only_one_sibling_has_concept(tmp_path, monkeypatch):
+def test_hoist_pass_skips_when_only_one_sibling_has_concept(tmp_path):
     """Pair-level recurrence is adjacent-merge territory, not hoist."""
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
     _write_concept(tmp_path, "ops-db", "ops-db-only")
@@ -120,10 +105,9 @@ def test_hoist_pass_skips_when_only_one_sibling_has_concept(tmp_path, monkeypatc
     assert counts["cross_scope_hoist_proposed"] == 0
 
 
-def test_hoist_pass_uses_existing_parent_project_folder(tmp_path, monkeypatch):
+def test_hoist_pass_uses_existing_parent_project_folder(tmp_path):
     """Parent project already exists → pass does not auto-stub a new one,
     just files the proposal inside the existing parent."""
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
     _write_orientation(tmp_path, "data-center", "ccat:data-center")
@@ -142,9 +126,8 @@ def test_hoist_pass_uses_existing_parent_project_folder(tmp_path, monkeypatch):
     )
 
 
-def test_hoist_pass_idempotent(tmp_path, monkeypatch):
+def test_hoist_pass_idempotent(tmp_path):
     """Second run finds the proposal already exists and skips."""
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
     _write_concept(tmp_path, "ops-db", "event-sourcing-pattern")
@@ -156,9 +139,8 @@ def test_hoist_pass_idempotent(tmp_path, monkeypatch):
     assert counts["cross_scope_hoist_proposed"] == 0
 
 
-def test_hoist_pass_does_not_edit_source_concepts(tmp_path, monkeypatch):
+def test_hoist_pass_does_not_edit_source_concepts(tmp_path):
     """Originals stay untouched — Curator C is proposal-only."""
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
     a = _write_concept(tmp_path, "ops-db", "event-sourcing-pattern")
@@ -172,8 +154,7 @@ def test_hoist_pass_does_not_edit_source_concepts(tmp_path, monkeypatch):
     assert b.read_text() == pre_b
 
 
-def test_hoist_pass_dry_run_writes_nothing(tmp_path, monkeypatch):
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
+def test_hoist_pass_dry_run_writes_nothing(tmp_path):
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
     _write_concept(tmp_path, "ops-db", "event-sourcing-pattern")
@@ -191,10 +172,9 @@ def test_hoist_pass_dry_run_writes_nothing(tmp_path, monkeypatch):
     assert not proposal.exists()
 
 
-def test_hoist_pass_refuses_on_slug_collision(tmp_path, monkeypatch):
+def test_hoist_pass_refuses_on_slug_collision(tmp_path):
     """If the parent slug collides with a non-project basename anywhere
     in the wiki, auto-stub is refused for that hoist candidate."""
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
     _write_concept(tmp_path, "ops-db", "event-sourcing-pattern")
@@ -218,9 +198,8 @@ def test_hoist_pass_refuses_on_slug_collision(tmp_path, monkeypatch):
     assert not proposal.exists()
 
 
-def test_hoist_pass_only_groups_actual_siblings(tmp_path, monkeypatch):
+def test_hoist_pass_only_groups_actual_siblings(tmp_path):
     """Projects whose scopes do NOT share a parent are not hoist candidates."""
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "telescope", "ccat:telescope")
     _write_concept(tmp_path, "ops-db", "event-sourcing-pattern")
@@ -233,10 +212,9 @@ def test_hoist_pass_only_groups_actual_siblings(tmp_path, monkeypatch):
     assert counts["cross_scope_hoist_proposed"] == 0
 
 
-def test_hoist_pass_handles_three_siblings(tmp_path, monkeypatch):
+def test_hoist_pass_handles_three_siblings(tmp_path):
     """Three sibling projects all sharing a concept → one hoist proposal
     listing all three sources."""
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
     _write_orientation(tmp_path, "ops-db", "ccat:data-center:ops-db")
     _write_orientation(tmp_path, "data-transfer", "ccat:data-center:data-transfer")
     _write_orientation(tmp_path, "workflow-manager", "ccat:data-center:workflow-manager")

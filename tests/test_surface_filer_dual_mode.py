@@ -1,17 +1,14 @@
-"""Integration tests for ``file_surface`` Phase 3 dual-mode routing.
+"""Integration tests for ``file_surface`` project-folder routing.
 
-When ``LORE_PROJECT_FOLDERS=on`` AND a ``projects/<slug>/`` folder exists
-for the cluster's scope, the note lands inside that project's
-``concepts/`` (or ``decisions/``, etc.) subfolder. Otherwise the note
-lands at the legacy flat path.
+When a ``projects/<slug>/`` folder exists for the cluster's scope, the
+note lands inside that project's ``concepts/`` (or ``decisions/``, etc.)
+subfolder. Otherwise the note lands at the legacy flat path.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-
-import pytest
 
 from lore_core.surfaces import SurfaceDef, SurfacesDoc
 from lore_curator.surface_filer import file_surface
@@ -41,27 +38,7 @@ def _surfaces_doc() -> SurfacesDoc:
     )
 
 
-def test_file_surface_legacy_flat_when_toggle_off(tmp_path, monkeypatch):
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "off")
-    # A project folder exists, but the toggle is off — must use flat.
-    (tmp_path / "projects" / "ops-db").mkdir(parents=True)
-
-    filed = file_surface(
-        surface_name="concept",
-        title="Event Sourcing Pattern",
-        body="...",
-        sources=["[[2026-04-28-foo]]"],
-        wiki_root=tmp_path,
-        surfaces_doc=_surfaces_doc(),
-        extra_frontmatter={"tags": ["topic/db"]},
-        now=_NOW,
-        scope="ccat:ops-db",
-    )
-    assert filed.path == tmp_path / "concepts" / "event-sourcing-pattern.md"
-
-
-def test_file_surface_routes_into_project_folder_when_toggle_on(tmp_path, monkeypatch):
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
+def test_file_surface_routes_into_project_folder_when_match(tmp_path):
     project_dir = tmp_path / "projects" / "ops-db"
     project_dir.mkdir(parents=True)
 
@@ -79,9 +56,8 @@ def test_file_surface_routes_into_project_folder_when_toggle_on(tmp_path, monkey
     assert filed.path == project_dir / "concepts" / "event-sourcing-pattern.md"
 
 
-def test_file_surface_falls_back_to_flat_when_project_folder_missing(tmp_path, monkeypatch):
-    """Toggle on, but no project folder for this scope → flat fallback."""
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
+def test_file_surface_falls_back_to_flat_when_project_folder_missing(tmp_path):
+    """No project folder for this scope → flat fallback."""
     # Wiki has no projects/ subtree at all.
 
     filed = file_surface(
@@ -98,8 +74,7 @@ def test_file_surface_falls_back_to_flat_when_project_folder_missing(tmp_path, m
     assert filed.path == tmp_path / "decisions" / "use-postgres.md"
 
 
-def test_file_surface_no_scope_uses_flat_path(tmp_path, monkeypatch):
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
+def test_file_surface_no_scope_uses_flat_path(tmp_path):
     (tmp_path / "projects" / "ops-db").mkdir(parents=True)
 
     filed = file_surface(
@@ -116,9 +91,8 @@ def test_file_surface_no_scope_uses_flat_path(tmp_path, monkeypatch):
     assert filed.path == tmp_path / "concepts" / "generic-concept.md"
 
 
-def test_file_surface_keeps_existing_callers_working(tmp_path, monkeypatch):
+def test_file_surface_keeps_existing_callers_working(tmp_path):
     """Backward compat: callers that don't pass ``scope`` keep using flat path."""
-    monkeypatch.setenv("LORE_PROJECT_FOLDERS", "on")
     (tmp_path / "projects" / "ops-db").mkdir(parents=True)
 
     filed = file_surface(
