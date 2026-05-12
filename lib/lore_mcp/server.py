@@ -641,6 +641,12 @@ def handle_surface_context(wiki: str) -> dict[str, Any]:
         if start != -1:
             end = txt.find("\n## ", start + 1)
             claude_md_attach = txt[start:end] if end != -1 else txt[start:]
+        # Two-region retrieval filter (PRD #92): handle_surface_context
+        # is an LLM-facing surface, so strip any human-only region a
+        # CLAUDE.md happens to carry. Conventionally CLAUDE.md has no
+        # marker; the call is defensive and a no-op for marker-free
+        # files.
+        claude_md_attach = redact_human_only(claude_md_attach)
 
     return {
         "schema": "lore.surface.context/1",
@@ -805,11 +811,16 @@ def handle_drill(
         return {"trace": trace, "result": {"notes": notes}}
 
     # Stage 2: read top hits
+    # Drill is the user-invoked deep-dive surface (PRD #92 retrieval
+    # contract): pass ``include_human=True`` so the full note — including
+    # the human-only region — is returned. ``handle_search`` /
+    # ``handle_surface_context`` / ``handle_briefing_gather`` are the
+    # auto-load surfaces where redaction is enforced.
     t0 = _time.monotonic()
     top_paths = [h["path"] for h in hits]
     read_failed_top: list[str] = []
     for path in top_paths:
-        body = handle_read(path=path, wiki=wiki)
+        body = handle_read(path=path, wiki=wiki, include_human=True)
         if "error" in body:
             read_failed_top.append(path)
             continue
@@ -873,7 +884,7 @@ def handle_drill(
         rel = _resolve_slug(wiki_path, slug)
         if rel is None:
             continue
-        body = handle_read(path=rel, wiki=wiki)
+        body = handle_read(path=rel, wiki=wiki, include_human=True)
         if "error" in body:
             read_failed_expanded.append(rel)
             continue
