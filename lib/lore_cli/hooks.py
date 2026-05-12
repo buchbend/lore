@@ -1294,6 +1294,28 @@ from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry, WikiLedger
 from lore_core.scope_resolver import resolve_scope  # noqa: E402
 from lore_cli._argv_compat import argv_main  # noqa: E402
 
+# Re-export the spawn machinery so hooks-internal heartbeat code and any
+# external test that patches ``lore_cli.hooks.<name>`` keep working without
+# tracking the move to ``lore_cli.spawn``.
+from lore_cli.spawn import (  # noqa: E402, F401
+    _migrate_legacy_spawn_stamp,
+    _open_proc_log,
+    _prior_spawn_runaway,
+    _process_is_ours,
+    _rotate_meta_sidecar,
+    _spawn_detached,
+    _spawn_detached_curator_a,
+    _spawn_detached_curator_b,
+    _spawn_detached_curator_c,
+    _spawn_detached_transcript_sync,
+    _stamp_within_cooldown,
+    _write_stamp,
+    _curator_c_email,
+    _curator_c_jitter_seconds,
+    _iso_week_monday_utc,
+    spawn,
+)
+
 hook_app = typer.Typer(
     add_completion=False,
     help="Internal hook dispatcher — invoked by Claude Code at SessionStart, PreCompact, etc.",
@@ -2232,266 +2254,6 @@ def _load_wiki_cfg_for_wiki(lore_root: Path, wiki_name: str):
     return load_wiki_config(lore_root / "wiki" / wiki_name)
 
 
-def _stamp_within_cooldown(stamp: Path, cooldown_s: int) -> bool:
-    """True if stamp exists and is younger than cooldown_s seconds."""
-    import time as _time
-    try:
-        last = float(stamp.read_text().strip())
-    except (OSError, ValueError):
-        return False
-    return (_time.time() - last) < cooldown_s
-
-
-def _write_stamp(stamp: Path) -> None:
-    """Atomic write of current unix timestamp into stamp. Best-effort."""
-    import time as _time
-    stamp.parent.mkdir(parents=True, exist_ok=True)
-    tmp = stamp.with_suffix(stamp.suffix + ".tmp")
-    tmp.write_text(f"{_time.time():.6f}")
-    os.replace(tmp, stamp)
-
-
-def _migrate_legacy_spawn_stamp(lore_root: Path, role: str) -> None:
-    """Unlink the pre-flock stamp file if present; log to hook-events on failure."""
-    old = lore_root / ".lore" / f"last-curator-{role}-spawn"
-    try:
-        old.unlink()
-    except FileNotFoundError:
-        return
-    except OSError as exc:
-        try:
-            HookEventLogger(lore_root).emit(
-                event="spawn-throttle",
-                outcome="warning",
-                error={
-                    "type": "LegacyStampMigrationFailed",
-                    "message": str(exc),
-                    "role": role,
-                },
-            )
-        except Exception:
-            pass
-
-
-def _open_proc_log(lore_root: Path, role: str, *, keep: int = 3) -> int | None:
-    """Open .lore/proc/<role>.log for subprocess output, rotating previous generations."""
-    import contextlib
-
-    proc_dir = lore_root / ".lore" / "proc"
-    try:
-        proc_dir.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        return None
-    log_path = proc_dir / f"{role}.log"
-    with contextlib.suppress(OSError):
-        (proc_dir / f"{role}.log.{keep}").unlink(missing_ok=True)
-    for i in range(keep, 1, -1):
-        src = proc_dir / f"{role}.log.{i - 1}"
-        dst = proc_dir / f"{role}.log.{i}"
-        with contextlib.suppress(OSError):
-            os.replace(str(src), str(dst))
-    if log_path.exists():
-        with contextlib.suppress(OSError):
-            os.replace(str(log_path), str(proc_dir / f"{role}.log.1"))
-    try:
-        return os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
-    except OSError:
-        return None
-
-
-def _rotate_meta_sidecar(proc_dir: Path, role: str, *, keep: int = 3) -> None:
-    """Rotate <role>.meta.json alongside proc logs. Best-effort."""
-    import contextlib
-    with contextlib.suppress(OSError):
-        (proc_dir / f"{role}.meta.json.{keep}").unlink(missing_ok=True)
-    for i in range(keep, 1, -1):
-        src = proc_dir / f"{role}.meta.json.{i - 1}"
-        dst = proc_dir / f"{role}.meta.json.{i}"
-        with contextlib.suppress(OSError):
-            os.replace(str(src), str(dst))
-    current = proc_dir / f"{role}.meta.json"
-    if current.exists():
-        with contextlib.suppress(OSError):
-            os.replace(str(current), str(proc_dir / f"{role}.meta.json.1"))
-
-
-def _process_is_ours(pid: int) -> bool:
-    """True if ``pid`` is alive AND looks like a lore_cli process.
-
-    On Linux the cmdline check via ``/proc/<pid>/cmdline`` dodges PID-recycle
-    false positives — the kernel reuses PIDs aggressively, so a bare
-    ``os.kill(pid, 0)`` on a stale meta.json could match an unrelated
-    process. On non-Linux the cmdline file isn't present and we fall back
-    to the liveness probe alone (the rare false positive self-heals once
-    the next successful spawn rewrites meta.json).
-    """
-    if pid <= 1:
-        return False
-    try:
-        os.kill(pid, 0)
-    except (ProcessLookupError, PermissionError, OSError):
-        return False
-    cmdline_path = Path(f"/proc/{pid}/cmdline")
-    if not cmdline_path.exists():
-        return True  # non-Linux fallback
-    try:
-        cmdline = cmdline_path.read_bytes().replace(b"\x00", b" ")
-    except OSError:
-        return True  # alive but unreadable; assume ours
-    return b"lore_cli" in cmdline
-
-
-def _prior_spawn_runaway(
-    lore_root: Path, role: str, *, runaway_age_s: int
-) -> dict | None:
-    """Return runaway-process info if the prior spawn for ``role`` is hung.
-
-    "Hung" = sidecar meta.json says ``exit_code is None`` AND its recorded
-    ``pid`` is still alive on this host AND ``start_ts`` is older than
-    ``runaway_age_s`` seconds.
-
-    Returns ``None`` (safe to spawn) when meta.json is absent, malformed,
-    already exited, or the prior process is young/dead. The returned dict
-    carries ``pid``, ``age_s``, ``start_ts`` for telemetry.
-
-    Final gate before ``_spawn_detached`` commits a fresh subprocess —
-    catches the pile-up pattern where a child hangs (e.g. the v0.37.0 lock
-    spin) and the cooldown stamp keeps green-lighting new spawns on the
-    same broken state. See issue #42 for the related lockfile silent-
-    cleanup follow-up.
-    """
-    import json as _json
-    import time as _time
-
-    meta_path = lore_root / ".lore" / "proc" / f"{role}.meta.json"
-    try:
-        meta = _json.loads(meta_path.read_text())
-    except (OSError, ValueError):
-        return None
-    if meta.get("exit_code") is not None:
-        return None
-    pid = meta.get("pid")
-    start_ts = meta.get("start_ts")
-    if not isinstance(pid, int) or not isinstance(start_ts, (int, float)):
-        return None
-    age_s = _time.time() - start_ts
-    if age_s < runaway_age_s:
-        return None
-    if not _process_is_ours(pid):
-        return None
-    return {"pid": pid, "age_s": int(age_s), "start_ts": start_ts}
-
-
-def _spawn_detached(
-    lore_root: Path,
-    role: str,
-    cmd: list[str],
-    *,
-    cooldown_s: int,
-    migrate_stamp: bool = False,
-    runaway_age_s: int | None = None,
-) -> bool:
-    """Fire-and-forget a subprocess under a spawn lock + cooldown stamp.
-
-    Acquires a non-blocking flock on the per-role spawn lock. Returns False
-    if another process holds the lock OR the cooldown stamp is still fresh
-    OR the prior spawn for this role is still alive past the runaway
-    threshold (default ``cooldown_s * 5``).
-
-    The runaway gate is the safety net for "child hangs and cooldown keeps
-    green-lighting fresh spawns" — once tripped, a single warning event is
-    appended to ``hook-events.jsonl`` per ``cooldown_s * 10`` window
-    (throttled via ``curator-<role>.runaway.stamp``) so users running
-    ``lore status`` / grepping the log can see the issue without it
-    spamming on every UserPromptSubmit.
-    """
-    import contextlib
-    import subprocess
-    from lore_core.lockfile import try_acquire_spawn_lock
-
-    effective_runaway = (
-        runaway_age_s if runaway_age_s is not None else cooldown_s * 5
-    )
-
-    with try_acquire_spawn_lock(lore_root, role) as (held, stamp):
-        if not held:
-            return False
-        if _stamp_within_cooldown(stamp, cooldown_s):
-            return False
-        runaway = _prior_spawn_runaway(
-            lore_root, role, runaway_age_s=effective_runaway
-        )
-        if runaway is not None:
-            warn_stamp = (
-                lore_root / ".lore" / f"curator-{role}.runaway.stamp"
-            )
-            if not _stamp_within_cooldown(warn_stamp, cooldown_s * 10):
-                try:
-                    HookEventLogger(lore_root).emit(
-                        event="spawn-throttle",
-                        outcome="prior-runaway",
-                        role=role,
-                        error={
-                            "type": "PriorSpawnAlive",
-                            "pid": runaway["pid"],
-                            "age_s": runaway["age_s"],
-                            "runaway_threshold_s": effective_runaway,
-                        },
-                    )
-                except Exception:
-                    pass
-                with contextlib.suppress(OSError):
-                    _write_stamp(warn_stamp)
-            return False
-        if migrate_stamp:
-            _migrate_legacy_spawn_stamp(lore_root, role)
-        env = os.environ.copy()
-        # Re-inject as LORE_ROOT so child processes resolve identically
-        # without re-reading ~/.config/lore/config.yml. The child's
-        # lore_root_source() will report "env" even if the parent
-        # resolved via config — that's intentional. Resolution-source
-        # provenance is per-process; the path value is what matters
-        # across boundaries.
-        env["LORE_ROOT"] = str(lore_root)
-        env["LORE_CURATOR_MODE"] = "1"
-        log_fd = _open_proc_log(lore_root, role)
-        proc_dir = lore_root / ".lore" / "proc"
-        meta_path = proc_dir / f"{role}.meta.json"
-        _rotate_meta_sidecar(proc_dir, role)
-        wrapped_cmd = [
-            sys.executable, "-m", "lore_cli._proc_wrapper",
-            str(meta_path), "--", *cmd,
-        ]
-        try:
-            subprocess.Popen(
-                wrapped_cmd,
-                cwd=str(lore_root),
-                start_new_session=True,
-                stdout=log_fd if log_fd is not None else subprocess.DEVNULL,
-                stderr=log_fd if log_fd is not None else subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                env=env,
-            )
-        except (OSError, subprocess.SubprocessError):
-            if log_fd is not None:
-                os.close(log_fd)
-            return False
-        if log_fd is not None:
-            os.close(log_fd)
-        with contextlib.suppress(OSError):
-            _write_stamp(stamp)
-        return True
-
-
-def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
-    """Fire-and-forget `lore curator run` subprocess."""
-    return _spawn_detached(
-        lore_root, "a",
-        [sys.executable, "-m", "lore_cli", "curator", "run"],
-        cooldown_s=cooldown_s, migrate_stamp=True,
-    )
-
-
 _HANDOVER_RECENT_S = 3600   # 60 min — "the same Claude project recently"
 _HANDOVER_POLL_INTERVAL_S = 0.1
 
@@ -2715,41 +2477,6 @@ def _now_utc() -> "datetime":
     return _dt.now(UTC)
 
 
-def _curator_c_email() -> str:
-    """Resolve git user.email → hostname fallback → empty (offset=0)."""
-    from lore_core.git import git_user_email
-    return git_user_email(fallback_hostname=True)
-
-
-def _curator_c_jitter_seconds(email: str) -> int:
-    """Deterministic 0-48h offset from SHA-256(email). Empty → 0 (fire at Monday 00Z)."""
-    import hashlib
-    if not email:
-        return 0
-    h = hashlib.sha256(email.encode()).hexdigest()[:8]
-    return int(h, 16) % 172800  # 48h in seconds
-
-
-def _iso_week_monday_utc(ts: "datetime") -> "datetime":
-    """Monday 00:00Z of the ISO week containing ts."""
-    from datetime import datetime as _dt
-    from datetime import UTC, timedelta
-    weekday = ts.isocalendar().weekday  # 1..7, Monday=1
-    date = ts.date() - timedelta(days=weekday - 1)
-    return _dt(date.year, date.month, date.day, tzinfo=UTC)
-
-
-def _spawn_detached_curator_c(
-    lore_root: Path, *, cooldown_s: int = 3600
-) -> bool:
-    """Fire-and-forget `lore curator run --defrag` subprocess (Curator C)."""
-    return _spawn_detached(
-        lore_root, "c",
-        [sys.executable, "-m", "lore_cli", "curator", "run", "--defrag"],
-        cooldown_s=cooldown_s,
-    )
-
-
 def _render_drain_lines(lore_root: Path, cwd: Path) -> list[str]:
     """Compile the two drain-banner lines shown at SessionStart.
 
@@ -2864,35 +2591,6 @@ def _wiki_suffix(events, event_name: str) -> str:
     items = sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))
     bits = ", ".join(f"{n} in {w}" for w, n in items)
     return f" ({bits})"
-
-
-def _spawn_detached_transcript_sync(
-    lore_root: Path, *, cooldown_s: int = 300
-) -> bool:
-    """Fire-and-forget ``lore transcripts sync`` subprocess.
-
-    Runs on the same spawn-lock + cooldown pattern as the curators, so
-    a busy SessionStart hook can't stampede the filesystem with parallel
-    sync jobs. The P4a sync itself is idempotent; the lock exists purely
-    as a politeness budget.
-    """
-    return _spawn_detached(
-        lore_root, "transcripts",
-        [sys.executable, "-m", "lore_cli", "transcripts", "sync"],
-        cooldown_s=cooldown_s,
-    )
-
-
-def _spawn_detached_curator_b(
-    lore_root: Path, wiki_name: str, *, cooldown_s: int = 300
-) -> bool:
-    """Fire-and-forget `lore curator run --abstract --wiki <name>` subprocess."""
-    return _spawn_detached(
-        lore_root, "b",
-        [sys.executable, "-m", "lore_cli",
-         "curator", "run", "--abstract", "--wiki", wiki_name],
-        cooldown_s=cooldown_s, migrate_stamp=True,
-    )
 
 
 # ---------------------------------------------------------------------------

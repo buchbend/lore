@@ -66,7 +66,7 @@ def test_spawn_detached_writes_to_log(lore_root: Path) -> None:
             captured_kwargs.update(kwargs)
 
     with patch("subprocess.Popen", FakePopen):
-        with patch("lore_cli.hooks._stamp_within_cooldown", return_value=False):
+        with patch("lore_cli.spawn._stamp_within_cooldown", return_value=False):
             result = _spawn_detached(
                 lore_root, "a",
                 ["echo", "test"],
@@ -95,8 +95,8 @@ def test_spawn_detached_falls_back_to_devnull(lore_root: Path) -> None:
             captured_kwargs.update(kwargs)
 
     with patch("subprocess.Popen", FakePopen):
-        with patch("lore_cli.hooks._stamp_within_cooldown", return_value=False):
-            with patch("lore_cli.hooks._open_proc_log", return_value=None):
+        with patch("lore_cli.spawn._stamp_within_cooldown", return_value=False):
+            with patch("lore_cli.spawn._open_proc_log", return_value=None):
                 result = _spawn_detached(
                     lore_root, "a",
                     ["echo", "test"],
