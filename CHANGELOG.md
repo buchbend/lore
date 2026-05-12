@@ -10,6 +10,79 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-05-12
+
+### Added — Two-region session notes: reload-safe + human-only (PRD #92, slices #93–#97)
+
+Past-self carries the investigation arc and in-passing reasoning;
+future-LLM never sees it auto-loaded as authoritative. Each session
+note has two regions in one file, separated by the
+`<!-- lore:human-only -->` marker:
+
+1. **Reload-safe** (top, structured): the existing schema — lede,
+   outcomes / takeaways, worked_on, loose_ends, adr_candidates.
+   Terse, LLM-facing.
+2. **Human-only** (bottom, narrative): free-form prose. Investigation
+   trail, experiments, in-passing decisions told as story not as
+   claims. Gated retrieval — visible only to user-invoked surfaces.
+
+- `lore_core.regions` (#93): new module owning marker semantics —
+  `split_regions`, `render_regions`, `redact_human_only`, with
+  code-fence-aware parsing and forgiving fallbacks (missing marker →
+  whole body is reload-safe; multiple markers → first wins; old notes
+  index unchanged).
+- Curator emits both regions in one `compose` call (#94): tool schema
+  gains a top-level `narrative` field; prompt teaches voice
+  (tentative, past-tense investigation), length-to-substance
+  calibration (empty is fine), anti-duplication with the structured
+  section, and the discussion-shape takeaways tightening (markers
+  must be self-contained references, not session-jargon shorthand).
+- SessionStart hook applies `redact_human_only` to injected
+  last-session note bodies (#95).
+- MCP retrieval surfaces apply `redact_human_only` at every
+  LLM-facing boundary (#96): `handle_search`, `handle_read` (default;
+  bypass via `include_human=true`), `handle_surface_context`,
+  `handle_briefing_gather`. User-invoked surfaces (`handle_resume`,
+  `handle_drill`) return full content unchanged.
+- FTS index splits body into two columns (#97): schema v2→v3 adds
+  `body_reload_safe` + `body_human_only` on `notes_fts`. LLM-facing
+  search wraps the MATCH expression in an FTS5 column-set filter
+  (`{title description tags body_reload_safe}: (...)`), so a term
+  that lives *only* in human-only content produces no hit at all —
+  option (b) clean exclusion, no snippet preview the LLM could ask
+  about.
+
+### Added — Streamlining track: PRs 3–5 of the 9-PR cleanup (#80)
+
+- PR 3: spawn module extraction + role registry (#87) — curator
+  spawn paths converge on one module with role-keyed dispatch.
+- PR 4: hygiene-pass protocol + registry (#88) — every curator
+  hygiene pass is declared in one registry with a uniform
+  before/after contract.
+- PR 5: SessionStart refactor + v1 legacy delete (#90) — the
+  pre-buffer-flush SessionStart code path and its tests are deleted;
+  only the v2 (buffer-flush) path remains.
+
+### Why
+
+Single biggest UX complaint: past-self could not recognise their own
+session notes a week later. The structured schema (correct for its
+job — LLM auto-load contract) had no slot for the investigation arc,
+the experiments, the in-passing decisions. Restoring free-form prose
+without the gating would mean LLM sessions auto-load tentative
+reasoning as authoritative claims and sidetrack future work.
+Two-region split resolves both: past-self gets the prose, future-LLM
+never sees it auto-loaded. Trust contract preserved by construction
+through the retrieval filter — applied at every LLM-facing boundary.
+
+### Migration
+
+Old notes (no marker) treated as fully reload-safe by
+`split_regions`'s forgiving semantics. Zero data migration. The FTS
+schema bump (v2→v3) is transparent: `_migrate_if_needed` drops the
+old table on connect and the next reindex repopulates with the
+split.
+
 ## [0.50.0] - 2026-05-12
 
 ### Added — `lore_pending_verdicts` MCP tool, `/lore:verify` rewrite
