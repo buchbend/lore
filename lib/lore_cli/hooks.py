@@ -2840,16 +2840,36 @@ def _format_drain_summary(counts: dict[str, int], events) -> str:
         if wikilink and n_filed == 1:
             parts.append(f"new note {wikilink}")
         else:
-            parts.append(f"{n_filed} new notes")
+            parts.append(f"{n_filed} new notes{_wiki_suffix(events, 'note-filed')}")
     if n_appended:
         wikilink = _latest_wikilink(events, "note-appended")
         if wikilink and n_appended == 1:
             parts.append(f"added to {wikilink}")
         else:
-            parts.append(f"{n_appended} added")
+            parts.append(f"{n_appended} added{_wiki_suffix(events, 'note-appended')}")
     if n_surface:
-        parts.append(f"{n_surface} surface proposed")
+        parts.append(f"{n_surface} surface proposed{_wiki_suffix(events, 'surface-proposed')}")
     return " · ".join(parts)
+
+
+def _wiki_suffix(events, event_name: str) -> str:
+    """Build ' in <wiki>' or ' (2 in a, 1 in b)' for multi-event tallies.
+
+    Returns "" when any matching event lacks a wiki tag, to avoid
+    misleading partial breakdowns on legacy/migration data.
+    """
+    from collections import Counter
+    matching = [e for e in events if e.event == event_name]
+    if not matching or any(not e.wiki for e in matching):
+        return ""
+    tally = Counter(e.wiki for e in matching)
+    if len(tally) == 1:
+        wiki, _ = next(iter(tally.items()))
+        return f" in {wiki}"
+    # Highest count first, alphabetical tiebreak — stable across runs.
+    items = sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))
+    bits = ", ".join(f"{n} in {w}" for w, n in items)
+    return f" ({bits})"
 
 
 def _spawn_detached_transcript_sync(

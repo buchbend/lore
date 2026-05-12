@@ -121,7 +121,47 @@ def test_render_pluralizes_multiple_new_notes(tmp_path, pid_session):
     for i in range(3):
         session_store.emit("note-filed", wiki="a", wikilink=f"[[n{i}]]")
     lines = _render_drain_lines(tmp_path, tmp_path)
-    assert "3 new notes" in lines[0]
+    assert "3 new notes in a" in lines[0]
+
+
+def test_render_multi_wiki_new_notes_breakdown(tmp_path, pid_session):
+    """2+ notes spanning multiple wikis render a per-wiki tally in parens."""
+    session_store = DrainStore(tmp_path, pid_session)
+    session_store.emit("note-filed", wiki="a", wikilink="[[n1]]")
+    session_store.emit("note-filed", wiki="a", wikilink="[[n2]]")
+    session_store.emit("note-filed", wiki="b", wikilink="[[n3]]")
+    lines = _render_drain_lines(tmp_path, tmp_path)
+    # Highest count first, alphabetical tiebreak.
+    assert "3 new notes (2 in a, 1 in b)" in lines[0]
+
+
+def test_render_multi_appended_named_with_wiki(tmp_path, pid_session):
+    """2+ appends collapse to a wiki-tagged count."""
+    session_store = DrainStore(tmp_path, pid_session)
+    session_store.emit("note-appended", wiki="a", wikilink="[[t1]]")
+    session_store.emit("note-appended", wiki="a", wikilink="[[t2]]")
+    lines = _render_drain_lines(tmp_path, tmp_path)
+    assert "2 added in a" in lines[0]
+
+
+def test_render_surface_proposed_named_with_wiki(tmp_path, pid_session):
+    """surface-proposed gets the same wiki context treatment."""
+    _seed_system_cursor_in_past(tmp_path)
+    _write_legacy_system_row(tmp_path, event="surface-proposed", wiki="ccat")
+    _write_legacy_system_row(tmp_path, event="surface-proposed", wiki="ccat")
+    lines = _render_drain_lines(tmp_path, tmp_path)
+    assert "2 surface proposed in ccat" in lines[0]
+
+
+def test_render_falls_back_when_wiki_missing(tmp_path, pid_session):
+    """Legacy events without a wiki tag fall back to the bare count."""
+    _seed_system_cursor_in_past(tmp_path)
+    # Both rows have no wiki — guard against partial tallies.
+    _write_legacy_system_row(tmp_path, event="note-filed", wiki=None, wikilink="[[x]]")
+    _write_legacy_system_row(tmp_path, event="note-filed", wiki=None, wikilink="[[y]]")
+    lines = _render_drain_lines(tmp_path, tmp_path)
+    assert "2 new notes" in lines[0]
+    assert " in " not in lines[0].split("Since you left")[-1]
 
 
 def test_render_advances_cursor_so_second_call_is_silent(tmp_path, pid_session):
