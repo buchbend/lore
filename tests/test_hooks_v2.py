@@ -336,7 +336,10 @@ def test_session_start_from_lore_falls_back_when_gh_fails(fake_vault, tmp_path, 
     assert "PR" not in status_line
 
 
-def test_session_start_no_lore_config_uses_legacy_path(fake_vault, tmp_path, monkeypatch):
+def test_session_start_no_lore_config_emits_attach_hint(fake_vault, tmp_path, monkeypatch):
+    """Repo without a `## Lore` block surfaces a clear install/attach
+    instruction instead of guessing a wiki (PR 5 of #80 deleted the
+    legacy repo→wiki resolver + single-wiki fallback)."""
     vault, wiki = fake_vault
     repo_dir = tmp_path / "no-lore"
     repo_dir.mkdir()
@@ -344,12 +347,15 @@ def test_session_start_no_lore_config_uses_legacy_path(fake_vault, tmp_path, mon
     monkeypatch.setattr(hooks, "current_repo", lambda _cwd: None)
 
     out = hooks._session_start(str(repo_dir))
-    # Should hit the legacy branch — emits a resolved-wiki status line
-    # (single wiki in vault → auto-selected)
-    assert ": active" in out or "no wiki resolved" in out
+    assert "no `## Lore` attach block" in out
+    assert "lore install" in out
 
 
-def test_session_start_from_lore_missing_wiki_falls_through(fake_vault, tmp_path, monkeypatch):
+def test_session_start_from_lore_missing_wiki_emits_attach_hint(
+    fake_vault, tmp_path, monkeypatch,
+):
+    """`## Lore` block names a wiki that doesn't exist → renderer
+    returns None → caller emits the attach hint (no legacy fallback)."""
     vault, wiki = fake_vault
     repo_dir = tmp_path / "bogus"
     repo_dir.mkdir()
@@ -360,9 +366,7 @@ def test_session_start_from_lore_missing_wiki_falls_through(fake_vault, tmp_path
     monkeypatch.setattr(hooks, "_run_gh", lambda *a, **kw: [])
 
     out = hooks._session_start(str(repo_dir))
-    # Wiki doesn't exist → _session_start_from_lore returns None →
-    # legacy branch kicks in → single wiki in vault is picked
-    assert ": active" in out or "no wiki" in out
+    assert "no `## Lore` attach block" in out
 
 
 def test_run_gh_parallel_runs_concurrently(monkeypatch):
