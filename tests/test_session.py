@@ -1,10 +1,8 @@
 """Tests for `lore_core.session` (slug + commit) and `lore session commit` CLI.
 
-The `scaffold` / `lore session new` machinery was retired alongside the
-manual `/lore:session` skill — auto-capture (curator A → session_writer)
-is the canonical write path. This file now covers only the surface that
-remained: the `slugify` helper used by plans and the `commit` CLI verb
-used by inbox/briefing skills."""
+Auto-capture (curator A → session_writer) is the canonical write path.
+This file covers the `slugify` helper used by plans and the `commit` CLI
+verb used by inbox/briefing skills."""
 
 from __future__ import annotations
 

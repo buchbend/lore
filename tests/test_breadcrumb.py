@@ -443,16 +443,18 @@ def test_pending_breadcrumb_absent_returns_none(tmp_path: Path) -> None:
 
 
 def test_pending_breadcrumb_stale_returns_none(tmp_path: Path) -> None:
-    import time as _time
+    """A breadcrumb written >1 hour ago is treated as stale and skipped."""
+    from datetime import UTC, datetime as _dt, timedelta
+    from lore_core.hook_log import HookEventLogger
 
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
-    dest = lore_dir / "pending-breadcrumb.txt"
-    dest.write_text("old line")
-    # Back-date mtime by 2 hours
-    old_time = _time.time() - 7200
-    import os
-    os.utime(dest, (old_time, old_time))
+    stale_ts = (_dt.now(UTC) - timedelta(hours=2)).isoformat().replace("+00:00", "Z")
+    HookEventLogger(tmp_path).emit(
+        event="pending-breadcrumb-written",
+        line="old line",
+        ts=stale_ts,
+    )
     assert consume_pending_breadcrumb(tmp_path) is None
 
 

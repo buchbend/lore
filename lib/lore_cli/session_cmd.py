@@ -26,25 +26,14 @@ app = typer.Typer(
 )
 
 
+@app.callback()
+def _session() -> None:
+    """Keeps `commit` addressable as `lore session commit` (Typer otherwise
+    auto-flattens a single-command app)."""
+
+
 def _emit_json(envelope: dict) -> None:
     print(json.dumps(envelope, indent=2))
-
-
-@app.command("new", hidden=True)
-def cmd_new() -> None:
-    """Removed — auto-capture (curator A) is the canonical write path.
-
-    Kept as a hidden stub so Typer keeps the ``commit`` subcommand
-    addressable as ``lore session commit`` (a single-command Typer app
-    auto-flattens, which would break callers like the inbox + briefing
-    skills).
-    """
-    print(
-        "lore session new is gone — auto-capture (curator A) writes session "
-        "notes from the transcript automatically.",
-        file=sys.stderr,
-    )
-    raise typer.Exit(code=2)
 
 
 @app.command("commit")

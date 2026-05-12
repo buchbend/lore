@@ -15,7 +15,6 @@ from lore_core.wiki_config import WikiConfig
 # SessionEnd breadcrumb (file-based buffer, Option B)
 # ---------------------------------------------------------------------------
 
-_PENDING_BREADCRUMB_NAME = "pending-breadcrumb.txt"  # legacy; migration only
 _PENDING_BREADCRUMB_MAX_AGE_S = 3600  # 1 hour
 _EV_WRITTEN = "pending-breadcrumb-written"
 _EV_CONSUMED = "pending-breadcrumb-consumed"
@@ -62,15 +61,6 @@ def consume_pending_breadcrumb(lore_root: Path) -> str | None:
     AND younger than ``_PENDING_BREADCRUMB_MAX_AGE_S``. On success, appends
     a ``pending-breadcrumb-consumed`` event so the line is shown at most
     once.
-
-    The 0.9.0-era legacy ``.lore/pending-breadcrumb.txt`` migration
-    helper (``migrate_legacy_pending_breadcrumb``) is no longer called
-    from this hot path. It still exists for hand-rolled migrations on
-    vaults that were dormant through the 0.9–0.11 series; anyone with
-    a stale ``.lore/pending-breadcrumb.txt`` can either delete it or
-    run ``lore_cli.breadcrumb.migrate_legacy_pending_breadcrumb``
-    manually. Stat-skipping the migration on every SessionStart
-    removes ~10μs of idempotent FS overhead per session.
     """
     from datetime import UTC, datetime as _dt
     from lore_core.hook_log import HookEventLogger
@@ -117,45 +107,6 @@ def consume_pending_breadcrumb(lore_root: Path) -> str | None:
 
     HookEventLogger(lore_root).emit(event=_EV_CONSUMED)
     return last_written.get("line") or None
-
-
-def migrate_legacy_pending_breadcrumb(lore_root: Path) -> None:
-    """One-shot: convert a legacy .txt file to a written event + unlink.
-
-    Idempotent — second call is a no-op because the file is unlinked on
-    first success. Called from ``consume_pending_breadcrumb`` so users pay
-    the migration cost exactly once per vault on the first SessionStart
-    after upgrading.
-
-    .. deprecated:: 0.9.0
-       The legacy ``.txt`` breadcrumb format predates the JSONL
-       hook-events log; this migration helper runs once per vault on
-       the next SessionStart after upgrade, converts the file to a
-       hook-event record, and unlinks the original. Safe to delete in
-       a future 0.x release once enough time has passed that every
-       active vault has been opened at least once on a post-migration
-       build — at that point this function and its unconditional call
-       site at line 75 of ``consume_pending_breadcrumb`` can both go.
-    """
-    from datetime import UTC, datetime as _dt
-    from lore_core.hook_log import HookEventLogger
-
-    legacy = lore_root / ".lore" / _PENDING_BREADCRUMB_NAME
-    if not legacy.exists():
-        return
-    try:
-        line = legacy.read_text().strip()
-        mtime = legacy.stat().st_mtime
-    except OSError:
-        return
-    if line:
-        ts = _dt.fromtimestamp(mtime, tz=UTC).isoformat().replace("+00:00", "Z")
-        # Emit with an explicit ts so staleness uses the file mtime, not now.
-        HookEventLogger(lore_root).emit(event=_EV_WRITTEN, line=line, ts=ts)
-    try:
-        legacy.unlink()
-    except OSError:
-        pass
 
 
 @dataclass

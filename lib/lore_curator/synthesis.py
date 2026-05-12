@@ -89,7 +89,6 @@ if TYPE_CHECKING:
 __all__ = [
     "FlushOutcome",
     "compose_session_note",
-    "flush_buffer",
     "synth_in_place",
     "synth_and_close",
     "spawn_detached_flush",
@@ -1257,36 +1256,6 @@ def synth_in_place(
         logger=logger,
         auto_commit=auto_commit,
         close=False,
-    )
-
-
-def flush_buffer(
-    buffer_path: Path,
-    *,
-    lore_root: Path,
-    wiki_root: Path,
-    llm_client: Any = None,
-    model: str | None = None,
-    adapter_lookup=None,
-    logger: "RunLogger | None" = None,
-    auto_commit: bool = True,
-) -> FlushOutcome:
-    """Backwards-compatible alias for :func:`synth_and_close`.
-
-    ``buffer_path`` is the sidecar path (``<stem>.state.json``). New
-    callers should pick :func:`synth_and_close` (cap-trip / reaper) or
-    :func:`synth_in_place` (session-end / pre-compact) explicitly so
-    the buffer state-machine intent stays visible at the call site.
-    """
-    return synth_and_close(
-        buffer_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=llm_client,
-        model=model,
-        adapter_lookup=adapter_lookup,
-        logger=logger,
-        auto_commit=auto_commit,
     )
 
 

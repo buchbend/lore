@@ -132,7 +132,7 @@ def _dispatch_flush_requested(
     logger: RunLogger,
     max_per_pass: int = 20,
 ) -> int:
-    """Walk live buffers, run :func:`flush_buffer` for each ``flush_requested``.
+    """Walk live buffers, run :func:`synth_and_close` for each ``flush_requested``.
 
     Called at the start of :func:`run_curator_a` (when buffer-flush is
     enabled) so SessionEnd / cap-trip / reaper handover unblocks before
