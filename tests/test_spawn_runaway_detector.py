@@ -99,7 +99,7 @@ def test_runaway_returns_none_when_pid_dead(tmp_path: Path) -> None:
         exit_code=None,
     )
     # PID 999999 is unlikely to exist; if it does the cmdline check rejects it.
-    with patch("lore_cli.hooks._process_is_ours", return_value=False):
+    with patch("lore_cli.spawn._process_is_ours", return_value=False):
         assert _prior_spawn_runaway(tmp_path, "a", runaway_age_s=300) is None
 
 
@@ -114,7 +114,7 @@ def test_runaway_detects_hung_prior_child(tmp_path: Path) -> None:
         start_ts=started,
         exit_code=None,
     )
-    with patch("lore_cli.hooks._process_is_ours", return_value=True):
+    with patch("lore_cli.spawn._process_is_ours", return_value=True):
         info = _prior_spawn_runaway(tmp_path, "a", runaway_age_s=300)
 
     assert info is not None
@@ -175,7 +175,7 @@ def test_spawn_detached_skips_when_prior_runaway(tmp_path: Path) -> None:
     runaway_info = {"pid": 12345, "age_s": 9999, "start_ts": time.time() - 9999}
 
     with patch("subprocess.Popen", FakePopen), \
-         patch("lore_cli.hooks._prior_spawn_runaway", return_value=runaway_info):
+         patch("lore_cli.spawn._prior_spawn_runaway", return_value=runaway_info):
         spawned = _spawn_detached(
             tmp_path, "a",
             ["python", "-m", "lore_cli", "curator", "run"],
@@ -213,7 +213,7 @@ def test_spawn_detached_runaway_warning_throttled(tmp_path: Path) -> None:
             raise AssertionError("Popen must not be called when runaway active")
 
     with patch("subprocess.Popen", FakePopen), \
-         patch("lore_cli.hooks._prior_spawn_runaway", return_value=runaway_info):
+         patch("lore_cli.spawn._prior_spawn_runaway", return_value=runaway_info):
         # Three back-to-back attempts within the throttle window.
         for _ in range(3):
             _spawn_detached(
@@ -251,7 +251,7 @@ def test_spawn_detached_proceeds_when_no_runaway(tmp_path: Path) -> None:
             popen_calls.append((args, kwargs))
 
     with patch("subprocess.Popen", FakePopen), \
-         patch("lore_cli.hooks._prior_spawn_runaway", return_value=None):
+         patch("lore_cli.spawn._prior_spawn_runaway", return_value=None):
         spawned = _spawn_detached(
             tmp_path, "a",
             ["python", "-m", "lore_cli", "curator", "run"],
