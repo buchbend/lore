@@ -243,13 +243,14 @@ def test_curator_a_does_not_update_untouched_wikis(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_partial_failure_does_not_clobber_prior_last_curator_a(tmp_path: Path) -> None:
+def test_partial_failure_does_not_clobber_prior_last_curator_a(tmp_path: Path, monkeypatch) -> None:
     """If Curator A raises mid-run, last_curator_a is either prior OR new — never cleared.
 
     Atomic-or-unchanged contract. Guards against a future bug where
     update_last_curator is called before the work completes and an
     exception leaves a partially-updated ledger.
     """
+    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
     project_dir, turns = _minimal_curator_a_setup(tmp_path)
 
     # Seed a prior last_curator_a value so we can detect clobber.

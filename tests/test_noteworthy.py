@@ -74,7 +74,8 @@ def _simple_turns() -> list[Turn]:
 # ---------------------------------------------------------------------------
 
 
-def test_classify_returns_noteworthy_true_for_substantive_slice():
+def test_classify_returns_noteworthy_true_for_substantive_slice(monkeypatch):
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     data = {
         "noteworthy": True,
         "reason": "substantive refactor",
@@ -94,11 +95,12 @@ def test_classify_returns_noteworthy_true_for_substantive_slice():
     assert "append-only ledger" in result.description
 
 
-def test_classify_back_compat_summary_field_lands_in_description():
+def test_classify_back_compat_summary_field_lands_in_description(monkeypatch):
     """Older fixtures and any cached tool replays may still emit ``summary``.
     The classifier accepts it as a synonym for ``description`` so we don't
     silently lose content during the v2 → revised v2 migration window.
     """
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     data = {
         "noteworthy": True,
         "reason": "substantive",
@@ -110,7 +112,8 @@ def test_classify_back_compat_summary_field_lands_in_description():
     assert result.description == "Legacy paragraph that should land as description."
 
 
-def test_classify_returns_noteworthy_false_for_trivial():
+def test_classify_returns_noteworthy_false_for_trivial(monkeypatch):
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     data = {
         "noteworthy": False,
         "reason": "single tool question",
@@ -126,7 +129,8 @@ def test_classify_returns_noteworthy_false_for_trivial():
     assert result.reason == "single tool question"
 
 
-def test_classify_truncates_long_tool_results_in_prompt():
+def test_classify_truncates_long_tool_results_in_prompt(monkeypatch):
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     long_output = "\n".join(f"line {i}" for i in range(1000))
     tool_result = ToolResult(tool_call_id="t1", output=long_output)
     turns = [_t(role="tool", tool_result=tool_result)]
@@ -140,7 +144,8 @@ def test_classify_truncates_long_tool_results_in_prompt():
     assert "line 999" not in sent
 
 
-def test_classify_drops_thinking_blocks_from_prompt():
+def test_classify_drops_thinking_blocks_from_prompt(monkeypatch):
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     turns = [_t(role="assistant", reasoning="secret plan", text=None)]
     data = {"noteworthy": False, "reason": "trivial", "title": "t"}
     client = _make_client(data)
@@ -150,7 +155,8 @@ def test_classify_drops_thinking_blocks_from_prompt():
     assert "secret plan" not in sent
 
 
-def test_classify_uses_middle_tier_by_default():
+def test_classify_uses_middle_tier_by_default(monkeypatch):
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     recorded = []
 
     def recording_resolver(tier: str) -> str:
@@ -162,7 +168,8 @@ def test_classify_uses_middle_tier_by_default():
     assert recorded == ["middle"]
 
 
-def test_classify_uses_simple_tier_when_configured(tmp_path):
+def test_classify_uses_simple_tier_when_configured(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     recorded = []
 
     def recording_resolver(tier: str) -> str:
@@ -219,20 +226,23 @@ def test_simple_tier_without_lore_root_is_silent():
     assert result.noteworthy is False
 
 
-def test_classify_returns_valueerror_on_missing_tool_use():
+def test_classify_returns_valueerror_on_missing_tool_use(monkeypatch):
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     client = _make_text_client()
     with pytest.raises(ValueError, match="no tool_use block"):
         classify_slice(_simple_turns(), model_resolver=_resolver, llm_client=client)
 
 
-def test_classify_sends_correct_model_name():
+def test_classify_sends_correct_model_name(monkeypatch):
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     client = _make_client({"noteworthy": True, "reason": "r", "title": "t"})
     classify_slice(_simple_turns(), model_resolver=lambda _: "claude-sonnet-4-6",
                    llm_client=client)
     assert client.messages.calls[0]["model"] == "claude-sonnet-4-6"
 
 
-def test_classify_forces_tool_choice():
+def test_classify_forces_tool_choice(monkeypatch):
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     client = _make_client({"noteworthy": True, "reason": "r", "title": "t"})
     classify_slice(_simple_turns(), model_resolver=_resolver, llm_client=client)
     assert client.messages.calls[0]["tool_choice"] == {"type": "tool", "name": "classify"}
@@ -509,12 +519,13 @@ def test_classify_cascade_mode_calls_llm_on_uncertain(monkeypatch):
     assert result.reason == "llm_said_no"
 
 
-def test_classify_emits_prompt_chars_telemetry():
+def test_classify_emits_prompt_chars_telemetry(monkeypatch):
     """v0.5.8 replaced hardcoded token_count=0 with real prompt_chars.
 
     The noteworthy run-log events must now carry prompt_chars + usage so
     the operator can answer "which transcript ate my budget?"
     """
+    monkeypatch.setenv("LORE_NOTEWORTHY_MODE", "llm_only")
     from lore_core.run_log import RunLogger
 
     class _UsageShape:
