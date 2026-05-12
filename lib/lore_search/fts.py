@@ -25,6 +25,7 @@ from lore_core.lint import (
     discover_notes,
     discover_wikis,
 )
+from lore_core.regions import split_regions
 from lore_core.schema import parse_frontmatter
 
 
@@ -67,11 +68,11 @@ def _sha256(text: str) -> str:
 
 
 # Bump when the on-disk schema changes in a way that requires a rebuild.
-# The v1→v2 jump added `contentless_delete=1` to `notes_fts`; without
-# it, `DELETE FROM notes_fts WHERE rowid=?` raises
-# `OperationalError: cannot DELETE from contentless fts5 table: notes_fts`
-# on any reindex that updates or removes an already-indexed note.
-SCHEMA_VERSION = 2
+# v1→v2: added `contentless_delete=1` to `notes_fts` so DELETE works.
+# v2→v3: split `body` into `body_reload_safe` + `body_human_only` so
+# LLM-facing search can exclude the human-only region (PRD #92,
+# issue #97 — option (b) clean exclusion, no snippet preview).
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS notes (
@@ -91,7 +92,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     title,
     description,
     tags,
-    body,
+    body_reload_safe,
+    body_human_only,
     content='',
     contentless_delete=1,
     tokenize='porter unicode61'
@@ -102,6 +104,12 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT
 );
 """
+
+# Columns the LLM-facing search is allowed to match against. The
+# human-only body column is deliberately absent — a term that lives
+# *only* in human-only content must not surface to LLM retrieval
+# (PRD #92, option (b)).
+LLM_FACING_COLUMNS = ("title", "description", "tags", "body_reload_safe")
 
 
 def _stored_schema_version(conn: sqlite3.Connection) -> int:
@@ -311,10 +319,19 @@ class FtsBackend:
                 ),
             )
             rowid = cur.lastrowid
+        body_reload_safe, body_human_only = split_regions(rec.body)
         conn.execute(
-            "INSERT INTO notes_fts (rowid, title, description, tags, body) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (rowid, rec.title, rec.description, " ".join(rec.tags), rec.body),
+            "INSERT INTO notes_fts (rowid, title, description, tags, "
+            "body_reload_safe, body_human_only) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                rowid,
+                rec.title,
+                rec.description,
+                " ".join(rec.tags),
+                body_reload_safe,
+                body_human_only or "",
+            ),
         )
 
     def search(
@@ -324,6 +341,7 @@ class FtsBackend:
         wiki: str | None = None,
         for_repo: str | None = None,
         k: int = 5,
+        redact_human_only: bool = False,
     ) -> list[SearchHit]:
         """Hybrid AND-then-OR ranked search.
 
@@ -332,6 +350,12 @@ class FtsBackend:
         AND returns zero hits, retry with OR-joined tokens for graceful
         degradation. Single-token queries reduce to the same scan in
         both modes.
+
+        When ``redact_human_only=True`` (LLM-facing callers via MCP),
+        the MATCH expression is wrapped in an FTS5 column filter so
+        only the four LLM-facing columns are searched; a term that
+        lives only in the human-only body region produces no hit
+        (PRD #92 option (b) — clean exclusion, no snippet preview).
 
         Each query writes one record to ``$LORE_CACHE/query-log.jsonl``
         capturing both the AND and OR hit counts, so the
@@ -353,6 +377,10 @@ class FtsBackend:
                 results=[],
             )
             return []
+
+        if redact_human_only:
+            sanitized_and = _scope_to_columns(sanitized_and, LLM_FACING_COLUMNS)
+            sanitized_or = _scope_to_columns(sanitized_or, LLM_FACING_COLUMNS)
 
         conn = _connect()
         try:
@@ -415,7 +443,8 @@ class FtsBackend:
                     3.0,  -- title
                     2.0,  -- description
                     1.5,  -- tags
-                    1.0   -- body
+                    1.0,  -- body_reload_safe
+                    1.0   -- body_human_only
                ) AS score
         FROM notes_fts
         JOIN notes n ON n.id = notes_fts.rowid
@@ -496,6 +525,18 @@ def _sanitize_fts_query_or(q: str) -> str:
     if not tokens:
         return ""
     return " OR ".join(f'"{t}"' for t in tokens)
+
+
+def _scope_to_columns(match_str: str, columns: tuple[str, ...]) -> str:
+    """Wrap a sanitized MATCH string in an FTS5 column-set filter.
+
+    FTS5 syntax ``{col1 col2}: (expr)`` restricts every phrase in
+    ``expr`` to match within one of the listed columns. Used by the
+    LLM-facing search path to exclude the ``body_human_only`` column
+    from retrieval (PRD #92, issue #97).
+    """
+    col_set = " ".join(columns)
+    return f"{{{col_set}}}: ({match_str})"
 
 
 def _log_query(**fields: Any) -> None:
