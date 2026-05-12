@@ -124,7 +124,6 @@ def test_session_start_includes_citation_directive_when_set(
     from lore_cli import hooks
 
     monkeypatch.setattr(hooks, "current_repo", lambda _cwd: None)
-    monkeypatch.setattr(hooks, "_recent_open_items", lambda *a, **kw: ([], 0))
     monkeypatch.setattr(hooks, "_cross_scope_breadcrumbs", lambda *a, **kw: [])
     monkeypatch.setattr(hooks, "_stale_count", lambda _w: 0)
 
