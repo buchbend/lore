@@ -1,7 +1,8 @@
 """Heartbeat append for the buffer-and-flush curator.
 
-Replaces the per-chunk synthesise+merge in ``session_curator._process_chunk``
-when the ``curator.use_buffer_flush`` flag is set. Each heartbeat:
+This is the curator-A heartbeat path; the legacy per-chunk
+classify+synthesise+merge path was deleted in PR 6b of the
+streamlining track (issue #80). Each heartbeat:
 
 1. Resolves the ``(transcript_id, local_date)`` buffer.
 2. Runs the deterministic activity collectors (``_collect_activity``).
