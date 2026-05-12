@@ -43,6 +43,7 @@ from lore_core.freshness import (
     signal_to_dict,
 )
 from lore_core.freshness_filter import apply_search_filter
+from lore_core.regions import redact_human_only
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
@@ -309,7 +310,10 @@ def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
 
 
 def handle_read(
-    path: str, wiki: str | None = None, section: str | None = None
+    path: str,
+    wiki: str | None = None,
+    section: str | None = None,
+    include_human: bool = False,
 ) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
@@ -339,6 +343,13 @@ def handle_read(
     if not target.exists():
         return _mcp_error("path_not_found", f"not found: {path}")
     text = target.read_text(errors="replace")
+
+    # Two-region redaction (issue #93). The marker only ever appears in the
+    # body, never in YAML frontmatter, so applying redact_human_only to the
+    # full file text is safe and equivalent to body-only redaction. Old notes
+    # without a marker pass through unchanged → backwards compatible.
+    if not include_human:
+        text = redact_human_only(text)
 
     freshness = _freshness_block_for(
         wiki_path, path, orphan_set=load_orphan_set(wiki_path)
@@ -1163,7 +1174,10 @@ def _tool_schema() -> list[dict]:
                 "section (first match in document order, case-insensitive "
                 "substring; code-fence aware so ## inside fenced blocks is "
                 "ignored). Use `section` for long surface notes when you only "
-                "need one heading's content."
+                "need one heading's content. By default the response strips "
+                "the human-only region (everything after the "
+                "`<!-- lore:human-only -->` marker, if present). Pass "
+                "`include_human=true` to return the full note."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1175,6 +1189,16 @@ def _tool_schema() -> list[dict]:
                         "description": (
                             "If set, return only the matching H2 section "
                             "(heading + body to next H2 or EOF)."
+                        ),
+                    },
+                    "include_human": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": (
+                            "If true, include the human-only region of the "
+                            "note. Default false — LLM-facing callers should "
+                            "leave this off so private scratch content is "
+                            "never surfaced."
                         ),
                     },
                 },
