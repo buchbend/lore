@@ -10,6 +10,46 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-05-12
+
+### Added — `lore_pending_verdicts` MCP tool, `/lore:verify` rewrite
+
+The `/lore:verify` slash command no longer does ad-hoc bash discovery
+to find pending freshness verdicts. One MCP call now returns the full,
+picker-ready, pre-sorted list.
+
+- New `lore_pending_verdicts` MCP tool — wiki-wide enumeration of
+  notes currently flagged as stale-candidate. Returns the
+  `lore.pending_verdicts/1` envelope with per-entry slug, cause
+  (`authored_marker` / `orphan_broken`), reason text, personal
+  `confirmed_at`, and the disagreement block when present.
+- Entries arrive pre-sorted: disagreements first, then
+  `authored_marker`, then `orphan_broken`; within each bucket, most
+  recently marked stale first.
+- `wiki` arg is optional — auto-resolves from the active cwd
+  attachment in multi-wiki vaults.
+- Slash command rewritten to call the tool once, then loop a picker
+  per entry. Zero bash; the catalog + frontmatter + sidecar reads all
+  live behind the MCP boundary.
+
+### Changed
+
+- `lore_core.freshness`: extracted `_is_pending_from_catalog_entry`
+  shared predicate; `count_pending_verdicts` (the status-line chip)
+  and the new `list_pending_verdicts` (the picker) both gate on it,
+  so the chip count and the picker can no longer drift on what
+  counts as pending.
+
+### Why
+
+The chip says "1 pending verdict" but bare `/lore:verify` previously
+returned zero because it filtered by session-touched activity log —
+which is empty at SessionStart. The slash command is the chip's
+actionable surface, so it now matches the chip's scope exactly
+(wiki-wide). The session-scoped narrowing was redundant with the
+in-passing nudge (which already fires per-note, in-flow, per
+session).
+
 ## [0.49.0] - 2026-05-08
 
 ### Added — Freshness verdicts: end-to-end (#65, slices 1–10)

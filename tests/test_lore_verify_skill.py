@@ -69,5 +69,6 @@ def test_plugin_version_bumped_for_skill_addition():
     plugin = json.loads(
         (SKILL_PATH.parent.parent.parent / ".claude-plugin" / "plugin.json").read_text()
     )
-    # The new skill ships in 0.49.0 (slice 10 of #65) — pin the bump.
-    assert plugin["version"] == "0.49.0"
+    # 0.50.0 bump: `/lore:verify` rewritten to use the new
+    # `lore_pending_verdicts` MCP tool — zero bash.
+    assert plugin["version"] == "0.50.0"

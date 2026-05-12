@@ -35,7 +35,13 @@ from typing import Any
 
 from lore_core.config import get_wiki_root
 from lore_core.errors import mcp_error as _mcp_error
-from lore_core.freshness import compute_freshness, load_orphan_set, signal_to_dict
+from lore_core.freshness import (
+    compute_freshness,
+    list_pending_verdicts,
+    load_orphan_set,
+    pending_entry_to_dict,
+    signal_to_dict,
+)
 from lore_core.freshness_filter import apply_search_filter
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
@@ -1005,6 +1011,84 @@ def handle_verdict(
     }
 
 
+def _resolve_wiki_with_active_scope_fallback(wiki: str | None) -> Path | None:
+    """Like :func:`_resolve_wiki` but auto-resolves from the active
+    cwd attachment when ``wiki`` is omitted and there's no single-wiki
+    fallback to lean on.
+
+    Order:
+      1. Explicit ``wiki`` argument → :func:`_resolve_wiki`.
+      2. No argument, single-wiki vault → :func:`_resolve_wiki(None)`.
+      3. No argument, multi-wiki vault → :func:`resolve_scope(cwd)` →
+         the wiki named by the active attachment.
+    """
+    if wiki:
+        return _resolve_wiki(wiki)
+    direct = _resolve_wiki(None)
+    if direct is not None:
+        return direct
+    from lore_core.scope_resolver import resolve_scope
+
+    scope = resolve_scope(Path.cwd())
+    if scope is None or not scope.wiki:
+        return None
+    return _resolve_wiki(scope.wiki)
+
+
+def handle_pending_verdicts(wiki: str | None = None) -> dict[str, Any]:
+    """Enumerate wiki-wide pending freshness verdicts as picker-ready rows.
+
+    Backs the ``/lore:verify`` slash command. The skill calls this once
+    to get the full list (sorted: disagreements → authored_marker →
+    orphan_broken), then loops one ``AskUserQuestion`` per row, calling
+    :func:`handle_verdict` for each ``stale``/``confirm`` choice.
+
+    Returns the ``lore.pending_verdicts/1`` envelope:
+
+    .. code-block:: json
+
+        {
+          "schema": "lore.pending_verdicts/1",
+          "wiki": "<wiki-name>",
+          "pending": [
+            {
+              "path": "<wiki-relative path>",
+              "slug": "<slug>",
+              "cause": "authored_marker|orphan_broken",
+              "reason": "<short human reason>",
+              "confirmed_at": "<ISO date or null>",
+              "disagreement": {<...>} | null
+            },
+            ...
+          ],
+          "count": <int>,
+          "capped": false
+        }
+    """
+    wiki_path = _resolve_wiki_with_active_scope_fallback(wiki)
+    if wiki_path is None:
+        return _mcp_error(
+            "wiki_not_found",
+            (
+                f"wiki not found: {wiki}" if wiki else
+                "could not resolve active wiki (no explicit `wiki`, no "
+                "single-wiki fallback, no cwd attachment)"
+            ),
+            next_="pass `wiki` explicitly or attach the cwd to a wiki",
+        )
+
+    handle = _resolve_current_handle(wiki_path)
+    entries = list_pending_verdicts(wiki_path, handle or None)
+
+    return {
+        "schema": "lore.pending_verdicts/1",
+        "wiki": wiki_path.name,
+        "pending": [pending_entry_to_dict(e) for e in entries],
+        "count": len(entries),
+        "capped": False,
+    }
+
+
 def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
@@ -1320,6 +1404,34 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
+            "name": "lore_pending_verdicts",
+            "description": (
+                "Enumerate wiki-wide pending freshness verdicts as "
+                "picker-ready rows. Backs the `/lore:verify` slash "
+                "command: one call returns the full sorted list "
+                "(disagreements first, then authored markers, then "
+                "orphan-link signals), each row carrying everything "
+                "the picker needs (slug, cause, reason, personal "
+                "confirmed_at, optional disagreement block). The "
+                "skill then loops one `AskUserQuestion` per row and "
+                "calls `lore_verdict` for each user choice. `wiki` "
+                "is optional — auto-resolves from the active cwd "
+                "attachment when omitted."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "wiki": {
+                        "type": "string",
+                        "description": (
+                            "Wiki name. Optional; auto-resolves from "
+                            "the active attachment when omitted."
+                        ),
+                    },
+                },
+            },
+        },
+        {
             "name": "lore_verdict",
             "description": (
                 "Record a freshness verdict for a note. Use when the "
@@ -1401,6 +1513,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_journal_read(**args)
         case "lore_verdict":
             return handle_verdict(**args)
+        case "lore_pending_verdicts":
+            return handle_pending_verdicts(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 

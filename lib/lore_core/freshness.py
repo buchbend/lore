@@ -207,6 +207,58 @@ def signal_to_dict(signal: FreshnessSignal) -> dict:
     }
 
 
+def _is_pending_from_catalog_entry(
+    entry: dict, orphan_paths: set[str]
+) -> bool:
+    """Shared coarse predicate: does this catalog entry currently flag
+    as ``stale-candidate`` from catalog metadata alone?
+
+    Catalog-only signals (``status: stale``, ``superseded_by``,
+    ``orphan_set`` membership) are what both the status-line chip
+    (:func:`count_pending_verdicts`) and the picker
+    (:func:`list_pending_verdicts`) gate on. Centralising the rule
+    keeps the two surfaces from drifting — a key UX bug we want to
+    make unrepresentable.
+
+    Soft markers (``supersede_candidate``) and personal-confirm
+    suppression are NOT considered here — both the chip and the
+    picker are intentionally coarse "is there work to do?" signals;
+    the precise per-note classification still flows through
+    :func:`compute_freshness` at retrieval time.
+    """
+    if not isinstance(entry, dict):
+        return False
+    path = str(entry.get("path") or "")
+    return bool(
+        str(entry.get("status") or "").lower() == "stale"
+        or entry.get("superseded_by")
+        or (path and path in orphan_paths)
+    )
+
+
+def _iter_catalog_entries(catalog_data: dict):
+    """Yield every dict entry across all ``sections`` of the catalog."""
+    for entries in (catalog_data.get("sections") or {}).values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, dict):
+                yield entry
+
+
+def _load_catalog(wiki_path: Path) -> dict | None:
+    """Return the parsed ``_catalog.json`` for a wiki, or None on miss."""
+    import json as _json
+
+    cat = wiki_path / "_catalog.json"
+    if not cat.exists():
+        return None
+    try:
+        return _json.loads(cat.read_text(errors="replace"))
+    except (OSError, _json.JSONDecodeError):
+        return None
+
+
 def count_pending_verdicts(
     wiki_path: Path,
     *,
@@ -216,13 +268,9 @@ def count_pending_verdicts(
     ``stale-candidate`` (slice 8 of PRD #65 — status-line chip).
 
     Reads the cached ``_catalog.json`` so the per-call cost is one
-    JSON load, not a full wiki walk. Authored markers we can detect
-    from catalog metadata: ``status == 'stale'`` and ``superseded_by:``.
-    Soft markers (``supersede_candidate``) and personal-confirm
-    suppression are NOT considered here — the chip is intentionally
-    a coarse "is there work to do?" signal; the precise per-note
-    classification still flows through :func:`compute_freshness` at
-    retrieval time.
+    JSON load, not a full wiki walk. Delegates to
+    :func:`_is_pending_from_catalog_entry` so the chip and the
+    picker can never drift on what counts as "pending."
 
     Returns ``(count, capped)`` where ``capped`` is True iff the soft
     cap fired. The status-line render uses ``"9+"`` instead of the
@@ -231,34 +279,190 @@ def count_pending_verdicts(
     Cache miss (no catalog) returns ``(0, False)`` — the chip
     suppresses entirely until the next ``lore lint`` run.
     """
-    import json as _json
-
-    cat = wiki_path / "_catalog.json"
-    if not cat.exists():
-        return 0, False
-    try:
-        data = _json.loads(cat.read_text(errors="replace"))
-    except (OSError, _json.JSONDecodeError):
+    data = _load_catalog(wiki_path)
+    if data is None:
         return 0, False
 
     orphan_paths = set(data.get("orphan_set") or [])
     count = 0
-    for entries in (data.get("sections") or {}).values():
-        if not isinstance(entries, list):
+    for entry in _iter_catalog_entries(data):
+        if not _is_pending_from_catalog_entry(entry, orphan_paths):
             continue
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            path = str(entry.get("path") or "")
-            if (
-                str(entry.get("status") or "").lower() == "stale"
-                or entry.get("superseded_by")
-                or path in orphan_paths
-            ):
-                count += 1
-                if count > soft_cap:
-                    return soft_cap, True
+        count += 1
+        if count > soft_cap:
+            return soft_cap, True
     return count, False
+
+
+@dataclass(frozen=True)
+class PendingEntry:
+    """One picker-ready row for the ``/lore:verify`` resolver.
+
+    Built by :func:`list_pending_verdicts` from the catalog walk plus a
+    per-note frontmatter read + per-user sidecar lookup. Carries every
+    field the picker needs so the skill never has to do additional I/O.
+    """
+
+    path: str  # wiki-relative
+    slug: str
+    cause: Literal["authored_marker", "orphan_broken"]
+    reason: str
+    confirmed_at: date | None
+    disagreement: "Disagreement | None"  # forward ref; imported lazily
+    stale_at: date | None  # for sort tiebreaking; None if not set
+    mtime: date | None  # final fallback for sort
+
+
+def _sort_key(entry: "PendingEntry") -> tuple:
+    """Sort: disagreements first → authored_marker → orphan_broken;
+    within bucket, most-recently-marked-stale first (then file mtime).
+
+    Tuple ordering reverses dates (negate via ``date.toordinal``)
+    so the natural ascending sort of tuples puts "more recent" first.
+    """
+    has_disagreement = entry.disagreement is not None
+    cause_rank = 0 if entry.cause == "authored_marker" else 1
+    stale_ord = -entry.stale_at.toordinal() if entry.stale_at else 0
+    mtime_ord = -entry.mtime.toordinal() if entry.mtime else 0
+    return (
+        0 if has_disagreement else 1,
+        cause_rank,
+        stale_ord,
+        mtime_ord,
+        entry.path,
+    )
+
+
+def list_pending_verdicts(
+    wiki_path: Path,
+    handle: str | None = None,
+) -> list[PendingEntry]:
+    """Enumerate wiki-wide pending verdicts as picker-ready rows.
+
+    The chip's coarse predicate (:func:`_is_pending_from_catalog_entry`)
+    selects the set; per-note frontmatter reads then enrich each entry
+    with the reason text + four-field stale schema (when present), and
+    the per-user sidecar resolves the personal ``confirmed_at``.
+
+    The returned list is sorted per the picker UX contract:
+
+    * Disagreements first (someone marked stale, this user confirmed
+      after — needs explicit resolution).
+    * Then ``authored_marker`` (richer reason text from the note's
+      own frontmatter) before ``orphan_broken`` (derived signal).
+    * Within each bucket, most-recently-marked-stale first; falls back
+      to file mtime; final tiebreak by path for stability.
+
+    Args:
+        wiki_path: Absolute path to the wiki root.
+        handle: Current user's handle for personal-sidecar lookup.
+            ``None`` or empty string means no sidecar read — every
+            entry's ``confirmed_at`` will be ``None``. Solo vaults
+            without ``_users.yml`` typically pass ``""``.
+
+    Returns:
+        List of :class:`PendingEntry`, possibly empty. Cache miss
+        (missing/unreadable catalog) yields ``[]``.
+    """
+    from lore_core.disagreement import detect_disagreement
+    from lore_core.schema import parse_frontmatter
+    from lore_core.verdicts_sidecar import get_confirmed
+
+    data = _load_catalog(wiki_path)
+    if data is None:
+        return []
+
+    orphan_paths_str = set(data.get("orphan_set") or [])
+
+    out: list[PendingEntry] = []
+    for entry in _iter_catalog_entries(data):
+        if not _is_pending_from_catalog_entry(entry, orphan_paths_str):
+            continue
+
+        rel_path = str(entry.get("path") or "")
+        if not rel_path:
+            continue
+        target = wiki_path / rel_path
+        try:
+            target.resolve().relative_to(wiki_path.resolve())
+        except ValueError:
+            continue
+
+        fm: dict = {}
+        try:
+            fm = parse_frontmatter(target.read_text(errors="replace"))
+        except OSError:
+            fm = {}
+
+        # Determine cause: authored markers take precedence over orphan.
+        authored = _has_authored_marker(fm)
+        if authored is not None:
+            key, value = authored
+            cause: Literal["authored_marker", "orphan_broken"] = "authored_marker"
+            reason = _format_marker_reason(key, value)
+        elif rel_path in orphan_paths_str:
+            cause = "orphan_broken"
+            reason = "contains a broken wikilink"
+        else:
+            # Catalog flagged it but neither signal survived per-note
+            # parsing (e.g. note's frontmatter was sanitised since
+            # last lint). Skip rather than emit a no-cause entry.
+            continue
+
+        confirmed_at: date | None = None
+        if handle:
+            try:
+                confirmed_at = get_confirmed(wiki_path, handle, rel_path)
+            except (OSError, ValueError):
+                confirmed_at = None
+
+        disagreement = detect_disagreement(fm, confirmed_at)
+
+        stale_at: date | None = None
+        raw_stale_at = fm.get("stale_at")
+        if isinstance(raw_stale_at, date):
+            stale_at = raw_stale_at
+        elif isinstance(raw_stale_at, str):
+            try:
+                stale_at = date.fromisoformat(raw_stale_at)
+            except ValueError:
+                stale_at = None
+
+        mtime = _file_mtime_date(target)
+
+        slug = Path(rel_path).stem
+
+        out.append(
+            PendingEntry(
+                path=rel_path,
+                slug=slug,
+                cause=cause,
+                reason=reason,
+                confirmed_at=confirmed_at,
+                disagreement=disagreement,
+                stale_at=stale_at,
+                mtime=mtime,
+            )
+        )
+
+    out.sort(key=_sort_key)
+    return out
+
+
+def pending_entry_to_dict(entry: PendingEntry) -> dict:
+    """JSON-friendly render for the MCP ``pending`` array."""
+    from lore_core.disagreement import disagreement_to_dict
+
+    return {
+        "path": entry.path,
+        "slug": entry.slug,
+        "cause": entry.cause,
+        "reason": entry.reason,
+        "confirmed_at": entry.confirmed_at.isoformat() if entry.confirmed_at else None,
+        "disagreement": (
+            disagreement_to_dict(entry.disagreement) if entry.disagreement else None
+        ),
+    }
 
 
 def load_orphan_set(wiki_path: Path) -> set[Path]:
