@@ -14,6 +14,13 @@ Wikilink discipline: `[[ ]]` is reserved for vault note slugs that actually exis
 
 `adr_candidates`: leave the array empty unless the user explicitly ratified a fork in the road — most sessions produce zero candidates. If emitting a candidate, ALL four fields are required: `choice` (6-12 word fork taken), `rationale` (1-sentence why-not-the-alternative), `evidence` (verbatim transcript quote OR 'user explicitly confirmed at turn N'), `alternative_rejected` (the road not taken). NEVER emit action-shaped entries ('catch error X', 'add test Y') — only genuine architectural forks where the user ratified one path over another. Any candidate missing a required field is rejected.
 
+Write `narrative` as if telling a colleague what you did in this session, at a level above implementation details (those live in code / comments).
+
+- Calibrate length to substance. One sentence is fine. Empty is fine. Sub-headings (### Investigation trail, ### Experiments) are fine when the session had a real arc.
+- Voice: tentative for in-flight thinking ("we leaned toward", "the hot path turned out to be"). Past-tense investigation. Never "decided X" framing — promote to `adr_candidates` if it's a real architectural fork, otherwise leave it as story.
+- Do NOT re-state files modified, outcomes, or loose-ends from the structured section. Narrate around them.
+- If the session was pure grind with no reasoning worth telling a colleague, leave narrative empty. Padding is worse than silence.
+
 Activity already populated (do not duplicate verbatim, but use it to anchor the narrative):
 1 commit, 0 issues
 

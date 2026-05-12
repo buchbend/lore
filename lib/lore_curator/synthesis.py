@@ -54,6 +54,7 @@ import yaml
 from lore_adapters import Adapter, get_adapter
 from lore_core.io import atomic_write_text
 from lore_core.narrative_kind import NarrativeShape, select_shape
+from lore_core.regions import render_regions
 from lore_core.schema import parse_frontmatter, strip_frontmatter
 from lore_core.session_writer import (
     BodySections,
@@ -625,7 +626,18 @@ def _phase2_prompt(
             "takeaways distinctly from `discussion` (process narrative): "
             "takeaways = state-of-understanding, discussion = what was "
             "talked through. If the signal is thin, emit just the lede "
-            "and leave takeaways empty."
+            "and leave takeaways empty.\n\n"
+            "`summary_takeaways` are MARKERS, not claims, AND "
+            "self-contained references — they must read sensibly to a "
+            "cold reader who was not in the session. "
+            "✗ 'Explored two-region schema' — jargon, requires session "
+            "context. "
+            "✓ 'Explored splitting session notes into a reload-safe "
+            "region (LLM-accessible) and a human-only region (gated "
+            "retrieval) — the two-region shape' — referentially "
+            "complete. The test: would a colleague who was not in the "
+            "session understand this enough to know what the note is "
+            "about?"
         )
     else:
         summary_clause = (
@@ -719,6 +731,31 @@ def _phase2_prompt(
             adr_guidance,
         ])
 
+    # Narrative clause — unconditional, applies to both shapes (PRD #92,
+    # issue #94). The model decides per-session whether to emit content;
+    # empty is fine and encouraged for pure-grind sessions. Content
+    # lands in the human-only region (LLM-facing retrieval strips it).
+    parts.extend([
+        "",
+        "Write `narrative` as if telling a colleague what you did in "
+        "this session, at a level above implementation details (those "
+        "live in code / comments).",
+        "",
+        "- Calibrate length to substance. One sentence is fine. Empty "
+        "is fine. Sub-headings (### Investigation trail, "
+        "### Experiments) are fine when the session had a real arc.",
+        "- Voice: tentative for in-flight thinking (\"we leaned "
+        "toward\", \"the hot path turned out to be\"). Past-tense "
+        "investigation. Never \"decided X\" framing — promote to "
+        "`adr_candidates` if it's a real architectural fork, otherwise "
+        "leave it as story.",
+        "- Do NOT re-state files modified, outcomes, or loose-ends "
+        "from the structured section. Narrate around them.",
+        "- If the session was pure grind with no reasoning worth "
+        "telling a colleague, leave narrative empty. Padding is worse "
+        "than silence.",
+    ])
+
     if is_continuation and continues_wikilink:
         parts.extend([
             "",
@@ -790,6 +827,21 @@ def _phase2_tool_schema(shape: NarrativeShape | None = None) -> dict[str, Any]:
         # per candidate; the confabulation filter in _phase2_apply drops
         # any candidate that slips through with empty fields.
         "adr_candidates": adr_candidate.tool_schema_property(),
+        # Narrative is the human-only-region content (PRD #92 / issue #94).
+        # Optional, no length cap — the model self-calibrates length to
+        # substance. LLM-facing retrieval (lore_search, lore_read default,
+        # SessionStart, briefings) strips this region; only user-invoked
+        # paths (/lore:resume, /lore:context, direct read,
+        # lore_read --include_human=true) surface it.
+        "narrative": {
+            "type": "string",
+            "description": (
+                "Free-form prose carrying the investigation arc, "
+                "experiments, in-passing reasoning. Lands in the "
+                "human-only region; LLM-facing retrieval strips it by "
+                "default. Empty is fine — padding is worse than silence."
+            ),
+        },
     }
 
     if is_discussion:
@@ -1102,6 +1154,12 @@ def _phase2_apply(
         issues_closed=rb.activity_issues_closed,
         discussion=_bulletise(discussion),
     ))
+    # Two-region wiring (PRD #92, issue #94): wrap the structured body
+    # with the optional human-only narrative. ``render_regions`` omits
+    # the marker entirely when narrative is empty/None, so pure-grind
+    # sessions stay marker-free.
+    narrative_text = (composed.get("narrative") or "").strip()
+    body = render_regions(body, narrative_text or None)
     new_text = _render_markdown(fm, body, wiki_root=wiki_root)
     atomic_write_text(stub_path, new_text)
 

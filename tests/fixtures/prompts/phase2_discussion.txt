@@ -5,6 +5,8 @@ Return your output via the `compose` tool. Bullet-count caps are hard: discussio
 Title: 6-8 words; content-named (NOT phase numbers or release labels); reads as a filename a year from now.
 Description: 1-2 sentences; what + why in one breath (retrieval-shaped — distinct from `summary_lede` which is outcome-shaped for scanning).
 Summary: emit `summary_lede` — ONE sentence (<= 160 chars) answering 'what is this note about' — plus 0-4 `summary_takeaways` bullets naming what was understood, weighed, or framed (no outcome shipped). Frame the takeaways distinctly from `discussion` (process narrative): takeaways = state-of-understanding, discussion = what was talked through. If the signal is thin, emit just the lede and leave takeaways empty.
+
+`summary_takeaways` are MARKERS, not claims, AND self-contained references — they must read sensibly to a cold reader who was not in the session. ✗ 'Explored two-region schema' — jargon, requires session context. ✓ 'Explored splitting session notes into a reload-safe region (LLM-accessible) and a human-only region (gated retrieval) — the two-region shape' — referentially complete. The test: would a colleague who was not in the session understand this enough to know what the note is about?
 Bullets: lead with a 2-5 word bold phrase, colon, then detail.
 Loose ends: past-tense / stative phrasing, never imperatives.
 
@@ -15,6 +17,13 @@ Wikilink discipline: `[[ ]]` is reserved for vault note slugs that actually exis
 `adr_candidates`: leave the array empty unless the user explicitly ratified a fork in the road — most sessions produce zero candidates. If emitting a candidate, ALL four fields are required: `choice` (6-12 word fork taken), `rationale` (1-sentence why-not-the-alternative), `evidence` (verbatim transcript quote OR 'user explicitly confirmed at turn N'), `alternative_rejected` (the road not taken). NEVER emit action-shaped entries ('catch error X', 'add test Y') — only genuine architectural forks where the user ratified one path over another. Any candidate missing a required field is rejected.
 
 Title shape: title MUST NOT promise work that did not happen. If you are reaching for a deliverable verb ('Refactor', 'Add', 'Fix', 'Implement', 'Migrate', 'Build', 'Ship', 'Create', 'Delete', 'Replace'), prefix it with 'Discussed:' / 'Explored:' / 'Sketched:' / 'Reviewed:' OR rephrase as a noun phrase. The deliverable verb on its own lies about what the session produced.
+
+Write `narrative` as if telling a colleague what you did in this session, at a level above implementation details (those live in code / comments).
+
+- Calibrate length to substance. One sentence is fine. Empty is fine. Sub-headings (### Investigation trail, ### Experiments) are fine when the session had a real arc.
+- Voice: tentative for in-flight thinking ("we leaned toward", "the hot path turned out to be"). Past-tense investigation. Never "decided X" framing — promote to `adr_candidates` if it's a real architectural fork, otherwise leave it as story.
+- Do NOT re-state files modified, outcomes, or loose-ends from the structured section. Narrate around them.
+- If the session was pure grind with no reasoning worth telling a colleague, leave narrative empty. Padding is worse than silence.
 
 Activity already populated (do not duplicate verbatim, but use it to anchor the narrative):
 1 commit, 0 issues
