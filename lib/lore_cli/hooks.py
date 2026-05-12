@@ -36,6 +36,7 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -218,7 +219,6 @@ def _gc_sessions_cache(max_age_days: int = 14) -> None:
 # context cap stays small enough to not derail token-economy.
 MAX_CONTEXT_CHARS = 5000
 ORIENTATION_BUDGET_CHARS = 3000
-RECENT_SESSION_DAYS = 14
 
 # Active gather-incentive directive. Inserted near the top of every
 # SessionStart additionalContext block and re-asserted in PreCompact so
@@ -275,17 +275,6 @@ PRECOMPACT_DIRECTIVE = (
     "about wikilinked terms."
 )
 
-# Lines we never promote to the SessionStart open-items list — they're
-# either explicitly marked ephemeral, checked off, or too trivial to
-# surface every session.
-EPHEMERAL_MARKERS = (
-    "(ephemeral)",
-    "(trivial)",
-    "(todo)",
-    "(skip)",
-)
-
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -323,67 +312,6 @@ def _wiki_hints(wiki: Path) -> dict:
         return {}
 
 
-def _wiki_for_repo(repo: str) -> Path | None:
-    """Find the wiki most relevant to the given `org/name` repo.
-
-    Resolution order:
-      1. Note-level `repos:` entries in the wiki's catalog (future-proof,
-         populated by the session/curator skills as you work)
-      2. Tag strings containing the repo (legacy fallback)
-      3. Wiki's `.lore-hints.yml` `repos:` list (explicit coverage)
-      4. Wiki name as substring of the repo's final path segment
-    """
-    wiki_root = get_wiki_root()
-    if not wiki_root.exists():
-        return None
-
-    repo_tail = repo.rsplit("/", 1)[-1].lower()
-    best_by_repos: tuple[int, Path] | None = None
-    best_by_tag: tuple[int, Path] | None = None
-    hints_match: Path | None = None
-    name_match: Path | None = None
-
-    for wiki in sorted(wiki_root.iterdir()):
-        if not wiki.resolve().is_dir():
-            continue
-        wiki_name = wiki.name.lower()
-
-        hints = _wiki_hints(wiki)
-        if hints_match is None and repo in (hints.get("repos") or []):
-            hints_match = wiki
-
-        if name_match is None and wiki_name in repo_tail:
-            name_match = wiki
-
-        catalog = _wiki_catalog(wiki)
-        if catalog is None:
-            continue
-        repo_count = 0
-        tag_count = 0
-        for entries in catalog.get("sections", {}).values():
-            for entry in entries:
-                repos = entry.get("repos") or []
-                if repo in repos:
-                    repo_count += 1
-                tags = entry.get("tags") or []
-                for tag in tags:
-                    if repo in tag:
-                        tag_count += 1
-                        break
-        if repo_count and (best_by_repos is None or repo_count > best_by_repos[0]):
-            best_by_repos = (repo_count, wiki)
-        if tag_count and (best_by_tag is None or tag_count > best_by_tag[0]):
-            best_by_tag = (tag_count, wiki)
-
-    if best_by_repos:
-        return best_by_repos[1]
-    if best_by_tag:
-        return best_by_tag[1]
-    if hints_match:
-        return hints_match
-    return name_match
-
-
 def _read_wiki_index(wiki: Path, max_chars: int) -> str:
     """Return the wiki's _index.txt, truncated to fit."""
     index_path = wiki / "_index.txt"
@@ -395,72 +323,6 @@ def _read_wiki_index(wiki: Path, max_chars: int) -> str:
     return text[: max_chars - 40] + "\n... (truncated — run /lore:context for full)"
 
 
-# Matches the loose-ends-style section up to next `##` or EOF.
-#
-# Recognises three heading shapes for back-compat across the v1/v2/v3
-# session-note revisions:
-#   - ``## Open items``   (v1, pre-revision; never auto-flipped to v2)
-#   - ``## Loose ends``   (v2 + v3, current)
-# ``## Issues touched`` (v2-only — actual gh issue references) is
-# deliberately NOT matched here: its content is "things filed
-# elsewhere", not "discussed but not pursued".
-_OPEN_ITEMS_RE = re.compile(
-    r"##\s+(?:Open items|Loose ends)\s*\n(.+?)(?=\n##|\Z)",
-    re.DOTALL,
-)
-
-
-def _session_touches_repo(text: str, fm: dict, repo: str) -> bool:
-    """Return True if a session note concerns the given repo.
-
-    Order of evidence:
-      1. Session frontmatter `repos:` includes the repo
-      2. Session body literally mentions `<repo>` or its tail (`name`)
-    """
-    repos = fm.get("repos") or []
-    if repo in repos:
-        return True
-    tail = repo.rsplit("/", 1)[-1]
-    # Cheap substring check — false positives are tolerable here
-    return repo in text or (tail and tail in text)
-
-
-def _is_ephemeral(item: str) -> bool:
-    lower = item.lower()
-    return any(marker in lower for marker in EPHEMERAL_MARKERS)
-
-
-def _session_note_date(path: Path) -> date | None:
-    """Infer the work-date for a session note from its sharded path.
-
-    Two layouts in the wild:
-
-    - Sharded (current): ``sessions/.../YYYY/MM/DD-slug.md`` — year/month
-      come from the parent dirs, day from the filename's leading
-      ``DD-`` prefix.
-    - Flat-legacy: ``sessions/YYYY-MM-DD-slug.md`` — the full date
-      sits in the filename.
-
-    Returns ``None`` when neither shape matches (the file isn't a
-    real session note — e.g. an inbox draft or stray markdown).
-    """
-    name = path.name
-    # Flat-legacy: filename starts with YYYY-MM-DD.
-    if len(name) >= 10 and name[4] == "-" and name[7] == "-":
-        try:
-            return date.fromisoformat(name[:10])
-        except ValueError:
-            pass
-    # Sharded: YYYY/MM/ parent dirs + DD-... filename.
-    if len(name) >= 3 and name[2] == "-":
-        try:
-            day = int(name[:2])
-            month = int(path.parent.name)
-            year = int(path.parent.parent.name)
-            return date(year, month, day)
-        except (ValueError, IndexError):
-            pass
-    return None
 
 
 def _last_session_hint_with_freshness(
@@ -639,69 +501,6 @@ def _cross_scope_breadcrumbs(lore_root: Path, current_wiki: str) -> list[str]:
     return lines
 
 
-def _recent_open_items(
-    wiki: Path,
-    repo: str | None = None,
-    days: int = RECENT_SESSION_DAYS,
-) -> tuple[list[str], int]:
-    """Parse `## Open items` from recent session notes.
-
-    When `repo` is given, only sessions that touch that repo contribute
-    items to the primary list; items from other sessions are counted
-    as "elsewhere in the wiki" so the caller can show a collapsed
-    pointer rather than a dump.
-
-    Returns (items_for_repo, count_elsewhere).
-    """
-    sessions_dir = wiki / "sessions"
-    if not sessions_dir.is_dir():
-        return [], 0
-    cutoff = date.today() - timedelta(days=days)
-    items: list[str] = []
-    seen: set[str] = set()
-    elsewhere = 0
-
-    # Sharded layout: walk recursively. The previous flat
-    # ``sessions_dir.glob("*.md")`` only ever found ``_recent.md`` (a
-    # cached pointer file), so the loose-ends harvest was empty in
-    # production. Date filter accepts both YYYY-MM-DD-prefixed (legacy
-    # team-mode flat) and the DD-prefixed names that live under
-    # ``<year>/<month>/`` — for the latter we compare against the
-    # parent month directory for the year/month and the filename's DD
-    # prefix.
-    for md in sorted(sessions_dir.rglob("*.md"), reverse=True):
-        if not md.is_file() or md.name.startswith("_"):
-            continue
-        d = _session_note_date(md)
-        if d is None:
-            continue
-        if d < cutoff:
-            continue
-        text = md.read_text(errors="replace")
-        fm = parse_frontmatter(text)
-        m = _OPEN_ITEMS_RE.search(text)
-        if not m:
-            continue
-        matches_repo = True if repo is None else _session_touches_repo(text, fm, repo)
-        for line in m.group(1).splitlines():
-            line = line.strip()
-            if not line.startswith("-"):
-                continue
-            body = line.lstrip("-").strip()
-            if not body or body.lower() == "none":
-                continue
-            if _is_ephemeral(body):
-                continue
-            if body in seen:
-                continue
-            seen.add(body)
-            if matches_repo:
-                items.append(body)
-            else:
-                elsewhere += 1
-    return items, elsewhere
-
-
 def _project_note_for_repo(wiki: Path, repo: str) -> dict | None:
     """Find a project note whose filename or frontmatter matches the repo.
 
@@ -801,36 +600,49 @@ def _run_gh_parallel(
 
 
 
-def _session_start_from_lore(
-    cwd: str,
-    config: tuple[Path, dict],
-    wiki_root: Path,
-) -> str | None:
-    """Build SessionStart output from a `## Lore` config block.
+@dataclass(frozen=True)
+class SessionFacts:
+    """Inputs needed to render a SessionStart banner.
 
-    Returns the formatted output, or None if the config is unusable
-    (wiki doesn't exist) so the caller falls through to the legacy
-    path. `gh` failures never raise — they just result in empty lists.
+    Built by :func:`collect_session_facts`; consumed by
+    :func:`render_session_banner`. The split lets future SessionStart
+    variants (different surfaces, alternate backends) share the
+    rendering layer without copying its body.
     """
-    _, block = config
-    wiki_name = block.get("wiki")
-    scope = block.get("scope") or ""
-    backend = block.get("backend") or "github"
-    issues_filter = block.get("issues") or "--assignee @me --state open"
-    prs_filter = block.get("prs") or "--author @me"
 
-    if not wiki_name:
-        return None
-    wiki = wiki_root / wiki_name
-    if not wiki.exists():
-        return None
+    wiki_name: str
+    repo: str | None
+    scope: str = ""
+    issues: tuple[dict, ...] = ()
+    prs: tuple[dict, ...] = ()
+    project_entry: dict | None = None
+    session_hints: tuple[tuple[str, str], ...] = ()
+    freshness_audit_lines: tuple[str, ...] = ()
+    pending_chip: str | None = None
 
-    repo = current_repo(cwd)
 
+def collect_session_facts(
+    wiki: Path,
+    repo: str | None,
+    *,
+    scope: str = "",
+    backend: str | None = None,
+    issues_filter: str | None = None,
+    prs_filter: str | None = None,
+) -> SessionFacts:
+    """Gather every per-session fact the renderer needs.
+
+    ``gh`` failures never raise — fetched issue/PR lists default to
+    empty and the banner renders without those bits.
+    """
     issues: list[dict] = []
     prs: list[dict] = []
-
-    if backend == "github" and repo:
+    if (
+        backend == "github"
+        and repo
+        and issues_filter is not None
+        and prs_filter is not None
+    ):
         issues_args = _gh_mod.split_filter(issues_filter)
         prs_args = _gh_mod.split_filter(prs_filter)
         calls: list[tuple[str, str, list[str]]] = [
@@ -846,61 +658,122 @@ def _session_start_from_lore(
     session_hints, freshness_audit_lines = _filter_session_hints(
         session_hints_full, max_notes=2
     )
+    pending_chip = _pending_verdict_chip(wiki) or None
+    return SessionFacts(
+        wiki_name=wiki.name,
+        repo=repo,
+        scope=scope,
+        issues=tuple(issues),
+        prs=tuple(prs),
+        project_entry=project_entry,
+        session_hints=tuple(session_hints),
+        freshness_audit_lines=tuple(freshness_audit_lines),
+        pending_chip=pending_chip,
+    )
 
+
+def render_session_banner(facts: SessionFacts) -> str:
+    """Format a SessionStart banner from collected facts.
+
+    The directive postscript trails the status + focus + session hints
+    so users see what Lore did *first* and the rule re-assertion second.
+    """
     injected_bits: list[str] = []
-    if scope:
-        injected_bits.append(scope)
-    elif project_entry is not None:
-        injected_bits.append(f"[[{project_entry['name']}]]")
-    if session_hints:
-        _, first_summary = session_hints[0]
+    if facts.scope:
+        injected_bits.append(facts.scope)
+    elif facts.project_entry is not None:
+        injected_bits.append(f"[[{facts.project_entry['name']}]]")
+    if facts.session_hints:
+        _, first_summary = facts.session_hints[0]
         injected_bits.append(f"last: {first_summary}")
-    if issues:
-        injected_bits.append(f"{len(issues)} issue{'s' if len(issues) != 1 else ''}")
-    if prs:
-        injected_bits.append(f"{len(prs)} PR{'s' if len(prs) != 1 else ''}")
-    pending_chip = _pending_verdict_chip(wiki)
-    if pending_chip:
-        injected_bits.append(pending_chip)
-    status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
+    if facts.issues:
+        injected_bits.append(
+            f"{len(facts.issues)} issue{'s' if len(facts.issues) != 1 else ''}"
+        )
+    if facts.prs:
+        injected_bits.append(
+            f"{len(facts.prs)} PR{'s' if len(facts.prs) != 1 else ''}"
+        )
+    if facts.pending_chip:
+        injected_bits.append(facts.pending_chip)
+    status_line = f"lore {_lore_version()}: active" + (
+        " · " + " · ".join(injected_bits) if injected_bits else ""
+    )
 
-    out_parts: list[str] = [status_line, ""]
-    if project_entry is not None:
-        out_parts.append(f"## Focus: [[{project_entry['name']}]]")
-        desc = project_entry.get("description")
+    parts: list[str] = [status_line, ""]
+
+    if facts.project_entry is not None:
+        parts.append(f"## Focus: [[{facts.project_entry['name']}]]")
+        desc = facts.project_entry.get("description")
         if desc:
-            out_parts.append(desc)
-        out_parts.append("")
-    elif repo:
-        out_parts.append(f"_Repo `{repo}` has no dedicated project note in {wiki_name}._")
-        out_parts.append("")
+            parts.append(desc)
+        parts.append("")
+    elif facts.repo:
+        parts.append(
+            f"_Repo `{facts.repo}` has no dedicated project note in {facts.wiki_name}._"
+        )
+        parts.append("")
 
-    if session_hints:
-        for slug, desc in session_hints[:2]:
-            out_parts.append(f"Last: [[{slug}]] — {desc}")
-        out_parts.append("")
+    if facts.session_hints:
+        for slug, desc in facts.session_hints[:2]:
+            parts.append(f"Last: [[{slug}]] — {desc}")
+        parts.append("")
 
-    if freshness_audit_lines:
-        out_parts.extend(freshness_audit_lines)
-        out_parts.append("")
+    if facts.freshness_audit_lines:
+        parts.extend(facts.freshness_audit_lines)
+        parts.append("")
 
-    # Directive last: status + focus + open items show what Lore did for
-    # the user *first*; the rule postscript reasserts the contract without
-    # competing for the most-attention slot at the top of the banner.
-    out_parts.extend(_load_directive_lines())
-    out_parts.extend(_citation_directive_lines())
-    out_parts.extend(_journal_directive_lines())
+    parts.extend(_load_directive_lines())
+    parts.extend(_citation_directive_lines())
+    parts.extend(_journal_directive_lines())
 
-    return "\n".join(out_parts)
+    return "\n".join(parts)
+
+
+def _session_start_from_lore(
+    cwd: str,
+    config: tuple[Path, dict],
+    wiki_root: Path,
+) -> str | None:
+    """Build SessionStart output from a `## Lore` config block.
+
+    Returns ``None`` if the config is unusable (wiki missing) so the
+    caller can fall through to a clear "no attach" error message.
+    Thin wrapper around :func:`collect_session_facts` +
+    :func:`render_session_banner`.
+    """
+    _, block = config
+    wiki_name = block.get("wiki")
+    scope = block.get("scope") or ""
+    backend = block.get("backend") or "github"
+    issues_filter = block.get("issues") or "--assignee @me --state open"
+    prs_filter = block.get("prs") or "--author @me"
+
+    if not wiki_name:
+        return None
+    wiki = wiki_root / wiki_name
+    if not wiki.exists():
+        return None
+
+    facts = collect_session_facts(
+        wiki,
+        current_repo(cwd),
+        scope=scope,
+        backend=backend,
+        issues_filter=issues_filter,
+        prs_filter=prs_filter,
+    )
+    return render_session_banner(facts)
 
 
 def _session_start(cwd: str | None) -> str:
-    """Build the SessionStart context block.
+    """Build the SessionStart context block from a `## Lore` attach block.
 
-    Prefers the `## Lore`-driven path (schema v2) when the cwd resolves
-    an ancestor CLAUDE.md with a `## Lore` section. Falls back to the
-    legacy `## Open items` scrape for wikis without explicit attach
-    configuration.
+    The legacy repo-based wiki resolution + single-wiki fallback was
+    deleted in PR 5 of the streamlining track (#80). Repos now opt
+    into Lore by running ``lore install`` or ``lore attach`` — both
+    write the ``## Lore`` block this resolver reads. Without it, the
+    banner surfaces a clear "no attach" instruction instead of guessing.
     """
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
@@ -922,7 +795,6 @@ def _session_start(cwd: str | None) -> str:
             "Set $LORE_ROOT, write ~/.config/lore/config.yml, or run `lore init`."
         )
 
-    # Schema v2 path: cwd has (or inherits) a `## Lore` section.
     if cwd:
         from lore_core.session import _resolve_attach_block
         cfg = _resolve_attach_block(Path(cwd))
@@ -931,68 +803,10 @@ def _session_start(cwd: str | None) -> str:
             if v2 is not None:
                 return v2
 
-    # Legacy path: resolve wiki from repo, scrape `## Open items`.
-    repo = current_repo(cwd)
-    wiki = _wiki_for_repo(repo) if repo else None
-
-    if wiki is None:
-        wikis = [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
-        if len(wikis) == 1:
-            wiki = wikis[0]
-
-    if wiki is None:
-        if repo:
-            return (
-                f"lore: no wiki covers `{repo}`. Add it to a wiki's "
-                "`.lore-hints.yml` or run `/lore:session` to auto-tag."
-            )
-        return f"lore: no wiki resolved in {wiki_root}."
-
-    # Project note focused on this repo, if any
-    project_entry = _project_note_for_repo(wiki, repo) if repo else None
-    session_hints_full = _last_session_hint_with_freshness(wiki, max_notes=4)
-    session_hints, freshness_audit_lines = _filter_session_hints(
-        session_hints_full, max_notes=2
+    return (
+        "lore: this repo has no `## Lore` attach block. "
+        "Run `lore install` (inside the repo) or `lore attach` to add one."
     )
-
-    injected_bits: list[str] = []
-    if project_entry is not None:
-        injected_bits.append(f"[[{project_entry['name']}]]")
-    if session_hints:
-        _, first_summary = session_hints[0]
-        injected_bits.append(f"last: {first_summary}")
-    pending_chip = _pending_verdict_chip(wiki)
-    if pending_chip:
-        injected_bits.append(pending_chip)
-    status_line = f"lore {_lore_version()}: active" + (" · " + " · ".join(injected_bits) if injected_bits else "")
-
-    parts: list[str] = [status_line, ""]
-
-    if project_entry is not None:
-        parts.append(f"## Focus: [[{project_entry['name']}]]")
-        desc = project_entry.get("description")
-        if desc:
-            parts.append(desc)
-        parts.append("")
-    elif repo:
-        parts.append(f"_Repo `{repo}` has no dedicated project note in {wiki.name}._")
-        parts.append("")
-
-    if session_hints:
-        for slug, desc in session_hints[:2]:
-            parts.append(f"Last: [[{slug}]] — {desc}")
-        parts.append("")
-
-    if freshness_audit_lines:
-        parts.extend(freshness_audit_lines)
-        parts.append("")
-
-    # Directive last: see _session_start_from_lore for rationale.
-    parts.extend(_load_directive_lines())
-    parts.extend(_citation_directive_lines())
-    parts.extend(_journal_directive_lines())
-
-    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -1003,35 +817,15 @@ def _session_start(cwd: str | None) -> str:
 def _pre_compact(cwd: str | None) -> str:
     """One-line hint that survives compaction.
 
-    PreCompact emits into `systemMessage`, which is a visible banner
-    to the user on every compaction — so we keep it to one short line.
+    PreCompact emits into `systemMessage`, a visible banner shown on
+    every compaction — so the payload is intentionally one short line.
     The full open-items context is already in SessionStart's
-    additionalContext and stays with the agent until manually cleared.
+    additionalContext and stays with the agent until manually cleared,
+    so PreCompact re-asserts only the vault-first directive.
     """
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
         return ""
-    repo = current_repo(cwd)
-    wiki = _wiki_for_repo(repo) if repo else None
-    if wiki is None:
-        wikis = [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
-        if len(wikis) == 1:
-            wiki = wikis[0]
-    if wiki is None:
-        return ""
-
-    items, _elsewhere = _recent_open_items(wiki, repo=repo)
-    scope = wiki.name if repo is None else f"{wiki.name}:{repo.rsplit('/', 1)[-1]}"
-
-    # Always re-assert the vault-first directive across compaction —
-    # compliance decay is real, and the rule must survive even when no
-    # open items are pending. Open-items hint is optional.
-    if items:
-        return (
-            f"lore: {len(items)} open items for {scope} carry past compaction — "
-            "run /lore:resume if the agent needs them refreshed. "
-            + PRECOMPACT_DIRECTIVE
-        )
     return PRECOMPACT_DIRECTIVE
 
 
