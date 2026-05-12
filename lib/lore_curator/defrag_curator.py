@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -221,6 +222,40 @@ class CuratorReport:
     actions: list[CuratorAction] = field(default_factory=list)
     skipped: list[tuple[Path, str]] = field(default_factory=list)
     hints: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Hygiene pass protocol — one wiki-walk + action-merge scaffold for all six
+# Curator-C hygiene passes (action-producing and hint-producing alike).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PassContext:
+    """Shared inputs passed to every hygiene pass."""
+
+    today: date
+
+
+@dataclass(frozen=True)
+class PassResult:
+    """Output bundle — passes may produce actions, hints, or both."""
+
+    actions: list[CuratorAction] = field(default_factory=list)
+    hints: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class HygienePass:
+    """One curator-C hygiene pass.
+
+    ``only_when_defrag`` gates passes that are too expensive or too
+    proposal-flavoured to run on every (hygiene-only) curator-C invocation.
+    """
+
+    name: str
+    run: Callable[[Path, "PassContext"], "PassResult"]
+    only_when_defrag: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -574,6 +609,45 @@ def _pass_git_backfill(wiki_path: Path) -> list[CuratorAction]:
 
 
 # ---------------------------------------------------------------------------
+# Pass-protocol adapters + registry
+# ---------------------------------------------------------------------------
+
+
+def _run_staleness(wiki_path: Path, ctx: PassContext) -> PassResult:
+    return PassResult(actions=_pass_staleness(wiki_path, ctx.today, 0))
+
+
+def _run_supersession(wiki_path: Path, ctx: PassContext) -> PassResult:
+    return PassResult(actions=_pass_supersession(wiki_path))
+
+
+def _run_implements(wiki_path: Path, ctx: PassContext) -> PassResult:
+    return PassResult(actions=_pass_implements(wiki_path))
+
+
+def _run_git_backfill(wiki_path: Path, ctx: PassContext) -> PassResult:
+    return PassResult(actions=_pass_git_backfill(wiki_path))
+
+
+def _run_draft_promotion(wiki_path: Path, ctx: PassContext) -> PassResult:
+    return PassResult(actions=_pass_draft_promotion(wiki_path, ctx.today))
+
+
+def _run_team_mode_hint(wiki_path: Path, ctx: PassContext) -> PassResult:
+    return PassResult(hints=_pass_team_mode_hint(wiki_path))
+
+
+HYGIENE_PASSES: list[HygienePass] = [
+    HygienePass("staleness", _run_staleness),
+    HygienePass("supersession", _run_supersession),
+    HygienePass("implements", _run_implements),
+    HygienePass("git_backfill", _run_git_backfill),
+    HygienePass("draft_promotion", _run_draft_promotion, only_when_defrag=True),
+    HygienePass("team_mode_hint", _run_team_mode_hint),
+]
+
+
+# ---------------------------------------------------------------------------
 # Write path (safe — mtime guard)
 # ---------------------------------------------------------------------------
 
@@ -735,13 +809,13 @@ def run_curator_c(
                     continue
 
             report = CuratorReport(wiki=wiki_path.name)
-            report.actions.extend(_pass_staleness(wiki_path, today, 0))
-            report.actions.extend(_pass_supersession(wiki_path))
-            report.actions.extend(_pass_implements(wiki_path))
-            report.actions.extend(_pass_git_backfill(wiki_path))
-            if defrag:
-                report.actions.extend(_pass_draft_promotion(wiki_path, today))
-            report.hints.extend(_pass_team_mode_hint(wiki_path))
+            ctx = PassContext(today=today)
+            for pass_def in HYGIENE_PASSES:
+                if pass_def.only_when_defrag and not defrag:
+                    continue
+                result = pass_def.run(wiki_path, ctx)
+                report.actions.extend(result.actions)
+                report.hints.extend(result.hints)
             reports.append(report)
 
         for report in reports:
