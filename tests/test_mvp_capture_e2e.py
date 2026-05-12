@@ -290,68 +290,6 @@ def test_mvp_e2e_session_end_produces_note(
     )
 
 
-def test_mvp_e2e_non_noteworthy_slice_produces_no_note(
-    lore_root_with_attached_wiki, register_fake_claude_code, monkeypatch
-):
-    """Non-noteworthy classification: no session note, but ledger is advanced."""
-    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
-    lore_root, work = lore_root_with_attached_wiki
-    turns = _make_turns(3)
-    handle = _make_handle(work)
-
-    register_fake_claude_code(
-        handles_by_dir={str(work): [handle]},
-        turns_by_id={handle.id: turns},
-    )
-
-    from lore_cli.hooks import hook_app
-    from lore_core.ledger import TranscriptLedger
-
-    runner = CliRunner()
-    runner.invoke(
-        hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(work), "--integration", "claude-code"],
-        env={"LORE_ROOT": str(lore_root), "CLAUDE_PROJECT_DIR": str(work)},
-        catch_exceptions=False,
-    )
-
-    from lore_curator.session_curator import run_curator_a
-
-    # Return noteworthy=False from the classify call (tool_choice name is "classify")
-    fake_anthropic = FakeAnthropic({
-        "classify": _FakeResponse([
-            _FakeBlock("tool_use", input_={
-                "noteworthy": False,
-                "reason": "trivial",
-                "title": "X",
-                "bullets": [],
-                "files_touched": [],
-                "entities": [],
-                "decisions": [],
-            })
-        ]),
-    })
-
-    curator_result = run_curator_a(
-        lore_root=lore_root,
-        llm_client=fake_anthropic,
-        dry_run=False,
-        now=_NOW,
-    )
-
-    # No session notes
-    sessions_dir = lore_root / "wiki" / "private" / "sessions"
-    notes = list(sessions_dir.rglob("*.md"))
-    assert len(notes) == 0, f"Expected no session notes, found {len(notes)}: {notes}"
-
-    # Ledger was advanced (digested_hash is now set)
-    tledger = TranscriptLedger(lore_root)
-    entry = tledger.get("claude-code", "uuid-1")
-    assert entry is not None
-    assert entry.digested_hash is not None, "Expected ledger to advance (digested_hash set)"
-    assert entry.digested_hash == turns[-1].content_hash()
-
-
 def test_mvp_e2e_idempotent_on_rerun(
     lore_root_with_attached_wiki, register_fake_claude_code, monkeypatch
 ):

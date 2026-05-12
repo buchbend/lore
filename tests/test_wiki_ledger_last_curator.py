@@ -243,47 +243,6 @@ def test_curator_a_does_not_update_untouched_wikis(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_partial_failure_does_not_clobber_prior_last_curator_a(tmp_path: Path, monkeypatch) -> None:
-    """If Curator A raises mid-run, last_curator_a is either prior OR new — never cleared.
-
-    Atomic-or-unchanged contract. Guards against a future bug where
-    update_last_curator is called before the work completes and an
-    exception leaves a partially-updated ledger.
-    """
-    monkeypatch.setenv("LORE_BUFFER_FLUSH", "0")
-    project_dir, turns = _minimal_curator_a_setup(tmp_path)
-
-    # Seed a prior last_curator_a value so we can detect clobber.
-    prior = _NOW - timedelta(days=7)
-    wledger = WikiLedger(tmp_path, "private")
-    wledger.write(WikiLedgerEntry(wiki="private", last_curator_a=prior))
-
-    adapter = _fake_adapter(turns)
-
-    # Mock classify_slice to raise — mid-run failure.
-    from lore_curator import session_curator as curator_a_mod
-
-    def boom(*_args, **_kwargs):
-        raise RuntimeError("simulated mid-run failure")
-
-    with patch.object(curator_a_mod, "classify_slice", boom):
-        from lore_curator.session_curator import run_curator_a
-        with pytest.raises(RuntimeError, match="simulated mid-run failure"):
-            run_curator_a(
-                lore_root=tmp_path,
-                llm_client=_noteworthy_false_client(),
-                adapter_lookup=lambda host: adapter if host == "fake" else None,
-                now=_NOW,
-            )
-
-    after = wledger.read().last_curator_a
-    # Contract: EITHER prior (unchanged) OR _NOW (atomic success). Not None.
-    assert after is not None, "last_curator_a must NOT be cleared on failure"
-    assert after in (prior, _NOW), (
-        f"last_curator_a must be prior={prior} or new={_NOW}; got {after}"
-    )
-
-
 # ---------------------------------------------------------------------------
 # Observability: write-failure emits a warning event
 # ---------------------------------------------------------------------------
