@@ -39,24 +39,6 @@ def test_malformed_yaml_warns(tmp_path: Path, recwarn):
     assert any("malformed YAML" in str(w.message) for w in recwarn)
 
 
-def test_curator_noteworthy_mode_defaults_to_cascade(tmp_path: Path):
-    """v0.6.0 promoted the feature-based cascade from opt-in to default.
-    Absent explicit override, every wiki runs cascade mode."""
-    cfg = load_root_config(tmp_path)
-    assert cfg.curator.noteworthy_mode == "cascade"
-
-
-def test_curator_noteworthy_mode_can_be_overridden_in_config(tmp_path: Path):
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text(
-        "curator:\n"
-        "  noteworthy_mode: llm_only\n"
-    )
-    cfg = load_root_config(tmp_path)
-    assert cfg.curator.noteworthy_mode == "llm_only"
-
-
 def test_unknown_key_warns(tmp_path: Path, recwarn):
     warnings.simplefilter("always")
     lore_dir = tmp_path / ".lore"
@@ -179,7 +161,6 @@ def test_schema_tree_covers_all_leaves() -> None:
     paths = {p for p, _, _, _ in rows}
     # Spot-check leaves we ship today.
     assert "curator.backend" in paths
-    assert "curator.noteworthy_mode" in paths
     assert "journal.enabled" in paths
     assert "observability.runs.keep" in paths
     # No group should appear (only leaves).

@@ -60,7 +60,6 @@ rather than silently falling back to `~/lore`.
 | Var | Type | Default | Read in | Wins over |
 |-----|------|---------|---------|-----------|
 | `LORE_LLM_BACKEND` | `auto` \| `subscription` \| `api` \| `openai` | `auto` | `lore_curator/llm_client.py:make_llm_client` | `.lore/config.yml:curator.backend` |
-| `LORE_NOTEWORTHY_MODE` | `cascade` \| `llm_only` | `cascade` | `lore_curator/noteworthy.py:_resolve_mode` | `.lore/config.yml:curator.noteworthy_mode` |
 | `LORE_CURATOR_MODE` | `local` \| `central` | `local` | `lore_curator/curator_c.py` | `.lore-wiki.yml:curator.curator_c.mode` |
 | `LORE_CLAUDE_TIMEOUT_S` | float seconds | `300.0` | `llm_client.py:_resolve_claude_timeout` | constructor arg |
 
@@ -110,7 +109,6 @@ Vault-wide policy. Schema lives in
 - `observability.runs.{keep, max_total_mb, keep_trace}`
 - `observability.proc.keep_generations`
 - `curator.backend` — `auto` | `subscription` | `api` | `openai`
-- `curator.noteworthy_mode` — `cascade` | `llm_only`
 - `curator.openai.{base_url, api_key_env, model_simple, model_middle, model_high}`
 
 Loader: `load_root_config(lore_root) -> RootConfig`. Missing file →
