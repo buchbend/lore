@@ -207,11 +207,11 @@ If you're creating a new wiki, declare which surfaces Curator B should
 extract:
 
 ```bash
-lore new-wiki team-wiki --surfaces standard  # concept + decision + session
+lore wiki new team-wiki --surfaces standard  # concept + decision + session
 # other templates:
-lore new-wiki research --surfaces science    # + paper + result
-lore new-wiki product --surfaces design      # + artefact + critique
-lore new-wiki scratch --surfaces custom      # skeleton you fill yourself
+lore wiki new research --surfaces science    # + paper + result
+lore wiki new product --surfaces design      # + artefact + critique
+lore wiki new scratch --surfaces custom      # skeleton you fill yourself
 ```
 
 `SURFACES.md` is human-editable markdown with embedded YAML. Two ways
@@ -224,7 +224,7 @@ to author and maintain it:
 - **Scripted / automation / no-LLM:** write a `draft.json` (schema:
   `lore.surface.draft/1`) and run `lore surface commit <path>`. This
   is also how the skill writes under the hood.
-  `lore new-wiki <name> --surfaces <template>` (above) remains the
+  `lore wiki new <name> --surfaces <template>` (above) remains the
   fastest way to seed a wiki headlessly.
 
 The interactive flow requires `claude` on PATH. The `commit` primitive

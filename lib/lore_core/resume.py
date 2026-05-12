@@ -60,7 +60,7 @@ def _resolve_wiki(wiki_root: Path, name: str) -> Path | None:
 def _session_date_from_path(md: Path, sessions_dir: Path) -> date | None:
     """Extract the session date from either layout.
 
-    Canonical sharded form (what `lore session new` writes):
+    Canonical sharded form (what auto-capture writes):
         sessions[/handle]/YYYY/MM/DD-slug.md  → date from path parts.
     Legacy flat form (older notes, test fixtures):
         sessions/YYYY-MM-DD-slug.md           → date from stem[:10].

@@ -22,7 +22,7 @@ from lore_curator.synthesis import (
     _phase2_prompt,
     _phase2_tool_schema,
     compose_session_note,
-    flush_buffer,
+    synth_and_close,
 )
 from lore_core.narrative_kind import NarrativeShape
 
@@ -175,7 +175,7 @@ def _seed_stub(lore_root: Path, monkeypatch, *, files=None, transcript_id: str =
 def test_phase1_drops_stub_marker_and_closes_buffer(lore_root, patch_collectors, monkeypatch):
     buffer, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
 
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -197,7 +197,7 @@ def test_close_collision_emits_warning_and_preserves_archive(
     lore_root, patch_collectors, monkeypatch
 ):
     """When ``_done/<stem>.state.json`` already exists at archive time,
-    ``flush_buffer`` must not crash, must leave the pre-existing archived
+    ``synth_and_close`` must not crash, must leave the pre-existing archived
     sidecar byte-for-byte unchanged, and must emit a warning through the
     curator logger so the failure is visible in diagnostics. Issue #54.
     """
@@ -222,7 +222,7 @@ def test_close_collision_emits_warning_and_preserves_archive(
     logger = _RecordingLogger()
 
     # Must not raise — the curator continues after a collision.
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -252,14 +252,14 @@ def test_close_collision_emits_warning_and_preserves_archive(
 def test_phase1_idempotent_on_already_closed(lore_root, patch_collectors, monkeypatch):
     _, _, sidecar_path = _seed_stub(lore_root, monkeypatch)
 
-    flush_buffer(
+    synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
     )
     # Second invocation -- sidecar moved to _done already; passing the
     # original path should short-circuit cleanly.
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -271,7 +271,7 @@ def test_phase1_handles_missing_stub_gracefully(lore_root, patch_collectors, mon
     buffer, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
     stub_path.unlink()
 
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -305,7 +305,7 @@ def test_phase2_rewrites_title_and_summary(lore_root, patch_collectors, monkeypa
     }
     llm = _FakeLlmClient(_ok_responder(composed))
 
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -344,7 +344,7 @@ def test_phase2_retry_then_succeed(lore_root, patch_collectors, monkeypatch):
         return _FakeResponse([_FakeContentBlock("tool_use", composed_ok)])
 
     llm = _FakeLlmClient(_flaky)
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -359,7 +359,7 @@ def test_phase2_exhausts_and_degrades(lore_root, patch_collectors, monkeypatch):
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
 
     llm = _FakeLlmClient(_err_responder())
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -393,7 +393,7 @@ def test_phase2_truncates_overlong_bullets(lore_root, patch_collectors, monkeypa
         "loose_ends": [],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -413,7 +413,7 @@ def test_phase2_truncates_overlong_bullets(lore_root, patch_collectors, monkeypa
 def test_phase2_skipped_without_llm_client(lore_root, patch_collectors, monkeypatch):
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
 
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -438,7 +438,7 @@ def test_phase2_renames_stub_to_slug_from_title(lore_root, patch_collectors, mon
     }
     llm = _FakeLlmClient(_ok_responder(composed))
 
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -467,7 +467,7 @@ def test_phase2_skips_rename_for_continuation_part(lore_root, patch_collectors, 
 
     composed = {"title": "completely different title", "description": "d", "summary_lede": "s"}
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -491,7 +491,7 @@ def test_phase2_skips_rename_when_slug_equals_existing(lore_root, patch_collecto
     _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
     composed = {"title": "fix seeded commit", "description": "d", "summary_lede": "s"}
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -522,7 +522,7 @@ def test_phase2_skipped_when_signal_is_empty(lore_root, monkeypatch):
     composed = {"title": "fabricated", "description": "d", "summary_lede": "s"}
     fake = _FakeLlmClient(_ok_responder(composed))
 
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -546,7 +546,7 @@ def test_phase2_rename_avoids_collision(lore_root, patch_collectors, monkeypatch
 
     composed = {"title": "auth handler refactor", "description": "d", "summary_lede": "s"}
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -747,7 +747,7 @@ def test_phase2_apply_renders_summary_from_lede_and_outcomes(
         "loose_ends": [],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -781,7 +781,7 @@ def test_phase2_apply_renders_summary_from_lede_only_when_outcomes_empty(
         "loose_ends": [],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -822,7 +822,7 @@ def test_phase2_apply_renders_summary_from_takeaways_in_discussion_shape(
         "loose_ends": [],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -1062,7 +1062,7 @@ def test_phase2_surfaces_adr_flagged_in_frontmatter(
         "loose_ends": [],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -1083,7 +1083,7 @@ def test_phase2_omits_adr_flagged_when_not_set(
         "adr_candidates": [], "worked_on": ["**auth.py** — touched"], "loose_ends": [],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -1175,7 +1175,7 @@ def test_phase2_e2e_05_1212_pattern_yields_discussion_shape(
         "loose_ends": ["**ADR backlog** — not yet validated with stakeholders"],
     }
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",
@@ -1208,7 +1208,7 @@ def test_phase2_pops_narrative_pending_sentinel(
         "summary_lede": "We pulled the legacy callbacks out and slotted in a decorator.",
     }
     llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = flush_buffer(
+    outcome = synth_and_close(
         sidecar_path,
         lore_root=lore_root,
         wiki_root=lore_root / "wiki" / "private",

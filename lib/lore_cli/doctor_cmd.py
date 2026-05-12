@@ -78,10 +78,10 @@ def _check_wikis(cwd: str) -> Check:
 
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
-        return False, f"{wiki_root} missing (run `lore init` or `lore new-wiki <name>`)"
+        return False, f"{wiki_root} missing (run `lore init` or `lore wiki new <name>`)"
     wikis = [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
     if not wikis:
-        return False, f"no wikis under {wiki_root} (run `lore new-wiki <name>`)"
+        return False, f"no wikis under {wiki_root} (run `lore wiki new <name>`)"
     return True, f"{len(wikis)} wiki(s): {', '.join(w.name for w in wikis)}"
 
 

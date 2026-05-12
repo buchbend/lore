@@ -197,12 +197,12 @@ def test_resume_wiki_scoped_no_keyword(vault, monkeypatch, capsys):
 def sharded_vault(tmp_path, monkeypatch):
     """Vault using the canonical sharded layout: sessions/YYYY/MM/DD-slug.md.
 
-    This is the layout `lore session new` actually writes (see
-    `lore_core.session.scaffold` — `<wiki>/sessions/<YYYY>/<MM>/<DD>-<slug>.md`).
-    The flat-layout fixture above predates sharding and only exercises the
-    legacy form; without a sharded fixture the date-prefix bug in
-    `_iter_session_notes` (parsed only the first 10 chars of the filename
-    stem, which for sharded files is "DD-foo-bar") went unnoticed.
+    This is the canonical layout auto-capture writes:
+    `<wiki>/sessions/<YYYY>/<MM>/<DD>-<slug>.md`. The flat-layout fixture
+    above predates sharding and only exercises the legacy form; without
+    a sharded fixture the date-prefix bug in `_iter_session_notes`
+    (parsed only the first 10 chars of the filename stem, which for
+    sharded files is "DD-foo-bar") went unnoticed.
     """
     from datetime import date
 

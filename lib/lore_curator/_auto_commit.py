@@ -1,7 +1,7 @@
 """Shared git auto-commit / auto-push for filed session notes.
 
 Lifted out of ``session_curator.py`` so the buffer-and-flush worker
-(``synthesis.flush_buffer``) can run the same opportunistic add+commit
+(``synthesis.synth_and_close``) can run the same opportunistic add+commit
 sequence Phase 1 of flush wants without importing the curator entry
 point. All failures are logged via ``logger.emit("warning", ...)`` and
 never raise — auto-commit/push is opportunistic; the curator's

@@ -1745,12 +1745,6 @@ def cmd_context_log() -> None:
     sys.stdout.write(_context_log())
 
 
-@hook_app.command("live-state", hidden=True)
-def cmd_live_state() -> None:
-    """Deprecated alias for context-log."""
-    sys.stdout.write(_context_log())
-
-
 # ---------------------------------------------------------------------------
 # UserPromptSubmit heartbeat
 # ---------------------------------------------------------------------------
@@ -3008,7 +3002,7 @@ def capture(
         # Buffer-and-flush: at session-end / pre-compact, walk this
         # session's live buffers and stamp ``flush_requested`` so the
         # detached curator-A spawn (or a manual ``lore curator flush``)
-        # routes them to ``synthesis.flush_buffer``. Bounded sidecar
+        # routes them to ``synthesis.synth_and_close``. Bounded sidecar
         # reads keep the hook inside its sub-100ms contract.
         if event in ("session-end", "pre-compact"):
             try:

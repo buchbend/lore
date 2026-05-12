@@ -77,7 +77,6 @@ def _build_app() -> typer.Typer:
         log_cmd,
         mcp_cmd,
         migrate_cmd,
-        new_wiki_cmd,
         news_cmd,
         off_cmd,
         on_cmd,
@@ -127,10 +126,6 @@ def _build_app() -> typer.Typer:
     app.add_typer(curator_cmd.app, name="curator", rich_help_panel=_KN)
     app.add_typer(on_cmd.app, name="on", rich_help_panel=_KN)
     app.add_typer(off_cmd.app, name="off", rich_help_panel=_KN)
-    # Legacy alias: `lore new-wiki <name>` forwards to the same scaffolder
-    # as `lore wiki new <name>`. Kept for backward compat with users who
-    # typed the old form during 0.x; the canonical path is `lore wiki new`.
-    app.add_typer(new_wiki_cmd.app, name="new-wiki", rich_help_panel=_ADV)
 
     app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
     app.add_typer(attachments_cmd.app, name="attachments", rich_help_panel=_ADV)
