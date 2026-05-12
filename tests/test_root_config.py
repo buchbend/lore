@@ -57,39 +57,6 @@ def test_curator_noteworthy_mode_can_be_overridden_in_config(tmp_path: Path):
     assert cfg.curator.noteworthy_mode == "llm_only"
 
 
-def test_use_buffer_flush_defaults_true(tmp_path: Path):
-    """Buffer-and-flush is the default heartbeat path as of PR 3.
-
-    Escape hatch lives in :func:`test_use_buffer_flush_can_be_disabled_in_config`.
-    """
-    cfg = load_root_config(tmp_path)
-    assert cfg.curator.use_buffer_flush is True
-
-
-def test_use_buffer_flush_can_be_disabled_in_config(tmp_path: Path):
-    """Operators can opt out of the new path via ``.lore/config.yml``."""
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text(
-        "curator:\n"
-        "  use_buffer_flush: false\n"
-    )
-    cfg = load_root_config(tmp_path)
-    assert cfg.curator.use_buffer_flush is False
-
-
-def test_use_buffer_flush_can_be_enabled_in_config(tmp_path: Path):
-    """Explicit ``true`` round-trips even though it now matches the default."""
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text(
-        "curator:\n"
-        "  use_buffer_flush: true\n"
-    )
-    cfg = load_root_config(tmp_path)
-    assert cfg.curator.use_buffer_flush is True
-
-
 def test_unknown_key_warns(tmp_path: Path, recwarn):
     warnings.simplefilter("always")
     lore_dir = tmp_path / ".lore"
@@ -119,11 +86,11 @@ def _fresh_root(tmp_path: Path, body: str) -> Path:
 def test_walk_fields_marks_file_vs_default(tmp_path: Path) -> None:
     from lore_core.root_config import walk_fields
 
-    root = _fresh_root(tmp_path, "curator:\n  use_buffer_flush: false\n")
+    root = _fresh_root(tmp_path, "journal:\n  enabled: false\n")
     fields_by_path = {fi.path: fi for fi in walk_fields(root)}
 
-    assert fields_by_path["curator.use_buffer_flush"].source == "file"
-    assert fields_by_path["curator.use_buffer_flush"].value is False
+    assert fields_by_path["journal.enabled"].source == "file"
+    assert fields_by_path["journal.enabled"].value is False
     # backend was not set in YAML — should be default "auto"
     assert fields_by_path["curator.backend"].source == "default"
     assert fields_by_path["curator.backend"].value == "auto"
@@ -133,9 +100,9 @@ def test_get_field_returns_leaf_info(tmp_path: Path) -> None:
     from lore_core.root_config import get_field
 
     root = _fresh_root(tmp_path, "")
-    fi = get_field(root, "curator.use_buffer_flush")
-    assert fi.value is True
-    assert fi.default is True
+    fi = get_field(root, "journal.enabled")
+    assert fi.value is False
+    assert fi.default is False
     assert fi.source == "default"
     assert fi.type_name == "bool"
 
@@ -160,13 +127,12 @@ def test_set_field_persists_and_round_trips(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, set_field
 
     root = _fresh_root(tmp_path, "curator:\n  backend: openai\njournal:\n  enabled: false\n")
-    fi = set_field(root, "curator.use_buffer_flush", "false")
-    assert fi.value is False
+    fi = set_field(root, "journal.enabled", "true")
+    assert fi.value is True
     assert fi.source == "file"
     # Re-read; siblings preserved.
-    assert get_field(root, "curator.use_buffer_flush").value is False
+    assert get_field(root, "journal.enabled").value is True
     assert get_field(root, "curator.backend").value == "openai"
-    assert get_field(root, "journal.enabled").value is False
 
 
 def test_set_field_creates_missing_parents(tmp_path: Path) -> None:
@@ -183,7 +149,7 @@ def test_set_field_rejects_bad_type(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(ValueError, match="cannot parse"):
-        set_field(root, "curator.use_buffer_flush", "notabool")
+        set_field(root, "journal.enabled", "notabool")
 
 
 def test_set_field_rejects_unknown_path(tmp_path: Path) -> None:
@@ -199,11 +165,11 @@ def test_set_field_bool_accepts_common_spellings(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     for spelling in ("true", "TRUE", "yes", "on", "1"):
-        set_field(root, "curator.use_buffer_flush", spelling)
-        assert get_field(root, "curator.use_buffer_flush").value is True
+        set_field(root, "journal.enabled", spelling)
+        assert get_field(root, "journal.enabled").value is True
     for spelling in ("false", "FALSE", "no", "off", "0"):
-        set_field(root, "curator.use_buffer_flush", spelling)
-        assert get_field(root, "curator.use_buffer_flush").value is False
+        set_field(root, "journal.enabled", spelling)
+        assert get_field(root, "journal.enabled").value is False
 
 
 def test_schema_tree_covers_all_leaves() -> None:
@@ -213,8 +179,7 @@ def test_schema_tree_covers_all_leaves() -> None:
     paths = {p for p, _, _, _ in rows}
     # Spot-check leaves we ship today.
     assert "curator.backend" in paths
-    assert "curator.use_buffer_flush" in paths
-    assert "curator.use_buffer_flush" in paths
+    assert "curator.noteworthy_mode" in paths
     assert "journal.enabled" in paths
     assert "observability.runs.keep" in paths
     # No group should appear (only leaves).

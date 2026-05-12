@@ -80,19 +80,6 @@ class CuratorBackendConfig:
     openai: OpenAIBackendConfig = field(default_factory=OpenAIBackendConfig)
     noteworthy_mode: str = "cascade"
 
-    # Buffer-and-flush curator feature flag. PR 3 of the
-    # very-good-thats-the-mossy-lobster plan flipped this from False to
-    # True; the heartbeat path now buffers deterministic chunk deltas
-    # and synthesises once at flush time (SessionEnd / cap-trip /
-    # reaper) instead of LLM-classifying every chunk.
-    #
-    # Escape hatch: set ``LORE_BUFFER_FLUSH=0`` in the environment, or
-    # ``curator.use_buffer_flush: false`` in ``$LORE_ROOT/.lore/config.yml``,
-    # to fall back to the legacy classify-per-chunk path. The legacy
-    # path stays compiled in until PR 4 (next minor release) deletes
-    # it.
-    use_buffer_flush: bool = True
-
 
 @dataclass
 class JournalConfig:

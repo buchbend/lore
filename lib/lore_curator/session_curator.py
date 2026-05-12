@@ -15,18 +15,16 @@ from lore_core.ledger import (
     WikiLedger,
 )
 from lore_core.lockfile import curator_lock, LockContendedError, read_lock_holder
-from lore_core.root_config import load_root_config
 from lore_core.run_log import RecordCallback, RunLogger
 from lore_core.scope_resolver import resolve_scope
+from lore_core.session_writer import FiledNote
 from lore_core.state.attachments import AttachmentsFile
 from lore_core.types import Scope, Turn, TranscriptHandle
 from lore_core.wiki_config import WikiConfig, load_wiki_config
 from lore_curator import stub_note
 from lore_curator._auto_commit import maybe_auto_commit as _maybe_auto_commit
 from lore_curator.buffer_append import append_chunk
-from lore_curator.llm_client import LlmClientError
-from lore_curator.noteworthy import classify_slice
-from lore_curator.session_filer import FiledNote, _resolve_handle_for, file_session_note
+from lore_curator.session_filer import _resolve_handle_for
 
 
 Resolver = Callable[[Path], "Scope | None"]
@@ -90,9 +88,8 @@ class CuratorAResult:
     counters (``noteworthy_count``, ``skipped_reasons``, ``new_notes``,
     ``merged_notes``) increment per chunk, not per transcript.
 
-    ``buffers_appended`` / ``buffers_flushed`` cover the buffer-and-flush
-    path (``curator.use_buffer_flush``); they stay 0 under the legacy
-    classify-per-chunk path.
+    ``buffers_appended`` / ``buffers_flushed`` track the buffer-and-flush
+    heartbeat and synthesis worker respectively.
     """
 
     transcripts_considered: int = 0
@@ -106,25 +103,6 @@ class CuratorAResult:
     buffers_flushed: int = 0
 
 
-def _buffer_flush_enabled(lore_root: Path) -> bool:
-    """Return True when the buffer-and-flush curator should drive heartbeats.
-
-    Honours ``LORE_BUFFER_FLUSH=1`` env override (truthy values: ``1``,
-    ``true``, ``yes`` — case-insensitive); otherwise falls back to
-    ``$LORE_ROOT/.lore/config.yml`` ``curator.use_buffer_flush``.
-    Default false until the plan's PR 3 stage flips the config.
-    """
-    env = os.environ.get("LORE_BUFFER_FLUSH", "")
-    if env.strip().lower() in ("1", "true", "yes"):
-        return True
-    if env.strip().lower() in ("0", "false", "no"):
-        return False
-    try:
-        return bool(load_root_config(lore_root).curator.use_buffer_flush)
-    except Exception:  # noqa: BLE001 — never let config trip the curator
-        return False
-
-
 def _dispatch_flush_requested(
     lore_root: Path,
     *,
@@ -134,9 +112,9 @@ def _dispatch_flush_requested(
 ) -> int:
     """Walk live buffers, run :func:`synth_and_close` for each ``flush_requested``.
 
-    Called at the start of :func:`run_curator_a` (when buffer-flush is
-    enabled) so SessionEnd / cap-trip / reaper handover unblocks before
-    the curator-A pass touches the regular pending queue.
+    Called at the start of :func:`run_curator_a` so SessionEnd / cap-trip
+    / reaper handover unblocks before the curator-A pass touches the
+    regular pending queue.
 
     Bounded by ``max_per_pass`` to keep one curator run from getting
     stuck on a runaway buffer queue. Each flush takes the per-buffer
@@ -334,13 +312,14 @@ def run_curator_a(
     - Reads the sidecar transcript ledger.
     - For each pending entry whose `directory` resolves to an attached
       scope (or matches the supplied `scope`), loads new turns via its
-      adapter, redacts, classifies via `classify_slice`, and on
-      noteworthy=True files a session note via `file_session_note`.
-    - Advances the ledger for every considered transcript (noteworthy
-      or not) so we don't re-process.
-    - `dry_run=True` skips all writes (including ledger advance and
-      session-note file creation) but still runs the classification
-      (unless llm_client is None). Dry-run bypasses the lockfile.
+      adapter, redacts, splits by local date, and for each chunk
+      buffers an event + rewrites the live stub note. The synthesis
+      worker (`lore_curator.synthesis.synth_and_close`) finalises stubs
+      at SessionEnd / cap-trip / reaper time.
+    - Advances the ledger for every considered transcript so we don't
+      re-process.
+    - `dry_run=True` skips all writes (ledger, buffer, stub). Dry-run
+      bypasses the lockfile.
     """
     start = time.monotonic()
     now = now or datetime.now(UTC)
@@ -418,39 +397,35 @@ def run_curator_a(
                     # Buffer-and-flush handover dispatch first so a
                     # SessionEnd / PreCompact / cap-trip flush_requested
                     # marker unblocks before the regular pending loop.
-                    if _buffer_flush_enabled(lore_root):
-                        try:
-                            _dispatch_flush_requested(
-                                lore_root,
-                                llm_client=llm_client,
-                                logger=logger,
-                            )
-                        except Exception as exc:  # noqa: BLE001
-                            logger.emit(
-                                "warning",
-                                call="flush-dispatch",
-                                message=f"{type(exc).__name__}: {exc}",
-                            )
+                    try:
+                        _dispatch_flush_requested(
+                            lore_root,
+                            llm_client=llm_client,
+                            logger=logger,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.emit(
+                            "warning",
+                            call="flush-dispatch",
+                            message=f"{type(exc).__name__}: {exc}",
+                        )
                     _iterate_pending()
                     # Inline reaper pass — bounded so the spawn overhead
                     # stays sub-100ms even with many orphan buffers.
-                    # Behind the same flag as the heartbeat path so
-                    # non-buffer-flush deployments stay untouched.
-                    if _buffer_flush_enabled(lore_root):
-                        try:
-                            from lore_curator.reaper import reap_once
+                    try:
+                        from lore_curator.reaper import reap_once
 
-                            reap_once(
-                                lore_root,
-                                max_per_pass=5,
-                                logger=logger,
-                            )
-                        except Exception as exc:  # noqa: BLE001 — reaper must never abort curator-A
-                            logger.emit(
-                                "warning",
-                                call="reaper-inline",
-                                message=f"{type(exc).__name__}: {exc}",
-                            )
+                        reap_once(
+                            lore_root,
+                            max_per_pass=5,
+                            logger=logger,
+                        )
+                    except Exception as exc:  # noqa: BLE001 — reaper must never abort curator-A
+                        logger.emit(
+                            "warning",
+                            call="reaper-inline",
+                            message=f"{type(exc).__name__}: {exc}",
+                        )
                 # Only update last_curator_a on successful run completion.
                 # On dry-run: skip (telemetry is only for real runs).
                 # On mid-run exception: this line is unreachable, prior value
@@ -655,45 +630,21 @@ def _process_entry(
     chunks = _split_turns_by_local_date(turns)
     outcomes: list[_Outcome] = []
     for chunk_turns in chunks:
-        if _buffer_flush_enabled(lore_root):
-            outcome = _process_chunk_buffer_flush(
-                chunk_turns,
-                entry=entry,
-                tledger=tledger,
-                attached=attached,
-                wiki_dir=wiki_dir,
-                cfg=cfg,
-                handle=handle,
-                now=now,
-                dry_run=dry_run,
-                logger=logger,
-                lore_root=lore_root,
-                scope_redirected_from=scope_redirected_from,
-            )
-        else:
-            outcome = _process_chunk(
-                chunk_turns,
-                entry=entry,
-                tledger=tledger,
-                attached=attached,
-                wiki_dir=wiki_dir,
-                cfg=cfg,
-                llm_client=llm_client,
-                handle=handle,
-                now=now,
-                dry_run=dry_run,
-                logger=logger,
-                lore_root=lore_root,
-                scope_redirected_from=scope_redirected_from,
-            )
+        outcome = _process_chunk(
+            chunk_turns,
+            entry=entry,
+            tledger=tledger,
+            attached=attached,
+            wiki_dir=wiki_dir,
+            cfg=cfg,
+            handle=handle,
+            now=now,
+            dry_run=dry_run,
+            logger=logger,
+            lore_root=lore_root,
+            scope_redirected_from=scope_redirected_from,
+        )
         outcomes.append(outcome)
-        # Per-chunk failure isolation: if classify_slice failed for THIS
-        # chunk we must not process later chunks. A later chunk that
-        # succeeds would advance the ledger past this chunk's last hash
-        # and the failed content would be lost forever. Subsequent
-        # chunks stay pending; next heartbeat retries from this chunk.
-        if outcome.skip_reason and outcome.skip_reason.startswith("classify_failed"):
-            break
     return outcomes
 
 
@@ -705,7 +656,6 @@ def _process_chunk(
     attached: Scope,
     wiki_dir: Path,
     cfg: WikiConfig,
-    llm_client: Any,
     handle: TranscriptHandle,
     now: datetime,
     dry_run: bool,
@@ -713,137 +663,7 @@ def _process_chunk(
     lore_root: Path,
     scope_redirected_from: str | None,
 ) -> _Outcome:
-    """Classify + file one chunk (post Phase-B day split).
-
-    Each chunk is a contiguous run of turns in the same local date. The
-    ledger advances to this chunk's last hash on completion so the next
-    chunk (or run) picks up cleanly.
-    """
-    tier = cfg.curator.a_noteworthy_tier
-
-    def model_resolver(t: str) -> str:
-        return {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}[t]
-
-    try:
-        noteworthy = classify_slice(
-            chunk_turns,
-            tier=tier,
-            model_resolver=model_resolver,
-            llm_client=llm_client,
-            lore_root=lore_root,
-            wiki_dir=wiki_dir,
-            logger=logger,
-            transcript_id=entry.transcript_id,
-        )
-    except LlmClientError as exc:
-        # Per-chunk isolation: a 5xx / timeout / oversize-prompt failure
-        # on one chunk must not block the rest of the slice. Ledger stays
-        # un-advanced for THIS chunk so it's retried next run.
-        if logger is not None:
-            logger.emit(
-                "skip",
-                transcript_id=entry.transcript_id,
-                reason="classify-failed",
-                error=str(exc)[:300],
-            )
-        return _Outcome(
-            skip_reason=f"classify_failed:{type(exc).__name__}",
-            wiki_name=attached.wiki,
-        )
-
-    last_hash = chunk_turns[-1].content_hash()
-    last_hint = chunk_turns[-1].index
-
-    if not noteworthy.noteworthy:
-        if not dry_run:
-            tledger.advance(
-                integration=entry.integration,
-                transcript_id=entry.transcript_id,
-                digested_hash=last_hash,
-                digested_index_hint=last_hint,
-                noteworthy=False,
-                session_note=None,
-                curator_a_run=now,
-            )
-        if logger is not None:
-            logger.emit("skip", transcript_id=entry.transcript_id, reason="noteworthy-false")
-        return _Outcome(
-            skip_reason=f"not_noteworthy:{noteworthy.reason}",
-            was_noteworthy=False,
-            wiki_name=attached.wiki,
-        )
-
-    if dry_run:
-        return _Outcome(was_noteworthy=True, wiki_name=attached.wiki)
-
-    work_time = chunk_turns[-1].timestamp or handle.mtime or now
-
-    filed = file_session_note(
-        scope=attached,
-        handle=handle,
-        noteworthy=noteworthy,
-        turns=chunk_turns,
-        wiki_root=wiki_dir,
-        now=now,
-        work_time=work_time,
-        logger=logger,
-        transcript_id=entry.transcript_id,
-        scope_redirected_from=scope_redirected_from,
-        # LLM-merged summary on append: same client + tier as
-        # noteworthy classification. Reusing ``middle`` keeps the
-        # quality bar consistent — both calls are short, structured,
-        # and benefit from the same tier-budget tuning. The writer
-        # short-circuits on new-note path (no merge needed) so the
-        # extra round-trip only fires when there's an actual append.
-        llm_client=llm_client,
-        summary_merge_model=cfg.models.middle,
-    )
-    tledger.advance(
-        integration=entry.integration,
-        transcript_id=entry.transcript_id,
-        digested_hash=last_hash,
-        digested_index_hint=last_hint,
-        noteworthy=True,
-        session_note=filed.wikilink,
-        curator_a_run=now,
-    )
-
-    if not dry_run:
-        _maybe_auto_commit(wiki_dir, filed, logger, llm_client=llm_client)
-
-    try:
-        from lore_core.drain import DrainStore, resolve_session_id
-
-        sid, _ = resolve_session_id(entry.directory)
-        DrainStore(lore_root, sid).emit(
-            "note-appended" if filed.was_merge else "note-filed",
-            wiki=attached.wiki,
-            wikilink=filed.wikilink,
-            path=str(filed.path),
-            transcript_id=entry.transcript_id,
-        )
-    except Exception:  # noqa: BLE001 - logger emit must never abort a successful file
-        pass
-
-    return _Outcome(filed=filed, was_noteworthy=True, wiki_name=attached.wiki)
-
-
-def _process_chunk_buffer_flush(
-    chunk_turns: list[Turn],
-    *,
-    entry: TranscriptLedgerEntry,
-    tledger: TranscriptLedger,
-    attached: Scope,
-    wiki_dir: Path,
-    cfg: WikiConfig,
-    handle: TranscriptHandle,
-    now: datetime,
-    dry_run: bool,
-    logger: RunLogger | None,
-    lore_root: Path,
-    scope_redirected_from: str | None,
-) -> _Outcome:
-    """Buffer-and-flush variant of :func:`_process_chunk`.
+    """Buffer-and-flush chunk processor — one chunk per local-date.
 
     No ``classify_slice``, no per-chunk LLM call. Each heartbeat:
 
