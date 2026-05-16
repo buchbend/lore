@@ -531,12 +531,20 @@ def compose_session_note(
                 title_out=title_out,
             )
     if logger is not None:
+        # Surface the literal model id the backend echoed back plus the
+        # reasoning_effort the client applied (if any) — lets future
+        # experiments correlate quality with the resolved setting without
+        # bypassing the wrapper. ``resp.model`` is populated by every
+        # backend (SDK, subprocess, openai-compatible); ``reasoning_effort``
+        # is a lore-only field that only the openai client populates today.
         logger.emit(
             "llm-response",
             call="compose-session-note",
             transcript_id=transcript_id,
             latency_ms=latency_ms,
             keys=sorted(data.keys()),
+            model_resolved=getattr(resp, "model", "") or "",
+            reasoning_effort=getattr(resp, "reasoning_effort", None),
         )
     return data
 

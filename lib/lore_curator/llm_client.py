@@ -57,6 +57,12 @@ class LlmResponse:
     """Mimics an anthropic.types.Message for the subset curators use.
 
     ``total_cost_usd`` is a lore-only extension absent on the real SDK type.
+
+    ``reasoning_effort`` is a lore-only extension populated only by the
+    OpenAI-compatible backend; it lets the caller (e.g. Curator A's
+    telemetry) observe the effort level the client actually applied
+    without poking at private resolver state. Subprocess + SDK paths
+    leave it ``None`` — they don't carry a notion of reasoning effort.
     """
 
     # Narrow shape used by the SubprocessClient synthesiser.  SDKClient does
@@ -67,6 +73,7 @@ class LlmResponse:
     stop_reason: str = "end_turn"
     usage: dict[str, int] = field(default_factory=dict)  # input_tokens, output_tokens, …
     total_cost_usd: float | None = None
+    reasoning_effort: Literal["low", "medium", "high"] | None = None
 
 
 class _MessagesAPI(Protocol):
@@ -479,7 +486,7 @@ class _OpenAIMessagesAPI:
          LlmClientError with a message pointing at LORE_OPENAI_MODEL_*.
     """
 
-    def __init__(self, client: Any, tier_to_model: dict[str, str]):
+    def __init__(self, client: Any, tier_to_model: dict[str, ResolvedModel]):
         self._client = client
         self._tier_to_model = tier_to_model
 
@@ -491,13 +498,19 @@ class _OpenAIMessagesAPI:
         tools: list[dict[str, Any]] | None = None,
         tool_choice: dict[str, Any] | None = None,
         max_tokens: int | None = None,
-        **_extra: Any,
     ) -> LlmResponse:
         tier = _infer_tier(model)
+        # ``resolved`` is the ResolvedModel for the tier (carries id +
+        # optional reasoning_effort). When ``model`` is a literal pass-
+        # through (tier is None — e.g. "Mistral Small 4 119B") we have no
+        # ResolvedModel to consult, so ``resolved`` stays None and the
+        # forwarding logic below treats reasoning_effort as unset.
+        resolved: ResolvedModel | None = None
         if tier is not None:
             configured = self._tier_to_model.get(tier)
-            if configured:
-                resolved_model = configured
+            if configured is not None:
+                resolved = configured
+                resolved_model = configured.id
             else:
                 raise LlmClientError(
                     f"openai backend: no model configured for tier {tier!r} "
@@ -541,6 +554,13 @@ class _OpenAIMessagesAPI:
             kwargs["tools"] = openai_tools
         if openai_tool_choice is not None:
             kwargs["tool_choice"] = openai_tool_choice
+        # Forward reasoning_effort via ``extra_body`` only when the resolved
+        # tier opted in. When unset (or model was a literal pass-through),
+        # leave the key off entirely so the on-the-wire payload matches the
+        # pre-PRD-#110 byte sequence for users who haven't opted in.
+        applied_effort = resolved.reasoning_effort if resolved is not None else None
+        if applied_effort is not None:
+            kwargs["extra_body"] = {"reasoning_effort": applied_effort}
 
         try:
             completion = self._client.chat.completions.create(**kwargs)
@@ -632,6 +652,7 @@ class _OpenAIMessagesAPI:
             model=getattr(completion, "model", resolved_model) or resolved_model,
             stop_reason=getattr(choices[0], "finish_reason", "end_turn") or "end_turn",
             usage=usage_dict,
+            reasoning_effort=applied_effort,
         )
 
 
@@ -650,9 +671,11 @@ class OpenAICompatibleClient:
     ``tier_to_model`` accepts either a ``dict[str, ResolvedModel]`` (the
     new shape used by :func:`_resolve_openai_settings`) or the legacy
     ``dict[str, str]`` (back-compat path for tests and external callers
-    that pass plain model IDs). On the wire today only the model ``id``
-    is forwarded — slice 2 plumbs ``reasoning_effort`` through to the
-    underlying chat completions call.
+    that pass plain model IDs — these are normalized to
+    ``ResolvedModel(id=<str>, reasoning_effort=None)`` at construction
+    time). ResolvedModel flows through unchanged to :class:`_OpenAIMessagesAPI`
+    so ``reasoning_effort`` lands on the chat completions request via
+    ``extra_body``.
     """
 
     def __init__(
@@ -666,7 +689,9 @@ class OpenAICompatibleClient:
         self._client = openai.OpenAI(base_url=base_url, api_key=api_key)
         # Back-compat: accept plain-string tier maps and wrap them into
         # ResolvedModel internally. Tests that predate ResolvedModel still
-        # pass ``{"simple": "m", ...}``.
+        # pass ``{"simple": "m", ...}``; those callers get
+        # reasoning_effort=None implicitly, which means no extra_body on
+        # the wire (byte-identical to the pre-PRD-#110 payload).
         normalized: dict[str, ResolvedModel] = {}
         for tier, val in (tier_to_model or {}).items():
             if isinstance(val, ResolvedModel):
@@ -674,11 +699,7 @@ class OpenAICompatibleClient:
             else:
                 normalized[tier] = ResolvedModel(id=val)
         self._tier_to_model: dict[str, ResolvedModel] = normalized
-        # _OpenAIMessagesAPI stays on the plain-string shape in this slice
-        # — slice 2 lifts it to ResolvedModel when it starts forwarding
-        # reasoning_effort on the wire.
-        plain_tier_to_model = {tier: rm.id for tier, rm in normalized.items()}
-        self.messages = _OpenAIMessagesAPI(self._client, plain_tier_to_model)
+        self.messages = _OpenAIMessagesAPI(self._client, normalized)
 
     @property
     def backend_name(self) -> str:
