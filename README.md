@@ -453,6 +453,35 @@ a one-shot: `lore curator run --backend openai --dry-run --trace-llm` —
 the trace file under `$LORE_ROOT/.lore/runs/<id>.trace.jsonl` shows the
 exact prompt/response pair for inspection.
 
+### Recommended openai-backend setup (Curator A narration)
+
+The narrator used to default to Mistral-119B, which has a known structural
+failure on retraction-heavy transcripts — it asserts decisions and outcomes
+the transcript later walks back (see experiments **005**, **006**, **007**
+in the [`lore-experiments`](https://github.com/) repo). Swapping the high
+tier to **GPT-OSS-120B with `reasoning_effort=high`** roughly halves
+contradicted claims (4 → 2 on the 007 sample) and passes the pre-committed
+gate.
+
+```yaml
+curator:
+  openai:
+    base_url: https://chat.kiconnect.nrw/api/v1
+    model_high: "Openai GPT OSS 120B"
+    reasoning_effort_high: high
+# Per-wiki, in <wiki>/.lore-wiki.yml — route Curator A to the high tier:
+# curator:
+#   synthesis_model_tier: high
+```
+
+- **Latency**: GPT-OSS-120B at `reasoning_effort=high` takes 80–100s per
+  Curator A call vs ~10s for Mistral. The session-note pipeline is async,
+  so this is acceptable but worth knowing.
+- **Cost**: both Mistral-119B and GPT-OSS-120B are free on the
+  kiconnect.nrw endpoint Lore points at by default.
+- **Backwards compatibility**: existing Mistral-only configs keep working
+  unchanged — leave `reasoning_effort_high` unset and nothing flips.
+
 ## Scheduling the curator — cost-free defaults
 
 The curator (flags stale notes, detects superseded decisions, keeps
