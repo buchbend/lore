@@ -565,7 +565,7 @@ def test_make_llm_client_openai_from_env(monkeypatch, fake_openai):
 
     client = make_llm_client(backend="openai")
     assert isinstance(client, OpenAICompatibleClient)
-    assert client._tier_to_model["middle"] == "gpt-oss-120b"
+    assert client._tier_to_model["middle"].id == "gpt-oss-120b"
 
 
 def test_make_llm_client_openai_missing_base_url_raises(monkeypatch):

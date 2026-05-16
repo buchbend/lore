@@ -52,6 +52,15 @@ class OpenAIBackendConfig:
     the gitignored ``.lore/`` directory, and never appears in diffs.
     ``model_{simple,middle,high}`` override the Anthropic tier names; leave empty to fall
     back to the env var ``LORE_OPENAI_MODEL_{SIMPLE,MIDDLE,HIGH}`` or pass-through.
+
+    ``reasoning_effort_{simple,middle,high}`` opt the corresponding tier into a
+    reasoning-capable model's effort knob (``"low" | "medium" | "high"``).
+    Empty string means "unset" (no reasoning_effort forwarded). The empty-
+    string-means-unset convention lets the typed CLI set path (``lore config
+    set ...``) and the existing schema walker keep working without learning
+    about ``None`` as a YAML/CLI value. Validated and forwarded to the wire
+    by ``lore_curator.llm_client._resolve_openai_settings``; values from env
+    var ``LORE_OPENAI_REASONING_EFFORT_{SIMPLE,MIDDLE,HIGH}`` win over config.
     """
 
     base_url: str = ""
@@ -59,6 +68,9 @@ class OpenAIBackendConfig:
     model_simple: str = ""
     model_middle: str = ""
     model_high: str = ""
+    reasoning_effort_simple: str = ""
+    reasoning_effort_middle: str = ""
+    reasoning_effort_high: str = ""
 
 
 @dataclass

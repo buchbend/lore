@@ -5,8 +5,27 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Any, Callable, Literal, Protocol, runtime_checkable
 from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class ResolvedModel:
+    """Per-tier resolved model identity plus any per-tier knobs.
+
+    Frozen value object — equality and hash come from the dataclass.
+    Currently carries the model id and an optional ``reasoning_effort``;
+    future per-tier knobs (max_tokens floor, response_format, …) belong
+    here so callers don't grow new positional plumbing every time.
+
+    Fields:
+      - ``id``: the literal model identifier the backend should send.
+      - ``reasoning_effort``: ``"low" | "medium" | "high"`` or ``None``
+        when the user has not opted in.
+    """
+
+    id: str
+    reasoning_effort: Literal["low", "medium", "high"] | None = None
 
 
 class LlmClientError(RuntimeError):
@@ -627,6 +646,13 @@ class OpenAICompatibleClient:
 
     Tier names (``simple``/``middle``/``high``) are resolved via
     ``tier_to_model``; literal model IDs are passed through unchanged.
+
+    ``tier_to_model`` accepts either a ``dict[str, ResolvedModel]`` (the
+    new shape used by :func:`_resolve_openai_settings`) or the legacy
+    ``dict[str, str]`` (back-compat path for tests and external callers
+    that pass plain model IDs). On the wire today only the model ``id``
+    is forwarded — slice 2 plumbs ``reasoning_effort`` through to the
+    underlying chat completions call.
     """
 
     def __init__(
@@ -634,12 +660,25 @@ class OpenAICompatibleClient:
         *,
         base_url: str,
         api_key: str,
-        tier_to_model: dict[str, str] | None = None,
+        tier_to_model: dict[str, ResolvedModel] | dict[str, str] | None = None,
     ) -> None:
         import openai  # lazy — optional dep
         self._client = openai.OpenAI(base_url=base_url, api_key=api_key)
-        self._tier_to_model = tier_to_model or {}
-        self.messages = _OpenAIMessagesAPI(self._client, self._tier_to_model)
+        # Back-compat: accept plain-string tier maps and wrap them into
+        # ResolvedModel internally. Tests that predate ResolvedModel still
+        # pass ``{"simple": "m", ...}``.
+        normalized: dict[str, ResolvedModel] = {}
+        for tier, val in (tier_to_model or {}).items():
+            if isinstance(val, ResolvedModel):
+                normalized[tier] = val
+            else:
+                normalized[tier] = ResolvedModel(id=val)
+        self._tier_to_model: dict[str, ResolvedModel] = normalized
+        # _OpenAIMessagesAPI stays on the plain-string shape in this slice
+        # — slice 2 lifts it to ResolvedModel when it starts forwarding
+        # reasoning_effort on the wire.
+        plain_tier_to_model = {tier: rm.id for tier, rm in normalized.items()}
+        self.messages = _OpenAIMessagesAPI(self._client, plain_tier_to_model)
 
     @property
     def backend_name(self) -> str:
@@ -685,15 +724,49 @@ def _make_sdk_client(api_key: str | None) -> "SDKClient":
     )
 
 
+_VALID_REASONING_EFFORTS = frozenset({"low", "medium", "high"})
+
+
+def _coerce_reasoning_effort(
+    raw: str | None, *, tier: str, source: str,
+) -> Literal["low", "medium", "high"] | None:
+    """Validate + lowercase-normalize a reasoning_effort value.
+
+    Empty/whitespace/None → None (i.e. "unset", no value forwarded).
+    Case-insensitive match against {low, medium, high}; anything else
+    raises ``LlmClientError`` naming both the tier and the bad value so
+    the user can find the source quickly.
+    """
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    lowered = stripped.lower()
+    if lowered not in _VALID_REASONING_EFFORTS:
+        raise LlmClientError(
+            f"invalid reasoning_effort for tier {tier!r} "
+            f"(from {source}): {raw!r} — "
+            f"expected one of low/medium/high (case-insensitive) or empty"
+        )
+    return lowered  # type: ignore[return-value]
+
+
 def _resolve_openai_settings(
     lore_root: "Path | None" = None,
-) -> tuple[str, str, dict[str, str]]:
-    """Resolve base_url, api_key, and tier→model map from env + root config.
+) -> tuple[str, str, dict[str, ResolvedModel]]:
+    """Resolve base_url, api_key, and tier→ResolvedModel map from env + root config.
 
     Precedence per field: process env > $LORE_ROOT/.lore/secrets.env > root
     config > empty. The secrets.env layer lets users persist the API key
     on disk without putting it in the diffable config.yml; the file itself
     sits inside the already-gitignored ``.lore/`` directory.
+
+    Each tier resolves to a :class:`ResolvedModel` that carries the model
+    id plus an optional ``reasoning_effort``. The reasoning_effort comes
+    from ``curator.openai.reasoning_effort_{tier}`` in config (empty =
+    unset) and is overridden by ``LORE_OPENAI_REASONING_EFFORT_{TIER}``
+    in env. Invalid reasoning_effort values raise ``LlmClientError``.
 
     Raises LlmClientError if base_url or api_key can't be found.
     """
@@ -708,7 +781,12 @@ def _resolve_openai_settings(
 
     base_url = os.environ.get("LORE_OPENAI_BASE_URL", "").strip()
     api_key_env_name = "LORE_OPENAI_API_KEY"
-    tier_to_model: dict[str, str] = {}
+    # Build the per-tier model id and reasoning_effort maps separately,
+    # then zip them into ResolvedModel at the end.
+    tier_to_id: dict[str, str] = {}
+    tier_to_effort: dict[str, Literal["low", "medium", "high"] | None] = {
+        "simple": None, "middle": None, "high": None,
+    }
 
     if lore_root is not None:
         try:
@@ -719,11 +797,29 @@ def _resolve_openai_settings(
             if cfg.api_key_env:
                 api_key_env_name = cfg.api_key_env
             if cfg.model_simple:
-                tier_to_model["simple"] = cfg.model_simple
+                tier_to_id["simple"] = cfg.model_simple
             if cfg.model_middle:
-                tier_to_model["middle"] = cfg.model_middle
+                tier_to_id["middle"] = cfg.model_middle
             if cfg.model_high:
-                tier_to_model["high"] = cfg.model_high
+                tier_to_id["high"] = cfg.model_high
+            # reasoning_effort from config (validated; empty → None).
+            tier_to_effort["simple"] = _coerce_reasoning_effort(
+                cfg.reasoning_effort_simple,
+                tier="simple",
+                source="curator.openai.reasoning_effort_simple",
+            )
+            tier_to_effort["middle"] = _coerce_reasoning_effort(
+                cfg.reasoning_effort_middle,
+                tier="middle",
+                source="curator.openai.reasoning_effort_middle",
+            )
+            tier_to_effort["high"] = _coerce_reasoning_effort(
+                cfg.reasoning_effort_high,
+                tier="high",
+                source="curator.openai.reasoning_effort_high",
+            )
+        except LlmClientError:
+            raise
         except Exception:
             pass
 
@@ -735,7 +831,19 @@ def _resolve_openai_settings(
     ):
         val = os.environ.get(env_name, "").strip()
         if val:
-            tier_to_model[tier] = val
+            tier_to_id[tier] = val
+
+    # Env-var reasoning_effort overrides config (same precedence as model).
+    for tier, env_name in (
+        ("simple", "LORE_OPENAI_REASONING_EFFORT_SIMPLE"),
+        ("middle", "LORE_OPENAI_REASONING_EFFORT_MIDDLE"),
+        ("high", "LORE_OPENAI_REASONING_EFFORT_HIGH"),
+    ):
+        raw_env = os.environ.get(env_name, "")
+        if raw_env.strip():
+            tier_to_effort[tier] = _coerce_reasoning_effort(
+                raw_env, tier=tier, source=f"env {env_name}",
+            )
 
     if not base_url:
         raise LlmClientError(
@@ -749,6 +857,10 @@ def _resolve_openai_settings(
             f"openai backend requested but {api_key_env_name} is not set"
         )
 
+    tier_to_model: dict[str, ResolvedModel] = {
+        tier: ResolvedModel(id=model_id, reasoning_effort=tier_to_effort.get(tier))
+        for tier, model_id in tier_to_id.items()
+    }
     return base_url, api_key, tier_to_model
 
 
