@@ -130,7 +130,9 @@ def test_secrets_env_provides_models_and_config_provides_base_url(
     base_url, api_key, tier_to_model = _resolve_openai_settings(tmp_path)
     assert base_url == "https://gateway.example/v1"
     assert api_key == "sk-secret"
-    assert tier_to_model == {"simple": "tiny", "middle": "mid", "high": "big"}
+    assert tier_to_model["simple"].id == "tiny"
+    assert tier_to_model["middle"].id == "mid"
+    assert tier_to_model["high"].id == "big"
 
 
 def test_make_llm_client_picks_up_backend_from_secrets_env(

@@ -35,7 +35,7 @@ def test_env_model_middle_beats_config(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setenv("LORE_OPENAI_MODEL_MIDDLE", "from-env")
 
     base_url, api_key, tier_to_model = _resolve_openai_settings(tmp_path)
-    assert tier_to_model["middle"] == "from-env"
+    assert tier_to_model["middle"].id == "from-env"
 
 
 def test_env_model_simple_beats_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -52,7 +52,7 @@ def test_env_model_simple_beats_config(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setenv("LORE_OPENAI_MODEL_SIMPLE", "from-env")
 
     _, _, tier_to_model = _resolve_openai_settings(tmp_path)
-    assert tier_to_model["simple"] == "from-env"
+    assert tier_to_model["simple"].id == "from-env"
 
 
 def test_env_base_url_beats_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,7 +89,7 @@ def test_config_used_when_env_unset(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     base_url, _, tier_to_model = _resolve_openai_settings(tmp_path)
     assert base_url == "https://config-only.example/v1"
-    assert tier_to_model["high"] == "only-from-config"
+    assert tier_to_model["high"].id == "only-from-config"
 
 
 def test_partial_env_override_leaves_other_tiers_from_config(
@@ -113,6 +113,6 @@ def test_partial_env_override_leaves_other_tiers_from_config(
     monkeypatch.delenv("LORE_OPENAI_MODEL_HIGH", raising=False)
 
     _, _, tier_to_model = _resolve_openai_settings(tmp_path)
-    assert tier_to_model["simple"] == "cfg-simple"
-    assert tier_to_model["middle"] == "env-middle"
-    assert tier_to_model["high"] == "cfg-high"
+    assert tier_to_model["simple"].id == "cfg-simple"
+    assert tier_to_model["middle"].id == "env-middle"
+    assert tier_to_model["high"].id == "cfg-high"
