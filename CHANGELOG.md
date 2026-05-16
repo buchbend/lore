@@ -10,6 +10,55 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-05-16
+
+### Added — Curator A reasoning-mode narration (PRD #110, PRs 1–4)
+
+Revamps the Curator A OpenAI-backend path so reasoning-capable models
+(GPT-OSS-120B at `reasoning_effort=high`) can actually drive Phase 2
+narration end-to-end. Previously, configured reasoning never reached
+the wire and the 1024-token ceiling truncated the structured tool
+response mid-stream once hidden reasoning tokens were in play.
+
+- **PR 1 — `ResolvedModel` value object (#111)**: introduced a frozen
+  `ResolvedModel(id, reasoning_effort)` in `lore_curator.llm_client`
+  and routed `_resolve_openai_settings` through it. New
+  `curator.openai.reasoning_effort_{simple,middle,high}` config keys
+  and matching `LORE_OPENAI_REASONING_EFFORT_{TIER}` env-var overrides,
+  with case-insensitive validation that raises `LlmClientError` naming
+  both tier and bad value. Back-compat: `OpenAICompatibleClient`
+  still accepts the legacy `dict[str, str]` shape.
+- **PR 2 — plumb `reasoning_effort` end-to-end (#113)**:
+  `_OpenAIMessagesAPI` now takes `dict[str, ResolvedModel]` directly;
+  the down-conversion in `OpenAICompatibleClient.__init__` is gone and
+  `create` drops its `**_extra: Any` so future silent-kwargs-drop
+  regressions surface as a clean `TypeError`. Resolved
+  `reasoning_effort` is forwarded as `extra_body={"reasoning_effort": ...}`
+  on `chat.completions.create`; unset / literal pass-through omits
+  `extra_body` for byte-identical opt-out. Telemetry: `LlmResponse`
+  gains `reasoning_effort`; `synthesis.compose_session_note` enriches
+  the `llm-response` event with `model_resolved` + `reasoning_effort`.
+- **PR 3 — Phase 2 max output tokens (#112)**: bumped
+  `PHASE2_MAX_OUTPUT_TOKENS` 1024 → 4000 — the smallest safe floor
+  above the PRD's ≥4000 ask that covers reasoning payload + structured
+  response on every cell of experiment 007 without inviting silent
+  cost inflation. OpenAI SDK default 600s timeout comfortably covers
+  the documented 80–100s GPT-OSS-120B latency; no explicit
+  `LORE_OPENAI_TIMEOUT_S` knob added until a forcing function appears.
+- **PR 4 — recommended openai-backend setup (#114)**: README gains a
+  "Recommended openai-backend setup (Curator A narration)" subsection
+  documenting the GPT-OSS-120B + `reasoning_effort=high` recipe that
+  experiment 007 in lore-experiments showed cuts contradicted claims
+  roughly in half (4 → 2 on the 4-cell sample), with latency caveat
+  (80–100s vs ~10s) and cost note (both free on kiconnect.nrw).
+  `docs/architecture/config.md` extended with the three
+  `LORE_OPENAI_REASONING_EFFORT_{SIMPLE,MIDDLE,HIGH}` rows and the new
+  `curator.openai` schema bullet.
+
+Backwards-compatible: users on existing Mistral-119B / non-reasoning
+configs see no behaviour change (no `extra_body`, no payload diff);
+the recipe is opt-in via the documented config keys.
+
 ## [0.52.0] - 2026-05-12
 
 ### Changed — Streamlining track grandfather kill (issue #80, PRs 6a–6d)
