@@ -74,6 +74,14 @@ Resolution: env > `.lore/config.yml:curator.openai.*` > error.
 | `LORE_OPENAI_MODEL_SIMPLE` | `model_simple` |
 | `LORE_OPENAI_MODEL_MIDDLE` | `model_middle` |
 | `LORE_OPENAI_MODEL_HIGH`   | `model_high` |
+| `LORE_OPENAI_REASONING_EFFORT_SIMPLE` | `reasoning_effort_simple` |
+| `LORE_OPENAI_REASONING_EFFORT_MIDDLE` | `reasoning_effort_middle` |
+| `LORE_OPENAI_REASONING_EFFORT_HIGH`   | `reasoning_effort_high` |
+
+`reasoning_effort_*` values are `low | medium | high` (case-insensitive)
+or empty string for "unset" (no `reasoning_effort` forwarded). See
+[Recommended openai-backend setup](../../README.md#recommended-openai-backend-setup-curator-a-narration)
+in the README for the GPT-OSS-120B production recipe.
 
 Implemented in `lore_curator/llm_client.py:_resolve_openai_settings`.
 
@@ -109,7 +117,7 @@ Vault-wide policy. Schema lives in
 - `observability.runs.{keep, max_total_mb, keep_trace}`
 - `observability.proc.keep_generations`
 - `curator.backend` — `auto` | `subscription` | `api` | `openai`
-- `curator.openai.{base_url, api_key_env, model_simple, model_middle, model_high}`
+- `curator.openai.{base_url, api_key_env, model_simple, model_middle, model_high, reasoning_effort_simple, reasoning_effort_middle, reasoning_effort_high}`
 
 Loader: `load_root_config(lore_root) -> RootConfig`. Missing file →
 all defaults. Unknown keys → `warnings.warn` (not fatal). Malformed
