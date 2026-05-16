@@ -154,7 +154,7 @@ _DISCUSSION_LEADS = frozenset({
 _TITLE_WORD_CAP = 8
 BULLET_LINE_MAX = 280
 PHASE2_MAX_ATTEMPTS = 3
-PHASE2_MAX_OUTPUT_TOKENS = 1024
+PHASE2_MAX_OUTPUT_TOKENS = 4000
 
 
 # ---------------------------------------------------------------------------
