@@ -10,8 +10,7 @@ Phase 1 — deterministic, never raises:
 3. Validate plan / project refs against the vault; drop dangles, emit
    ``dangling-ref`` telemetry.
 4. Re-render :class:`BodySections` with Activity from accumulators;
-   ``summary`` / ``decisions`` / ``worked_on`` / ``loose_ends`` stay
-   empty.
+   ``summary`` / ``narrative`` stay empty until Phase 2 fills them.
 5. Atomically rewrite the stub at ``sidecar.stub_path``; drop
    frontmatter ``state: stub``; for Part >= 2 add ``part: N`` and
    ``continues: [[<prev>]]``.
@@ -21,24 +20,40 @@ Phase 1 — deterministic, never raises:
 The Phase-1 note is already useful by itself — Activity (commits /
 issues / files) is the most evidentiary part of any session note.
 
-Phase 2 — LLM composition, optional, in the same worker:
+Phase 2 — LLM composition, two-call P2 (experiment 005 best-GPT-OSS
+cell at 0.804 / 0.964 hero):
 
-1. One LLM tool-use call composes ``{title, summary, description,
-   decisions[], worked_on[], loose_ends[]}`` from the full slice the
-   buffer pointed at.
-2. For Part >= 2, the prompt tells the model "this continues
-   [[<prev>]]; do not re-summarise, focus on this part's arc".
-3. Re-open the finalised stub, rewrite frontmatter ``title`` /
+1. **Call A — `outline`**: cheap first pass. Model emits 4-8 short
+   outline items (≤8 words each, no grounding yet) from the transcript
+   slice. ``{items}`` is the entire schema.
+2. **Call B — `compose`**: expand pass. Model receives the outline +
+   transcript and emits ``{title, summary_lede, narrative}``. The
+   narrative is a single markdown string with bold-led bullets, ``@N``
+   turn citations, optional sub-headings (``### Strategy / ### Detours
+   / ### Outcomes``), and per-bullet epistemic prefixes
+   (``Considered: / Leaning: / Tried: / Open:``) for tentative items.
+3. For Part >= 2, both prompts get a rider: "this continues
+   [[<prev>]]; focus on THIS part's arc only".
+4. Re-open the finalised stub, rewrite frontmatter ``title`` /
    ``description`` and body sections (``# H1``, ``## Summary``,
-   ``## Decisions made``, ``## What we worked on``, ``## Loose ends``).
-   Activity / files_touched / plans / projects / provenance preserved.
-4. Bullet caps enforced post-LLM: ``decisions`` <= 5, ``worked_on``
-   <= 8, ``loose_ends`` <= 5; each line <= 120 chars.
-5. On failure: ``flush_attempts++``, retry up to 3 times in-process.
-   On exhaustion, emit ``flush-degraded`` and leave the Activity-only
-   note intact. **No state rollback** — buffer stays ``closed``.
+   ``## Narrative``, ``## Activity``). Activity / files_touched /
+   plans / projects / provenance preserved. The structured side-fields
+   the pre-P2 schema produced (``adr_candidates`` / ``worked_on`` /
+   ``discussion`` / ``loose_ends``) are not emitted; legacy notes keep
+   them on round-trip via the parser.
+5. On failure on either call: ``flush_attempts++``, retry up to 3
+   times in-process. On exhaustion, emit ``flush-degraded`` and leave
+   the Activity-only note intact. **No state rollback** — buffer stays
+   ``closed``.
 6. For Part >= 2, back-fill ``continued_by: [[<this>]]`` onto the prior
    part's frontmatter.
+
+Tier note: P2 is a GPT-OSS-class-or-better recipe. Mistral-119B
+collapsed on this shape in experiment 005 (0.426 vs 0.804) because
+the narrative-string schema can't structurally block ``from_example``
+copy-paste; a weaker model with poor grounding would degrade quality
+without the harness noticing. The README recommends GPT-OSS-120B +
+``reasoning_effort=high`` for this path.
 """
 from __future__ import annotations
 
@@ -53,7 +68,6 @@ import yaml
 
 from lore_adapters import Adapter, get_adapter
 from lore_core.io import atomic_write_text
-from lore_core.narrative_kind import NarrativeShape, select_shape
 from lore_core.regions import render_regions
 from lore_core.schema import parse_frontmatter, strip_frontmatter
 from lore_core.session_writer import (
@@ -72,7 +86,6 @@ from lore_curator.buffer_store import (
     _now_iso,
     done_dir,
 )
-from lore_curator.session_activity import _files_modified_from_turns
 from lore_curator.session_filer import _slug
 from lore_curator.stub_note import (
     STUB_DESCRIPTION_PLACEHOLDER,
@@ -81,7 +94,6 @@ from lore_curator.stub_note import (
     STUB_SUMMARY_PLACEHOLDER,
     file_lists_for_frontmatter,
 )
-from lore_curator import adr_candidate, summary_block
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
@@ -93,66 +105,29 @@ __all__ = [
     "synth_in_place",
     "synth_and_close",
     "spawn_detached_flush",
-    "BULLET_CAPS",
-    "BULLET_LINE_MAX",
+    "OUTLINE_MIN_ITEMS",
+    "OUTLINE_MAX_ITEMS",
+    "OUTLINE_ITEM_WORD_CAP",
+    "SUMMARY_LEDE_MAX",
 ]
 
 
-# Phase-2 caps. Phrased as a tool-schema constraint AND post-validated.
-BULLET_CAPS = {
-    "adr_candidates": 5,  # per-session cap; four-field friction does the real filtering
-    "worked_on": 8,
-    "loose_ends": 5,
-    "discussion": 8,  # mirrors worked_on cap; discussion replaces it in non-work shape
-    # Summary lede + bullet shape (PRD #61 / slice #62). Caps are friction
-    # shape — prompt discipline does the real filtering; cap is the safety
-    # net. ``summary_outcomes`` (work shape) and ``summary_takeaways``
-    # (discussion shape) share the same maxItems.
-    "summary_outcomes": 4,
-    "summary_takeaways": 4,
-}
+# P2 is shape-agnostic — kind classification moves into per-bullet
+# epistemic prefixes inside the narrative string (`Considered:` /
+# `Leaning:` / `Tried:` / `Open:`), so the per-section caps that gated
+# the old work/discussion split are gone. The only schema cap that still
+# matters is the outline length; everything else is prompt-shaped.
+OUTLINE_MIN_ITEMS = 4
+OUTLINE_MAX_ITEMS = 8
+OUTLINE_ITEM_WORD_CAP = 8
 
-# Lede-line cap. Distinct from BULLET_LINE_MAX — the lede is one
-# sentence answering "what is this note", not a bullet body.
-SUMMARY_LEDE_MAX = 160
+# Lede length cap, matching experiment 005 P2 (≤220 chars). Up from the
+# pre-P2 ledeshape (160) — the longer cap gives the model room to name
+# both topic and outcome in one sentence without scattering into bullets.
+SUMMARY_LEDE_MAX = 220
+TITLE_WORD_MIN = 6
+TITLE_WORD_MAX = 10
 
-
-# Title-verb gate (step-6 of yes-do-that-keen-yeti). In discussion shape
-# the title MUST NOT lead with a verb that promises work the session
-# didn't deliver. The Phase-2 prompt steers the LLM toward
-# "Discussed:" / "Explored:" / "Sketched:" / "Reviewed:" or a noun-
-# phrase title; this set + the coercion below enforce it deterministically.
-_DELIVERABLE_VERBS = frozenset({
-    "refactor", "refactored", "refactoring",
-    "add", "added", "adding",
-    "fix", "fixed", "fixing",
-    "implement", "implemented", "implementing",
-    "migrate", "migrated", "migrating",
-    "build", "built", "building",
-    "ship", "shipped", "shipping",
-    "create", "created", "creating",
-    "delete", "deleted", "deleting",
-    "remove", "removed", "removing",
-    "update", "updated", "updating",
-    "replace", "replaced", "replacing",
-    "land", "landed", "landing",
-    "rewrite", "rewrote", "rewriting",
-})
-
-
-_DISCUSSION_LEADS = frozenset({
-    "discussed", "discussed:",
-    "explored", "explored:",
-    "sketched", "sketched:",
-    "reviewed", "reviewed:",
-    "considered", "considered:",
-    "drafted", "drafted:",
-    "proposed", "proposed:",
-})
-
-
-_TITLE_WORD_CAP = 8
-BULLET_LINE_MAX = 280
 PHASE2_MAX_ATTEMPTS = 3
 PHASE2_MAX_OUTPUT_TOKENS = 4000
 
@@ -441,31 +416,150 @@ def compose_session_note(
     model: str,
     logger: "RunLogger | None" = None,
     transcript_id: str = "",
-    shape: NarrativeShape | None = None,
 ) -> dict[str, Any] | None:
-    """One-shot composition: ``turns_text`` -> ``{title, summary, ...}``.
+    """Two-call P2 composition: outline → expand → ``{title, summary_lede, narrative}``.
 
-    Returns ``None`` on any failure (LLM exception, malformed tool_use,
-    empty output). The caller increments ``flush_attempts`` and retries
-    up to :data:`PHASE2_MAX_ATTEMPTS`.
+    Returns ``None`` on any failure of either call (LLM exception,
+    malformed tool_use, empty output). The caller increments
+    ``flush_attempts`` and retries up to :data:`PHASE2_MAX_ATTEMPTS`;
+    each retry redoes both calls.
 
-    ``shape`` (added in step-3 of the conditional-Decisions plan) is used
-    by step-4 to gate the Phase-2 schema and prompt. ``None`` preserves
-    the existing work-shape behaviour for tests and callers that haven't
-    been migrated.
+    Shape-agnostic: the P2 schema is the same for work and discussion
+    sessions. The per-bullet epistemic prefix (``Considered: /
+    Leaning: / Tried: / Open:``) carries the kind information that the
+    pre-P2 work/discussion gating used to enforce structurally.
     """
-    prompt = _phase2_prompt(
+    outline_items = _p2_call_outline(
         turns_text=turns_text,
         activity_summary=activity_summary,
         is_continuation=is_continuation,
         continues_wikilink=continues_wikilink,
-        shape=shape,
+        llm_client=llm_client,
+        model=model,
+        logger=logger,
+        transcript_id=transcript_id,
     )
-    schema = _phase2_tool_schema(shape)
+    if not outline_items:
+        return None
+    data = _p2_call_compose(
+        outline_items=outline_items,
+        turns_text=turns_text,
+        activity_summary=activity_summary,
+        is_continuation=is_continuation,
+        continues_wikilink=continues_wikilink,
+        llm_client=llm_client,
+        model=model,
+        logger=logger,
+        transcript_id=transcript_id,
+    )
+    if data is None:
+        return None
+    data["outline_items"] = outline_items
+    return data
+
+
+def _p2_call_outline(
+    *,
+    turns_text: str,
+    activity_summary: str,
+    is_continuation: bool,
+    continues_wikilink: str | None,
+    llm_client: Any,
+    model: str,
+    logger: "RunLogger | None",
+    transcript_id: str,
+) -> list[str] | None:
+    prompt = _p2_outline_prompt(
+        turns_text=turns_text,
+        activity_summary=activity_summary,
+        is_continuation=is_continuation,
+        continues_wikilink=continues_wikilink,
+    )
+    schema = _p2_outline_tool_schema()
     if logger is not None:
         logger.emit(
             "llm-prompt",
-            call="compose-session-note",
+            call="p2-outline",
+            transcript_id=transcript_id,
+            prompt_chars=len(prompt),
+            turns_text_chars=len(turns_text),
+            activity_summary_chars=len(activity_summary),
+        )
+    t0 = time.monotonic()
+    try:
+        resp = llm_client.messages.create(
+            model=model,
+            max_tokens=PHASE2_MAX_OUTPUT_TOKENS,
+            tools=[schema],
+            tool_choice={"type": "tool", "name": "outline"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except Exception as exc:  # noqa: BLE001
+        if logger is not None:
+            logger.emit(
+                "warning",
+                call="p2-outline",
+                message=f"LLM call raised: {type(exc).__name__}: {exc}",
+            )
+        return None
+    latency_ms = int((time.monotonic() - t0) * 1000)
+    data = _extract_tool_input(resp)
+    if not isinstance(data, dict):
+        if logger is not None:
+            logger.emit(
+                "warning",
+                call="p2-outline",
+                message="no tool_use block in response",
+            )
+        return None
+    raw_items = data.get("items") or []
+    items: list[str] = []
+    for raw in raw_items:
+        if not isinstance(raw, str):
+            continue
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        items.append(stripped)
+    if not items:
+        return None
+    if logger is not None:
+        logger.emit(
+            "llm-response",
+            call="p2-outline",
+            transcript_id=transcript_id,
+            latency_ms=latency_ms,
+            outline_items_count=len(items),
+            model_resolved=getattr(resp, "model", "") or "",
+            reasoning_effort=getattr(resp, "reasoning_effort", None),
+        )
+    return items
+
+
+def _p2_call_compose(
+    *,
+    outline_items: list[str],
+    turns_text: str,
+    activity_summary: str,
+    is_continuation: bool,
+    continues_wikilink: str | None,
+    llm_client: Any,
+    model: str,
+    logger: "RunLogger | None",
+    transcript_id: str,
+) -> dict[str, Any] | None:
+    prompt = _p2_compose_prompt(
+        outline_items=outline_items,
+        turns_text=turns_text,
+        activity_summary=activity_summary,
+        is_continuation=is_continuation,
+        continues_wikilink=continues_wikilink,
+    )
+    schema = _p2_compose_tool_schema()
+    if logger is not None:
+        logger.emit(
+            "llm-prompt",
+            call="p2-compose",
             transcript_id=transcript_id,
             prompt_chars=len(prompt),
             turns_text_chars=len(turns_text),
@@ -480,11 +574,11 @@ def compose_session_note(
             tool_choice={"type": "tool", "name": "compose"},
             messages=[{"role": "user", "content": prompt}],
         )
-    except Exception as exc:  # noqa: BLE001 - any exc -> caller retries
+    except Exception as exc:  # noqa: BLE001
         if logger is not None:
             logger.emit(
                 "warning",
-                call="compose-session-note",
+                call="p2-compose",
                 message=f"LLM call raised: {type(exc).__name__}: {exc}",
             )
         return None
@@ -494,405 +588,306 @@ def compose_session_note(
         if logger is not None:
             logger.emit(
                 "warning",
-                call="compose-session-note",
+                call="p2-compose",
                 message="no tool_use block in response",
             )
         return None
-    # Defensive: even with ``additionalProperties: false`` set, the
-    # Anthropic SDK does not validate tool_use responses against the
-    # schema we sent. Strip any keys that aren't in the schema we built
-    # for this shape and log them — an LLM emitting ``decisions[]`` in
-    # discussion shape would otherwise silently slip past the gate.
+    # additionalProperties is set on the schema but the SDK doesn't
+    # enforce it — strip unknown keys and log them so model drift
+    # surfaces in telemetry.
     allowed_keys = set(schema["input_schema"]["properties"].keys())
     extra_keys = sorted(k for k in data.keys() if k not in allowed_keys)
     if extra_keys and logger is not None:
         logger.emit(
             "warning",
-            call="compose-extra-key",
+            call="p2-compose-extra-key",
             transcript_id=transcript_id,
-            shape_kind=shape.kind if shape is not None else "unspecified",
             extra_keys=extra_keys,
         )
     data = {k: v for k, v in data.items() if k in allowed_keys}
-    # Title-verb coercion: in discussion shape, strip leading deliverable
-    # verbs and prepend ``Discussed:``. Pure post-LLM safety net for the
-    # cases the prompt didn't catch.
-    title_in = data.get("title", "")
-    title_out = _coerce_title_for_shape(title_in, shape)
-    if title_out != title_in:
-        data["title"] = title_out
-        if logger is not None:
-            logger.emit(
-                "warning",
-                call="compose-title-coerced",
-                transcript_id=transcript_id,
-                shape_kind=shape.kind if shape is not None else "unspecified",
-                title_in=title_in,
-                title_out=title_out,
-            )
+    title = _truncate_title_words((data.get("title") or "").strip())
+    if title:
+        data["title"] = title
     if logger is not None:
-        # Surface the literal model id the backend echoed back plus the
-        # reasoning_effort the client applied (if any) — lets future
-        # experiments correlate quality with the resolved setting without
-        # bypassing the wrapper. ``resp.model`` is populated by every
-        # backend (SDK, subprocess, openai-compatible); ``reasoning_effort``
-        # is a lore-only field that only the openai client populates today.
         logger.emit(
             "llm-response",
-            call="compose-session-note",
+            call="p2-compose",
             transcript_id=transcript_id,
             latency_ms=latency_ms,
             keys=sorted(data.keys()),
+            narrative_chars=len(data.get("narrative") or ""),
             model_resolved=getattr(resp, "model", "") or "",
             reasoning_effort=getattr(resp, "reasoning_effort", None),
         )
     return data
 
 
-def _coerce_title_for_shape(title: str, shape: NarrativeShape | None) -> str:
-    """Enforce the no-deliverable-verb rule for discussion-shape titles.
-
-    Work shape: untouched. Discussion shape: if the title leads with a
-    deliverable verb (``Refactor``, ``Add``, ``Fix``, …) the verb is
-    stripped and ``Discussed:`` is prepended. Already-discussion-led
-    titles (``Discussed:``, ``Explored:``, ``Sketched:``, ``Reviewed:``,
-    …) and noun-phrase titles pass through unchanged.
-
-    The 6-8 word cap is enforced by truncating trailing words rather
-    than the prefix — the rewritten title's framing is more important
-    than its tail.
+def _truncate_title_words(title: str, cap: int = TITLE_WORD_MAX) -> str:
+    """Drop trailing words past ``cap``. Last-resort safety net only —
+    P2's compose-schema title description already asks for 6-10 words.
     """
-    if shape is None or shape.has_edits:
-        return title
-    title = title.strip()
-    if not title:
-        return title
-    words = title.split()
-    if not words:
-        return title
-    first_norm = words[0].lower().rstrip(":,")
-    if first_norm in _DISCUSSION_LEADS:
-        # Already discussion-shaped (or has a recognised lead). Honour
-        # the model's framing and just enforce the word cap.
-        return _truncate_title_words(title)
-    if first_norm not in _DELIVERABLE_VERBS:
-        # Not a deliverable verb — could be a noun phrase or a less-
-        # suspect verb. Leave alone; the prompt does most of the
-        # steering, and over-coercing would replace legitimate framings
-        # with a generic ``Discussed:`` prefix.
-        return _truncate_title_words(title)
-    # Strip the deliverable verb and prepend ``Discussed:``. If the
-    # remainder is empty (one-word title like "Refactor"), fall back to
-    # a placeholder so the slug isn't degenerate.
-    rest = " ".join(words[1:]).strip()
-    coerced = f"Discussed: {rest}" if rest else "Discussed: session"
-    return _truncate_title_words(coerced)
-
-
-def _truncate_title_words(title: str, cap: int = _TITLE_WORD_CAP) -> str:
-    """Drop trailing words past ``cap``. Keeps the leading ``Discussed:``
-    style prefix so the framing of the title is preserved at the cost
-    of the tail."""
     words = title.split()
     if len(words) <= cap:
         return title
     return " ".join(words[:cap])
 
 
-def _phase2_prompt(
+def _p2_outline_prompt(
     *,
     turns_text: str,
     activity_summary: str,
     is_continuation: bool,
     continues_wikilink: str | None,
-    shape: NarrativeShape | None = None,
 ) -> str:
-    is_discussion = shape is not None and not shape.has_edits
-    adr_cap = BULLET_CAPS["adr_candidates"]
-    if is_discussion:
-        bullet_line = (
-            f"Bullet-count caps are hard: discussion <= "
-            f"{BULLET_CAPS.get('discussion', 8)}, loose_ends <= "
-            f"{BULLET_CAPS['loose_ends']}. Each bullet line <= "
-            f"{BULLET_LINE_MAX} chars. adr_candidates array <= {adr_cap} "
-            f"items (zero is the expected default)."
-        )
-    else:
-        bullet_line = (
-            f"Bullet-count caps are hard: worked_on <= {BULLET_CAPS['worked_on']}, "
-            f"loose_ends <= {BULLET_CAPS['loose_ends']}. Each bullet line <= "
-            f"{BULLET_LINE_MAX} chars. adr_candidates array <= {adr_cap} "
-            f"items (zero is the expected default)."
-        )
-
-    if is_discussion:
-        summary_clause = (
-            "Summary: emit `summary_lede` — ONE sentence (<= 160 chars) "
-            "answering 'what is this note about' — plus 0-4 "
-            "`summary_takeaways` bullets naming what was understood, "
-            "weighed, or framed (no outcome shipped). Frame the "
-            "takeaways distinctly from `discussion` (process narrative): "
-            "takeaways = state-of-understanding, discussion = what was "
-            "talked through. If the signal is thin, emit just the lede "
-            "and leave takeaways empty.\n\n"
-            "`summary_takeaways` are MARKERS, not claims, AND "
-            "self-contained references — they must read sensibly to a "
-            "cold reader who was not in the session. "
-            "✗ 'Explored two-region schema' — jargon, requires session "
-            "context. "
-            "✓ 'Explored splitting session notes into a reload-safe "
-            "region (LLM-accessible) and a human-only region (gated "
-            "retrieval) — the two-region shape' — referentially "
-            "complete. The test: would a colleague who was not in the "
-            "session understand this enough to know what the note is "
-            "about?"
-        )
-    else:
-        summary_clause = (
-            "Summary: emit `summary_lede` — ONE sentence (<= 160 chars) "
-            "answering 'what is this note about' — plus 0-4 "
-            "`summary_outcomes` bullets naming what changed, in "
-            "state-of-world / present-tense framing (e.g. 'auth.py now "
-            "uses the policy decorator'). Frame outcomes distinctly "
-            "from `worked_on` (process narrative): outcomes = "
-            "state-of-world result, worked_on = what was actually "
-            "changed. If the signal is thin, emit just the lede and "
-            "leave outcomes empty."
-        )
-
+    """P2 Call A — outline. Ported verbatim from experiment 005's
+    ``prompts/p2_outline_v1.json`` with three lore-only riders appended
+    (continuation, activity anchor, empty-slice guardrail).
+    """
     parts: list[str] = [
-        "You are composing the human-readable narrative for ONE session "
-        "note. The deterministic Activity (commits, issues, files touched) "
-        "is already in place; your job is to write the narrative the reader "
-        "sees first.",
+        "Below is a TRANSCRIPT of a past session between a user and an "
+        "AI coding assistant, delimited by <<<TRANSCRIPT BEGIN>>> / "
+        "<<<TRANSCRIPT END>>>.",
         "",
-        f"Return your output via the `compose` tool. {bullet_line}",
+        f"Your ONLY task is to call the `outline` tool with "
+        f"{OUTLINE_MIN_ITEMS}-{OUTLINE_MAX_ITEMS} short outline items "
+        "describing what happened in this session.",
         "",
-        "Title: 6-8 words; content-named (NOT phase numbers or release "
-        "labels); reads as a filename a year from now.",
-        "Description: 1-2 sentences; what + why in one breath (retrieval-"
-        "shaped — distinct from `summary_lede` which is outcome-shaped "
-        "for scanning).",
-        summary_clause,
-        "Bullets: lead with a 2-5 word bold phrase, colon, then detail.",
-        "Loose ends: past-tense / stative phrasing, never imperatives.",
+        "Rules:",
+        f"- Each item ≤ {OUTLINE_ITEM_WORD_CAP} words.",
+        "- One topic per item. Don't compound.",
+        "- Plain text, no markdown, no leading bullet.",
+        "- Pick from: user intents, decisions, things tried, things "
+        "done, loose ends.",
+        f"- Pick the MOST IMPORTANT {OUTLINE_MIN_ITEMS}-"
+        f"{OUTLINE_MAX_ITEMS} items if there are more candidates.",
+        "- Do not include illustrative material from the transcript "
+        "(✓/✗ examples, references to other sessions) — focus on what "
+        "THIS session worked on.",
         "",
-        "Wikilink discipline: `[[ ]]` is reserved for vault note slugs that "
-        "actually exist. Use backticks for code-shaped tokens, plain text "
-        "otherwise.",
+        "This is a FIRST PASS. A second LLM call will expand each item "
+        "with evidence from the transcript. Your job is to surface the "
+        "right topics, not to ground them yet.",
+        "",
+        "Call the `outline` tool exactly once.",
     ]
-
-    # Shape-specific clause. The schema has already been narrowed for
-    # this shape (see ``_phase2_tool_schema``); the prompt makes the
-    # narrowing explicit so the model doesn't waste output budget
-    # trying to emit fields that aren't in its tool spec.
-    adr_guidance = (
-        "`adr_candidates`: leave the array empty unless the user explicitly "
-        "ratified a fork in the road — most sessions produce zero candidates. "
-        "If emitting a candidate, ALL four fields are required: `choice` "
-        "(6-12 word fork taken), `rationale` (1-sentence why-not-the-"
-        "alternative), `evidence` (verbatim transcript quote OR 'user "
-        "explicitly confirmed at turn N'), `alternative_rejected` (the road "
-        "not taken). NEVER emit action-shaped entries ('catch error X', "
-        "'add test Y') — only genuine architectural forks where the user "
-        "ratified one path over another. Any candidate missing a required "
-        "field is rejected."
-    )
-
-    if is_discussion:
-        intent_note = ""
-        if shape is not None and shape.no_edit_intent:
-            intent_note = (
-                " The user explicitly disclaimed intent to change code "
-                "('no code change', 'just exploration', 'brainstorming') —"
-                " honour that framing in the title and summary."
-            )
-        parts.extend([
-            "",
-            "**Narrative shape: discussion.** The underlying turn slice "
-            "contains no file edits. Compose Discussion bullets (what "
-            "was talked through — model-proposed options, considered "
-            "trade-offs, lines of reasoning the user did NOT explicitly "
-            "ratify) and Loose ends (open threads, past-tense). The "
-            "schema does NOT include `worked_on[]` for this shape — do "
-            "not attempt to emit it; it would be rejected. "
-            "`adr_candidates[]` IS available — real architectural forks "
-            "happen in pure-discussion sessions." + intent_note,
-            "",
-            adr_guidance,
-            "",
-            "Title shape: title MUST NOT promise work that did not "
-            "happen. If you are reaching for a deliverable verb "
-            "('Refactor', 'Add', 'Fix', 'Implement', 'Migrate', 'Build', "
-            "'Ship', 'Create', 'Delete', 'Replace'), prefix it with "
-            "'Discussed:' / 'Explored:' / 'Sketched:' / 'Reviewed:' OR "
-            "rephrase as a noun phrase. The deliverable verb on its own "
-            "lies about what the session produced.",
-        ])
-    elif shape is not None:
-        parts.extend([
-            "",
-            "**Narrative shape: work.** The underlying turn slice "
-            "contains real file edits. Compose worked_on (narrative "
-            "bullets of what was actually changed) and loose_ends.",
-            "",
-            adr_guidance,
-        ])
-
-    # Narrative clause — unconditional, applies to both shapes (PRD #92,
-    # issue #94). The model decides per-session whether to emit content;
-    # empty is fine and encouraged for pure-grind sessions. Content
-    # lands in the human-only region (LLM-facing retrieval strips it).
-    parts.extend([
-        "",
-        "Write `narrative` as if telling a colleague what you did in "
-        "this session, at a level above implementation details (those "
-        "live in code / comments).",
-        "",
-        "- Calibrate length to substance. One sentence is fine. Empty "
-        "is fine. Sub-headings (### Investigation trail, "
-        "### Experiments) are fine when the session had a real arc.",
-        "- Voice: tentative for in-flight thinking (\"we leaned "
-        "toward\", \"the hot path turned out to be\"). Past-tense "
-        "investigation. Never \"decided X\" framing — promote to "
-        "`adr_candidates` if it's a real architectural fork, otherwise "
-        "leave it as story.",
-        "- Do NOT re-state files modified, outcomes, or loose-ends "
-        "from the structured section. Narrate around them.",
-        "- If the session was pure grind with no reasoning worth "
-        "telling a colleague, leave narrative empty. Padding is worse "
-        "than silence.",
-    ])
-
     if is_continuation and continues_wikilink:
         parts.extend([
             "",
-            f"This note CONTINUES {continues_wikilink}. Do not re-summarise "
-            "the prior part; focus on THIS part's arc only.",
+            f"This note CONTINUES {continues_wikilink}. Surface topics "
+            "from THIS part's arc only — do not re-list topics already "
+            "covered in the prior part.",
         ])
     if activity_summary:
         parts.extend([
             "",
-            "Activity already populated (do not duplicate verbatim, but "
-            "use it to anchor the narrative):",
+            "Activity already populated (deterministic — anchor your "
+            "outline to it, don't duplicate verbatim):",
             activity_summary,
         ])
     if turns_text:
         parts.extend([
             "",
-            "Conversation slice:",
+            "<<<TRANSCRIPT BEGIN>>>",
             turns_text,
+            "<<<TRANSCRIPT END>>>",
         ])
     else:
-        # No transcript content available — make the LLM stay close to
-        # the deterministic activity rather than confabulating a story.
-        # Without this guardrail, mid-tier models reach for generic
-        # engineering narratives that have nothing to do with the work.
+        # Empty-slice guardrail — keep the outline grounded in the
+        # deterministic activity rather than inventing topics.
         parts.extend([
             "",
-            "No conversation slice is available for this flush. Compose "
-            "the narrative *strictly* from the activity bullets above — "
-            "do NOT invent decisions, designs, or details that aren't "
-            "directly evidenced by the file paths, commit subjects, "
-            "plan / project references, or issue numbers shown. If the "
-            "signal is too thin to write a substantive summary, keep "
-            "the summary terse and factual ('Touched X, Y, Z; no "
-            "narrative reconstruction available.') rather than padding.",
+            "No conversation slice is available. Outline strictly from "
+            "the activity bullets above — do not invent topics that "
+            "aren't evidenced by file paths, commit subjects, plan / "
+            "project references, or issue numbers shown.",
         ])
     return "\n".join(parts)
 
 
-def _phase2_tool_schema(shape: NarrativeShape | None = None) -> dict[str, Any]:
-    """Build the ``compose`` tool schema for the given narrative shape.
-
-    Two variants:
-
-    - **work** (``shape.has_edits`` or ``shape is None``): includes
-      ``adr_candidates[]``, ``worked_on[]``, ``loose_ends[]``.
-    - **discussion** (``not shape.has_edits``): replaces ``worked_on``
-      with ``discussion``; ``adr_candidates[]`` is present in BOTH
-      shapes — real architectural forks happen in pure-talk sessions.
-
-    ``shape=None`` preserves the work-shape behaviour for tests and
-    callers that haven't migrated.
+def _p2_compose_prompt(
+    *,
+    outline_items: list[str],
+    turns_text: str,
+    activity_summary: str,
+    is_continuation: bool,
+    continues_wikilink: str | None,
+) -> str:
+    """P2 Call B — compose. Ported verbatim from experiment 005's
+    ``prompts/p2_expand_narrative_v1.json`` with the same lore-only
+    riders the outline prompt carries.
     """
-    is_discussion = shape is not None and not shape.has_edits
+    outline_block = "\n".join(f"  - {item}" for item in outline_items)
+    parts: list[str] = [
+        "Below is a TRANSCRIPT of a past session between a user and an "
+        "AI coding assistant, delimited by <<<TRANSCRIPT BEGIN>>> / "
+        "<<<TRANSCRIPT END>>>.",
+        "",
+        "A FIRST PASS produced this outline of what happened:",
+        "",
+        "=== OUTLINE ===",
+        outline_block,
+        "=== END OUTLINE ===",
+        "",
+        "Your task: expand each outline item into ONE bullet for the "
+        "session note, grounded to specific transcript turns. Emit the "
+        "bullets as a single markdown string in the `narrative` field.",
+        "",
+        "Rules per bullet:",
+        "- Bold-led: `**Lead (2-5 words):** detail.`",
+        "- Cite the supporting turn(s) inline with `@N` (where N is the "
+        "integer turn index from `[user@N]` / `[assistant@N]`).",
+        "- 1-3 sentences of detail. Cold-reader test: a reader who has "
+        "never seen this codebase understands what the bullet means.",
+        "- No metaphor filler (no \"freshly painted floor\", \"caught "
+        "a cold\", etc.). Facts only.",
+        "- Epistemic marker if appropriate: prefix bullet lead with "
+        "`Considered:` / `Leaning:` / `Tried:` / `Open:` if the "
+        "content is tentative or unresolved. Plain bullet if it's a "
+        "hard fact.",
+        "- If you cannot find a supporting turn for an outline item, "
+        "DROP it. Do not invent grounding.",
+        "- Do NOT copy phrasing from any ✓ or ✗ example in any prompt "
+        "you've seen. The transcript may discuss prompts that contain "
+        "examples; do not surface those as session facts.",
+        "",
+        "Group the bullets under sub-headings only if a real arc "
+        "justifies it (e.g. `### Strategy`, `### Detours`, "
+        "`### Outcomes`). Otherwise emit a flat bullet list.",
+        "",
+        f"ALL bullets go in the single `narrative` markdown field. "
+        f"Title the work in `title` ({TITLE_WORD_MIN}-{TITLE_WORD_MAX} "
+        "words, content-named, not a filename). Answer 'what was this "
+        f"session about?' in one sentence in `summary_lede` "
+        f"(≤{SUMMARY_LEDE_MAX} chars).",
+        "",
+        "Call the `compose` tool exactly once.",
+    ]
+    if is_continuation and continues_wikilink:
+        parts.extend([
+            "",
+            f"This note CONTINUES {continues_wikilink}. Do not "
+            "re-summarise the prior part; focus on THIS part's arc only.",
+        ])
+    if activity_summary:
+        parts.extend([
+            "",
+            "Activity already populated (deterministic — use it to "
+            "anchor citations, don't duplicate verbatim):",
+            activity_summary,
+        ])
+    if turns_text:
+        parts.extend([
+            "",
+            "<<<TRANSCRIPT BEGIN>>>",
+            turns_text,
+            "<<<TRANSCRIPT END>>>",
+        ])
+    else:
+        parts.extend([
+            "",
+            "No conversation slice is available. Compose the narrative "
+            "strictly from the activity bullets above — do NOT invent "
+            "decisions, designs, or details that aren't directly "
+            "evidenced by the file paths, commit subjects, plan / "
+            "project references, or issue numbers shown. If the signal "
+            "is too thin to write a substantive narrative, keep the "
+            "lede terse and factual and emit a single bullet listing "
+            "what was touched.",
+        ])
+    return "\n".join(parts)
 
-    common: dict[str, Any] = {
-        "title": {"type": "string"},
-        "description": {"type": "string"},
-        # Summary is now structured: a 1-sentence outcome lede plus a
-        # shape-conditional bullet array (outcomes / takeaways). The
-        # applier composes the body Summary string from these fields.
-        "summary_lede": {"type": "string", "maxLength": SUMMARY_LEDE_MAX},
-        "loose_ends": {
-            "type": "array",
-            "maxItems": BULLET_CAPS["loose_ends"],
-            "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
-        },
-        # ADR candidates available in both shapes — real forks happen in
-        # discussion sessions too. Schema is strict: four required fields
-        # per candidate; the confabulation filter in _phase2_apply drops
-        # any candidate that slips through with empty fields.
-        "adr_candidates": adr_candidate.tool_schema_property(),
-        # Narrative is the human-only-region content (PRD #92 / issue #94).
-        # Optional, no length cap — the model self-calibrates length to
-        # substance. LLM-facing retrieval (lore_search, lore_read default,
-        # SessionStart, briefings) strips this region; only user-invoked
-        # paths (/lore:resume, /lore:context, direct read,
-        # lore_read --include_human=true) surface it.
-        "narrative": {
-            "type": "string",
-            "description": (
-                "Free-form prose carrying the investigation arc, "
-                "experiments, in-passing reasoning. Lands in the "
-                "human-only region; LLM-facing retrieval strips it by "
-                "default. Empty is fine — padding is worse than silence."
-            ),
+
+def _p2_outline_tool_schema() -> dict[str, Any]:
+    """P2 Call A tool schema. Ported verbatim from experiment 005's
+    ``schemas/p2_outline_v1.json`` — 4-8 items, each ≤8 words, no
+    grounding.
+    """
+    return {
+        "name": "outline",
+        "description": (
+            "List 4-8 things that happened in this session. Each line "
+            "≤ 8 words, plain prose, no bullet marker. Just the bare "
+            "topics — Call B will expand each one with evidence."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "minItems": OUTLINE_MIN_ITEMS,
+                    "maxItems": OUTLINE_MAX_ITEMS,
+                    "description": (
+                        f"{OUTLINE_MIN_ITEMS}-{OUTLINE_MAX_ITEMS} short "
+                        f"outline items. Each ≤{OUTLINE_ITEM_WORD_CAP} words."
+                    ),
+                    "items": {
+                        "type": "string",
+                        "description": (
+                            "One outline item — a topic or event that "
+                            "happened in this session. Plain text, "
+                            f"≤{OUTLINE_ITEM_WORD_CAP} words, no leading "
+                            "bullet, no markdown. Each item names one "
+                            "thing — don't compound items."
+                        ),
+                    },
+                }
+            },
+            "additionalProperties": False,
+            "required": ["items"],
         },
     }
 
-    if is_discussion:
-        properties: dict[str, Any] = {
-            **common,
-            "summary_takeaways": {
-                "type": "array",
-                "maxItems": BULLET_CAPS["summary_takeaways"],
-                "items": {"type": "string"},
-            },
-            "discussion": {
-                "type": "array",
-                "maxItems": BULLET_CAPS.get("discussion", BULLET_CAPS["worked_on"]),
-                "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
-            },
-        }
-    else:
-        properties = {
-            **common,
-            "summary_outcomes": {
-                "type": "array",
-                "maxItems": BULLET_CAPS["summary_outcomes"],
-                "items": {"type": "string"},
-            },
-            "worked_on": {
-                "type": "array",
-                "maxItems": BULLET_CAPS["worked_on"],
-                "items": {"type": "string", "maxLength": BULLET_LINE_MAX},
-            },
-        }
 
+def _p2_compose_tool_schema() -> dict[str, Any]:
+    """P2 Call B tool schema. Ported verbatim from experiment 005's
+    ``prompts/p2_expand_narrative_v1.json`` — tight ``{title,
+    summary_lede, narrative}`` shape. No side-arrays: scattering bullets
+    into typed arrays was a failure mode on v2 schemas, so the narrative
+    is one markdown string and that is the only place bullets live.
+    """
     return {
         "name": "compose",
-        "description": "Emit the narrative for the session note.",
+        "description": (
+            "Compose a session-note narrative from the outline, "
+            "grounded to transcript turns. The narrative field is a "
+            "single markdown string — that is where ALL the bullets go."
+        ),
         "input_schema": {
             "type": "object",
-            "properties": properties,
-            # Structural gate, not instructional. Without this, an LLM
-            # that decides to emit unexpected fields would silently pass
-            # through — the SDK doesn't validate tool_use responses
-            # against the schema we sent.
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": (
+                        f"{TITLE_WORD_MIN}-{TITLE_WORD_MAX} words, "
+                        "topic/outcome named. Title the WORK, not a "
+                        "filename or script identifier."
+                    ),
+                },
+                "summary_lede": {
+                    "type": "string",
+                    "maxLength": SUMMARY_LEDE_MAX,
+                    "description": (
+                        f"ONE sentence (≤{SUMMARY_LEDE_MAX} chars) "
+                        "answering 'what was this session about?'. "
+                        "Plain prose, no bullets."
+                    ),
+                },
+                "narrative": {
+                    "type": "string",
+                    "description": (
+                        "The full session-note narrative as a single "
+                        "markdown string. Bold-led bullets are the "
+                        "primary content. Optionally grouped under "
+                        "sub-headings (### Strategy / ### Detours / "
+                        "### Outcomes). ALL bullets go in this field — "
+                        "there is no separate `bullets` array. The "
+                        "narrative is markdown text, not a structured "
+                        "list."
+                    ),
+                },
+            },
             "additionalProperties": False,
-            "required": ["title", "description", "summary_lede"],
+            "required": ["title", "summary_lede", "narrative"],
         },
     }
 
@@ -905,28 +900,6 @@ def _extract_tool_input(resp: Any) -> dict[str, Any]:
             if isinstance(inp, dict):
                 return inp
     return {}
-
-
-def _truncate_bullets(items: list[str] | None, *, cap: int) -> list[str]:
-    """Cap count and per-line length defensively (post-LLM)."""
-    if not items:
-        return []
-    out: list[str] = []
-    for raw in items[:cap]:
-        if not isinstance(raw, str):
-            continue
-        line = raw.strip()
-        if not line:
-            continue
-        if len(line) > BULLET_LINE_MAX:
-            line = line[: BULLET_LINE_MAX - 1].rstrip() + "…"
-        out.append(line)
-    return out
-
-
-def _bulletise(items: list[str]) -> list[str]:
-    """Wrap each line with ``- `` (round-trip with parse_body_sections)."""
-    return [f"- {x}" for x in items]
 
 
 def _activity_summary_text(rb: ReplayedBuffer) -> str:
@@ -1044,10 +1017,9 @@ def _phase2_apply(
     rb: ReplayedBuffer,
     sidecar: Sidecar,
     logger: "RunLogger | None" = None,
-    shape: NarrativeShape | None = None,
     in_place: bool = False,
 ) -> Path:
-    """Rewrite the finalised stub with the LLM-composed narrative.
+    """Rewrite the finalised stub with the P2-composed narrative.
 
     Returns the final stub path. Phase 2 may rename the file from the
     deterministic-slug stub (often a fallback like ``session-<scope>-<HHMM>``
@@ -1056,66 +1028,24 @@ def _phase2_apply(
     the note. Old stem is preserved as a frontmatter ``aliases:`` entry
     so existing ``[[old-stem]]`` references keep resolving.
 
-    ``shape`` (added in step-8 of the conditional-Decisions plan) drives
-    a small frontmatter surfacing: when ``shape.adr_flagged`` is True
-    (the user explicitly invoked ADR vocabulary), ``adr_flagged: true``
-    is written to frontmatter so a future ``lore curator promote-adr``
-    flow can find candidates without re-scanning transcripts. No
-    auto-stub creation: the regex cue alone never mutates the vault.
+    P2 body shape: ``# Title`` / ``## Summary`` (one-sentence lede) /
+    ``## Narrative`` (model's bold-led bullets with @N citations,
+    optional sub-headings) / ``## Activity`` (deterministic). The
+    pre-P2 sections (``ADR candidates`` / ``What we worked on`` /
+    ``Discussion`` / ``Loose ends``) are no longer emitted by new
+    flushes; the parser still recognises them for legacy round-trip.
     """
     text = stub_path.read_text()
     fm = parse_frontmatter(text)
     body_text = strip_frontmatter(text)  # noqa: F841 - body re-rendered from scratch
 
     title = (composed.get("title") or "").strip() or fm.get("title") or "session"
+    summary_lede = (composed.get("summary_lede") or "").strip()
+    narrative_text = (composed.get("narrative") or "").strip()
     description = (
-        (composed.get("description") or "").strip()
+        summary_lede
         or fm.get("description")
         or STUB_DESCRIPTION_PLACEHOLDER
-    )
-    # Compose body Summary from the new structured fields (PRD #61
-    # slice #62): a 1-sentence ``summary_lede`` + 0-4 outcome /
-    # takeaway bullets, framed differently per shape. Legacy in-flight
-    # tool-call outputs that still emit a single ``summary`` string
-    # are tolerated as a fallback so a buffer flushed across the
-    # rollout boundary doesn't crash the applier.
-    summary_lede = (composed.get("summary_lede") or "").strip()
-    summary_items = composed.get("summary_outcomes") or composed.get(
-        "summary_takeaways"
-    ) or []
-    summary_items = [
-        item.strip() for item in summary_items
-        if isinstance(item, str) and item.strip()
-    ]
-    if summary_lede or summary_items:
-        summary = summary_block.compose(summary_lede, summary_items)
-    else:
-        legacy_summary = (composed.get("summary") or "").strip()
-        summary = legacy_summary or description
-
-    # Validate ADR candidates — drop any that are missing required fields.
-    # The JSONSchema cap is maxItems:5; post-validate to also filter
-    # confabulated entries that slipped through with empty-string fields.
-    adr_raw = composed.get("adr_candidates") or []
-    valid_adr: list[adr_candidate.ADRCandidate] = []
-    for raw in adr_raw[: BULLET_CAPS["adr_candidates"]]:
-        c = adr_candidate.validate(raw) if isinstance(raw, dict) else None
-        if c is not None:
-            valid_adr.append(c)
-    # Build the opaque bullet lines for BodySections (heading + gloss are
-    # added by render_body_sections; only the per-candidate lines go here).
-    adr_lines: list[str] = []
-    for c in valid_adr:
-        adr_lines.append(f"- **{c.choice}**")
-        adr_lines.append(f"  - Why: {c.rationale}")
-        adr_lines.append(f"  - Instead of: {c.alternative_rejected}")
-        adr_lines.append(f"  - Evidence: {c.evidence}")
-
-    worked_on = _truncate_bullets(composed.get("worked_on"), cap=BULLET_CAPS["worked_on"])
-    loose_ends = _truncate_bullets(composed.get("loose_ends"), cap=BULLET_CAPS["loose_ends"])
-    discussion = _truncate_bullets(
-        composed.get("discussion"),
-        cap=BULLET_CAPS.get("discussion", BULLET_CAPS["worked_on"]),
     )
 
     fm["title"] = title
@@ -1124,8 +1054,14 @@ def _phase2_apply(
     # description, and title are now authoritative. Subsequent
     # heartbeats during in-place synthesis must preserve them.
     fm.pop("narrative", None)
-    if shape is not None and shape.adr_flagged:
-        fm["adr_flagged"] = True
+    # Persist the outline as a frontmatter breadcrumb — cheap retrieval
+    # signal for ``lore_search`` snippets and a sanity check during
+    # post-mortem on degraded flushes. Optional; absent when Call A
+    # didn't run (legacy buffers flushed before the P2 rollout).
+    outline_items = composed.get("outline_items") or []
+    outline_items = [s for s in outline_items if isinstance(s, str) and s.strip()]
+    if outline_items:
+        fm["outline"] = outline_items
     fm["last_reviewed"] = datetime.now(UTC).date().isoformat()
     if in_place:
         # Retain the stub marker so the merge gate keeps the
@@ -1153,21 +1089,22 @@ def _phase2_apply(
 
     body = render_body_sections(BodySections(
         title=title,
-        summary=summary,
-        adr_candidates=adr_lines,
-        worked_on=_bulletise(worked_on),
-        loose_ends=_bulletise(loose_ends),
+        summary=summary_lede or description,
+        adr_candidates=[],
+        worked_on=[],
+        loose_ends=[],
         commits=rb.activity_commits,
         issues_opened=rb.activity_issues_opened,
         issues_closed=rb.activity_issues_closed,
-        discussion=_bulletise(discussion),
+        discussion=[],
+        narrative=narrative_text,
     ))
-    # Two-region wiring (PRD #92, issue #94): wrap the structured body
-    # with the optional human-only narrative. ``render_regions`` omits
-    # the marker entirely when narrative is empty/None, so pure-grind
-    # sessions stay marker-free.
-    narrative_text = (composed.get("narrative") or "").strip()
-    body = render_regions(body, narrative_text or None)
+    # Two-region wiring (PRD #92, issue #94): the human-only region is
+    # unused under P2 — the narrative *is* the canonical content and
+    # belongs in the reload-safe region. ``render_regions(body, None)``
+    # is a no-op marker-omitting passthrough, kept for shape parity
+    # with legacy notes that still carry a human-only block.
+    body = render_regions(body, None)
     new_text = _render_markdown(fm, body, wiki_root=wiki_root)
     atomic_write_text(stub_path, new_text)
 
@@ -1454,25 +1391,10 @@ def _synthesize(
     turns_text = "\n".join(
         f"[{t.role}@{t.index}] {t.text}" for t in turns_list if t.text
     )
-    # Narrative shape drives Phase-2 schema + prompt gating in step-4.
-    # Recompute ``files_modified`` from the actual turns rather than
-    # trusting the buffer's accumulator: archived v1 buffers don't carry
-    # ``files_modified`` in their event log (it stays empty), but the
-    # transcript adapter still has the truth.
-    files_modified = _files_modified_from_turns(turns_list)
-    shape = select_shape(turns_list, files_modified)
-    if logger is not None:
-        logger.emit(
-            "narrative-shape",
-            transcript_id=sidecar.transcript_id,
-            buffer_stem=buffer.stem,
-            kind=shape.kind,
-            has_edits=shape.has_edits,
-            decisions_allowed=shape.decisions_allowed,
-            no_edit_intent=shape.no_edit_intent,
-            adr_flagged=shape.adr_flagged,
-            files_modified_count=len(files_modified),
-        )
+    # P2 is shape-agnostic: the per-bullet epistemic prefix
+    # (``Considered: / Leaning: / Tried: / Open:``) carries the kind
+    # signal that the pre-P2 work/discussion gate used to enforce
+    # structurally. No ``select_shape`` call here.
     activity_summary = _activity_summary_text(rb_post or rb)
     continues_wikilink = (
         f"[[{sidecar.continuation_of}]]"
@@ -1518,7 +1440,6 @@ def _synthesize(
             model=model,
             logger=logger,
             transcript_id=sidecar.transcript_id,
-            shape=shape,
         )
         if composed:
             break
@@ -1543,7 +1464,6 @@ def _synthesize(
             rb=rb_post or rb,
             sidecar=sidecar,
             logger=logger,
-            shape=shape,
             in_place=not close,
         )
     except OSError as exc:

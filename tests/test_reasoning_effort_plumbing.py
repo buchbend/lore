@@ -115,6 +115,64 @@ def fake_openai(monkeypatch: pytest.MonkeyPatch):
     return fake_mod
 
 
+def _route_two_call_responses(
+    client: Any,
+    *,
+    outline_items: list[str] | None = None,
+    compose_payload: dict[str, Any] | None = None,
+    compose_model: str = "reasoning-X",
+) -> None:
+    """Wire the fake OpenAI client to return tool-specific responses.
+
+    P2's ``compose_session_note`` makes two calls (outline → compose);
+    legacy tests mocked a single ``_response`` for the old single-call
+    schema. This helper installs a routing ``create()`` that returns an
+    outline-shaped payload when the request asks for the ``outline``
+    tool and a compose-shaped payload otherwise.
+    """
+    outline_items = outline_items or [
+        "Wired reasoning_effort plumbing",
+        "Verified extra_body forwarded",
+        "Captured telemetry event",
+        "Asserted resolved model echoed",
+    ]
+    compose_payload = compose_payload or {
+        "title": "Reasoning-mode narration",
+        "summary_lede": "Stub P2 compose payload.",
+        "narrative": "- **Outcome:** stub narrative for the test. @0",
+    }
+    completions = client._client._completions
+
+    def _route(**kwargs: Any) -> _FakeCompletion:
+        completions.last_kwargs = kwargs
+        # The OpenAI-compatible client translates the Anthropic-shape
+        # ``tool_choice={"type":"tool", "name": X}`` to the literal
+        # ``tool_choice="required"`` string and carries the tool name in
+        # ``kwargs["tools"][0]["function"]["name"]``. Read it from
+        # there instead of the dict-shaped tool_choice.
+        tools = kwargs.get("tools") or []
+        tool_name = ""
+        if tools:
+            fn = (tools[0] or {}).get("function") or {}
+            tool_name = fn.get("name", "")
+        if tool_name == "outline":
+            msg = _FakeMessage(tool_calls=[_FakeToolCall(
+                name="outline",
+                arguments=json.dumps({"items": outline_items}),
+            )])
+        else:
+            msg = _FakeMessage(tool_calls=[_FakeToolCall(
+                name="compose",
+                arguments=json.dumps(compose_payload),
+            )])
+        resp = _FakeCompletion(msg, model=compose_model)
+        if isinstance(kwargs.get("model"), str):
+            resp.model = kwargs["model"]
+        return resp
+
+    completions.create = _route  # type: ignore[method-assign]
+
+
 # ---------------------------------------------------------------------------
 # (a) Positive: configured reasoning_effort lands as extra_body kwarg
 # ---------------------------------------------------------------------------
@@ -358,22 +416,10 @@ def test_compose_session_note_end_to_end_carries_reasoning_effort(fake_openai):
         },
     )
 
-    # Override the default fake response with one whose tool_call carries
-    # fields that exist in the work-shape Phase 2 schema (``shape=None``
-    # selects the work variant). Keys outside the schema get stripped by
-    # the caller-side filter; ``title`` + ``summary_lede`` both survive.
-    compose_payload = {
-        "title": "Reasoning-mode narration",
-        "description": "Stub description.",
-        "summary_lede": "Stub Phase 2 compose payload.",
-    }
-    client._client._completions._response = _FakeCompletion(
-        message=_FakeMessage(tool_calls=[_FakeToolCall(
-            name="compose",
-            arguments=json.dumps(compose_payload),
-        )]),
-        model="reasoning-X",
-    )
+    # P2 is two-call (outline → compose). Route fake responses by
+    # tool_choice.name so the outline pass returns an items payload and
+    # the compose pass returns title + summary_lede + narrative.
+    _route_two_call_responses(client)
 
     events: list[tuple[str, dict[str, Any]]] = []
 
@@ -392,23 +438,21 @@ def test_compose_session_note_end_to_end_carries_reasoning_effort(fake_openai):
         model="high",  # tier name — Phase 2 resolves via tier_to_model
         logger=_CaptureLogger(),
         transcript_id="t-1",
-        shape=None,
     )
     assert out is not None
-    # ``title`` and ``summary_lede`` are real schema fields and survive
-    # the caller-side schema-key filter.
     assert out["title"] == "Reasoning-mode narration"
-    assert out["summary_lede"] == "Stub Phase 2 compose payload."
+    assert out["summary_lede"] == "Stub P2 compose payload."
 
-    # (1) On-the-wire payload carries reasoning_effort.
+    # (1) Final on-the-wire compose payload carries reasoning_effort.
     kwargs = client._client._completions.last_kwargs
     assert kwargs is not None
     assert kwargs["model"] == "reasoning-X"
     assert kwargs["extra_body"] == {"reasoning_effort": "high"}
 
-    # (2) Telemetry event surfaces resolved model + effort.
+    # (2) Telemetry event surfaces resolved model + effort on the
+    # compose call.
     resp_events = [(n, kw) for n, kw in events
-                   if n == "llm-response" and kw.get("call") == "compose-session-note"]
+                   if n == "llm-response" and kw.get("call") == "p2-compose"]
     assert len(resp_events) == 1, events
     _, payload = resp_events[0]
     assert payload["model_resolved"] == "reasoning-X"
@@ -433,14 +477,7 @@ def test_compose_session_note_telemetry_when_reasoning_effort_unset(fake_openai)
         },
     )
 
-    compose_payload = {"title": "Plain", "summary_lede": "no reasoning."}
-    client._client._completions._response = _FakeCompletion(
-        message=_FakeMessage(tool_calls=[_FakeToolCall(
-            name="compose",
-            arguments=json.dumps(compose_payload),
-        )]),
-        model="plain-Y",
-    )
+    _route_two_call_responses(client, compose_model="plain-Y")
 
     events: list[tuple[str, dict[str, Any]]] = []
 
@@ -459,7 +496,6 @@ def test_compose_session_note_telemetry_when_reasoning_effort_unset(fake_openai)
         model="middle",
         logger=_CaptureLogger(),
         transcript_id="t-2",
-        shape=None,
     )
     assert out is not None
 
@@ -468,7 +504,7 @@ def test_compose_session_note_telemetry_when_reasoning_effort_unset(fake_openai)
     assert "extra_body" not in kwargs
 
     resp_events = [(n, kw) for n, kw in events
-                   if n == "llm-response" and kw.get("call") == "compose-session-note"]
+                   if n == "llm-response" and kw.get("call") == "p2-compose"]
     assert len(resp_events) == 1
     payload = resp_events[0][1]
     assert payload["model_resolved"] == "plain-Y"

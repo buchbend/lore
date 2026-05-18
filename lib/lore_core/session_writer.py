@@ -69,11 +69,20 @@ class BodySections(NamedTuple):
     # constructor sites stay positional-compatible without re-typing
     # an empty list literal at each call.
     discussion: list[str] = ()  # type: ignore[assignment]
+    # P2 narrative — a single markdown string carrying bold-led bullets
+    # with ``@N`` turn citations (and optional sub-headings). When set,
+    # the renderer emits ``## Narrative`` between Summary and Activity.
+    # P2 (experiment 005, GPT-OSS-120B hero cell) replaces the structured
+    # ``worked_on`` / ``discussion`` / ``adr_candidates`` / ``loose_ends``
+    # sections with this single field; those fields stay on BodySections
+    # for legacy-note round-trip but are not populated by new notes.
+    narrative: str = ""
 
 
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
 _KNOWN_H2: dict[str, str] = {
     "Summary": "summary",
+    "Narrative": "narrative",
     # New heading (slice #63) — canonical.
     "ADR candidates": "adr_candidates",
     # Legacy alias — maps to the same field; renderer always emits the new heading.
@@ -109,6 +118,7 @@ def parse_body_sections(body: str) -> BodySections:
     """
     title = ""
     summary_lines: list[str] = []
+    narrative_lines: list[str] = []
     adr_candidates: list[str] = []
     discussion: list[str] = []
     worked_on: list[str] = []
@@ -138,6 +148,8 @@ def parse_body_sections(body: str) -> BodySections:
 
         if current_h2 == "summary":
             summary_lines.append(line)
+        elif current_h2 == "narrative":
+            narrative_lines.append(line)
         elif current_h2 == "adr_candidates" and line.lstrip().startswith("-"):
             adr_candidates.append(line)
         elif current_h2 == "discussion" and line.lstrip().startswith("-"):
@@ -165,6 +177,7 @@ def parse_body_sections(body: str) -> BodySections:
         issues_opened=issues_opened,
         issues_closed=issues_closed,
         discussion=discussion,
+        narrative="\n".join(narrative_lines).strip(),
     )
 
 
@@ -177,6 +190,10 @@ def render_body_sections(sections: BodySections) -> str:
     if sections.summary:
         parts.append("\n## Summary\n\n")
         parts.append(sections.summary.rstrip() + "\n")
+
+    if sections.narrative:
+        parts.append("\n## Narrative\n\n")
+        parts.append(sections.narrative.rstrip() + "\n")
 
     if sections.discussion:
         parts.append("\n## Discussion\n\n")
@@ -232,6 +249,7 @@ def merge_body_sections(existing: BodySections, new: BodySections) -> BodySectio
         issues_opened=_dedup_lines(existing.issues_opened, new.issues_opened),
         issues_closed=_dedup_lines(existing.issues_closed, new.issues_closed),
         discussion=_dedup_lines(existing.discussion, new.discussion),
+        narrative=existing.narrative or new.narrative,
     )
 
 

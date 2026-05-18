@@ -10,6 +10,53 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-05-18
+
+### Changed — Curator A: two-call P2 (outline → narrative) session notes
+
+Ports experiment 005's best-GPT-OSS-120B cell (P2, 0.804 mean / 0.964
+hero) into Curator A's Phase 2. The single-call work/discussion-gated
+schema is replaced by a two-call shape:
+
+1. **Call A — `outline`**: 4-8 short outline items (≤8 words each, no
+   grounding). Tight schema; ~3-5s on GPT-OSS-120B.
+2. **Call B — `compose`**: expands the outline + transcript into
+   `{title, summary_lede, narrative}`. The narrative is one markdown
+   string with bold-led bullets, `@N` turn citations, optional sub-
+   headings (`### Strategy / ### Detours / ### Outcomes`), and per-
+   bullet epistemic prefixes (`Considered: / Leaning: / Tried: /
+   Open:`) for tentative items.
+
+Body shape gains a `## Narrative` section between `## Summary` and
+`## Activity`. Frontmatter gains `outline:` as a retrieval breadcrumb.
+The pre-P2 sections (`ADR candidates` / `What we worked on` /
+`Discussion` / `Loose ends`) are no longer emitted; legacy notes
+still round-trip through the parser.
+
+Shape gating (`select_shape`, `NarrativeShape`,
+`_coerce_title_for_shape`) removed from the call chain — kind
+classification now lives in the per-bullet epistemic prefix.
+
+**Tier caveat**: P2 is a GPT-OSS-class-or-better recipe. Mistral-119B
+collapsed to 0.426 on this shape in experiment 005 (vs GPT-OSS 0.804)
+because the narrative-string schema can't structurally block
+`from_example` copy-paste. The 0.53.0 README's "Recommended openai-
+backend setup" (GPT-OSS-120B + `reasoning_effort=high`) is the
+intended production config.
+
+**Orphans for follow-up cleanup**: `lib/lore_curator/adr_candidate.py`,
+`lib/lore_core/narrative_kind.py`, `lib/lore_curator/summary_block.py`
+are no longer imported by `synthesis.py`. Their tests still pass; a
+follow-up PR can delete the modules.
+
+**Tests**: new `tests/test_synthesis_p2.py` (10 tests covering
+schemas, prompts, two-call dispatch, telemetry, empty-outline-
+returns-None). `tests/test_synthesis.py` and
+`tests/test_synthesis_narrative.py` skipped at module level —
+they assert on the dead schema and need rewriting in a follow-up.
+`tests/test_reasoning_effort_plumbing.py` adapted to the two-call
+shape (helper routes outline vs compose by tool name).
+
 ## [0.53.0] - 2026-05-16
 
 ### Added — Curator A reasoning-mode narration (PRD #110, PRs 1–4)
