@@ -1,30 +1,27 @@
-"""Tests for lore_curator.synthesis — two-phase flush worker."""
-from __future__ import annotations
+"""Tests for lore_curator.synthesis — two-phase flush worker.
 
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
+NOTE: this module targets the pre-P2 work/discussion-gated schema
+(``BULLET_CAPS``, ``_phase2_prompt``, ``_phase2_tool_schema``,
+``_coerce_title_for_shape``, ``NarrativeShape``). The Curator A
+revamp on branch ``pr/p2-style`` ports synthesis to the two-call P2
+shape (experiment 005 best GPT-OSS cell); none of the imported
+symbols exist anymore. The replacement coverage lives in
+``tests/test_synthesis_p2.py`` (P2 schemas + prompts + two-call
+``compose_session_note``).
+
+Skipped at the module level until the legacy assertions are excised
+or rewritten — a follow-up PR can either delete this file outright
+or rewrite the high-value scenarios against the P2 contract.
+"""
+from __future__ import annotations
 
 import pytest
 
-from lore_core.schema import parse_frontmatter
-from lore_core.types import Scope, TranscriptHandle, Turn
-from lore_core.wiki_config import WikiConfig
-from lore_curator import stub_note
-from lore_curator.buffer_append import append_chunk
-from lore_curator.buffer_store import Buffer
-from lore_curator.stub_note import write_or_update
-from lore_curator.synthesis import (
-    BULLET_CAPS,
-    BULLET_LINE_MAX,
-    FlushOutcome,
-    _coerce_title_for_shape,
-    _phase2_prompt,
-    _phase2_tool_schema,
-    compose_session_note,
-    synth_and_close,
+pytest.skip(
+    "Pre-P2 synthesis tests — replaced by tests/test_synthesis_p2.py. "
+    "See branch pr/p2-style.",
+    allow_module_level=True,
 )
-from lore_core.narrative_kind import NarrativeShape
 
 
 # ---------------------------------------------------------------------------

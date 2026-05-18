@@ -1,42 +1,22 @@
-"""Tests for the narrative field in Curator A's compose call (issue #94).
+"""Pre-P2 narrative-field tests (issue #94).
 
-Covers three integration points in lib/lore_curator/synthesis.py:
+Asserted on ``_phase2_tool_schema`` + ``_phase2_prompt`` + the
+two-region wrapping that put the model's narrative into the human-only
+region. P2 collapses those into a single ``narrative`` field in the
+reload-safe region; the schema/prompt symbols this module imported
+are gone. Replacement coverage lives in
+``tests/test_synthesis_p2.py``.
 
-* ``_phase2_tool_schema`` — adds the ``narrative`` field for both work
-  and discussion shapes.
-* ``_phase2_prompt`` — adds the unconditional narrative clause and the
-  tightened discussion-shape ``summary_takeaways`` rule.
-* Phase-2 body rendering — wraps the structured body through
-  ``regions.render_regions``; the ``<!-- lore:human-only -->`` marker
-  lands in the file iff narrative is non-empty.
+See branch ``pr/p2-style``.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
-
 import pytest
 
-from lore_core.narrative_kind import NarrativeShape
-from lore_core.regions import HUMAN_ONLY_MARKER, split_regions
-from lore_core.schema import strip_frontmatter
-from lore_curator.synthesis import (
-    _phase2_prompt,
-    _phase2_tool_schema,
-    synth_and_close,
-)
-
-# Re-use the existing test-suite fakes and helpers by importing them
-# from tests/test_synthesis.py — keeps fixture wiring + shape defaults
-# consistent.
-from tests.test_synthesis import (  # noqa: E402
-    _FakeLlmClient,
-    _make_shape,
-    _ok_responder,
-    _seed_stub,
-    lore_root,  # fixture
-    patch_collectors,  # fixture
+pytest.skip(
+    "Pre-P2 narrative tests — replaced by tests/test_synthesis_p2.py. "
+    "See branch pr/p2-style.",
+    allow_module_level=True,
 )
 
 
