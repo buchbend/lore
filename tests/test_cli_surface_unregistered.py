@@ -1,11 +1,8 @@
-"""Kill switch: `lore surface` is no longer a top-level CLI command.
+"""`lore surface` is not a CLI command.
 
-Curator B's surface-extraction pass is retired and PRD 0001's Deletions
-list names the surface CLI among the entry points to sever first (code
-stays on disk for a later physical-deletion slice). `surface_cmd.app`
-itself is untouched and still directly testable — see
-test_cli_surface.py — only its mount on the top-level `lore` dispatcher
-is removed.
+Curator B's surface-extraction pass is retired; the surface-authoring
+CLI, its module, and lore_core.surfaces have all been deleted. This
+guards against a future re-mount silently reintroducing the verb.
 """
 
 from __future__ import annotations

@@ -26,7 +26,6 @@ from lore_core.schema import (
     compute_lifecycle,
     parse_frontmatter,
 )
-from lore_curator.defrag_curator import _pass_staleness, _pass_supersession
 
 # ---------- schema ----------
 
@@ -200,79 +199,6 @@ def test_index_renders_lifecycle_badges(wiki_root: Path):
     )
     assert "DRAFT" not in alpha_line
     assert "SUPERSEDED" not in alpha_line
-
-
-# ---------- curator: staleness + supersession ----------
-
-
-def test_curator_staleness_pass_is_now_a_noop(tmp_path: Path, monkeypatch):
-    """PRD #65: age never flags. The legacy 90-day pass is a no-op now;
-    staleness is positive-evidence-only at read time. Even an ancient
-    `last_reviewed` produces zero actions.
-    """
-    root = tmp_path / "vault"
-    wiki = root / "wiki" / "w"
-    (wiki / "concepts").mkdir(parents=True)
-    monkeypatch.setenv("LORE_ROOT", str(root))
-
-    old = (date.today() - timedelta(days=200)).isoformat()
-    p = wiki / "concepts" / "stale.md"
-    p.write_text(
-        f"""---
-schema_version: 2
-type: concept
-created: 2026-01-01
-last_reviewed: {old}
-description: "stale."
-tags: [topic/test]
----
-body
-"""
-    )
-    actions = _pass_staleness(wiki, date.today(), threshold=180)
-    assert actions == []
-
-
-def test_curator_supersession_writes_only_superseded_by(tmp_path: Path, monkeypatch):
-    root = tmp_path / "vault"
-    wiki = root / "wiki" / "w"
-    (wiki / "concepts").mkdir(parents=True)
-    monkeypatch.setenv("LORE_ROOT", str(root))
-
-    new = wiki / "concepts" / "new.md"
-    new.write_text(
-        """---
-schema_version: 2
-type: concept
-created: 2026-04-17
-last_reviewed: 2026-04-17
-description: "replacement."
-tags: [topic/test]
----
-# new
-
-This supersedes [[old]].
-"""
-    )
-    old = wiki / "concepts" / "old.md"
-    old.write_text(
-        """---
-schema_version: 2
-type: concept
-created: 2026-01-01
-last_reviewed: 2026-01-01
-description: "the old thing."
-tags: [topic/test]
----
-# old
-"""
-    )
-    actions = _pass_supersession(wiki)
-    assert len(actions) == 1
-    a = actions[0]
-    assert a.path == old
-    assert a.patch == {"superseded_by": "[[new]]"}
-    assert "status" not in a.patch
 
 
 # ---------- migration ----------

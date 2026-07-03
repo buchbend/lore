@@ -1,4 +1,4 @@
-"""Tests for ``surfaces.rewrite_scopes_in_frontmatter`` (Phase 8 primitive)."""
+"""Tests for ``scopes.rewrite_scopes_in_frontmatter``."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from lore_core.schema import parse_frontmatter
-from lore_core.surfaces import rewrite_scopes_in_frontmatter
+from lore_core.scopes import rewrite_scopes_in_frontmatter
 
 
 def _write_note(tmp_path: Path, name: str, fm: dict) -> Path:

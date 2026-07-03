@@ -234,7 +234,7 @@ def cmd_reconcile() -> None:
     Idempotent: re-running after a clean catch-up is a no-op.
     """
     from lore_core.state.scope_renames import read_log
-    from lore_core.surfaces import rewrite_scopes_in_frontmatter
+    from lore_core.scopes import rewrite_scopes_in_frontmatter
     from lore_core.config import get_wiki_root
 
     lore_root = _lore_root_or_die()
@@ -362,8 +362,8 @@ def _apply_frontmatter_and_log(
     ``"_log_path"`` entry pointing at the rename log.
     """
     from lore_core.config import get_wiki_root
+    from lore_core.scopes import rewrite_scopes_in_frontmatter
     from lore_core.state.scope_renames import append_rename
-    from lore_core.surfaces import rewrite_scopes_in_frontmatter
 
     if not rewrites:
         return {}

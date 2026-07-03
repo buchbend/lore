@@ -5,6 +5,7 @@ from pathlib import Path
 from lore_core.wikilinks import (
     WIKILINK_RE,
     existing_slugs,
+    find_orphan_links,
     strip_broken_wikilinks,
 )
 
@@ -164,3 +165,53 @@ def test_existing_slugs_handles_string_alias_form(tmp_path: Path):
     )
     slugs = existing_slugs(tmp_path)
     assert slugs == {"n", "legacy-stem"}
+
+
+# --- find_orphan_links: detect wikilinks whose target doesn't resolve ---
+
+
+def _note(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "---\ntype: session\ncreated: 2026-04-21\n---\n\n" + body
+    )
+
+
+def test_find_orphan_links_detects_missing_targets(tmp_path: Path):
+    wiki = tmp_path / "w"
+    _note(wiki / "sessions" / "a.md", "see [[missing-target]] and [[existing]]\n")
+    _note(wiki / "sessions" / "existing.md", "present\n")
+
+    orphans = find_orphan_links(wiki)
+    assert len(orphans) == 1
+    note, slug, offset = orphans[0]
+    assert slug == "missing-target"
+    assert note.name == "a.md"
+    assert isinstance(offset, int)
+
+
+def test_find_orphan_links_detects_none_when_all_resolve(tmp_path: Path):
+    wiki = tmp_path / "w"
+    _note(wiki / "sessions" / "a.md", "see [[b]]\n")
+    _note(wiki / "sessions" / "b.md", "exists\n")
+
+    assert find_orphan_links(wiki) == []
+
+
+def test_find_orphan_links_skips_derived_underscore_files(tmp_path: Path):
+    """``_index.md`` etc. are derived; broken links inside them don't count."""
+    wiki = tmp_path / "w"
+    _note(wiki / "sessions" / "real.md", "resolves [[real]]\n")
+    (wiki / "_index.md").write_text("orphan [[nope]] in a derived file\n")
+
+    assert find_orphan_links(wiki) == []
+
+
+def test_find_orphan_links_resolves_via_alias(tmp_path: Path):
+    """A link to an aliased note resolves (per-wiki alias-aware slugs)."""
+    wiki = tmp_path / "w"
+    _note(wiki / "sessions" / "a.md", "see [[old-name]]\n")
+    (wiki / "sessions" / "b.md").write_text(
+        "---\ntype: session\naliases:\n  - old-name\n---\n\nbody\n"
+    )
+    assert find_orphan_links(wiki) == []

@@ -4,24 +4,22 @@ The canonical home for wiki-lifecycle verbs going forward. Today it
 hosts ``new`` (scaffold a new wiki); future work can land alongside
 without inventing more top-level CLI verbs.
 """
+
 from __future__ import annotations
 
 import shutil
 import subprocess
 import sys
 from enum import Enum
-from importlib import resources
 from pathlib import Path
 
 import typer
 from lore_core.config import get_wiki_root
-from lore_core.io import atomic_write_text
 from rich.console import Console
 
 from lore_cli._argv_compat import argv_main
 
 console = Console()
-err_console = Console(stderr=True)
 
 app = typer.Typer(
     add_completion=False,
@@ -37,18 +35,12 @@ class WikiMode(str, Enum):
 
 
 SUBDIRS = ("projects", "concepts", "decisions", "sessions", "inbox")
-TEMPLATE_NAMES = ("standard", "science", "design", "custom")
 
 
 def _plugin_templates_dir() -> Path:
     from lore_core.templates import templates_dir
+
     return templates_dir()
-
-
-def _load_template(name: str) -> str:
-    if name not in TEMPLATE_NAMES:
-        raise ValueError(f"unknown template {name!r}; choose from {TEMPLATE_NAMES}")
-    return resources.files("lore_core.surface_templates").joinpath(f"{name}.md").read_text()
 
 
 def scaffold_wiki(
@@ -57,7 +49,6 @@ def scaffold_wiki(
     mode: str = "personal",
     remote: str | None = None,
     force: bool = False,
-    surfaces: str = "standard",
 ) -> Path:
     wiki_root = get_wiki_root()
     wiki_root.mkdir(parents=True, exist_ok=True)
@@ -80,13 +71,6 @@ def scaffold_wiki(
             f"# {name.upper()} Knowledge Index\n\n"
             f"(Newly created wiki — run `lore lint --wiki {name}` to populate.)\n"
         )
-
-    surfaces_path = target / "SURFACES.md"
-    if not surfaces_path.exists():
-        if surfaces not in TEMPLATE_NAMES:
-            err_console.print(f"[red]unknown template '{surfaces}'; choose from {TEMPLATE_NAMES}[/red]")
-            raise typer.Exit(1)
-        atomic_write_text(surfaces_path, _load_template(surfaces))
 
     if mode == "team":
         subprocess.run(["git", "init"], cwd=str(target), check=False)
@@ -116,20 +100,11 @@ def cmd_new(
         "--mode",
         help="`team` mode adds git init + optional remote.",
     ),
-    remote: str = typer.Option(
-        None, "--remote", help="Git remote URL (team mode)."
-    ),
-    force: bool = typer.Option(
-        False, "--force", help="Overwrite an existing wiki directory."
-    ),
-    surfaces: str = typer.Option(
-        "standard",
-        "--surfaces",
-        help=f"SURFACES.md template: {TEMPLATE_NAMES}",
-    ),
+    remote: str = typer.Option(None, "--remote", help="Git remote URL (team mode)."),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing wiki directory."),
 ) -> None:
     """Scaffold a new wiki under $LORE_ROOT/wiki/."""
-    scaffold_wiki(name, mode=mode.value, remote=remote, force=force, surfaces=surfaces)
+    scaffold_wiki(name, mode=mode.value, remote=remote, force=force)
 
 
 main = argv_main(app)

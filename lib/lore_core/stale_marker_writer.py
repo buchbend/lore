@@ -6,10 +6,9 @@ vault-wide edit policy (#37): never deletes user-set fields, never
 overwrites pre-existing values without an explicit ``clear_stale``
 call.
 
-Body bytes are never touched. The writer reuses the safe-edit pattern
-from :mod:`lore_curator.c_auto_supersede`'s ``_append_marker``:
-operate on the YAML frontmatter block as text, leave the body alone,
-preserve trailing-newline.
+Body bytes are never touched. The writer operates on the YAML
+frontmatter block as text, leaves the body alone, and preserves the
+trailing newline.
 """
 
 from __future__ import annotations
