@@ -1,0 +1,16 @@
+
+==================================== ERRORS ====================================
+________________ ERROR collecting tests/test_chapter_compose.py ________________
+ImportError while importing test module '/home/buchbend/git/lore/.worktrees/feat-125-chapter-compose/tests/test_chapter_compose.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../../../.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_chapter_compose.py:19: in <module>
+    from lore_curator.chapter_compose import (
+E   ModuleNotFoundError: No module named 'lore_curator.chapter_compose'
+=========================== short test summary info ============================
+ERROR tests/test_chapter_compose.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.76s

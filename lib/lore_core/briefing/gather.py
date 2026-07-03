@@ -22,7 +22,6 @@ from typing import Any
 
 from lore_core.config import get_wiki_root
 from lore_core.errors import NO_VAULT, WIKI_NOT_FOUND, mcp_error
-from lore_core.regions import redact_human_only
 from lore_core.schema import parse_frontmatter
 
 _LEDGER_FILE = ".briefing-ledger.json"
@@ -188,12 +187,10 @@ def gather(
             if md.name in incorporated or stem + ".md" in incorporated:
                 continue
             text = md.read_text(errors="replace")
-            # Two-region retrieval filter (PRD #92): gather feeds into LLM
-            # composition (the briefing skill writes prose from this), so
-            # strip the human-only region before any section extraction.
-            # Frontmatter lives above the marker, so parse_frontmatter is
-            # unaffected by the redaction.
-            text = redact_human_only(text)
+            # Session notes carry no human-only region: the note is
+            # machine-written and cleared by the publish gate, so the
+            # whole body feeds the briefing composer. (Chapter-aware
+            # gather over the new note shape is a separate slice.)
             entry: dict[str, Any] = {
                 "path": rel,
                 "date": d.isoformat(),

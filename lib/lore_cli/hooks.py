@@ -1363,11 +1363,10 @@ def _render_project_orientation(scope: "Scope", wiki_root: Path) -> str | None:
     for path in candidates:
         if path.is_file():
             try:
-                from lore_core.regions import redact_human_only
                 from lore_core.schema import strip_frontmatter
 
                 text = path.read_text(errors="replace")
-                body = redact_human_only(strip_frontmatter(text)).strip()
+                body = strip_frontmatter(text).strip()
             except OSError:
                 return None
             if not body:
