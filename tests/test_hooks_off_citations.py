@@ -108,10 +108,13 @@ def test_user_prompt_submit_emits_directive_mid_session(
     assert "consulted" in additional.lower()
 
 
-def test_session_start_includes_citation_directive_when_set(
+def test_session_start_does_not_include_citation_directive(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    """End-to-end: `_session_start_from_lore` output contains the directive."""
+    """The SessionStart banner never carries the citation directive —
+    it collapsed into the single ambient directive. The suppression
+    still applies mid-session, re-asserted on every prompt (see
+    ``test_user_prompt_submit_emits_directive_mid_session``)."""
     sid = "sid-cite-E"
     monkeypatch.setenv("CLAUDE_SESSION_ID", sid)
     toggles.set_off("citations", sid)
@@ -132,4 +135,4 @@ def test_session_start_includes_citation_directive_when_set(
     out = hooks._session_start_from_lore(str(tmp_path), config, tmp_path)
 
     assert out is not None
-    assert "consulted" in out.lower()
+    assert "consulted" not in out.lower()
