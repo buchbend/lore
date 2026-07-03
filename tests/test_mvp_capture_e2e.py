@@ -276,18 +276,14 @@ def test_mvp_e2e_session_end_produces_note(
     assert fm.get("type") == "session", f"Expected type:session, got {fm.get('type')}"
     assert fm.get("scope") == "projectA", f"Expected scope:projectA, got {fm.get('scope')}"
 
-    src_transcripts = fm.get("source_transcripts", [])
-    assert len(src_transcripts) >= 1, "Expected at least one source_transcript"
-    src = src_transcripts[0]
-    assert src.get("integration") == "claude-code", (
-        f"Expected integration=claude-code, got {src.get('integration')}"
+    # Ingest provenance now lives as machine-first frontmatter on the
+    # append-only note: one note per (transcript, day), so a single
+    # ``transcript_id`` + ``integration`` replaces the old per-chunk
+    # ``source_transcripts`` list.
+    assert fm.get("integration") == "claude-code", (
+        f"Expected integration=claude-code, got {fm.get('integration')}"
     )
-    assert src.get("from_hash") == turns[0].content_hash(), (
-        f"Expected from_hash={turns[0].content_hash()}, got {src.get('from_hash')}"
-    )
-    assert src.get("to_hash") == turns[-1].content_hash(), (
-        f"Expected to_hash={turns[-1].content_hash()}, got {src.get('to_hash')}"
-    )
+    assert fm.get("transcript_id"), "Expected a transcript_id provenance field"
 
 
 def test_mvp_e2e_idempotent_on_rerun(

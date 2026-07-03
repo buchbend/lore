@@ -1306,6 +1306,15 @@ def cmd_session_start(
         except Exception:
             pass
 
+        # Singleton startup sweep: closes the note of any session that
+        # died mid-flush. Spawned detached so SessionStart stays fast; the
+        # command holds the global curator lock, so concurrent starts race
+        # safely and the losers exit without touching anything.
+        try:
+            spawn("sweep", lore_root)
+        except Exception:
+            pass
+
     # Phase 6: project orientation auto-injection. When SessionStart
     # fires inside an attached scope and a project orientation note
     # exists at ``projects/<slug>/<slug>.md`` (folder layout, post-

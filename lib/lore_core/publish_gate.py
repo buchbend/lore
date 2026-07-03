@@ -50,6 +50,7 @@ __all__ = [
     "CATEGORY_ERROR",
     "GateResult",
     "PASS",
+    "PublishGate",
     "Detector",
     "LlmPiiDetector",
     "WithholdOutcome",
@@ -120,16 +121,30 @@ _MARKER_REASON: dict[str, str] = {
 
 @dataclass(frozen=True)
 class GateResult:
-    """Verdict for one chapter.
+    """Verdict for one chapter — the single type shared composer→gate→append.
 
     ``passed`` is the whole result; on a withhold, ``category`` names the
     class of problem and ``feedback`` is the retry-prompt injection. Both
     are empty on a pass, and ``feedback`` never contains the matched value.
+
+    This is the one canonical verdict type: the chapter composer imports
+    and re-exports it rather than defining a parallel copy, so a gate's
+    verdict flows straight into the compose retry loop.
     """
 
     passed: bool
     category: str = ""
     feedback: str = ""
+
+    @classmethod
+    def ok(cls) -> GateResult:
+        """A passing verdict (the composer's clean path)."""
+        return PASS
+
+    @classmethod
+    def withheld(cls, category: str, feedback: str) -> GateResult:
+        """A withheld verdict carrying its category and retry feedback."""
+        return cls(passed=False, category=category, feedback=feedback)
 
 
 # The singleton pass result — cheaper than allocating one per clean chapter.
@@ -437,6 +452,24 @@ def evaluate(chapter_text: str, *, detector: Detector | None = None) -> GateResu
         return PASS
     except Exception:  # noqa: BLE001 — any gate failure withholds, never passes
         return _withheld(CATEGORY_ERROR)
+
+
+class PublishGate:
+    """The real gate as a ``Gate`` object the chapter composer can inject.
+
+    The composer consumes a ``gate.evaluate(chapter_text) -> GateResult``
+    seam; this binds an optional :class:`Detector` once and forwards each
+    call to the module-level :func:`evaluate`. Constructing it with no
+    detector runs the deterministic scanners + phrasing lint only (the
+    fuzzy-PII detection call is skipped), which is the safe default when
+    no small-model backend is configured.
+    """
+
+    def __init__(self, *, detector: Detector | None = None) -> None:
+        self._detector = detector
+
+    def evaluate(self, chapter_text: str) -> GateResult:
+        return evaluate(chapter_text, detector=self._detector)
 
 
 # ---------------------------------------------------------------------------
