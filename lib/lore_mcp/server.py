@@ -1180,9 +1180,7 @@ def handle_repo_docs_list(kind: str, repo_path: str | None = None) -> dict[str, 
     from lore_core.repo_docs import HOMES, list_docs
 
     if kind not in HOMES:
-        return _mcp_error(
-            "invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}"
-        )
+        return _mcp_error("invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}")
     repo_root = _resolve_repo_root(repo_path)
     if repo_root is None:
         return _mcp_error(
@@ -1200,9 +1198,7 @@ def handle_repo_docs_list(kind: str, repo_path: str | None = None) -> dict[str, 
     }
 
 
-def handle_repo_docs_fetch(
-    kind: str, path: str, repo_path: str | None = None
-) -> dict[str, Any]:
+def handle_repo_docs_fetch(kind: str, path: str, repo_path: str | None = None) -> dict[str, Any]:
     """Fetch one ADR/PRD's content from a connected repo.
 
     `path` accepts a bare slug, a filename, or the full repo-relative
@@ -1211,9 +1207,7 @@ def handle_repo_docs_fetch(
     from lore_core.repo_docs import HOMES, read_doc
 
     if kind not in HOMES:
-        return _mcp_error(
-            "invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}"
-        )
+        return _mcp_error("invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}")
     repo_root = _resolve_repo_root(repo_path)
     if repo_root is None:
         return _mcp_error(
