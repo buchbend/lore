@@ -453,33 +453,6 @@ def test_phase2_renames_stub_to_slug_from_title(lore_root, patch_collectors, mon
     assert stub_path.stem in (fm.get("aliases") or [])
 
 
-def test_phase2_skips_rename_for_continuation_part(lore_root, patch_collectors, monkeypatch):
-    _, stub_path, sidecar_path = _seed_stub(lore_root, monkeypatch)
-    # Mark the stub as part 2 of a continuation chain — rename would
-    # orphan ``continued_by:`` / ``continues:`` cross-references on the
-    # prior part.
-    buf = Buffer.from_sidecar_path(sidecar_path)
-    with buf.with_lock():
-        buf.patch(part_index=2, continuation_of="01-0900-prior-stub")
-
-    composed = {"title": "completely different title", "description": "d", "summary_lede": "s"}
-    llm = _FakeLlmClient(_ok_responder(composed))
-    outcome = synth_and_close(
-        sidecar_path,
-        lore_root=lore_root,
-        wiki_root=lore_root / "wiki" / "private",
-        llm_client=llm,
-        model="m",
-    )
-    assert outcome.phase2_completed is True
-    # Path unchanged — same as the seeded stub.
-    assert outcome.stub_path == stub_path
-    assert stub_path.exists()
-    fm = parse_frontmatter(stub_path.read_text())
-    # No alias added, since we didn't rename.
-    assert "aliases" not in fm or not fm["aliases"]
-
-
 def test_phase2_skips_rename_when_slug_equals_existing(lore_root, patch_collectors, monkeypatch):
     # Seed a stub whose existing slug already matches the title-derived slug.
     # ``patch_collectors`` seeds a commit "fix: seeded commit" → slug

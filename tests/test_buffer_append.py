@@ -158,7 +158,7 @@ def test_subsequent_heartbeat_advances_counters(lore_root, patch_collectors):
     assert log.count('"type": "append"') == 2
 
 
-def test_cap_trip_flips_buffer_to_ready(lore_root, patch_collectors):
+def test_cap_trip_requests_in_place_flush(lore_root, patch_collectors):
     turns = _make_turns(8)
     cfg = _make_cfg(cap_turns=4)  # tripped on first heartbeat
 
@@ -176,9 +176,13 @@ def test_cap_trip_flips_buffer_to_ready(lore_root, patch_collectors):
     )
     assert outcome.cap_tripped is True
     sidecar = outcome.buffer.read_sidecar()
-    assert sidecar.state == "ready"
+    # A cap-trip is a flush trigger, not a session boundary: the buffer
+    # stays accumulating and the flush is requested in-place so the
+    # session keeps folding into a single note (no Part-N split).
+    assert sidecar.state == "accumulating"
     assert sidecar.flush_requested is not None
     assert sidecar.flush_requested.trigger == "cap-trip"
+    assert sidecar.flush_requested.mode == "in_place"
 
 
 def test_cap_trip_chars_threshold(lore_root, patch_collectors):
@@ -199,7 +203,29 @@ def test_cap_trip_chars_threshold(lore_root, patch_collectors):
     )
     assert outcome.cap_tripped is True
     sidecar = outcome.buffer.read_sidecar()
-    assert sidecar.state == "ready"
+    assert sidecar.state == "accumulating"
+    assert sidecar.flush_requested.mode == "in_place"
+
+
+def test_cap_trip_keeps_single_buffer_for_session(lore_root, patch_collectors):
+    """One session yields exactly one note: after a cap-trip the next
+    heartbeat folds into the SAME buffer (stem), not a new part."""
+    cfg = _make_cfg(cap_turns=4)
+    o1 = append_chunk(
+        lore_root=lore_root, chunk_turns=_make_turns(8), local_date="2026-05-01",
+        transcript_id="abc", integration="claude-code", wiki="private", scope="proj:x",
+        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=cfg,
+    )
+    assert o1.cap_tripped is True
+    o2 = append_chunk(
+        lore_root=lore_root, chunk_turns=_make_turns(3), local_date="2026-05-01",
+        transcript_id="abc", integration="claude-code", wiki="private", scope="proj:x",
+        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=cfg,
+    )
+    # Same buffer, still accumulating — the session is one buffer / one note.
+    assert o2.buffer.stem == o1.buffer.stem
+    assert "__part" not in o2.buffer.stem
+    assert o2.buffer.read_sidecar().state == "accumulating"
 
 
 def test_no_op_chunk_does_not_create_buffer(lore_root, patch_collectors):
@@ -435,20 +461,3 @@ def test_emits_telemetry(lore_root, patch_collectors, monkeypatch):
     assert "buffer-appended" in names
 
 
-def test_part_index_2_uses_separate_stem(lore_root, patch_collectors):
-    """Cap-trip's Part-N split (Step 8) opens a separate buffer; verify the
-    buffer addressing primitive accepts ``part_index=2`` cleanly."""
-    o1 = append_chunk(
-        lore_root=lore_root, chunk_turns=_make_turns(2), local_date="2026-05-01",
-        transcript_id="abc", integration="claude-code", wiki="private", scope="proj:x",
-        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=_make_cfg(),
-        part_index=1,
-    )
-    o2 = append_chunk(
-        lore_root=lore_root, chunk_turns=_make_turns(2), local_date="2026-05-01",
-        transcript_id="abc", integration="claude-code", wiki="private", scope="proj:x",
-        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=_make_cfg(),
-        part_index=2,
-    )
-    assert o1.buffer.stem != o2.buffer.stem
-    assert o2.buffer.stem.endswith("__part2")

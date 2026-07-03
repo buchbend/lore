@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -183,98 +182,6 @@ def _dispatch_flush_requested(
                 message=f"{type(exc).__name__}: {exc}",
             )
     return flushed
-
-
-def _resolve_active_part(
-    lore_root: Path,
-    *,
-    transcript_id: str,
-    local_date: str,
-) -> tuple[int, str | None]:
-    """Pick the ``part_index`` and (if continuing) the prior part's stem.
-
-    Algorithm:
-    1. If any live (non-_done) sidecar exists for this
-       ``(transcript_id, local_date)`` and is still ``accumulating``,
-       reuse its ``part_index`` (we're appending into the active part).
-    2. Otherwise find the highest ``part_index`` seen for this pair —
-       across any state, including ``_done/`` archive entries — and
-       return ``(highest + 1, <highest's stem>)``. This is the cap-trip
-       continuation case.
-    3. Fresh pair: ``(1, None)``.
-
-    Both the live buffers directory and the ``_done/`` archive are
-    consulted so that a closed Part-N (cap-trip / reaper) correctly
-    leads to Part-(N+1) on the next heartbeat. Without scanning
-    ``_done/``, the resolver would silently return ``(1, None)`` and
-    open a duplicate Part-1 stub for the same ``(transcript_id,
-    local_date)`` — the bug behind today's three-split symptom.
-    """
-    from lore_curator.buffer_store import iter_all
-
-    compact = local_date.replace("-", "")
-    prefix = f"{transcript_id}__{compact}"
-    candidates: list[tuple[int, str, str]] = []  # (part_index, state, stem)
-
-    seen_stems: set[str] = set()
-    for buf in iter_all(lore_root):
-        if not buf.stem.startswith(prefix):
-            continue
-        sidecar = buf.read_sidecar()
-        if sidecar is None:
-            continue
-        if sidecar.transcript_id != transcript_id or sidecar.local_date != local_date:
-            continue
-        candidates.append((sidecar.part_index, sidecar.state, buf.stem))
-        seen_stems.add(buf.stem)
-
-    # Scan ``_done/`` for archived parts. Filter by stem prefix to keep
-    # the directory walk bounded — only entries that match this
-    # ``(transcript_id, local_date)`` pair are considered.
-    done = lore_root / ".lore" / "buffers" / "_done"
-    if done.exists():
-        for entry in sorted(done.iterdir()):
-            if entry.is_dir():
-                continue
-            if not entry.name.endswith(".state.json"):
-                continue
-            stem = entry.name[: -len(".state.json")]
-            if not stem.startswith(prefix):
-                continue
-            if stem in seen_stems:
-                continue
-            try:
-                raw = json.loads(entry.read_text())
-            except (OSError, json.JSONDecodeError):
-                continue
-            if not isinstance(raw, dict):
-                continue
-            from lore_curator.buffer_store import Sidecar as _Sidecar
-            try:
-                sidecar = _Sidecar.from_dict(raw)
-            except (TypeError, ValueError):
-                continue
-            if sidecar.transcript_id != transcript_id or sidecar.local_date != local_date:
-                continue
-            candidates.append((sidecar.part_index, sidecar.state, stem))
-            seen_stems.add(stem)
-
-    if not candidates:
-        return 1, None
-
-    # Active part: still accumulating.
-    accumulating = [c for c in candidates if c[1] == "accumulating"]
-    if accumulating:
-        # Defensive: pick the highest part_index in case multiple exist
-        # (shouldn't happen — cap-trip flips the prior to ready before
-        # opening a new one).
-        accumulating.sort(reverse=True)
-        return accumulating[0][0], None
-
-    # Continuation case: open Part-(highest + 1).
-    candidates.sort(reverse=True)
-    highest_part, _state, highest_stem = candidates[0]
-    return highest_part + 1, highest_stem
 
 
 def _chunk_local_date(chunk_turns: list[Turn]) -> str:
@@ -686,11 +593,6 @@ def _process_chunk(
     work_time = chunk_turns[-1].timestamp or handle.mtime or now
     local_date = _chunk_local_date(chunk_turns)
     handle_label = _resolve_handle_for(wiki_dir, handle)
-    part_index, continuation_of = _resolve_active_part(
-        lore_root,
-        transcript_id=entry.transcript_id,
-        local_date=local_date,
-    )
 
     outcome = append_chunk(
         lore_root=lore_root,
@@ -707,8 +609,6 @@ def _process_chunk(
         owner_run_id=getattr(logger, "run_id", "") or "",
         owner_claude_session_id=os.environ.get("CLAUDE_SESSION_ID", ""),
         logger=logger,
-        part_index=part_index,
-        continuation_of=continuation_of,
     )
 
     if outcome.skipped_no_op:
@@ -757,12 +657,10 @@ def _process_chunk(
     )
 
     if outcome.cap_tripped:
-        # Spawn the flush worker for the just-tripped part. The next
-        # heartbeat for this transcript+date will land in Part-N+1
-        # (resolved via _resolve_active_part). We don't open Part-N+1
-        # eagerly — cap-trip flipped the current buffer to ``ready``,
-        # so the next call hitting _resolve_active_part skips it and
-        # falls into the continuation branch.
+        # Spawn the flush worker. Cap-trip requests an in-place flush
+        # (``mode="in_place"`` on the sidecar), so the worker appends a
+        # chapter and leaves the buffer ``accumulating`` — the next
+        # heartbeat keeps folding into the same buffer and the same note.
         from lore_curator.synthesis import spawn_detached_flush
 
         spawned = spawn_detached_flush(
