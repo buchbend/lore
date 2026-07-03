@@ -4,9 +4,10 @@ Two file mutations + one check:
 
   1. Merge `mcpServers.lore` into `<cursor-config-dir>/mcp.json`
      with `_lore_schema_version: "1"` for future migrations.
-  2. Write `<cursor-rules-dir>/lore.md` with the vault-first directive
-     wrapped in `<!-- lore-managed-start -->` … `<!-- lore-managed-end -->`
-     markers so user-appended content survives uninstall.
+  2. Write `<cursor-rules-dir>/lore.md` with the ambient SessionStart
+     directive wrapped in `<!-- lore-managed-start -->` …
+     `<!-- lore-managed-end -->` markers so user-appended content
+     survives uninstall.
   3. Verify `lore` is on PATH (Cursor's MCP client subprocess-spawns
      the server via that name).
 
@@ -35,7 +36,7 @@ SCHEMA_VERSION = "1"
 
 
 def _read_directive_body() -> str:
-    """Pull the canonical vault-first directive out of the bundled templates.
+    """Pull the canonical SessionStart directive out of the bundled templates.
 
     Resolved at call time (not import time) so tests can monkeypatch the
     directive path. Delegates the directory lookup to
@@ -202,7 +203,7 @@ def plan(ctx: InstallContext) -> list[Action]:
                 description="Write Lore directive to Cursor rules",
                 target=str(rules_path),
                 summary=f"new file (~{len(body.splitlines())} lines, "
-                "vault-first directive)",
+                "SessionStart directive)",
                 payload={
                     "path": str(rules_path),
                     "content": full_content,
@@ -363,7 +364,7 @@ def _plan_plugin_packaging(ctx: InstallContext) -> list[Action]:
         )
     )
 
-    # 4d. Rules tree — vault-first directive in markdown form.
+    # 4d. Rules tree — SessionStart directive in markdown form.
     rules_src = source_root / "lib" / "lore_core" / "templates" / "integration-rules"
     if rules_src.is_dir():
         actions.append(
