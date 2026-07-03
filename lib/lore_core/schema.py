@@ -186,31 +186,20 @@ def extract_wikilinks(text: str) -> list[str]:
 def required_fields_for(type_name: str, *, wiki_dir: Path | None = None) -> list[str]:
     """Return required frontmatter fields for `type_name`.
 
-    Resolves from the wiki's SURFACES.md when available; falls back to
-    the module-level REQUIRED_FIELDS dict otherwise.
+    Resolves against the module-level REQUIRED_FIELDS dict.
 
     Args:
         type_name: The note type (e.g., "concept", "decision", "session").
-        wiki_dir: Optional path to a wiki directory. If provided and
-                  SURFACES.md exists, will check there first for overrides.
+        wiki_dir: Accepted for call-site compatibility; ignored. Per-wiki
+                  SURFACES.md schema overrides were removed with surfaces.
 
     Returns:
         A list of required field names. Always returns a new list (not the
         internal one), so callers can mutate freely.
 
     Raises:
-        KeyError: If the type is not found in either SURFACES.md or
-                  REQUIRED_FIELDS.
+        KeyError: If the type is not found in REQUIRED_FIELDS.
     """
-    if wiki_dir is not None:
-        # Lazy import to avoid circular imports if schema is loaded early.
-        from lore_core.surfaces import load_surfaces
-
-        doc = load_surfaces(wiki_dir)
-        if doc is not None:
-            for surface in doc.surfaces:
-                if surface.name == type_name:
-                    return list(surface.required)
     if type_name in REQUIRED_FIELDS:
         return list(REQUIRED_FIELDS[type_name])
     raise KeyError(type_name)

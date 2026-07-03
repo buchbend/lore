@@ -1,29 +1,37 @@
 ---
 name: lore:curator
-description: Mark notes stale by mtime, propagate `supersedes:` and
-  `implements:` status flips, backfill missing dates. Judgment calls
-  on metadata only — never edits note bodies. Use for routine vault
-  hygiene; pair with `lore lint` when indexes are also stale. Run
-  with "/lore:curator <wiki>".
+description: Propagate `supersedes:` and `implements:` relations, backfill
+  missing dates from git, and hint when a wiki has outgrown solo mode.
+  Frontmatter-only judgement calls — never edits note bodies. Use for
+  routine vault hygiene; pair with `lore lint` when indexes are also
+  stale. Run with "/lore:curator <wiki>".
 user_invocable: true
 ---
 
 # Curator
 
-Keeps the vault's metadata trustworthy so SessionStart's auto-injection
+Keeps the vault's frontmatter trustworthy so SessionStart's context
 surfaces only current, active knowledge.
 
-Four passes per wiki, all frontmatter-only — bodies are never touched
-without user approval:
+Passes per wiki, all frontmatter-only — note bodies are never touched:
 
-1. **Staleness** — `status: active` + `last_reviewed > 90 days` ago →
-   `status: stale`.
-2. **Supersession** — note A says "supersedes [[B]]" → B becomes
-   `status: superseded` with `superseded_by: [[A]]`.
+1. **Supersession** — note A says "supersedes [[B]]" → B gets
+   `superseded_by: [[A]]`. Only the relation is written; `status:` is
+   never set (lifecycle is derived at read time).
+2. **Implements-propagation** — a session note's `implements: <slug>`
+   drops `draft:` on the target and stamps `implemented_by` /
+   `implemented_at` back-links; `implements: <slug>:superseded-by:<other>`
+   writes `superseded_by: [[other]]`.
 3. **Git backfill** — missing `created` / `last_reviewed` filled from
    `git log --follow`.
-4. **Review summary** — writes `wiki/<name>/_review.md` listing every
+4. **Team-mode hint** — advises creating `_users.yml` once a solo wiki
+   shows multiple distinct git authors.
+5. **Review summary** — writes `wiki/<name>/_review.md` listing every
    action; SessionStart surfaces the count in its one-liner.
+
+Staleness is **not** flagged by age: it is positive-evidence-only at
+read time (a broken wikilink or an authored marker), so the curator's
+staleness pass is a deliberate no-op.
 
 ## Workflow
 

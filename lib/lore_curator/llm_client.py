@@ -992,3 +992,24 @@ def make_llm_client(
     raise ValueError(  # pragma: no cover
         f"unknown backend {backend!r}"
     )
+
+
+def _resolve_backend(cli_backend: str | None, lore_root: Path) -> str | None:
+    """Resolve curator backend from CLI flag → env var → root config → auto.
+
+    The returned value is what ``make_llm_client(backend=...)`` expects:
+    ``"subscription"`` | ``"api"`` | ``"openai"`` | ``"auto"`` | ``None``.
+    """
+    if cli_backend:
+        return cli_backend.strip()
+    env = os.environ.get("LORE_LLM_BACKEND", "").strip().lower()
+    if env:
+        return env
+    try:
+        from lore_core.root_config import load_root_config
+        cfg_backend = load_root_config(lore_root).curator.backend.strip().lower()
+        if cfg_backend and cfg_backend != "auto":
+            return cfg_backend
+    except Exception:
+        pass
+    return None

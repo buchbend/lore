@@ -1,4 +1,8 @@
-"""Tests for schema.required_fields_for() — integration with per-wiki SURFACES.md."""
+"""Tests for schema.required_fields_for() — resolves against REQUIRED_FIELDS.
+
+Per-wiki SURFACES.md schema overrides were removed with surfaces; the
+``wiki_dir`` argument is accepted for call-site compatibility but ignored.
+"""
 
 from __future__ import annotations
 
@@ -23,11 +27,12 @@ class TestRequiredFieldsFallback:
         assert result == REQUIRED_FIELDS["concept"]
 
 
-class TestRequiredFieldsFromSurfaces:
-    """When SURFACES.md exists and declares the type."""
+class TestRequiredFieldsIgnoresSurfaces:
+    """SURFACES.md no longer overrides the schema; REQUIRED_FIELDS wins."""
 
-    def test_required_fields_uses_surfaces_md_when_present(self, tmp_path: Path):
-        """Write SURFACES.md declaring concept with custom required fields."""
+    def test_required_fields_ignores_surfaces_md_when_present(self, tmp_path: Path):
+        """A SURFACES.md declaring custom fields is ignored — the legacy
+        REQUIRED_FIELDS mapping is authoritative."""
         surfaces_md = tmp_path / "SURFACES.md"
         surfaces_md.write_text("""schema_version: 2
 
@@ -41,8 +46,8 @@ optional: [description, tags]
 ```
 """)
         result = required_fields_for("concept", wiki_dir=tmp_path)
-        # Should use the SURFACES.md definition, not the legacy REQUIRED_FIELDS
-        assert result == ["type", "my_custom_field"]
+        assert result == REQUIRED_FIELDS["concept"]
+        assert "my_custom_field" not in result
 
 
 class TestRequiredFieldsErrors:

@@ -62,6 +62,36 @@ def existing_slugs(wiki_path: Path) -> set[str]:
     return slugs
 
 
+def find_orphan_links(wiki_path: Path) -> list[tuple[Path, str, int]]:
+    """Return ``(note_path, orphan_slug, match_start_offset)`` for every
+    wikilink in the wiki whose target doesn't resolve.
+
+    An orphan is a ``[[slug]]`` whose target is not among
+    :func:`existing_slugs` (which is alias-aware and per-wiki). Derived
+    ``_``-prefixed files are skipped as sources. Each occurrence is listed
+    once — a note with three uses of the same orphan returns three entries.
+
+    Used by the linter to cache the orphan set into ``_catalog.json`` so
+    the read-time freshness check can flag broken-link notes without
+    re-walking the wiki (positive-evidence staleness — a broken link is a
+    named cause; see :mod:`lore_core.freshness`).
+    """
+    slugs = existing_slugs(wiki_path)
+    results: list[tuple[Path, str, int]] = []
+    for p in sorted(wiki_path.rglob("*.md")):
+        if p.name.startswith("_"):
+            continue
+        try:
+            text = p.read_text(errors="replace")
+        except OSError:
+            continue
+        for m in WIKILINK_RE.finditer(text):
+            slug = m.group(1).strip()
+            if slug and slug not in slugs:
+                results.append((p, slug, m.start()))
+    return results
+
+
 def _aliases_from_file(path: Path) -> set[str]:
     """Read ``aliases:`` from a note's frontmatter, if any.
 

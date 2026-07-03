@@ -7,17 +7,12 @@ Covers:
 * dispatch(): mismatched sink (yaml says X, URI says Y) raises
   SinkConfigMismatchError
 * cmd_publish --wiki: loads yaml and threads it through to the sink
-* Curator B auto-publish: passes gather_result['sink_config'] into
-  dispatch, so env-less wikis can publish
 """
 
 from __future__ import annotations
 
 import warnings
-from pathlib import Path
 from textwrap import dedent
-from typing import Any
-from unittest.mock import patch
 
 import pytest
 
@@ -302,77 +297,3 @@ def test_cli_publish_missing_yaml_file(
     )
     assert rc == 1
     assert "no .lore-briefing.yml" in capsys.readouterr().err
-
-
-# ---------------------------------------------------------------------------
-# Curator B: auto-publish threads sink_config through
-# ---------------------------------------------------------------------------
-
-
-def test_curator_b_auto_publish_passes_sink_config() -> None:
-    """daily_curator._maybe_publish_briefing forwards gather's sink_config
-    to dispatch so the matrix sink can resolve from yaml without env vars."""
-    from datetime import UTC, datetime
-
-    from lore_curator import daily_curator as dc
-
-    captured: dict[str, Any] = {}
-
-    def fake_dispatch(uri: str, text: str, config: Any) -> None:
-        captured["uri"] = uri
-        captured["text"] = text
-        captured["config"] = config
-
-    fake_gather_result = {
-        "wiki": "demo",
-        "today": "2026-04-29",
-        "ledger": {"last_briefing": None, "incorporated_count": 0},
-        "sink_config": {
-            "sink": "matrix",
-            "matrix": {
-                "homeserver": "https://m.example.org",
-                "user_id": "@bot:m.example.org",
-                "room_id": "!abc:m.example.org",
-            },
-        },
-        "new_sessions": [
-            {
-                "path": "sessions/x.md",
-                "date": "2026-04-29",
-                "slug": "x",
-                "frontmatter": {"description": "test"},
-                "sections": {"what we worked on": "stuff"},
-            }
-        ],
-    }
-
-    wiki_config = type(
-        "WC",
-        (),
-        {
-            "briefing": type(
-                "B",
-                (),
-                {"auto": True, "sinks": ["matrix"]},
-            )(),
-        },
-    )()
-
-    with patch.object(dc, "_curator_log"), \
-         patch("lore_core.briefing.gather", return_value=fake_gather_result), \
-         patch("lore_core.briefing.dispatch", fake_dispatch), \
-         patch("lore_curator.daily_curator.WikiLedger") as ledger_cls:
-        ledger_cls.return_value.read.return_value = type(
-            "E", (), {"last_briefing": None}
-        )()
-        result = dc._maybe_publish_briefing(
-            lore_root=Path("/tmp/fake-vault"),
-            wiki="demo",
-            wiki_config=wiki_config,
-            now=datetime(2026, 4, 29, tzinfo=UTC),
-            dry_run=False,
-        )
-
-    assert result == {"sinks_written": ["matrix"]}
-    assert captured["uri"] == "matrix"
-    assert captured["config"]["matrix"]["homeserver"] == "https://m.example.org"

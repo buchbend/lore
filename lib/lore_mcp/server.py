@@ -22,11 +22,6 @@ Exposed tools:
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
     lore_repo_docs_fetch    — fetch one ADR or PRD's content (pull-only)
 
-Not registered: `handle_surface_context` / `handle_surface_validate` stay
-importable (exercised directly by tests) but their MCP tools are
-unregistered — Curator B's surface extraction is retired and no MCP path
-reaches surface authoring any more.
-
 Start:
     lore mcp
 """
@@ -573,186 +568,6 @@ def handle_journal_read(
     }
 
 
-def handle_surface_context(wiki: str) -> dict[str, Any]:
-    """Gather context pack for surface-authoring skills."""
-    from importlib import resources
-    from lore_core.surfaces import load_surfaces
-    import yaml
-
-    wiki_dir = _resolve_wiki(wiki)
-    if wiki_dir is None:
-        return {
-            "schema": "lore.surface.context/1",
-            "wiki": wiki,
-            "error": f"wiki '{wiki}' not found under $LORE_ROOT/wiki/",
-        }
-
-    surfaces_path = wiki_dir / "SURFACES.md"
-    exists = surfaces_path.exists()
-    doc = load_surfaces(wiki_dir) if exists else None
-    current: list[dict[str, Any]] = []
-    note_samples: dict[str, list[str]] = {}
-
-    if doc is not None:
-        for s in doc.surfaces:
-            current.append({
-                "name": s.name,
-                "description": s.description,
-                "required": list(s.required),
-                "optional": list(s.optional),
-                "extract_when": s.extract_when,
-                "plural": s.plural,
-                "slug_format": s.slug_format,
-                "extract_prompt": s.extract_prompt,
-            })
-            dirname = s.plural or (s.name if s.name.endswith("s") else f"{s.name}s")
-            subdir = wiki_dir / dirname
-            if not subdir.is_dir():
-                continue
-            samples: list[tuple[str, str]] = []
-            for md in subdir.glob("*.md"):
-                try:
-                    txt = md.read_text()
-                except OSError:
-                    continue
-                fm = parse_frontmatter(txt)
-                if not fm:
-                    continue
-                created = str(fm.get("created", ""))
-                samples.append((created, md.stem))
-            samples.sort(reverse=True)
-            if samples:
-                note_samples[s.name] = [f"[[{stem}]]" for _created, stem in samples[:3]]
-
-    shipped_templates: dict[str, str] = {}
-    for tmpl in ("standard", "science", "design"):
-        try:
-            shipped_templates[tmpl] = (
-                resources.files("lore_core.surface_templates")
-                .joinpath(f"{tmpl}.md")
-                .read_text()
-            )
-        except (FileNotFoundError, ModuleNotFoundError):
-            continue
-
-    claude_md_attach = ""
-    claude_md = wiki_dir / "CLAUDE.md"
-    if claude_md.exists():
-        txt = claude_md.read_text()
-        start = txt.find("## Lore")
-        if start != -1:
-            end = txt.find("\n## ", start + 1)
-            claude_md_attach = txt[start:end] if end != -1 else txt[start:]
-
-    return {
-        "schema": "lore.surface.context/1",
-        "wiki": wiki,
-        "wiki_dir": str(wiki_dir),
-        "surfaces_md_exists": exists,
-        "current_surfaces": current,
-        "claude_md_attach": claude_md_attach,
-        "note_samples": note_samples,
-        "shipped_templates": shipped_templates,
-    }
-
-
-def handle_surface_validate(wiki: str, draft: dict) -> dict[str, Any]:
-    """Validate a draft-spec. Returns issues + rendered markdown + unified diff."""
-    import difflib
-    from lore_core.surfaces import (
-        SurfaceDef,
-        render_section,
-        render_document,
-        validate_draft,
-    )
-
-    wiki_dir = _resolve_wiki(wiki)
-    if wiki_dir is None:
-        return {
-            "schema": "lore.surface.validate/1",
-            "ok": False,
-            "issues": [{
-                "level": "error",
-                "code": "unknown_wiki",
-                "message": f"wiki '{wiki}' not found under $LORE_ROOT/wiki/",
-            }],
-            "rendered_markdown": "",
-            "diff_preview": "",
-        }
-
-    issues = validate_draft(draft, wiki_dir=wiki_dir)
-    ok = not any(i["level"] == "error" for i in issues)
-
-    rendered = ""
-    op = draft.get("operation")
-    surfaces_path = wiki_dir / "SURFACES.md"
-    current_text = surfaces_path.read_text() if surfaces_path.exists() else ""
-    new_text = current_text
-
-    try:
-        if op == "append" and isinstance(draft.get("surface"), dict):
-            s = draft["surface"]
-            sd = SurfaceDef(
-                name=s.get("name", ""),
-                description=s.get("description", ""),
-                required=list(s.get("required") or []),
-                optional=list(s.get("optional") or []),
-                extract_when=s.get("extract_when", ""),
-                plural=s.get("plural"),
-                slug_format=s.get("slug_format"),
-                extract_prompt=s.get("extract_prompt"),
-            )
-            rendered = render_section(sd)
-            if current_text:
-                new_text = current_text.rstrip("\n") + "\n\n" + rendered
-            else:
-                new_text = "# Surfaces\nschema_version: 2\n\n" + rendered
-        elif op == "init" and isinstance(draft.get("surfaces"), list):
-            sds = [
-                SurfaceDef(
-                    name=s.get("name", ""),
-                    description=s.get("description", ""),
-                    required=list(s.get("required") or []),
-                    optional=list(s.get("optional") or []),
-                    extract_when=s.get("extract_when", ""),
-                    plural=s.get("plural"),
-                    slug_format=s.get("slug_format"),
-                    extract_prompt=s.get("extract_prompt"),
-                )
-                for s in draft["surfaces"]
-            ]
-            new_text = render_document(
-                schema_version=draft.get("schema_version", 2),
-                surfaces=sds,
-                wiki=wiki,
-            )
-            rendered = new_text
-    except Exception as e:
-        issues.append({
-            "level": "error",
-            "code": "render_failed",
-            "message": str(e),
-        })
-        ok = False
-
-    diff_lines = list(difflib.unified_diff(
-        current_text.splitlines(keepends=True),
-        new_text.splitlines(keepends=True),
-        fromfile="a/SURFACES.md",
-        tofile="b/SURFACES.md",
-    ))
-    diff_preview = "".join(diff_lines)
-
-    return {
-        "schema": "lore.surface.validate/1",
-        "wiki": wiki,
-        "ok": ok,
-        "issues": issues,
-        "rendered_markdown": rendered,
-        "diff_preview": diff_preview,
-    }
-
-
 def handle_drill(
     query: str,
     wiki: str | None = None,
@@ -810,8 +625,8 @@ def handle_drill(
     # Drill is the user-invoked deep-dive surface (PRD #92 retrieval
     # contract): pass ``include_human=True`` so the full note — including
     # the human-only region — is returned. ``handle_search`` /
-    # ``handle_surface_context`` / ``handle_briefing_gather`` are the
-    # auto-load surfaces where redaction is enforced.
+    # ``handle_briefing_gather`` are the auto-load surfaces where
+    # redaction is enforced.
     t0 = _time.monotonic()
     top_paths = [h["path"] for h in hits]
     read_failed_top: list[str] = []
