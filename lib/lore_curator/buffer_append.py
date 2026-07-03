@@ -136,8 +136,6 @@ def _build_initial_sidecar(
     cwd: Path,
     handle_label: str,
     owner: OwnerInfo,
-    part_index: int = 1,
-    continuation_of: str | None = None,
 ) -> Sidecar:
     return Sidecar(
         transcript_id=transcript_id,
@@ -151,8 +149,6 @@ def _build_initial_sidecar(
         state="accumulating",
         counters=Counters(),
         last_seen=LastSeen(),
-        part_index=part_index,
-        continuation_of=continuation_of,
     )
 
 
@@ -183,8 +179,6 @@ def append_chunk(
     owner_run_id: str = "",
     owner_claude_session_id: str = "",
     logger: "RunLogger | None" = None,
-    part_index: int = 1,
-    continuation_of: str | None = None,
 ) -> AppendOutcome:
     """Append one heartbeat's worth of chunk data to the buffer.
 
@@ -207,7 +201,6 @@ def append_chunk(
             lore_root,
             transcript_id=transcript_id,
             local_date=local_date,
-            part_index=part_index,
         )
         return AppendOutcome(
             buffer=buffer,
@@ -226,7 +219,6 @@ def append_chunk(
         lore_root,
         transcript_id=transcript_id,
         local_date=local_date,
-        part_index=part_index,
     )
 
     files_touched = _files_touched_from_turns(chunk_turns)
@@ -295,8 +287,6 @@ def append_chunk(
                 cwd=cwd,
                 handle_label=handle_label,
                 owner=owner,
-                part_index=part_index,
-                continuation_of=continuation_of,
             )
             buffer.init_sidecar(sidecar)
             is_new = True
@@ -311,8 +301,7 @@ def append_chunk(
 
         # State guard: if a flush worker has already taken ownership
         # (state in {flushing, closed}), the heartbeat must NOT mutate
-        # the buffer. Caller decides what to do — typically open a fresh
-        # Part-N+1 buffer at Step 8 cap-trip cutover.
+        # the buffer. The caller treats this as a no-op heartbeat.
         if existing.state in ("flushing", "closed"):
             return AppendOutcome(
                 buffer=buffer,
@@ -408,19 +397,22 @@ def append_chunk(
                 files_touched_count=new_counters.files_touched_count,
             )
 
-        # Cap check (Step 8 wires the Part-N+1 split; here we just flip
-        # state to ready and stamp flush_requested for the spawn worker).
+        # Cap check. A cap-trip is a flush trigger, not a session
+        # boundary: the note is append-only until close, so the buffer
+        # stays ``accumulating`` and the flush is requested in-place
+        # (append a chapter, keep folding into the same buffer). One
+        # session yields one note — no splitting.
         if (
             new_counters.turn_count >= cfg.curator.synthesis_buffer_cap_turns
             or new_counters.prompt_chars >= cfg.curator.synthesis_buffer_cap_chars
         ):
             buffer.append_event({"type": "cap-tripped"})
-            sidecar_after = buffer.transition(
-                "ready",
+            sidecar_after = buffer.patch(
                 flush_requested=FlushRequest(
                     trigger="cap-trip",
                     requested_at=_now_iso(),
                     by_pid=os.getpid(),
+                    mode="in_place",
                 ),
             )
             cap_tripped = True

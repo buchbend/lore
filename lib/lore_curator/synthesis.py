@@ -12,8 +12,7 @@ Phase 1 — deterministic, never raises:
 4. Re-render :class:`BodySections` with Activity from accumulators;
    ``summary`` / ``narrative`` stay empty until Phase 2 fills them.
 5. Atomically rewrite the stub at ``sidecar.stub_path``; drop
-   frontmatter ``state: stub``; for Part >= 2 add ``part: N`` and
-   ``continues: [[<prev>]]``.
+   frontmatter ``state: stub``.
 6. CAS ``flushing -> closed`` — handover unblocks here.
 7. Move sidecar+log to ``.lore/buffers/_done/``.
 
@@ -32,21 +31,17 @@ cell at 0.804 / 0.964 hero):
    turn citations, optional sub-headings (``### Strategy / ### Detours
    / ### Outcomes``), and per-bullet epistemic prefixes
    (``Considered: / Leaning: / Tried: / Open:``) for tentative items.
-3. For Part >= 2, both prompts get a rider: "this continues
-   [[<prev>]]; focus on THIS part's arc only".
-4. Re-open the finalised stub, rewrite frontmatter ``title`` /
+3. Re-open the finalised stub, rewrite frontmatter ``title`` /
    ``description`` and body sections (``# H1``, ``## Summary``,
    ``## Narrative``, ``## Activity``). Activity / files_touched /
    plans / projects / provenance preserved. The structured side-fields
    the pre-P2 schema produced (``adr_candidates`` / ``worked_on`` /
    ``discussion`` / ``loose_ends``) are not emitted; legacy notes keep
    them on round-trip via the parser.
-5. On failure on either call: ``flush_attempts++``, retry up to 3
+4. On failure on either call: ``flush_attempts++``, retry up to 3
    times in-process. On exhaustion, emit ``flush-degraded`` and leave
    the Activity-only note intact. **No state rollback** — buffer stays
    ``closed``.
-6. For Part >= 2, back-fill ``continued_by: [[<this>]]`` onto the prior
-   part's frontmatter.
 
 Tier note: P2 is a GPT-OSS-class-or-better recipe. Mistral-119B
 collapsed on this shape in experiment 005 (0.426 vs 0.804) because
@@ -300,10 +295,6 @@ def _phase1_finalise(
     elif "projects" in fm and dpr:
         fm.pop("projects", None)
     fm.pop("plans", None)
-    if sidecar.part_index >= 2:
-        fm["part"] = sidecar.part_index
-        if sidecar.continuation_of:
-            fm["continues"] = f"[[{sidecar.continuation_of}]]"
     fm["buffer_stem"] = buffer.stem
 
     body = render_body_sections(BodySections(
@@ -323,16 +314,6 @@ def _phase1_finalise(
     out.stub_path = stub_path
     out.wikilink = f"[[{stub_path.stem}]]"
 
-    # Part >= 2: back-fill ``continued_by`` on the prior part's note.
-    if sidecar.part_index >= 2 and sidecar.continuation_of:
-        _backfill_continued_by(
-            buffer=buffer,
-            wiki_root=wiki_root,
-            sidecar=sidecar,
-            this_stub_path=stub_path,
-            logger=logger,
-        )
-
     if logger is not None:
         logger.emit(
             "flush-deterministic-completed",
@@ -345,45 +326,6 @@ def _phase1_finalise(
             commit_count=len(rb.activity_commits),
         )
     return out
-
-
-def _backfill_continued_by(
-    *,
-    buffer: Buffer,
-    wiki_root: Path,
-    sidecar: Sidecar,
-    this_stub_path: Path,
-    logger: "RunLogger | None",
-) -> None:
-    """Patch the prior part's frontmatter with ``continued_by: [[<this>]]``.
-
-    Reads the prior buffer's sidecar (live or _done) to find its
-    ``stub_path``. Best-effort — emits a warning on failure but never
-    raises (this is a polish field, not a correctness invariant).
-    """
-    prev_stem = sidecar.continuation_of
-    if not prev_stem:
-        return
-    prior = _find_buffer_sidecar(buffer.lore_root, prev_stem)
-    if prior is None or not prior.stub_path:
-        return
-    prior_path = Path(prior.stub_path)
-    if not prior_path.exists():
-        return
-    try:
-        text = prior_path.read_text()
-        fm = parse_frontmatter(text)
-        fm["continued_by"] = f"[[{this_stub_path.stem}]]"
-        body = strip_frontmatter(text)
-        new_text = _render_markdown(fm, body, wiki_root=wiki_root)
-        atomic_write_text(prior_path, new_text)
-    except OSError as exc:
-        if logger is not None:
-            logger.emit(
-                "warning",
-                call="continued-by-backfill",
-                message=f"failed to patch {prior_path}: {exc}",
-            )
 
 
 def _find_buffer_sidecar(lore_root: Path, stem: str) -> Sidecar | None:
@@ -1075,7 +1017,7 @@ def _phase2_apply(
     # update the title in frontmatter but never rename the file again,
     # so existing ``[[<title-slug>]]`` references keep resolving.
     final_path = _resolve_phase2_path(
-        stub_path=stub_path, title=title, sidecar=sidecar,
+        stub_path=stub_path, title=title,
         allow_rename=(not in_place) or not fm.get("aliases"),
     )
     if final_path != stub_path:
@@ -1144,7 +1086,7 @@ _SESSION_STEM_PARTS = 3
 
 
 def _resolve_phase2_path(
-    *, stub_path: Path, title: str, sidecar: Sidecar,
+    *, stub_path: Path, title: str,
     allow_rename: bool = True,
 ) -> Path:
     """Return the path the Phase 2 note should live at.
@@ -1153,8 +1095,6 @@ def _resolve_phase2_path(
     * ``allow_rename`` is False (caller has decided the rename slot is
       already used — e.g., a prior in-place synth has already renamed
       and stamped ``aliases:``);
-    * the note is part 2+ of a continuation chain (renaming would
-      orphan ``continued_by`` / ``continues`` cross-references);
     * the synthesised title is empty / equals the placeholder;
     * the title-derived slug already matches the stub's slug-portion;
     * the stub path doesn't conform to ``<DD>-<HHMM>-<slug>.md``.
@@ -1164,8 +1104,6 @@ def _resolve_phase2_path(
     counter when needed.
     """
     if not allow_rename:
-        return stub_path
-    if sidecar.part_index >= 2 or sidecar.continuation_of:
         return stub_path
     if not title.strip():
         return stub_path
@@ -1396,11 +1334,6 @@ def _synthesize(
     # signal that the pre-P2 work/discussion gate used to enforce
     # structurally. No ``select_shape`` call here.
     activity_summary = _activity_summary_text(rb_post or rb)
-    continues_wikilink = (
-        f"[[{sidecar.continuation_of}]]"
-        if sidecar.part_index >= 2 and sidecar.continuation_of
-        else None
-    )
 
     # Guard: don't ask the LLM to fabricate a narrative from boilerplate
     # alone. When the conversation slice is empty AND the activity has
@@ -1434,8 +1367,8 @@ def _synthesize(
         composed = compose_session_note(
             turns_text=turns_text,
             activity_summary=activity_summary,
-            is_continuation=sidecar.part_index >= 2,
-            continues_wikilink=continues_wikilink,
+            is_continuation=False,
+            continues_wikilink=None,
             llm_client=llm_client,
             model=model,
             logger=logger,

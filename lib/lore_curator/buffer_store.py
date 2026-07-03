@@ -11,10 +11,9 @@ Layout under ``<lore_root>/.lore/buffers/``::
     <stem>.jsonl        append-only event log; one line per heartbeat
     <stem>.lock         per-buffer flock used by every mutation
 
-where ``<stem> = <transcript_id>__<YYYYMMDD>`` for the first part of a
-day, and ``<transcript_id>__<YYYYMMDD>__partN`` for ``part_index N >= 2``
-(cap-trip continuations). On close, both ``.state.json`` and ``.jsonl``
-are moved to ``.lore/buffers/_done/``.
+where ``<stem> = <transcript_id>__<YYYYMMDD>``. There is one buffer per
+``(transcript_id, local_date)`` and it yields one session note. On close,
+both ``.state.json`` and ``.jsonl`` are moved to ``.lore/buffers/_done/``.
 
 State machine:
 
@@ -100,23 +99,21 @@ def done_dir(lore_root: Path) -> Path:
     return p
 
 
-def _stem_for(transcript_id: str, local_date: str, part_index: int = 1) -> str:
-    """Build a buffer filename stem.
+def _stem_for(transcript_id: str, local_date: str) -> str:
+    """Build a buffer filename stem ``<transcript_id>__<YYYYMMDD>``.
 
     ``local_date`` must already be ``YYYY-MM-DD`` — we strip dashes for
     the on-disk form so the double-underscore separator stays unambiguous
-    against UUIDs that contain hyphens.
+    against UUIDs that contain hyphens. There is one buffer per
+    ``(transcript_id, local_date)``: the session accumulates into a single
+    buffer that yields a single note.
     """
     if not transcript_id or "__" in transcript_id:
         raise ValueError(f"invalid transcript_id: {transcript_id!r}")
     compact = local_date.replace("-", "")
     if len(compact) != 8 or not compact.isdigit():
         raise ValueError(f"local_date must be YYYY-MM-DD, got {local_date!r}")
-    if part_index < 1:
-        raise ValueError(f"part_index must be >= 1, got {part_index}")
-    if part_index == 1:
-        return f"{transcript_id}__{compact}"
-    return f"{transcript_id}__{compact}__part{part_index}"
+    return f"{transcript_id}__{compact}"
 
 
 def _now_iso() -> str:
@@ -190,8 +187,6 @@ class Sidecar:
     counters: Counters = field(default_factory=Counters)
     last_seen: LastSeen = field(default_factory=LastSeen)
     stub_path: str = ""            # absolute path to canonical session note (set on first stub write)
-    part_index: int = 1
-    continuation_of: str | None = None  # prior buffer stem
     flush_attempts: int = 0
     last_error: str | None = None
     flush_requested: FlushRequest | None = None
@@ -230,8 +225,6 @@ class Sidecar:
             last_seen=LastSeen(**{k: last_seen_raw.get(k, getattr(LastSeen(), k))
                                   for k in LastSeen.__dataclass_fields__}),
             stub_path=str(raw.get("stub_path", "")),
-            part_index=int(raw.get("part_index", 1)),
-            continuation_of=raw.get("continuation_of"),
             flush_attempts=int(raw.get("flush_attempts", 0)),
             last_error=raw.get("last_error"),
             flush_requested=(
@@ -344,15 +337,14 @@ class Buffer:
         *,
         transcript_id: str,
         local_date: str,
-        part_index: int = 1,
     ) -> "Buffer":
-        """Return a Buffer for ``(transcript_id, local_date, part_index)``.
+        """Return a Buffer for ``(transcript_id, local_date)``.
 
         Does NOT create the sidecar — call :meth:`init_sidecar` while
         holding the lock if the buffer is fresh. ``open`` is just an
         addressing primitive.
         """
-        stem = _stem_for(transcript_id, local_date, part_index)
+        stem = _stem_for(transcript_id, local_date)
         return cls(lore_root, stem)
 
     @classmethod
@@ -582,11 +574,10 @@ class Buffer:
 
         Refuses to silently clobber an existing ``_done/<stem>.state.json``
         (or its companion ``.jsonl``). A pre-existing archived sidecar
-        with the same stem means part-resolution misfired — opening a
-        duplicate Part-1 stub for an already-archived buffer — and
-        clobbering it would erase the prior part's archived state. We
-        raise instead so the underlying bug surfaces loudly rather than
-        corrupting history.
+        with the same stem means a duplicate buffer was opened for an
+        already-archived ``(transcript_id, local_date)`` pair; clobbering
+        it would erase the archived state. We raise instead so the
+        underlying bug surfaces loudly rather than corrupting history.
         """
         if not self._sidecar_path.exists() and not self._log_path.exists():
             return None
@@ -597,9 +588,9 @@ class Buffer:
             raise BufferTransitionError(
                 f"refusing to overwrite existing _done/ archive for stem "
                 f"{self._stem!r}: an archived sidecar / log already exists "
-                "at the target path. This usually means part-resolution "
-                "misfired and a duplicate Part-1 buffer was opened for an "
-                "already-archived (transcript_id, local_date) pair."
+                "at the target path. This usually means a duplicate buffer "
+                "was opened for an already-archived (transcript_id, "
+                "local_date) pair."
             )
         # Use os.replace for cross-FS atomicity within the same FS (which is
         # guaranteed since done_dir() lives inside .lore/buffers/ on the same
