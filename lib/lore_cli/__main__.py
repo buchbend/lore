@@ -89,7 +89,6 @@ def _build_app() -> typer.Typer:
         search_cmd,
         session_cmd,
         status_cmd,
-        surface_cmd,
         transcripts_cmd,
         wiki_cmd,
     )
@@ -118,7 +117,10 @@ def _build_app() -> typer.Typer:
     app.add_typer(drill_cmd.app, name="drill", rich_help_panel=_KN)
     app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
     app.add_typer(project_cmd.app, name="project", rich_help_panel=_KN)
-    app.add_typer(surface_cmd.app, name="surface", rich_help_panel=_KN)
+    # `surface_cmd.app` is not mounted here — Curator B's surface extraction
+    # is retired and the surface-authoring CLI is a severed entry point.
+    # The module stays importable (tests exercise it directly) and unmounted
+    # is the only change; nothing under it was deleted.
     app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
     app.add_typer(news_cmd.app, name="news", rich_help_panel=_KN)
     app.add_typer(resume_cmd.app, name="resume", rich_help_panel=_KN)

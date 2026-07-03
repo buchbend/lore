@@ -1,17 +1,22 @@
-"""Tests for SessionStart auto-trigger of Curator B on calendar-day rollover."""
+"""Kill switch: SessionStart no longer auto-triggers Curator B.
+
+Curator B's day-rollover spawn used to fire unconditionally (no config
+flag) from `cmd_session_start`. It is now a severed entry point —
+SessionStart never calls `_spawn_detached_curator_b`, regardless of the
+wiki ledger's `last_curator_b` state. The underlying spawn machinery
+(`_spawn_detached_curator_b` itself, in `lore_cli.spawn`) is untouched;
+only the automatic call site is gone.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-from typer.testing import CliRunner
-
 from lore_cli.hooks import hook_app
 from lore_core.ledger import WikiLedger, WikiLedgerEntry
-
+from typer.testing import CliRunner
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,17 +44,23 @@ def _make_attached_project(root: Path) -> Path:
     # wiki directory so _infer_lore_root walks up correctly
     (project / "wiki" / "testwiki").mkdir(parents=True)
     (project / ".lore").mkdir(parents=True, exist_ok=True)
-    af = AttachmentsFile(project); af.load()
-    af.add(Attachment(
-        path=project, wiki="testwiki", scope="testscope",
-        attached_at=_now(), source="manual",
-    ))
+    af = AttachmentsFile(project)
+    af.load()
+    af.add(
+        Attachment(
+            path=project,
+            wiki="testwiki",
+            scope="testscope",
+            attached_at=_now(),
+            source="manual",
+        )
+    )
     af.save()
     return project
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def _today() -> datetime:
@@ -75,51 +86,13 @@ runner = CliRunner()
 # ---------------------------------------------------------------------------
 
 
-def test_session_start_spawns_curator_b_on_new_day(tmp_path: Path) -> None:
-    """Session-start spawns Curator B when last_curator_b is from yesterday."""
-    project = _make_attached_project(tmp_path)
-    lore_root = project  # In test setup, project is the lore_root
-
-    # Pre-populate wiki ledger with last_curator_b from yesterday
-    wledger = WikiLedger(lore_root, "testwiki")
-    entry = WikiLedgerEntry(
-        wiki="testwiki",
-        last_curator_b=_yesterday(),
-    )
-    wledger.write(entry)
-
-    # Monkeypatch _spawn_detached_curator_b to track calls
-    calls = []
-
-    def mock_spawn(lore_root: Path, wiki: str, **kw):
-        calls.append((lore_root, wiki))
-        return True
-
-    with patch("lore_cli.hooks._spawn_detached_curator_b", side_effect=mock_spawn):
-        result = runner.invoke(
-            hook_app,
-            ["session-start", "--cwd", str(project), "--plain"],
-            env={"LORE_ROOT": str(lore_root)},
-            catch_exceptions=False,
-        )
-
-    assert result.exit_code == 0, result.output
-    assert len(calls) == 1, f"Expected 1 spawn call, got {len(calls)}: {calls}"
-    assert calls[0] == (lore_root, "testwiki")
-
-
-def test_session_start_does_not_spawn_curator_b_same_day(tmp_path: Path) -> None:
-    """Session-start does NOT spawn Curator B when last_curator_b is from today."""
+def test_session_start_never_spawns_curator_b_when_stale(tmp_path: Path) -> None:
+    """Even with a stale (yesterday's) last_curator_b, no spawn happens."""
     project = _make_attached_project(tmp_path)
     lore_root = project
 
-    # Pre-populate wiki ledger with last_curator_b from today
     wledger = WikiLedger(lore_root, "testwiki")
-    entry = WikiLedgerEntry(
-        wiki="testwiki",
-        last_curator_b=_today(),
-    )
-    wledger.write(entry)
+    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_b=_yesterday()))
 
     calls = []
 
@@ -136,21 +109,16 @@ def test_session_start_does_not_spawn_curator_b_same_day(tmp_path: Path) -> None
         )
 
     assert result.exit_code == 0, result.output
-    assert len(calls) == 0, f"Expected no spawn calls, got {len(calls)}: {calls}"
+    assert calls == [], f"Curator B entry point must be severed; got {calls}"
 
 
-def test_session_start_spawns_curator_b_when_never_run(tmp_path: Path) -> None:
-    """Session-start spawns Curator B when last_curator_b is None (never run)."""
+def test_session_start_never_spawns_curator_b_when_never_run(tmp_path: Path) -> None:
+    """Even with last_curator_b=None (never run), no spawn happens."""
     project = _make_attached_project(tmp_path)
     lore_root = project
 
-    # Pre-populate wiki ledger with last_curator_b=None
     wledger = WikiLedger(lore_root, "testwiki")
-    entry = WikiLedgerEntry(
-        wiki="testwiki",
-        last_curator_b=None,
-    )
-    wledger.write(entry)
+    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_b=None))
 
     calls = []
 
@@ -167,15 +135,13 @@ def test_session_start_spawns_curator_b_when_never_run(tmp_path: Path) -> None:
         )
 
     assert result.exit_code == 0, result.output
-    assert len(calls) == 1, f"Expected 1 spawn call, got {len(calls)}: {calls}"
-    assert calls[0] == (lore_root, "testwiki")
+    assert calls == [], f"Curator B entry point must be severed; got {calls}"
 
 
 def test_session_start_does_not_spawn_when_unattached(tmp_path: Path) -> None:
     """Session-start does NOT spawn when cwd is unattached (no ## Lore block)."""
     unattached = tmp_path / "unattached"
     unattached.mkdir()
-    # No CLAUDE.md with ## Lore
 
     calls = []
 
@@ -191,33 +157,4 @@ def test_session_start_does_not_spawn_when_unattached(tmp_path: Path) -> None:
         )
 
     assert result.exit_code == 0, result.output
-    # No spawn should happen because scope resolution fails (unattached)
-    assert len(calls) == 0, f"Expected no spawn calls, got {len(calls)}: {calls}"
-
-
-def test_session_start_curator_b_spawn_does_not_break_hook_on_error(tmp_path: Path) -> None:
-    """Session-start does NOT break if _spawn_detached_curator_b raises an error."""
-    project = _make_attached_project(tmp_path)
-    lore_root = project
-
-    # Pre-populate wiki ledger with last_curator_b from yesterday to trigger spawn
-    wledger = WikiLedger(lore_root, "testwiki")
-    entry = WikiLedgerEntry(
-        wiki="testwiki",
-        last_curator_b=_yesterday(),
-    )
-    wledger.write(entry)
-
-    def mock_spawn_raises(lore_root: Path, wiki: str, **kw):
-        raise RuntimeError("Intentional spawn failure for testing")
-
-    with patch("lore_cli.hooks._spawn_detached_curator_b", side_effect=mock_spawn_raises):
-        result = runner.invoke(
-            hook_app,
-            ["session-start", "--cwd", str(project), "--plain"],
-            env={"LORE_ROOT": str(lore_root)},
-            catch_exceptions=False,
-        )
-
-    # Hook should still exit 0 even though spawn raised
-    assert result.exit_code == 0, f"Hook should not fail on spawn error. Output: {result.output}"
+    assert calls == [], f"Expected no spawn calls, got {calls}"

@@ -992,13 +992,17 @@ import typer  # noqa: E402
 
 from lore_adapters import get_adapter  # noqa: E402
 from lore_core.hook_log import HookEventLogger  # noqa: E402
-from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry, WikiLedger  # noqa: E402
+from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry  # noqa: E402
 from lore_core.scope_resolver import resolve_scope  # noqa: E402
 from lore_cli._argv_compat import argv_main  # noqa: E402
 
 # Re-export the spawn machinery so hooks-internal heartbeat code and any
 # external test that patches ``lore_cli.hooks.<name>`` keep working without
-# tracking the move to ``lore_cli.spawn``.
+# tracking the move to ``lore_cli.spawn``. ``_spawn_detached_curator_b`` and
+# ``_spawn_detached_curator_c`` stay re-exported even though no call site in
+# this module invokes them any more — the SessionStart entry points to
+# Curator B/C are severed, but the underlying spawn primitives are exercised
+# directly by tests covering the flock/cooldown machinery itself.
 from lore_cli.spawn import (  # noqa: E402, F401
     _migrate_legacy_spawn_stamp,
     _open_proc_log,
@@ -1012,9 +1016,6 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _spawn_detached_transcript_sync,
     _stamp_within_cooldown,
     _write_stamp,
-    _curator_c_email,
-    _curator_c_jitter_seconds,
-    _iso_week_monday_utc,
     spawn,
 )
 
@@ -1290,64 +1291,18 @@ def cmd_session_start(
         out = out + "\n" + auto_pull_warning
 
     # Side-effect spawns — suppressed under --probe.
+    #
+    # Curator B's day-rollover auto-spawn and Curator C's weekly auto-spawn
+    # used to fire from here (see git history for the removed blocks); both
+    # are retired and no longer reachable from SessionStart. The spawn
+    # primitives themselves (``_spawn_detached_curator_b/_c`` in
+    # ``lore_cli.spawn``) stay in place — this only severs the automatic
+    # call site.
     if not probe and scope is not None and lore_root is not None:
-        # Auto-trigger Curator B on calendar-day rollover.
-        try:
-            from datetime import UTC, datetime as dt
-
-            wledger = WikiLedger(lore_root, scope.wiki)
-            wentry = wledger.read()
-            today = dt.now(UTC).date()
-            last_b_date = wentry.last_curator_b.date() if wentry.last_curator_b else None
-            if last_b_date is None or today > last_b_date:
-                cfg_b = _load_wiki_cfg_from_scope(scope, lore_root)
-                _spawn_detached_curator_b(
-                    lore_root, scope.wiki, cooldown_s=cfg_b.curator.curator_b_cooldown_s
-                )
-        except Exception:
-            pass
-
         # Fire-and-forget transcript mirror (P4a). Idempotent, gitignored
         # destination, own spawn lock.
         try:
             _spawn_detached_transcript_sync(lore_root)
-        except Exception:
-            pass
-
-        # Auto-trigger Curator C weekly (UTC ISO-week + per-user 48h jitter).
-        # Flag-gated off by default; see project_curator_triad + spec §6.
-        try:
-            cfg = _load_wiki_cfg_from_scope(scope, lore_root)
-            c_cfg = cfg.curator.curator_c
-            if c_cfg.enabled:
-                if c_cfg.mode != "local":
-                    HookEventLogger(lore_root).emit(
-                        event="curator-c",
-                        outcome="central-mode-skipped",
-                        error={
-                            "message": "mode=central deferred to v2; local spawn skipped",
-                            "wiki": scope.wiki,
-                        },
-                    )
-                else:
-                    wledger = WikiLedger(lore_root, scope.wiki)
-                    wentry = wledger.read()
-                    now = _now_utc()
-                    last_c = wentry.last_curator_c
-                    if last_c is not None and last_c.tzinfo is None:
-                        from datetime import UTC as _UTC
-                        last_c = last_c.replace(tzinfo=_UTC)
-                    iso_now = now.isocalendar()
-                    needs_rollover = (
-                        last_c is None
-                        or last_c.isocalendar()[:2] != iso_now[:2]
-                    )
-                    if needs_rollover:
-                        monday = _iso_week_monday_utc(now)
-                        offset = _curator_c_jitter_seconds(_curator_c_email())
-                        from datetime import timedelta as _td
-                        if now >= monday + _td(seconds=offset):
-                            _spawn_detached_curator_c(lore_root)
         except Exception:
             pass
 

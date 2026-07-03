@@ -11,16 +11,14 @@ that suppresses ALL spawn side-effects. `lore doctor` invokes with
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
-
-from typer.testing import CliRunner
 
 from lore_cli import doctor_cmd
 from lore_cli.hooks import hook_app
 from lore_core.ledger import WikiLedger, WikiLedgerEntry
-
+from typer.testing import CliRunner
 
 runner = CliRunner()
 
@@ -47,14 +45,21 @@ def _make_attached_project(root: Path) -> Path:
     (project / "wiki" / "testwiki").mkdir(parents=True)
     (project / ".lore").mkdir(parents=True, exist_ok=True)
 
-    af = AttachmentsFile(project); af.load()
-    af.add(Attachment(
-        path=project, wiki="testwiki", scope="testscope",
-        attached_at=datetime.now(tz=timezone.utc), source="manual",
-    ))
+    af = AttachmentsFile(project)
+    af.load()
+    af.add(
+        Attachment(
+            path=project,
+            wiki="testwiki",
+            scope="testscope",
+            attached_at=datetime.now(tz=UTC),
+            source="manual",
+        )
+    )
     af.save()
 
-    sf = ScopesFile(project); sf.load()
+    sf = ScopesFile(project)
+    sf.load()
     sf.ingest_chain("testscope", "testwiki")
     sf.save()
 
@@ -62,13 +67,14 @@ def _make_attached_project(root: Path) -> Path:
 
 
 def _yesterday() -> datetime:
-    now = datetime.now(tz=timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     return now - timedelta(days=1)
 
 
 def _snapshot_dir(path: Path) -> dict[str, tuple[int, bytes]]:
     """Return {relative_path: (mtime_ns, content_hash_bytes)} for every file under path."""
     import hashlib
+
     out: dict[str, tuple[int, bytes]] = {}
     if not path.exists():
         return out
@@ -113,8 +119,10 @@ def test_session_start_probe_suppresses_curator_b_spawn(tmp_path: Path) -> None:
     )
 
 
-def test_session_start_no_probe_still_spawns_curator_b(tmp_path: Path) -> None:
-    """Baseline regression guard: without --probe, calendar-rollover still spawns."""
+def test_session_start_no_probe_also_does_not_spawn_curator_b(tmp_path: Path) -> None:
+    """Curator B's calendar-rollover entry point is severed entirely — with
+    or without --probe, SessionStart never spawns it (see
+    test_hooks_curator_b_trigger.py for the dedicated kill-switch coverage)."""
     project = _make_attached_project(tmp_path)
     lore_root = project
 
@@ -136,7 +144,7 @@ def test_session_start_no_probe_still_spawns_curator_b(tmp_path: Path) -> None:
         )
 
     assert result.exit_code == 0, result.output
-    assert len(calls) == 1, f"Without --probe, spawn must still happen: {calls}"
+    assert len(calls) == 0, f"Curator B entry point must be severed: {calls}"
 
 
 def test_session_start_probe_suppresses_curator_a_spawn(tmp_path: Path) -> None:
@@ -159,8 +167,10 @@ def test_session_start_probe_suppresses_curator_a_spawn(tmp_path: Path) -> None:
         a_calls.append((args, kw))
         return True
 
-    with patch("lore_cli.hooks._spawn_detached_curator_a", side_effect=mock_spawn_a), \
-         patch("lore_cli.hooks._spawn_detached_curator_b", return_value=True):
+    with (
+        patch("lore_cli.hooks._spawn_detached_curator_a", side_effect=mock_spawn_a),
+        patch("lore_cli.hooks._spawn_detached_curator_b", return_value=True),
+    ):
         result = runner.invoke(
             hook_app,
             ["session-start", "--cwd", str(project), "--plain", "--probe"],

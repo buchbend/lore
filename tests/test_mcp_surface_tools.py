@@ -1,7 +1,12 @@
-"""Tests for MCP surface-authoring tools."""
-from __future__ import annotations
+"""Tests for MCP surface-authoring tools.
 
-from pathlib import Path
+The handler functions below (``handle_surface_context``,
+``handle_surface_validate``) stay importable and directly testable —
+only their MCP tool *registration* (schema entry + dispatch case) is
+severed; see the kill-switch tests at the bottom of this file.
+"""
+
+from __future__ import annotations
 
 
 def test_surface_context_fresh_wiki(tmp_path, monkeypatch):
@@ -9,6 +14,7 @@ def test_surface_context_fresh_wiki(tmp_path, monkeypatch):
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     (tmp_path / "wiki" / "science").mkdir(parents=True)
     from lore_mcp.server import handle_surface_context
+
     ctx = handle_surface_context(wiki="science")
     assert ctx["schema"] == "lore.surface.context/1"
     assert ctx["wiki"] == "science"
@@ -35,6 +41,7 @@ def test_surface_context_with_existing_surfaces_and_notes(tmp_path, monkeypatch)
         "---\ntype: concept\ncreated: 2026-04-02\ndescription: Beta\n---\nbody\n"
     )
     from lore_mcp.server import handle_surface_context
+
     ctx = handle_surface_context(wiki="science")
     assert ctx["surfaces_md_exists"] is True
     assert len(ctx["current_surfaces"]) == 1
@@ -50,11 +57,17 @@ def test_surface_validate_happy_path_append(tmp_path, monkeypatch):
         "# Surfaces\nschema_version: 2\n\n## concept\nA.\n\n```yaml\nrequired: [type]\noptional: []\n```\n"
     )
     from lore_mcp.server import handle_surface_validate
+
     draft = {
         "schema": "lore.surface.draft/1",
         "wiki": "x",
         "operation": "append",
-        "surface": {"name": "paper", "description": "A paper.", "required": ["type"], "optional": []},
+        "surface": {
+            "name": "paper",
+            "description": "A paper.",
+            "required": ["type"],
+            "optional": [],
+        },
     }
     result = handle_surface_validate(wiki="x", draft=draft)
     assert result["schema"] == "lore.surface.validate/1"
@@ -72,6 +85,7 @@ def test_surface_validate_surfaces_issues(tmp_path, monkeypatch):
         "# Surfaces\nschema_version: 2\n\n## paper\nA.\n\n```yaml\nrequired: [type]\noptional: []\n```\n"
     )
     from lore_mcp.server import handle_surface_validate
+
     draft = {
         "schema": "lore.surface.draft/1",
         "wiki": "x",
@@ -87,6 +101,7 @@ def test_surface_validate_init_diff_is_new_file(tmp_path, monkeypatch):
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     (tmp_path / "wiki" / "x").mkdir(parents=True)
     from lore_mcp.server import handle_surface_validate
+
     draft = {
         "schema": "lore.surface.draft/1",
         "wiki": "x",
@@ -97,3 +112,37 @@ def test_surface_validate_init_diff_is_new_file(tmp_path, monkeypatch):
     result = handle_surface_validate(wiki="x", draft=draft)
     assert result["ok"] is True
     assert result["diff_preview"].count("\n+") >= 3
+
+
+# ---------------------------------------------------------------------------
+# Kill switch: neither surface tool is MCP-registered any more
+# ---------------------------------------------------------------------------
+
+
+def test_surface_tools_absent_from_tool_schema():
+    from lore_mcp.server import _tool_schema
+
+    names = {t["name"] for t in _tool_schema()}
+    assert "lore_surface_context" not in names
+    assert "lore_surface_validate" not in names
+
+
+def test_surface_context_unreachable_via_dispatch(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    (tmp_path / "wiki" / "x").mkdir(parents=True)
+    from lore_mcp.server import _dispatch
+
+    result = _dispatch("lore_surface_context", {"wiki": "x"})
+    assert result["error"]["code"] == "unknown_tool"
+
+
+def test_surface_validate_unreachable_via_dispatch(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    (tmp_path / "wiki" / "x").mkdir(parents=True)
+    from lore_mcp.server import _dispatch
+
+    result = _dispatch(
+        "lore_surface_validate",
+        {"wiki": "x", "draft": {"schema": "lore.surface.draft/1"}},
+    )
+    assert result["error"]["code"] == "unknown_tool"
