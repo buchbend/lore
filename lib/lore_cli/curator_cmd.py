@@ -1,8 +1,10 @@
-"""`lore curator` — manual entry point for the session-note curator.
+"""`lore curator` — manual entry point for the curator.
 
-`lore curator run` files session notes from pending transcripts. The
-bare `lore curator` command carries only the one-shot
-`--migrate-open-items` legacy migration; run without it, it prints help.
+Bare `lore curator [--wiki] [--apply]` runs the deterministic hygiene
+passes (supersession, `implements:` back-links, git-backfill of dates,
+team-mode hint; staleness is a positive-evidence-only no-op) and writes
+`_review.md` per wiki. `lore curator run` files session notes from
+pending transcripts. The retired weekly LLM defrag (`--defrag`) is gone.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ console = Console()
 
 app = typer.Typer(
     add_completion=False,
-    help="Curator — file session notes from pending transcripts.",
+    help="Curator — flag superseded notes, propagate `implements:`, backfill dates.",
     no_args_is_help=False,
     rich_markup_mode="rich",
 )
@@ -41,7 +43,7 @@ def curator(
         help="Interactive v1 → v2 migration for `## Open items` session sections.",
     ),
 ) -> None:
-    """Session-note curator. Use `run` to file notes from transcripts."""
+    """Run the hygiene passes — supersession, implements, git backfill."""
     # A subcommand (e.g. `lore curator run`) handles its own flow.
     if ctx.invoked_subcommand is not None:
         return
@@ -50,8 +52,10 @@ def curator(
 
         run_open_items_migration(wiki_filter=wiki, dry_run=not apply)
         return
-    # Bare `lore curator` has no default action — show help.
-    console.print(ctx.get_help())
+
+    from lore_curator.hygiene import run_hygiene
+
+    run_hygiene(wiki_filter=wiki, dry_run=not apply)
 
 
 def _discover_wikis(lore_root: Path) -> list[str]:
