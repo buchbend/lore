@@ -47,13 +47,12 @@ DATE = "2026-05-01"
 
 
 def _fresh(lore_root: Path, *, transcript_id: str = TID, local_date: str = DATE,
-           part_index: int = 1, **patch) -> Buffer:
+           **patch) -> Buffer:
     """Open + init a buffer with a minimal but well-formed sidecar."""
     buf = Buffer.open(
         lore_root,
         transcript_id=transcript_id,
         local_date=local_date,
-        part_index=part_index,
     )
     sidecar = Sidecar(
         transcript_id=transcript_id,
@@ -65,7 +64,6 @@ def _fresh(lore_root: Path, *, transcript_id: str = TID, local_date: str = DATE,
         handle="buchbend",
         owner=OwnerInfo(pid=os.getpid(), start_ts=12345.0, host="testhost",
                         run_id="run-test", claude_session_id="cs-test"),
-        part_index=part_index,
         **patch,
     )
     with buf.with_lock():
@@ -100,15 +98,11 @@ def test_open_rejects_invalid_transcript_id(tmp_path: Path) -> None:
         Buffer.open(tmp_path, transcript_id="has__double_underscore", local_date=DATE)
 
 
-def test_part_index_changes_stem(tmp_path: Path) -> None:
-    a = Buffer.open(tmp_path, transcript_id=TID, local_date=DATE, part_index=1)
-    b = Buffer.open(tmp_path, transcript_id=TID, local_date=DATE, part_index=2)
-    c = Buffer.open(tmp_path, transcript_id=TID, local_date=DATE, part_index=3)
-    assert a.stem != b.stem != c.stem
-    assert b.stem.endswith("__part2")
-    assert c.stem.endswith("__part3")
-    # Part 1 has no suffix — so the buffer-flush change is invisible to
-    # day-1 buffers and matches the "single Part" common case.
+def test_stem_is_transcript_and_date_only(tmp_path: Path) -> None:
+    # One buffer per (transcript_id, local_date) — no part suffix. A
+    # session accumulates into a single buffer that yields one note.
+    a = Buffer.open(tmp_path, transcript_id=TID, local_date=DATE)
+    assert a.stem == f"{TID}__20260501"
     assert "__part" not in a.stem
 
 
@@ -141,8 +135,6 @@ def test_sidecar_round_trip_full() -> None:
         counters=Counters(turn_count=10, prompt_chars=4096, files_touched_count=3),
         last_seen=LastSeen(content_hash="sha256:abc", index_hint=99),
         stub_path="/notes/stub.md",
-        part_index=2,
-        continuation_of=f"{TID}__20260501",
         flush_attempts=1,
         last_error="boom",
         flush_requested=FlushRequest(trigger="cap-trip", requested_at="t", by_pid=42),

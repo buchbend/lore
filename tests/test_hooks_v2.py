@@ -1,7 +1,9 @@
 """Tests for the schema-v2 SessionStart path.
 
 Covers the pure helpers (scope-tree walk, filter parsing, walk-up of
-`CLAUDE.md`) and the orchestrator with `gh` mocked out.
+`CLAUDE.md`) and the orchestrator. SessionStart itself never calls
+`gh` — issue/PR counts were dropped from the banner — so `gh.split_filter`
+and the formatters are exercised directly against `lore_core.gh`.
 """
 
 from __future__ import annotations
@@ -217,13 +219,6 @@ def fake_vault(tmp_path, monkeypatch):
     return vault, wiki
 
 
-def _fake_gh_factory(responses: dict[tuple[str, str], list[dict]]):
-    """Build a _run_gh stub that returns the canned response for (kind, repo)."""
-    def _fake(kind, repo, filter_args):
-        return responses.get((kind, repo), [])
-    return _fake
-
-
 def _register_attachment(lore_root: Path, repo: Path, *, wiki: str, scope: str) -> None:
     """Register ``repo`` in ``lore_root/.lore/attachments.json``."""
     from datetime import UTC, datetime
@@ -243,40 +238,17 @@ def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
     repo_dir = tmp_path / "data-transfer"
     repo_dir.mkdir()
     _register_attachment(vault, repo_dir, wiki="ccat", scope="ccat:data-center:data-transfer")
-    # Write a .lore.yml so the backend/issues/prs fields surface to
-    # _session_start_from_lore (block dict merge in _resolve_attach_block).
     (repo_dir / ".lore.yml").write_text(
         "wiki: ccat\nscope: ccat:data-center:data-transfer\nbackend: github\n"
-        "issues: --assignee @me --state open\nprs: --author @me\n"
     )
     monkeypatch.setattr(hooks, "current_repo", lambda _cwd: "ccatobs/data-transfer")
-    monkeypatch.setattr(
-        hooks,
-        "_run_gh",
-        _fake_gh_factory({
-            ("issue", "ccatobs/data-transfer"): [
-                {"number": 47, "title": "retry cap missing", "state": "OPEN"},
-                {"number": 52, "title": "stale docs", "state": "OPEN"},
-            ],
-            ("issue", "ccatobs/system-integration"): [
-                {"number": 10, "title": "trust CA", "state": "OPEN"},
-            ],
-            ("pr", "ccatobs/data-transfer"): [
-                {"number": 31, "title": "atm-table v2", "isDraft": True},
-            ],
-        }),
-    )
 
     out = hooks._session_start(str(repo_dir))
-    # Status line carries the counts; issue/PR titles no longer ride inline
-    # as part of the SessionStart minimisation — agents fetch via gh on demand.
     assert ": active" in out
-    assert "2 issues" in out
-    assert "1 PR" in out
 
     # Status line first, directive postscript last.
     status_pos = out.find(": active")
-    directives_pos = out.find("## Directives")
+    directives_pos = out.find("## Directive")
     assert status_pos < directives_pos, (
         "directive should be a postscript, after the status line"
     )
@@ -304,7 +276,6 @@ def test_status_line_shows_scope_not_project_wikilink(
         "---\ntype: project\nrepo: ccatobs/data-transfer\n---\n\nbody\n"
     )
     monkeypatch.setattr(hooks, "current_repo", lambda _cwd: "ccatobs/data-transfer")
-    monkeypatch.setattr(hooks, "_run_gh", lambda *a, **kw: [])
 
     out = hooks._session_start(str(repo_dir))
     status_line = out.splitlines()[0]
@@ -315,22 +286,27 @@ def test_status_line_shows_scope_not_project_wikilink(
     assert "· [[data-transfer]]" not in status_line, status_line
 
 
-def test_session_start_from_lore_falls_back_when_gh_fails(fake_vault, tmp_path, monkeypatch):
+def test_session_start_never_shows_issue_or_pr_counts(fake_vault, tmp_path, monkeypatch):
+    """The banner never fetches or renders issue/PR counts — that
+    ambient gh fetch was dropped from SessionStart entirely."""
     vault, wiki = fake_vault
     repo_dir = tmp_path / "data-transfer"
     repo_dir.mkdir()
     _register_attachment(vault, repo_dir, wiki="ccat", scope="ccat:data-center:data-transfer")
     (repo_dir / ".lore.yml").write_text(
         "wiki: ccat\nscope: ccat:data-center:data-transfer\nbackend: github\n"
+        "issues: --assignee @me --state open\nprs: --author @me\n"
     )
     monkeypatch.setattr(hooks, "current_repo", lambda _cwd: "ccatobs/data-transfer")
-    # gh returns nothing for everything
-    monkeypatch.setattr(hooks, "_run_gh", lambda *a, **kw: [])
+
+    from lore_core import gh as gh_mod
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(gh_mod, "run_gh", lambda *a, **kw: calls.append((a, kw)) or [])
 
     out = hooks._session_start(str(repo_dir))
-    # Status line still renders even when gh fails entirely.
     assert ": active" in out
-    # No issue/PR counts in the status line when gh returned nothing.
+    assert calls == [], "SessionStart must never call gh, even with issues/prs configured"
     status_line = out.splitlines()[0]
     assert "issue" not in status_line
     assert "PR" not in status_line
@@ -363,50 +339,6 @@ def test_session_start_from_lore_missing_wiki_emits_attach_hint(
         "## Lore\n\n- wiki: does-not-exist\n- scope: foo\n"
     )
     monkeypatch.setattr(hooks, "current_repo", lambda _cwd: None)
-    monkeypatch.setattr(hooks, "_run_gh", lambda *a, **kw: [])
 
     out = hooks._session_start(str(repo_dir))
     assert "no `## Lore` attach block" in out
-
-
-def test_run_gh_parallel_runs_concurrently(monkeypatch):
-    """Four 50ms-each fakes should finish well under the 200ms serial cost.
-
-    Guards the SessionStart fix for issue #27: when sibling-scope
-    fan-out adds calls, they must run in parallel, not serially.
-    """
-    import time
-
-    def slow_fake(kind, repo, _filter_args):
-        time.sleep(0.05)
-        return [{"kind": kind, "repo": repo}]
-
-    monkeypatch.setattr(hooks, "_run_gh", slow_fake)
-
-    calls = [
-        ("issue", "r1", []),
-        ("issue", "r2", []),
-        ("pr", "r3", []),
-        ("issue", "r4", []),
-    ]
-    t0 = time.monotonic()
-    results = hooks._run_gh_parallel(calls)
-    elapsed = time.monotonic() - t0
-
-    assert len(results) == 4
-    # 4 × 50ms serial = 200ms; parallel should be ~50ms. 150ms is the
-    # generous ceiling that still distinguishes parallel from serial.
-    assert elapsed < 0.15, f"expected parallel execution, got {elapsed:.3f}s"
-    assert results[0][0]["repo"] == "r1"
-    assert results[3][0]["repo"] == "r4"
-
-
-def test_run_gh_parallel_empty_returns_empty():
-    assert hooks._run_gh_parallel([]) == []
-
-
-def test_run_gh_parallel_single_call_no_pool(monkeypatch):
-    """Single-call path skips the executor (avoid thread overhead)."""
-    monkeypatch.setattr(hooks, "_run_gh", lambda k, r, f: [{"k": k, "r": r}])
-    out = hooks._run_gh_parallel([("issue", "solo", [])])
-    assert out == [[{"k": "issue", "r": "solo"}]]

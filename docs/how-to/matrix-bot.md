@@ -101,13 +101,13 @@ thread it through to the matrix sink.
 echo "## test briefing" | lore briefing publish --sink matrix --wiki <wiki>
 ```
 
-### Auto-publish from Curator B
+### Scheduled publish
 
-If the wiki's `.lore/wiki-config.yml` has `briefing.auto: true` with
-`briefing.sinks: ["matrix"]`, Curator B's daily run will publish
-without any further action — it reuses the same `.lore-briefing.yml`
-via `gather`'s `sink_config` field, so no env vars are required for
-the daemon path.
+There is no automatic daily publish — `lore briefing publish` is a
+manual (or externally scheduled, e.g. `cron` / `/schedule`) command.
+Whatever triggers it reuses the same `.lore-briefing.yml` via
+`gather`'s `sink_config` field, so no env vars are required beyond
+the one-time Matrix login above.
 
 ---
 

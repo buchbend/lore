@@ -379,6 +379,17 @@ SPAWN_ROLES: dict[str, SpawnRole] = {
         ],
         default_cooldown_s=300,
     ),
+    # Startup singleton sweep: closes dead sessions' notes. The real
+    # singleton guard is the global curator lock inside the command; the
+    # spawn lock + cooldown here are just a politeness budget so a burst
+    # of session starts doesn't fork one sweep process per start.
+    "sweep": SpawnRole(
+        name="sweep",
+        argv_builder=lambda: [
+            sys.executable, "-m", "lore_cli", "curator", "sweep",
+        ],
+        default_cooldown_s=60,
+    ),
 }
 
 

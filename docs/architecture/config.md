@@ -60,7 +60,7 @@ rather than silently falling back to `~/lore`.
 | Var | Type | Default | Read in | Wins over |
 |-----|------|---------|---------|-----------|
 | `LORE_LLM_BACKEND` | `auto` \| `subscription` \| `api` \| `openai` | `auto` | `lore_curator/llm_client.py:make_llm_client` | `.lore/config.yml:curator.backend` |
-| `LORE_CURATOR_MODE` | `local` \| `central` | `local` | `lore_curator/curator_c.py` | `.lore-wiki.yml:curator.curator_c.mode` |
+| `LORE_CURATOR_MODE` | `1` \| unset | unset | `lore_cli/hooks.py:_in_curator_mode` | (internal — set by the curator's own detached-subprocess spawns, not a user knob) |
 | `LORE_CLAUDE_TIMEOUT_S` | float seconds | `300.0` | `llm_client.py:_resolve_claude_timeout` | constructor arg |
 
 #### OpenAI-compatible backend (when `LORE_LLM_BACKEND=openai`)
@@ -129,11 +129,13 @@ Per-vault-mount policy. Schema lives in
 `lib/lore_core/wiki_config.py:WikiConfig`. Subsections:
 
 - `git.{auto_commit, auto_push, auto_pull}`
-- `curator.{threshold_pending, threshold_tokens, a_noteworthy_tier,
-  curator_a_cooldown_s, curator_b_cooldown_s}`
-- `curator.curator_c.{enabled, mode, defrag_body_writes}`
+- `curator.{threshold_pending_turns, max_pending_age_s, a_noteworthy_tier,
+  curator_a_cooldown_s}`
+- `curator.{synthesis_buffer_cap_turns, synthesis_buffer_cap_chars,
+  synthesis_flush_timeout_s, synthesis_model_tier, reaper_max_per_pass,
+  buffer_done_retention_days, liveness_stale_threshold_s}` — buffer-and-flush knobs
 - `models.{simple, middle, high}` — Claude model IDs per tier
-- `briefing.{auto, audience, sinks}`
+- `briefing.{audience, sinks}`
 - `heartbeat.{enabled, cooldown_s, push_context}`
 - `breadcrumb.{mode, scope_filter}`
 

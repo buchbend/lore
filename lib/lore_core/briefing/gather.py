@@ -15,20 +15,16 @@ sink-side write and `lore briefing mark` for the ledger commit.
 from __future__ import annotations
 
 import json
-import re
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_wiki_root
 from lore_core.errors import NO_VAULT, WIKI_NOT_FOUND, mcp_error
-from lore_core.regions import redact_human_only
-from lore_core.schema import parse_frontmatter
+from lore_core.schema import parse_frontmatter, strip_frontmatter
 
 _LEDGER_FILE = ".briefing-ledger.json"
 _CONFIG_FILE = ".lore-briefing.yml"
-
-_SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
 
 def _parse_session_path(
@@ -108,18 +104,6 @@ def _read_sink_config(wiki_path: Path) -> dict[str, Any] | None:
         return None
 
 
-def _extract_sections(text: str) -> dict[str, str]:
-    """Map H2 heading → body text up to the next H2."""
-    out: dict[str, str] = {}
-    matches = list(_SECTION_RE.finditer(text))
-    for i, m in enumerate(matches):
-        title = m.group(1).strip().lower()
-        body_start = m.end()
-        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        out[title] = text[body_start:body_end].strip()
-    return out
-
-
 def gather(
     *,
     wiki: str,
@@ -145,7 +129,7 @@ def gather(
             "date": str,
             "slug": str,
             "frontmatter": dict,
-            "sections": {h2_title_lower: body_text}  (when include_body_sections)
+            "body": str  (when include_body_sections)
           },
           ...
         ],
@@ -188,12 +172,6 @@ def gather(
             if md.name in incorporated or stem + ".md" in incorporated:
                 continue
             text = md.read_text(errors="replace")
-            # Two-region retrieval filter (PRD #92): gather feeds into LLM
-            # composition (the briefing skill writes prose from this), so
-            # strip the human-only region before any section extraction.
-            # Frontmatter lives above the marker, so parse_frontmatter is
-            # unaffected by the redaction.
-            text = redact_human_only(text)
             entry: dict[str, Any] = {
                 "path": rel,
                 "date": d.isoformat(),
@@ -203,7 +181,12 @@ def gather(
             if user and entry["frontmatter"].get("user") != user:
                 continue
             if include_body_sections:
-                entry["sections"] = _extract_sections(text)
+                # Session notes carry no human-only region — machine-written
+                # and cleared by the publish gate before they land here — so
+                # the whole body (disclaimer + chronological chapters of
+                # topic blocks) feeds the briefing composer. There is no H2
+                # structure left to split on in the new note shape.
+                entry["body"] = strip_frontmatter(text).strip()
             new_sessions.append(entry)
 
     return {

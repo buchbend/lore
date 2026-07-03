@@ -1,28 +1,21 @@
-"""`lore curator` — manual entry point for the curator triad.
+"""`lore curator` — manual entry point for the curator.
 
-Bare `lore curator` runs the Curator C hygiene passes (stale, supersession,
-backfill, implements-propagation). `lore curator run` is the full pipeline:
-classify pending transcripts → file session notes → optional surface
-extraction (`--abstract`) and weekly defrag (`--defrag`).
-
-Curator A / B / C labels are internal; user-facing copy says "Curator"
-or the role name.
+Bare `lore curator [--wiki] [--apply]` runs the deterministic hygiene
+passes (supersession, `implements:` back-links, git-backfill of dates,
+team-mode hint; staleness is a positive-evidence-only no-op) and writes
+`_review.md` per wiki. `lore curator run` files session notes from
+pending transcripts. The retired weekly LLM defrag (`--defrag`) is gone.
 """
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any
 
 import typer
 from lore_core.run_render import pick_icon_set, render_flat_log, should_use_color
-from lore_curator.defrag_curator import (
-    _resolve_backend,
-    run_curator_c,
-    run_open_items_migration,
-)
+from lore_curator.llm_client import _resolve_backend
 from rich.console import Console
 
 from lore_cli._argv_compat import argv_main
@@ -31,7 +24,7 @@ console = Console()
 
 app = typer.Typer(
     add_completion=False,
-    help="Curator — flag stale notes, propagate `implements:` status flips, etc.",
+    help="Curator — flag superseded notes, propagate `implements:`, backfill dates.",
     no_args_is_help=False,
     rich_markup_mode="rich",
 )
@@ -44,60 +37,25 @@ def curator(
     apply: bool = typer.Option(
         False, "--apply", help="Actually write changes. Without this, runs dry."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit machine-readable summary."
-    ),
     migrate_open_items: bool = typer.Option(
         False,
         "--migrate-open-items",
         help="Interactive v1 → v2 migration for `## Open items` session sections.",
     ),
 ) -> None:
-    """Run curator passes — flag stale, propagate implements, etc."""
-    # If a subcommand was invoked (e.g. `lore curator run --defrag`), let it
-    # handle the flow; the callback's hygiene-only path is for bare
-    # `lore curator` only.
+    """Run the hygiene passes — supersession, implements, git backfill."""
+    # A subcommand (e.g. `lore curator run`) handles its own flow.
     if ctx.invoked_subcommand is not None:
         return
     if migrate_open_items:
+        from lore_curator.open_items_migration import run_open_items_migration
+
         run_open_items_migration(wiki_filter=wiki, dry_run=not apply)
         return
 
-    reports = run_curator_c(
-        wiki_filter=wiki,
-        dry_run=not apply,
-    )
+    from lore_curator.hygiene import run_hygiene
 
-    if json_out:
-        print(
-            json.dumps(
-                {
-                    "schema": "lore.curator/1",
-                    "data": {
-                        "dry_run": not apply,
-                        "wikis": [
-                            {
-                                "wiki": r.wiki,
-                                "actions": [
-                                    {
-                                        "kind": a.kind,
-                                        "path": str(a.path),
-                                        "reason": a.reason,
-                                    }
-                                    for a in r.actions
-                                ],
-                                "skipped": [
-                                    {"path": str(p), "reason": reason}
-                                    for p, reason in r.skipped
-                                ],
-                            }
-                            for r in reports
-                        ],
-                    },
-                },
-                indent=2,
-            )
-        )
+    run_hygiene(wiki_filter=wiki, dry_run=not apply)
 
 
 def _discover_wikis(lore_root: Path) -> list[str]:
@@ -136,59 +94,10 @@ def _print_backend_label(con: Console, llm_client: object) -> None:
 def run_command(
     scope: str = typer.Option(None, "--scope", help="Filter to one scope, e.g. 'mywiki:subproject'."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Classify but don't write notes or advance ledger."),
-    abstract: bool = typer.Option(False, "--abstract", help="Also run the surface-extraction pass after filing session notes."),
-    defrag: bool = typer.Option(False, "--defrag", help="Run Curator C weekly defragmentation (hygiene + LLM adjacent-merge / auto-supersede / orphan-repair / draft-promotion)."),
-    wiki: str = typer.Option(None, "--wiki", help="Limit the surface-extraction / defrag pass to a single wiki."),
     trace_llm: bool = typer.Option(False, "--trace-llm", help="Capture LLM prompts/responses to runs/<id>.trace.jsonl (equivalent to LORE_TRACE_LLM=1)."),
     backend: str = typer.Option(None, "--backend", help="LLM backend: subscription | api | openai | auto. Overrides LORE_LLM_BACKEND and curator.backend config."),
 ) -> None:
-    """Run the curator.
-
-    Default: classify pending transcripts and file session notes.
-    --abstract also runs the surface-extraction pass.
-    --defrag runs the weekly whole-wiki defragmentation (hygiene passes
-    + LLM proposals for adjacent-concept merges, auto-supersession,
-    orphan wikilink repair, and draft promotions).
-    """
-    if defrag:
-        # --defrag runs Curator C directly, not Curator A. Bypass the
-        # transcript classification path and go straight to the whole-wiki
-        # pipeline.
-        import os
-        from lore_cli._cli_helpers import lore_root_or_die
-        err_console = Console(stderr=True)
-        lore_root_defrag = lore_root_or_die(err_console)
-        effective_backend = _resolve_backend(backend, lore_root_defrag)
-
-        # LLM client resolution (same seam as Curator A).
-        from lore_curator.llm_client import LlmClientError, make_llm_client
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "") or None
-        try:
-            llm_client = make_llm_client(
-                backend=effective_backend,
-                api_key=api_key,
-                lore_root=lore_root_defrag,
-            )
-        except LlmClientError as exc:
-            err_console.print(f"[yellow]Warning:[/yellow] {exc}")
-            llm_client = None
-        if llm_client is None:
-            console.print(
-                "[yellow]Running --defrag without an LLM client — "
-                "LLM passes (adjacent-merge, auto-supersede, orphan-repair) "
-                "will be skipped.[/yellow]"
-            )
-        else:
-            _print_backend_label(console, llm_client)
-
-        run_curator_c(
-            wiki_filter=wiki,
-            dry_run=dry_run,
-            defrag=True,
-            llm_client=llm_client,
-        )
-        # Exit success — report already printed by run_curator_c.
-        return
+    """Run the curator: classify pending transcripts and file session notes."""
     import os
     from datetime import UTC, datetime
     from pathlib import Path
@@ -279,34 +188,6 @@ def run_command(
     )
     console.print(f"  skipped: {{{skipped_summary}}}")
     console.print(f"  took: {result.duration_seconds:.2f}s")
-
-    # Run Curator B if --abstract is specified
-    if abstract:
-        from lore_curator.daily_curator import run_curator_b
-
-        wikis_to_process = [wiki] if wiki else _discover_wikis(lore_root)
-
-        for wiki_name in wikis_to_process:
-            b_result = run_curator_b(
-                lore_root=lore_root,
-                wiki=wiki_name,
-                llm_client=llm_client,
-                dry_run=dry_run,
-                now=datetime.now(UTC),
-                lock_timeout=lock_timeout,
-            )
-
-            skipped_b_summary = ", ".join(
-                f"{k}: {v}" for k, v in b_result.skipped_reasons.items()
-            ) or "none"
-
-            console.print(
-                f"[bold]Curator B[/bold] ({wiki_name}) — {b_result.notes_considered} note(s) considered"
-            )
-            console.print(f"  clusters: {b_result.clusters_formed}")
-            console.print(f"  surfaces: {len(b_result.surfaces_emitted)}")
-            console.print(f"  skipped: {{{skipped_b_summary}}}")
-            console.print(f"  took: {b_result.duration_seconds:.2f}s")
 
 
 @app.command("flush")
@@ -431,6 +312,51 @@ def reap_command(
     )
     for stem, reason in report.skipped:
         console.print(f"  [dim]skipped[/dim] {stem}: {reason}")
+
+
+@app.command("sweep")
+def sweep_command(
+    backend: str = typer.Option(None, "--backend", help="LLM backend override."),
+) -> None:
+    """Close the note of every dead session, under the singleton lock.
+
+    lore acts as a singleton at startup: the sweep holds the global
+    curator lock so concurrent session starts race safely (the loser
+    exits without touching anything). Each dead session gets one compose
+    attempt through the normal gate — a composed chapter, a withheld
+    marker + quarantine, or a failed marker — then its note is closed.
+    """
+    import os
+
+    from lore_cli._cli_helpers import lore_root_or_die
+    from lore_core.run_log import RunLogger
+    from lore_curator.chapter_flush import startup_sweep
+    from lore_curator.llm_client import LlmClientError, make_llm_client
+
+    err_console = Console(stderr=True)
+    lore_root = lore_root_or_die(err_console)
+    effective_backend = _resolve_backend(backend, lore_root)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or None
+    try:
+        llm_client = make_llm_client(
+            backend=effective_backend, api_key=api_key, lore_root=lore_root,
+        )
+    except LlmClientError as exc:
+        # No client → dead sessions still close, with failed markers.
+        err_console.print(f"[yellow]Warning:[/yellow] {exc}")
+        llm_client = None
+
+    with RunLogger(lore_root, trigger="sweep", pending_count=0) as logger:
+        report = startup_sweep(lore_root, llm_client=llm_client, logger=logger)
+
+    if report.contended:
+        console.print("[dim]sweep[/dim] — another session holds the lock; skipped")
+        return
+    console.print(
+        f"[bold]sweep[/bold] — scanned={report.scanned}, swept={report.swept}, "
+        f"alive={report.alive_skipped}, uncertain={report.uncertain_skipped}"
+    )
 
 
 @app.command("backfill-slugs")

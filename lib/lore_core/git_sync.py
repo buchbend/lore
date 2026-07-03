@@ -221,10 +221,10 @@ def auto_push(
 ) -> SyncResult:
     """Push local commits, resolving conflicts via LLM merge if needed.
 
-    ``surface_dirs`` is the list of subdirectory names that contain
-    surfaces (e.g. ``["concepts", "decisions", "results"]``). If not
-    given, derived from ``<wiki_dir>/SURFACES.md``. Used to classify
-    a conflict path as a surface (LLM-merge) vs other (bail).
+    ``surface_dirs`` is the list of subdirectory names whose conflicts are
+    eligible for LLM merge (e.g. ``["concepts", "decisions", "results"]``).
+    If not given, a permissive default set is used. Used to classify a
+    conflict path as LLM-mergeable vs other (bail).
 
     Returns:
       OK                — push succeeded outright
@@ -375,24 +375,13 @@ def _list_conflicts(wiki_dir: Path) -> list[str]:
 
 
 def _surface_dirs(wiki_dir: Path) -> list[str]:
-    """Read SURFACES.md and return the list of surface-plural directory names.
+    """Return the subdirectory names classified as LLM-mergeable notes.
 
-    Falls back to a permissive default set when SURFACES.md is missing
-    or unparseable — better to LLM-merge a surface that turned out to
-    be a hand-edited note than to bail.
+    A permissive default set — better to LLM-merge a note that turned out
+    to be hand-edited than to bail. Used only to classify a conflict path;
+    ``wiki_dir`` is unused but kept for call-site stability.
     """
-    try:
-        from lore_core.surfaces import load_surfaces
-        doc = load_surfaces(wiki_dir)
-    except Exception:  # noqa: BLE001
-        doc = None
-    if doc is None or not doc.surfaces:
-        return ["concepts", "decisions", "results", "people", "places", "questions"]
-    out: list[str] = []
-    for s in doc.surfaces:
-        plural = s.plural or (s.name if s.name.endswith("s") else f"{s.name}s")
-        out.append(plural)
-    return out
+    return ["concepts", "decisions", "results", "people", "places", "questions"]
 
 
 def _classify_conflict_path(path: str, surface_dirs: list[str]) -> ConflictKind:

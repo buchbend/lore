@@ -19,8 +19,8 @@ Exposed tools:
     lore_inbox_classify     — read-only inbox walk (file list with type +
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
-    lore_surface_context    — gather context pack for surface-authoring skills
-    lore_surface_validate   — validate draft-spec + preview diff (no writes)
+    lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
+    lore_repo_docs_fetch    — fetch one ADR or PRD's content (pull-only)
 
 Start:
     lore mcp
@@ -43,7 +43,6 @@ from lore_core.freshness import (
     signal_to_dict,
 )
 from lore_core.freshness_filter import apply_search_filter
-from lore_core.regions import redact_human_only
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
@@ -346,12 +345,10 @@ def handle_read(
         return _mcp_error("path_not_found", f"not found: {path}")
     text = target.read_text(errors="replace")
 
-    # Two-region redaction (issue #93). The marker only ever appears in the
-    # body, never in YAML frontmatter, so applying redact_human_only to the
-    # full file text is safe and equivalent to body-only redaction. Old notes
-    # without a marker pass through unchanged → backwards compatible.
-    if not include_human:
-        text = redact_human_only(text)
+    # Notes carry no human-only region: they are machine-written and
+    # cleared by the publish gate. ``include_human`` is retained on the
+    # signature for callers that still pass it, but there is nothing to
+    # redact — the full body is returned.
 
     freshness = _freshness_block_for(
         wiki_path, path, orphan_set=load_orphan_set(wiki_path)
@@ -571,192 +568,6 @@ def handle_journal_read(
     }
 
 
-def handle_surface_context(wiki: str) -> dict[str, Any]:
-    """Gather context pack for surface-authoring skills."""
-    from importlib import resources
-    from lore_core.surfaces import load_surfaces
-    import yaml
-
-    wiki_dir = _resolve_wiki(wiki)
-    if wiki_dir is None:
-        return {
-            "schema": "lore.surface.context/1",
-            "wiki": wiki,
-            "error": f"wiki '{wiki}' not found under $LORE_ROOT/wiki/",
-        }
-
-    surfaces_path = wiki_dir / "SURFACES.md"
-    exists = surfaces_path.exists()
-    doc = load_surfaces(wiki_dir) if exists else None
-    current: list[dict[str, Any]] = []
-    note_samples: dict[str, list[str]] = {}
-
-    if doc is not None:
-        for s in doc.surfaces:
-            current.append({
-                "name": s.name,
-                "description": s.description,
-                "required": list(s.required),
-                "optional": list(s.optional),
-                "extract_when": s.extract_when,
-                "plural": s.plural,
-                "slug_format": s.slug_format,
-                "extract_prompt": s.extract_prompt,
-            })
-            dirname = s.plural or (s.name if s.name.endswith("s") else f"{s.name}s")
-            subdir = wiki_dir / dirname
-            if not subdir.is_dir():
-                continue
-            samples: list[tuple[str, str]] = []
-            for md in subdir.glob("*.md"):
-                try:
-                    txt = md.read_text()
-                except OSError:
-                    continue
-                fm = parse_frontmatter(txt)
-                if not fm:
-                    continue
-                created = str(fm.get("created", ""))
-                samples.append((created, md.stem))
-            samples.sort(reverse=True)
-            if samples:
-                note_samples[s.name] = [f"[[{stem}]]" for _created, stem in samples[:3]]
-
-    shipped_templates: dict[str, str] = {}
-    for tmpl in ("standard", "science", "design"):
-        try:
-            shipped_templates[tmpl] = (
-                resources.files("lore_core.surface_templates")
-                .joinpath(f"{tmpl}.md")
-                .read_text()
-            )
-        except (FileNotFoundError, ModuleNotFoundError):
-            continue
-
-    claude_md_attach = ""
-    claude_md = wiki_dir / "CLAUDE.md"
-    if claude_md.exists():
-        txt = claude_md.read_text()
-        start = txt.find("## Lore")
-        if start != -1:
-            end = txt.find("\n## ", start + 1)
-            claude_md_attach = txt[start:end] if end != -1 else txt[start:]
-        # Two-region retrieval filter (PRD #92): handle_surface_context
-        # is an LLM-facing surface, so strip any human-only region a
-        # CLAUDE.md happens to carry. Conventionally CLAUDE.md has no
-        # marker; the call is defensive and a no-op for marker-free
-        # files.
-        claude_md_attach = redact_human_only(claude_md_attach)
-
-    return {
-        "schema": "lore.surface.context/1",
-        "wiki": wiki,
-        "wiki_dir": str(wiki_dir),
-        "surfaces_md_exists": exists,
-        "current_surfaces": current,
-        "claude_md_attach": claude_md_attach,
-        "note_samples": note_samples,
-        "shipped_templates": shipped_templates,
-    }
-
-
-def handle_surface_validate(wiki: str, draft: dict) -> dict[str, Any]:
-    """Validate a draft-spec. Returns issues + rendered markdown + unified diff."""
-    import difflib
-    from lore_core.surfaces import (
-        SurfaceDef,
-        render_section,
-        render_document,
-        validate_draft,
-    )
-
-    wiki_dir = _resolve_wiki(wiki)
-    if wiki_dir is None:
-        return {
-            "schema": "lore.surface.validate/1",
-            "ok": False,
-            "issues": [{
-                "level": "error",
-                "code": "unknown_wiki",
-                "message": f"wiki '{wiki}' not found under $LORE_ROOT/wiki/",
-            }],
-            "rendered_markdown": "",
-            "diff_preview": "",
-        }
-
-    issues = validate_draft(draft, wiki_dir=wiki_dir)
-    ok = not any(i["level"] == "error" for i in issues)
-
-    rendered = ""
-    op = draft.get("operation")
-    surfaces_path = wiki_dir / "SURFACES.md"
-    current_text = surfaces_path.read_text() if surfaces_path.exists() else ""
-    new_text = current_text
-
-    try:
-        if op == "append" and isinstance(draft.get("surface"), dict):
-            s = draft["surface"]
-            sd = SurfaceDef(
-                name=s.get("name", ""),
-                description=s.get("description", ""),
-                required=list(s.get("required") or []),
-                optional=list(s.get("optional") or []),
-                extract_when=s.get("extract_when", ""),
-                plural=s.get("plural"),
-                slug_format=s.get("slug_format"),
-                extract_prompt=s.get("extract_prompt"),
-            )
-            rendered = render_section(sd)
-            if current_text:
-                new_text = current_text.rstrip("\n") + "\n\n" + rendered
-            else:
-                new_text = "# Surfaces\nschema_version: 2\n\n" + rendered
-        elif op == "init" and isinstance(draft.get("surfaces"), list):
-            sds = [
-                SurfaceDef(
-                    name=s.get("name", ""),
-                    description=s.get("description", ""),
-                    required=list(s.get("required") or []),
-                    optional=list(s.get("optional") or []),
-                    extract_when=s.get("extract_when", ""),
-                    plural=s.get("plural"),
-                    slug_format=s.get("slug_format"),
-                    extract_prompt=s.get("extract_prompt"),
-                )
-                for s in draft["surfaces"]
-            ]
-            new_text = render_document(
-                schema_version=draft.get("schema_version", 2),
-                surfaces=sds,
-                wiki=wiki,
-            )
-            rendered = new_text
-    except Exception as e:
-        issues.append({
-            "level": "error",
-            "code": "render_failed",
-            "message": str(e),
-        })
-        ok = False
-
-    diff_lines = list(difflib.unified_diff(
-        current_text.splitlines(keepends=True),
-        new_text.splitlines(keepends=True),
-        fromfile="a/SURFACES.md",
-        tofile="b/SURFACES.md",
-    ))
-    diff_preview = "".join(diff_lines)
-
-    return {
-        "schema": "lore.surface.validate/1",
-        "wiki": wiki,
-        "ok": ok,
-        "issues": issues,
-        "rendered_markdown": rendered,
-        "diff_preview": diff_preview,
-    }
-
-
 def handle_drill(
     query: str,
     wiki: str | None = None,
@@ -814,8 +625,8 @@ def handle_drill(
     # Drill is the user-invoked deep-dive surface (PRD #92 retrieval
     # contract): pass ``include_human=True`` so the full note — including
     # the human-only region — is returned. ``handle_search`` /
-    # ``handle_surface_context`` / ``handle_briefing_gather`` are the
-    # auto-load surfaces where redaction is enforced.
+    # ``handle_briefing_gather`` are the auto-load surfaces where
+    # redaction is enforced.
     t0 = _time.monotonic()
     top_paths = [h["path"] for h in hits]
     read_failed_top: list[str] = []
@@ -1152,6 +963,73 @@ def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
     return _mcp_error("note_not_found", f"note not found: {note}")
 
 
+def _resolve_repo_root(repo_path: str | None) -> Path | None:
+    """Resolve the connected repo's root for the repo-docs pull tools.
+
+    Explicit `repo_path` wins (also how tests avoid needing a real git
+    repo). Otherwise auto-detect the git repo containing the server's
+    cwd — an MCP client normally launches this server from within the
+    project it's connected to.
+    """
+    if repo_path:
+        p = Path(repo_path).expanduser().resolve()
+        return p if p.is_dir() else None
+    from lore_core.git import git_repo_root
+
+    return git_repo_root(Path.cwd())
+
+
+def handle_repo_docs_list(kind: str, repo_path: str | None = None) -> dict[str, Any]:
+    """List ADR/PRD entries from a connected repo's conventional home.
+
+    Pull-only: fires on explicit MCP call, never at SessionStart. A
+    repo without `docs/adr` or `docs/prd` is not an error — `exists`
+    is False and `entries` is empty.
+    """
+    from lore_core.repo_docs import HOMES, list_docs
+
+    if kind not in HOMES:
+        return _mcp_error("invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}")
+    repo_root = _resolve_repo_root(repo_path)
+    if repo_root is None:
+        return _mcp_error(
+            "repo_not_found",
+            "could not resolve the connected repo",
+            next_="pass `repo_path` explicitly, or run the MCP server from within a git repo",
+        )
+    return {
+        "schema": "lore.repo_docs.list/1",
+        "kind": kind,
+        "repo_root": str(repo_root),
+        "home": HOMES[kind],
+        "exists": (repo_root / HOMES[kind]).is_dir(),
+        "entries": list_docs(repo_root, kind),
+    }
+
+
+def handle_repo_docs_fetch(kind: str, path: str, repo_path: str | None = None) -> dict[str, Any]:
+    """Fetch one ADR/PRD's content from a connected repo.
+
+    `path` accepts a bare slug, a filename, or the full repo-relative
+    path. Pull-only, same contract as :func:`handle_repo_docs_list`.
+    """
+    from lore_core.repo_docs import HOMES, read_doc
+
+    if kind not in HOMES:
+        return _mcp_error("invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}")
+    repo_root = _resolve_repo_root(repo_path)
+    if repo_root is None:
+        return _mcp_error(
+            "repo_not_found",
+            "could not resolve the connected repo",
+            next_="pass `repo_path` explicitly, or run the MCP server from within a git repo",
+        )
+    doc = read_doc(repo_root, kind, path)
+    if doc is None:
+        return _mcp_error("doc_not_found", f"{kind} not found: {path}")
+    return {"schema": "lore.repo_docs.fetch/1", "kind": kind, **doc}
+
+
 # ---------------------------------------------------------------------------
 # MCP server wrapper
 # ---------------------------------------------------------------------------
@@ -1363,34 +1241,6 @@ def _tool_schema() -> list[dict]:
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
-            "name": "lore_surface_context",
-            "description": (
-                "Gather context for surface-authoring skills: current SURFACES.md, "
-                "CLAUDE.md attach block, sampled recent notes per surface, shipped templates."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {"wiki": {"type": "string"}},
-                "required": ["wiki"],
-            },
-        },
-        {
-            "name": "lore_surface_validate",
-            "description": (
-                "Validate a surface draft-spec (append or init). Returns structured "
-                "issue list + rendered markdown + unified diff preview against the "
-                "current SURFACES.md. Never writes."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "wiki": {"type": "string"},
-                    "draft": {"type": "object"},
-                },
-                "required": ["wiki", "draft"],
-            },
-        },
-        {
             "name": "lore_journal_write",
             "description": (
                 "Append a freeform entry to the AI or human journal "
@@ -1505,6 +1355,54 @@ def _tool_schema() -> list[dict]:
                 "required": ["wiki", "note", "verdict"],
             },
         },
+        {
+            "name": "lore_repo_docs_list",
+            "description": (
+                "List a connected repo's ADRs or PRDs from their conventional, "
+                "hard-coded homes (`docs/adr/`, `docs/prd/`; homes are not "
+                "configurable). Includes index files (README.md/index.md). "
+                "Pull-only: fires on explicit call, never injected ambiently. "
+                "A repo without the home directory is not an error — returns "
+                "`exists: false` and an empty `entries` list."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["adr", "prd"]},
+                    "repo_path": {
+                        "type": "string",
+                        "description": (
+                            "Override the repo root. Defaults to the git repo "
+                            "containing the server's working directory."
+                        ),
+                    },
+                },
+                "required": ["kind"],
+            },
+        },
+        {
+            "name": "lore_repo_docs_fetch",
+            "description": (
+                "Fetch one ADR or PRD's full content from a connected repo. "
+                "`path` accepts a bare slug (`0001-x`), a filename (`0001-x.md`), "
+                "or the full repo-relative path (`docs/adr/0001-x.md`). Pull-only."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["adr", "prd"]},
+                    "path": {"type": "string"},
+                    "repo_path": {
+                        "type": "string",
+                        "description": (
+                            "Override the repo root. Defaults to the git repo "
+                            "containing the server's working directory."
+                        ),
+                    },
+                },
+                "required": ["kind", "path"],
+            },
+        },
     ]
 
 
@@ -1540,10 +1438,6 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_briefing_gather(**args)
         case "lore_inbox_classify":
             return handle_inbox_classify(**args)
-        case "lore_surface_context":
-            return handle_surface_context(**args)
-        case "lore_surface_validate":
-            return handle_surface_validate(**args)
         case "lore_journal_write":
             return handle_journal_write(**args)
         case "lore_journal_read":
@@ -1552,6 +1446,10 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_verdict(**args)
         case "lore_pending_verdicts":
             return handle_pending_verdicts(**args)
+        case "lore_repo_docs_list":
+            return handle_repo_docs_list(**args)
+        case "lore_repo_docs_fetch":
+            return handle_repo_docs_fetch(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 

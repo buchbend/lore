@@ -20,11 +20,9 @@ from __future__ import annotations
 import json
 import sys
 import types
-from pathlib import Path
 from typing import Any
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fake openai SDK — same minimal shape used by test_openai_backend.py
@@ -385,127 +383,3 @@ def test_legacy_string_tier_map_still_omits_extra_body(fake_openai):
     assert kwargs["model"] == "m-m"
     assert "extra_body" not in kwargs
 
-
-# ---------------------------------------------------------------------------
-# (f) End-to-end: synthesis.compose_session_note → resolved request payload
-# carries reasoning_effort AND the llm-response telemetry event surfaces it.
-# ---------------------------------------------------------------------------
-
-
-def test_compose_session_note_end_to_end_carries_reasoning_effort(fake_openai):
-    """Drive the Phase 2 compose path with an OpenAI client whose ``high``
-    tier opted into reasoning_effort=high. Assert:
-
-    1. The recorded outgoing request kwargs carry
-       ``extra_body={"reasoning_effort": "high"}`` and ``model="reasoning-X"``.
-    2. The ``llm-response`` telemetry event carries the new
-       ``model_resolved`` + ``reasoning_effort`` fields so future
-       experiment writeups don't have to bypass the wrapper.
-    """
-    from lore_curator.llm_client import (
-        OpenAICompatibleClient,
-        ResolvedModel,
-    )
-    from lore_curator.synthesis import compose_session_note
-
-    client = OpenAICompatibleClient(
-        base_url="https://example.local/v1",
-        api_key="sk-test",
-        tier_to_model={
-            "high": ResolvedModel(id="reasoning-X", reasoning_effort="high"),
-        },
-    )
-
-    # P2 is two-call (outline → compose). Route fake responses by
-    # tool_choice.name so the outline pass returns an items payload and
-    # the compose pass returns title + summary_lede + narrative.
-    _route_two_call_responses(client)
-
-    events: list[tuple[str, dict[str, Any]]] = []
-
-    class _CaptureLogger:
-        run_id = "test"
-
-        def emit(self, name: str, **kw: Any) -> None:
-            events.append((name, kw))
-
-    out = compose_session_note(
-        turns_text="some session text",
-        activity_summary="",
-        is_continuation=False,
-        continues_wikilink=None,
-        llm_client=client,
-        model="high",  # tier name — Phase 2 resolves via tier_to_model
-        logger=_CaptureLogger(),
-        transcript_id="t-1",
-    )
-    assert out is not None
-    assert out["title"] == "Reasoning-mode narration"
-    assert out["summary_lede"] == "Stub P2 compose payload."
-
-    # (1) Final on-the-wire compose payload carries reasoning_effort.
-    kwargs = client._client._completions.last_kwargs
-    assert kwargs is not None
-    assert kwargs["model"] == "reasoning-X"
-    assert kwargs["extra_body"] == {"reasoning_effort": "high"}
-
-    # (2) Telemetry event surfaces resolved model + effort on the
-    # compose call.
-    resp_events = [(n, kw) for n, kw in events
-                   if n == "llm-response" and kw.get("call") == "p2-compose"]
-    assert len(resp_events) == 1, events
-    _, payload = resp_events[0]
-    assert payload["model_resolved"] == "reasoning-X"
-    assert payload["reasoning_effort"] == "high"
-
-
-def test_compose_session_note_telemetry_when_reasoning_effort_unset(fake_openai):
-    """Negative-case telemetry: an openai client without reasoning_effort
-    configured still emits ``model_resolved`` (the literal model id) and
-    ``reasoning_effort=None`` so the field is observable either way."""
-    from lore_curator.llm_client import (
-        OpenAICompatibleClient,
-        ResolvedModel,
-    )
-    from lore_curator.synthesis import compose_session_note
-
-    client = OpenAICompatibleClient(
-        base_url="https://example.local/v1",
-        api_key="sk-test",
-        tier_to_model={
-            "middle": ResolvedModel(id="plain-Y", reasoning_effort=None),
-        },
-    )
-
-    _route_two_call_responses(client, compose_model="plain-Y")
-
-    events: list[tuple[str, dict[str, Any]]] = []
-
-    class _CaptureLogger:
-        run_id = "test"
-
-        def emit(self, name: str, **kw: Any) -> None:
-            events.append((name, kw))
-
-    out = compose_session_note(
-        turns_text="some session text",
-        activity_summary="",
-        is_continuation=False,
-        continues_wikilink=None,
-        llm_client=client,
-        model="middle",
-        logger=_CaptureLogger(),
-        transcript_id="t-2",
-    )
-    assert out is not None
-
-    kwargs = client._client._completions.last_kwargs
-    assert kwargs is not None
-    assert "extra_body" not in kwargs
-
-    resp_events = [(n, kw) for n, kw in events
-                   if n == "llm-response" and kw.get("call") == "p2-compose"]
-    assert len(resp_events) == 1
-    payload = resp_events[0][1]
-    assert payload["model_resolved"] == "plain-Y"
-    assert payload["reasoning_effort"] is None

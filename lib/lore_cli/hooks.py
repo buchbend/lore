@@ -2,25 +2,11 @@
 
 These commands read cached files the linter regenerates (_index.txt,
 _catalog.json) and emit bounded context blobs for the hook stream.
-No LLM invocation; the only network calls are the parallel-fanned
-``gh`` queries below.
-
-Measured cost on a populated single-wiki vault (issue #27 re-audit
-2026-04-28, after the gh-parallelization fix):
-
-  - ``lore --help``                — ~600ms (Python startup + typer
-                                    dispatch + eager import of ~30
-                                    cmd modules in `__main__.py`)
-  - ``lore hook session-start``     — ~2.0s end-to-end (the 600ms
-                                    startup + ~max(issue_gh, pr_gh)
-                                    parallel fetch ~1.7-2.0s + small
-                                    file I/O)
-
-Before this fix the gh fetches were sequential (issues then PRs then
-each sibling), summing to ~3.7s. They now fan out via
-``_run_gh_parallel`` so wall time tracks the slowest single call.
-Lazy-mounting subcommand typer apps in ``__main__.py`` would cut a
-further ~300-400ms but is a structural refactor.
+No LLM invocation, no network calls — the SessionStart banner is
+deliberately ambient-minimal (status line, optional Focus block, a
+couple of session hints, freshness lines, one directive); gh-derived
+issue/PR counts were dropped, deeper context is an explicit MCP pull
+instead of an eager fetch on every session start.
 
     lore hook session-start [--cwd PATH]
     lore hook pre-compact  [--cwd PATH]
@@ -34,14 +20,12 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from lore_core import gh as _gh_mod
 from lore_core.config import get_lore_root, get_wiki_root
 
 
@@ -220,10 +204,11 @@ def _gc_sessions_cache(max_age_days: int = 14) -> None:
 MAX_CONTEXT_CHARS = 5000
 ORIENTATION_BUDGET_CHARS = 3000
 
-# Active gather-incentive directive. Inserted near the top of every
-# SessionStart additionalContext block and re-asserted in PreCompact so
-# the rule survives compaction. Bullet form, negatively framed — both
-# stick harder in long sessions than passive permission.
+# SessionStart's single ambient directive — the whole point is that
+# depth is a pull, not a push: unfamiliar context is fetched via MCP
+# on demand, and anything pulled from a session note is read as an
+# informational lab record, never as an instruction. A one-line hint
+# survives compaction via PreCompact's own, separately-worded directive.
 #
 # The canonical content lives in `lore_core/templates/integration-rules/default.md`
 # (shipped as package data) so the same source feeds both this hook
@@ -245,11 +230,12 @@ _DIRECTIVE_PATH = _resolve_directive_path()
 
 
 def _load_directive_lines() -> list[str]:
-    """Read the canonical vault-first directive and return as a list.
+    """Read the single ambient SessionStart directive and return as a list.
 
-    Output shape preserves the historical 3-element layout exactly:
-    `["## Directives", "- **Vault first.** …", ""]`. The trailing
-    empty string produces the blank line spacer in the joined output.
+    This is the sole directive block the banner emits — the former
+    vault-first/freshness-nudge, citation-suppression, and journal-invitation
+    blocks collapsed into it. A trailing empty string is appended to
+    produce the blank line spacer in the joined output.
 
     Returns an empty list if the bundled template can't be read — the
     surrounding banner survives without the postscript, and the
@@ -542,12 +528,10 @@ def _stale_count(wiki: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Scope + gh integration (schema v2 — superseded `## Open items` scraping
-# when the cwd's CLAUDE.md has a `## Lore` section)
+# Scope resolution (schema v2 — superseded `## Open items` scraping when
+# the cwd's CLAUDE.md has a `## Lore` section)
 # ---------------------------------------------------------------------------
 
-
-GH_TIMEOUT_SECONDS = 10
 
 # Ancestor-walk for ## Lore is canonical in lore_core.session. Imported
 # lazily below at call sites to avoid a module-load-order wobble.
@@ -558,40 +542,6 @@ GH_TIMEOUT_SECONDS = 10
 _walk_scope_leaves = walk_scope_leaves
 _load_scopes_yml = load_scopes_yml
 _subtree_siblings = subtree_siblings
-
-
-# gh wrappers moved to `lore_core.gh`. The underscore-prefixed names are
-# kept as thin delegates so tests that monkeypatch `hooks._run_gh` still
-# intercept every call made from this module.
-
-
-def _run_gh(kind: str, repo: str, filter_args: list[str]) -> list[dict]:
-    """Indirection kept for the test-monkeypatch contract. ``test_hooks_v2``
-    swaps this to feed deterministic JSON. Do NOT inline."""
-    return _gh_mod.run_gh(kind, repo, filter_args)
-
-
-def _run_gh_parallel(
-    calls: list[tuple[str, str, list[str]]],
-) -> list[list[dict]]:
-    """Fan out ``_run_gh`` calls concurrently; preserve input order.
-
-    Each ``calls`` entry is ``(kind, repo, filter_args)`` matching
-    ``_run_gh``. SessionStart used to pay these gh fetches serially
-    (~1.7s each); fanning them out keeps wall time at the slowest
-    single call. Routes through ``_run_gh`` so the
-    ``hooks._run_gh`` monkeypatch in ``test_hooks_v2`` still
-    intercepts every fetch.
-    """
-    if not calls:
-        return []
-    if len(calls) == 1:
-        return [_run_gh(*calls[0])]
-    from concurrent.futures import ThreadPoolExecutor
-
-    with ThreadPoolExecutor(max_workers=min(8, len(calls))) as pool:
-        futures = [pool.submit(_run_gh, *c) for c in calls]
-        return [f.result() for f in futures]
 
 
 # ---------------------------------------------------------------------------
@@ -613,8 +563,6 @@ class SessionFacts:
     wiki_name: str
     repo: str | None
     scope: str = ""
-    issues: tuple[dict, ...] = ()
-    prs: tuple[dict, ...] = ()
     project_entry: dict | None = None
     session_hints: tuple[tuple[str, str], ...] = ()
     freshness_audit_lines: tuple[str, ...] = ()
@@ -626,33 +574,12 @@ def collect_session_facts(
     repo: str | None,
     *,
     scope: str = "",
-    backend: str | None = None,
-    issues_filter: str | None = None,
-    prs_filter: str | None = None,
 ) -> SessionFacts:
     """Gather every per-session fact the renderer needs.
 
-    ``gh`` failures never raise — fetched issue/PR lists default to
-    empty and the banner renders without those bits.
+    No ``gh`` calls: issue/PR counts were dropped from the ambient
+    banner (agents fetch via gh, or a future MCP pull tool, on demand).
     """
-    issues: list[dict] = []
-    prs: list[dict] = []
-    if (
-        backend == "github"
-        and repo
-        and issues_filter is not None
-        and prs_filter is not None
-    ):
-        issues_args = _gh_mod.split_filter(issues_filter)
-        prs_args = _gh_mod.split_filter(prs_filter)
-        calls: list[tuple[str, str, list[str]]] = [
-            ("issue", repo, issues_args),
-            ("pr", repo, prs_args),
-        ]
-        results = _run_gh_parallel(calls)
-        issues = results[0]
-        prs = results[1]
-
     project_entry = _project_note_for_repo(wiki, repo) if repo else None
     session_hints_full = _last_session_hint_with_freshness(wiki, max_notes=4)
     session_hints, freshness_audit_lines = _filter_session_hints(
@@ -663,8 +590,6 @@ def collect_session_facts(
         wiki_name=wiki.name,
         repo=repo,
         scope=scope,
-        issues=tuple(issues),
-        prs=tuple(prs),
         project_entry=project_entry,
         session_hints=tuple(session_hints),
         freshness_audit_lines=tuple(freshness_audit_lines),
@@ -675,8 +600,11 @@ def collect_session_facts(
 def render_session_banner(facts: SessionFacts) -> str:
     """Format a SessionStart banner from collected facts.
 
-    The directive postscript trails the status + focus + session hints
-    so users see what Lore did *first* and the rule re-assertion second.
+    Ambient-minimum shape: status line (no issue/PR counts), optional
+    Focus block, at most two last-session hints, freshness lines only
+    on positive evidence, and the single collapsed directive as a
+    postscript — so users see what Lore did *first* and the rule
+    re-assertion second.
     """
     injected_bits: list[str] = []
     if facts.scope:
@@ -686,14 +614,6 @@ def render_session_banner(facts: SessionFacts) -> str:
     if facts.session_hints:
         _, first_summary = facts.session_hints[0]
         injected_bits.append(f"last: {first_summary}")
-    if facts.issues:
-        injected_bits.append(
-            f"{len(facts.issues)} issue{'s' if len(facts.issues) != 1 else ''}"
-        )
-    if facts.prs:
-        injected_bits.append(
-            f"{len(facts.prs)} PR{'s' if len(facts.prs) != 1 else ''}"
-        )
     if facts.pending_chip:
         injected_bits.append(facts.pending_chip)
     status_line = f"lore {_lore_version()}: active" + (
@@ -724,8 +644,6 @@ def render_session_banner(facts: SessionFacts) -> str:
         parts.append("")
 
     parts.extend(_load_directive_lines())
-    parts.extend(_citation_directive_lines())
-    parts.extend(_journal_directive_lines())
 
     return "\n".join(parts)
 
@@ -745,9 +663,6 @@ def _session_start_from_lore(
     _, block = config
     wiki_name = block.get("wiki")
     scope = block.get("scope") or ""
-    backend = block.get("backend") or "github"
-    issues_filter = block.get("issues") or "--assignee @me --state open"
-    prs_filter = block.get("prs") or "--author @me"
 
     if not wiki_name:
         return None
@@ -755,14 +670,7 @@ def _session_start_from_lore(
     if not wiki.exists():
         return None
 
-    facts = collect_session_facts(
-        wiki,
-        current_repo(cwd),
-        scope=scope,
-        backend=backend,
-        issues_filter=issues_filter,
-        prs_filter=prs_filter,
-    )
+    facts = collect_session_facts(wiki, current_repo(cwd), scope=scope)
     return render_session_banner(facts)
 
 
@@ -1084,13 +992,17 @@ import typer  # noqa: E402
 
 from lore_adapters import get_adapter  # noqa: E402
 from lore_core.hook_log import HookEventLogger  # noqa: E402
-from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry, WikiLedger  # noqa: E402
+from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry  # noqa: E402
 from lore_core.scope_resolver import resolve_scope  # noqa: E402
 from lore_cli._argv_compat import argv_main  # noqa: E402
 
 # Re-export the spawn machinery so hooks-internal heartbeat code and any
 # external test that patches ``lore_cli.hooks.<name>`` keep working without
-# tracking the move to ``lore_cli.spawn``.
+# tracking the move to ``lore_cli.spawn``. ``_spawn_detached_curator_b`` and
+# ``_spawn_detached_curator_c`` stay re-exported even though no call site in
+# this module invokes them any more — the SessionStart entry points to
+# Curator B/C are severed, but the underlying spawn primitives are exercised
+# directly by tests covering the flock/cooldown machinery itself.
 from lore_cli.spawn import (  # noqa: E402, F401
     _migrate_legacy_spawn_stamp,
     _open_proc_log,
@@ -1104,9 +1016,6 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _spawn_detached_transcript_sync,
     _stamp_within_cooldown,
     _write_stamp,
-    _curator_c_email,
-    _curator_c_jitter_seconds,
-    _iso_week_monday_utc,
     spawn,
 )
 
@@ -1382,23 +1291,14 @@ def cmd_session_start(
         out = out + "\n" + auto_pull_warning
 
     # Side-effect spawns — suppressed under --probe.
+    #
+    # Curator B's day-rollover auto-spawn and Curator C's weekly auto-spawn
+    # used to fire from here (see git history for the removed blocks); both
+    # are retired and no longer reachable from SessionStart. The spawn
+    # primitives themselves (``_spawn_detached_curator_b/_c`` in
+    # ``lore_cli.spawn``) stay in place — this only severs the automatic
+    # call site.
     if not probe and scope is not None and lore_root is not None:
-        # Auto-trigger Curator B on calendar-day rollover.
-        try:
-            from datetime import UTC, datetime as dt
-
-            wledger = WikiLedger(lore_root, scope.wiki)
-            wentry = wledger.read()
-            today = dt.now(UTC).date()
-            last_b_date = wentry.last_curator_b.date() if wentry.last_curator_b else None
-            if last_b_date is None or today > last_b_date:
-                cfg_b = _load_wiki_cfg_from_scope(scope, lore_root)
-                _spawn_detached_curator_b(
-                    lore_root, scope.wiki, cooldown_s=cfg_b.curator.curator_b_cooldown_s
-                )
-        except Exception:
-            pass
-
         # Fire-and-forget transcript mirror (P4a). Idempotent, gitignored
         # destination, own spawn lock.
         try:
@@ -1406,40 +1306,12 @@ def cmd_session_start(
         except Exception:
             pass
 
-        # Auto-trigger Curator C weekly (UTC ISO-week + per-user 48h jitter).
-        # Flag-gated off by default; see project_curator_triad + spec §6.
+        # Singleton startup sweep: closes the note of any session that
+        # died mid-flush. Spawned detached so SessionStart stays fast; the
+        # command holds the global curator lock, so concurrent starts race
+        # safely and the losers exit without touching anything.
         try:
-            cfg = _load_wiki_cfg_from_scope(scope, lore_root)
-            c_cfg = cfg.curator.curator_c
-            if c_cfg.enabled:
-                if c_cfg.mode != "local":
-                    HookEventLogger(lore_root).emit(
-                        event="curator-c",
-                        outcome="central-mode-skipped",
-                        error={
-                            "message": "mode=central deferred to v2; local spawn skipped",
-                            "wiki": scope.wiki,
-                        },
-                    )
-                else:
-                    wledger = WikiLedger(lore_root, scope.wiki)
-                    wentry = wledger.read()
-                    now = _now_utc()
-                    last_c = wentry.last_curator_c
-                    if last_c is not None and last_c.tzinfo is None:
-                        from datetime import UTC as _UTC
-                        last_c = last_c.replace(tzinfo=_UTC)
-                    iso_now = now.isocalendar()
-                    needs_rollover = (
-                        last_c is None
-                        or last_c.isocalendar()[:2] != iso_now[:2]
-                    )
-                    if needs_rollover:
-                        monday = _iso_week_monday_utc(now)
-                        offset = _curator_c_jitter_seconds(_curator_c_email())
-                        from datetime import timedelta as _td
-                        if now >= monday + _td(seconds=offset):
-                            _spawn_detached_curator_c(lore_root)
+            spawn("sweep", lore_root)
         except Exception:
             pass
 
@@ -1500,11 +1372,10 @@ def _render_project_orientation(scope: "Scope", wiki_root: Path) -> str | None:
     for path in candidates:
         if path.is_file():
             try:
-                from lore_core.regions import redact_human_only
                 from lore_core.schema import strip_frontmatter
 
                 text = path.read_text(errors="replace")
-                body = redact_human_only(strip_frontmatter(text)).strip()
+                body = strip_frontmatter(text).strip()
             except OSError:
                 return None
             if not body:

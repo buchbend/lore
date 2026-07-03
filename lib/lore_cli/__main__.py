@@ -82,6 +82,7 @@ def _build_app() -> typer.Typer:
         on_cmd,
         proc_cmd,
         project_cmd,
+        quarantine_cmd,
         registry_cmd,
         resume_cmd,
         runs_cmd,
@@ -89,7 +90,6 @@ def _build_app() -> typer.Typer:
         search_cmd,
         session_cmd,
         status_cmd,
-        surface_cmd,
         transcripts_cmd,
         wiki_cmd,
     )
@@ -118,7 +118,6 @@ def _build_app() -> typer.Typer:
     app.add_typer(drill_cmd.app, name="drill", rich_help_panel=_KN)
     app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
     app.add_typer(project_cmd.app, name="project", rich_help_panel=_KN)
-    app.add_typer(surface_cmd.app, name="surface", rich_help_panel=_KN)
     app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
     app.add_typer(news_cmd.app, name="news", rich_help_panel=_KN)
     app.add_typer(resume_cmd.app, name="resume", rich_help_panel=_KN)
@@ -141,6 +140,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(mcp_cmd.app, name="mcp", rich_help_panel=_ADV)
     app.add_typer(migrate_cmd.app, name="migrate", rich_help_panel=_ADV)
     app.add_typer(proc_cmd.app, name="proc", rich_help_panel=_ADV)
+    app.add_typer(quarantine_cmd.app, name="quarantine", rich_help_panel=_ADV)
     app.add_typer(registry_cmd.app, name="registry", rich_help_panel=_ADV)
     app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
     app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)

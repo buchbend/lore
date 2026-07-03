@@ -1,15 +1,12 @@
 """Tests for `lore curator run` CLI command."""
+
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-from typer.testing import CliRunner
-
 from lore_cli.__main__ import app
+from typer.testing import CliRunner
 
 runner = CliRunner()
 
@@ -120,173 +117,24 @@ def test_curator_run_missing_anthropic_key_warns(tmp_path, monkeypatch):
     # Warning now goes to stderr via err_console; check it mentions classification skip
     combined = ((result.output or "") + (result.stderr or "")).lower()
     assert (
-        "anthropic" in combined
-        or "api_key" in combined
-        or "key" in combined
-        or "skip" in combined
+        "anthropic" in combined or "api_key" in combined or "key" in combined or "skip" in combined
     )
 
 
 # ---------------------------------------------------------------------------
-# Tests for --abstract flag and Curator B
+# Kill switch: `curator run` no longer accepts --abstract (Curator B, retired)
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class FakeCuratorBResult:
-    notes_considered: int = 0
-    clusters_formed: int = 0
-    surfaces_emitted: list = field(default_factory=list)
-    skipped_reasons: dict = field(default_factory=dict)
-    duration_seconds: float = 0.0
-
-
-def _make_fake_run_b(store: list, result=None):
-    """Return a fake run_curator_b that records kwargs and returns result."""
-    if result is None:
-        result = FakeCuratorBResult()
-
-    def fake_run(**kwargs):
-        store.append(kwargs)
-        return result
-
-    return fake_run
-
-
-def test_curator_run_default_does_not_invoke_curator_b(tmp_path, monkeypatch):
-    """Without --abstract, Curator B should not be invoked."""
+def test_curator_run_rejects_abstract_flag(tmp_path, monkeypatch):
+    """`--abstract` is a retired entry point — the CLI no longer accepts it."""
     lore_root = tmp_path / "lore_root"
     lore_root.mkdir()
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    calls_a = []
-    calls_b = []
-    monkeypatch.setattr(
-        "lore_curator.session_curator.run_curator_a",
-        _make_fake_run(calls_a),
-    )
-    monkeypatch.setattr(
-        "lore_curator.daily_curator.run_curator_b",
-        _make_fake_run_b(calls_b),
-    )
-
-    result = runner.invoke(app, ["curator", "run"])
-    assert result.exit_code == 0, result.output
-    assert len(calls_a) == 1
-    assert len(calls_b) == 0
-
-
-def test_curator_run_abstract_invokes_curator_b(tmp_path, monkeypatch):
-    """With --abstract, both Curator A and B should be invoked."""
-    lore_root = tmp_path / "lore_root"
-    lore_root.mkdir()
-    wiki_dir = lore_root / "wiki" / "default"
-    wiki_dir.mkdir(parents=True)
-    monkeypatch.setenv("LORE_ROOT", str(lore_root))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    calls_a = []
-    calls_b = []
-    monkeypatch.setattr(
-        "lore_curator.session_curator.run_curator_a",
-        _make_fake_run(calls_a),
-    )
-    monkeypatch.setattr(
-        "lore_curator.daily_curator.run_curator_b",
-        _make_fake_run_b(calls_b),
-    )
 
     result = runner.invoke(app, ["curator", "run", "--abstract"])
-    assert result.exit_code == 0, result.output
-    assert len(calls_a) == 1
-    assert len(calls_b) == 1
-
-
-def test_curator_run_abstract_with_wiki_flag_filters_to_one_wiki(tmp_path, monkeypatch):
-    """With --abstract --wiki foo, only that wiki is passed to Curator B."""
-    lore_root = tmp_path / "lore_root"
-    lore_root.mkdir()
-    wiki_a = lore_root / "wiki" / "a"
-    wiki_b = lore_root / "wiki" / "b"
-    wiki_a.mkdir(parents=True)
-    wiki_b.mkdir(parents=True)
-    monkeypatch.setenv("LORE_ROOT", str(lore_root))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    calls_a = []
-    calls_b = []
-    monkeypatch.setattr(
-        "lore_curator.session_curator.run_curator_a",
-        _make_fake_run(calls_a),
-    )
-    monkeypatch.setattr(
-        "lore_curator.daily_curator.run_curator_b",
-        _make_fake_run_b(calls_b),
-    )
-
-    result = runner.invoke(app, ["curator", "run", "--abstract", "--wiki", "a"])
-    assert result.exit_code == 0, result.output
-    assert len(calls_a) == 1
-    assert len(calls_b) == 1
-    assert calls_b[0]["wiki"] == "a"
-
-
-def test_curator_run_abstract_dry_run_propagates(tmp_path, monkeypatch):
-    """With --abstract --dry-run, both A and B run with dry_run=True."""
-    lore_root = tmp_path / "lore_root"
-    lore_root.mkdir()
-    wiki_dir = lore_root / "wiki" / "default"
-    wiki_dir.mkdir(parents=True)
-    monkeypatch.setenv("LORE_ROOT", str(lore_root))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    calls_a = []
-    calls_b = []
-    monkeypatch.setattr(
-        "lore_curator.session_curator.run_curator_a",
-        _make_fake_run(calls_a),
-    )
-    monkeypatch.setattr(
-        "lore_curator.daily_curator.run_curator_b",
-        _make_fake_run_b(calls_b),
-    )
-
-    result = runner.invoke(app, ["curator", "run", "--abstract", "--dry-run"])
-    assert result.exit_code == 0, result.output
-    assert calls_a[0]["dry_run"] is True
-    assert calls_b[0]["dry_run"] is True
-
-
-def test_curator_run_abstract_iterates_all_wikis_when_no_wiki_flag(tmp_path, monkeypatch):
-    """With --abstract (no --wiki), all wikis are processed by Curator B."""
-    lore_root = tmp_path / "lore_root"
-    lore_root.mkdir()
-    wiki_a = lore_root / "wiki" / "a"
-    wiki_b = lore_root / "wiki" / "b"
-    wiki_a.mkdir(parents=True)
-    wiki_b.mkdir(parents=True)
-    monkeypatch.setenv("LORE_ROOT", str(lore_root))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    calls_a = []
-    calls_b = []
-    monkeypatch.setattr(
-        "lore_curator.session_curator.run_curator_a",
-        _make_fake_run(calls_a),
-    )
-    monkeypatch.setattr(
-        "lore_curator.daily_curator.run_curator_b",
-        _make_fake_run_b(calls_b),
-    )
-
-    result = runner.invoke(app, ["curator", "run", "--abstract"])
-    assert result.exit_code == 0, result.output
-    assert len(calls_a) == 1
-    assert len(calls_b) == 2
-    # Check that both wikis were processed
-    wikis_processed = sorted([call["wiki"] for call in calls_b])
-    assert wikis_processed == ["a", "b"]
+    assert result.exit_code != 0, result.output
+    assert "abstract" in result.output.lower()
 
 
 # ---------------------------------------------------------------------------

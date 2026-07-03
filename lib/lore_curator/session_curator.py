@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -21,7 +20,7 @@ from lore_core.session_writer import FiledNote
 from lore_core.state.attachments import AttachmentsFile
 from lore_core.types import Scope, Turn, TranscriptHandle
 from lore_core.wiki_config import WikiConfig, load_wiki_config
-from lore_curator import stub_note
+from lore_curator import session_note
 from lore_curator._auto_commit import maybe_auto_commit as _maybe_auto_commit
 from lore_curator.buffer_append import append_chunk
 from lore_curator.session_filer import _resolve_handle_for
@@ -183,98 +182,6 @@ def _dispatch_flush_requested(
                 message=f"{type(exc).__name__}: {exc}",
             )
     return flushed
-
-
-def _resolve_active_part(
-    lore_root: Path,
-    *,
-    transcript_id: str,
-    local_date: str,
-) -> tuple[int, str | None]:
-    """Pick the ``part_index`` and (if continuing) the prior part's stem.
-
-    Algorithm:
-    1. If any live (non-_done) sidecar exists for this
-       ``(transcript_id, local_date)`` and is still ``accumulating``,
-       reuse its ``part_index`` (we're appending into the active part).
-    2. Otherwise find the highest ``part_index`` seen for this pair —
-       across any state, including ``_done/`` archive entries — and
-       return ``(highest + 1, <highest's stem>)``. This is the cap-trip
-       continuation case.
-    3. Fresh pair: ``(1, None)``.
-
-    Both the live buffers directory and the ``_done/`` archive are
-    consulted so that a closed Part-N (cap-trip / reaper) correctly
-    leads to Part-(N+1) on the next heartbeat. Without scanning
-    ``_done/``, the resolver would silently return ``(1, None)`` and
-    open a duplicate Part-1 stub for the same ``(transcript_id,
-    local_date)`` — the bug behind today's three-split symptom.
-    """
-    from lore_curator.buffer_store import iter_all
-
-    compact = local_date.replace("-", "")
-    prefix = f"{transcript_id}__{compact}"
-    candidates: list[tuple[int, str, str]] = []  # (part_index, state, stem)
-
-    seen_stems: set[str] = set()
-    for buf in iter_all(lore_root):
-        if not buf.stem.startswith(prefix):
-            continue
-        sidecar = buf.read_sidecar()
-        if sidecar is None:
-            continue
-        if sidecar.transcript_id != transcript_id or sidecar.local_date != local_date:
-            continue
-        candidates.append((sidecar.part_index, sidecar.state, buf.stem))
-        seen_stems.add(buf.stem)
-
-    # Scan ``_done/`` for archived parts. Filter by stem prefix to keep
-    # the directory walk bounded — only entries that match this
-    # ``(transcript_id, local_date)`` pair are considered.
-    done = lore_root / ".lore" / "buffers" / "_done"
-    if done.exists():
-        for entry in sorted(done.iterdir()):
-            if entry.is_dir():
-                continue
-            if not entry.name.endswith(".state.json"):
-                continue
-            stem = entry.name[: -len(".state.json")]
-            if not stem.startswith(prefix):
-                continue
-            if stem in seen_stems:
-                continue
-            try:
-                raw = json.loads(entry.read_text())
-            except (OSError, json.JSONDecodeError):
-                continue
-            if not isinstance(raw, dict):
-                continue
-            from lore_curator.buffer_store import Sidecar as _Sidecar
-            try:
-                sidecar = _Sidecar.from_dict(raw)
-            except (TypeError, ValueError):
-                continue
-            if sidecar.transcript_id != transcript_id or sidecar.local_date != local_date:
-                continue
-            candidates.append((sidecar.part_index, sidecar.state, stem))
-            seen_stems.add(stem)
-
-    if not candidates:
-        return 1, None
-
-    # Active part: still accumulating.
-    accumulating = [c for c in candidates if c[1] == "accumulating"]
-    if accumulating:
-        # Defensive: pick the highest part_index in case multiple exist
-        # (shouldn't happen — cap-trip flips the prior to ready before
-        # opening a new one).
-        accumulating.sort(reverse=True)
-        return accumulating[0][0], None
-
-    # Continuation case: open Part-(highest + 1).
-    candidates.sort(reverse=True)
-    highest_part, _state, highest_stem = candidates[0]
-    return highest_part + 1, highest_stem
 
 
 def _chunk_local_date(chunk_turns: list[Turn]) -> str:
@@ -686,11 +593,6 @@ def _process_chunk(
     work_time = chunk_turns[-1].timestamp or handle.mtime or now
     local_date = _chunk_local_date(chunk_turns)
     handle_label = _resolve_handle_for(wiki_dir, handle)
-    part_index, continuation_of = _resolve_active_part(
-        lore_root,
-        transcript_id=entry.transcript_id,
-        local_date=local_date,
-    )
 
     outcome = append_chunk(
         lore_root=lore_root,
@@ -707,8 +609,6 @@ def _process_chunk(
         owner_run_id=getattr(logger, "run_id", "") or "",
         owner_claude_session_id=os.environ.get("CLAUDE_SESSION_ID", ""),
         logger=logger,
-        part_index=part_index,
-        continuation_of=continuation_of,
     )
 
     if outcome.skipped_no_op:
@@ -727,24 +627,22 @@ def _process_chunk(
         )
         return _Outcome(was_noteworthy=False, wiki_name=attached.wiki)
 
-    chunk_from_hash = chunk_turns[0].content_hash()
-    chunk_to_hash = chunk_turns[-1].content_hash()
-
-    stub_result = stub_note.write_or_update(
+    # Heartbeat guarantees the append-only session note exists (disclaimer
+    # + machine-first frontmatter, zero chapters) and records its path on
+    # the sidecar. The body only ever grows by chapters, one per flush;
+    # the heartbeat never writes a body.
+    note_result = session_note.ensure_note(
         outcome=outcome,
         scope=attached,
         transcript=handle,
         wiki_root=wiki_dir,
         work_time=work_time,
-        now=now,
-        integration=entry.integration,
         handle_label=handle_label,
-        chunk_from_hash=chunk_from_hash,
-        chunk_to_hash=chunk_to_hash,
+        integration=entry.integration,
         logger=logger,
     )
 
-    wikilink: str | None = stub_result.wikilink if stub_result is not None else None
+    wikilink: str | None = note_result.wikilink if note_result is not None else None
 
     tledger.advance(
         integration=entry.integration,
@@ -757,12 +655,10 @@ def _process_chunk(
     )
 
     if outcome.cap_tripped:
-        # Spawn the flush worker for the just-tripped part. The next
-        # heartbeat for this transcript+date will land in Part-N+1
-        # (resolved via _resolve_active_part). We don't open Part-N+1
-        # eagerly — cap-trip flipped the current buffer to ``ready``,
-        # so the next call hitting _resolve_active_part skips it and
-        # falls into the continuation branch.
+        # Spawn the flush worker. Cap-trip requests an in-place flush
+        # (``mode="in_place"`` on the sidecar), so the worker appends a
+        # chapter and leaves the buffer ``accumulating`` — the next
+        # heartbeat keeps folding into the same buffer and the same note.
         from lore_curator.synthesis import spawn_detached_flush
 
         spawned = spawn_detached_flush(
@@ -777,11 +673,11 @@ def _process_chunk(
                 spawned=spawned,
             )
 
-    if stub_result is not None:
+    if note_result is not None:
         filed = FiledNote(
-            path=stub_result.path,
-            wikilink=stub_result.wikilink,
-            was_merge=not stub_result.is_first_write,
+            path=note_result.path,
+            wikilink=note_result.wikilink,
+            was_merge=not note_result.is_first_write,
         )
         _maybe_auto_commit(wiki_dir, filed, logger, llm_client=None)
 
@@ -790,10 +686,10 @@ def _process_chunk(
 
             sid, _ = resolve_session_id(entry.directory)
             DrainStore(lore_root, sid).emit(
-                "note-appended" if not stub_result.is_first_write else "note-filed",
+                "note-appended" if not note_result.is_first_write else "note-filed",
                 wiki=attached.wiki,
-                wikilink=stub_result.wikilink,
-                path=str(stub_result.path),
+                wikilink=note_result.wikilink,
+                path=str(note_result.path),
                 transcript_id=entry.transcript_id,
             )
         except Exception:  # noqa: BLE001 — drain emit must never abort a successful append
@@ -801,7 +697,7 @@ def _process_chunk(
 
         if scope_redirected_from is not None and logger is not None:
             logger.emit(
-                "scope-redirected-stub",
+                "scope-redirected-note",
                 transcript_id=entry.transcript_id,
                 from_scope=scope_redirected_from,
                 to_scope=attached.scope,
