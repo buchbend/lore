@@ -359,6 +359,51 @@ def reap_command(
         console.print(f"  [dim]skipped[/dim] {stem}: {reason}")
 
 
+@app.command("sweep")
+def sweep_command(
+    backend: str = typer.Option(None, "--backend", help="LLM backend override."),
+) -> None:
+    """Close the note of every dead session, under the singleton lock.
+
+    lore acts as a singleton at startup: the sweep holds the global
+    curator lock so concurrent session starts race safely (the loser
+    exits without touching anything). Each dead session gets one compose
+    attempt through the normal gate — a composed chapter, a withheld
+    marker + quarantine, or a failed marker — then its note is closed.
+    """
+    import os
+
+    from lore_cli._cli_helpers import lore_root_or_die
+    from lore_core.run_log import RunLogger
+    from lore_curator.chapter_flush import startup_sweep
+    from lore_curator.llm_client import LlmClientError, make_llm_client
+
+    err_console = Console(stderr=True)
+    lore_root = lore_root_or_die(err_console)
+    effective_backend = _resolve_backend(backend, lore_root)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or None
+    try:
+        llm_client = make_llm_client(
+            backend=effective_backend, api_key=api_key, lore_root=lore_root,
+        )
+    except LlmClientError as exc:
+        # No client → dead sessions still close, with failed markers.
+        err_console.print(f"[yellow]Warning:[/yellow] {exc}")
+        llm_client = None
+
+    with RunLogger(lore_root, trigger="sweep", pending_count=0) as logger:
+        report = startup_sweep(lore_root, llm_client=llm_client, logger=logger)
+
+    if report.contended:
+        console.print("[dim]sweep[/dim] — another session holds the lock; skipped")
+        return
+    console.print(
+        f"[bold]sweep[/bold] — scanned={report.scanned}, swept={report.swept}, "
+        f"alive={report.alive_skipped}, uncertain={report.uncertain_skipped}"
+    )
+
+
 @app.command("backfill-slugs")
 def backfill_slugs_command(
     wiki: str = typer.Option(

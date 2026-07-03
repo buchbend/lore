@@ -38,6 +38,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from lore_core.note_document import Chapter, TopicBlock, render_chapter_body
+from lore_core.publish_gate import GateResult
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
@@ -71,22 +72,10 @@ _TOOL_NAME = "compose_chapter"
 # Publish-gate seam (interface only — the implementation lives elsewhere)
 # ---------------------------------------------------------------------------
 
-
-@dataclass(frozen=True)
-class GateResult:
-    """Verdict of the publish gate on one rendered chapter."""
-
-    passed: bool
-    category: str = ""
-    feedback: str = ""
-
-    @classmethod
-    def ok(cls) -> GateResult:
-        return cls(passed=True)
-
-    @classmethod
-    def withheld(cls, category: str, feedback: str) -> GateResult:
-        return cls(passed=False, category=category, feedback=feedback)
+# ``GateResult`` is the one canonical verdict type, defined in
+# :mod:`lore_core.publish_gate` and re-exported here so the composer's
+# retry loop and the gate speak the same type. ``GateResult.ok()`` /
+# ``GateResult.withheld(...)`` are its constructors.
 
 
 @runtime_checkable

@@ -20,7 +20,7 @@ from lore_core.session_writer import FiledNote
 from lore_core.state.attachments import AttachmentsFile
 from lore_core.types import Scope, Turn, TranscriptHandle
 from lore_core.wiki_config import WikiConfig, load_wiki_config
-from lore_curator import stub_note
+from lore_curator import session_note
 from lore_curator._auto_commit import maybe_auto_commit as _maybe_auto_commit
 from lore_curator.buffer_append import append_chunk
 from lore_curator.session_filer import _resolve_handle_for
@@ -627,24 +627,22 @@ def _process_chunk(
         )
         return _Outcome(was_noteworthy=False, wiki_name=attached.wiki)
 
-    chunk_from_hash = chunk_turns[0].content_hash()
-    chunk_to_hash = chunk_turns[-1].content_hash()
-
-    stub_result = stub_note.write_or_update(
+    # Heartbeat guarantees the append-only session note exists (disclaimer
+    # + machine-first frontmatter, zero chapters) and records its path on
+    # the sidecar. The body only ever grows by chapters, one per flush;
+    # the heartbeat never writes a body.
+    note_result = session_note.ensure_note(
         outcome=outcome,
         scope=attached,
         transcript=handle,
         wiki_root=wiki_dir,
         work_time=work_time,
-        now=now,
-        integration=entry.integration,
         handle_label=handle_label,
-        chunk_from_hash=chunk_from_hash,
-        chunk_to_hash=chunk_to_hash,
+        integration=entry.integration,
         logger=logger,
     )
 
-    wikilink: str | None = stub_result.wikilink if stub_result is not None else None
+    wikilink: str | None = note_result.wikilink if note_result is not None else None
 
     tledger.advance(
         integration=entry.integration,
@@ -675,11 +673,11 @@ def _process_chunk(
                 spawned=spawned,
             )
 
-    if stub_result is not None:
+    if note_result is not None:
         filed = FiledNote(
-            path=stub_result.path,
-            wikilink=stub_result.wikilink,
-            was_merge=not stub_result.is_first_write,
+            path=note_result.path,
+            wikilink=note_result.wikilink,
+            was_merge=not note_result.is_first_write,
         )
         _maybe_auto_commit(wiki_dir, filed, logger, llm_client=None)
 
@@ -688,10 +686,10 @@ def _process_chunk(
 
             sid, _ = resolve_session_id(entry.directory)
             DrainStore(lore_root, sid).emit(
-                "note-appended" if not stub_result.is_first_write else "note-filed",
+                "note-appended" if not note_result.is_first_write else "note-filed",
                 wiki=attached.wiki,
-                wikilink=stub_result.wikilink,
-                path=str(stub_result.path),
+                wikilink=note_result.wikilink,
+                path=str(note_result.path),
                 transcript_id=entry.transcript_id,
             )
         except Exception:  # noqa: BLE001 — drain emit must never abort a successful append
@@ -699,7 +697,7 @@ def _process_chunk(
 
         if scope_redirected_from is not None and logger is not None:
             logger.emit(
-                "scope-redirected-stub",
+                "scope-redirected-note",
                 transcript_id=entry.transcript_id,
                 from_scope=scope_redirected_from,
                 to_scope=attached.scope,
