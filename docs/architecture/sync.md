@@ -36,8 +36,7 @@ produces — without producing temp artifacts or losing content.
 
 | Trigger | Where | What |
 |---|---|---|
-| **Curator A post-commit** | `lib/lore_curator/session_curator.py:_maybe_auto_commit` (existing) | After auto-commit of a freshly filed session note. |
-| **Curator B post-write** | `lib/lore_curator/daily_curator.py` | After surfaces are filed. |
+| **Curator A post-commit** | `lib/lore_curator/session_curator.py:_maybe_auto_commit` (existing) | After auto-commit of a freshly filed session note or appended chapter. |
 | LLM-merge follow-up | `lib/lore_core/git_sync.py:auto_push` | When push fails non-FF, run LLM merge, re-push. |
 
 `auto_push` is `auto_pull` + `git push`, with conflict-resolution baked in.
@@ -69,36 +68,33 @@ tree, network failure), and Host B writes its own day-note that later
 collides with Host A's on push, the LLM-merge resolver kicks in. The
 two notes get merged into one canonical body. No `.host-A.md` siblings.
 
-### 2. Surfaces — LLM-merge on push conflict
+### 2. Manually-authored notes — LLM-merge on push conflict
 
-Surfaces (`<wiki>/<surface_dir>/<slug>.md` — concepts, decisions,
-results, … as defined by each wiki's `SURFACES.md`) are the most
-likely conflict point: Curator B on Host A and Host B both produce
-`concepts/foo.md` independently, abstracting overlapping work.
-
-Resolution at push time:
+Notes in a wiki's typed subdirectories (`concepts/`, `decisions/`,
+`projects/`, …) are written directly — by hand or via `/lore:inbox` —
+there is no automatic abstraction pass that populates them, so this
+conflict class is rarer than session-note conflicts in practice. The
+classifier and merge path still apply to whatever two hosts
+independently write there:
 
 1. `git fetch origin`
 2. `git merge origin/<branch> --no-commit --no-ff`
 3. Enumerate conflicted paths: `git diff --name-only --diff-filter=U`
-4. Classify each path. For surfaces:
+4. Classify each path. For a typed-subdirectory note:
    - Read OURS (HEAD), THEIRS (origin), BASE (merge-base)
    - LLM call (middle tier, ~$0.001) with structured prompt: "merge
-     these two versions of `<surface>`. Preserve all distinct facts,
-     deduplicate restated points, keep wikilinks from both sides.
-     Validate the result still satisfies the `<surface_type>` schema
-     in SURFACES.md."
+     these two versions of `<note>`. Preserve all distinct facts,
+     deduplicate restated points, keep wikilinks from both sides."
    - Write merged result, `git add <path>`
 5. If all conflicts resolved: `git commit -m "merge(auto-llm): N
-   surface(s)"`, `git push`
+   note(s)"`, `git push`
 6. If any unresolved: `git merge --abort`, log via `lore status`,
    surface a `lore curator merge --resolve` action to the user.
 
-**Why LLM and not Curator C's defrag?** Curator C runs on cadence and
-introduces a *temporal* gap where the wiki is in an "I have two notes
-about the same thing" state visible to MCP search. LLM-merge at push
-time is synchronous: by the time Host B's push completes, the wiki
-has one canonical surface. No temp artifacts. No drift window.
+LLM-merge at push time is synchronous: by the time Host B's push
+completes, the wiki has one canonical note. No temp artifacts, no
+drift window where MCP search would see two notes about the same
+thing.
 
 ### 3. Regenerable artifacts — pick either side, lint to truth
 
@@ -111,7 +107,7 @@ on either host's next regen.
 ### 4. Unknown — bail to user
 
 Anything else (CLAUDE.md root files, hand-edited markdown outside
-sessions/surfaces) → `git merge --abort`, log via `lore status` with
+sessions/typed-notes) → `git merge --abort`, log via `lore status` with
 the path list and a `lore curator merge --resolve <path>` hint. Never
 silently overwrite hand-edited content.
 
@@ -132,9 +128,10 @@ regresses to "post-pull, MCP search may be stale for up to 5s." This
 is what 0.10.x ships today, so the optional-dep fallback is not a
 regression.
 
-**Self-edit handling:** Curator A/B/C writes notes — the watcher
-trips on those too. That's fine: the dirty flag just says "next
-query may need fresh data." The throttle prevents a reindex storm.
+**Self-edit handling:** the curator's own writes (session notes,
+chapters, hygiene-pass frontmatter edits) trip the watcher too. That's
+fine: the dirty flag just says "next query may need fresh data." The
+throttle prevents a reindex storm.
 
 ### Future direction (not for 0.11.0)
 
@@ -168,7 +165,7 @@ Per-wiki, in `<wiki>/.lore-wiki.yml`:
 
 ```yaml
 git:
-  auto_commit: true     # Curator A/B commit their writes
+  auto_commit: true     # the curator commits its own writes
   auto_push: true       # push after each commit
   auto_pull: true       # fetch + ff at SessionStart
 ```
@@ -191,7 +188,7 @@ because it's read-only on a clean tree.
 | Clean tree, fast-forwardable | Fetch + ff | `lore status` (silent unless new commits pulled) |
 | Clean tree, diverged (we have local commits, remote has different commits) | Skip pull, surface to user | `lore status` `· wiki diverged — git pull manually` |
 | Push: remote ahead, FF possible | Fetch + ff + push | (silent) |
-| Push: surface conflict | LLM-merge → push | `lore status` shows merge count |
+| Push: typed-note conflict | LLM-merge → push | `lore status` shows merge count |
 | Push: unresolvable conflict | abort merge, surface to user | `lore status` `· merge needed: <paths>` |
 | `watchdog` not installed | Reindex throttle = 5s natural decay | (silent — same as 0.10.x) |
 
@@ -202,7 +199,7 @@ because it's read-only on a clean tree.
 - Bare-repo fixtures for two hosts (`tmp_path/host_a`, `tmp_path/host_b`,
   shared `tmp_path/origin`)
 - `auto_pull`: clean tree → ff; dirty tree → skip + log; diverged → skip + status flag
-- `auto_push`: surface-conflict → LLM-stub merge → assert merged file present, no
+- `auto_push`: typed-note conflict → LLM-stub merge → assert merged file present, no
   `.host-*` siblings, exit code 0
 - `auto_push`: session-conflict → LLM-stub merge → assert one canonical file
 - `auto_push`: regenerable conflict (`_catalog.json`) → ours wins → lint reconciles

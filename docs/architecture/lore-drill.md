@@ -4,8 +4,9 @@
 MCP tool and the `lore drill` CLI presenter.
 
 This document settles **P3.2** from the 2026-04-27 multi-agent review.
-`lore drill` does not exist yet — this is the design before the first
-implementation commit.
+`lore drill` is implemented (`lore_mcp/server.py:handle_drill`); this
+is the design it was built against — check the handler for the current
+behavior of any detail this doc doesn't cover.
 
 ## Purpose
 
