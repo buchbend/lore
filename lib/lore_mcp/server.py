@@ -21,6 +21,8 @@ Exposed tools:
                               out to `lore inbox archive`
     lore_surface_context    — gather context pack for surface-authoring skills
     lore_surface_validate   — validate draft-spec + preview diff (no writes)
+    lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
+    lore_repo_docs_fetch    — fetch one ADR or PRD's content (pull-only)
 
 Start:
     lore mcp
@@ -1152,6 +1154,73 @@ def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
     return _mcp_error("note_not_found", f"note not found: {note}")
 
 
+def _resolve_repo_root(repo_path: str | None) -> Path | None:
+    """Resolve the connected repo's root for the repo-docs pull tools.
+
+    Explicit `repo_path` wins (also how tests avoid needing a real git
+    repo). Otherwise auto-detect the git repo containing the server's
+    cwd — an MCP client normally launches this server from within the
+    project it's connected to.
+    """
+    if repo_path:
+        p = Path(repo_path).expanduser().resolve()
+        return p if p.is_dir() else None
+    from lore_core.git import git_repo_root
+
+    return git_repo_root(Path.cwd())
+
+
+def handle_repo_docs_list(kind: str, repo_path: str | None = None) -> dict[str, Any]:
+    """List ADR/PRD entries from a connected repo's conventional home.
+
+    Pull-only: fires on explicit MCP call, never at SessionStart. A
+    repo without `docs/adr` or `docs/prd` is not an error — `exists`
+    is False and `entries` is empty.
+    """
+    from lore_core.repo_docs import HOMES, list_docs
+
+    if kind not in HOMES:
+        return _mcp_error("invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}")
+    repo_root = _resolve_repo_root(repo_path)
+    if repo_root is None:
+        return _mcp_error(
+            "repo_not_found",
+            "could not resolve the connected repo",
+            next_="pass `repo_path` explicitly, or run the MCP server from within a git repo",
+        )
+    return {
+        "schema": "lore.repo_docs.list/1",
+        "kind": kind,
+        "repo_root": str(repo_root),
+        "home": HOMES[kind],
+        "exists": (repo_root / HOMES[kind]).is_dir(),
+        "entries": list_docs(repo_root, kind),
+    }
+
+
+def handle_repo_docs_fetch(kind: str, path: str, repo_path: str | None = None) -> dict[str, Any]:
+    """Fetch one ADR/PRD's content from a connected repo.
+
+    `path` accepts a bare slug, a filename, or the full repo-relative
+    path. Pull-only, same contract as :func:`handle_repo_docs_list`.
+    """
+    from lore_core.repo_docs import HOMES, read_doc
+
+    if kind not in HOMES:
+        return _mcp_error("invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}")
+    repo_root = _resolve_repo_root(repo_path)
+    if repo_root is None:
+        return _mcp_error(
+            "repo_not_found",
+            "could not resolve the connected repo",
+            next_="pass `repo_path` explicitly, or run the MCP server from within a git repo",
+        )
+    doc = read_doc(repo_root, kind, path)
+    if doc is None:
+        return _mcp_error("doc_not_found", f"{kind} not found: {path}")
+    return {"schema": "lore.repo_docs.fetch/1", "kind": kind, **doc}
+
+
 # ---------------------------------------------------------------------------
 # MCP server wrapper
 # ---------------------------------------------------------------------------
@@ -1505,6 +1574,54 @@ def _tool_schema() -> list[dict]:
                 "required": ["wiki", "note", "verdict"],
             },
         },
+        {
+            "name": "lore_repo_docs_list",
+            "description": (
+                "List a connected repo's ADRs or PRDs from their conventional, "
+                "hard-coded homes (`docs/adr/`, `docs/prd/`; homes are not "
+                "configurable). Includes index files (README.md/index.md). "
+                "Pull-only: fires on explicit call, never injected ambiently. "
+                "A repo without the home directory is not an error — returns "
+                "`exists: false` and an empty `entries` list."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["adr", "prd"]},
+                    "repo_path": {
+                        "type": "string",
+                        "description": (
+                            "Override the repo root. Defaults to the git repo "
+                            "containing the server's working directory."
+                        ),
+                    },
+                },
+                "required": ["kind"],
+            },
+        },
+        {
+            "name": "lore_repo_docs_fetch",
+            "description": (
+                "Fetch one ADR or PRD's full content from a connected repo. "
+                "`path` accepts a bare slug (`0001-x`), a filename (`0001-x.md`), "
+                "or the full repo-relative path (`docs/adr/0001-x.md`). Pull-only."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["adr", "prd"]},
+                    "path": {"type": "string"},
+                    "repo_path": {
+                        "type": "string",
+                        "description": (
+                            "Override the repo root. Defaults to the git repo "
+                            "containing the server's working directory."
+                        ),
+                    },
+                },
+                "required": ["kind", "path"],
+            },
+        },
     ]
 
 
@@ -1552,6 +1669,10 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_verdict(**args)
         case "lore_pending_verdicts":
             return handle_pending_verdicts(**args)
+        case "lore_repo_docs_list":
+            return handle_repo_docs_list(**args)
+        case "lore_repo_docs_fetch":
+            return handle_repo_docs_fetch(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 
