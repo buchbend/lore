@@ -49,6 +49,7 @@ __all__ = [
     "close_note",
     "is_closed",
     "read_note",
+    "render_chapter_body",
 ]
 
 
@@ -156,11 +157,20 @@ def _chapter_delimiter(n: int, from_turn: int, to_turn: int, *, marker: str | No
     return f"<!-- lore:chapter {n} {span} -->"
 
 
+def render_chapter_body(chapter: Chapter) -> str:
+    """Render a chapter's topic blocks to markdown (no chapter delimiter).
+
+    This is the exact text that lands in the note body, so upstream
+    (the publish gate) can scan what will actually be published — the
+    gate must see the same bytes the reader will.
+    """
+    return "\n\n".join(_render_block(block) for block in chapter.blocks)
+
+
 def _render_topic_chapter(n: int, chapter: Chapter, from_turn: int, to_turn: int) -> str:
-    lines = [_chapter_delimiter(n, from_turn, to_turn)]
-    for block in chapter.blocks:
-        lines.append(_render_block(block))
-    return "\n\n".join(lines)
+    delimiter = _chapter_delimiter(n, from_turn, to_turn)
+    body = render_chapter_body(chapter)
+    return f"{delimiter}\n\n{body}" if body else delimiter
 
 
 def _render_marker_chapter(n: int, kind: str, reason: str, from_turn: int, to_turn: int) -> str:

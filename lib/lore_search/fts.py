@@ -25,7 +25,6 @@ from lore_core.lint import (
     discover_notes,
     discover_wikis,
 )
-from lore_core.regions import split_regions
 from lore_core.schema import parse_frontmatter
 
 
@@ -319,7 +318,9 @@ class FtsBackend:
                 ),
             )
             rowid = cur.lastrowid
-        body_reload_safe, body_human_only = split_regions(rec.body)
+        # Notes carry no human-only region since the regions module was
+        # removed; the whole body indexes as reload-safe.
+        body_reload_safe, body_human_only = rec.body, None
         conn.execute(
             "INSERT INTO notes_fts (rowid, title, description, tags, "
             "body_reload_safe, body_human_only) "

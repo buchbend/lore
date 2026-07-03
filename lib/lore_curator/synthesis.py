@@ -63,7 +63,6 @@ import yaml
 
 from lore_adapters import Adapter, get_adapter
 from lore_core.io import atomic_write_text
-from lore_core.regions import render_regions
 from lore_core.schema import parse_frontmatter, strip_frontmatter
 from lore_core.session_writer import (
     BodySections,
@@ -1041,12 +1040,6 @@ def _phase2_apply(
         discussion=[],
         narrative=narrative_text,
     ))
-    # Two-region wiring (PRD #92, issue #94): the human-only region is
-    # unused under P2 — the narrative *is* the canonical content and
-    # belongs in the reload-safe region. ``render_regions(body, None)``
-    # is a no-op marker-omitting passthrough, kept for shape parity
-    # with legacy notes that still carry a human-only block.
-    body = render_regions(body, None)
     new_text = _render_markdown(fm, body, wiki_root=wiki_root)
     atomic_write_text(stub_path, new_text)
 

@@ -48,7 +48,6 @@ from lore_core.freshness import (
     signal_to_dict,
 )
 from lore_core.freshness_filter import apply_search_filter
-from lore_core.regions import redact_human_only
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
@@ -351,12 +350,10 @@ def handle_read(
         return _mcp_error("path_not_found", f"not found: {path}")
     text = target.read_text(errors="replace")
 
-    # Two-region redaction (issue #93). The marker only ever appears in the
-    # body, never in YAML frontmatter, so applying redact_human_only to the
-    # full file text is safe and equivalent to body-only redaction. Old notes
-    # without a marker pass through unchanged → backwards compatible.
-    if not include_human:
-        text = redact_human_only(text)
+    # Notes carry no human-only region: they are machine-written and
+    # cleared by the publish gate. ``include_human`` is retained on the
+    # signature for callers that still pass it, but there is nothing to
+    # redact — the full body is returned.
 
     freshness = _freshness_block_for(
         wiki_path, path, orphan_set=load_orphan_set(wiki_path)
@@ -646,12 +643,6 @@ def handle_surface_context(wiki: str) -> dict[str, Any]:
         if start != -1:
             end = txt.find("\n## ", start + 1)
             claude_md_attach = txt[start:end] if end != -1 else txt[start:]
-        # Two-region retrieval filter (PRD #92): handle_surface_context
-        # is an LLM-facing surface, so strip any human-only region a
-        # CLAUDE.md happens to carry. Conventionally CLAUDE.md has no
-        # marker; the call is defensive and a no-op for marker-free
-        # files.
-        claude_md_attach = redact_human_only(claude_md_attach)
 
     return {
         "schema": "lore.surface.context/1",
