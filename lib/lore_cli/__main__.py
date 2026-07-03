@@ -82,6 +82,7 @@ def _build_app() -> typer.Typer:
         on_cmd,
         proc_cmd,
         project_cmd,
+        quarantine_cmd,
         registry_cmd,
         resume_cmd,
         runs_cmd,
@@ -141,6 +142,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(mcp_cmd.app, name="mcp", rich_help_panel=_ADV)
     app.add_typer(migrate_cmd.app, name="migrate", rich_help_panel=_ADV)
     app.add_typer(proc_cmd.app, name="proc", rich_help_panel=_ADV)
+    app.add_typer(quarantine_cmd.app, name="quarantine", rich_help_panel=_ADV)
     app.add_typer(registry_cmd.app, name="registry", rich_help_panel=_ADV)
     app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
     app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
