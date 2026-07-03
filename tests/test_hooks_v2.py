@@ -302,9 +302,7 @@ def test_session_start_never_shows_issue_or_pr_counts(fake_vault, tmp_path, monk
     from lore_core import gh as gh_mod
 
     calls: list[tuple] = []
-    monkeypatch.setattr(
-        gh_mod, "run_gh", lambda *a, **kw: calls.append((a, kw)) or []
-    )
+    monkeypatch.setattr(gh_mod, "run_gh", lambda *a, **kw: calls.append((a, kw)) or [])
 
     out = hooks._session_start(str(repo_dir))
     assert ": active" in out
