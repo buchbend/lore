@@ -72,8 +72,8 @@ CATEGORY_PHRASING = "phrasing"
 CATEGORY_PII = "pii"
 CATEGORY_ERROR = "gate-error"
 
-# Retry-prompt feedback per category. The retry loop (#125) injects the
-# string verbatim into its re-compose prompt, so it describes the class of
+# Retry-prompt feedback per category. The retry loop injects this string
+# verbatim into the next compose prompt, so it describes the class of
 # problem and how to avoid it — and NEVER echoes the matched value, which
 # would re-plant the secret straight back into the next prompt.
 _FEEDBACK: dict[str, str] = {

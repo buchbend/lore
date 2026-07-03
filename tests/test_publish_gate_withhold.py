@@ -1,10 +1,10 @@
 """End-to-end withhold side-effects for the publish gate.
 
 On a terminal WITHHELD verdict the gate owns two side-effects, testable
-without the real compose loop (#125): a deterministic withheld-marker
-chapter is appended to the note, and the composed text is stored in the
-private quarantine sidecar. The shared note never carries the unsafe
-content — only a safe marker and the turn range.
+without the real compose loop: a deterministic withheld-marker chapter is
+appended to the note, and the composed text is stored in the private
+quarantine sidecar. The shared note never carries the unsafe content —
+only a safe marker and the turn range.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ class TestPlantedSecretEndToEnd:
 class TestPhrasingGiveUpPath:
     def test_phrasing_hit_produces_withheld_with_feedback(self, tmp_path: Path):
         # First compose attempt: a lint hit yields WITHHELD-with-feedback,
-        # which #125 injects into the retry prompt.
+        # which the retry loop injects into the next compose prompt.
         result = pg.evaluate("**Fix the flush race**\n\ndetail. @1")
         assert result.passed is False
         assert result.category == pg.CATEGORY_PHRASING
@@ -125,7 +125,7 @@ class TestPhrasingGiveUpPath:
 class TestGateIsTheOnlyDoor:
     def test_passing_chapter_is_not_quarantined(self, tmp_path: Path):
         # A clean chapter produces no quarantine side-effect; the caller
-        # appends it normally (that path is #125/#127, not the gate).
+        # appends it normally (the compose/integration layer, not the gate).
         result = pg.evaluate("**Traced the flush race**\n\nprose. @1")
         assert result.passed is True
         assert quarantine.list_entries(lore_root=tmp_path) == []
