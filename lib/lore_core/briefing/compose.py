@@ -64,6 +64,10 @@ _PROMPT_HEADER = (
 
 _MAX_SESSIONS_IN_PROMPT = 60
 _SUMMARY_CAP = 600
+# Full note bodies are the primary input now (no more pre-extracted
+# "what we worked on" / "decisions made" sections to lean on), so they get
+# a generous cap of their own rather than the short one-liner cap above.
+_BODY_CAP = 2000
 
 
 def _shorten(text: str, cap: int) -> str:
@@ -71,6 +75,10 @@ def _shorten(text: str, cap: int) -> str:
     if len(text) <= cap:
         return text
     return text[:cap].rstrip() + "…"
+
+
+def _indent(text: str, prefix: str = "  ") -> str:
+    return "\n".join(prefix + line if line else line for line in text.splitlines())
 
 
 def _build_prompt(gather_result: dict[str, Any]) -> str:
@@ -98,16 +106,13 @@ def _build_prompt(gather_result: dict[str, Any]) -> str:
         slug = s.get("slug", "")
         fm = s.get("frontmatter") or {}
         summary = fm.get("summary") or fm.get("description") or ""
-        sections = s.get("sections") or {}
-        worked = sections.get("what we worked on", "")
-        decisions = sections.get("decisions made", "")
+        body = s.get("body") or ""
         lines.append(f"- {d} · {slug}")
         if summary:
             lines.append(f"  summary: {_shorten(str(summary), _SUMMARY_CAP)}")
-        if worked:
-            lines.append(f"  what: {_shorten(worked, _SUMMARY_CAP)}")
-        if decisions and decisions.strip().lower() not in {"_none_", "none", ""}:
-            lines.append(f"  decisions: {_shorten(decisions, _SUMMARY_CAP)}")
+        if body:
+            lines.append("  body:")
+            lines.append(_indent(_shorten(body, _BODY_CAP)))
     if len(sessions) > _MAX_SESSIONS_IN_PROMPT:
         lines.append(
             f"(+{len(sessions) - _MAX_SESSIONS_IN_PROMPT} older sessions omitted)"

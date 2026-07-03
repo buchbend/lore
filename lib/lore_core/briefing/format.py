@@ -18,9 +18,13 @@ Shape:
 
 Per-session ``<summary>`` resolution order:
     1. ``frontmatter.summary`` (curator-written)
-    2. first non-empty bullet of the "what we worked on" section
-    3. ``frontmatter.description``
-    4. ``""`` (slug alone)
+    2. ``frontmatter.description``
+    3. ``""`` (slug alone)
+
+The new note shape has no H2 structure to mine a fallback bullet from —
+a session's full body (disclaimer + chapters of topic blocks) is
+available via ``session["body"]`` for the LLM composer, but this
+deterministic fallback formatter stays frontmatter-only.
 """
 
 from __future__ import annotations
@@ -28,32 +32,12 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-_BULLET_PREFIXES = ("- ", "* ", "+ ")
-
-
-def _first_bullet(text: str) -> str:
-    """Return the first non-empty bullet body from ``text``, or ""."""
-    for raw in text.splitlines():
-        line = raw.strip()
-        for prefix in _BULLET_PREFIXES:
-            if line.startswith(prefix):
-                body = line[len(prefix) :].strip()
-                if body:
-                    return body
-                break
-    return ""
-
 
 def _session_summary(session: dict[str, Any]) -> str:
     fm = session.get("frontmatter") or {}
     summary = fm.get("summary")
     if isinstance(summary, str) and summary.strip():
         return summary.strip()
-    sections = session.get("sections") or {}
-    worked_on = sections.get("what we worked on", "")
-    bullet = _first_bullet(worked_on)
-    if bullet:
-        return bullet
     description = fm.get("description")
     if isinstance(description, str) and description.strip():
         return description.strip()
