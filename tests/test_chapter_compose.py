@@ -87,7 +87,7 @@ def _valid_payload() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Gate seam (the interface #126 implements)
+# Gate seam (the interface the publish gate implements)
 # ---------------------------------------------------------------------------
 
 
