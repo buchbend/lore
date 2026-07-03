@@ -51,8 +51,8 @@ SKIP_FILES = {
     "_concepts.txt",
     "_decisions.txt",
     "_threads.txt",
-    # Legacy filenames — kept in skip-list so daily_curator and lint
-    # still ignore them on vaults that haven't been re-linted yet.
+    # Legacy filenames — kept in skip-list so lint still ignores them
+    # on vaults that haven't been re-linted yet.
     "_recent.md",
     "_index.md",
     "llms.txt",
@@ -964,14 +964,14 @@ def run_lint(
             # walking the whole wiki on every retrieval. Stored as
             # wiki-relative paths for portability.
             try:
-                from lore_curator.c_orphan_links import find_orphan_links
+                from lore_core.wikilinks import find_orphan_links
 
                 orphan_paths = sorted({
                     str(p.relative_to(wiki_path))
                     for p, _slug, _off in find_orphan_links(wiki_path)
                 })
             except Exception:
-                # Defensive: a broken curator import must not break lint.
+                # Defensive: an orphan-scan failure must not break lint.
                 orphan_paths = []
             catalog["orphan_set"] = orphan_paths
 
@@ -989,9 +989,8 @@ def run_lint(
             # by ``_index.txt`` — remove if present so vaults self-heal
             # on the next lint after upgrade.
             #
-            # Also clean legacy ``threads.md`` (replaced by ``_threads.txt``,
-            # written by Curator B at daily_curator.py) and
-            # ``sessions/_recent.md`` (replaced by the ``.txt`` sibling).
+            # Also clean legacy ``threads.md`` (replaced by ``_threads.txt``)
+            # and ``sessions/_recent.md`` (replaced by the ``.txt`` sibling).
             # These ``.md`` collections used to be wikilink-graph nodes;
             # the ``.txt`` version is not.
             for legacy in ("_index.md", "llms.txt", "threads.md"):

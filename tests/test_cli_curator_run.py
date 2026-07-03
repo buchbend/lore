@@ -122,36 +122,12 @@ def test_curator_run_missing_anthropic_key_warns(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Kill switch: `curator run` no longer accepts --abstract (Curator B)
+# Kill switch: `curator run` no longer accepts --abstract (Curator B, retired)
 # ---------------------------------------------------------------------------
 
 
-def test_curator_run_default_does_not_invoke_curator_b(tmp_path, monkeypatch):
-    """`curator run` (no flags) never touches Curator B."""
-    lore_root = tmp_path / "lore_root"
-    lore_root.mkdir()
-    monkeypatch.setenv("LORE_ROOT", str(lore_root))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    calls_a = []
-    calls_b = []
-    monkeypatch.setattr(
-        "lore_curator.session_curator.run_curator_a",
-        _make_fake_run(calls_a),
-    )
-    monkeypatch.setattr(
-        "lore_curator.daily_curator.run_curator_b",
-        lambda **kwargs: calls_b.append(kwargs),
-    )
-
-    result = runner.invoke(app, ["curator", "run"])
-    assert result.exit_code == 0, result.output
-    assert len(calls_a) == 1
-    assert len(calls_b) == 0
-
-
 def test_curator_run_rejects_abstract_flag(tmp_path, monkeypatch):
-    """`--abstract` is a severed entry point — the CLI no longer accepts it."""
+    """`--abstract` is a retired entry point — the CLI no longer accepts it."""
     lore_root = tmp_path / "lore_root"
     lore_root.mkdir()
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
