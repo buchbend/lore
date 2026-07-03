@@ -89,15 +89,10 @@ class PassResult:
 
 @dataclass(frozen=True)
 class HygienePass:
-    """One curator-C hygiene pass.
-
-    ``only_when_defrag`` gates passes that are too expensive or too
-    proposal-flavoured to run on every (hygiene-only) curator-C invocation.
-    """
+    """One curator hygiene pass — a named, frontmatter-only wiki walk."""
 
     name: str
     run: Callable[[Path, PassContext], PassResult]
-    only_when_defrag: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -353,59 +348,6 @@ def _pass_implements(wiki_path: Path) -> list[CuratorAction]:
     return actions
 
 
-def _pass_draft_promotion(
-    wiki_path: Path, today: date, threshold_days: int = 14
-) -> list[CuratorAction]:
-    """Time-based proposal: mark long-standing drafts with
-    ``promotion_candidate: true``. NEVER flips ``draft: false``.
-
-    A note is a candidate when:
-      - ``draft: true`` AND
-      - ``created`` date is older than ``threshold_days`` days ago AND
-      - ``promotion_candidate`` is not already set
-    """
-    from datetime import date as _date_t
-    from datetime import timedelta
-
-    actions: list[CuratorAction] = []
-    cutoff = today - timedelta(days=threshold_days)
-
-    for fpath in discover_notes(wiki_path):
-        try:
-            text = fpath.read_text(errors="replace")
-        except OSError:
-            continue
-        fm = parse_frontmatter(text)
-        if fm is None:
-            continue
-        if fm.get("draft") is not True:
-            continue
-        if fm.get("promotion_candidate") is True:
-            continue  # idempotent
-        created = fm.get("created")
-        if isinstance(created, str):
-            try:
-                created = _date_t.fromisoformat(created)
-            except ValueError:
-                continue
-        if not isinstance(created, _date_t):
-            continue
-        # Strictly older than cutoff — boundary exclusive.
-        if not (created < cutoff):
-            continue
-
-        # Patch: append promotion_candidate: true at end of frontmatter.
-        actions.append(
-            CuratorAction(
-                path=fpath,
-                kind="promote-draft",
-                reason=f"draft created {(today - created).days}d ago ({created.isoformat()})",
-                patch={"promotion_candidate": True},
-            )
-        )
-    return actions
-
-
 def _pass_team_mode_hint(wiki_path: Path) -> list[str]:
     """Check whether the wiki has outgrown solo mode.
 
@@ -473,10 +415,6 @@ def _run_git_backfill(wiki_path: Path, ctx: PassContext) -> PassResult:
     return PassResult(actions=_pass_git_backfill(wiki_path))
 
 
-def _run_draft_promotion(wiki_path: Path, ctx: PassContext) -> PassResult:
-    return PassResult(actions=_pass_draft_promotion(wiki_path, ctx.today))
-
-
 def _run_team_mode_hint(wiki_path: Path, ctx: PassContext) -> PassResult:
     return PassResult(hints=_pass_team_mode_hint(wiki_path))
 
@@ -486,7 +424,6 @@ HYGIENE_PASSES: list[HygienePass] = [
     HygienePass("supersession", _run_supersession),
     HygienePass("implements", _run_implements),
     HygienePass("git_backfill", _run_git_backfill),
-    HygienePass("draft_promotion", _run_draft_promotion, only_when_defrag=True),
     HygienePass("team_mode_hint", _run_team_mode_hint),
 ]
 
@@ -528,10 +465,9 @@ def run_hygiene(
 ) -> list[CuratorReport]:
     """Run the deterministic hygiene passes over each wiki.
 
-    Passes are frontmatter-only and never touch note bodies. Passes marked
-    ``only_when_defrag`` are skipped — the weekly LLM defrag they gated was
-    retired. Writes ``_review.md`` per wiki. ``dry_run`` (the default)
-    writes nothing; ``--apply`` performs the mtime-guarded writes.
+    Passes are frontmatter-only and never touch note bodies. Writes
+    ``_review.md`` per wiki. ``dry_run`` (the default) writes nothing;
+    ``--apply`` performs the mtime-guarded writes.
     """
     import contextlib
     from datetime import UTC
@@ -579,8 +515,6 @@ def run_hygiene(
             report = CuratorReport(wiki=wiki_path.name)
             pass_ctx = PassContext(today=today)
             for pass_def in HYGIENE_PASSES:
-                if pass_def.only_when_defrag:
-                    continue
                 result = pass_def.run(wiki_path, pass_ctx)
                 report.actions.extend(result.actions)
                 report.hints.extend(result.hints)
