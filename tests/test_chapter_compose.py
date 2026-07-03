@@ -323,6 +323,18 @@ class _AlwaysWithholdGate:
         return GateResult.withheld(self._category, self._feedback)
 
 
+class _AlwaysSoftWithholdGate:
+    """Always returns a SOFT (phrasing) withhold — style, not safety."""
+
+    def __init__(self, feedback: str) -> None:
+        self._feedback = feedback
+        self.texts: list[str] = []
+
+    def evaluate(self, chapter_text: str) -> GateResult:
+        self.texts.append(chapter_text)
+        return GateResult.withheld("phrasing", self._feedback, soft=True)
+
+
 def test_gate_withhold_retries_with_feedback_then_passes():
     gate = _WithholdOnceGate("phrasing", "remove the imperative lead")
     msgs = _RecordingMessages([_valid_payload(), _valid_payload()])
@@ -367,6 +379,30 @@ def test_two_withholds_returns_withheld_outcome():
     # The withheld composed text is surfaced for quarantine downstream.
     assert "The composer sent the slice once." in result.withheld_text
     assert result.chapter is None
+
+
+def test_persistent_soft_phrasing_verdict_publishes_not_withholds():
+    # Phrasing is style, not safety: after retrying with the gate's feedback,
+    # a chapter whose voice is still imperfect is PUBLISHED, never lost.
+    gate = _AlwaysSoftWithholdGate("re-compose in past tense")
+    msgs = _RecordingMessages([_valid_payload(), _valid_payload()])
+    client = _FakeClient(msgs)
+
+    result = compose_chapter(
+        slice_text="[user@2] x\n[assistant@4] y",
+        slice_from_turn=2,
+        slice_to_turn=4,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+        gate=gate,
+    )
+    assert result.status is ComposeStatus.COMPOSED  # published, not withheld
+    assert result.attempts == CHAPTER_MAX_ATTEMPTS  # it did retry first
+    assert result.chapter is not None
+    # It genuinely tried to fix the voice: the retry prompt carried the feedback.
+    retry_prompt = _prompt_text(msgs.calls[1])
+    assert "re-compose in past tense" in retry_prompt
 
 
 def test_default_gate_is_passthrough_standalone():

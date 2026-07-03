@@ -8,6 +8,7 @@ lock: the loser touches nothing.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -98,11 +99,22 @@ def _lore_root(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _seed(lore_root: Path, turns: list[Turn], *, tid: str, owner: OwnerInfo) -> Buffer:
+def _today() -> str:
+    return datetime.now(UTC).date().isoformat()
+
+
+def _seed(
+    lore_root: Path,
+    turns: list[Turn],
+    *,
+    tid: str,
+    owner: OwnerInfo,
+    local_date: str | None = None,
+) -> Buffer:
     outcome = append_chunk(
         lore_root=lore_root,
         chunk_turns=turns,
-        local_date="2026-05-01",
+        local_date=local_date or _today(),
         transcript_id=tid,
         integration="fake",
         wiki="private",
@@ -165,6 +177,50 @@ def test_sweep_marks_and_closes_when_compose_fails(tmp_path):
     markers = [c for c in view.chapters if c.get("kind") == "marker"]
     assert len(markers) == 1 and markers[0]["marker"] == nd.MARKER_FAILED
     assert not buf.sidecar_path.exists()
+
+
+def test_sweep_stale_closes_old_dead_session_without_composing(tmp_path):
+    # A dead buffer older than the stale window is closed with a marker and
+    # NO LLM call, so a deep backlog can't stall startup. The client would
+    # compose visible content if consulted — it must not appear.
+    lore_root = _lore_root(tmp_path)
+    all_turns = _turns(0, 3)
+    old_date = (datetime.now(UTC).date() - timedelta(days=30)).isoformat()
+    buf = _seed(lore_root, all_turns, tid="stale1", owner=_dead_owner(), local_date=old_date)
+    client = _Client([{"blocks": [{"lead": "should not appear", "body": "x", "anchor": 1}]}])
+
+    report = sweep_dead_sessions(
+        lore_root,
+        llm_client=client,
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+    )
+    assert report.stale_closed == 1
+    assert report.swept == 0
+    note_path = next((tmp_path / "wiki" / "private" / "sessions").rglob("*.md"))
+    view = nd.read_note(note_path)
+    assert view.closed is True
+    # No composed topic chapter — a marker instead (the LLM was never called).
+    assert not any(c.get("kind") == "topic" for c in view.chapters)
+    assert not buf.sidecar_path.exists()  # archived to _done/
+
+
+def test_sweep_budget_defers_excess_recent_dead_sessions(tmp_path):
+    # More recent dead buffers than the compose budget: the sweep handles
+    # max_compose of them and leaves the rest for the next sweep.
+    lore_root = _lore_root(tmp_path)
+    all_turns = _turns(0, 2)
+    for i in range(3):
+        _seed(lore_root, all_turns, tid=f"recent{i}", owner=_dead_owner())
+    client = _Client([{"blocks": [{"lead": "Recorded it", "body": "prose.", "anchor": 1}]}] * 3)
+
+    report = sweep_dead_sessions(
+        lore_root,
+        llm_client=client,
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        max_compose=2,
+    )
+    assert report.swept == 2
+    assert report.deferred == 1
 
 
 def test_sweep_skips_uncertain_owner(tmp_path):

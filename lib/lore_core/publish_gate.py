@@ -135,6 +135,12 @@ class GateResult:
     passed: bool
     category: str = ""
     feedback: str = ""
+    # ``soft`` marks a *style* verdict (phrasing) that the composer should
+    # retry once but ultimately PUBLISH — style is never worth losing the
+    # chapter's content over. Hard verdicts (PII/secrets, scanner/detector
+    # error) stay withheld: those protect the shared vault. ``passed`` is
+    # unaffected; ``soft`` only steers the composer's terminal decision.
+    soft: bool = False
 
     @classmethod
     def ok(cls) -> GateResult:
@@ -142,17 +148,19 @@ class GateResult:
         return PASS
 
     @classmethod
-    def withheld(cls, category: str, feedback: str) -> GateResult:
+    def withheld(cls, category: str, feedback: str, *, soft: bool = False) -> GateResult:
         """A withheld verdict carrying its category and retry feedback."""
-        return cls(passed=False, category=category, feedback=feedback)
+        return cls(passed=False, category=category, feedback=feedback, soft=soft)
 
 
 # The singleton pass result — cheaper than allocating one per clean chapter.
 PASS = GateResult(passed=True)
 
 
-def _withheld(category: str) -> GateResult:
-    return GateResult(passed=False, category=category, feedback=_FEEDBACK[category])
+def _withheld(category: str, *, soft: bool = False) -> GateResult:
+    return GateResult(
+        passed=False, category=category, feedback=_FEEDBACK[category], soft=soft
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -436,7 +444,11 @@ def evaluate(chapter_text: str, *, detector: Detector | None = None) -> GateResu
             return _withheld(category)
 
         if phrasing_lint(chapter_text):
-            return _withheld(CATEGORY_PHRASING)
+            # Style, not safety: the composer retries with this feedback but
+            # publishes the chapter if the voice is still imperfect after the
+            # retry. Losing real content to a stray modal is worse than a note
+            # that reads slightly directive.
+            return _withheld(CATEGORY_PHRASING, soft=True)
 
         if detector is not None:
             try:

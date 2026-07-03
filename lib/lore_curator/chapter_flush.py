@@ -83,6 +83,13 @@ __all__ = [
 FLUSH_DEFAULT_CAP_TURNS = 120
 FLUSH_DEFAULT_CAP_CHARS = 240_000
 
+# Startup-sweep bounds. A dead buffer older than SWEEP_STALE_DAYS is closed
+# with a marker and no LLM call (its transcript is likely gone); at most
+# SWEEP_MAX_COMPOSE recent dead buffers are composed per sweep so a deep
+# backlog can never stall SessionStart.
+SWEEP_STALE_DAYS = 3
+SWEEP_MAX_COMPOSE = 8
+
 
 @dataclass
 class FlushOutcome:
@@ -667,6 +674,8 @@ class SweepReport:
     swept: int = 0
     alive_skipped: int = 0
     uncertain_skipped: int = 0
+    stale_closed: int = 0   # dead + too old → closed with a marker, no LLM call
+    deferred: int = 0       # recent dead buffers left for the next sweep (budget hit)
     contended: bool = False
     swept_stems: list[str] = field(default_factory=list)
 
@@ -679,13 +688,17 @@ def startup_sweep(
     logger: RunLogger | None = None,
     host: str | None = None,
     lock_timeout: float = 0.0,
+    stale_days: int = SWEEP_STALE_DAYS,
+    max_compose: int = SWEEP_MAX_COMPOSE,
 ) -> SweepReport:
     """Sweep dead-session buffers under the global singleton lock.
 
     lore is a singleton at startup: the sweep holds the global
     ``curator.lock`` so concurrent session starts race safely — the
     loser sees the lock contended and returns without touching anything
-    (``report.contended``). The winner closes every dead session's note.
+    (``report.contended``). The winner closes dead sessions' notes,
+    bounded so a deep backlog never stalls startup (see
+    :func:`sweep_dead_sessions`).
     """
     try:
         with curator_lock(lore_root, timeout=lock_timeout):
@@ -695,9 +708,27 @@ def startup_sweep(
                 adapter_lookup=adapter_lookup,
                 logger=logger,
                 host=host,
+                stale_days=stale_days,
+                max_compose=max_compose,
             )
     except LockContendedError:
         return SweepReport(contended=True)
+
+
+def _age_days(local_date_str: str) -> int | None:
+    """Whole days between ``local_date_str`` (YYYY-MM-DD) and today (UTC).
+
+    Returns ``None`` when the date is missing or unparseable, which the
+    caller treats as "recent" (compose) rather than stale — better to
+    spend one compose than to silently drop a session on a bad date.
+    """
+    if not local_date_str:
+        return None
+    try:
+        d = datetime.strptime(local_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    return (datetime.now(UTC).date() - d).days
 
 
 def sweep_dead_sessions(
@@ -707,19 +738,31 @@ def sweep_dead_sessions(
     adapter_lookup=None,
     logger: RunLogger | None = None,
     host: str | None = None,
+    stale_days: int = SWEEP_STALE_DAYS,
+    max_compose: int = SWEEP_MAX_COMPOSE,
 ) -> SweepReport:
-    """Close the note of every buffer whose owner is provably dead.
+    """Close the notes of dead-owner buffers, bounded so startup never stalls.
 
-    Each dead session gets one compose attempt through the normal gate;
-    on success its chapter is appended, on a withhold a marker +
-    quarantine entry, on failure a failed marker — then the note is
-    closed and the buffer archived, unconditionally. Live owners are left
-    alone; uncertain liveness (no ``/proc`` / macOS / network fs) is left
-    to the reaper's staleness path rather than swept here.
+    A naive "compose every dead buffer" sweep chokes on a deep backlog —
+    each compose is an LLM call, so months of abandoned buffers can hang
+    SessionStart for minutes. Instead:
+
+    * dead buffers are handled **newest-first**, so a live session's own
+      recent work drains before the per-run budget is spent;
+    * a dead buffer **older than ``stale_days``** is closed with a marker
+      and **no LLM call** — its transcript is likely gone and a stale
+      compose is wasteful; this clears the backlog cheaply;
+    * at most ``max_compose`` recent dead buffers are composed per sweep;
+      the rest are left for the next sweep (they drain over successive
+      starts) so one startup is always bounded.
+
+    Live owners are left alone; uncertain liveness (no ``/proc`` / macOS /
+    network fs) is left to the reaper's staleness path rather than swept.
     """
     from lore_curator.reaper import is_owner_alive
 
     report = SweepReport()
+    dead: list[tuple[str, Any, Any]] = []
     for buf in iter_all(lore_root):
         sidecar = buf.read_sidecar()
         if sidecar is None or sidecar.state == "closed":
@@ -732,8 +775,39 @@ def sweep_dead_sessions(
         if verdict is None:
             report.uncertain_skipped += 1
             continue
-        # verdict is False — the owner is gone; close this session's note.
+        dead.append((sidecar.local_date or "", buf, sidecar))
+
+    # Newest local_date first; recent sessions win the compose budget.
+    dead.sort(key=lambda t: t[0], reverse=True)
+
+    composed = 0
+    for local_date_str, buf, sidecar in dead:
         wiki_dir = lore_root / "wiki" / sidecar.wiki
+        age = _age_days(local_date_str)
+        if age is not None and age > stale_days:
+            # Too old to compose: close with a marker, no model call.
+            synth_and_close(
+                buf.sidecar_path,
+                lore_root=lore_root,
+                wiki_root=wiki_dir,
+                llm_client=None,
+                model=None,
+                adapter_lookup=adapter_lookup,
+                logger=logger,
+            )
+            report.stale_closed += 1
+            report.swept_stems.append(buf.stem)
+            if logger is not None:
+                logger.emit(
+                    "sweep-stale-closed",
+                    buffer_stem=buf.stem,
+                    transcript_id=sidecar.transcript_id,
+                    age_days=age,
+                )
+            continue
+        if composed >= max_compose:
+            report.deferred += 1
+            continue
         model = _resolve_model(wiki_dir)
         synth_and_close(
             buf.sidecar_path,
@@ -744,6 +818,7 @@ def sweep_dead_sessions(
             adapter_lookup=adapter_lookup,
             logger=logger,
         )
+        composed += 1
         report.swept += 1
         report.swept_stems.append(buf.stem)
         if logger is not None:

@@ -187,6 +187,7 @@ def compose_chapter(
     retry_feedback = ""
     last_withheld: GateResult | None = None
     last_withheld_text = ""
+    last_chapter = None
     attempts = 0
 
     while attempts < CHAPTER_MAX_ATTEMPTS:
@@ -227,6 +228,7 @@ def compose_chapter(
             return ComposeResult(status=ComposeStatus.COMPOSED, chapter=chapter, attempts=attempts)
         last_withheld = verdict
         last_withheld_text = chapter_text
+        last_chapter = chapter
         retry_feedback = verdict.feedback
         if logger is not None:
             logger.emit(
@@ -237,6 +239,20 @@ def compose_chapter(
             )
 
     if last_withheld is not None:
+        if last_withheld.soft and last_chapter is not None:
+            # A style-only (phrasing) verdict survived the retry: publish the
+            # chapter rather than lose its content. Only hard verdicts
+            # (PII/secrets, gate error) reach the withheld/quarantine path.
+            if logger is not None:
+                logger.emit(
+                    "chapter-soft-published",
+                    call="publish-gate",
+                    transcript_id=transcript_id,
+                    category=last_withheld.category,
+                )
+            return ComposeResult(
+                status=ComposeStatus.COMPOSED, chapter=last_chapter, attempts=attempts
+            )
         return ComposeResult(
             status=ComposeStatus.WITHHELD,
             attempts=attempts,
