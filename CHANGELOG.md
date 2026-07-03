@@ -10,6 +10,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-07-03
+
+### Removed
+- Curator B (daily) and Curator C (defrag + its passes), the surface store/filer/CLI/MCP tools, the two-region renderer, and Part-N note splitting. Vault-lint, git-sync, scopes, and schema were decoupled from them.
+
+### Changed
+- Session capture is rebuilt around **lab-notebook notes**: one append-only note per session — chronological chapters of bold-lead topic blocks, one `@turn` anchor per block, a fixed genre disclaimer, never authoritative. Each chapter is composed in a single LLM call (the outline→compose two-call pipeline is gone).
+- Briefings hand full note bodies to the composer.
+- The SessionStart banner is trimmed to a minimal ambient signal (no issue/PR counts, one directive).
+- `lore curator` keeps only its deterministic hygiene passes (supersession, implements-propagation, git-backfill, positive-evidence staleness).
+
+### Added
+- A blocking publish gate (deterministic PII/secret scanners + phrasing lint + optional fuzzy-PII detector) with a private quarantine sidecar and a `lore quarantine` review CLI; no chapter reaches a note without passing it.
+- Failure semantics: silent mid-session defer, a 2x-cap give-up marker, and a singleton startup sweep of dead sessions.
+- MCP pull tools that read a repo's `docs/adr/` and `docs/prd/` natively.
+
 ## [0.54.0] - 2026-05-18
 
 ### Changed — Curator A: two-call P2 (outline → narrative) session notes
