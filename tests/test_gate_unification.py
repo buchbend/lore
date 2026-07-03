@@ -1,7 +1,7 @@
 """One canonical GateResult; PublishGate satisfies the compose Gate seam.
 
-The chapter composer (#125) and the publish gate (#126) each grew their
-own ``GateResult`` with identical fields. The flush integration needs a
+The chapter composer and the publish gate each grew their own
+``GateResult`` with identical fields. The flush integration needs a
 single verdict type flowing composer→gate→append, and it needs the real
 :class:`~lore_core.publish_gate.PublishGate` to slot into the ``Gate``
 protocol the composer consumes. These tests pin both.
