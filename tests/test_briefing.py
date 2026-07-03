@@ -9,6 +9,7 @@ from textwrap import dedent
 import pytest
 from lore_cli import briefing_cmd
 from lore_core.briefing import gather, mark_incorporated, render_briefing
+from lore_core.note_document import Chapter, TopicBlock, append_chapter, close_note, create_note
 
 
 @pytest.fixture
@@ -17,31 +18,27 @@ def briefing_vault(tmp_path, monkeypatch):
     wiki = vault_root / "wiki" / "ccat"
     (wiki / "sessions").mkdir(parents=True)
 
-    def write_session(name: str, what: str, decisions: str = "") -> None:
-        body = dedent(
-            f"""\
-            ---
-            schema_version: 2
-            type: session
-            created: {name[:10]}
-            last_reviewed: {name[:10]}
-            description: "session {name}"
-            ---
-
-            ## What we worked on
-
-            {what}
-
-            ## Decisions made
-
-            {decisions or "_None_"}
-            """
+    def write_session(name: str, lead: str, decision: str = "") -> None:
+        """Write a real new-shape note: disclaimer + one chapter + one block."""
+        path = wiki / "sessions" / f"{name}.md"
+        create_note(
+            path,
+            title=name[11:],
+            description=f"session {name}",
+            scope="lore:test",
+            created=name[:10],
         )
-        (wiki / "sessions" / f"{name}.md").write_text(body)
+        append_chapter(
+            path,
+            Chapter(blocks=[TopicBlock(lead=lead, body=decision, anchor_turn=12)]),
+            slice_from_turn=1,
+            slice_to_turn=12,
+        )
+        close_note(path)
 
-    write_session("2026-04-15-fix-a", "- did the A thing")
-    write_session("2026-04-16-fix-b", "- did the B thing", "- chose option Z because Y")
-    write_session("2026-04-17-fix-c", "- did the C thing")
+    write_session("2026-04-15-fix-a", "Did the A thing.")
+    write_session("2026-04-16-fix-b", "Did the B thing.", "Chose option Z because Y.")
+    write_session("2026-04-17-fix-c", "Did the C thing.")
 
     monkeypatch.setenv("LORE_ROOT", str(vault_root))
     return vault_root, wiki
@@ -75,19 +72,22 @@ def test_gather_filters_by_since_date(briefing_vault):
     assert result["new_sessions"][0]["slug"] == "fix-c"
 
 
-def test_gather_extracts_sections(briefing_vault):
+def test_gather_includes_full_body(briefing_vault):
+    """Chapter-aware gather: the whole note body (disclaimer + chapters +
+    topic blocks) is handed over — there is no H2 structure to split on
+    in the new note shape, so full text is the only faithful extraction."""
     result = gather(wiki="ccat")
     s = next(s for s in result["new_sessions"] if s["slug"] == "fix-b")
-    assert "what we worked on" in s["sections"]
-    assert "B thing" in s["sections"]["what we worked on"]
-    assert "decisions made" in s["sections"]
-    assert "option Z" in s["sections"]["decisions made"]
+    assert "Lab-notebook session note" in s["body"]  # disclaimer travels too
+    assert "lore:chapter 1" in s["body"]
+    assert "Did the B thing." in s["body"]
+    assert "Chose option Z because Y." in s["body"]
 
 
-def test_gather_no_sections_when_disabled(briefing_vault):
+def test_gather_no_body_when_disabled(briefing_vault):
     result = gather(wiki="ccat", include_body_sections=False)
     s = result["new_sessions"][0]
-    assert "sections" not in s
+    assert "body" not in s
 
 
 def test_gather_unknown_wiki(briefing_vault):
@@ -178,7 +178,7 @@ def test_render_briefing_uses_summary_frontmatter():
                 "date": "2026-04-29",
                 "slug": "thing",
                 "frontmatter": {"summary": "shipped the thing"},
-                "sections": {},
+                "body": "**Shipped the thing.**\n\n@12",
             }
         ],
     }
@@ -189,27 +189,10 @@ def test_render_briefing_uses_summary_frontmatter():
     assert "- **thing** — shipped the thing" in out
 
 
-def test_render_briefing_falls_back_to_first_bullet():
-    result = {
-        "wiki": "ccat",
-        "today": "2026-04-29",
-        "ledger": {"last_briefing": None, "incorporated_count": 0},
-        "new_sessions": [
-            {
-                "path": "p",
-                "date": "2026-04-29",
-                "slug": "thing",
-                "frontmatter": {},
-                "sections": {"what we worked on": "- did the A thing\n- and B"},
-            }
-        ],
-    }
-    out = render_briefing(result)
-    assert "- **thing** — did the A thing" in out
-    assert "since the start" in out
-
-
 def test_render_briefing_falls_back_to_description():
+    """No `summary` frontmatter: falls straight to `description` — the new
+    note shape has no H2 sections to mine a bullet from, so there is no
+    intermediate tier between summary and description."""
     result = {
         "wiki": "ccat",
         "today": "2026-04-29",
@@ -220,12 +203,13 @@ def test_render_briefing_falls_back_to_description():
                 "date": "2026-04-29",
                 "slug": "thing",
                 "frontmatter": {"description": "fallback line"},
-                "sections": {},
+                "body": "**Did the thing.**\n\n@12",
             }
         ],
     }
     out = render_briefing(result)
     assert "- **thing** — fallback line" in out
+    assert "since the start" in out
 
 
 def test_render_briefing_groups_by_date_descending():
@@ -239,14 +223,14 @@ def test_render_briefing_groups_by_date_descending():
                 "date": "2026-04-15",
                 "slug": "older",
                 "frontmatter": {"summary": "older work"},
-                "sections": {},
+                "body": "",
             },
             {
                 "path": "p2",
                 "date": "2026-04-29",
                 "slug": "newer",
                 "frontmatter": {"summary": "newer work"},
-                "sections": {},
+                "body": "",
             },
         ],
     }
@@ -374,20 +358,20 @@ def sharded_briefing_vault(tmp_path, monkeypatch):
     sessions.mkdir(parents=True)
 
     def write(name: str, summary: str) -> None:
-        body = dedent(
-            f"""\
-            ---
-            schema_version: 2
-            type: session
-            summary: "{summary}"
-            ---
-
-            ## What we worked on
-
-            - did things
-            """
+        path = sessions / f"{name}.md"
+        create_note(
+            path,
+            title=summary,
+            description=summary,
+            scope="lore:test",
+            extra_frontmatter={"summary": summary},
         )
-        (sessions / f"{name}.md").write_text(body)
+        append_chapter(
+            path,
+            Chapter(blocks=[TopicBlock(lead="Did things.", anchor_turn=5)]),
+            slice_from_turn=1,
+            slice_to_turn=5,
+        )
 
     write("15-0900-fix-a", "fixed A")
     write("16-1200-fix-b", "fixed B")
@@ -434,20 +418,19 @@ def test_gather_sharded_without_handle(tmp_path, monkeypatch):
     wiki = vault_root / "wiki" / "demo"
     sessions = wiki / "sessions" / "2026" / "04"
     sessions.mkdir(parents=True)
-    (sessions / "29-1100-thing.md").write_text(
-        dedent(
-            """\
-            ---
-            schema_version: 2
-            type: session
-            summary: "did the thing"
-            ---
-
-            ## What we worked on
-
-            - thing
-            """
-        )
+    path = sessions / "29-1100-thing.md"
+    create_note(
+        path,
+        title="thing",
+        description="did the thing",
+        scope="lore:test",
+        extra_frontmatter={"summary": "did the thing"},
+    )
+    append_chapter(
+        path,
+        Chapter(blocks=[TopicBlock(lead="Did the thing.", anchor_turn=3)]),
+        slice_from_turn=1,
+        slice_to_turn=3,
     )
     monkeypatch.setenv("LORE_ROOT", str(vault_root))
     result = gather(wiki="demo")
@@ -506,7 +489,7 @@ def test_compose_briefing_prose_returns_llm_text():
                     "date": "2026-04-29",
                     "slug": "thing",
                     "frontmatter": {"summary": "shipped the thing"},
-                    "sections": {},
+                    "body": "**Shipped the thing.**\n\nWired up the last piece.\n\n@12",
                 }
             ],
         },
@@ -518,6 +501,8 @@ def test_compose_briefing_prose_returns_llm_text():
     prompt = fake.messages.calls[0]["messages"][0]["content"]
     assert "shipped the thing" in prompt
     assert "ccat" in prompt
+    # Full body text (not a section extract) reaches the composer prompt.
+    assert "Wired up the last piece." in prompt
 
 
 def test_compose_briefing_prose_empty_input_short_circuits():
