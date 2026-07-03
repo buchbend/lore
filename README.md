@@ -5,13 +5,9 @@ auto-extracted into durable knowledge, repo-scoped context injected at
 session start, pluggable team briefings. No vector DB needed for small
 vaults; a full hybrid search + MCP server for larger ones.
 
-> ⚠️ **Work in progress — 0.1 alpha.** APIs, hook contracts, skill
-> surfaces, frontmatter schema, and CLI flags are all still changing.
-> Expect breakage. Not recommended for wikis you can't re-linter into
-> shape. Core linter + schema + migration are in place; session
-> pipeline, search, MCP, curator, and the scope/team/identity MVP
-> (tracked in [#3](https://github.com/buchbend/lore/issues/3)) are
-> under active implementation. No stability guarantee until 0.2.
+> ⚠️ **Pre-1.0.** APIs, hook contracts, skill surfaces, frontmatter
+> schema, and CLI flags can still change between minor versions. Not
+> recommended for wikis you can't re-migrate into shape.
 
 ## The pitch
 
@@ -20,18 +16,20 @@ threads live in a chat window that disappears. PRs capture the diff;
 nothing captures *why*. Lore closes the loop:
 
 ```
-Session with AI  →  (auto at SessionEnd / PreCompact)
-                 →  transcript captured, session note filed (draft:true)
-                 →  daily: Curator B abstracts concepts / decisions / results
-                 →  briefing published to configured sinks
-                 →  graph surfaces at next SessionStart, scoped
-                    to the repo you're in
+Session with AI  →  (auto at SessionEnd / PreCompact / cap-trip)
+                 →  transcript captured into a per-session buffer
+                 →  one chapter composed per flush, gated for PII/
+                    secrets/directive phrasing before it's appended
+                 →  one lab-notebook session note per session,
+                    readable via MCP pull at next SessionStart
 ```
 
-The flagship is the **session-note pipeline**. As of the work on `main`
-(Plans 1 + 2 of the passive-capture roadmap), capture is automatic —
+The flagship is the **session-note pipeline**: capture is automatic —
 no explicit capture command needed. See the "Bootstrap" section below.
-Everything else (search, MCP, curator C) serves the same pipeline.
+Everything else (search, MCP, hygiene curator) serves the same
+pipeline. Ratified decisions live in the connected repo's ADRs/PRDs,
+pulled on demand via MCP — Lore does not extract decisions from
+transcripts.
 
 ## Canonical shape
 
@@ -147,13 +145,15 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the editable-from-checkout
 recipe. Same recipe is the path for installs on machines without
 network egress to PyPI / the marketplace.
 
-## Bootstrap: passive capture (new, on `main`)
+## Bootstrap: passive capture
 
-As of the work on `main` (see
-`docs/superpowers/specs/2026-04-19-passive-capture-v1-design.md`),
-session notes auto-extract from Claude Code transcripts; explicit
-capture commands are no longer needed. Surfaces (concepts, decisions,
-results, …) are abstracted daily by Curator B.
+Session notes auto-extract from Claude Code transcripts; explicit
+capture commands are no longer needed. Each session's turns accumulate
+in a buffer and are composed into chapters of a single, per-session
+lab-notebook note (see `CONTEXT.md` for the full model). Anything else
+in a wiki — concepts, decisions, projects, reference notes — is
+written directly, by hand or via `/lore:inbox`; there is no automatic
+daily abstraction pass.
 
 ### Update from an older install
 
@@ -201,59 +201,40 @@ lore attach
 Interactive — asks for wiki + scope, writes the managed block to
 `CLAUDE.md`. Idempotent; safe to re-run.
 
-### Bootstrap a wiki with surfaces
-
-If you're creating a new wiki, declare which surfaces Curator B should
-extract:
-
-```bash
-lore wiki new team-wiki --surfaces standard  # concept + decision + session
-# other templates:
-lore wiki new research --surfaces science    # + paper + result
-lore wiki new product --surfaces design      # + artefact + critique
-lore wiki new scratch --surfaces custom      # skeleton you fill yourself
-```
-
-`SURFACES.md` is human-editable markdown with embedded YAML. Two ways
-to author and maintain it:
-
-- **Interactive, LLM-guided:** `/lore:surface <wiki>` opens with one
-  dispatch question — *add* a new surface or *redesign* the full set —
-  and routes to either flow. Both commit through
-  `lore surface commit <path>`.
-- **Scripted / automation / no-LLM:** write a `draft.json` (schema:
-  `lore.surface.draft/1`) and run `lore surface commit <path>`. This
-  is also how the skill writes under the hood.
-  `lore wiki new <name> --surfaces <template>` (above) remains the
-  fastest way to seed a wiki headlessly.
-
-The interactive flow requires `claude` on PATH. The `commit` primitive
-does not. Run `lore surface lint` anytime to validate the file.
-
-See `docs/superpowers/specs/2026-04-20-surface-authoring-design.md` for
-the full design.
-
 ### What runs automatically
 
 Once attached with a wiki present:
 
-- **Claude Code SessionEnd / PreCompact hooks** update the sidecar
-  transcript ledger. No LLM in the hook itself; Curator A runs in a
-  detached background subprocess when pending work crosses threshold.
-- **First SessionStart of each calendar day** also spawns Curator B
-  for the attached wiki (graph abstraction) and publishes a briefing
-  if configured. All detached — SessionStart never blocks.
-- **Banner at SessionStart** shows pending state:
-  `lore: 3 pending · last curator 2h ago · briefing yesterday`.
-  `lore!:` prefix flags actionable errors (broken SURFACES.md, etc.).
+- **Claude Code SessionEnd / PreCompact hooks**, plus ordinary tool
+  activity, drive a per-session buffer-and-flush heartbeat — no cron.
+  A flush composes one chapter (one LLM call) from the buffered slice
+  and appends it to the session's note, behind the publish gate. No
+  LLM runs inline in the hook itself; the flush is detached.
+- **SessionStart** also sweeps any session whose owning process is
+  provably dead (crash, closed laptop lid) — its note gets one compose
+  attempt and closes, under a global singleton lock. All detached —
+  SessionStart never blocks.
+- **Banner at SessionStart** is deliberately minimal: a status line, an
+  optional Focus block, at most two last-session hints, freshness
+  lines only on positive evidence, and a fixed directive pointing at
+  MCP pull for anything deeper. `lore!:` prefix flags actionable
+  errors.
 
 ### Manual escape hatches
 
 - `lore ingest --from <file.jsonl> --integration cursor --directory <cwd>` —
   ingest a transcript from any integration lore doesn't auto-capture.
-- `lore curator run` — run Curator A now.
-- `lore curator run --abstract [--wiki <name>]` — run A then B.
-- `lore curator run --abstract --dry-run` — see what would happen.
+- `lore curator run` — run the buffer/flush heartbeat now (files
+  session notes from pending transcripts).
+- `lore curator flush <buffer-sidecar>` — run the flush worker for one
+  buffer directly.
+- `lore curator sweep` — close every dead session's note now, under
+  the singleton lock.
+- `lore curator reap` — force-flush buffers whose owning session
+  crashed.
+- `lore curator [--wiki <name>] [--apply]` — the frontmatter-only
+  hygiene pass (supersession, `implements:` back-links, git-date
+  backfill, team-mode hint); dry-run by default.
 - `lore registry ls` / `lore registry doctor` —
   list configured wikis and validate them. (For looking up the
   attachment covering a specific path, use `lore attachments show
@@ -269,18 +250,17 @@ git:
   auto_push: false              # push manually by default
   auto_pull: true
 curator:
-  threshold_pending: 3          # spawn Curator A when ≥ N pending
-  threshold_tokens: 50000       # OR ≥ M tokens accumulated
+  threshold_pending_turns: 30   # spawn the heartbeat when ≥ N buffered turns
+  max_pending_age_s: 600        # OR the oldest pending entry is this old
   a_noteworthy_tier: middle     # middle (default) | simple (cheap, higher false-neg)
-  curator_c:
-    enabled: false              # experimental weekly defrag — off for v1
-    mode: local
+  synthesis_buffer_cap_turns: 120   # flush a chapter at this many turns...
+  synthesis_buffer_cap_chars: 240000 # ...or this many transcript chars
+  synthesis_model_tier: middle  # which `models.*` tier composes chapters
 models:
   simple: claude-haiku-4-5
   middle: claude-sonnet-4-6
-  high:   claude-opus-4-7       # or 'off' — degrades Curator B/C abstract to middle
+  high:   claude-opus-4-7       # or 'off' — degrades synthesis_model_tier: high to middle
 briefing:
-  auto: true
   audience: personal
   sinks:
     - markdown:~/lore-briefing.md
@@ -290,16 +270,8 @@ breadcrumb:
 ```
 
 All fields default to sane values — start without a `.lore-wiki.yml`
-and add knobs only as you need them.
-
-### Roadmap & implementation notes
-
-- [`docs/superpowers/specs/2026-04-19-passive-capture-v1-design.md`](docs/superpowers/specs/2026-04-19-passive-capture-v1-design.md) —
-  architecture spec (all 5 plans).
-- [`docs/superpowers/HANDOVER-2026-04-19.md`](docs/superpowers/HANDOVER-2026-04-19.md) —
-  roadmap status, gotchas, how to resume Plans 3–5.
-- [`docs/superpowers/plans/`](docs/superpowers/plans/) — executed plans
-  (1 + 2) for reference when writing 3–5.
+and add knobs only as you need them. Briefings publish manually
+(`lore briefing publish`) — there is no automatic cadence.
 
 ## Observability
 
@@ -342,8 +314,6 @@ observability:
     max_total_mb: 100
     keep_trace: 30
 ~~~
-
-Full design: [`docs/superpowers/specs/2026-04-20-auto-session-diagnostics-design.md`](docs/superpowers/specs/2026-04-20-auto-session-diagnostics-design.md).
 
 ## Two onboarding recipes
 
@@ -403,8 +373,8 @@ curator:
     base_url: https://chat.kiconnect.nrw/api/v1   # your gateway root
     # api_key_env: LORE_OPENAI_API_KEY            # optional override
     model_simple: gpt-4o-mini                     # cheap tier
-    model_middle: gpt-4o                          # default tier (Curator A noteworthy, Curator B sections)
-    model_high:   gpt-4o                          # heaviest tier (Curator B abstract, Curator C defrag)
+    model_middle: gpt-4o                          # default tier (chapter compose at synthesis_model_tier: middle)
+    model_high:   gpt-4o                          # heaviest tier (synthesis_model_tier: high)
 ```
 
 **`$LORE_ROOT/.lore/secrets.env`** — secrets only, mode `0600`:
@@ -484,9 +454,10 @@ curator:
 
 ## Scheduling the curator — cost-free defaults
 
-The curator (flags stale notes, detects superseded decisions, keeps
-`_index.txt` fresh) can run several ways. The README picks no default for
-you; pick your trade-off:
+The hygiene curator (propagates `supersedes:` / `implements:`
+relations, backfills dates from git, hints at team-mode) can run
+several ways. The README picks no default for you; pick your
+trade-off:
 
 | Pattern | Cost | Cadence | For |
 |---------|------|---------|-----|
