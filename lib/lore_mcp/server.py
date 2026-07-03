@@ -19,10 +19,13 @@ Exposed tools:
     lore_inbox_classify     — read-only inbox walk (file list with type +
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
-    lore_surface_context    — gather context pack for surface-authoring skills
-    lore_surface_validate   — validate draft-spec + preview diff (no writes)
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
     lore_repo_docs_fetch    — fetch one ADR or PRD's content (pull-only)
+
+Not registered: `handle_surface_context` / `handle_surface_validate` stay
+importable (exercised directly by tests) but their MCP tools are
+unregistered — Curator B's surface extraction is retired and no MCP path
+reaches surface authoring any more.
 
 Start:
     lore mcp
@@ -1432,34 +1435,6 @@ def _tool_schema() -> list[dict]:
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
-            "name": "lore_surface_context",
-            "description": (
-                "Gather context for surface-authoring skills: current SURFACES.md, "
-                "CLAUDE.md attach block, sampled recent notes per surface, shipped templates."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {"wiki": {"type": "string"}},
-                "required": ["wiki"],
-            },
-        },
-        {
-            "name": "lore_surface_validate",
-            "description": (
-                "Validate a surface draft-spec (append or init). Returns structured "
-                "issue list + rendered markdown + unified diff preview against the "
-                "current SURFACES.md. Never writes."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "wiki": {"type": "string"},
-                    "draft": {"type": "object"},
-                },
-                "required": ["wiki", "draft"],
-            },
-        },
-        {
             "name": "lore_journal_write",
             "description": (
                 "Append a freeform entry to the AI or human journal "
@@ -1657,10 +1632,6 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_briefing_gather(**args)
         case "lore_inbox_classify":
             return handle_inbox_classify(**args)
-        case "lore_surface_context":
-            return handle_surface_context(**args)
-        case "lore_surface_validate":
-            return handle_surface_validate(**args)
         case "lore_journal_write":
             return handle_journal_write(**args)
         case "lore_journal_read":
