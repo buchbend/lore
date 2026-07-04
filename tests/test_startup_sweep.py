@@ -141,7 +141,7 @@ def _uncertain_owner() -> OwnerInfo:
 
 def test_sweep_composes_and_closes_dead_session(tmp_path):
     lore_root = _lore_root(tmp_path)
-    all_turns = _turns(0, 4)
+    all_turns = _turns(0, 12)  # above the trivial-session gate
     buf = _seed(lore_root, all_turns, tid="dead1", owner=_dead_owner())
     client = _Client([{"blocks": [{"lead": "Recorded the crash", "body": "prose.", "anchor": 2}]}])
 
@@ -162,7 +162,7 @@ def test_sweep_composes_and_closes_dead_session(tmp_path):
 
 def test_sweep_marks_and_closes_when_compose_fails(tmp_path):
     lore_root = _lore_root(tmp_path)
-    all_turns = _turns(0, 2)
+    all_turns = _turns(0, 12)
     buf = _seed(lore_root, all_turns, tid="dead2", owner=_dead_owner())
 
     report = sweep_dead_sessions(
@@ -184,7 +184,7 @@ def test_sweep_stale_closes_old_dead_session_without_composing(tmp_path):
     # NO LLM call, so a deep backlog can't stall startup. The client would
     # compose visible content if consulted — it must not appear.
     lore_root = _lore_root(tmp_path)
-    all_turns = _turns(0, 3)
+    all_turns = _turns(0, 12)
     old_date = (datetime.now(UTC).date() - timedelta(days=30)).isoformat()
     buf = _seed(lore_root, all_turns, tid="stale1", owner=_dead_owner(), local_date=old_date)
     client = _Client([{"blocks": [{"lead": "should not appear", "body": "x", "anchor": 1}]}])
@@ -208,7 +208,7 @@ def test_sweep_budget_defers_excess_recent_dead_sessions(tmp_path):
     # More recent dead buffers than the compose budget: the sweep handles
     # max_compose of them and leaves the rest for the next sweep.
     lore_root = _lore_root(tmp_path)
-    all_turns = _turns(0, 2)
+    all_turns = _turns(0, 12)
     for i in range(3):
         _seed(lore_root, all_turns, tid=f"recent{i}", owner=_dead_owner())
     client = _Client([{"blocks": [{"lead": "Recorded it", "body": "prose.", "anchor": 1}]}] * 3)
@@ -221,6 +221,27 @@ def test_sweep_budget_defers_excess_recent_dead_sessions(tmp_path):
     )
     assert report.swept == 2
     assert report.deferred == 1
+
+
+def test_sweep_discards_trivial_dead_session_without_composing(tmp_path):
+    # A tiny dead session (no files, no commits) leaves no note at all:
+    # the sweep discards its stub deterministically, spending no LLM call
+    # and no compose budget.
+    lore_root = _lore_root(tmp_path)
+    all_turns = _turns(0, 4)
+    buf = _seed(lore_root, all_turns, tid="tiny", owner=_dead_owner())
+    client = _Client([{"blocks": [{"lead": "must not appear", "body": "x", "anchor": 1}]}])
+
+    report = sweep_dead_sessions(
+        lore_root,
+        llm_client=client,
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+    )
+    assert report.discarded == 1
+    assert report.swept == 0
+    assert client.messages.calls == []
+    assert not list((tmp_path / "wiki" / "private" / "sessions").rglob("*.md"))
+    assert not buf.sidecar_path.exists()  # archived to _done/
 
 
 def test_sweep_skips_uncertain_owner(tmp_path):
@@ -261,7 +282,7 @@ def test_startup_sweep_is_contended_when_global_lock_held(tmp_path):
 
 def test_startup_sweep_closes_dead_session_under_lock(tmp_path):
     lore_root = _lore_root(tmp_path)
-    all_turns = _turns(0, 3)
+    all_turns = _turns(0, 12)
     buf = _seed(lore_root, all_turns, tid="dead4", owner=_dead_owner())
     client = _Client([{"blocks": [{"lead": "Recorded it", "body": "prose.", "anchor": 1}]}])
 

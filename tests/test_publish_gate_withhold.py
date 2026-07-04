@@ -91,20 +91,19 @@ class TestPlantedSecretEndToEnd:
         assert token not in view.body
 
 
-class TestPhrasingGiveUpPath:
-    def test_phrasing_hit_produces_withheld_with_feedback(self, tmp_path: Path):
-        # First compose attempt: a lint hit yields WITHHELD-with-feedback,
-        # which the retry loop injects into the next compose prompt.
-        result = pg.evaluate("**Fix the flush race**\n\ndetail. @1")
-        assert result.passed is False
-        assert result.category == pg.CATEGORY_PHRASING
-        assert result.feedback
+class TestStyleIsNotSafety:
+    def test_directive_styled_prose_is_never_withheld(self, tmp_path: Path):
+        # Imperative leads / TODO / must-should language are the compose
+        # prompt's problem, not the gate's: no withhold, no quarantine.
+        result = pg.evaluate("**Fix the flush race**\n\nTODO: it should be retried. @1")
+        assert result.passed is True
+        assert quarantine.list_entries(lore_root=tmp_path) == []
 
-    def test_give_up_withhold_side_effects(self, tmp_path: Path):
-        # Second attempt also hits: the give-up path runs the terminal
-        # withhold side-effects (marker + quarantine).
+    def test_give_up_withhold_side_effects_for_pii(self, tmp_path: Path):
+        # A non-secret safety category runs the same terminal withhold
+        # side-effects (marker + quarantine).
         note = _fixture_note(tmp_path)
-        composed = "**Fix the flush race**\n\nstill imperative. @1"
+        composed = "**Coordinated the rollout**\n\nmail bob@example.com about it. @1"
         result = pg.evaluate(composed)
         outcome = pg.apply_withhold(
             note,
@@ -119,7 +118,7 @@ class TestPhrasingGiveUpPath:
         assert marker["marker"] == nd.MARKER_WITHHELD
         (entry,) = quarantine.list_entries(lore_root=tmp_path)
         assert entry.id == outcome.entry_id
-        assert entry.category == pg.CATEGORY_PHRASING
+        assert entry.category == pg.CATEGORY_EMAIL
 
 
 class TestGateIsTheOnlyDoor:

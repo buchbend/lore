@@ -1,10 +1,11 @@
 """Tests for ``lore_core.publish_gate`` — the blocking publish gate.
 
 The gate runs between compose and append, ordered cheapest-first:
-deterministic scanners (secrets, email, phone), then deterministic
-phrasing lint, then one small-model detection call for fuzzy PII. The
-first hit short-circuits. Anything unexpected fails CLOSED (withheld),
-never a silent pass. The gate is a tripwire, not a guarantee.
+deterministic scanners (secrets, email, phone), then one small-model
+detection call for fuzzy PII. The first hit short-circuits. Anything
+unexpected fails CLOSED (withheld), never a silent pass. The gate is a
+safety tripwire only — style/voice is the compose prompt's job and never
+withholds a chapter.
 """
 
 from __future__ import annotations
@@ -67,30 +68,6 @@ class TestPhoneScanner:
         assert pg.has_phone("buffer cap 120 turns / 240000 chars") is False
 
 
-class TestPhrasingLint:
-    def test_todo_marker_is_a_hit(self):
-        assert pg.phrasing_lint("TODO: wire the sweep path") != []
-
-    def test_fixme_marker_is_a_hit(self):
-        assert pg.phrasing_lint("the flush is racy (FIXME)") != []
-
-    def test_imperative_bold_lead_is_a_hit(self):
-        assert pg.phrasing_lint("**Fix the flush race condition**\n\ndetail. @42") != []
-
-    def test_past_tense_bold_lead_is_clean(self):
-        assert pg.phrasing_lint("**Fixed the flush race condition**\n\ndetail. @42") == []
-
-    def test_must_should_task_language_is_a_hit(self):
-        assert pg.phrasing_lint("The buffer should be refactored before release.") != []
-
-    def test_stative_prose_is_clean(self):
-        text = (
-            "**Traced the flush race** \n\nThe buffer accumulated turns and "
-            "retried at the next trigger; the give-up bound was discussed. @42"
-        )
-        assert pg.phrasing_lint(text) == []
-
-
 # ---------------------------------------------------------------------------
 # GateResult + evaluate() — ordering, short-circuit, fail-closed
 # ---------------------------------------------------------------------------
@@ -123,17 +100,16 @@ class TestEvaluateHits:
         assert result.category == pg.CATEGORY_EMAIL
         assert "bob@example.com" not in result.feedback
 
-    def test_phrasing_withheld_with_feedback(self):
-        result = pg.evaluate("**Fix the race** \n\ndetail. @1")
-        assert result.passed is False
-        assert result.category == pg.CATEGORY_PHRASING
-        assert result.feedback
+    def test_directive_styled_prose_passes(self):
+        # Style is not safety: imperative leads, TODO markers, and
+        # must/should language never withhold — voice is the compose
+        # prompt's job, the gate guards secrets/PII only.
+        text = "**Fix the race** \n\nTODO: the buffer should be refactored. @1"
+        assert pg.evaluate(text).passed is True
 
 
 class TestEvaluateOrdering:
-    def test_scanner_beats_phrasing_when_both_present(self):
-        # A chapter with BOTH a secret and an imperative lead: cheapest-first
-        # means the scanner (secret) short-circuits before the phrasing lint.
+    def test_scanner_hits_regardless_of_style(self):
         token = _secrets.token_urlsafe(40)
         result = pg.evaluate(f"**Fix the race** \n\nkey sk-{token}. @1")
         assert result.category == pg.CATEGORY_SECRET
@@ -150,7 +126,9 @@ class TestEvaluateOrdering:
         pg.evaluate(f"key sk-{token}", detector=Spy())
         assert calls == []  # short-circuited before detection
 
-    def test_detector_not_called_when_phrasing_hits(self):
+    def test_detector_runs_on_directive_styled_prose(self):
+        # Directive style no longer short-circuits: the safety detector
+        # still inspects the text.
         calls = []
 
         class Spy:
@@ -158,8 +136,9 @@ class TestEvaluateOrdering:
                 calls.append(text)
                 return None
 
-        pg.evaluate("**Fix the race**\n\ndetail. @1", detector=Spy())
-        assert calls == []
+        result = pg.evaluate("**Fix the race**\n\ndetail. @1", detector=Spy())
+        assert result.passed is True
+        assert len(calls) == 1
 
 
 class TestEvaluateDetection:

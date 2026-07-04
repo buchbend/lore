@@ -355,7 +355,8 @@ def sweep_command(
         return
     console.print(
         f"[bold]sweep[/bold] — scanned={report.scanned}, swept={report.swept}, "
-        f"stale-closed={report.stale_closed}, deferred={report.deferred}, "
+        f"stale-closed={report.stale_closed}, discarded={report.discarded}, "
+        f"deferred={report.deferred}, "
         f"alive={report.alive_skipped}, uncertain={report.uncertain_skipped}"
     )
 

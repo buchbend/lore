@@ -212,10 +212,10 @@ def test_gate_withhold_drives_retry_then_composes(tmp_path):
     wiki_root = lore_root / "wiki" / "private"
     all_turns = _turns(0, 4)
     buf = _append(lore_root, all_turns)
-    # Attempt 1 has an imperative lead (phrasing withhold); attempt 2 is clean.
+    # Attempt 1 leaks an email (scanner withhold); attempt 2 is clean.
     client = _Client(
         [
-            _chapter_payload("Fix the flush race", "detail.", 2),
+            _chapter_payload("Traced the flush race", "mail bob@example.com about it.", 2),
             _chapter_payload("Traced the flush race", "The buffer accumulated turns.", 2),
         ]
     )
@@ -230,9 +230,10 @@ def test_gate_withhold_drives_retry_then_composes(tmp_path):
     )
     assert outcome.status == "composed"
     assert len(client.messages.calls) == 2
-    # The retry prompt carried the gate's phrasing feedback.
+    # The retry prompt carried the gate's feedback (value-free).
     retry_prompt = client.messages.calls[1]["messages"][0]["content"]
-    assert "past-tense" in retry_prompt.lower()
+    assert "contact details" in retry_prompt.lower()
+    assert "bob@example.com" not in retry_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +389,7 @@ def test_give_up_at_double_cap_writes_marker_and_fresh_buffer(tmp_path):
 def test_session_end_failure_writes_marker_and_closes(tmp_path):
     lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 2)
+    all_turns = _turns(0, 12)  # above the trivial-session gate
     buf = _append(lore_root, all_turns)
 
     outcome = synth_and_close(
@@ -415,7 +416,7 @@ def test_session_end_failure_writes_marker_and_closes(tmp_path):
 def test_session_end_success_appends_chapter_and_closes(tmp_path):
     lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 4)
+    all_turns = _turns(0, 12)  # above the trivial-session gate
     buf = _append(lore_root, all_turns)
     client = _Client([_chapter_payload("Wrapped the session", "final prose.", 3)])
 
@@ -434,3 +435,127 @@ def test_session_end_success_appends_chapter_and_closes(tmp_path):
     assert len([c for c in view.chapters if c.get("kind") == "topic"]) == 1
     assert view.closed is True
     assert not buf.sidecar_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# No note is better than a noise note: trivial gate + empty compose
+# ---------------------------------------------------------------------------
+
+
+def test_session_end_trivial_session_leaves_no_note(tmp_path):
+    # A tiny session with no file/commit activity is discarded
+    # deterministically: no LLM call, the stub note is removed, the
+    # buffer is archived.
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 4)
+    buf = _append(lore_root, all_turns)
+    client = _Client([_chapter_payload("must never be composed", "x", 1)])
+
+    outcome = synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+    assert outcome.status == "trivial"
+    assert outcome.discarded is True
+    assert outcome.closed is True
+    assert client.messages.calls == []
+    assert not list((wiki_root / "sessions").rglob("*.md"))
+    assert not buf.sidecar_path.exists()  # archived to _done/
+
+
+def test_session_end_empty_compose_with_no_chapters_leaves_no_note(tmp_path):
+    # Above the trivial gate, but the model answers "nothing of
+    # substance" (zero blocks): the stub note is removed, not closed
+    # around manufactured content — and empty is an answer, not retried.
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 12)
+    buf = _append(lore_root, all_turns)
+    client = _Client([{"blocks": []}])
+
+    outcome = synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+    assert outcome.status == "empty"
+    assert outcome.discarded is True
+    assert outcome.closed is True
+    assert len(client.messages.calls) == 1
+    assert not list((wiki_root / "sessions").rglob("*.md"))
+    assert not buf.sidecar_path.exists()
+
+
+def test_session_end_empty_compose_after_real_chapter_closes_note(tmp_path):
+    # A session that produced a real chapter earlier, then nothing of
+    # substance at close: the note closes with the real chapter only.
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    adapter = _Adapter(_turns(0, 20))
+
+    _append(lore_root, _turns(0, 12))
+    buf = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
+    synth_in_place(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=_Client([_chapter_payload("Recorded the design", "prose.", 4)]),
+        model="m",
+        adapter_lookup=_lookup(adapter),
+        auto_commit=False,
+    )
+
+    _append(lore_root, _turns(13, 20))
+    outcome = synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=_Client([{"blocks": []}]),
+        model="m",
+        adapter_lookup=_lookup(adapter),
+        auto_commit=False,
+    )
+    assert outcome.status == "empty"
+    assert outcome.discarded is False
+    assert outcome.closed is True
+    view = nd.read_note(outcome.note_path)
+    assert view.closed is True
+    assert len([c for c in view.chapters if c.get("kind") == "topic"]) == 1
+    assert not buf.sidecar_path.exists()
+
+
+def test_inplace_empty_compose_consumes_the_slice(tmp_path):
+    # Mid-session, the model finds nothing of substance in the slice:
+    # the span is consumed (buffer reset) so it is never recomposed, the
+    # session stays live, and no chapter or marker is appended.
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 12)
+    buf = _append(lore_root, all_turns)
+
+    outcome = synth_in_place(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=_Client([{"blocks": []}]),
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+    assert outcome.status == "empty"
+    assert outcome.discarded is False
+    view = nd.read_note(outcome.note_path)
+    assert view.chapters == []
+    sidecar = buf.read_sidecar()
+    assert sidecar.state == "accumulating"
+    assert buf.replay().turn_count == 0  # slice consumed, not re-queued

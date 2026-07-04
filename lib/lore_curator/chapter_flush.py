@@ -27,6 +27,16 @@ Failure semantics
   note. Composed / withheld close paths append their chapter / marker and
   close all the same. Either way a closed session note is immutable.
 
+No note is better than a noise note
+-----------------------------------
+* A **trivial session** (tiny turn count, no file/commit/issue activity,
+  no chapters yet) is discarded deterministically at close: the stub
+  note is removed, no LLM call is spent.
+* A compose that returns **zero blocks** is the model's "nothing of
+  substance" answer (``EMPTY``). In place, the judged span is consumed
+  (buffer reset) so it is never recomposed; at close, a note that never
+  gained a chapter is removed instead of being closed empty.
+
 Markers are terminal-only. Flush triggers (cap 120 turns / 240K chars,
 pre-compact, session-end, reaper) are unchanged and live elsewhere; this
 module consumes a request and drives the composer + gate + note.
@@ -83,6 +93,14 @@ __all__ = [
 FLUSH_DEFAULT_CAP_TURNS = 120
 FLUSH_DEFAULT_CAP_CHARS = 240_000
 
+# Trivial-session gate: a closing session at or below BOTH bounds, with
+# zero repo activity and no chapters yet, leaves no note at all. Kept
+# deliberately tight — a short but substantive exchange easily exceeds
+# the char bound, and anything bigger still gets the composer, which can
+# answer "nothing of substance" itself.
+TRIVIAL_MAX_TURNS = 8
+TRIVIAL_MAX_CHARS = 4_000
+
 # Startup-sweep bounds. A dead buffer older than SWEEP_STALE_DAYS is closed
 # with a marker and no LLM call (its transcript is likely gone); at most
 # SWEEP_MAX_COMPOSE recent dead buffers are composed per sweep so a deep
@@ -96,9 +114,13 @@ class FlushOutcome:
     """Terminal report of one chapter flush.
 
     ``status`` names the branch taken:
-    ``composed`` | ``withheld`` | ``failed`` | ``deferred`` | ``gave-up``
-    | ``closed-empty`` | ``skipped``. The ``phase*`` / ``degraded`` fields
-    are compatibility shims the CLI + dispatch telemetry still read.
+    ``composed`` | ``empty`` | ``trivial`` | ``withheld`` | ``failed`` |
+    ``deferred`` | ``gave-up`` | ``closed-empty`` | ``skipped``. On
+    ``discarded`` outcomes (``trivial``, or ``empty`` at close with no
+    chapters) the stub note was deleted; ``note_path`` still names the
+    removed file so the deletion can be committed. The ``phase*`` /
+    ``degraded`` fields are compatibility shims the CLI + dispatch
+    telemetry still read.
     """
 
     buffer_stem: str
@@ -110,6 +132,7 @@ class FlushOutcome:
     chapter_n: int = 0
     attempts: int = 0
     closed: bool = False
+    discarded: bool = False
 
     # --- compatibility shims (CLI print + flush-dispatch telemetry) ---
     @property
@@ -340,6 +363,39 @@ def flush_chapter(
         flushed_to = _flushed_to(note_path)
         last_idx = max((s.to_index for s in rb.slices), default=-1)
 
+    # ---- Trivial-session gate (close only; deterministic, no LLM) -------
+    if close and _is_trivial(rb, flushed_to):
+        with buffer.with_lock():
+            with contextlib.suppress(OSError):
+                note_path.unlink()
+            buffer.transition("closed")
+        out = FlushOutcome(
+            buffer_stem=buffer.stem,
+            state_before=state_before,
+            status="trivial",
+            note_path=note_path,
+            closed=True,
+            discarded=True,
+        )
+        if logger is not None:
+            logger.emit(
+                "flush-trivial",
+                buffer_stem=buffer.stem,
+                transcript_id=sidecar.transcript_id,
+                turn_count=rb.turn_count,
+            )
+        _post_flush(
+            buffer=buffer,
+            outcome=out,
+            close=True,
+            lore_root=lore_root,
+            wiki_root=wiki_root,
+            sidecar=sidecar,
+            auto_commit=auto_commit,
+            logger=logger,
+        )
+        return out
+
     # Nothing new since the last chapter — close (if asked) with no chapter.
     if last_idx <= flushed_to:
         return _finish_no_new_turns(
@@ -461,6 +517,28 @@ def _apply_outcome(
         )
         out.status = "composed"
         _clear_after_progress(buffer, close=close)
+    elif status is ComposeStatus.EMPTY:
+        out.status = "empty"
+        if close:
+            if _flushed_to(note_path) < 0:
+                # The whole session produced nothing of substance: the
+                # stub note is removed rather than closed empty.
+                with contextlib.suppress(OSError):
+                    note_path.unlink()
+                out.discarded = True
+                out.wikilink = ""
+        else:
+            # The span was judged substance-free: consume it (buffer
+            # reset, watermark kept) so the same turns are never
+            # recomposed; the session stays live.
+            _reset_buffer_fresh(buffer)
+        if logger is not None:
+            logger.emit(
+                "flush-empty",
+                buffer_stem=buffer.stem,
+                transcript_id=sidecar.transcript_id,
+                discarded=out.discarded,
+            )
     elif status is ComposeStatus.WITHHELD:
         verdict = GateResult.withheld(
             compose_result.withheld_category,
@@ -536,11 +614,32 @@ def _apply_outcome(
                 )
 
     if close:
-        if not nd.is_closed(note_path):
+        if not out.discarded and not nd.is_closed(note_path):
             nd.close_note(note_path, facts=facts, wiki_root=wiki_root)
         buffer.transition("closed")
         out.closed = True
     return out
+
+
+def _is_trivial(rb: ReplayedBuffer, flushed_to: int) -> bool:
+    """True when the whole session is too small to be worth a note.
+
+    Deterministic and conservative: fires only when the note has no
+    chapters yet AND the buffer shows a tiny turn count, little text,
+    and zero repo activity. Anything bigger goes to the composer, which
+    can still answer "nothing of substance" itself.
+    """
+    if flushed_to >= 0:
+        return False
+    if rb.turn_count > TRIVIAL_MAX_TURNS or rb.prompt_chars > TRIVIAL_MAX_CHARS:
+        return False
+    return not (
+        rb.files_touched
+        or rb.commit_shas
+        or rb.activity_commits
+        or rb.activity_issues_opened
+        or rb.activity_issues_closed
+    )
 
 
 def _clear_after_progress(buffer: Buffer, *, close: bool) -> None:
@@ -622,7 +721,22 @@ def _post_flush(
 ) -> None:
     if close:
         _archive(buffer, logger=logger)
-    if outcome.note_path is None or not outcome.chapter_n:
+    if outcome.note_path is None:
+        return
+    if outcome.discarded:
+        # Stage/commit the stub's deletion so the wiki repo stays clean
+        # (a no-op when the stub was never committed). Nothing filed —
+        # no drain event.
+        if auto_commit:
+            with contextlib.suppress(Exception):
+                maybe_auto_commit(
+                    wiki_root,
+                    FiledNote(path=outcome.note_path, wikilink="", was_merge=True),
+                    logger,
+                    llm_client=None,
+                )
+        return
+    if not outcome.chapter_n:
         return
     if auto_commit:
         # Never block a flush on git.
@@ -676,6 +790,7 @@ class SweepReport:
     uncertain_skipped: int = 0
     stale_closed: int = 0   # dead + too old → closed with a marker, no LLM call
     deferred: int = 0       # recent dead buffers left for the next sweep (budget hit)
+    discarded: int = 0      # trivial / all-empty sessions whose stub was removed
     contended: bool = False
     swept_stems: list[str] = field(default_factory=list)
 
@@ -786,7 +901,8 @@ def sweep_dead_sessions(
         age = _age_days(local_date_str)
         if age is not None and age > stale_days:
             # Too old to compose: close with a marker, no model call.
-            synth_and_close(
+            # A trivial stale session discards its stub instead.
+            oc = synth_and_close(
                 buf.sidecar_path,
                 lore_root=lore_root,
                 wiki_root=wiki_dir,
@@ -795,7 +911,10 @@ def sweep_dead_sessions(
                 adapter_lookup=adapter_lookup,
                 logger=logger,
             )
-            report.stale_closed += 1
+            if oc.discarded:
+                report.discarded += 1
+            else:
+                report.stale_closed += 1
             report.swept_stems.append(buf.stem)
             if logger is not None:
                 logger.emit(
@@ -809,7 +928,7 @@ def sweep_dead_sessions(
             report.deferred += 1
             continue
         model = _resolve_model(wiki_dir)
-        synth_and_close(
+        oc = synth_and_close(
             buf.sidecar_path,
             lore_root=lore_root,
             wiki_root=wiki_dir,
@@ -818,8 +937,14 @@ def sweep_dead_sessions(
             adapter_lookup=adapter_lookup,
             logger=logger,
         )
-        composed += 1
-        report.swept += 1
+        if oc.status != "trivial":
+            # Everything past the trivial gate spent an LLM call —
+            # including an "empty" answer — so it consumes the budget.
+            composed += 1
+        if oc.discarded:
+            report.discarded += 1
+        else:
+            report.swept += 1
         report.swept_stems.append(buf.stem)
         if logger is not None:
             logger.emit("sweep-closed", buffer_stem=buf.stem, transcript_id=sidecar.transcript_id)

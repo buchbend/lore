@@ -194,7 +194,7 @@ def test_note_so_far_included_in_the_call():
     assert "Prior chapter about the buffer store." in prompt
 
 
-def test_prompt_carries_phrasing_rules():
+def test_prompt_carries_essence_rules():
     msgs = _RecordingMessages([_valid_payload()])
     client = _FakeClient(msgs)
     compose_chapter(
@@ -206,10 +206,13 @@ def test_prompt_carries_phrasing_rules():
         model="m",
     )
     prompt = _prompt_text(msgs.calls[0]).lower()
-    assert "past tense" in prompt
+    # The subject is the work, never the session mechanics.
+    assert "not the working" in prompt
     assert "continued:" in prompt
     # Self-sufficient lead: no pronouns reaching into the body.
     assert "self-sufficient" in prompt
+    # An empty chapter is explicitly offered as the no-substance outcome.
+    assert "nothing of substance" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -323,20 +326,8 @@ class _AlwaysWithholdGate:
         return GateResult.withheld(self._category, self._feedback)
 
 
-class _AlwaysSoftWithholdGate:
-    """Always returns a SOFT (phrasing) withhold — style, not safety."""
-
-    def __init__(self, feedback: str) -> None:
-        self._feedback = feedback
-        self.texts: list[str] = []
-
-    def evaluate(self, chapter_text: str) -> GateResult:
-        self.texts.append(chapter_text)
-        return GateResult.withheld("phrasing", self._feedback, soft=True)
-
-
 def test_gate_withhold_retries_with_feedback_then_passes():
-    gate = _WithholdOnceGate("phrasing", "remove the imperative lead")
+    gate = _WithholdOnceGate("email", "remove the contact details")
     msgs = _RecordingMessages([_valid_payload(), _valid_payload()])
     client = _FakeClient(msgs)
 
@@ -355,7 +346,7 @@ def test_gate_withhold_retries_with_feedback_then_passes():
     assert "The composer sent the slice once." in gate.texts[0]
     # The retry prompt carried the gate's feedback verbatim.
     retry_prompt = _prompt_text(msgs.calls[1])
-    assert "remove the imperative lead" in retry_prompt
+    assert "remove the contact details" in retry_prompt
 
 
 def test_two_withholds_returns_withheld_outcome():
@@ -379,30 +370,6 @@ def test_two_withholds_returns_withheld_outcome():
     # The withheld composed text is surfaced for quarantine downstream.
     assert "The composer sent the slice once." in result.withheld_text
     assert result.chapter is None
-
-
-def test_persistent_soft_phrasing_verdict_publishes_not_withholds():
-    # Phrasing is style, not safety: after retrying with the gate's feedback,
-    # a chapter whose voice is still imperfect is PUBLISHED, never lost.
-    gate = _AlwaysSoftWithholdGate("re-compose in past tense")
-    msgs = _RecordingMessages([_valid_payload(), _valid_payload()])
-    client = _FakeClient(msgs)
-
-    result = compose_chapter(
-        slice_text="[user@2] x\n[assistant@4] y",
-        slice_from_turn=2,
-        slice_to_turn=4,
-        note_so_far="note",
-        llm_client=client,
-        model="m",
-        gate=gate,
-    )
-    assert result.status is ComposeStatus.COMPOSED  # published, not withheld
-    assert result.attempts == CHAPTER_MAX_ATTEMPTS  # it did retry first
-    assert result.chapter is not None
-    # It genuinely tried to fix the voice: the retry prompt carried the feedback.
-    retry_prompt = _prompt_text(msgs.calls[1])
-    assert "re-compose in past tense" in retry_prompt
 
 
 def test_default_gate_is_passthrough_standalone():
@@ -441,8 +408,50 @@ def test_llm_failure_both_attempts_returns_failed():
     assert len(msgs.calls) == CHAPTER_MAX_ATTEMPTS
 
 
-def test_empty_blocks_returns_failed():
-    msgs = _RecordingMessages([{"blocks": []}, {"blocks": []}])
+def test_empty_blocks_is_the_nothing_of_substance_outcome():
+    # A model returning zero blocks answered "nothing worth recording" —
+    # that is a terminal EMPTY outcome, not a failure, and never retried.
+    msgs = _RecordingMessages([{"blocks": []}])
+    client = _FakeClient(msgs)
+    result = compose_chapter(
+        slice_text="[user@0] x",
+        slice_from_turn=0,
+        slice_to_turn=0,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+    )
+    assert result.status is ComposeStatus.EMPTY
+    assert result.chapter is None
+    assert result.attempts == 1
+    assert len(msgs.calls) == 1
+
+
+def test_lead_markdown_bold_is_stripped():
+    # Models sometimes bold the lead themselves; the renderer adds the
+    # bold, so embedded ** would double up ("****lead****"). Parsing
+    # normalizes it away.
+    payload = {"blocks": [{"lead": "**The cache was stale**, so skills never loaded.", "body": "x", "anchor": 0}]}
+    msgs = _RecordingMessages([payload])
+    client = _FakeClient(msgs)
+    result = compose_chapter(
+        slice_text="[user@0] x",
+        slice_from_turn=0,
+        slice_to_turn=0,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+    )
+    assert result.status is ComposeStatus.COMPOSED
+    lead = result.chapter.blocks[0].lead
+    assert "*" not in lead
+    assert lead == "The cache was stale, so skills never loaded."
+
+
+def test_malformed_response_still_retries_then_fails():
+    # Missing/invalid `blocks` is a malformed response (unlike an empty
+    # list, which is an answer) — it retries and ends FAILED.
+    msgs = _RecordingMessages([{"blocks": "nope"}, {}])
     client = _FakeClient(msgs)
     result = compose_chapter(
         slice_text="[user@0] x",
@@ -453,6 +462,7 @@ def test_empty_blocks_returns_failed():
         model="m",
     )
     assert result.status is ComposeStatus.FAILED
+    assert len(msgs.calls) == CHAPTER_MAX_ATTEMPTS
 
 
 # ---------------------------------------------------------------------------

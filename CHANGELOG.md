@@ -10,6 +10,28 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-07-04
+
+### Changed
+- The chapter-compose prompt is rebuilt around **essence extraction**: it
+  records the work, not the working. Blocks are self-sufficient declarative
+  claims — a finding, an outcome, or a gap stated as a fact — with the
+  reasoning in an active-voice body. Session mechanics (greetings, test
+  traffic, slash commands, sandbox/tooling hiccups) are excluded unless the
+  tooling was the session's subject. Event narration ("The session was
+  started") is banned.
+- The publish gate is **safety-only**: the phrasing lint (and the 0.55.x
+  soft-verdict plumbing) is gone. Voice is the prompt's job; PII/secret
+  scanners and the optional detector still withhold.
+
+### Added
+- **No note is better than a noise note.** A compose may return zero blocks
+  ("nothing of substance") — mid-session the judged span is consumed, and a
+  session whose note never gained a chapter leaves no note at all. A
+  deterministic trivial-session gate (≤8 turns, ≤4k chars, no file/commit/
+  issue activity) discards the stub without spending an LLM call. The
+  startup sweep reports these as `discarded`.
+
 ## [0.55.0] - 2026-07-03
 
 ### Removed

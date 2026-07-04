@@ -1,22 +1,19 @@
 """Blocking publish gate — the last check before a chapter joins the note.
 
 Every composed chapter passes through :func:`evaluate` before it is
-appended to the shared session note. The gate runs cheapest-first and
-short-circuits on the first hit:
+appended to the shared session note. The gate is **safety-only** — voice
+and style are the compose prompt's job and never withhold a chapter. It
+runs cheapest-first and short-circuits on the first hit:
 
 1. **Deterministic scanners** — high-entropy secrets (reusing the secret
    patterns in :mod:`lore_core.redaction`), email addresses, phone
    numbers.
-2. **Deterministic phrasing lint** — TODO/FIXME markers, imperative bold
-   leads, and must/should task language. The note is a past-tense lab
-   record, never a directive; a lint hit is a compose failure and the
-   feedback feeds the retry.
-3. **One small-model detection call** for fuzzy PII/secrets that slip the
+2. **One small-model detection call** for fuzzy PII/secrets that slip the
    deterministic layers. Detection is *pattern recognition*, not truth
    verification, so it is exempt from the no-LLM-judges rule — but it is
    a **tripwire, not a guarantee**, and is documented as such.
 
-The gate **fails closed**: any scanner/lint error, and any error from the
+The gate **fails closed**: any scanner error, and any error from the
 detection call, withholds the chapter rather than letting it through. A
 false withhold only costs a marker and a quarantine entry; a false pass
 could leak a secret into the shared vault.
@@ -45,7 +42,6 @@ __all__ = [
     "CATEGORY_SECRET",
     "CATEGORY_EMAIL",
     "CATEGORY_PHONE",
-    "CATEGORY_PHRASING",
     "CATEGORY_PII",
     "CATEGORY_ERROR",
     "GateResult",
@@ -57,7 +53,6 @@ __all__ = [
     "has_secret",
     "has_email",
     "has_phone",
-    "phrasing_lint",
     "evaluate",
     "apply_withhold",
 ]
@@ -69,7 +64,6 @@ __all__ = [
 CATEGORY_SECRET = "secret"
 CATEGORY_EMAIL = "email"
 CATEGORY_PHONE = "phone"
-CATEGORY_PHRASING = "phrasing"
 CATEGORY_PII = "pii"
 CATEGORY_ERROR = "gate-error"
 
@@ -91,12 +85,6 @@ _FEEDBACK: dict[str, str] = {
     CATEGORY_PHONE: (
         "The draft contained a phone number. Re-compose without personal contact details."
     ),
-    CATEGORY_PHRASING: (
-        "The draft used directive or task phrasing (TODO/FIXME, an imperative "
-        "lead, or must/should task language). Re-compose as a past-tense "
-        "lab-notebook record: describe what was discussed or tried, never what "
-        "to do next. Leads must be self-sufficient past-tense statements."
-    ),
     CATEGORY_PII: (
         "A detection pass flagged possible personal or sensitive information. "
         "Re-compose without personal data or secrets; keep only what is safe to "
@@ -113,7 +101,6 @@ _MARKER_REASON: dict[str, str] = {
     CATEGORY_SECRET: "a credential/secret was detected",
     CATEGORY_EMAIL: "an email address was detected",
     CATEGORY_PHONE: "a phone number was detected",
-    CATEGORY_PHRASING: "directive/task phrasing was detected",
     CATEGORY_PII: "possible personal or sensitive data was detected",
     CATEGORY_ERROR: "the publish gate errored (withheld as a precaution)",
 }
@@ -135,12 +122,6 @@ class GateResult:
     passed: bool
     category: str = ""
     feedback: str = ""
-    # ``soft`` marks a *style* verdict (phrasing) that the composer should
-    # retry once but ultimately PUBLISH — style is never worth losing the
-    # chapter's content over. Hard verdicts (PII/secrets, scanner/detector
-    # error) stay withheld: those protect the shared vault. ``passed`` is
-    # unaffected; ``soft`` only steers the composer's terminal decision.
-    soft: bool = False
 
     @classmethod
     def ok(cls) -> GateResult:
@@ -148,19 +129,17 @@ class GateResult:
         return PASS
 
     @classmethod
-    def withheld(cls, category: str, feedback: str, *, soft: bool = False) -> GateResult:
+    def withheld(cls, category: str, feedback: str) -> GateResult:
         """A withheld verdict carrying its category and retry feedback."""
-        return cls(passed=False, category=category, feedback=feedback, soft=soft)
+        return cls(passed=False, category=category, feedback=feedback)
 
 
 # The singleton pass result — cheaper than allocating one per clean chapter.
 PASS = GateResult(passed=True)
 
 
-def _withheld(category: str, *, soft: bool = False) -> GateResult:
-    return GateResult(
-        passed=False, category=category, feedback=_FEEDBACK[category], soft=soft
-    )
+def _withheld(category: str) -> GateResult:
+    return GateResult(passed=False, category=category, feedback=_FEEDBACK[category])
 
 
 # ---------------------------------------------------------------------------
@@ -203,103 +182,6 @@ def has_phone(text: str) -> bool:
         if sum(c.isdigit() for c in m.group()) >= _PHONE_INTL_MIN_DIGITS:
             return True
     return _PHONE_NANP_RE.search(text) is not None
-
-
-# ---------------------------------------------------------------------------
-# Deterministic phrasing lint
-# ---------------------------------------------------------------------------
-
-
-# Base-form action verbs. A bold lead beginning with one of these reads as an
-# instruction ("Fix the race"), whereas the past-tense form ("Fixed the race")
-# is a lab-record statement. The same stems, in any tense, following a modal
-# ("should refactor", "must be fixed") are the must/should task-language hit.
-_IMPERATIVE_VERBS = frozenset(
-    {
-        "add",
-        "audit",
-        "build",
-        "change",
-        "check",
-        "clean",
-        "commit",
-        "configure",
-        "consider",
-        "create",
-        "delete",
-        "deploy",
-        "disable",
-        "document",
-        "drop",
-        "enable",
-        "ensure",
-        "expose",
-        "extend",
-        "extract",
-        "fetch",
-        "fix",
-        "handle",
-        "implement",
-        "install",
-        "investigate",
-        "land",
-        "make",
-        "merge",
-        "migrate",
-        "move",
-        "port",
-        "pull",
-        "push",
-        "rebase",
-        "refactor",
-        "remove",
-        "rename",
-        "replace",
-        "revert",
-        "review",
-        "run",
-        "split",
-        "test",
-        "try",
-        "update",
-        "use",
-        "validate",
-        "verify",
-        "wire",
-        "write",
-    }
-)
-
-_TODO_RE = re.compile(r"(?i)\b(?:todo|fixme)\b")
-_BOLD_LEAD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
-_LEAD_FIRST_WORD_RE = re.compile(r"[A-Za-z]+")
-
-# Modal + optional adverb/"be" + an action verb stem (any tense). Catches
-# "should refactor", "must be fixed", "needs to update", "have to run".
-_DIRECTIVE_RE = re.compile(
-    r"(?i)\b(?:must|should|shall|need(?:s|ed)?\s+to|have\s+to|has\s+to|"
-    r"ought\s+to)\b\s+(?:not\s+|also\s+|still\s+|then\s+|be\s+|get\s+){0,2}"
-    r"(?:" + "|".join(sorted(_IMPERATIVE_VERBS)) + r")(?:s|es|ed|ing|d)?\b"
-)
-
-
-def phrasing_lint(text: str) -> list[str]:
-    """Return phrasing-lint hit tags (empty list means clean).
-
-    Tags are for diagnostics only; the gate maps any non-empty result to
-    the single :data:`CATEGORY_PHRASING` verdict.
-    """
-    hits: list[str] = []
-    if _TODO_RE.search(text):
-        hits.append("todo-marker")
-    for m in _BOLD_LEAD_RE.finditer(text):
-        first = _LEAD_FIRST_WORD_RE.search(m.group(1))
-        if first is not None and first.group().lower() in _IMPERATIVE_VERBS:
-            hits.append("imperative-lead")
-            break
-    if _DIRECTIVE_RE.search(text):
-        hits.append("directive-language")
-    return hits
 
 
 # ---------------------------------------------------------------------------
@@ -434,21 +316,14 @@ def evaluate(chapter_text: str, *, detector: Detector | None = None) -> GateResu
     """Evaluate one composed chapter. Returns PASS or a withheld verdict.
 
     Cheapest-first, short-circuiting on the first hit: deterministic
-    scanners, then deterministic phrasing lint, then — only if the first
-    two pass and a detector is supplied — one detection call. Fails closed:
-    an error in any layer withholds rather than passes.
+    scanners, then — only if they pass and a detector is supplied — one
+    detection call. Fails closed: an error in any layer withholds rather
+    than passes. Style/voice is deliberately not judged here.
     """
     try:
         category = _run_scanners(chapter_text)
         if category is not None:
             return _withheld(category)
-
-        if phrasing_lint(chapter_text):
-            # Style, not safety: the composer retries with this feedback but
-            # publishes the chapter if the voice is still imperfect after the
-            # retry. Losing real content to a stray modal is worse than a note
-            # that reads slightly directive.
-            return _withheld(CATEGORY_PHRASING, soft=True)
 
         if detector is not None:
             try:
@@ -472,9 +347,9 @@ class PublishGate:
     The composer consumes a ``gate.evaluate(chapter_text) -> GateResult``
     seam; this binds an optional :class:`Detector` once and forwards each
     call to the module-level :func:`evaluate`. Constructing it with no
-    detector runs the deterministic scanners + phrasing lint only (the
-    fuzzy-PII detection call is skipped), which is the safe default when
-    no small-model backend is configured.
+    detector runs the deterministic scanners only (the fuzzy-PII
+    detection call is skipped), which is the safe default when no
+    small-model backend is configured.
     """
 
     def __init__(self, *, detector: Detector | None = None) -> None:

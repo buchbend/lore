@@ -15,13 +15,16 @@ wrapper configures it.
 Two attempts. Between attempts a deterministic **anchor lint** rejects
 any anchor outside the chapter's slice, and an injected **publish gate**
 may withhold the chapter; either verdict feeds corrective text into the
-retry prompt. After two attempts the outcome is surfaced — composed,
-withheld (for quarantine downstream), or failed. Appending the chapter,
-writing markers, and the give-up/sweep semantics live in their own
-layers and consume this outcome; this module never writes to disk.
+retry prompt. A model that returns zero blocks has *answered* — nothing
+of substance in the slice — which is the terminal ``EMPTY`` outcome,
+never retried and never gated (there is no text). After two attempts the
+outcome is surfaced — composed, empty, withheld (for quarantine
+downstream), or failed. Appending the chapter, writing markers, and the
+give-up/sweep semantics live in their own layers and consume this
+outcome; this module never writes to disk.
 
 The gate is dependency-injected. Its contract is small enough to state
-here so the scanner/lint/detection implementation can match it:
+here so the scanner/detection implementation can match it:
 
     gate.evaluate(chapter_text: str) -> GateResult
 
@@ -84,8 +87,8 @@ class Gate(Protocol):
 
     Implementations scan the rendered chapter for anything unsafe to
     publish and return :class:`GateResult`. This module only reacts to
-    the verdict; the deterministic phrasing lint and PII/secret scanners
-    live inside the gate.
+    the verdict; the PII/secret scanners and detection live inside the
+    gate.
     """
 
     def evaluate(self, chapter_text: str) -> GateResult: ...
@@ -105,6 +108,7 @@ class PassThroughGate:
 
 class ComposeStatus(Enum):
     COMPOSED = "composed"
+    EMPTY = "empty"  # the model answered "nothing of substance"
     WITHHELD = "withheld"
     FAILED = "failed"
 
@@ -175,6 +179,9 @@ def compose_chapter(
     :data:`CHAPTER_MAX_ATTEMPTS` the outcome is returned:
 
     * PASS → ``COMPOSED`` with the chapter.
+    * zero blocks on any attempt → ``EMPTY`` immediately (the model
+      answered "nothing of substance"; there is no text to lint or gate
+      and a retry would only pressure it into manufacturing noise).
     * gate WITHHELD on the final attempt → ``WITHHELD`` (with the
       rendered text for quarantine).
     * no composable / anchor-clean chapter → ``FAILED``.
@@ -187,7 +194,6 @@ def compose_chapter(
     retry_feedback = ""
     last_withheld: GateResult | None = None
     last_withheld_text = ""
-    last_chapter = None
     attempts = 0
 
     while attempts < CHAPTER_MAX_ATTEMPTS:
@@ -205,10 +211,12 @@ def compose_chapter(
             transcript_id=transcript_id,
         )
         if chapter is None:
-            # LLM failure / malformed / empty: nothing structured to
-            # correct — retry the same prompt.
+            # LLM failure / malformed: nothing structured to correct —
+            # retry the same prompt.
             retry_feedback = ""
             continue
+        if not chapter.blocks:
+            return ComposeResult(status=ComposeStatus.EMPTY, attempts=attempts)
 
         offenders = chapter_anchor_lint(chapter, from_turn=slice_from_turn, to_turn=slice_to_turn)
         if offenders:
@@ -228,7 +236,6 @@ def compose_chapter(
             return ComposeResult(status=ComposeStatus.COMPOSED, chapter=chapter, attempts=attempts)
         last_withheld = verdict
         last_withheld_text = chapter_text
-        last_chapter = chapter
         retry_feedback = verdict.feedback
         if logger is not None:
             logger.emit(
@@ -239,20 +246,6 @@ def compose_chapter(
             )
 
     if last_withheld is not None:
-        if last_withheld.soft and last_chapter is not None:
-            # A style-only (phrasing) verdict survived the retry: publish the
-            # chapter rather than lose its content. Only hard verdicts
-            # (PII/secrets, gate error) reach the withheld/quarantine path.
-            if logger is not None:
-                logger.emit(
-                    "chapter-soft-published",
-                    call="publish-gate",
-                    transcript_id=transcript_id,
-                    category=last_withheld.category,
-                )
-            return ComposeResult(
-                status=ComposeStatus.COMPOSED, chapter=last_chapter, attempts=attempts
-            )
         return ComposeResult(
             status=ComposeStatus.WITHHELD,
             attempts=attempts,
@@ -341,7 +334,7 @@ def _compose_once(
                 "warning",
                 call="chapter-compose",
                 transcript_id=transcript_id,
-                message="no usable blocks in response",
+                message="malformed response (no blocks array)",
             )
         return None
     if logger is not None:
@@ -367,6 +360,12 @@ def _extract_tool_input(resp: Any) -> dict[str, Any]:
 
 
 def _parse_chapter(data: dict[str, Any]) -> Chapter | None:
+    """Parse the tool payload; ``None`` means malformed (retryable).
+
+    An empty (or wholly contentless) ``blocks`` list is NOT malformed:
+    it is the model's "nothing of substance" answer and round-trips as a
+    chapter with zero blocks, which the compose loop maps to ``EMPTY``.
+    """
     raw_blocks = data.get("blocks")
     if not isinstance(raw_blocks, list):
         return None
@@ -374,7 +373,9 @@ def _parse_chapter(data: dict[str, Any]) -> Chapter | None:
     for raw in raw_blocks:
         if not isinstance(raw, dict):
             continue
-        lead = str(raw.get("lead") or "").strip()
+        # The renderer bolds the lead itself; embedded ** from the model
+        # would render as "****lead****", so strip markdown bold here.
+        lead = str(raw.get("lead") or "").replace("**", "").strip()
         body = str(raw.get("body") or "").strip()
         continued = bool(raw.get("continued"))
         continued_topic = str(raw.get("continued_topic") or "").strip()
@@ -392,8 +393,6 @@ def _parse_chapter(data: dict[str, Any]) -> Chapter | None:
                 continued_topic=continued_topic,
             )
         )
-    if not blocks:
-        return None
     return Chapter(blocks=blocks)
 
 
@@ -432,34 +431,55 @@ def _build_prompt(
                 "",
             ]
         )
+    lo = min(slice_from_turn, slice_to_turn)
+    hi = max(slice_from_turn, slice_to_turn)
     parts.extend(
         [
-            "You are writing ONE chapter of a lab-notebook session note: a "
-            "skimmable, chronological record of what a work session discussed "
-            "and tried. The chapter is a set of topic blocks.",
+            "You are distilling ONE chapter of a lab-notebook session note "
+            "from a work-session transcript. A colleague reads the note "
+            "months later to learn what the session figured out.",
             "",
-            "Rules:",
-            "- Report in the PAST TENSE and a reportive voice. Describe what "
-            "was discussed, tried, and left open. No imperatives, no advice, "
-            "no TODOs — the note is a record, never a directive.",
-            "- Each topic is one block: a bold one-sentence SELF-SUFFICIENT "
-            "lead that stands alone (no pronouns reaching into the body — a "
-            "reader who sees only the lead must understand it), then a short "
-            "prose body.",
+            "Record the WORK, not the WORKING. The subject is the problem, "
+            "the system, and what was learned about it — never the session "
+            "itself. Session mechanics are noise: greetings, test messages, "
+            "slash commands, tool/sandbox/environment hiccups, plugin and "
+            "permission chatter. Leave them out entirely, unless diagnosing "
+            "the tooling was itself the session's purpose.",
+            "",
+            "Each topic is ONE block:",
+            "- The lead is one bold sentence carrying the takeaway: a "
+            "SELF-SUFFICIENT declarative claim a reader understands with no "
+            "other context (no pronouns reaching into the body). Three "
+            "shapes:",
+            '  * a finding — something figured out: "Host compromise '
+            'dominates service-auth risk on co-located hosts."',
+            '  * an outcome — something tried, with its result: "Bounding '
+            "the startup sweep to eight composes cut startup from a "
+            'two-minute timeout to seconds."',
+            "  * a gap — something left open, stated as a fact about the "
+            'work, never as an instruction: "The deployment doc still '
+            "lacks a trust-boundary section, so adopters won't know the "
+            'secret lands as plaintext on the host."',
+            "- The body is short prose carrying the reasoning and the "
+            "specifics (names, numbers, paths) behind the lead. Active "
+            "voice; name the actor or system. Every sentence must add "
+            "information.",
             "- End every block with exactly one @N anchor citing the turn "
-            f"where that topic started. N is a turn index shown in the slice "
-            f"(between {min(slice_from_turn, slice_to_turn)} and "
-            f"{max(slice_from_turn, slice_to_turn)}).",
-            "- If a topic already in the note so far was resumed or corrected "
+            f"where that topic started. N is a turn index shown in the "
+            f"slice (between {lo} and {hi}).",
+            "",
+            "Write FEW blocks — only what has substance. Never narrate "
+            'events ("The session was started", "A command was executed") '
+            "and never emit directives or TODOs. If the slice contains "
+            "nothing of substance, return an EMPTY blocks array — no note "
+            "is better than a noisy one.",
+            "",
+            "If a topic already in the note so far was resumed or corrected "
             "in this slice, emit a CONTINUATION block: set `continued` and "
             "name the earlier topic in `continued_topic` (the lead renders "
-            'as "Continued: <topic>"). Never edit earlier blocks.',
-            "- Phrase unsettled or left-open material as prose in the body — "
-            "never as a decision, a conclusion, or a directive.",
-            "- No kinds, no lead prefixes, no epistemic tags.",
-            "",
-            "Read the NOTE SO FAR to spot topics left open earlier and "
-            "resolved here — those become continuation blocks.",
+            'as "Continued: <topic>"). Never edit earlier blocks. Read the '
+            "NOTE SO FAR to spot topics left open earlier and resolved "
+            "here — those become continuation blocks.",
             "",
             "=== NOTE SO FAR ===",
             note_so_far.strip() if note_so_far.strip() else "(empty — this is the first chapter.)",
@@ -483,7 +503,9 @@ def chapter_tool_schema() -> dict[str, Any]:
         "description": (
             "Emit the topic blocks for one chapter of a lab-notebook "
             "session note. Each block is a bold self-sufficient lead, a "
-            "short prose body, and one @turn anchor."
+            "short prose body, and one @turn anchor. An empty blocks "
+            "array is the correct output when the slice contains nothing "
+            "of substance."
         ),
         "input_schema": {
             "type": "object",
@@ -491,7 +513,9 @@ def chapter_tool_schema() -> dict[str, Any]:
                 "blocks": {
                     "type": "array",
                     "description": (
-                        "The chapter's topic blocks, in chronological order. One block per topic."
+                        "The chapter's topic blocks, in chronological "
+                        "order. One block per topic with substance; "
+                        "empty when there is none."
                     ),
                     "items": {
                         "type": "object",
@@ -499,8 +523,11 @@ def chapter_tool_schema() -> dict[str, Any]:
                             "lead": {
                                 "type": "string",
                                 "description": (
-                                    "One-sentence self-sufficient lead in "
-                                    "the past tense. Stands alone; no "
+                                    "One-sentence self-sufficient "
+                                    "declarative claim: a finding, an "
+                                    "outcome, or a gap stated as a fact. "
+                                    "Plain text — no markdown, the "
+                                    "renderer bolds it. Stands alone; no "
                                     "pronouns into the body. Leave empty "
                                     "only for a continuation block."
                                 ),
@@ -508,9 +535,9 @@ def chapter_tool_schema() -> dict[str, Any]:
                             "body": {
                                 "type": "string",
                                 "description": (
-                                    "Short prose body. Unsettled material "
-                                    "phrased as prose, never as a "
-                                    "decision or directive."
+                                    "Short prose body: the reasoning and "
+                                    "specifics behind the lead, in the "
+                                    "active voice. No event narration."
                                 ),
                             },
                             "anchor": {
