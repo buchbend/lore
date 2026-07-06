@@ -50,7 +50,13 @@ decisions); absorbing the plugin into lore is a follow-up epic.
 ## Implementation decisions
 
 **Note document (deterministic core).** One note per session; the file is append-only until
-close, then immutable (Part-N splitting is removed). Structure: fixed machine-written genre
+close, then immutable (Part-N splitting is removed) — with one carve-out added by epic #151
+(PRD 0002): a resumed session (same transcript + local date) whose note was closed early may
+**reopen** its own note and continue appending, so one session still yields exactly one note
+instead of a duplicated sibling. Immutability still holds for every derived/curated artifact
+and for any other writer; only a session's own continuing heartbeat reopens its own session
+note. See [ADR 0001](../adr/0001-session-note-reopen-relaxes-close-immutability.md).
+Structure: fixed machine-written genre
 disclaimer, then chronological chapters — one per flush. A chapter is a set of topic blocks:
 bold one-sentence self-sufficient lead (no pronouns into the body), short prose body, one
 `@turn` anchor at block end marking where the topic starts. No kinds, no lead prefixes;

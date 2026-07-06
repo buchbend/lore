@@ -274,6 +274,117 @@ def test_planted_secret_withholds_marker_and_quarantines(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Topic-derived slug — rename the note once its first chapter composes
+# ---------------------------------------------------------------------------
+
+
+def test_first_chapter_rename_reflects_topic_lead(tmp_path):
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 4)
+    buf = _append(lore_root, all_turns)
+    client = _Client([_chapter_payload("Traced the flush race", "prose.", 2)])
+
+    outcome = synth_in_place(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+    assert outcome.status == "composed"
+    assert outcome.note_path.name.endswith("-traced-the-flush-race.md")
+    assert outcome.wikilink == f"[[{outcome.note_path.stem}]]"
+
+    # Renamed in place — no orphaned file left at the old heuristic name.
+    notes = list((wiki_root / "sessions").rglob("*.md"))
+    assert notes == [outcome.note_path]
+
+    reopened = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
+    assert reopened.read_sidecar().stub_path == str(outcome.note_path)
+
+
+def test_second_chapter_does_not_rename_again(tmp_path):
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    adapter = _Adapter(_turns(0, 5))
+
+    _append(lore_root, _turns(0, 2))
+    buf = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
+    c1 = _Client([_chapter_payload("Recorded the buffer store design", "Prose about buffers.", 1)])
+    first_outcome = synth_in_place(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=c1,
+        model="m",
+        adapter_lookup=_lookup(adapter),
+        auto_commit=False,
+    )
+    assert first_outcome.note_path.name.endswith("-recorded-the-buffer-store-design.md")
+
+    _append(lore_root, _turns(3, 5))
+    c2 = _Client([_chapter_payload("Discussed the flush lifecycle", "More prose.", 4)])
+    second_outcome = synth_in_place(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=c2,
+        model="m",
+        adapter_lookup=_lookup(adapter),
+        auto_commit=False,
+    )
+    # The filename stays pinned to the first chapter's topic.
+    assert second_outcome.note_path == first_outcome.note_path
+    notes = list((wiki_root / "sessions").rglob("*.md"))
+    assert notes == [first_outcome.note_path]
+
+
+def test_same_minute_rename_collision_gets_numeric_suffix(tmp_path, monkeypatch):
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    # Force both buffers into the same minute so their rename targets collide.
+    monkeypatch.setattr(
+        "lore_curator.buffer_store._now_iso",
+        lambda: "2026-05-01T14:32:00+00:00",
+    )
+
+    turns_a = _turns(0, 2)
+    buf_a = _append(lore_root, turns_a, tid="abc")
+    client_a = _Client([_chapter_payload("Shared Topic", "prose a.", 1)])
+    outcome_a = synth_in_place(
+        buf_a.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client_a,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(turns_a)),
+        auto_commit=False,
+    )
+
+    turns_b = _turns(0, 2)
+    buf_b = _append(lore_root, turns_b, tid="def")
+    client_b = _Client([_chapter_payload("Shared Topic", "prose b.", 1)])
+    outcome_b = synth_in_place(
+        buf_b.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client_b,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(turns_b)),
+        auto_commit=False,
+    )
+
+    assert outcome_a.note_path != outcome_b.note_path
+    assert outcome_a.note_path.name.endswith("-shared-topic.md")
+    assert outcome_b.note_path.name.endswith("-shared-topic-2.md")
+    assert outcome_a.note_path.exists()
+    assert outcome_b.note_path.exists()
+
+
+# ---------------------------------------------------------------------------
 # Failure semantics
 # ---------------------------------------------------------------------------
 

@@ -601,6 +601,46 @@ class Buffer:
             os.replace(self._log_path, new_log)
         return new_sidecar, new_log
 
+    def reopen_from_done(self) -> Sidecar | None:
+        """Restore this stem's archived buffer from ``_done/`` for continuation.
+
+        Moves ``_done/<stem>.state.json`` (and ``.jsonl`` if present) back to
+        the live buffers dir, then resets the sidecar to a fresh accumulation
+        cycle — state ``accumulating``, counters zeroed, event log truncated,
+        flush bookkeeping cleared — while preserving the note pointer
+        (``stub_path``), session identity, and the transcript watermark
+        (``last_seen``). Returns the restored :class:`Sidecar`, or ``None``
+        when no archived buffer exists for this stem. Caller must hold
+        :meth:`with_lock`.
+
+        This is the buffer half of the reopen-and-continue path: a session
+        that was closed — a false liveness reap, or a genuine close followed
+        by a resume — reattaches to its own buffer instead of minting a
+        duplicate. The archive is *moved* (not copied) so the "one buffer per
+        stem" invariant holds: a later :meth:`close` archives cleanly with no
+        ``_done/`` collision. The event log is truncated because the note
+        already carries every flushed chapter; only new turns accumulate now.
+        """
+        done = done_dir(self._lore_root)
+        archived_sidecar = done / self._sidecar_path.name
+        archived_log = done / self._log_path.name
+        if not archived_sidecar.exists():
+            return None
+        os.replace(archived_sidecar, self._sidecar_path)
+        if archived_log.exists():
+            os.replace(archived_log, self._log_path)
+        sidecar = self.read_sidecar()
+        if sidecar is None:
+            return None
+        sidecar.state = "accumulating"
+        sidecar.counters = Counters()
+        sidecar.flush_attempts = 0
+        sidecar.last_error = None
+        sidecar.flush_requested = None
+        self._write_sidecar(sidecar)
+        self._log_path.write_text("")
+        return sidecar
+
 
 # ---------------------------------------------------------------------------
 # Cross-buffer iteration (used by reaper / SessionEnd / status)

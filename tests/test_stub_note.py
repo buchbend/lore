@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from lore_core.note_document import Chapter, TopicBlock
 from lore_core.schema import parse_frontmatter
 from lore_core.types import Scope, TranscriptHandle, Turn
 from lore_core.wiki_config import WikiConfig
@@ -14,6 +15,8 @@ from lore_curator.buffer_append import append_chunk
 from lore_curator.stub_note import (
     STUB_DESCRIPTION_PLACEHOLDER,
     STUB_SUMMARY_PLACEHOLDER,
+    _lead_for_rename,
+    _resolve_renamed_path,
     write_or_update,
 )
 
@@ -609,3 +612,63 @@ def test_preview_singular_plural_and_no_extras(
     # No commits / issues seeded → those segments must not appear.
     assert "commits" not in text.lower().split("_so far:", 1)[1].split("_._", 1)[0]
     assert "issue" not in text.lower().split("_so far:", 1)[1].split("_._", 1)[0]
+
+
+# ---------------------------------------------------------------------------
+# Topic-derived rename — the note's filename after its first chapter composes
+# ---------------------------------------------------------------------------
+
+
+def test_lead_for_rename_picks_first_block_lead():
+    chapter = Chapter(blocks=[
+        TopicBlock(lead="Traced the flush race", body="prose", anchor_turn=2),
+    ])
+    assert _lead_for_rename(chapter) == "Traced the flush race"
+
+
+def test_lead_for_rename_uses_continued_topic_for_continuation_block():
+    chapter = Chapter(blocks=[
+        TopicBlock(
+            lead="", body="prose", anchor_turn=2, continued=True, continued_topic="Flush race",
+        ),
+    ])
+    assert _lead_for_rename(chapter) == "Flush race"
+
+
+def test_lead_for_rename_empty_when_no_blocks():
+    assert _lead_for_rename(Chapter(blocks=[])) == ""
+
+
+def test_lead_for_rename_empty_when_first_block_blank():
+    chapter = Chapter(blocks=[TopicBlock(lead="   ", body="prose", anchor_turn=1)])
+    assert _lead_for_rename(chapter) == ""
+
+
+def test_resolve_renamed_path_swaps_slug_keeps_prefix(tmp_path: Path):
+    old = tmp_path / "01-1432-session-proj-x-1432.md"
+    old.write_text("stub")
+    new = _resolve_renamed_path(old, "traced-the-flush-race")
+    assert new.name == "01-1432-traced-the-flush-race.md"
+    assert new.parent == old.parent
+
+
+def test_resolve_renamed_path_noop_when_slug_unchanged(tmp_path: Path):
+    old = tmp_path / "01-1432-traced-the-flush-race.md"
+    old.write_text("stub")
+    new = _resolve_renamed_path(old, "traced-the-flush-race")
+    assert new == old
+
+
+def test_resolve_renamed_path_avoids_collision(tmp_path: Path):
+    old = tmp_path / "01-1432-session-proj-x-1432.md"
+    old.write_text("stub")
+    (tmp_path / "01-1432-traced-the-flush-race.md").write_text("someone else's note")
+    new = _resolve_renamed_path(old, "traced-the-flush-race")
+    assert new.name == "01-1432-traced-the-flush-race-2.md"
+
+
+def test_resolve_renamed_path_leaves_malformed_stem_untouched(tmp_path: Path):
+    old = tmp_path / "weird-name.md"
+    old.write_text("stub")
+    new = _resolve_renamed_path(old, "traced-the-flush-race")
+    assert new == old
