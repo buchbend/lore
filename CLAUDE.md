@@ -7,3 +7,13 @@
 - backend: github
 - issues: --assignee @me --state open
 - prs: --author @me
+
+## Releasing
+
+Every merge to `main` that ships plugin-relevant behavior (hooks, MCP server,
+curator/capture code, skills) **must** end with a version bump — bump
+`.claude-plugin/plugin.json`, `pyproject.toml`, and `CHANGELOG.md` together in
+one `chore: release X.Y.Z` commit, then push. `claude plugin update lore@lore`
+only re-fetches on a version *change*; without the bump, installed plugin
+caches silently stay on the old code even though `main` has moved on (this bit
+us once already — see `CHANGELOG.md`'s own header note and commit `004d033`).
