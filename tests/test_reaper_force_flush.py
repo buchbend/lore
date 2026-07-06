@@ -6,13 +6,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from lore_core.types import Turn
 from lore_core.wiki_config import WikiConfig
 from lore_curator.buffer_append import append_chunk
 from lore_curator.buffer_store import OwnerInfo, Sidecar
 from lore_curator.reaper import (
-    ReaperReport,
     is_owner_alive,
     reap_once,
 )
@@ -33,9 +31,15 @@ def lore_root(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def patch_collectors(monkeypatch):
-    monkeypatch.setattr("lore_curator.session_activity.collect_commits_by_sha", lambda *a, **kw: [])
-    monkeypatch.setattr("lore_curator.session_activity.collect_issues_in_window", lambda *a, **kw: ([], []))
-    monkeypatch.setattr("lore_curator.session_activity.collect_projects_for_session", lambda **kw: [])
+    monkeypatch.setattr(
+        "lore_curator.session_activity.collect_commits_by_sha", lambda *a, **kw: []
+    )
+    monkeypatch.setattr(
+        "lore_curator.session_activity.collect_issues_in_window", lambda *a, **kw: ([], [])
+    )
+    monkeypatch.setattr(
+        "lore_curator.session_activity.collect_projects_for_session", lambda **kw: []
+    )
     monkeypatch.setattr("lore_core.git.git_repo_root", lambda cwd: None)
     monkeypatch.setattr("lore_core.git.current_repo", lambda cwd: "")
 
@@ -72,12 +76,28 @@ def test_owner_alive_local_pid_returns_true_or_none():
     assert verdict in (True, None)  # depends on /proc availability
 
 
-def test_owner_dead_pid_returns_false():
-    """Use a pid that's almost certainly free (very high)."""
+def test_owner_gone_same_host_returns_none():
+    """A same-host owner whose pid is absent is uncertain, not dead.
+
+    The buffer's owner pid is re-stamped every heartbeat to the hook
+    subprocess, which exits within milliseconds -- "pid gone" is the
+    normal steady state, not a death signal, so long as the host still
+    matches."""
     sidecar = Sidecar(owner=OwnerInfo(pid=2**31 - 1, host="", start_ts=0.0))
     import socket
+
     sidecar.owner.host = socket.gethostname()
-    assert is_owner_alive(sidecar) is False
+    assert is_owner_alive(sidecar) is None
+
+
+def test_owner_pid_reused_start_ts_mismatch_returns_none():
+    """A live pid whose start-tick doesn't match the recorded value means
+    the pid was reused by an unrelated process -- uncertain, not dead."""
+    sidecar = Sidecar(owner=OwnerInfo(pid=os.getpid(), host="", start_ts=999999999.0))
+    import socket
+
+    sidecar.owner.host = socket.gethostname()
+    assert is_owner_alive(sidecar) is None
 
 
 def test_owner_different_host_returns_false():
@@ -103,7 +123,6 @@ def test_alive_owner_not_reaped(lore_root, monkeypatch):
 def test_dead_owner_and_stale_is_reaped(lore_root, monkeypatch):
     buf, _ = _seed(lore_root)
     # Backdate last_heartbeat past the staleness threshold.
-    sidecar = buf.read_sidecar()
     stale = (datetime.now(UTC) - timedelta(hours=3)).isoformat().replace("+00:00", "Z")
     with buf.with_lock():
         buf.patch(last_heartbeat=stale, last_appended_at=stale)
@@ -179,6 +198,48 @@ def test_closed_buffers_skipped(lore_root, monkeypatch):
     report = reap_once(lore_root)
     assert report.already_done == 1
     assert report.force_flushed == 0
+
+
+def test_pid_gone_same_host_not_reaped_within_staleness(lore_root):
+    """Regression for the mid-session false reap: a heartbeat stamps a
+    pid that then exits (the normal buffer-and-flush steady state) --
+    the reaper must not treat pid-gone alone as death while the
+    heartbeat is still fresh. The buffer must survive as-is."""
+    import socket
+
+    buf, _ = _seed(lore_root)
+    with buf.with_lock():
+        buf.patch(owner=OwnerInfo(pid=2**31 - 1, host=socket.gethostname(), start_ts=0.0))
+
+    report = reap_once(lore_root)
+    assert report.force_flushed == 0
+    assert report.alive == 1
+    assert buf.read_sidecar().state == "accumulating"
+
+
+def test_pid_gone_same_host_reaped_after_staleness(lore_root, monkeypatch):
+    """A same-host pid-gone owner is still eventually reaped once the
+    heartbeat goes stale -- uncertainty defers to the staleness floor,
+    it doesn't suppress reaping forever."""
+    import socket
+
+    buf, _ = _seed(lore_root)
+    stale = (datetime.now(UTC) - timedelta(hours=3)).isoformat().replace("+00:00", "Z")
+    with buf.with_lock():
+        buf.patch(
+            owner=OwnerInfo(pid=2**31 - 1, host=socket.gethostname(), start_ts=0.0),
+            last_heartbeat=stale,
+            last_appended_at=stale,
+        )
+
+    spawned: list = []
+    monkeypatch.setattr(
+        "lore_curator.reaper.spawn_detached_flush",
+        lambda buffer_path, lore_root: spawned.append(buffer_path) or True,
+    )
+    report = reap_once(lore_root)
+    assert report.force_flushed == 1
+    assert spawned == [buf.sidecar_path]
 
 
 def test_max_per_pass_bounds_scan(lore_root, monkeypatch):
