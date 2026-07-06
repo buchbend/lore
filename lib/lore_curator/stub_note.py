@@ -54,6 +54,7 @@ from lore_curator.buffer_store import Buffer, ReplayedBuffer, Sidecar
 from lore_curator.session_filer import _slug
 
 if TYPE_CHECKING:
+    from lore_core.note_document import Chapter
     from lore_core.run_log import RunLogger
 
 
@@ -132,6 +133,53 @@ def _derive_slug(
 
     scope_label = scope.scope.replace(":", "-")
     return _slug(f"session-{scope_label}-{work_time.strftime('%H%M')}")
+
+
+def _lead_for_rename(chapter: Chapter) -> str:
+    """First block's topic text, for renaming a note after its first chapter.
+
+    A composed note's file is created (and first named) at the first
+    heartbeat — well before any chapter exists, so the initial filename is
+    always the heuristic guess above. Once the first chapter composes, its
+    opening block names the session's actual topic and the file is renamed
+    to match (see ``chapter_flush._rename_to_topic_slug``). Returns ``""``
+    when the chapter has no blocks or the first one carries no usable text
+    (a continuation block's topic lives in ``continued_topic``) — the
+    caller must treat that as "keep the current filename", never invent an
+    empty slug.
+    """
+    if not chapter.blocks:
+        return ""
+    block = chapter.blocks[0]
+    lead = (block.continued_topic if block.continued else block.lead) or ""
+    return lead.strip()
+
+
+def _resolve_renamed_path(note_path: Path, slug: str) -> Path:
+    """Return the rename target for ``note_path`` once ``slug`` is known.
+
+    Preserves the ``<DD>-<HHMM>-`` prefix and probes the same directory for
+    a free filename exactly like :func:`_resolve_first_write_path`'s
+    same-minute collision handling (numeric ``-2``, ``-3`` ... suffix) —
+    two notes composed in the same minute must never collide. Returns
+    ``note_path`` unchanged when its stem isn't the canonical
+    ``<DD>-<HHMM>-<slug>`` shape, or when ``slug`` already matches the
+    current one (nothing to rename).
+    """
+    parts = note_path.stem.split("-", 2)
+    if len(parts) < 3:
+        return note_path
+    day, hhmm, current_slug = parts
+    if current_slug == slug:
+        return note_path
+    prefix = f"{day}-{hhmm}-"
+    parent = note_path.parent
+    candidate = parent / f"{prefix}{slug}.md"
+    counter = 1
+    while candidate.exists() and candidate != note_path:
+        counter += 1
+        candidate = parent / f"{prefix}{slug}-{counter}.md"
+    return candidate
 
 
 # ---------------------------------------------------------------------------
