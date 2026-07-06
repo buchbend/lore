@@ -1,14 +1,14 @@
 ---
 title: Session notes that carry the essence, one per session
 status: draft
-epic: https://github.com/buchbend/lore/issues/PENDING
+epic: https://github.com/buchbend/lore/issues/151
 repos:
   - buchbend/lore
 ---
 
 # PRD 0002: Session notes that carry the essence, one per session
 
-> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/PENDING).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/151).
 > The epic links here; this file is not embedded in the issue body.
 
 ## Problem
