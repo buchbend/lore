@@ -68,7 +68,9 @@ from lore_curator.buffer_store import (
     iter_all,
 )
 from lore_curator.chapter_compose import ComposeStatus, Gate, compose_chapter
+from lore_curator.session_filer import _slug
 from lore_curator.session_note import ensure_note_from_sidecar, facts_from_replay
+from lore_curator.stub_note import _lead_for_rename, _resolve_renamed_path
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
@@ -470,6 +472,31 @@ def _read_note_body(note_path: Path) -> str:
         return ""
 
 
+def _rename_to_topic_slug(buffer: Buffer, note_path: Path, chapter: nd.Chapter) -> Path:
+    """Rename a note to its first chapter's topic, once that topic exists.
+
+    The note is created (and first named) at the first heartbeat, well
+    before any chapter — so its filename starts as an incidental guess (a
+    commit subject, a touched file's basename, or a bare timestamp). Once
+    the first chapter composes, its opening lead names the session's
+    actual topic; this makes the filename match. A chapter with no usable
+    lead text (shouldn't happen for a COMPOSED result, but defensive)
+    leaves the filename untouched rather than risk an empty slug.
+    """
+    lead = _lead_for_rename(chapter)
+    if not lead:
+        return note_path
+    slug = _slug(lead)
+    if not slug or slug == "session":
+        return note_path
+    new_path = _resolve_renamed_path(note_path, slug)
+    if new_path == note_path:
+        return note_path
+    note_path.replace(new_path)
+    buffer.patch(stub_path=str(new_path))
+    return new_path
+
+
 def _apply_outcome(
     *,
     buffer: Buffer,
@@ -515,6 +542,10 @@ def _apply_outcome(
             facts=facts,
             wiki_root=wiki_root,
         )
+        if out.chapter_n == 1:
+            note_path = _rename_to_topic_slug(buffer, note_path, compose_result.chapter)
+            out.note_path = note_path
+            out.wikilink = f"[[{note_path.stem}]]"
         out.status = "composed"
         _clear_after_progress(buffer, close=close)
     elif status is ComposeStatus.EMPTY:
