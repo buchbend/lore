@@ -24,6 +24,7 @@ from lore_curator.chapter_compose import (
     GateResult,
     PassThroughGate,
     chapter_anchor_lint,
+    chapter_same_anchor_lint,
     chapter_tool_schema,
     compose_chapter,
     render_chapter_body,
@@ -292,6 +293,107 @@ def test_persistent_out_of_slice_anchor_fails():
     )
     assert result.status is ComposeStatus.FAILED
     assert result.attempts == CHAPTER_MAX_ATTEMPTS
+
+
+# ---------------------------------------------------------------------------
+# Same-anchor lint (deterministic) — soft: nudges once, never blocks publish
+# ---------------------------------------------------------------------------
+
+
+def test_same_anchor_lint_flags_more_than_two_shared():
+    chapter = Chapter(
+        blocks=[
+            TopicBlock(lead="a", body="", anchor_turn=34),
+            TopicBlock(lead="b", body="", anchor_turn=34),
+            TopicBlock(lead="c", body="", anchor_turn=34),
+        ]
+    )
+    assert chapter_same_anchor_lint(chapter) == 34
+
+
+def test_same_anchor_lint_allows_two_shared():
+    chapter = Chapter(
+        blocks=[
+            TopicBlock(lead="a", body="", anchor_turn=5),
+            TopicBlock(lead="b", body="", anchor_turn=5),
+        ]
+    )
+    assert chapter_same_anchor_lint(chapter) is None
+
+
+def test_same_anchor_lint_allows_distinct_anchors():
+    chapter = Chapter(
+        blocks=[
+            TopicBlock(lead="a", body="", anchor_turn=1),
+            TopicBlock(lead="b", body="", anchor_turn=2),
+            TopicBlock(lead="c", body="", anchor_turn=3),
+        ]
+    )
+    assert chapter_same_anchor_lint(chapter) is None
+
+
+def _same_anchor_payload(anchor: int, count: int) -> dict[str, Any]:
+    blocks = [{"lead": f"lead {i}", "body": f"body {i}", "anchor": anchor} for i in range(count)]
+    return {"blocks": blocks}
+
+
+def test_more_than_two_shared_anchors_triggers_one_retry_then_composes():
+    bad = _same_anchor_payload(34, 3)
+    good = _valid_payload()
+    msgs = _RecordingMessages([bad, good])
+    client = _FakeClient(msgs)
+
+    result = compose_chapter(
+        slice_text="[user@0] x\n[assistant@34] y",
+        slice_from_turn=0,
+        slice_to_turn=100,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+    )
+    assert result.status is ComposeStatus.COMPOSED
+    assert result.attempts == 2
+    assert len(msgs.calls) == 2
+    retry_prompt = _prompt_text(msgs.calls[1])
+    assert "34" in retry_prompt
+    assert "same turn" in retry_prompt.lower()
+
+
+def test_distinct_anchors_untouched_by_same_anchor_lint():
+    msgs = _RecordingMessages([_valid_payload()])
+    client = _FakeClient(msgs)
+
+    result = compose_chapter(
+        slice_text="[user@2] x\n[assistant@4] y",
+        slice_from_turn=2,
+        slice_to_turn=4,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+    )
+    assert result.status is ComposeStatus.COMPOSED
+    assert result.attempts == 1
+    assert len(msgs.calls) == 1
+
+
+def test_persistent_same_anchor_still_publishes():
+    bad = _same_anchor_payload(34, 3)
+    msgs = _RecordingMessages([bad, dict(bad)])
+    client = _FakeClient(msgs)
+
+    result = compose_chapter(
+        slice_text="[user@0] x\n[assistant@34] y",
+        slice_from_turn=0,
+        slice_to_turn=100,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+    )
+    assert result.status is ComposeStatus.COMPOSED
+    assert result.attempts == 2
+    assert len(msgs.calls) == 2
+    assert result.chapter is not None
+    assert len(result.chapter.blocks) == 3
 
 
 # ---------------------------------------------------------------------------

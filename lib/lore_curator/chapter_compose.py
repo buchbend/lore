@@ -54,6 +54,7 @@ __all__ = [
     "ComposeResult",
     "compose_chapter",
     "chapter_anchor_lint",
+    "chapter_same_anchor_lint",
     "chapter_tool_schema",
     "render_chapter_body",
     "CHAPTER_MAX_ATTEMPTS",
@@ -153,6 +154,25 @@ def chapter_anchor_lint(chapter: Chapter, *, from_turn: int, to_turn: int) -> li
     return offenders
 
 
+def chapter_same_anchor_lint(chapter: Chapter) -> int | None:
+    """Return the anchor turn shared by more than two blocks, else ``None``.
+
+    Two blocks citing the same turn is common and unremarkable — two
+    closely related findings surfacing together. More than two is usually
+    a tell that every block was derived from one quoted or pasted passage
+    rather than distinct moments in the session, which collapses the
+    anchors and makes them useless for navigation. This is a soft signal:
+    callers retry once for a nudge, never reject on it.
+    """
+    counts: dict[int, int] = {}
+    for block in chapter.blocks:
+        counts[block.anchor_turn] = counts.get(block.anchor_turn, 0) + 1
+    for anchor, count in counts.items():
+        if count > 2:
+            return anchor
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Compose loop
 # ---------------------------------------------------------------------------
@@ -175,8 +195,12 @@ def compose_chapter(
 
     Attempt 1 composes; a deterministic anchor lint and the injected
     gate then judge the result. An anchor-lint miss or a gate withhold
-    feeds corrective text into a second attempt. After
-    :data:`CHAPTER_MAX_ATTEMPTS` the outcome is returned:
+    feeds corrective text into a second attempt. A softer same-anchor
+    lint (more than two blocks citing one turn) earns at most one
+    corrective retry of its own but never blocks publication — after
+    that single nudge the chapter is composed regardless of whether the
+    anchors changed. After :data:`CHAPTER_MAX_ATTEMPTS` the outcome is
+    returned:
 
     * PASS → ``COMPOSED`` with the chapter.
     * zero blocks on any attempt → ``EMPTY`` immediately (the model
@@ -195,6 +219,7 @@ def compose_chapter(
     last_withheld: GateResult | None = None
     last_withheld_text = ""
     attempts = 0
+    same_anchor_retried = False
 
     while attempts < CHAPTER_MAX_ATTEMPTS:
         attempts += 1
@@ -227,6 +252,20 @@ def compose_chapter(
                     call="chapter-anchor-lint",
                     transcript_id=transcript_id,
                     offenders=offenders,
+                )
+            continue
+
+        shared_anchor = chapter_same_anchor_lint(chapter)
+        retry_left = attempts < CHAPTER_MAX_ATTEMPTS
+        if shared_anchor is not None and not same_anchor_retried and retry_left:
+            same_anchor_retried = True
+            retry_feedback = _same_anchor_feedback(shared_anchor)
+            if logger is not None:
+                logger.emit(
+                    "warning",
+                    call="chapter-same-anchor-lint",
+                    transcript_id=transcript_id,
+                    anchor=shared_anchor,
                 )
             continue
 
@@ -268,6 +307,15 @@ def _anchor_feedback(offenders: list[tuple[int, int]], from_turn: int, to_turn: 
         f"The previous attempt cited a turn outside it (block(s) {bad}). "
         f"Every @N anchor must be a turn index shown in the slice, within "
         f"{lo}-{hi}."
+    )
+
+
+def _same_anchor_feedback(anchor: int) -> str:
+    return (
+        f"Several blocks all cite the same turn (@{anchor}). Confirm these "
+        "are distinct findings from the session's progression, not "
+        "restatements of one quoted or pasted passage — re-anchor each "
+        "block to the turn where its own topic actually started."
     )
 
 
