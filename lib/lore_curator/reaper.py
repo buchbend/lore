@@ -8,18 +8,23 @@ time.
 
 Liveness verdict:
 
-* If the owner PID is unambiguously **dead** (host mismatch,
-  ``ProcessLookupError`` from ``os.kill(pid, 0)``, or
-  ``/proc/<pid>/stat`` start-ts mismatch indicating PID reuse) →
-  **reap immediately**, regardless of heartbeat freshness. Waiting on
-  a confirmed-dead owner buys nothing; short Claude sessions that die
-  without SessionEnd would otherwise leave stub notes pending for the
-  full staleness window.
-* If the owner is unambiguously **alive** → keep waiting.
-* If liveness is **uncertain** (no ``/proc`` access — macOS, network
-  fs, sandbox) → fall back on the staleness threshold
+* If the owner PID is unambiguously **dead** — the recorded owner
+  ``host`` differs from this host — → **reap immediately**, regardless
+  of heartbeat freshness. Waiting on a confirmed-dead owner buys
+  nothing; short Claude sessions that die without SessionEnd would
+  otherwise leave stub notes pending for the full staleness window.
+* If the owner is unambiguously **alive** (same host, PID signalable,
+  ``/proc`` start-ts matches) → keep waiting.
+* If liveness is **uncertain** → fall back on the staleness threshold
   (``liveness_stale_threshold_s``, default 30 min, per-wiki
-  configurable; doubled on macOS).
+  configurable; doubled on macOS). This covers no ``/proc`` access
+  (macOS, network fs, sandbox) *and* a same-host owner whose PID is
+  simply gone (``ProcessLookupError``) or whose ``/proc`` start-ts no
+  longer matches (PID reuse). In the buffer-and-flush architecture the
+  owner pid is re-stamped every heartbeat to the hook subprocess, which
+  exits within milliseconds — "pid gone, same host" is the normal
+  steady state, not a death signal, so it must not short-circuit past
+  the staleness floor the way a genuine cross-host mismatch does.
 
 Concurrency:
 
@@ -41,6 +46,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lore_core.wiki_config import load_wiki_config
+
 from lore_curator.buffer_store import Buffer, Sidecar, iter_all
 from lore_curator.synthesis import spawn_detached_flush
 
@@ -66,7 +72,7 @@ class ReaperReport:
 def _read_proc_start_ticks(pid: int) -> float | None:
     """Return ``/proc/<pid>/stat`` field 22, or ``None`` on macOS / missing."""
     try:
-        with open(f"/proc/{pid}/stat", "r") as fh:
+        with open(f"/proc/{pid}/stat") as fh:
             content = fh.read()
     except (FileNotFoundError, PermissionError, OSError):
         return None
@@ -85,14 +91,17 @@ def _read_proc_start_ticks(pid: int) -> float | None:
 def is_owner_alive(sidecar: Sidecar, *, host: str | None = None) -> bool | None:
     """Return True (alive), False (dead), or None (can't tell — keep waiting).
 
-    Encapsulates the AND-condition liveness check. Returns:
+    Encapsulates the liveness check. Returns:
 
     * ``True`` if the owner is local AND PID is alive AND start_ts matches.
-    * ``False`` if the owner is local AND PID is gone, OR start_ts mismatch.
     * ``False`` if owner host differs from this host (definitely not us).
-    * ``None`` if we can't read /proc and the host matches — the
-      caller should treat this as "uncertain, fall back on staleness
-      threshold".
+    * ``None`` if the owner is local but the PID is gone, or the
+      ``/proc`` start-ts no longer matches (PID reuse), or we can't
+      read ``/proc`` at all — a same-host PID going missing is the
+      normal buffer-and-flush steady state (the owner pid is
+      re-stamped every heartbeat to a hook subprocess that exits
+      within milliseconds), not evidence of death, so the caller falls
+      back on the staleness threshold instead of reaping immediately.
     """
     host = host or socket.gethostname()
     if not sidecar.owner.pid:
@@ -103,7 +112,7 @@ def is_owner_alive(sidecar: Sidecar, *, host: str | None = None) -> bool | None:
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        return False
+        return None
     except PermissionError:
         # Pid exists but we can't signal; treat as alive.
         return True
@@ -116,7 +125,9 @@ def is_owner_alive(sidecar: Sidecar, *, host: str | None = None) -> bool | None:
         # No /proc access — caller falls back on staleness threshold.
         return None
     if abs(actual - expected) > _START_TS_TOLERANCE:
-        return False
+        # PID reuse: the process answering to this pid isn't the one
+        # that recorded it — uncertain, not proof of death.
+        return None
     return True
 
 
@@ -165,7 +176,7 @@ def reap_once(
     *,
     dry_run: bool = False,
     max_per_pass: int | None = None,
-    logger: "RunLogger | None" = None,
+    logger: RunLogger | None = None,
     now: datetime | None = None,
 ) -> ReaperReport:
     """One reaper pass over live buffers under ``<lore_root>/.lore/buffers``.
@@ -236,7 +247,7 @@ def _judge(
     *,
     host: str,
     now: datetime,
-    logger: "RunLogger | None",
+    logger: RunLogger | None,
 ) -> tuple[str, str]:
     """Return ``(verdict, reason)`` for a single buffer.
 
@@ -265,14 +276,16 @@ def _judge(
             return "alive", "owner-alive"
 
         if alive_verdict is False:
-            # Owner is unambiguously dead — reap regardless of staleness.
-            # Why: short Claude sessions that die without SessionEnd leave
-            # stub notes "synthesis pending" for the full staleness window
-            # (30+ min); waiting buys nothing once the PID is provably gone.
+            # Owner is on a different host — unambiguously not us, reap
+            # regardless of staleness. Why: short Claude sessions that die
+            # without SessionEnd leave stub notes "synthesis pending" for
+            # the full staleness window (30+ min); waiting buys nothing
+            # once the owner is provably not this machine.
             return "reap", "owner-dead"
 
-        # alive_verdict is None: uncertain (no /proc / network-fs / macOS).
-        # Fall back on staleness threshold to avoid false-positive reaps.
+        # alive_verdict is None: uncertain (no /proc / network-fs / macOS /
+        # same-host pid-gone / pid-reused). Fall back on staleness
+        # threshold to avoid false-positive reaps.
         if not _is_stale(sidecar, threshold_s=threshold, now=now):
             return "alive", "fresh-heartbeat"
         return "reap", "stale+owner-uncertain"
