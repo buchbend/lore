@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lore_core import note_document as nd
 from lore_core.types import Turn
 from lore_core.wiki_config import WikiConfig
 from lore_curator.buffer_store import (
@@ -274,30 +275,56 @@ def append_chunk(
         existing = buffer.read_sidecar()
 
         if existing is None:
-            owner = _build_owner(
-                run_id=owner_run_id,
-                claude_session_id=owner_claude_session_id,
-            )
-            sidecar = _build_initial_sidecar(
-                transcript_id=transcript_id,
-                local_date=local_date,
-                integration=integration,
-                wiki=wiki,
-                scope=scope,
-                cwd=cwd,
-                handle_label=handle_label,
-                owner=owner,
-            )
-            buffer.init_sidecar(sidecar)
-            is_new = True
-            existing = buffer.read_sidecar()
-            if logger is not None:
-                logger.emit(
-                    "buffer-opened",
+            restored = buffer.reopen_from_done()
+            if restored is not None:
+                # Resumed session: a prior close (a false liveness reap, or a
+                # genuine close followed by an editor restart / /compact /
+                # idle-then-return) archived this stem's buffer. Reattach to
+                # it and reopen its note so the continuation appends to the
+                # SAME file instead of minting a duplicate, partly-duplicated
+                # sibling — one session, one note. See docs/adr/0001.
+                existing = restored
+                note_path = Path(restored.stub_path) if restored.stub_path else None
+                if note_path is not None and note_path.exists():
+                    nd.reopen_note(note_path, wiki_root=wiki_root)
+                else:
+                    # The prior note was discarded (trivial / empty) or never
+                    # written; drop the dangling pointer so a fresh note is
+                    # created for the resumed session.
+                    existing = buffer.patch(stub_path="")
+                if logger is not None:
+                    logger.emit(
+                        "buffer-reopened",
+                        transcript_id=transcript_id,
+                        local_date=local_date,
+                        stem=buffer.stem,
+                        note_path=existing.stub_path,
+                    )
+            else:
+                owner = _build_owner(
+                    run_id=owner_run_id,
+                    claude_session_id=owner_claude_session_id,
+                )
+                sidecar = _build_initial_sidecar(
                     transcript_id=transcript_id,
                     local_date=local_date,
-                    stem=buffer.stem,
+                    integration=integration,
+                    wiki=wiki,
+                    scope=scope,
+                    cwd=cwd,
+                    handle_label=handle_label,
+                    owner=owner,
                 )
+                buffer.init_sidecar(sidecar)
+                is_new = True
+                existing = buffer.read_sidecar()
+                if logger is not None:
+                    logger.emit(
+                        "buffer-opened",
+                        transcript_id=transcript_id,
+                        local_date=local_date,
+                        stem=buffer.stem,
+                    )
 
         # State guard: if a flush worker has already taken ownership
         # (state in {flushing, closed}), the heartbeat must NOT mutate

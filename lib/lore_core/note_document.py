@@ -47,6 +47,7 @@ __all__ = [
     "append_chapter",
     "append_marker_chapter",
     "close_note",
+    "reopen_note",
     "is_closed",
     "read_note",
     "render_chapter_body",
@@ -397,6 +398,36 @@ def close_note(
     _apply_facts(fm, facts)
     fm["last_reviewed"] = _today()
     _write(path, fm, body, wiki_root=wiki_root)
+
+
+def reopen_note(
+    path: Path,
+    *,
+    wiki_root: Path | None = None,
+) -> bool:
+    """Reopen a closed session note so its own continuing session can append.
+
+    Flips ``note_status`` from ``closed`` back to ``open`` and returns
+    ``True`` when a reopen happened; a no-op returning ``False`` when the
+    note is already open (idempotent). No content is touched — only the
+    status flag and ``last_reviewed`` move, and the next
+    :func:`append_chapter` resumes numbering from the existing chapters.
+
+    This deliberately relaxes the "a closed session note is immutable"
+    invariant, and *only* for session notes under the one-file-per-session
+    (reopen) model: a session that was closed early (a false liveness reap)
+    or resumes after a genuine close reattaches to its own note rather than
+    minting a duplicate sibling. Immutability still holds for derived /
+    curated artifacts; there is no close-reason gate because the note
+    records no close reason to gate on. See ``docs/adr/0001``.
+    """
+    fm, body = _load(path)
+    if fm.get("note_status") != _CLOSED:
+        return False
+    fm["note_status"] = _OPEN
+    fm["last_reviewed"] = _today()
+    _write(path, fm, body, wiki_root=wiki_root)
+    return True
 
 
 def is_closed(path: Path) -> bool:
