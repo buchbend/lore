@@ -10,6 +10,39 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-07-06
+
+### Fixed
+- **One session, one note.** A same-host owner whose pid is gone is no
+  longer judged dead outright — the reaper and startup sweep now treat it
+  as uncertain and defer to the existing staleness threshold, instead of
+  force-closing a session that is still running (the root cause of one
+  session filing several unlinked, partly-duplicated notes). A resumed
+  session whose buffer was archived reattaches to its own note instead of
+  minting a new one: a `reopen_note` primitive reopens the closed note and
+  the buffer restores from `_done/`, seeding the continued compose from the
+  existing body so nothing is re-narrated. This relaxes "a closed session
+  note is immutable" for session notes only (see
+  `docs/adr/0001-session-note-reopen-relaxes-close-immutability.md`);
+  derived/curated artifacts stay immutable.
+- The composer no longer attributes material the user only pasted or
+  quoted as an exemplar (formatting example, "an older version of", a
+  fenced block with its own anchored leads) to the session's own work,
+  unless working on that material was itself the topic.
+
+### Added
+- A soft same-anchor lint: when a chapter has more than two blocks all
+  citing the same turn, one corrective retry nudges the composer toward
+  distinct anchors. It never hard-rejects and never fabricates diversity —
+  the chapter still publishes either way.
+
+### Changed
+- A note's filename is renamed to reflect its first composed lead once the
+  first chapter lands, instead of staying pinned to the note-creation-time
+  heuristic (commit subject / touched-file basename) for the note's whole
+  life. Stub notes with no chapter yet, and same-minute collisions, keep
+  the existing fallback/suffix behavior.
+
 ## [0.56.0] - 2026-07-04
 
 ### Changed
