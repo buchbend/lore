@@ -12,6 +12,7 @@ prompt experiments.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -431,7 +432,11 @@ def test_lead_markdown_bold_is_stripped():
     # Models sometimes bold the lead themselves; the renderer adds the
     # bold, so embedded ** would double up ("****lead****"). Parsing
     # normalizes it away.
-    payload = {"blocks": [{"lead": "**The cache was stale**, so skills never loaded.", "body": "x", "anchor": 0}]}
+    payload = {
+        "blocks": [
+            {"lead": "**The cache was stale**, so skills never loaded.", "body": "x", "anchor": 0}
+        ]
+    }
     msgs = _RecordingMessages([payload])
     client = _FakeClient(msgs)
     result = compose_chapter(
@@ -506,3 +511,81 @@ def test_synthesis_no_longer_imports_render_regions():
     import lore_curator.synthesis as synthesis
 
     assert not hasattr(synthesis, "render_regions")
+
+
+# ---------------------------------------------------------------------------
+# Quoted / reference material is not the session's work (#147)
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_carries_quoted_material_distinction():
+    # The compose model (a weak-pragmatics ~120B open model) must be told
+    # concretely that pasted exemplar / reference material is not the
+    # session's own work, with the signals spelled out — not inferred.
+    msgs = _RecordingMessages([_valid_payload()])
+    client = _FakeClient(msgs)
+    compose_chapter(
+        slice_text="[user@0] hi",
+        slice_from_turn=0,
+        slice_to_turn=0,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+    )
+    prompt = _prompt_text(msgs.calls[0]).lower()
+    assert "quoted and reference material" in prompt
+    assert "not the session's work" in prompt
+    # Concrete exemplar-framing signals are named verbatim.
+    assert "this is a form i'd like" in prompt
+    assert "for example" in prompt
+    assert "an older version of" in prompt
+    # Structural signals: fenced blocks and self-anchored bold leads.
+    assert "fenced" in prompt
+    assert "anchored bold lead" in prompt
+
+
+def test_prompt_keeps_worked_pasted_content_attributable():
+    # True-positive exception: when the session actually works ON the
+    # pasted content (reviews / fixes it), that work IS reported. The
+    # prompt must carry the exception so the clause does not over-suppress.
+    msgs = _RecordingMessages([_valid_payload()])
+    client = _FakeClient(msgs)
+    compose_chapter(
+        slice_text="[user@0] hi",
+        slice_from_turn=0,
+        slice_to_turn=0,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+    )
+    prompt = _prompt_text(msgs.calls[0]).lower()
+    assert "exception" in prompt
+    assert "working on that material was itself the topic" in prompt
+    assert "review" in prompt
+    assert "pasted content" in prompt
+
+
+def test_prompt_from_exemplar_paste_fixture_carries_clause():
+    # A realistic slice matching the SOPS-paste regression (transcript
+    # a737ff12): a long block pasted purely as a formatting exemplar,
+    # followed by the genuine session topic (note voice). The clause that
+    # keeps the pasted block's SOPS/.env/tmpfs claims out of the note must
+    # ride the prompt built from that exact input.
+    fixture = Path(__file__).parent / "fixtures" / "prompts" / "quoted_exemplar_paste.txt"
+    slice_text = fixture.read_text()
+    msgs = _RecordingMessages([_valid_payload()])
+    client = _FakeClient(msgs)
+    compose_chapter(
+        slice_text=slice_text,
+        slice_from_turn=1095,
+        slice_to_turn=1383,
+        note_so_far="(empty)",
+        llm_client=client,
+        model="m",
+    )
+    prompt = _prompt_text(msgs.calls[0]).lower()
+    # The exemplar framing from the paste is present in the slice ...
+    assert "this is a form i'd like the notes to have" in prompt
+    # ... and the guarding clause is present in the same prompt.
+    assert "quoted and reference material" in prompt
+    assert "never report the claims" in prompt
