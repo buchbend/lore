@@ -7,4 +7,5 @@ PRDs are the source of truth for decisions. Each PRD lives at
 :maxdepth: 1
 
 0001-trim-to-lab-notebook-notes
+0002-useful-session-notes
 ```
