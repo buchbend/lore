@@ -104,9 +104,12 @@ Work is confined to `buchbend/lore`, across two subsystems.
   from session progression, not restatements of one quoted passage"). It never
   hard-rejects and never fabricates anchor diversity; after the retry the
   chapter publishes regardless.
-- **Topic slug (`lore_curator/session_note.py::_derive_slug`).** Derive the
-  note filename slug from the first composed lead; fall back to the current
-  heuristic for stubs that have no chapter yet.
+- **Topic slug (`lore_curator/chapter_flush.py::_rename_to_topic_slug`).** The
+  note file is created (and first named via the existing
+  `stub_note.py::_derive_slug` heuristic) before any chapter exists, so the
+  topic-accurate name is applied as a rename once the first chapter composes
+  — not a change to the initial-creation heuristic. Stubs with no chapter yet
+  keep the fallback name; same-minute collisions still get a numeric suffix.
 
 ## Testing decisions
 
