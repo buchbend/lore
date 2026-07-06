@@ -446,6 +446,23 @@ def _build_prompt(
             "permission chatter. Leave them out entirely, unless diagnosing "
             "the tooling was itself the session's purpose.",
             "",
+            "Quoted and reference material is NOT the session's work. "
+            "Sometimes the user pastes or quotes a block as an exemplar, a "
+            "reference, or a comparison, not as something to act on: a "
+            'formatting sample ("this is a form I\'d like the notes to have", '
+            '"here is the shape I want"), an example ("for example", "like '
+            'this one"), or another / older artefact of their own ("an older '
+            'version of", "the previous note", "a note I wrote earlier"). Its '
+            "content is ABOUT that pasted material and does not describe what "
+            "this session did. Spot it by the exemplar framing in the "
+            "surrounding turns, by a fenced code block, or by a block that "
+            "carries its OWN @N-anchored bold leads (the shape of an earlier "
+            "note). NEVER report the claims, tools, paths, or config inside "
+            "such material as this session's findings. The ONLY exception is "
+            "when working on that material was itself the topic: the user asks "
+            "you to review, fix, or reason about the pasted content, in which "
+            "case that work IS the session's work and you record it.",
+            "",
             "Each topic is ONE block:",
             "- The lead is one bold sentence carrying the takeaway: a "
             "SELF-SUFFICIENT declarative claim a reader understands with no "
@@ -537,7 +554,10 @@ def chapter_tool_schema() -> dict[str, Any]:
                                 "description": (
                                     "Short prose body: the reasoning and "
                                     "specifics behind the lead, in the "
-                                    "active voice. No event narration."
+                                    "active voice. No event narration. "
+                                    "Never restate claims from material "
+                                    "the user only pasted or quoted as an "
+                                    "exemplar or reference."
                                 ),
                             },
                             "anchor": {

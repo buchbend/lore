@@ -1,0 +1,13 @@
+[user@1095] Before we touch the session-note voice, look at this — this is a form I'd like the notes to have. It's an older version of a note I wrote by hand about secret management, pasted here only as a formatting example:
+[user@1096] ```
+[user@1097] > **Lab-notebook session note.**
+[user@1098]
+[user@1099] **Secrets are encrypted at rest with SOPS and age.** The repo keeps `secrets.env` encrypted with `sops`; the `age` identity lives outside the repo and decrypts into a `tmpfs` mount at deploy time so the plaintext `.env` never touches disk. @12
+[user@1100]
+[user@1101] **The deploy script sources the decrypted .env into the systemd unit.** `systemd` `EnvironmentFile=` points at the tmpfs path; on stop the tmpfs is unmounted and the plaintext is gone. @14
+[user@1102] ```
+[user@1103] See how each point leads with a bold claim and ends with an @-anchor? That is the shape I want for our notes — I am not asking you to do anything with SOPS or age, it is purely an exemplar.
+[assistant@1120] Understood — bold self-sufficient lead, short body, exactly one @-anchor per point. That is the lab-notebook chapter shape we are building toward.
+[user@1140] Right. For THIS session the thing I actually care about is the note voice: I keep getting notes that narrate the session ("the user asked...", "a command was run...") instead of recording what was figured out.
+[assistant@1160] The fix is essence-first: the lead carries the takeaway as a self-sufficient claim, and session mechanics (greetings, tool hiccups) are omitted entirely.
+[user@1383] Exactly. Let's make the composer record the work, not the working.
