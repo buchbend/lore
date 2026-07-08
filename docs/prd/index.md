@@ -8,4 +8,6 @@ PRDs are the source of truth for decisions. Each PRD lives at
 
 0001-trim-to-lab-notebook-notes
 0002-useful-session-notes
+0003-lore-workflow-plugin-and-deterministic-substrate
+0004-deterministic-context-lights-out-notes
 ```
