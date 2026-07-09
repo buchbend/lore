@@ -102,16 +102,41 @@ def test_create_includes_handle_when_team_mode(tmp_path):
     assert fm["user"] == "alice"
 
 
+def test_create_exclusive_refuses_to_clobber_existing_note(tmp_path):
+    """exclusive=True must refuse an existing path instead of overwriting it.
+
+    Two authors/sessions racing on the same first-write path (same slug,
+    same minute) must not have one silently clobber the other's note.
+    """
+    path = _note_path(tmp_path)
+    _create(tmp_path, path=path, title="alice's note")
+    with pytest.raises(FileExistsError):
+        _create(tmp_path, path=path, title="bob's note", exclusive=True)
+    # alice's note survives untouched.
+    assert "alice's note" in path.read_text()
+
+
+def test_create_exclusive_succeeds_for_a_free_path(tmp_path):
+    path = _create(tmp_path, title="alice's note", exclusive=True)
+    assert "alice's note" in path.read_text()
+
+
 # ---------------------------------------------------------------------------
 # linkage frontmatter (schema-versioned, round-trips)
 # ---------------------------------------------------------------------------
 
 
 def test_create_writes_linkage_block(tmp_path):
-    path = _create(tmp_path, linkage=nd.Linkage(
-        repo="buchbend/lore", branch="feat/175-linkage-frontmatter",
-        issues=[175], epics=[162], author="Christof Buchbender",
-    ))
+    path = _create(
+        tmp_path,
+        linkage=nd.Linkage(
+            repo="buchbend/lore",
+            branch="feat/175-linkage-frontmatter",
+            issues=[175],
+            epics=[162],
+            author="Christof Buchbender",
+        ),
+    )
     fm = parse_frontmatter(path.read_text())
     assert fm["linkage"] == {
         "schema_version": 1,

@@ -12,7 +12,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from lore_core.git_sync import (
     ConflictKind,
     SyncStatus,
@@ -20,7 +19,6 @@ from lore_core.git_sync import (
     auto_pull,
     auto_push,
 )
-
 
 # ---------------------------------------------------------------------------
 # Bare-repo + two-clone fixture
@@ -133,6 +131,23 @@ def test_auto_pull_skipped_when_diverged(two_hosts) -> None:
     assert result.status is SyncStatus.SKIPPED_DIVERGED
 
 
+def test_auto_pull_unreachable_remote_recovers_on_next_sync(two_hosts) -> None:
+    _, host_a, host_b = two_hosts
+    _commit_file(host_a, "concepts/foo.md", "---\ntype: concept\n---\n# foo\n", "add foo")
+    _git(host_a, "push")
+
+    # Remote goes unreachable (e.g. offline host, VPN down).
+    _git(host_b, "remote", "set-url", "origin", str(host_b.parent / "nowhere.git"))
+    result = auto_pull(host_b)
+    assert result.status is SyncStatus.SKIPPED_UNREACHABLE
+
+    # Remote comes back — next sync recovers without any human input.
+    _git(host_b, "remote", "set-url", "origin", str(two_hosts[0]))
+    result2 = auto_pull(host_b)
+    assert result2.status is SyncStatus.OK
+    assert (host_b / "concepts" / "foo.md").exists()
+
+
 # ---------------------------------------------------------------------------
 # auto_push (clean paths)
 # ---------------------------------------------------------------------------
@@ -153,6 +168,32 @@ def test_auto_push_pushes_local_commit(two_hosts) -> None:
     assert result.pushed_commits == 1
 
     # Host B can pull it.
+    pull_b = auto_pull(host_b)
+    assert pull_b.status is SyncStatus.OK
+    assert (host_b / "concepts" / "foo.md").exists()
+
+
+def test_auto_push_unreachable_remote_queues_locally_and_recovers_on_next_sync(
+    two_hosts,
+) -> None:
+    origin, host_a, host_b = two_hosts
+    _commit_file(host_a, "concepts/foo.md", "---\ntype: concept\n---\n# foo\n", "add foo")
+
+    # Remote goes unreachable (e.g. offline host, VPN down).
+    _git(host_a, "remote", "set-url", "origin", str(host_a.parent / "nowhere.git"))
+    result = auto_push(host_a)
+    assert result.status is SyncStatus.SKIPPED_UNREACHABLE
+
+    # Nothing was lost — the commit is still queued locally.
+    log = _git(host_a, "log", "--oneline", "-1").stdout
+    assert "add foo" in log
+
+    # Remote comes back — next sync recovers without any human input.
+    _git(host_a, "remote", "set-url", "origin", str(origin))
+    result2 = auto_push(host_a)
+    assert result2.status is SyncStatus.OK
+    assert result2.pushed_commits == 1
+
     pull_b = auto_pull(host_b)
     assert pull_b.status is SyncStatus.OK
     assert (host_b / "concepts" / "foo.md").exists()
@@ -210,9 +251,7 @@ def test_auto_push_resolves_surface_conflict_via_llm(two_hosts) -> None:
         "host_b adds foo",
     )
 
-    merged_body = (
-        "---\ntype: concept\n---\n# foo\n\nFact A. Fact B.\n"
-    )
+    merged_body = "---\ntype: concept\n---\n# foo\n\nFact A. Fact B.\n"
     result = auto_push(
         host_b,
         llm_client=StubLlm(merged_body),
