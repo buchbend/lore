@@ -48,10 +48,7 @@ def test_resolve_unknown_host_fails_loudly(tmp_path):
 def test_config_override_wins_over_table_default(tmp_path):
     root = _mk_root(tmp_path)
     (root / ".lore" / "config.yml").write_text(
-        "tiers:\n"
-        "  overrides:\n"
-        "    claude:\n"
-        "      frontier: claude-opus-4-9\n"
+        "tiers:\n  overrides:\n    claude:\n      frontier: claude-opus-4-9\n"
     )
     assert resolve_tier("frontier", host="claude", lore_root=root) == "claude-opus-4-9"
     # untouched tier still falls through to the shipped table

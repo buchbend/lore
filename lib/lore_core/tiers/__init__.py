@@ -54,9 +54,7 @@ def resolve_tier(tier: str, host: str | None = None, lore_root: Path | None = No
     (mainly for tests); defaults to :func:`lore_core.config.get_lore_root`.
     """
     if tier not in TIER_ORDER:
-        raise TierResolutionError(
-            f"unknown tier {tier!r}; known tiers: {', '.join(TIER_ORDER)}"
-        )
+        raise TierResolutionError(f"unknown tier {tier!r}; known tiers: {', '.join(TIER_ORDER)}")
     resolved_host = host or detect_host()
     if resolved_host not in TABLE:
         raise TierResolutionError(
