@@ -29,9 +29,12 @@ Frontmatter contract for a stub:
 The deterministic-final note left behind on Phase 2 LLM failure is
 exactly the same shape minus ``state: stub``.
 """
+
 from __future__ import annotations
 
+import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -82,9 +85,7 @@ _TRANSCRIPTS_CAP = 20
 #   - `<short_hash>` <subject> (<repo>/<branch>)?
 # We pull the subject so the slug derivation can use it without
 # re-running the git collectors.
-_COMMIT_BULLET_RE = re.compile(
-    r"^\s*-\s+`[0-9a-f]+`\s+(?P<subject>.+?)(?:\s+\([^)]+\))?\s*$"
-)
+_COMMIT_BULLET_RE = re.compile(r"^\s*-\s+`[0-9a-f]+`\s+(?P<subject>.+?)(?:\s+\([^)]+\))?\s*$")
 
 
 def _commit_subject_from_bullet(bullet: str) -> str:
@@ -159,7 +160,7 @@ def _resolve_renamed_path(note_path: Path, slug: str) -> Path:
     """Return the rename target for ``note_path`` once ``slug`` is known.
 
     Preserves the ``<DD>-<HHMM>-`` prefix and probes the same directory for
-    a free filename exactly like :func:`_resolve_first_write_path`'s
+    a free filename exactly like :func:`_claim_first_write_slot`'s
     same-minute collision handling (numeric ``-2``, ``-3`` ... suffix) —
     two notes composed in the same minute must never collide. Returns
     ``note_path`` unchanged when its stem isn't the canonical
@@ -223,10 +224,7 @@ def _parse_iso_z(timestamp: str) -> datetime | None:
 def _stub_duration_seconds(sidecar: Sidecar) -> int:
     """Seconds between buffer creation and the most recent heartbeat."""
     start = _parse_iso_z(sidecar.created_at)
-    end = (
-        _parse_iso_z(sidecar.last_heartbeat)
-        or _parse_iso_z(sidecar.last_appended_at)
-    )
+    end = _parse_iso_z(sidecar.last_heartbeat) or _parse_iso_z(sidecar.last_appended_at)
     if start is None or end is None:
         return 0
     return max(0, int((end - start).total_seconds()))
@@ -246,9 +244,7 @@ def _render_stub_summary_block(rb: ReplayedBuffer, sidecar: Sidecar) -> str:
 
     turn_count = rb.turn_count or sidecar.counters.turn_count
     duration = _format_duration(_stub_duration_seconds(sidecar))
-    parts: list[str] = [
-        f"{_pluralize(turn_count, 'turn', 'turns')} over {duration}"
-    ]
+    parts: list[str] = [f"{_pluralize(turn_count, 'turn', 'turns')} over {duration}"]
 
     commits = len(rb.activity_commits)
     if commits:
@@ -315,16 +311,18 @@ def _render_body(
     activity_issues_opened: list[str],
     activity_issues_closed: list[str],
 ) -> str:
-    return render_body_sections(BodySections(
-        title=title_placeholder,
-        summary=summary,
-        adr_candidates=[],
-        worked_on=[],
-        loose_ends=[],
-        commits=activity_commits,
-        issues_opened=activity_issues_opened,
-        issues_closed=activity_issues_closed,
-    ))
+    return render_body_sections(
+        BodySections(
+            title=title_placeholder,
+            summary=summary,
+            adr_candidates=[],
+            worked_on=[],
+            loose_ends=[],
+            commits=activity_commits,
+            issues_opened=activity_issues_opened,
+            issues_closed=activity_issues_closed,
+        )
+    )
 
 
 def _render_markdown(fm: dict[str, Any], body: str, *, wiki_root: Path) -> str:
@@ -422,24 +420,68 @@ def _build_first_write_frontmatter(
     return fm
 
 
-def _resolve_first_write_path(
+def _claim_first_write_slot(
     *,
     wiki_root: Path,
     handle_label: str,
     work_time: datetime,
     slug: str,
+    write_fn: Callable[[Path], None],
 ) -> Path:
+    """Atomically claim a first-write filename slot and call `write_fn(path)`.
+
+    Two authors/sessions racing on the same slug in the same minute must
+    not clobber each other. A separate "resolve path" then "write" step
+    is a TOCTOU race: both can observe the candidate as free before
+    either writes. `write_fn` MUST create the file exclusively (e.g. via
+    `os.O_CREAT | os.O_EXCL`) and raise `FileExistsError` if the path is
+    already taken — the loser of the race then retries the next numbered
+    candidate here, so no writer ever silently overwrites another's note.
+    """
     sessions_base = session_note_dir(wiki_root, handle_label)
     month_dir = sessions_base / str(work_time.year) / f"{work_time.month:02d}"
     month_dir.mkdir(parents=True, exist_ok=True)
     day_prefix = f"{work_time.day:02d}"
     time_prefix = work_time.strftime("%H%M")
-    candidate = month_dir / f"{day_prefix}-{time_prefix}-{slug}.md"
     counter = 1
-    while candidate.exists():
-        counter += 1
-        candidate = month_dir / f"{day_prefix}-{time_prefix}-{slug}-{counter}.md"
-    return candidate
+    candidate = month_dir / f"{day_prefix}-{time_prefix}-{slug}.md"
+    while True:
+        try:
+            write_fn(candidate)
+        except FileExistsError:
+            counter += 1
+            candidate = month_dir / f"{day_prefix}-{time_prefix}-{slug}-{counter}.md"
+            continue
+        return candidate
+
+
+def _claim_first_write_path(
+    *,
+    wiki_root: Path,
+    handle_label: str,
+    work_time: datetime,
+    slug: str,
+    text: str,
+) -> Path:
+    """Atomically claim a first-write path and write `text` to it."""
+    if not text.endswith("\n"):
+        text += "\n"
+    content = text.encode("utf-8")
+
+    def _write(path: Path) -> None:
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        try:
+            os.write(fd, content)
+        finally:
+            os.close(fd)
+
+    return _claim_first_write_slot(
+        wiki_root=wiki_root,
+        handle_label=handle_label,
+        work_time=work_time,
+        slug=slug,
+        write_fn=_write,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -510,12 +552,6 @@ def write_or_update(
             scope=scope,
             work_time=work_time,
         )
-        path = _resolve_first_write_path(
-            wiki_root=wiki_root,
-            handle_label=handle_label,
-            work_time=work_time,
-            slug=slug,
-        )
         body = _render_body(
             title_placeholder=title_placeholder,
             summary=_render_stub_summary_block(rb, sidecar),
@@ -541,7 +577,13 @@ def write_or_update(
             description=_render_stub_description(rb, sidecar),
         )
         text = _render_markdown(fm, body, wiki_root=wiki_root)
-        atomic_write_text(path, text)
+        path = _claim_first_write_path(
+            wiki_root=wiki_root,
+            handle_label=handle_label,
+            work_time=work_time,
+            slug=slug,
+            text=text,
+        )
 
         with buffer.with_lock():
             buffer.patch(stub_path=str(path))
@@ -651,12 +693,14 @@ def write_or_update(
     src = fm.get("source_transcripts") or []
     if not isinstance(src, list):
         src = []
-    src.append({
-        "integration": integration,
-        "id": transcript_id,
-        "from_hash": chunk_from_hash,
-        "to_hash": chunk_to_hash,
-    })
+    src.append(
+        {
+            "integration": integration,
+            "id": transcript_id,
+            "from_hash": chunk_from_hash,
+            "to_hash": chunk_to_hash,
+        }
+    )
     fm["source_transcripts"] = src
 
     existing_uuids = fm.get("transcripts") or []
@@ -691,17 +735,19 @@ def write_or_update(
         body_worked_on = existing_body.worked_on
         body_loose_ends = existing_body.loose_ends
         body_discussion = existing_body.discussion
-    body = render_body_sections(BodySections(
-        title=body_title,
-        summary=body_summary,
-        adr_candidates=body_decisions,
-        worked_on=body_worked_on,
-        loose_ends=body_loose_ends,
-        commits=rb.activity_commits,
-        issues_opened=rb.activity_issues_opened,
-        issues_closed=rb.activity_issues_closed,
-        discussion=body_discussion,
-    ))
+    body = render_body_sections(
+        BodySections(
+            title=body_title,
+            summary=body_summary,
+            adr_candidates=body_decisions,
+            worked_on=body_worked_on,
+            loose_ends=body_loose_ends,
+            commits=rb.activity_commits,
+            issues_opened=rb.activity_issues_opened,
+            issues_closed=rb.activity_issues_closed,
+            discussion=body_discussion,
+        )
+    )
     new_text = _render_markdown(fm, body, wiki_root=wiki_root)
     atomic_write_text(path, new_text)
 

@@ -24,6 +24,7 @@ seams here.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -251,14 +252,27 @@ def _today() -> str:
     return date.today().isoformat()
 
 
-def _write(path: Path, fm: dict[str, Any], body: str, *, wiki_root: Path | None) -> None:
+def _write(
+    path: Path, fm: dict[str, Any], body: str, *, wiki_root: Path | None, exclusive: bool = False
+) -> None:
     dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
     text = f"---\n{dumped}\n---\n\n{body.rstrip()}\n"
     if wiki_root is not None:
         from lore_core.wikilinks import sanitize_for_write
 
         text = sanitize_for_write(text, wiki_root)
-    atomic_write_text(path, text)
+    if not exclusive:
+        atomic_write_text(path, text)
+        return
+    # Exclusive create: refuse to clobber a file a concurrent writer just
+    # claimed. Raises FileExistsError instead of silently overwriting —
+    # callers creating a brand-new note (never an update) retry elsewhere.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        os.write(fd, text.encode("utf-8"))
+    finally:
+        os.close(fd)
 
 
 def _load(path: Path) -> tuple[dict[str, Any], str]:
@@ -293,12 +307,18 @@ def create_note(
     linkage: Linkage | None = None,
     extra_frontmatter: dict[str, Any] | None = None,
     wiki_root: Path | None = None,
+    exclusive: bool = False,
 ) -> None:
     """Create the session note: disclaimer + machine-first frontmatter.
 
     The note starts ``open`` (append-only). Session facts, when supplied,
     are recorded in frontmatter. The body carries the fixed disclaimer
     and no chapters yet.
+
+    ``exclusive=True`` refuses to overwrite an existing file at ``path``,
+    raising ``FileExistsError`` instead — for callers where two
+    authors/sessions might race on the same first-write path (default
+    ``False`` preserves plain overwrite for known-fresh paths).
     """
     created = created or _today()
     fm: dict[str, Any] = {
@@ -321,7 +341,7 @@ def create_note(
     fm["chapters"] = []
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    _write(path, fm, DISCLAIMER, wiki_root=wiki_root)
+    _write(path, fm, DISCLAIMER, wiki_root=wiki_root, exclusive=exclusive)
 
 
 def append_chapter(

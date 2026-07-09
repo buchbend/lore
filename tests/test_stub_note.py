@@ -1,8 +1,11 @@
 """Tests for lore_curator.stub_note — live deterministic stub."""
+
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -15,6 +18,8 @@ from lore_curator.buffer_append import append_chunk
 from lore_curator.stub_note import (
     STUB_DESCRIPTION_PLACEHOLDER,
     STUB_SUMMARY_PLACEHOLDER,
+    _claim_first_write_path,
+    _claim_first_write_slot,
     _lead_for_rename,
     _resolve_renamed_path,
     write_or_update,
@@ -83,10 +88,16 @@ def patch_collectors(monkeypatch):
     )
 
 
-def _do_append(lore_root: Path, transcript_id: str = "abc", *,
-               turns=None, files_touched=None, files_read=None,
-               monkeypatch=None,
-               local_date: str = "2026-05-01") -> tuple:
+def _do_append(
+    lore_root: Path,
+    transcript_id: str = "abc",
+    *,
+    turns=None,
+    files_touched=None,
+    files_read=None,
+    monkeypatch=None,
+    local_date: str = "2026-05-01",
+) -> tuple:
     """Run one heartbeat; return (outcome, chunk_from_hash, chunk_to_hash).
 
     ``files_touched`` drives both the legacy-union mock and the new
@@ -130,7 +141,9 @@ def _do_append(lore_root: Path, transcript_id: str = "abc", *,
 
 
 def test_first_heartbeat_creates_stub_at_canonical_path(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
     outcome, fh, th = _do_append(
@@ -173,7 +186,9 @@ def test_first_heartbeat_creates_stub_at_canonical_path(
 
 
 def test_slug_falls_back_to_files_touched_basename(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     outcome, fh, th = _do_append(
         lore_root,
@@ -195,7 +210,9 @@ def test_slug_falls_back_to_files_touched_basename(
 
 
 def test_slug_falls_back_to_session_scope_hhmm(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     """No commits, no files_touched -> slug uses scope+HHMM fallback."""
     outcome, fh, th = _do_append(
@@ -219,7 +236,9 @@ def test_slug_falls_back_to_session_scope_hhmm(
 
 
 def test_subsequent_heartbeat_rewrites_in_place_with_same_path(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
     o1, fh1, th1 = _do_append(
@@ -228,11 +247,15 @@ def test_subsequent_heartbeat_rewrites_in_place_with_same_path(
         monkeypatch=monkeypatch,
     )
     r1 = write_or_update(
-        outcome=o1, scope=_make_scope(), transcript=_make_handle(),
+        outcome=o1,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh1, chunk_to_hash=th1,
+        chunk_from_hash=fh1,
+        chunk_to_hash=th1,
     )
 
     # Second heartbeat with new files.
@@ -246,16 +269,27 @@ def test_subsequent_heartbeat_rewrites_in_place_with_same_path(
     )
     turns_b = [Turn(index=2, timestamp=None, role="user", text="more")]
     outcome2 = append_chunk(
-        lore_root=lore_root, chunk_turns=turns_b, local_date="2026-05-01",
-        transcript_id="abc", integration="claude-code", wiki="private", scope="proj:feature",
-        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
+        lore_root=lore_root,
+        chunk_turns=turns_b,
+        local_date="2026-05-01",
+        transcript_id="abc",
+        integration="claude-code",
+        wiki="private",
+        scope="proj:feature",
+        cwd=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        cfg=WikiConfig(),
     )
     r2 = write_or_update(
-        outcome=outcome2, scope=_make_scope(), transcript=_make_handle(),
+        outcome=outcome2,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=turns_b[0].content_hash(), chunk_to_hash=turns_b[-1].content_hash(),
+        chunk_from_hash=turns_b[0].content_hash(),
+        chunk_to_hash=turns_b[-1].content_hash(),
     )
 
     assert r2.path == r1.path
@@ -273,7 +307,9 @@ def test_subsequent_heartbeat_rewrites_in_place_with_same_path(
 
 
 def test_unchanged_accumulators_skip_disk_rewrite(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
     o1, fh1, th1 = _do_append(
@@ -282,11 +318,15 @@ def test_unchanged_accumulators_skip_disk_rewrite(
         monkeypatch=monkeypatch,
     )
     r1 = write_or_update(
-        outcome=o1, scope=_make_scope(), transcript=_make_handle(),
+        outcome=o1,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh1, chunk_to_hash=th1,
+        chunk_from_hash=fh1,
+        chunk_to_hash=th1,
     )
     mtime_before = r1.path.stat().st_mtime_ns
 
@@ -299,18 +339,24 @@ def test_unchanged_accumulators_skip_disk_rewrite(
     )
     assert o2.accumulators_unchanged is True
     r2 = write_or_update(
-        outcome=o2, scope=_make_scope(), transcript=_make_handle(),
+        outcome=o2,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh2, chunk_to_hash=th2,
+        chunk_from_hash=fh2,
+        chunk_to_hash=th2,
     )
     assert r2.skipped is True
     assert r2.path.stat().st_mtime_ns == mtime_before
 
 
 def test_slug_never_changes_across_heartbeats(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
     o1, fh1, th1 = _do_append(
@@ -319,11 +365,15 @@ def test_slug_never_changes_across_heartbeats(
         monkeypatch=monkeypatch,
     )
     r1 = write_or_update(
-        outcome=o1, scope=_make_scope(), transcript=_make_handle(),
+        outcome=o1,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh1, chunk_to_hash=th1,
+        chunk_from_hash=fh1,
+        chunk_to_hash=th1,
     )
     original_slug = r1.path.stem
     # New chunk introduces a different filename — should NOT change the slug.
@@ -337,22 +387,35 @@ def test_slug_never_changes_across_heartbeats(
     )
     turns_b = [Turn(index=2, timestamp=None, role="user", text="payments work")]
     outcome2 = append_chunk(
-        lore_root=lore_root, chunk_turns=turns_b, local_date="2026-05-01",
-        transcript_id="abc", integration="claude-code", wiki="private", scope="proj:feature",
-        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
+        lore_root=lore_root,
+        chunk_turns=turns_b,
+        local_date="2026-05-01",
+        transcript_id="abc",
+        integration="claude-code",
+        wiki="private",
+        scope="proj:feature",
+        cwd=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        cfg=WikiConfig(),
     )
     r2 = write_or_update(
-        outcome=outcome2, scope=_make_scope(), transcript=_make_handle(),
+        outcome=outcome2,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=turns_b[0].content_hash(), chunk_to_hash=turns_b[-1].content_hash(),
+        chunk_from_hash=turns_b[0].content_hash(),
+        chunk_to_hash=turns_b[-1].content_hash(),
     )
     assert r2.path.stem == original_slug
 
 
 def test_stub_path_recorded_in_sidecar_on_first_write(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
     outcome, fh, th = _do_append(
@@ -361,11 +424,15 @@ def test_stub_path_recorded_in_sidecar_on_first_write(
         monkeypatch=monkeypatch,
     )
     result = write_or_update(
-        outcome=outcome, scope=_make_scope(), transcript=_make_handle(),
+        outcome=outcome,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh, chunk_to_hash=th,
+        chunk_from_hash=fh,
+        chunk_to_hash=th,
     )
     sidecar = outcome.buffer.read_sidecar()
     assert sidecar.stub_path == str(result.path)
@@ -374,12 +441,21 @@ def test_stub_path_recorded_in_sidecar_on_first_write(
 def test_skipped_no_op_returns_none(lore_root, patch_collectors):
     """An empty-chunk AppendOutcome must short-circuit stub writing."""
     outcome = append_chunk(
-        lore_root=lore_root, chunk_turns=[], local_date="2026-05-01",
-        transcript_id="abc", integration="claude-code", wiki="private", scope="proj:x",
-        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
+        lore_root=lore_root,
+        chunk_turns=[],
+        local_date="2026-05-01",
+        transcript_id="abc",
+        integration="claude-code",
+        wiki="private",
+        scope="proj:x",
+        cwd=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        cfg=WikiConfig(),
     )
     result = write_or_update(
-        outcome=outcome, scope=_make_scope(), transcript=_make_handle(),
+        outcome=outcome,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
         work_time=datetime(2026, 5, 1, 14, 32, tzinfo=UTC),
         now=datetime(2026, 5, 1, 14, 32, tzinfo=UTC),
@@ -394,7 +470,9 @@ def test_skipped_no_op_returns_none(lore_root, patch_collectors):
 
 
 def test_first_write_renders_live_stub_preview(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     """First-write surfaces the C-phrased framing + a stats line keyed
     on the deterministic accumulators."""
@@ -405,11 +483,15 @@ def test_first_write_renders_live_stub_preview(
         monkeypatch=monkeypatch,
     )
     result = write_or_update(
-        outcome=outcome, scope=_make_scope(), transcript=_make_handle(),
+        outcome=outcome,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh, chunk_to_hash=th,
+        chunk_from_hash=fh,
+        chunk_to_hash=th,
     )
     text = result.path.read_text()
     fm = parse_frontmatter(text)
@@ -429,7 +511,9 @@ def test_first_write_renders_live_stub_preview(
 
 
 def test_first_write_preview_includes_project_wikilinks(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     """A buffer that observed projects surfaces them as wikilinks in the
     body stats line + the description prefix."""
@@ -445,11 +529,15 @@ def test_first_write_preview_includes_project_wikilinks(
         monkeypatch=monkeypatch,
     )
     result = write_or_update(
-        outcome=outcome, scope=_make_scope(), transcript=_make_handle(),
+        outcome=outcome,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh, chunk_to_hash=th,
+        chunk_from_hash=fh,
+        chunk_to_hash=th,
     )
     text = result.path.read_text()
     fm = parse_frontmatter(text)
@@ -458,7 +546,9 @@ def test_first_write_preview_includes_project_wikilinks(
 
 
 def test_heartbeat_refreshes_preview_while_sentinel_set(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     """A second heartbeat with new accumulators rewrites the preview."""
     work_time = datetime(2026, 5, 1, 14, 32, tzinfo=UTC)
@@ -468,11 +558,15 @@ def test_heartbeat_refreshes_preview_while_sentinel_set(
         monkeypatch=monkeypatch,
     )
     r1 = write_or_update(
-        outcome=o1, scope=_make_scope(), transcript=_make_handle(),
+        outcome=o1,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh1, chunk_to_hash=th1,
+        chunk_from_hash=fh1,
+        chunk_to_hash=th1,
     )
     fm1 = parse_frontmatter(r1.path.read_text())
     assert "1 file modified" in fm1["description"]
@@ -488,15 +582,24 @@ def test_heartbeat_refreshes_preview_while_sentinel_set(
     )
     turns_b = [Turn(index=2, timestamp=None, role="user", text="more")]
     o2 = append_chunk(
-        lore_root=lore_root, chunk_turns=turns_b, local_date="2026-05-01",
-        transcript_id="abc", integration="claude-code", wiki="private",
-        scope="proj:feature", cwd=lore_root,
-        wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
+        lore_root=lore_root,
+        chunk_turns=turns_b,
+        local_date="2026-05-01",
+        transcript_id="abc",
+        integration="claude-code",
+        wiki="private",
+        scope="proj:feature",
+        cwd=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        cfg=WikiConfig(),
     )
     r2 = write_or_update(
-        outcome=o2, scope=_make_scope(), transcript=_make_handle(),
+        outcome=o2,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
         chunk_from_hash=turns_b[0].content_hash(),
         chunk_to_hash=turns_b[-1].content_hash(),
@@ -510,7 +613,9 @@ def test_heartbeat_refreshes_preview_while_sentinel_set(
 
 
 def test_heartbeat_preserves_phase2_summary_when_sentinel_absent(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     """Once Phase 2 has popped the sentinel and written an LLM summary,
     a subsequent heartbeat must NOT clobber the narrative or re-add
@@ -522,17 +627,22 @@ def test_heartbeat_preserves_phase2_summary_when_sentinel_absent(
         monkeypatch=monkeypatch,
     )
     r1 = write_or_update(
-        outcome=o1, scope=_make_scope(), transcript=_make_handle(),
+        outcome=o1,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh1, chunk_to_hash=th1,
+        chunk_from_hash=fh1,
+        chunk_to_hash=th1,
     )
     # Simulate a Phase-2 in-place rewrite: pop the sentinel, drop a
     # composed narrative + description on disk.
     text = r1.path.read_text()
     import yaml
     from lore_core.schema import parse_frontmatter, strip_frontmatter
+
     fm = parse_frontmatter(text)
     body = strip_frontmatter(text)
     fm.pop("narrative", None)
@@ -546,8 +656,7 @@ def test_heartbeat_preserves_phase2_summary_when_sentinel_absent(
         "## Activity\n\n### Commits\n\n- `abc1234` fix: stuff\n"
     )
     new_text = (
-        f"---\n{yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()}\n"
-        f"---\n\n{body}\n"
+        f"---\n{yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()}\n---\n\n{body}\n"
     )
     r1.path.write_text(new_text)
 
@@ -562,15 +671,24 @@ def test_heartbeat_preserves_phase2_summary_when_sentinel_absent(
     )
     turns_b = [Turn(index=2, timestamp=None, role="user", text="more")]
     o2 = append_chunk(
-        lore_root=lore_root, chunk_turns=turns_b, local_date="2026-05-01",
-        transcript_id="abc", integration="claude-code", wiki="private",
-        scope="proj:feature", cwd=lore_root,
-        wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
+        lore_root=lore_root,
+        chunk_turns=turns_b,
+        local_date="2026-05-01",
+        transcript_id="abc",
+        integration="claude-code",
+        wiki="private",
+        scope="proj:feature",
+        cwd=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        cfg=WikiConfig(),
     )
     r2 = write_or_update(
-        outcome=o2, scope=_make_scope(), transcript=_make_handle(),
+        outcome=o2,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
         chunk_from_hash=turns_b[0].content_hash(),
         chunk_to_hash=turns_b[-1].content_hash(),
@@ -590,7 +708,9 @@ def test_heartbeat_preserves_phase2_summary_when_sentinel_absent(
 
 
 def test_preview_singular_plural_and_no_extras(
-    lore_root, patch_collectors, monkeypatch,
+    lore_root,
+    patch_collectors,
+    monkeypatch,
 ):
     """Counts at 1 use the singular form; zero-valued segments are
     omitted from the stats line."""
@@ -601,11 +721,15 @@ def test_preview_singular_plural_and_no_extras(
         monkeypatch=monkeypatch,
     )
     result = write_or_update(
-        outcome=outcome, scope=_make_scope(), transcript=_make_handle(),
+        outcome=outcome,
+        scope=_make_scope(),
+        transcript=_make_handle(),
         wiki_root=lore_root / "wiki" / "private",
-        work_time=work_time, now=work_time,
+        work_time=work_time,
+        now=work_time,
         integration="claude-code",
-        chunk_from_hash=fh, chunk_to_hash=th,
+        chunk_from_hash=fh,
+        chunk_to_hash=th,
     )
     text = result.path.read_text()
     assert "1 file modified" in text
@@ -620,18 +744,26 @@ def test_preview_singular_plural_and_no_extras(
 
 
 def test_lead_for_rename_picks_first_block_lead():
-    chapter = Chapter(blocks=[
-        TopicBlock(lead="Traced the flush race", body="prose", anchor_turn=2),
-    ])
+    chapter = Chapter(
+        blocks=[
+            TopicBlock(lead="Traced the flush race", body="prose", anchor_turn=2),
+        ]
+    )
     assert _lead_for_rename(chapter) == "Traced the flush race"
 
 
 def test_lead_for_rename_uses_continued_topic_for_continuation_block():
-    chapter = Chapter(blocks=[
-        TopicBlock(
-            lead="", body="prose", anchor_turn=2, continued=True, continued_topic="Flush race",
-        ),
-    ])
+    chapter = Chapter(
+        blocks=[
+            TopicBlock(
+                lead="",
+                body="prose",
+                anchor_turn=2,
+                continued=True,
+                continued_topic="Flush race",
+            ),
+        ]
+    )
     assert _lead_for_rename(chapter) == "Flush race"
 
 
@@ -672,3 +804,90 @@ def test_resolve_renamed_path_leaves_malformed_stem_untouched(tmp_path: Path):
     old.write_text("stub")
     new = _resolve_renamed_path(old, "traced-the-flush-race")
     assert new == old
+
+
+def test_claim_first_write_path_two_authors_same_minute_same_slug_dont_clobber(
+    tmp_path: Path,
+):
+    """Two authors' first-write claims for the same slug in the same minute
+    must land on distinct files with both contents intact.
+
+    Neither author is in team mode (no _users.yml), so both land in the
+    same flat sessions/ dir — the exact scenario where a check-then-act
+    resolver (Path.exists() then a separate write) lets two concurrent
+    writers both see "free" and one clobber the other via os.replace.
+    """
+    wiki_root = tmp_path / "wiki"
+    work_time = datetime(2026, 7, 9, 14, 5, tzinfo=UTC)
+
+    path_a = _claim_first_write_path(
+        wiki_root=wiki_root,
+        handle_label="alice",
+        work_time=work_time,
+        slug="fixed-a-bug",
+        text="alice's note",
+    )
+    path_b = _claim_first_write_path(
+        wiki_root=wiki_root,
+        handle_label="bob",
+        work_time=work_time,
+        slug="fixed-a-bug",
+        text="bob's note",
+    )
+    assert path_a != path_b
+    assert path_a.read_text() == "alice's note\n"
+    assert path_b.read_text() == "bob's note\n"
+
+
+def test_claim_first_write_slot_under_real_thread_contention(tmp_path: Path):
+    """Force genuine concurrent writers (not just back-to-back calls) onto
+    the identical slot and prove none is lost.
+
+    A Barrier holds every thread until all N have resolved the same
+    candidate path, then releases them together so their O_CREAT|O_EXCL
+    attempts race for real at the OS level — the scenario a check-then-act
+    resolver cannot survive.
+    """
+    wiki_root = tmp_path / "wiki"
+    work_time = datetime(2026, 7, 9, 14, 5, tzinfo=UTC)
+    n = 8
+    barrier = Barrier(n)
+
+    def _claim(i: int) -> Path:
+        def _write(path: Path) -> None:
+            fd = stub_note.os.open(
+                str(path), stub_note.os.O_WRONLY | stub_note.os.O_CREAT | stub_note.os.O_EXCL, 0o644
+            )
+            try:
+                stub_note.os.write(fd, f"writer-{i}\n".encode())
+            finally:
+                stub_note.os.close(fd)
+
+        barrier.wait()  # release all N threads together, so their first os.open races for real
+        return _claim_first_write_slot(
+            wiki_root=wiki_root,
+            handle_label="alice",
+            work_time=work_time,
+            slug="race",
+            write_fn=_write,
+        )
+
+    with ThreadPoolExecutor(max_workers=n) as pool:
+        paths = list(pool.map(_claim, range(n)))
+
+    assert len(set(paths)) == n  # every writer got its own file
+    contents = {p.read_text() for p in paths}
+    assert len(contents) == n  # no writer's content got clobbered
+
+
+def test_claim_first_write_path_no_collision_uses_bare_slug(tmp_path: Path):
+    wiki_root = tmp_path / "wiki"
+    work_time = datetime(2026, 7, 9, 14, 5, tzinfo=UTC)
+    path = _claim_first_write_path(
+        wiki_root=wiki_root,
+        handle_label="alice",
+        work_time=work_time,
+        slug="fixed-a-bug",
+        text="alice's note",
+    )
+    assert path.name == "09-1405-fixed-a-bug.md"
