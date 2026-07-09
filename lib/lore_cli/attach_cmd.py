@@ -128,7 +128,32 @@ def _no_applicable_offer_message(cwd_path: Path) -> None:
     )
 
 
-def _do_accept(lore_root: Path, cwd_path: Path) -> None:
+def _maybe_scaffold_workflow(lore_root: Path, repo_root: Path, scaffold_workflow: bool) -> None:
+    """Run the workflow scaffold (docs/prd, docs/adr, AGENTS.md shim) and
+    record it, if the caller opted in. One onboarding command per repo: this
+    is a step of `lore attach`, never a separate entry point.
+    """
+    if not scaffold_workflow:
+        return
+    from lore_core.state.workflow_scaffold import WorkflowScaffoldFile
+    from lore_workflow.scaffold import scaffold
+
+    changed = scaffold(repo_root)
+    record = WorkflowScaffoldFile(lore_root)
+    record.load()
+    record.record(repo_root)
+    record.save()
+
+    if changed:
+        console.print(
+            "[green]Scaffolded workflow docs[/green] "
+            "(docs/prd, docs/adr, AGENTS.md) at " + str(repo_root)
+        )
+    else:
+        console.print("[dim]Workflow docs already scaffolded — no changes.[/dim]")
+
+
+def _do_accept(lore_root: Path, cwd_path: Path, scaffold_workflow: bool = False) -> None:
     from datetime import UTC, datetime
 
     from lore_core.consent import ConsentState, classify_state
@@ -189,6 +214,7 @@ def _do_accept(lore_root: Path, cwd_path: Path) -> None:
         f"[green]Attached[/green] {repo_root} → wiki [cyan]{offer.wiki}[/cyan], "
         f"scope [magenta]{offer.scope}[/magenta]"
     )
+    _maybe_scaffold_workflow(lore_root, repo_root, scaffold_workflow)
     stub = _maybe_stub_project_note(
         lore_root=lore_root,
         wiki=offer.wiki,
@@ -221,7 +247,9 @@ def _do_decline(lore_root: Path, cwd_path: Path) -> None:
     )
 
 
-def _do_manual(lore_root: Path, cwd_path: Path, wiki: str, scope: str) -> None:
+def _do_manual(
+    lore_root: Path, cwd_path: Path, wiki: str, scope: str, scaffold_workflow: bool = False
+) -> None:
     from datetime import UTC, datetime
 
     from lore_core.state.attachments import Attachment, AttachmentsFile
@@ -254,6 +282,7 @@ def _do_manual(lore_root: Path, cwd_path: Path, wiki: str, scope: str) -> None:
         f"[green]Attached[/green] {cwd_path} → wiki [cyan]{wiki}[/cyan], "
         f"scope [magenta]{scope}[/magenta] (manual)"
     )
+    _maybe_scaffold_workflow(lore_root, cwd_path, scaffold_workflow)
     stub = _maybe_stub_project_note(
         lore_root=lore_root,
         wiki=wiki,
@@ -515,13 +544,14 @@ def _execute_attach(
     scope: str,
     backend: str,
     write_offer: bool,
+    scaffold_workflow: bool = False,
 ) -> None:
     """Shared executor: register the attachment, optionally write a
     ``.lore.yml`` and stamp its fingerprint onto the row so the very
     next session doesn't see it as DRIFT."""
     from lore_core.offer import FILENAME
 
-    _do_manual(lore_root, resolved, wiki, scope)
+    _do_manual(lore_root, resolved, wiki, scope, scaffold_workflow)
 
     if write_offer:
         import yaml
@@ -572,6 +602,8 @@ def _config_wizard(
         console.print()
         choice = input("  [A]ccept   [s]tep through   [c]ancel: ").strip().lower()
         if choice in ("", "a", "y", "yes", "accept"):
+            # One-click accept keeps the fast path fast: no scaffold prompt.
+            # `lore attach manual --scaffold-workflow` covers it explicitly.
             _execute_attach(
                 lore_root, resolved,
                 wiki=proposed_wiki, scope=proposed_scope,
@@ -648,6 +680,14 @@ def _config_wizard(
         raw = input("\n  Write .lore.yml so other contributors get this config? [y/N]: ").strip().lower()
         write_offer = raw in ("y", "yes")
 
+    # Step D.5: Offer workflow scaffolding (docs/prd, docs/adr, AGENTS.md
+    # shim) — same onboarding command, one extra opt-in step, never a
+    # separate entry point.
+    raw = input(
+        "\n  Scaffold workflow docs (docs/prd, docs/adr, AGENTS.md)? [y/N]: "
+    ).strip().lower()
+    scaffold_workflow = raw in ("y", "yes")
+
     # Step E: Summary + confirm
     console.print("\n[bold]─── Attach summary ───[/bold]")
     console.print(f"  Directory:  {resolved}")
@@ -656,6 +696,8 @@ def _config_wizard(
     console.print(f"  Backend:    {backend}")
     if write_offer:
         console.print(f"  .lore.yml:  will be written")
+    if scaffold_workflow:
+        console.print("  Workflow:   docs/prd, docs/adr, AGENTS.md will be scaffolded")
     console.print()
 
     raw = input("  Proceed? [Y/n]: ").strip().lower()
@@ -666,6 +708,7 @@ def _config_wizard(
     _execute_attach(
         lore_root, resolved,
         wiki=wiki, scope=scope, backend=backend, write_offer=write_offer,
+        scaffold_workflow=scaffold_workflow,
     )
 
 
@@ -729,9 +772,13 @@ def attach_interactive(
 @app.command("accept")
 def cmd_accept(
     cwd: str = typer.Option(None, "--cwd", help="Directory containing `.lore.yml` (default: current dir)."),
+    scaffold_workflow: bool = typer.Option(
+        False, "--scaffold-workflow",
+        help="Also scaffold docs/prd, docs/adr, and the AGENTS.md shim.",
+    ),
 ) -> None:
     """Accept the `.lore.yml` offer covering ``cwd``."""
-    _do_accept(_lore_root_or_die(), _cwd_arg(cwd))
+    _do_accept(_lore_root_or_die(), _cwd_arg(cwd), scaffold_workflow)
 
 
 @app.command("decline")
@@ -747,11 +794,15 @@ def cmd_manual(
     wiki: str = typer.Option(..., "--wiki", help="Wiki name."),
     scope: str = typer.Option(..., "--scope", help="Scope ID (colon-separated)."),
     cwd: str = typer.Option(None, "--cwd", help="Directory to attach (default: current dir)."),
+    scaffold_workflow: bool = typer.Option(
+        False, "--scaffold-workflow",
+        help="Also scaffold docs/prd, docs/adr, and the AGENTS.md shim.",
+    ),
 ) -> None:
     """Attach ``cwd`` manually with no ``.lore.yml`` required."""
     cwd_path = _cwd_arg(cwd)
     resolved = cwd_path.resolve() if cwd_path.exists() else cwd_path.absolute()
-    _do_manual(_lore_root_or_die(), resolved, wiki, scope)
+    _do_manual(_lore_root_or_die(), resolved, wiki, scope, scaffold_workflow)
 
 
 @app.command("offer")

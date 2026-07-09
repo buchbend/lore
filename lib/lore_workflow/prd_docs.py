@@ -113,17 +113,19 @@ def _body(seq: int, title: str, epic_url: str) -> str:
     )
 
 
-def wire_toctree(index_path: Path, entry: str) -> None:
+def wire_toctree(index_path: Path, entry: str, stub: str = _PRD_INDEX_STUB) -> None:
     """Add *entry* into *index_path*'s first toctree block, idempotently.
 
-    Creates the index from the stub when absent, then inserts the entry before
-    the closing fence of the first `{toctree}` block. Does nothing if the entry
-    is already present anywhere in the file. Mirrors the wiring contract in
-    scripts/ccat_workflow_init.py (single-brace MyST directive).
+    Creates the index from *stub* when absent (default: the PRD index stub),
+    then inserts the entry before the closing fence of the first `{toctree}`
+    block. Does nothing if the entry is already present anywhere in the file.
+    Mirrors the wiring contract in scripts/ccat_workflow_init.py (single-brace
+    MyST directive). Generic over *stub* so other scaffolded index files
+    (docs/adr/index.md, docs/index.md) reuse the same wiring logic.
     """
     if not index_path.exists():
         index_path.parent.mkdir(parents=True, exist_ok=True)
-        index_path.write_text(_PRD_INDEX_STUB, encoding="utf-8")
+        index_path.write_text(stub, encoding="utf-8")
 
     text = index_path.read_text(encoding="utf-8")
     if entry in text:
