@@ -60,6 +60,7 @@ def _build_app() -> typer.Typer:
         attachments_cmd,
         backfill_cmd,
         briefing_cmd,
+        codemap_cmd,
         completions_cmd,
         config_cmd,
         curator_cmd,
@@ -71,8 +72,8 @@ def _build_app() -> typer.Typer:
         inbox_cmd,
         ingest_cmd,
         init_cmd,
-        journal_cmd,
         install_cmd,
+        journal_cmd,
         lint_cmd,
         log_cmd,
         mcp_cmd,
@@ -90,8 +91,10 @@ def _build_app() -> typer.Typer:
         search_cmd,
         session_cmd,
         status_cmd,
+        tier_cmd,
         transcripts_cmd,
         wiki_cmd,
+        workflow_cmd,
     )
 
     app = typer.Typer(
@@ -127,8 +130,10 @@ def _build_app() -> typer.Typer:
     app.add_typer(off_cmd.app, name="off", rich_help_panel=_KN)
 
     app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
+    app.add_typer(tier_cmd.app, name="tier", rich_help_panel=_ADV)
     app.add_typer(attachments_cmd.app, name="attachments", rich_help_panel=_ADV)
     app.add_typer(briefing_cmd.app, name="briefing", rich_help_panel=_ADV)
+    app.add_typer(codemap_cmd.app, name="codemap", rich_help_panel=_ADV)
     app.add_typer(completions_cmd.app, name="completions", rich_help_panel=_ADV)
     app.add_typer(detach_cmd.app, name="detach", rich_help_panel=_ADV)
     app.add_typer(drain_cmd.app, name="drain", rich_help_panel=_ADV)
@@ -145,6 +150,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
     app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
     app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
+    app.add_typer(workflow_cmd.app, name="workflow", rich_help_panel=_ADV)
 
     app.command(
         "uninstall",

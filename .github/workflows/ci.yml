@@ -1,0 +1,35 @@
+name: ci
+
+# The prerequisite gate for every PR into epic/161 and main. Keep pytest
+# green. ruff is advisory (continue-on-error) until the repo-wide
+# lint/format cleanup lands — see #196 — so it reports without blocking.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: pip install -e .[dev]
+
+      - name: pytest
+        run: pytest -q
+
+      # advisory until repo is ruff-clean — see #196
+      - name: ruff check
+        continue-on-error: true
+        run: ruff check .
+
+      # advisory until repo is ruff-clean — see #196
+      - name: ruff format --check
+        continue-on-error: true
+        run: ruff format --check .

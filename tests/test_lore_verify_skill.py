@@ -63,12 +63,17 @@ def test_skill_calls_lore_verdict_mcp():
 
 def test_plugin_version_bumped_for_skill_addition():
     """Per the lore-plugin-cache-stale memory: any plugin.json change
-    needs a version bump or installed caches never re-fetch."""
-    import json
+    needs a version bump or installed caches never re-fetch.
 
-    plugin = json.loads(
-        (SKILL_PATH.parent.parent.parent / ".claude-plugin" / "plugin.json").read_text()
-    )
-    # 0.50.0 bump: `/lore:verify` rewritten to use the new
-    # `lore_pending_verdicts` MCP tool — zero bash.
-    assert plugin["version"] == "0.50.0"
+    Cross-checked against pyproject.toml's version rather than a
+    hardcoded literal — the release process bumps both in lockstep
+    (see test_version_sync.py), so a hardcoded string here just rots
+    on every release.
+    """
+    import json
+    import tomllib
+
+    repo_root = SKILL_PATH.parent.parent.parent
+    plugin = json.loads((repo_root / ".claude-plugin" / "plugin.json").read_text())
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text())
+    assert plugin["version"] == pyproject["project"]["version"]

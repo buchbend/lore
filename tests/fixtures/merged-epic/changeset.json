@@ -1,0 +1,75 @@
+{
+  "epic": "ccatobs/widgetlib#8",
+  "comment": "Cumulative epic diff: every path the merged sub-issue PRs touched, with the kind of change. This is the input to the document-epic classification heuristic. 'expected_quadrant' is the assertion target for the unit tests (null = no docs edit / excluded).",
+  "changes": [
+    {
+      "path": "src/widgetlib/export.py",
+      "kind": "added",
+      "summary": "New public export_widget() API with full docstring.",
+      "public_api": true,
+      "expected_quadrant": "reference"
+    },
+    {
+      "path": "src/widgetlib/_internal/serialize.py",
+      "kind": "added",
+      "summary": "Private serialisation helper (leading underscore package).",
+      "public_api": false,
+      "expected_quadrant": null
+    },
+    {
+      "path": "src/widgetlib/cli.py",
+      "kind": "modified",
+      "summary": "Added the widget-export subcommand.",
+      "public_api": true,
+      "expected_quadrant": "reference"
+    },
+    {
+      "path": "docs/how-to/export-a-widget.md",
+      "kind": "added",
+      "summary": "Task recipe: export a widget from the terminal.",
+      "expected_quadrant": "how-to"
+    },
+    {
+      "path": "docs/tutorials/getting-started.md",
+      "kind": "modified",
+      "summary": "Walkthrough now ends by exporting the toy widget.",
+      "expected_quadrant": "tutorial"
+    },
+    {
+      "path": "docs/explanation/export-format.md",
+      "kind": "added",
+      "summary": "Why JSON, size trade-offs; cites ADR 0002.",
+      "expected_quadrant": "explanation"
+    },
+    {
+      "path": "docs/reference/api.md",
+      "kind": "modified",
+      "summary": "autosummary/toctree entry wiring export_widget into the API ref.",
+      "expected_quadrant": "reference"
+    },
+    {
+      "path": "docs/prd/0001-widget-export.md",
+      "kind": "modified",
+      "summary": "PRD marked implemented. document-epic MUST NOT touch this.",
+      "expected_quadrant": null
+    },
+    {
+      "path": "docs/adr/0002-export-format.md",
+      "kind": "added",
+      "summary": "ADR for the format decision. document-epic MUST NOT touch this.",
+      "expected_quadrant": null
+    },
+    {
+      "path": "tests/test_export.py",
+      "kind": "added",
+      "summary": "Unit tests for the export API.",
+      "expected_quadrant": null
+    },
+    {
+      "path": "pyproject.toml",
+      "kind": "modified",
+      "summary": "Registered the widget-export console script.",
+      "expected_quadrant": null
+    }
+  ]
+}

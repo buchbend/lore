@@ -118,6 +118,10 @@ Vault-wide policy. Schema lives in
 - `observability.proc.keep_generations`
 - `curator.backend` — `auto` | `subscription` | `api` | `openai`
 - `curator.openai.{base_url, api_key_env, model_simple, model_middle, model_high, reasoning_effort_simple, reasoning_effort_middle, reasoning_effort_high}`
+- `journal.enabled`
+- `tiers.overrides.<host>.<tier>` — override the shipped model-tier table
+  (`lib/lore_core/tiers/table.py`) for one host/tier cell; see
+  `docs/model-tiers.md`.
 
 Loader: `load_root_config(lore_root) -> RootConfig`. Missing file →
 all defaults. Unknown keys → `warnings.warn` (not fatal). Malformed
