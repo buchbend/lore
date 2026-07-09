@@ -209,9 +209,11 @@ def test_install_wires_spawn_model_gate():
         "PreToolUse must call `lore hook spawn-model-gate`"
     )
 
-    matchers = [grp["matcher"] for grp in pretooluse if "lore hook spawn-model-gate" in [
-        h["command"] for h in grp["hooks"]
-    ]]
+    matchers = [
+        grp["matcher"]
+        for grp in pretooluse
+        if "lore hook spawn-model-gate" in [h["command"] for h in grp["hooks"]]
+    ]
     assert matchers, "spawn-model-gate hook must declare a matcher"
     matcher = matchers[0]
     assert re.fullmatch(matcher, "Task"), f"matcher {matcher!r} must match Task"

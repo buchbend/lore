@@ -38,9 +38,7 @@ def test_allows_spawn_with_explicit_model() -> None:
 
 def test_allows_fork_without_model() -> None:
     """Forks always inherit the parent model by design; the gate exempts them."""
-    assert (
-        check_spawn({"tool_name": "Task", "tool_input": {"subagent_type": "fork"}}) is None
-    )
+    assert check_spawn({"tool_name": "Task", "tool_input": {"subagent_type": "fork"}}) is None
 
 
 def test_ignores_unrelated_tools() -> None:
