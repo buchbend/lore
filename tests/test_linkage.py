@@ -5,6 +5,7 @@ by lore_core.git; issue/PR/epic refs come from regex classification of
 the branch name plus commit subject/body text handed in by the caller.
 Missing signals degrade to absent fields, never guesses.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -38,8 +39,9 @@ def _init_repo(repo_root: Path, *, branch: str = "main", remote_url: str | None 
 
 def test_extract_linkage_resolves_repo_and_branch(tmp_path):
     repo = tmp_path / "repo"
-    _init_repo(repo, branch="feat/175-linkage-frontmatter",
-               remote_url="git@github.com:buchbend/lore.git")
+    _init_repo(
+        repo, branch="feat/175-linkage-frontmatter", remote_url="git@github.com:buchbend/lore.git"
+    )
     linkage = extract_linkage(cwd=repo)
     assert linkage.repo == "buchbend/lore"
     assert linkage.branch == "feat/175-linkage-frontmatter"
@@ -98,9 +100,13 @@ def test_extract_linkage_author_from_users_yml(tmp_path):
     _init_repo(repo)
     wiki_root = tmp_path / "wiki"
     wiki_root.mkdir()
-    (wiki_root / "_users.yml").write_text(yaml.safe_dump({
-        "users": [{"handle": "alice", "display_name": "Alice A."}],
-    }))
+    (wiki_root / "_users.yml").write_text(
+        yaml.safe_dump(
+            {
+                "users": [{"handle": "alice", "display_name": "Alice A."}],
+            }
+        )
+    )
     linkage = extract_linkage(cwd=repo, wiki_root=wiki_root, handle="alice")
     assert linkage.author == "Alice A."
 
