@@ -107,6 +107,24 @@ def canonical_repo_name(remote_url: str) -> str | None:
     return "/".join(parts[-2:])
 
 
+def current_branch(cwd: Path | str | None = None) -> str:
+    """Resolve the current branch name for `cwd`. Empty string on any failure."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
 def current_repo(cwd: Path | str | None = None) -> str | None:
     """Resolve the current repo as `org/name`. Returns None if not in a repo."""
     root = git_repo_root(cwd)

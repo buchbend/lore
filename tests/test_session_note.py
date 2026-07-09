@@ -104,6 +104,30 @@ def test_first_heartbeat_creates_note_document_note(tmp_path):
     assert view.frontmatter["scope"] == "proj:x"
 
 
+def test_first_heartbeat_records_linkage_frontmatter(tmp_path):
+    (tmp_path / ".lore" / "buffers").mkdir(parents=True)
+    wiki_root = tmp_path / "wiki" / "private"
+    result = ensure_note(
+        outcome=_append(tmp_path),
+        scope=_scope(),
+        transcript=_handle(tmp_path),
+        wiki_root=wiki_root,
+        work_time=_NOW,
+        handle_label="",
+        integration="claude-code",
+    )
+    view = nd.read_note(result.path)
+    assert view.frontmatter["linkage"] == {
+        "schema_version": 1,
+        "repo": "",
+        "branch": "",
+        "issues": [],
+        "prs": [],
+        "epics": [],
+        "author": "",
+    }
+
+
 def test_stub_path_is_stamped_and_reused(tmp_path):
     (tmp_path / ".lore" / "buffers").mkdir(parents=True)
     wiki_root = tmp_path / "wiki" / "private"

@@ -69,7 +69,11 @@ from lore_curator.buffer_store import (
 )
 from lore_curator.chapter_compose import ComposeStatus, Gate, compose_chapter
 from lore_curator.session_filer import _slug
-from lore_curator.session_note import ensure_note_from_sidecar, facts_from_replay
+from lore_curator.session_note import (
+    ensure_note_from_sidecar,
+    facts_from_replay,
+    linkage_from_replay,
+)
 from lore_curator.stub_note import _lead_for_rename, _resolve_renamed_path
 
 if TYPE_CHECKING:
@@ -514,6 +518,7 @@ def _apply_outcome(
 ) -> FlushOutcome:
     sidecar = buffer.read_sidecar() or Sidecar(transcript_id=buffer.stem)
     facts = facts_from_replay(rb)
+    linkage = linkage_from_replay(rb, cwd=sidecar.cwd, wiki_root=wiki_root, handle=sidecar.handle)
     out = FlushOutcome(
         buffer_stem=buffer.stem,
         state_before=state_before,
@@ -540,6 +545,7 @@ def _apply_outcome(
             slice_from_turn=slice_from,
             slice_to_turn=slice_to,
             facts=facts,
+            linkage=linkage,
             wiki_root=wiki_root,
         )
         if out.chapter_n == 1:
@@ -603,6 +609,7 @@ def _apply_outcome(
                 slice_from_turn=slice_from,
                 slice_to_turn=slice_to,
                 facts=facts,
+                linkage=linkage,
                 wiki_root=wiki_root,
             )
             out.status = "failed"
@@ -614,6 +621,7 @@ def _apply_outcome(
                 slice_from_turn=slice_from,
                 slice_to_turn=slice_to,
                 facts=facts,
+                linkage=linkage,
                 wiki_root=wiki_root,
             )
             _reset_buffer_fresh(buffer)
@@ -646,7 +654,7 @@ def _apply_outcome(
 
     if close:
         if not out.discarded and not nd.is_closed(note_path):
-            nd.close_note(note_path, facts=facts, wiki_root=wiki_root)
+            nd.close_note(note_path, facts=facts, linkage=linkage, wiki_root=wiki_root)
         buffer.transition("closed")
         out.closed = True
     return out
@@ -725,13 +733,21 @@ def _finish_no_new_turns(
         skipped_reason="" if close else "no-new-turns",
     )
     with buffer.with_lock():
+        sc = buffer.read_sidecar()
         if close:
             if not nd.is_closed(note_path):
-                nd.close_note(note_path, facts=facts_from_replay(rb), wiki_root=wiki_root)
+                linkage = linkage_from_replay(
+                    rb,
+                    cwd=sc.cwd if sc else "",
+                    wiki_root=wiki_root,
+                    handle=sc.handle if sc else "",
+                )
+                nd.close_note(
+                    note_path, facts=facts_from_replay(rb), linkage=linkage, wiki_root=wiki_root
+                )
             buffer.transition("closed")
             out.closed = True
         else:
-            sc = buffer.read_sidecar()
             if sc is not None and sc.flush_requested is not None:
                 buffer.patch(flush_requested=None)
     if close:
