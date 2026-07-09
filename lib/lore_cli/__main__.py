@@ -91,6 +91,7 @@ def _build_app() -> typer.Typer:
         search_cmd,
         session_cmd,
         status_cmd,
+        tier_cmd,
         transcripts_cmd,
         wiki_cmd,
         workflow_cmd,
@@ -129,6 +130,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(off_cmd.app, name="off", rich_help_panel=_KN)
 
     app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
+    app.add_typer(tier_cmd.app, name="tier", rich_help_panel=_ADV)
     app.add_typer(attachments_cmd.app, name="attachments", rich_help_panel=_ADV)
     app.add_typer(briefing_cmd.app, name="briefing", rich_help_panel=_ADV)
     app.add_typer(codemap_cmd.app, name="codemap", rich_help_panel=_ADV)

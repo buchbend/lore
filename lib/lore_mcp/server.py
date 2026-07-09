@@ -979,6 +979,18 @@ def _resolve_repo_root(repo_path: str | None) -> Path | None:
     return git_repo_root(Path.cwd())
 
 
+def handle_tier_resolve(tier: str, host: str | None = None) -> dict[str, Any]:
+    """Resolve a semantic model tier to a concrete model for the current host."""
+    from lore_core.tiers import TierResolutionError, detect_host, resolve_tier
+
+    try:
+        resolved_host = host or detect_host()
+        model = resolve_tier(tier, host=resolved_host)
+    except TierResolutionError as e:
+        return _mcp_error("tier_resolution_failed", str(e))
+    return {"tier": tier, "host": resolved_host, "model": model}
+
+
 def handle_repo_docs_list(kind: str, repo_path: str | None = None) -> dict[str, Any]:
     """List ADR/PRD entries from a connected repo's conventional home.
 
@@ -1381,6 +1393,26 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
+            "name": "lore_tier_resolve",
+            "description": (
+                "Resolve a semantic model tier (frontier | strong | mid | "
+                "cheap) to the concrete model for the current host. Use "
+                "before spawning a subagent so its model param reflects "
+                "the tier the task needs, not a guess."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tier": {"type": "string"},
+                    "host": {
+                        "type": "string",
+                        "description": "Override host detection (optional).",
+                    },
+                },
+                "required": ["tier"],
+            },
+        },
+        {
             "name": "lore_repo_docs_fetch",
             "description": (
                 "Fetch one ADR or PRD's full content from a connected repo. "
@@ -1450,6 +1482,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_repo_docs_list(**args)
         case "lore_repo_docs_fetch":
             return handle_repo_docs_fetch(**args)
+        case "lore_tier_resolve":
+            return handle_tier_resolve(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 
