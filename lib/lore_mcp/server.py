@@ -21,6 +21,7 @@ Exposed tools:
                               out to `lore inbox archive`
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
     lore_repo_docs_fetch    — fetch one ADR or PRD's content (pull-only)
+    lore_codemap            — bounded code-map query (symbols/directory/top-N)
 
 Start:
     lore mcp
@@ -1042,6 +1043,47 @@ def handle_repo_docs_fetch(kind: str, path: str, repo_path: str | None = None) -
     return {"schema": "lore.repo_docs.fetch/1", "kind": kind, **doc}
 
 
+def handle_codemap(
+    mode: str,
+    repo_path: str | None = None,
+    pattern: str | None = None,
+    directory: str | None = None,
+    limit: int = 30,
+) -> dict[str, Any]:
+    """Bounded slice of the connected repo's code map (symbols/directory/top).
+
+    Pull-only, same repo-resolution contract as the repo-docs tools: an
+    explicit `repo_path` wins, otherwise the git repo containing the
+    server's cwd. Cold start (no map cached yet) generates one; the query
+    module caches subsequent calls on the generator's fingerprint.
+    """
+    from lore_core.codemap import query as codemap_query
+
+    if mode not in {"symbols", "directory", "top"}:
+        return _mcp_error(
+            "invalid_mode",
+            f"mode must be one of symbols|directory|top, got {mode!r}",
+        )
+    repo_root = _resolve_repo_root(repo_path)
+    if repo_root is None:
+        return _mcp_error(
+            "repo_not_found",
+            "could not resolve the connected repo",
+            next_="pass `repo_path` explicitly, or run the MCP server from within a git repo",
+        )
+
+    if mode == "symbols":
+        if not pattern:
+            return _mcp_error("pattern_required", "mode=symbols requires a non-empty `pattern`")
+        result = codemap_query.query_symbols(repo_root, pattern, limit=limit)
+    elif mode == "directory":
+        result = codemap_query.query_directory(repo_root, directory, limit=limit)
+    else:
+        result = codemap_query.query_top(repo_root, limit=limit)
+
+    return {"schema": "lore.codemap/1", "repo_root": str(repo_root), **result}
+
+
 # ---------------------------------------------------------------------------
 # MCP server wrapper
 # ---------------------------------------------------------------------------
@@ -1413,6 +1455,55 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
+            "name": "lore_codemap",
+            "description": (
+                "Bounded, cached slice of the connected repo's code map — "
+                "never the whole map. Three modes: `symbols` (qualname "
+                "regex/substring match, ranked by cross-repo references), "
+                "`directory` (inventory rows scoped to a directory prefix, "
+                "or the top-level bounded inventory when `directory` is "
+                "omitted), `top` (the N most-referenced symbols). Use this "
+                "instead of reading CODEMAP.md directly — pull ~30 relevant "
+                "rows instead of a 400-line file. Cached per-repo on the "
+                "generator's fingerprint; a cold repo (no map yet) is "
+                "generated on first call."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mode": {"type": "string", "enum": ["symbols", "directory", "top"]},
+                    "pattern": {
+                        "type": "string",
+                        "description": (
+                            "Regex/substring to match against symbol "
+                            "qualnames. Required for mode=symbols."
+                        ),
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": (
+                            "Directory prefix to scope inventory rows to. "
+                            "Only used for mode=directory; omit for the "
+                            "top-level inventory."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "Max rows returned.",
+                    },
+                    "repo_path": {
+                        "type": "string",
+                        "description": (
+                            "Override the repo root. Defaults to the git repo "
+                            "containing the server's working directory."
+                        ),
+                    },
+                },
+                "required": ["mode"],
+            },
+        },
+        {
             "name": "lore_repo_docs_fetch",
             "description": (
                 "Fetch one ADR or PRD's full content from a connected repo. "
@@ -1484,6 +1575,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_repo_docs_fetch(**args)
         case "lore_tier_resolve":
             return handle_tier_resolve(**args)
+        case "lore_codemap":
+            return handle_codemap(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 
