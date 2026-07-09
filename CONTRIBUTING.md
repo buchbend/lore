@@ -159,6 +159,8 @@ github-source plugins, the plugin manifest's version always wins
 silently and a duplicate in the marketplace is ignored (per the
 Claude Code plugin docs' explicit warning).
 
+The repo also ships `lore-workflow`, a second plugin with its own manifest at `lore-workflow/.claude-plugin/plugin.json` and an independent version axis — bumping `lore` does not require bumping `lore-workflow`, and vice versa. `tests/test_version_sync.py` checks both manifests are present and marketplace-wired; it does not force them to agree. Dependency direction is one-way: `lore-workflow` may depend on `lore`'s CLI/MCP surface, `lore` never depends on `lore-workflow`.
+
 The `_lore_schema_version` field inside `mcpServers.lore`
 (installed into `~/.cursor/mcp.json` etc.) is a separate concern —
 bump that only when the *managed-block shape* changes, not on every
