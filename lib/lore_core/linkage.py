@@ -20,7 +20,7 @@ from pathlib import Path
 from lore_core.git import current_branch, current_repo
 from lore_core.identity import resolve_display_name
 
-__all__ = ["Linkage", "extract_linkage"]
+__all__ = ["Linkage", "classify_refs", "extract_linkage"]
 
 SCHEMA_VERSION = 1
 
@@ -50,7 +50,7 @@ class Linkage:
     author: str = ""
 
 
-def _classify_refs(text: str) -> tuple[set[int], set[int], set[int]]:
+def classify_refs(text: str) -> tuple[set[int], set[int], set[int]]:
     """Return (issues, prs, epics) found in `text`, mutually exclusive."""
     epics = {int(m) for m in _EPIC_RE.findall(text)}
     prs = {int(a or b) for a, b in _PR_RE.findall(text)} - epics
@@ -78,7 +78,7 @@ def extract_linkage(
     prs: set[int] = set()
     epics: set[int] = set()
     for text in (branch, *(commit_texts or [])):
-        i, p, e = _classify_refs(text)
+        i, p, e = classify_refs(text)
         issues |= i
         prs |= p
         epics |= e
