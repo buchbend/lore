@@ -8,10 +8,19 @@ scope-aggregation logic was extracted from `lore_cli.resume_cmd` into
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from textwrap import dedent
 
 import pytest
 from lore_cli import resume_cmd
+
+# Fixture dates are relative to "today" (5/6 days back) rather than
+# hardcoded literals — a fixed date eventually falls outside the
+# default 30-day recent-session window and the fixture silently stops
+# exercising what it's meant to test (see test_resume_recent_finds_sharded_sessions
+# for the same pattern applied to the sharded-layout fixture below).
+_MATCHING_DATE = (date.today() - timedelta(days=5)).isoformat()
+_UNRELATED_DATE = (date.today() - timedelta(days=6)).isoformat()
 
 
 @pytest.fixture
@@ -36,14 +45,14 @@ def vault(tmp_path, monkeypatch):
         )
     )
     # A matching v2 session note
-    (wiki / "sessions" / "2026-04-10-retry-fix.md").write_text(
+    (wiki / "sessions" / f"{_MATCHING_DATE}-retry-fix.md").write_text(
         dedent(
-            """\
+            f"""\
             ---
             schema_version: 2
             type: session
-            created: 2026-04-10
-            last_reviewed: 2026-04-10
+            created: {_MATCHING_DATE}
+            last_reviewed: {_MATCHING_DATE}
             status: stable
             description: "retry fix session"
             scope: ccat:data-center:data-transfer
@@ -54,14 +63,14 @@ def vault(tmp_path, monkeypatch):
         )
     )
     # A non-matching one (different scope)
-    (wiki / "sessions" / "2026-04-09-unrelated.md").write_text(
+    (wiki / "sessions" / f"{_UNRELATED_DATE}-unrelated.md").write_text(
         dedent(
-            """\
+            f"""\
             ---
             schema_version: 2
             type: session
-            created: 2026-04-09
-            last_reviewed: 2026-04-09
+            created: {_UNRELATED_DATE}
+            last_reviewed: {_UNRELATED_DATE}
             status: stable
             description: "unrelated"
             scope: ccat:instrument:atm
@@ -111,9 +120,9 @@ def test_resume_subtree_aggregates_issues(vault, monkeypatch, capsys):
     assert "#10 trust CA" in out
     assert "#31 [draft] wip" in out
     # Session note matching by scope
-    assert "2026-04-10" in out
+    assert _MATCHING_DATE in out
     # Non-matching session excluded
-    assert "2026-04-09" not in out
+    assert _UNRELATED_DATE not in out
 
 
 def test_resume_no_wiki_matches_emits_error(vault, monkeypatch, capsys):
@@ -180,8 +189,8 @@ def test_resume_recent_no_args(vault, monkeypatch, capsys):
     assert "Resume: all wikis" in out
     assert "Recent sessions" in out
     # Both fixture sessions should appear
-    assert "2026-04-10" in out
-    assert "2026-04-09" in out
+    assert _MATCHING_DATE in out
+    assert _UNRELATED_DATE in out
 
 
 def test_resume_wiki_scoped_no_keyword(vault, monkeypatch, capsys):
