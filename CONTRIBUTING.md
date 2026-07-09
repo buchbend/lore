@@ -171,6 +171,23 @@ python -m pytest          # full suite
 python -m pytest tests/test_install_*.py -v   # installer-only
 ```
 
+## CI
+
+`.github/workflows/ci.yml` runs on every push and pull request. It
+mirrors the local dev commands exactly — no separate CI-only config:
+
+```bash
+pip install -e .[dev]
+pytest -q
+ruff check .
+ruff format --check .
+```
+
+`pytest` is a blocking gate. `ruff check` / `ruff format --check` run
+as advisory (`continue-on-error: true`) until the repo-wide lint and
+formatting cleanup tracked in #196 lands — new code you write should
+still pass both locally before you push.
+
 For end-to-end testing on a clean container, the canonical checklist
 lives in the PR description that lands a release (or in
 `docs/REVIEW-*.md` when one is written). If you're cutting a release,
