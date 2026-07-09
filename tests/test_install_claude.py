@@ -5,6 +5,7 @@ not-on-PATH self-install case."""
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -188,3 +189,33 @@ def test_install_writes_capture_hooks():
     assert "lore hook capture --event session-start" in all_commands("SessionStart"), (
         "SessionStart must call `lore hook capture --event session-start`"
     )
+
+
+def test_install_wires_spawn_model_gate():
+    """plugin.json must wire a PreToolUse hook on Task/Agent spawns to
+    `lore hook spawn-model-gate` (issue #170): the same
+    `claude plugin install lore@lore` / `claude plugin uninstall lore@lore`
+    pair used for every other hook installs and removes this one too,
+    so no separate install/uninstall action is needed — only the
+    manifest wiring is asserted here.
+    """
+    path = _plugin_json_path()
+    data = json.loads(path.read_text())
+    hooks = data["hooks"]
+
+    pretooluse = hooks.get("PreToolUse", [])
+    commands = [h["command"] for grp in pretooluse for h in grp["hooks"]]
+    assert "lore hook spawn-model-gate" in commands, (
+        "PreToolUse must call `lore hook spawn-model-gate`"
+    )
+
+    matchers = [
+        grp["matcher"]
+        for grp in pretooluse
+        if "lore hook spawn-model-gate" in [h["command"] for h in grp["hooks"]]
+    ]
+    assert matchers, "spawn-model-gate hook must declare a matcher"
+    matcher = matchers[0]
+    assert re.fullmatch(matcher, "Task"), f"matcher {matcher!r} must match Task"
+    assert re.fullmatch(matcher, "Agent"), f"matcher {matcher!r} must match Agent"
+    assert not re.fullmatch(matcher, "Bash"), f"matcher {matcher!r} must not match Bash"

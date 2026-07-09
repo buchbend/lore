@@ -80,6 +80,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Task|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook spawn-model-gate"
+          }
+        ]
+      }
     ]
   },
   "mcpServers": {
