@@ -10,6 +10,30 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-07-09
+
+### Added
+- **lore-workflow plugin + deterministic substrate (PRD 0003, epic #161).** The
+  ccat-agent-workflow plugin is folded into this monorepo as a second marketplace
+  plugin, `lore-workflow`, with its deterministic underbelly absorbed into the `lore`
+  package:
+  - **CI**: GitHub Actions runs pytest (blocking) + ruff (advisory until #196) on push/PR.
+  - **Two-plugin monorepo**: `lore-workflow` marketplace entry on an independent version axis.
+  - **`lore codemap`**: gitignore-aware code-map generator — all-files inventory + ranked
+    Python symbols (stdlib `ast`), git-blob-SHA fingerprint no-op fast path; multi-language
+    symbols (JS/TS, Vue, Rust, Julia, HTML) via the optional `lore[codemap]` tree-sitter extra.
+  - **`lore_codemap` MCP tool**: bounded, fingerprint-cached queryable slices of the code map.
+  - **`lore tier resolve`**: host-keyed model-tier resolution (CLI + MCP), user-overridable.
+  - **`lore workflow`**: roadmap validation + PRD scaffolding, ported into `lib/lore_workflow`.
+  - **Spawn-model gate**: PreToolUse hook (Claude Code) blocking modelless subagent spawns,
+    wired by the installer; retry guidance sourced from the tier resolver.
+  - **Onboarding**: `lore attach --scaffold-workflow` idempotently scaffolds docs/prd, docs/adr,
+    and the AGENTS.md shim — the standalone workflow-init path retired.
+  - **13 workflow skills** ported into `lore-workflow` (verbatim + tier/codemap/script rewires,
+    deduplicated tier reference); workflow conventions, tier explanation, and how-to guides
+    migrated into lore's docs.
+
+
 ## [0.57.0] - 2026-07-06
 
 ### Fixed
