@@ -43,6 +43,10 @@ capture = [
     "anthropic>=0.40",
     "openai>=1.40",
 ]
+codemap = [
+    "tree-sitter>=0.23",
+    "tree-sitter-language-pack>=0.13",
+]
 
 [project.scripts]
 lore = "lore_cli.__main__:main"
