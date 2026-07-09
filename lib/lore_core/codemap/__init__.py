@@ -366,6 +366,55 @@ def build_inventory(root: Path, relpaths: list[str]) -> Inventory:
 # ---------------------------------------------------------------------------
 
 
+def _build_language_symbols(root: Path, files: list[str]) -> tuple[list[Symbol], Counter[str]]:
+    """Extract non-Python symbols (#166) via the optional tree-sitter layer.
+
+    A no-op when the ``lore[codemap]`` extra is not installed (import guard
+    lives in :mod:`lore_core.codemap.languages`), so base installs keep
+    working with Python-only symbols. References are counted with a
+    cross-language word-boundary scan over the non-Python sources rather
+    than a per-grammar reference pass \u2014 cheap, deterministic, and good
+    enough to place these symbols into the same ranked table as Python's
+    (ast-based, more precise) reference counts.
+    """
+    from lore_core.codemap import languages
+
+    if not languages.AVAILABLE:
+        return [], Counter()
+
+    lang_sources: dict[str, tuple[str, str]] = {}
+    for rel in files:
+        language = languages.language_for(rel)
+        if language is None:
+            continue
+        try:
+            text_ = (root / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lang_sources[rel] = (language, text_)
+
+    symbols: list[Symbol] = []
+    file_counts: Counter[str] = Counter()
+    for relpath in sorted(lang_sources):
+        language, source = lang_sources[relpath]
+        found = languages.extract_symbols(relpath, source, language)
+        if found:
+            symbols.extend(found)
+            file_counts[relpath] += len(found)
+
+    if symbols:
+        blob = "\n".join(source for _, source in lang_sources.values())
+        refs: Counter[str] = Counter()
+        for name in {s.name for s in symbols}:
+            refs[name] = len(re.findall(rf"\b{re.escape(name)}\b", blob))
+        symbols = [
+            Symbol(s.name, s.qualname, s.kind, s.relpath, s.lineno, refs=refs[s.name])
+            for s in symbols
+        ]
+
+    return symbols, file_counts
+
+
 def build_code_map(root: Path) -> CodeMap:
     """Discover *root* once, then build the inventory and ranked symbol layers."""
     root = Path(root)
@@ -398,6 +447,10 @@ def build_code_map(root: Path) -> CodeMap:
                 )
             )
             file_counts[relpath] += 1
+
+    lang_symbols, lang_file_counts = _build_language_symbols(root, discovery.files)
+    symbols.extend(lang_symbols)
+    file_counts.update(lang_file_counts)
 
     symbols.sort(key=lambda s: (-s.refs, s.relpath, s.lineno, s.qualname))
     ranked_files = sorted(file_counts.items(), key=lambda kv: (-kv[1], kv[0]))
