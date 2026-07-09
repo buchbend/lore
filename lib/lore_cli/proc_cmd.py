@@ -29,7 +29,7 @@ app = typer.Typer(
 
 console = Console()
 
-_ROLES = ("a", "b", "c", "transcripts")
+_ROLES = ("a", "transcripts")
 _ERROR_MARKERS = ("Traceback", "Error:", "FATAL")
 _POLL_INTERVAL_S = 0.2
 _IDLE_TIMEOUT_S = 30 * 60
@@ -128,7 +128,7 @@ def list_logs() -> None:
 
 @app.command("show")
 def show(
-    role: str = typer.Argument(..., help="Subprocess role: a, b, c, or transcripts"),
+    role: str = typer.Argument(..., help="Subprocess role: a or transcripts"),
     prev: bool = typer.Option(False, "--prev", help="Show the previous run's log (.log.1)."),
     gen: int = typer.Option(0, "--gen", "-g", help="Generation (0=current, 1=previous, 2=...)."),
     lines: int = typer.Option(0, "--lines", "-n", help="Limit to last N lines (0 = all)."),
@@ -182,7 +182,7 @@ def show(
 
 @app.command("tail")
 def tail(
-    role: str = typer.Argument(..., help="Subprocess role: a, b, c, or transcripts"),
+    role: str = typer.Argument(..., help="Subprocess role: a or transcripts"),
 ) -> None:
     """Follow a subprocess log file. Exit with Ctrl+C."""
     if role not in _ROLES:

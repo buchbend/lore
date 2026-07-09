@@ -1,16 +1,12 @@
-"""Task 3: WikiLedger must track last_curator_{a,b,c}.
+"""WikiLedger tracks last_curator_a — the only curator.
 
-Pre-Task-3: last_curator_a was READ by the SessionStart banner but NEVER
-WRITTEN by Curator A. The banner rendered a permanent lie.
+WikiLedger.update_last_curator("a") is called by Curator A at run-end for
+every touched wiki; the SessionStart banner reads it to render "last
+curator N ago". Write failures emit a warning to hook-events.jsonl —
+never silent.
 
-Task 3 adds:
-- last_curator_c field (symmetry with the A/B/C triad)
-- WikiLedger.update_last_curator(role) helper
-- Curator A calls it at run-end for every touched wiki
-- Curator B continues to update last_curator_b (regression guard)
-- Write failures emit a warning to hook-events.jsonl — never silent.
-
-Back-compat: old ledgers without last_curator_c load fine (field = None).
+Back-compat: an old ledger with stale last_curator_b/last_curator_c keys
+on disk (pre-B/C-removal) loads fine — unknown keys are ignored.
 Partial-failure: if Curator A raises mid-run, last_curator_a must be
 EITHER the prior value OR the new value — never absent/clobbered.
 """
@@ -35,7 +31,7 @@ _NOW = datetime(2026, 4, 21, 10, 0, 0, tzinfo=UTC)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("role", ["a", "b", "c"])
+@pytest.mark.parametrize("role", ["a"])
 def test_update_last_curator_persists_and_roundtrips(tmp_path: Path, role: str) -> None:
     """update_last_curator(role) writes the timestamp; read() returns it."""
     ledger = WikiLedger(tmp_path, "testwiki")
@@ -51,40 +47,33 @@ def test_update_last_curator_persists_and_roundtrips(tmp_path: Path, role: str) 
 
 
 def test_update_last_curator_preserves_other_fields(tmp_path: Path) -> None:
-    """Updating one role must not clobber the others or other metadata."""
+    """Updating last_curator_a must not clobber other ledger metadata."""
     ledger = WikiLedger(tmp_path, "testwiki")
     (tmp_path / ".lore").mkdir()
 
-    earlier = _NOW - timedelta(days=2)
-    ledger.write(
-        WikiLedgerEntry(
-            wiki="testwiki",
-            last_curator_a=earlier,
-            last_curator_b=earlier,
-            pending_transcripts=3,
-        )
-    )
+    ledger.write(WikiLedgerEntry(wiki="testwiki", pending_transcripts=3))
 
-    ledger.update_last_curator("c", at=_NOW)
+    ledger.update_last_curator("a", at=_NOW)
 
     entry = ledger.read()
-    assert entry.last_curator_a == earlier, "a must be preserved"
-    assert entry.last_curator_b == earlier, "b must be preserved"
-    assert entry.last_curator_c == _NOW
+    assert entry.last_curator_a == _NOW
     assert entry.pending_transcripts == 3
 
 
-def test_missing_last_curator_c_field_loads_as_none(tmp_path: Path) -> None:
-    """Back-compat: ledger written before Task 3 has no last_curator_c key."""
+def test_stale_b_c_ledger_keys_load_and_are_ignored(tmp_path: Path) -> None:
+    """Back-compat: a ledger written before B/C removal still has stale
+    last_curator_b/last_curator_c keys on disk. WikiLedger.read() must
+    load it fine and silently ignore the extra keys.
+    """
     (tmp_path / ".lore").mkdir()
-    pre_task3_ledger = tmp_path / ".lore" / "wiki-testwiki-ledger.json"
-    pre_task3_ledger.write_text(
+    old_ledger = tmp_path / ".lore" / "wiki-testwiki-ledger.json"
+    old_ledger.write_text(
         json.dumps(
             {
                 "wiki": "testwiki",
                 "last_curator_a": "2026-04-20T00:00:00+00:00",
                 "last_curator_b": "2026-04-20T00:00:00+00:00",
-                # NO last_curator_c field — simulates an old ledger
+                "last_curator_c": None,
                 "last_briefing": None,
                 "pending_transcripts": 0,
                 "pending_tokens_est": 0,
@@ -94,16 +83,18 @@ def test_missing_last_curator_c_field_loads_as_none(tmp_path: Path) -> None:
 
     ledger = WikiLedger(tmp_path, "testwiki")
     entry = ledger.read()
-    assert entry.last_curator_c is None
     assert entry.last_curator_a is not None
+    assert not hasattr(entry, "last_curator_b")
+    assert not hasattr(entry, "last_curator_c")
 
 
 def test_update_last_curator_invalid_role_raises(tmp_path: Path) -> None:
-    """Defensive: role outside {'a','b','c'} is a programmer error, not silent."""
+    """Defensive: any role other than 'a' is a programmer error, not silent."""
     (tmp_path / ".lore").mkdir()
     ledger = WikiLedger(tmp_path, "testwiki")
-    with pytest.raises(ValueError):
-        ledger.update_last_curator("z", at=_NOW)
+    for role in ("b", "c", "z"):
+        with pytest.raises(ValueError):
+            ledger.update_last_curator(role, at=_NOW)
 
 
 # ---------------------------------------------------------------------------

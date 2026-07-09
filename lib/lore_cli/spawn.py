@@ -296,36 +296,6 @@ def _spawn_detached(
 
 
 # ---------------------------------------------------------------------------
-# Curator-C scheduling helpers — co-located with the role definition that
-# uses them (PRD §11). Pure functions, no I/O beyond ``git config``.
-# ---------------------------------------------------------------------------
-
-
-def _curator_c_email() -> str:
-    """Resolve git user.email → hostname fallback → empty (offset=0)."""
-    from lore_core.git import git_user_email
-    return git_user_email(fallback_hostname=True)
-
-
-def _curator_c_jitter_seconds(email: str) -> int:
-    """Deterministic 0-48h offset from SHA-256(email). Empty → 0 (fire at Monday 00Z)."""
-    import hashlib
-    if not email:
-        return 0
-    h = hashlib.sha256(email.encode()).hexdigest()[:8]
-    return int(h, 16) % 172800  # 48h in seconds
-
-
-def _iso_week_monday_utc(ts: "datetime") -> "datetime":
-    """Monday 00:00Z of the ISO week containing ts."""
-    from datetime import UTC, datetime as _dt
-    from datetime import timedelta
-    weekday = ts.isocalendar().weekday  # 1..7, Monday=1
-    date = ts.date() - timedelta(days=weekday - 1)
-    return _dt(date.year, date.month, date.day, tzinfo=UTC)
-
-
-# ---------------------------------------------------------------------------
 # SpawnRole registry + the single public ``spawn()`` entry point
 # ---------------------------------------------------------------------------
 
@@ -335,9 +305,9 @@ class SpawnRole:
     """One row in the spawn-role registry.
 
     ``argv_builder`` is called with the keyword arguments forwarded from
-    :func:`spawn` (currently only Curator B uses one — ``wiki_name``).
-    The returned argv is the *child* command; ``_spawn_detached`` wraps it
-    in ``python -m lore_cli._proc_wrapper`` for sidecar lifecycle tracking.
+    :func:`spawn`. The returned argv is the *child* command;
+    ``_spawn_detached`` wraps it in ``python -m lore_cli._proc_wrapper``
+    for sidecar lifecycle tracking.
     """
 
     name: str
@@ -354,23 +324,6 @@ SPAWN_ROLES: dict[str, SpawnRole] = {
         ],
         default_cooldown_s=60,
         migrate_stamp=True,
-    ),
-    "b": SpawnRole(
-        name="b",
-        argv_builder=lambda *, wiki_name: [
-            sys.executable, "-m", "lore_cli",
-            "curator", "run", "--abstract", "--wiki", wiki_name,
-        ],
-        default_cooldown_s=300,
-        migrate_stamp=True,
-    ),
-    "c": SpawnRole(
-        name="c",
-        argv_builder=lambda: [
-            sys.executable, "-m", "lore_cli",
-            "curator", "run", "--defrag",
-        ],
-        default_cooldown_s=3600,
     ),
     "transcripts": SpawnRole(
         name="transcripts",
@@ -426,20 +379,6 @@ def spawn(
 def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
     """Fire-and-forget `lore curator run` subprocess."""
     return spawn("a", lore_root, cooldown_s=cooldown_s)
-
-
-def _spawn_detached_curator_b(
-    lore_root: Path, wiki_name: str, *, cooldown_s: int = 300
-) -> bool:
-    """Fire-and-forget `lore curator run --abstract --wiki <name>` subprocess."""
-    return spawn("b", lore_root, cooldown_s=cooldown_s, wiki_name=wiki_name)
-
-
-def _spawn_detached_curator_c(
-    lore_root: Path, *, cooldown_s: int = 3600
-) -> bool:
-    """Fire-and-forget `lore curator run --defrag` subprocess (Curator C)."""
-    return spawn("c", lore_root, cooldown_s=cooldown_s)
 
 
 def _spawn_detached_transcript_sync(

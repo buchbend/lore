@@ -44,8 +44,8 @@ class RunLogger:
 
     Context-manager usage:
 
-        with RunLogger(lore_root, trigger="hook", role="b") as logger:
-            logger.emit("cluster-formed", surface_names=[...], note_count=3)
+        with RunLogger(lore_root, trigger="hook", role="a") as logger:
+            logger.emit("session-note", action="filed", path="...")
             ...
 
     Opens `runs/<id>.jsonl` and truncates `runs-live.jsonl` at start;
@@ -73,14 +73,8 @@ class RunLogger:
         "flush-degraded", "flush-handover-timeout",
         "reaper-scanned", "reaper-force-flushed",
         "dangling-ref",
-        # Curator B
-        "cluster-formed", "surface-filed", "threads-regenerated",
-        "merge-suggested",
-        # Curator B Phase 2: strict scope partitioning telemetry.
-        "unscoped-notes", "cluster-scope-overridden",
-        # Curator C
-        "action-applied", "action-skipped", "defrag-pass",
-        "wiki-start", "wiki-skip",
+        # Hygiene pass (lore curator [--wiki] [--apply])
+        "action-applied", "action-skipped", "wiki-start",
     })
 
     def __init__(
@@ -114,7 +108,6 @@ class RunLogger:
         self._write_failures = 0
         self._counts = {
             "notes_new": 0, "notes_merged": 0, "skipped": 0, "errors": 0,
-            "clusters_formed": 0, "surfaces_emitted": 0,
             "actions_applied": 0, "actions_skipped": 0,
         }
         self._on_record = on_record
@@ -246,10 +239,6 @@ class RunLogger:
             self._counts["skipped"] += 1
         elif record_type == "error":
             self._counts["errors"] += 1
-        elif record_type == "cluster-formed":
-            self._counts["clusters_formed"] += 1
-        elif record_type == "surface-filed":
-            self._counts["surfaces_emitted"] += 1
         elif record_type == "action-applied":
             self._counts["actions_applied"] += 1
         elif record_type == "action-skipped":

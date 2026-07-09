@@ -79,8 +79,8 @@ def test_capture_state_empty_vault(tmp_path: Path) -> None:
     assert state.last_note_filed is None
     assert state.hook_log_failed_marker_age_s is None
     assert state.simple_tier_fallback_active is False
-    assert len(state.curators) == 3
-    assert [c.role for c in state.curators] == ["a", "b", "c"]
+    assert len(state.curators) == 1
+    assert [c.role for c in state.curators] == ["a"]
     for c in state.curators:
         assert c.last_run_ts is None
         assert c.last_run_notes_new is None
@@ -137,10 +137,6 @@ def test_capture_state_scope_resolution(tmp_path: Path, monkeypatch: pytest.Monk
     [
         ("a", timedelta(hours=1), False),
         ("a", timedelta(hours=25), True),
-        ("b", timedelta(hours=6), False),  # same calendar day as _NOW
-        ("b", timedelta(days=1, hours=2), True),  # prior calendar day
-        ("c", timedelta(days=6), False),
-        ("c", timedelta(days=8), True),
     ],
 )
 def test_capture_state_overdue_calculation_per_role(
@@ -228,11 +224,8 @@ def test_capture_state_populated_vault(tmp_path: Path) -> None:
 
     lore_root = _seed_lore_root(tmp_path)
 
-    # Seed last_curator_{a,b,c} at different ages.
     wledger = WikiLedger(lore_root, "private")
     wledger.update_last_curator("a", at=_NOW - timedelta(hours=2))
-    wledger.update_last_curator("b", at=_NOW - timedelta(hours=3))
-    wledger.update_last_curator("c", at=_NOW - timedelta(days=6))
 
     # Seed 3 runs, last one recent with 2 new notes and 0 errors.
     paths = _write_runs(
@@ -270,15 +263,12 @@ def test_capture_state_populated_vault(tmp_path: Path) -> None:
 
     state = query_capture_state(lore_root, now=_NOW)
 
-    a, b, c = state.curators
+    (a,) = state.curators
     assert a.last_run_ts == _NOW - timedelta(hours=2)
     assert a.last_run_notes_new == 2
     assert a.last_run_errors == 0
     assert a.last_run_short_id is not None
     assert a.overdue is False
-
-    assert b.last_run_ts == _NOW - timedelta(hours=3)
-    assert c.last_run_ts == _NOW - timedelta(days=6)
 
     assert state.last_note_filed is not None
     note_ts, wikilink = state.last_note_filed

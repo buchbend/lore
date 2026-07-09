@@ -91,62 +91,6 @@ def _snapshot_dir(path: Path) -> dict[str, tuple[int, bytes]]:
 # ---------------------------------------------------------------------------
 
 
-def test_session_start_probe_suppresses_curator_b_spawn(tmp_path: Path) -> None:
-    """With --probe, calendar-rollover does NOT spawn Curator B."""
-    project = _make_attached_project(tmp_path)
-    lore_root = project
-
-    wledger = WikiLedger(lore_root, "testwiki")
-    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_b=_yesterday()))
-
-    calls: list[tuple] = []
-
-    def mock_spawn(lore_root_: Path, wiki: str, **kw):
-        calls.append((lore_root_, wiki))
-        return True
-
-    with patch("lore_cli.hooks._spawn_detached_curator_b", side_effect=mock_spawn):
-        result = runner.invoke(
-            hook_app,
-            ["session-start", "--cwd", str(project), "--plain", "--probe"],
-            env={"LORE_ROOT": str(lore_root)},
-            catch_exceptions=False,
-        )
-
-    assert result.exit_code == 0, result.output
-    assert len(calls) == 0, (
-        f"--probe must suppress Curator B spawn, got {len(calls)} calls: {calls}"
-    )
-
-
-def test_session_start_no_probe_also_does_not_spawn_curator_b(tmp_path: Path) -> None:
-    """Curator B's calendar-rollover entry point is severed entirely — with
-    or without --probe, SessionStart never spawns it (see
-    test_hooks_curator_b_trigger.py for the dedicated kill-switch coverage)."""
-    project = _make_attached_project(tmp_path)
-    lore_root = project
-
-    wledger = WikiLedger(lore_root, "testwiki")
-    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_b=_yesterday()))
-
-    calls: list[tuple] = []
-
-    def mock_spawn(lore_root_: Path, wiki: str, **kw):
-        calls.append((lore_root_, wiki))
-        return True
-
-    with patch("lore_cli.hooks._spawn_detached_curator_b", side_effect=mock_spawn):
-        result = runner.invoke(
-            hook_app,
-            ["session-start", "--cwd", str(project), "--plain"],
-            env={"LORE_ROOT": str(lore_root)},
-            catch_exceptions=False,
-        )
-
-    assert result.exit_code == 0, result.output
-    assert len(calls) == 0, f"Curator B entry point must be severed: {calls}"
-
-
 def test_session_start_probe_suppresses_curator_a_spawn(tmp_path: Path) -> None:
     """--probe also suppresses Curator A (defense in depth for future spawn paths).
 
@@ -159,7 +103,7 @@ def test_session_start_probe_suppresses_curator_a_spawn(tmp_path: Path) -> None:
     lore_root = project
 
     wledger = WikiLedger(lore_root, "testwiki")
-    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_b=_yesterday()))
+    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_a=_yesterday()))
 
     a_calls: list = []
 
@@ -167,10 +111,7 @@ def test_session_start_probe_suppresses_curator_a_spawn(tmp_path: Path) -> None:
         a_calls.append((args, kw))
         return True
 
-    with (
-        patch("lore_cli.hooks._spawn_detached_curator_a", side_effect=mock_spawn_a),
-        patch("lore_cli.hooks._spawn_detached_curator_b", return_value=True),
-    ):
+    with patch("lore_cli.hooks._spawn_detached_curator_a", side_effect=mock_spawn_a):
         result = runner.invoke(
             hook_app,
             ["session-start", "--cwd", str(project), "--plain", "--probe"],
@@ -197,11 +138,11 @@ def test_doctor_probe_writes_no_state_files(tmp_path, monkeypatch) -> None:
     project = _make_attached_project(tmp_path)
     lore_root = project
 
-    # Pre-populate WikiLedger with yesterday's last_curator_b so that WITHOUT
-    # --probe the hook would spawn Curator B. With --probe (via doctor) it
+    # Pre-populate WikiLedger with yesterday's last_curator_a so that WITHOUT
+    # --probe the hook would spawn Curator A. With --probe (via doctor) it
     # must NOT.
     wledger = WikiLedger(lore_root, "testwiki")
-    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_b=_yesterday()))
+    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_a=_yesterday()))
 
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
     monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))

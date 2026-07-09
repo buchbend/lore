@@ -43,8 +43,6 @@ class TranscriptLedgerEntry:
 class WikiLedgerEntry:
     wiki: str
     last_curator_a: datetime | None = None
-    last_curator_b: datetime | None = None
-    last_curator_c: datetime | None = None
     last_briefing: datetime | None = None
     pending_transcripts: int = 0
     pending_tokens_est: int = 0
@@ -391,8 +389,6 @@ class WikiLedger:
         return WikiLedgerEntry(
             wiki=raw.get("wiki", self._wiki),
             last_curator_a=_dt(raw.get("last_curator_a")),
-            last_curator_b=_dt(raw.get("last_curator_b")),
-            last_curator_c=_dt(raw.get("last_curator_c")),
             last_briefing=_dt(raw.get("last_briefing")),
             pending_transcripts=raw.get("pending_transcripts", 0),
             pending_tokens_est=raw.get("pending_tokens_est", 0),
@@ -407,8 +403,6 @@ class WikiLedger:
         raw = {
             "wiki": entry.wiki,
             "last_curator_a": _iso(entry.last_curator_a),
-            "last_curator_b": _iso(entry.last_curator_b),
-            "last_curator_c": _iso(entry.last_curator_c),
             "last_briefing": _iso(entry.last_briefing),
             "pending_transcripts": entry.pending_transcripts,
             "pending_tokens_est": entry.pending_tokens_est,
@@ -417,7 +411,7 @@ class WikiLedger:
         atomic_write_text(self._path, json.dumps(raw, indent=2))
 
     def update_last_curator(self, role: str, *, at: datetime | None = None) -> None:
-        """Write last_curator_{a,b,c} for this wiki; best-effort telemetry.
+        """Write last_curator_a for this wiki; best-effort telemetry.
 
         Read-modify-write: preserves other fields. On I/O failure, emits a
         warning event to hook-events.jsonl and returns — never raises past
@@ -425,13 +419,13 @@ class WikiLedger:
         a crashed curator must never be prevented from completing because
         the ledger disk is full.
 
-        Raises ValueError if role is not one of {'a', 'b', 'c'} — that is
-        a programmer error, not a runtime failure.
+        Raises ValueError if role != 'a' — that is a programmer error, not
+        a runtime failure.
         """
         from datetime import UTC as _UTC
 
-        if role not in ("a", "b", "c"):
-            raise ValueError(f"role must be 'a', 'b', or 'c'; got {role!r}")
+        if role != "a":
+            raise ValueError(f"role must be 'a'; got {role!r}")
         ts = at if at is not None else datetime.now(_UTC)
         try:
             entry = self.read()
