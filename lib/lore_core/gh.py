@@ -58,6 +58,23 @@ def gh_prs(repo: str, filter_str: str) -> list[dict]:
     return run_gh("pr", repo, split_filter(filter_str))
 
 
+def gh_issue_view(repo: str, number: int) -> dict | None:
+    """Fetch one issue/epic's number, title, state. None on any failure."""
+    cmd = ["gh", "issue", "view", str(number), "--repo", repo, "--json", "number,title,state"]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
 def format_issue_line(issue: dict) -> str:
     number = issue.get("number")
     title = issue.get("title") or ""
