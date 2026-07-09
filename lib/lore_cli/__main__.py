@@ -72,8 +72,8 @@ def _build_app() -> typer.Typer:
         inbox_cmd,
         ingest_cmd,
         init_cmd,
-        journal_cmd,
         install_cmd,
+        journal_cmd,
         lint_cmd,
         log_cmd,
         mcp_cmd,
@@ -93,6 +93,7 @@ def _build_app() -> typer.Typer:
         status_cmd,
         transcripts_cmd,
         wiki_cmd,
+        workflow_cmd,
     )
 
     app = typer.Typer(
@@ -147,6 +148,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
     app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
     app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
+    app.add_typer(workflow_cmd.app, name="workflow", rich_help_panel=_ADV)
 
     app.command(
         "uninstall",
