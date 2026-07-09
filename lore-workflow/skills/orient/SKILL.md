@@ -25,14 +25,13 @@ If they pass an issue reference (e.g. an epic seed from `/lore-workflow:seed-epi
 ### 2. Explore in parallel (subagents)
 Fan out read-only `Explore` subagents concurrently — one per facet, in a single message — and
 keep only their findings here (drop the file dumps). This fan-out runs at **mid-tier
-(REQUIRED)**: resolve the tier to a concrete model via the harness table in
-[MODEL-TIERS.md](../../MODEL-TIERS.md) ("Resolution at spawn time") and set each spawn's
-model parameter to that resolution. Tier prose inside the subagent prompt resolves
-nothing — a spawn with no explicit model implicitly inherits the session model, which both
-violates the tier contract and burns frontier-model tokens on gathering work.
+(REQUIRED)**: resolve the tier to a concrete model with `lore tier resolve mid` and set each
+spawn's model parameter to that resolution — see
+[TIER-DELEGATION.md](../../TIER-DELEGATION.md) for the no-implicit-inherit rule this enforces.
 Default facets:
 - **Code map** — where this touches the codebase: key modules, interfaces, current behavior,
-  relevant tests.
+  relevant tests. Start from `lore codemap` (or the `lore_codemap` MCP tool) for a ranked,
+  deterministic index instead of a blind directory walk.
 - **Docs & decisions** — CONTEXT.md / glossary, `docs/adr`, relevant guides; what is already
   decided or constrained.
 - **Prior art** — related issues/PRs and similar existing features.

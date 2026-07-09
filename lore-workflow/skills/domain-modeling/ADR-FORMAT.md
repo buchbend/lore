@@ -66,9 +66,9 @@ step you must always do.** After creating `docs/adr/NNNN-slug.md`, add its
 stem (`NNNN-slug`, no `.md` extension) to the **first `{toctree}` block** in
 `docs/adr/index.md` — the single-brace MyST stub already seeded in the repo.
 Insert the entry on its own line **before the closing `` ``` `` fence** of that
-block, preserving the existing entries. This mirrors the `_wire_toctree_entry()`
-convention in `scripts/ccat_workflow_init.py`; it is idempotent, so skip the
-insert if the stem is already present. Without this wiring Sphinx will not pick
+block, preserving the existing entries. This mirrors the idempotent toctree-wiring
+`lore workflow create-prd` and `lore attach --scaffold-workflow` use elsewhere; skip
+the insert if the stem is already present. Without this wiring Sphinx will not pick
 the ADR up and it will not render.
 
 ## When to offer an ADR

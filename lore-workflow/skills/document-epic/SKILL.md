@@ -46,7 +46,8 @@ Every documentation edit you make belongs to exactly one quadrant
 
 ## Loop
 
-**Map the deltas.** Read the merged epic with `gh ... --json` (see `CONVENTIONS.md`).
+**Map the deltas.** Read the merged epic with `gh ... --json` (see the repo's own
+conventions doc, if any).
 From it gather three sources of truth: the **merged PRD** (intent), the **sub-issue PRs**
 (per-feature acceptance notes that reveal which behaviors are user-facing), and the
 **cumulative epic diff** (every path the epic touched, with its change kind). Build one list
@@ -55,7 +56,8 @@ touches the **public API** (a non-underscore symbol exported from the package). 
 the input to classification.
 
 **Classify into quadrants.** Run each changed path through the deterministic heuristic in
-`diataxis.py` (bundled next to this skill): `classify(path, public_api=...)` returns the
+the `lore_workflow.diataxis` module (part of the `lore` package this plugin depends on):
+`classify(path, public_api=...)` returns the
 quadrant (`tutorial` / `how-to` / `reference` / `explanation`) or `None` for changes that
 warrant no docs edit, and `is_excluded(path)` flags the `docs/prd`/`docs/adr` paths you must
 skip. Use `classify_changeset(changes)` to turn the whole diff into an edit plan in one call;

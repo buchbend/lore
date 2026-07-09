@@ -31,8 +31,8 @@ not here.
 
 ### 1. Read the issue and the code map
 
-Read the GitHub issue the user wrote, then read the repo's **code map**
-([`CODEMAP.md`](../../CODEMAP.md)) to locate the symbols and files the change
+Read the GitHub issue the user wrote, then run `lore codemap` (or the
+`lore_codemap` MCP tool) to locate the symbols and files the change
 touches. That is the whole intake — **no exploration fan-out**. The code map is a
 ranked navigation index built for exactly this: find the symbol, open the cited
 file and line. Spinning up parallel explorer subagents for a single clear issue is
@@ -53,13 +53,13 @@ a quota to fill — when in doubt, prefer to proceed.
 
 Create one branch, `feat/<issue>-slug`, off the **detected target branch** —
 `develop` if that branch exists on the remote, else the repo default (`main`);
-never assume it. Implement the change with [`/lore-workflow:tdd`](../lore-workflow:tdd/SKILL.md): the strict
+never assume it. Implement the change with [`/lore-workflow:tdd`](../tdd/SKILL.md): the strict
 red → green → refactor loop, one behavior at a time, tests before code. Everything
 lands in **one PR** on that branch.
 
 ### 4. ADR gate
 
-Apply `domain-modeling`'s three [ADR](../lore-workflow:domain-modeling/ADR-FORMAT.md) criteria to
+Apply `domain-modeling`'s three [ADR](../domain-modeling/ADR-FORMAT.md) criteria to
 the decision the change embodies:
 
 1. **Hard to reverse** — the cost of changing your mind later is meaningful.
@@ -69,17 +69,18 @@ the decision the change embodies:
 
 If **all three** hold, draft the ADR at `docs/adr/NNNN-kebab.md` in the **same
 PR**. If any one is missing, **skip the ADR silently** — no note, no placeholder.
-(See [`domain-modeling`](../lore-workflow:domain-modeling/SKILL.md).)
+(See [`domain-modeling`](../domain-modeling/SKILL.md).)
 
 ### 5. Docs — Diátaxis pass
 
-Run [`document-epic`](../lore-workflow:document-epic/SKILL.md)'s
-[`diataxis.py`](../lore-workflow:document-epic/diataxis.py) classification over the change's diff:
-`classify_changeset(changes)` maps each changed path to its Diátaxis **quadrant**
-(tutorial / how-to / reference / explanation) or to "skip". Update the touched
-quadrants in the **same PR** — for reference, that means docstrings plus the
-autosummary/toctree wiring, not hand-written prose. `diataxis.py` never assigns a
-quadrant to `docs/prd/` or `docs/adr/`; leave those alone.
+Run [`document-epic`](../document-epic/SKILL.md)'s classification over the
+change's diff using the `lore_workflow.diataxis` module (part of the `lore`
+package this plugin depends on): `classify_changeset(changes)` maps each changed
+path to its Diátaxis **quadrant** (tutorial / how-to / reference / explanation) or
+to "skip". Update the touched quadrants in the **same PR** — for reference, that
+means docstrings plus the autosummary/toctree wiring, not hand-written prose.
+`classify_changeset` never assigns a quadrant to `docs/prd/` or `docs/adr/`;
+leave those alone.
 
 ### 6. Review, open the PR, report
 
@@ -96,5 +97,5 @@ the PR and stops there — it does not self-merge. **Never merge on red.**
 
 This track and the epic chain solve different problems and do not compose: one
 clear issue takes this fast path; a shaped, multi-feature body of work takes the
-chain. See [`CONVENTIONS.md`](../../CONVENTIONS.md) for the canonical chain and the
-artifact homes this skill writes into (`docs/adr/`, the Diátaxis `docs/`).
+chain. See the repo's own conventions doc, if any, for the canonical chain and
+the artifact homes this skill writes into (`docs/adr/`, the Diátaxis `docs/`).

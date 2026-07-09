@@ -49,7 +49,7 @@ completion or to escalate a hard blocker (see Stop conditions).
 
 ## Loop
 
-**Map.** Read the epic with `gh ... --json` (see `CONVENTIONS.md`). Extract roadmap
+**Map.** Read the epic with `gh ... --json` (see the repo's own conventions doc, if any). Extract roadmap
 items, per-feature acceptance criteria, dependency edges, target repo(s). If the epic was
 produced by `/lore-workflow:to-epic`, its **Roadmap** table is the canonical DAG (Feature | Issue | Repo |
 Type | Blocked by); read acceptance criteria from each linked sub-issue, and treat
@@ -73,8 +73,8 @@ No prior status comment found → this is a fresh run; proceed to the Roadmap-va
 and create the status comment as described below.
 
 **Roadmap-validator gate.** Before dispatching any teammate, validate that roadmap table
-with the deterministic, dependency-free `roadmap_validator.py` shipped beside the `to-epic`
-skill — required columns, fully-qualified `owner/repo#n` refs, blocked-by edges that resolve
+with the deterministic, dependency-free `lore workflow validate-roadmap` — required columns,
+fully-qualified `owner/repo#n` refs, blocked-by edges that resolve
 to rows, an acyclic DAG. **Refuse to start on a malformed or cyclic roadmap:** report the
 validator's problems and stop rather than dispatch teammates against a table it rejects.
 
@@ -104,8 +104,8 @@ completion. Record tier decisions and deviations there as they happen.
 
 **Context pack (built once at Map time, reused by every teammate).** Assemble one
 short context pack now, so codebase discovery happens once for the whole epic
-instead of once per teammate. Source it from the deterministic code map (`CODEMAP.md`,
-refreshed deterministically by `scripts/code_map.py`): rank that map's symbols
+instead of once per teammate. Source it from `lore codemap` (or the `lore_codemap`
+MCP tool for bounded, queryable slices): rank the map's symbols
 against this epic's shared touchpoints and pull only the top **token-budgeted
 excerpts (~1k tokens)** — never paste the whole map, which would swamp every
 brief. Shape the pack as Anthropic's four-part subagent brief checklist — their
@@ -115,7 +115,7 @@ teammate reads the same framing:
 - **Expected output format** — one branch `feat/<n>-slug` and one PR per feature,
   strict TDD with red→green evidence.
 - **Tool/source guidance** — the ranked code-map excerpts (files, key symbols,
-  conventions), the `CODEMAP.md` index to widen from, and where the domain
+  conventions), `lore codemap` / `lore_codemap` to widen from, and where the domain
   language lives (CONTEXT.md / glossary, `docs/adr`).
 - **Task boundaries** — the scope fence and the shared-file touchpoints to stay
   clear of.
@@ -125,8 +125,8 @@ Paste this same pack, unchanged, into every teammate brief below.
 and spawn a background teammate pinned to it (concurrency cap N, default 4). **Choose each
 teammate's model tier from the feature's assessed complexity** — a cheaper/faster tier for
 mechanical or well-scoped features, the strongest tier for architectural, ambiguous, or
-cross-cutting ones — and pass the chosen tier's resolved model in the spawn call
-(`MODEL-TIERS.md`, "Resolution at spawn time"). Fill the teammate brief below per feature.
+cross-cutting ones — and pass the chosen tier's resolved model (`lore tier resolve <tier>`,
+see [TIER-DELEGATION.md](../../TIER-DELEGATION.md)) in the spawn call. Fill the teammate brief below per feature.
 
 _Liveness._ Liveness is event-driven, not polled: the harness's completion notification
 — fired when a background teammate finishes or sends a message — is the primary signal,
@@ -148,7 +148,8 @@ cross-PR consistency too — instead of one reviewer spawn per PR.
 **Crosscheck (delegated).** When a teammate reports its PR, you do **not** read the diff.
 Delegating the read is what keeps the orchestrator's context free for supervision as the epic
 grows. Spawn one reviewer subagent per PR at the **strong-tier** — set the spawn's model
-parameter to the strong-tier resolution (`MODEL-TIERS.md`, "Resolution at spawn time");
+parameter to `lore tier resolve strong` (see
+[TIER-DELEGATION.md](../../TIER-DELEGATION.md));
 no delegation ever inherits the session model implicitly. The reviewer reads the
 diff and the linked sub-issue, runs the checks below, and returns a structured verdict. The
 orchestrator reads no diffs; it consumes only the verdict.
@@ -189,9 +190,9 @@ _Tier rules for this step._ The reviewer spawn carries the strong-tier's resolve
 its spawn call and never inherits the orchestrator's session model; the
 implementation-teammate tier the Dispatch step
 assigns is advisory — a deviation is allowed but recorded in the supervision trail. For the
-full tier contract — ordinal/collapse, fallback, and one-step escalation — comply with
-`MODEL-TIERS.md` and `CONVENTIONS.md` ("Model tiers"); record any tier escalation in the
-supervision trail.
+full tier contract — ordinal/collapse, fallback, and one-step escalation — see
+[TIER-DELEGATION.md](../../TIER-DELEGATION.md) and `docs/model-tiers.md`; record any tier
+escalation in the supervision trail.
 
 **Merge.** Merge crosscheck-passed PRs into `epic/<issue>` in dependency order; rebase later
 siblings on the updated epic branch and re-run their CI. If that rebase conflicts, it goes
@@ -266,7 +267,7 @@ Report.
 > Acceptance criteria: <criteria>.
 > Context pack (shared, built once at Map time — the same text for every teammate):
 > the objective, expected output format, tool/source guidance, and task boundaries,
-> carrying the ranked ~1k-token code-map excerpts from `CODEMAP.md` (never the whole
+> carrying the ranked ~1k-token code-map excerpts from `lore codemap` (never the whole
 > map). Read it before exploring — the repo discovery is already done; widen from
 > these excerpts only as needed.
 > Method: strict TDD via the `/lore-workflow:tdd` skill — failing test first, make it pass, refactor;

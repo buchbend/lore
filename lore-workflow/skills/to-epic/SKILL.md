@@ -20,23 +20,30 @@ Produce two coupled artifacts that `/lore-workflow:orchestrate-epic` consumes:
 This skill is the human checkpoint — `/lore-workflow:orchestrate-epic` runs hands-off afterward, so get the
 breakdown right here.
 
-Tracker: the project's GitHub issues, via `gh` (use `--json` for reads — see `CONVENTIONS.md`).
-This set is self-contained: it defines its own epic/sub-issue conventions below and
-does not rely on an external label vocabulary.
+Tracker: the project's GitHub issues, via `gh` (use `--json` for reads — see the repo's own
+conventions doc, if any). This set is self-contained: it defines its own epic/sub-issue
+conventions below and does not rely on an external label vocabulary.
 
-The PRD-in-docs / gh-epic-as-tracker model is documented in `CONVENTIONS.md`; this skill
-implements it. The deterministic file mechanics — create the PRD at `docs/prd/NNNN-kebab.md`
-with front-matter that links the epic and lists the involved repos, and wire it idempotently
-into `docs/prd/index.md`'s toctree — live in the `prd_docs.py` helper beside this file so they
-are reproducible and tested. Use `prd_docs.create_prd(repo_root, slug=..., title=...,
-epic_url=..., repos=[...])`; it returns the PRD path and wires the toctree.
+The PRD-in-docs / gh-epic-as-tracker model is implemented by this skill. The deterministic
+file mechanics — create the PRD at `docs/prd/NNNN-kebab.md` with front-matter that links the
+epic and lists the involved repos, and wire it idempotently into `docs/prd/index.md`'s toctree
+— live in `lore`'s `lore workflow create-prd` subcommand, so they are reproducible and tested
+independently of this skill:
+
+```
+lore workflow create-prd --slug <kebab> --title "<Title>" --epic-url <url> \
+    --repo owner/repo [--repo owner/repo-b ...] [--target <repo-root>]
+```
+
+It prints the PRD path and wires the toctree; there is no Python helper bundled with this
+skill any more.
 
 ## Process
 
 ### 1. Gather context
 Work from the conversation. If the user passes a plan, PRD, or issue reference — including
 an epic-seed issue produced by `/lore-workflow:seed-epic` (labeled `epic-seed`) — fetch and read it
-(`gh ... --json`; see `CONVENTIONS.md`).
+(`gh ... --json`; see the repo's own conventions doc, if any).
 
 ### 2. Explore the repo(s)
 Understand the current state. Identify **every target repo** — an epic may be cross-repo.
@@ -67,7 +74,7 @@ approval — `/lore-workflow:orchestrate-epic` will not ask again.
 ### 6. Publish
 Order matters so every cross-reference resolves:
 
-1. **Write the PRD file.** Call `prd_docs.create_prd(...)` to write
+1. **Write the PRD file.** Call `lore workflow create-prd` (see above) to write
    `docs/prd/NNNN-kebab.md` and wire it into `docs/prd/index.md`'s toctree. Front-matter
    carries `epic:` (filled with the epic URL once it exists — step 4 closes this loop) and
    `repos:` (every involved repo). Fill the PRD body sections with the synthesized PRD. Commit
@@ -89,8 +96,9 @@ Order matters so every cross-reference resolves:
 
 **Gate publishing on the roadmap validator.** The roadmap table is the dependency DAG
 `/lore-workflow:orchestrate-epic` consumes, so it must be well-formed before the epic goes live. Run the
-deterministic, dependency-free `roadmap_validator.py` (stdlib only, beside this file) on the
-composed epic body — e.g. `gh issue view <epic> --json body -q .body | python "$SKILL_DIR/roadmap_validator.py" -`, or point it at the drafted body file. It checks
+deterministic, dependency-free `lore workflow validate-roadmap` on the composed epic body —
+e.g. `gh issue view <epic> --json body -q .body | lore workflow validate-roadmap -`, or point
+it at the drafted body file (`lore workflow validate-roadmap <path>`). It checks
 the required columns (`# | Feature | Issue | Repo | Type | Blocked by`), fully-qualified
 `owner/repo#n` Issue refs, blocked-by edges that resolve to rows in the table, and an acyclic
 dependency DAG. **Publish only a roadmap it accepts:** a table it rejects is malformed and
@@ -105,8 +113,9 @@ Finish by printing the PRD file path, the epic reference, and the exact next com
 
 ## PRD file template
 
-The PRD is the **source of truth**, written to `docs/prd/NNNN-kebab.md` by `prd_docs.create_prd`
-(front-matter + skeleton) and filled with the synthesized PRD. Front-matter links the epic and
+The PRD is the **source of truth**, written to `docs/prd/NNNN-kebab.md` by
+`lore workflow create-prd` (front-matter + skeleton) and filled with the synthesized PRD.
+Front-matter links the epic and
 lists involved repos; the body carries the full spec that the epic body only links to.
 
 <prd-file-template>
