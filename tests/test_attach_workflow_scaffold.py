@@ -36,9 +36,15 @@ def test_manual_scaffold_flag_creates_docs(lore_env: Path, tmp_path: Path) -> No
     result = runner.invoke(
         app,
         [
-            "attach", "manual",
-            "--wiki", "ccat", "--scope", "ccat:backend",
-            "--cwd", str(repo), "--scaffold-workflow",
+            "attach",
+            "manual",
+            "--wiki",
+            "ccat",
+            "--scope",
+            "ccat:backend",
+            "--cwd",
+            str(repo),
+            "--scaffold-workflow",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -65,9 +71,15 @@ def test_manual_scaffold_flag_records_state(lore_env: Path, tmp_path: Path) -> N
     runner.invoke(
         app,
         [
-            "attach", "manual",
-            "--wiki", "ccat", "--scope", "ccat:backend",
-            "--cwd", str(repo), "--scaffold-workflow",
+            "attach",
+            "manual",
+            "--wiki",
+            "ccat",
+            "--scope",
+            "ccat:backend",
+            "--cwd",
+            str(repo),
+            "--scaffold-workflow",
         ],
     )
     record = WorkflowScaffoldFile(lore_env)
@@ -79,9 +91,15 @@ def test_manual_scaffold_flag_idempotent_on_rerun(lore_env: Path, tmp_path: Path
     repo = tmp_path / "repo"
     repo.mkdir()
     args = [
-        "attach", "manual",
-        "--wiki", "ccat", "--scope", "ccat:backend",
-        "--cwd", str(repo), "--scaffold-workflow",
+        "attach",
+        "manual",
+        "--wiki",
+        "ccat",
+        "--scope",
+        "ccat:backend",
+        "--cwd",
+        str(repo),
+        "--scaffold-workflow",
     ]
     first = runner.invoke(app, args)
     assert first.exit_code == 0, first.output

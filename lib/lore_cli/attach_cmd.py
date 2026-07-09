@@ -683,9 +683,9 @@ def _config_wizard(
     # Step D.5: Offer workflow scaffolding (docs/prd, docs/adr, AGENTS.md
     # shim) — same onboarding command, one extra opt-in step, never a
     # separate entry point.
-    raw = input(
-        "\n  Scaffold workflow docs (docs/prd, docs/adr, AGENTS.md)? [y/N]: "
-    ).strip().lower()
+    raw = (
+        input("\n  Scaffold workflow docs (docs/prd, docs/adr, AGENTS.md)? [y/N]: ").strip().lower()
+    )
     scaffold_workflow = raw in ("y", "yes")
 
     # Step E: Summary + confirm
@@ -773,7 +773,8 @@ def attach_interactive(
 def cmd_accept(
     cwd: str = typer.Option(None, "--cwd", help="Directory containing `.lore.yml` (default: current dir)."),
     scaffold_workflow: bool = typer.Option(
-        False, "--scaffold-workflow",
+        False,
+        "--scaffold-workflow",
         help="Also scaffold docs/prd, docs/adr, and the AGENTS.md shim.",
     ),
 ) -> None:
@@ -795,7 +796,8 @@ def cmd_manual(
     scope: str = typer.Option(..., "--scope", help="Scope ID (colon-separated)."),
     cwd: str = typer.Option(None, "--cwd", help="Directory to attach (default: current dir)."),
     scaffold_workflow: bool = typer.Option(
-        False, "--scaffold-workflow",
+        False,
+        "--scaffold-workflow",
         help="Also scaffold docs/prd, docs/adr, and the AGENTS.md shim.",
     ),
 ) -> None:

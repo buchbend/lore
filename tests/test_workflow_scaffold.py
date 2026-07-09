@@ -91,11 +91,7 @@ def test_coexistence_agents_md_not_duplicated_when_shim_present(tmp_path: Path) 
 def test_idempotent_full_rerun_is_noop(tmp_path: Path) -> None:
     """Running scaffold twice on a fresh repo must not change any output byte."""
     mod.scaffold(tmp_path)
-    snapshot = {
-        p: p.read_text(encoding="utf-8")
-        for p in tmp_path.rglob("*")
-        if p.is_file()
-    }
+    snapshot = {p: p.read_text(encoding="utf-8") for p in tmp_path.rglob("*") if p.is_file()}
     mod.scaffold(tmp_path)
     for p, before in snapshot.items():
         assert p.read_text(encoding="utf-8") == before, f"{p} changed on re-run"
