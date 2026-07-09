@@ -4,13 +4,18 @@
     "name": "Christof Buchbender"
   },
   "metadata": {
-    "description": "Lore — knowledge graph for AI-coding teams."
+    "description": "Lore \u2014 knowledge graph for AI-coding teams."
   },
   "plugins": [
     {
       "name": "lore",
       "source": "./",
       "description": "LLM-optimized knowledge graph: session notes, auto-extracted knowledge, pluggable briefings, magic context injection."
+    },
+    {
+      "name": "lore-workflow",
+      "source": "./lore-workflow",
+      "description": "Deterministic epic/PRD/TDD workflow skills for AI-coding teams (depends on lore; ships no skills yet)."
     }
   ]
 }
