@@ -999,11 +999,7 @@ from lore_cli._argv_compat import argv_main  # noqa: E402
 
 # Re-export the spawn machinery so hooks-internal heartbeat code and any
 # external test that patches ``lore_cli.hooks.<name>`` keep working without
-# tracking the move to ``lore_cli.spawn``. ``_spawn_detached_curator_b`` and
-# ``_spawn_detached_curator_c`` stay re-exported even though no call site in
-# this module invokes them any more — the SessionStart entry points to
-# Curator B/C are severed, but the underlying spawn primitives are exercised
-# directly by tests covering the flock/cooldown machinery itself.
+# tracking the move to ``lore_cli.spawn``.
 from lore_cli.spawn import (  # noqa: E402, F401
     _migrate_legacy_spawn_stamp,
     _open_proc_log,
@@ -1012,8 +1008,6 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _rotate_meta_sidecar,
     _spawn_detached,
     _spawn_detached_curator_a,
-    _spawn_detached_curator_b,
-    _spawn_detached_curator_c,
     _spawn_detached_transcript_sync,
     _stamp_within_cooldown,
     _write_stamp,
@@ -1307,13 +1301,6 @@ def cmd_session_start(
         out = out + "\n" + auto_pull_warning
 
     # Side-effect spawns — suppressed under --probe.
-    #
-    # Curator B's day-rollover auto-spawn and Curator C's weekly auto-spawn
-    # used to fire from here (see git history for the removed blocks); both
-    # are retired and no longer reachable from SessionStart. The spawn
-    # primitives themselves (``_spawn_detached_curator_b/_c`` in
-    # ``lore_cli.spawn``) stay in place — this only severs the automatic
-    # call site.
     if not probe and scope is not None and lore_root is not None:
         # Fire-and-forget transcript mirror (P4a). Idempotent, gitignored
         # destination, own spawn lock.

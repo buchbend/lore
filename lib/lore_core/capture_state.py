@@ -25,12 +25,8 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class CuratorStatus:
-    """Per-curator slice of state. role ∈ {'a', 'b', 'c'}.
-
-    The ``last_run_*`` fields (notes_new, notes_merged, skipped, errors,
-    short_id) are populated for role=='a' only — the run-log is emitted
-    by Curator A. B and C populate only ``last_run_ts`` (via their own
-    ledger entries) and ``overdue``.
+    """Per-curator slice of state. role is always 'a' — Curator A is the
+    only curator; the run-log is emitted by Curator A itself.
     """
 
     role: str
@@ -41,7 +37,7 @@ class CuratorStatus:
     last_run_errors: int | None
     last_run_short_id: str | None   # for "lore runs show <id>" hint copy
     work_lock_held: bool
-    overdue: bool                   # a: >24h, b: calendar-day rollover, c: >7d
+    overdue: bool                   # >24h since last run
 
 
 @dataclass(frozen=True)
@@ -65,9 +61,7 @@ class CaptureState:
     last_hook_event_kind: str | None = None       # e.g. "session-start"
 
 
-# Overdue thresholds per project_curator_triad memory.
 _A_OVERDUE = timedelta(hours=24)
-_C_OVERDUE = timedelta(days=7)
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -88,13 +82,8 @@ def _is_overdue(role: str, last_run_ts: datetime | None, now: datetime) -> bool:
     """
     if last_run_ts is None:
         return True
-    delta = now - last_run_ts
     if role == "a":
-        return delta > _A_OVERDUE
-    if role == "b":
-        return last_run_ts.date() < now.date()
-    if role == "c":
-        return delta > _C_OVERDUE
+        return (now - last_run_ts) > _A_OVERDUE
     return False
 
 
@@ -326,24 +315,21 @@ def query_capture_state(
     summary, last_note = _last_run_summary(lore_root)
     work_lock = _work_lock_held(lore_root)
 
-    curators: list[CuratorStatus] = []
-    for role in ("a", "b", "c"):
-        per_role_ts = _per_role_last_run(lore_root, role)
-        effective_ts = per_role_ts if per_role_ts is not None else (summary.ts if role == "a" else None)
-        is_a = role == "a"
-        curators.append(
-            CuratorStatus(
-                role=role,
-                last_run_ts=effective_ts,
-                last_run_notes_new=summary.notes_new if is_a else None,
-                last_run_notes_merged=summary.notes_merged if is_a else None,
-                last_run_skipped=summary.skipped if is_a else None,
-                last_run_errors=summary.errors if is_a else None,
-                last_run_short_id=summary.short_id if is_a else None,
-                work_lock_held=work_lock,
-                overdue=_is_overdue(role, effective_ts, now),
-            )
+    per_role_ts = _per_role_last_run(lore_root, "a")
+    effective_ts = per_role_ts if per_role_ts is not None else summary.ts
+    curators: list[CuratorStatus] = [
+        CuratorStatus(
+            role="a",
+            last_run_ts=effective_ts,
+            last_run_notes_new=summary.notes_new,
+            last_run_notes_merged=summary.notes_merged,
+            last_run_skipped=summary.skipped,
+            last_run_errors=summary.errors,
+            last_run_short_id=summary.short_id,
+            work_lock_held=work_lock,
+            overdue=_is_overdue("a", effective_ts, now),
         )
+    ]
 
     last_hook_ts, last_hook_outcome, last_hook_kind = _newest_hook_event(lore_root)
 

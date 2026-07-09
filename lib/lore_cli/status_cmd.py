@@ -317,7 +317,6 @@ def _render_unattached(lore_root: Path, cwd: Path) -> str:
 # ---------------------------------------------------------------------------
 
 _OVERDUE_A_S = 86400      # 24h
-_OVERDUE_C_S = 7 * 86400  # 7d
 
 
 def _render_verbose_curator_schedule(lore_root: Path, now: datetime) -> list[str]:
@@ -339,20 +338,14 @@ def _render_verbose_curator_schedule(lore_root: Path, now: datetime) -> list[str
 
     for wiki in wikis:
         entry = WikiLedger(lore_root, wiki).read()
-        parts: list[str] = []
-        for role, ts, threshold_s in [
-            ("A", entry.last_curator_a, _OVERDUE_A_S),
-            ("B", entry.last_curator_b, _OVERDUE_A_S),
-            ("C", entry.last_curator_c, _OVERDUE_C_S),
-        ]:
-            if ts is None:
-                parts.append(f"{role} —")
-            else:
-                rel = relative_time(ts, now=now, short=True)
-                age_s = (now - ts).total_seconds()
-                marker = " !" if age_s > threshold_s else ""
-                parts.append(f"{role} {rel}{marker}")
-        lines.append(f"    {wiki:12s}  {'  '.join(parts)}")
+        ts = entry.last_curator_a
+        if ts is None:
+            part = "A —"
+        else:
+            rel = relative_time(ts, now=now, short=True)
+            marker = " !" if (now - ts).total_seconds() > _OVERDUE_A_S else ""
+            part = f"A {rel}{marker}"
+        lines.append(f"    {wiki:12s}  {part}")
     return lines
 
 
@@ -403,7 +396,7 @@ def _render_verbose_proc_logs(lore_root: Path, now: datetime) -> list[str]:
         return lines
 
     found = False
-    for role in ("a", "b", "c", "transcripts"):
+    for role in ("a", "transcripts"):
         log = proc_dir / f"{role}.log"
         if not log.exists():
             continue
@@ -470,8 +463,6 @@ def _verbose_json_data(lore_root: Path, now: datetime) -> dict:
             wiki_schedules.append({
                 "wiki": name,
                 "last_curator_a": entry.last_curator_a.isoformat() if entry.last_curator_a else None,
-                "last_curator_b": entry.last_curator_b.isoformat() if entry.last_curator_b else None,
-                "last_curator_c": entry.last_curator_c.isoformat() if entry.last_curator_c else None,
                 "pending_tokens_est": entry.pending_tokens_est,
             })
     except OSError:

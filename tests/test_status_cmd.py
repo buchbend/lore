@@ -360,7 +360,7 @@ def test_status_json_mode(tmp_path: Path, monkeypatch) -> None:
     assert "curators" in data
     assert data["scope_name"] == "private/proj:test"
     roles = [c["role"] for c in data["curators"]]
-    assert roles == ["a", "b", "c"]
+    assert roles == ["a"]
 
 
 # ---------------------------------------------------------------------------
@@ -382,8 +382,6 @@ def test_status_help_mentions_activity() -> None:
 def _seed_wiki_ledger(
     lore_root: Path, wiki: str, *,
     last_a: datetime | None = None,
-    last_b: datetime | None = None,
-    last_c: datetime | None = None,
     pending_tokens: int = 0,
 ) -> None:
     from lore_core.ledger import WikiLedger, WikiLedgerEntry
@@ -391,8 +389,6 @@ def _seed_wiki_ledger(
     wl.write(WikiLedgerEntry(
         wiki=wiki,
         last_curator_a=last_a,
-        last_curator_b=last_b,
-        last_curator_c=last_c,
         pending_tokens_est=pending_tokens,
     ))
 
@@ -403,16 +399,11 @@ def test_verbose_shows_curator_schedule(tmp_path: Path, monkeypatch) -> None:
     _seed_wiki_ledger(
         lore_root, "private",
         last_a=_NOW - timedelta(hours=2),
-        last_b=_NOW - timedelta(hours=6),
-        last_c=_NOW - timedelta(days=3),
     )
     out = _invoke(lore_root, project, "--verbose", monkeypatch=monkeypatch)
     assert "Curator" in out
     assert "private" in out
-    # Should show all three roles
     assert " A " in out or " A:" in out
-    assert " B " in out or " B:" in out
-    assert " C " in out or " C:" in out
 
 
 def test_verbose_shows_recent_hooks(tmp_path: Path, monkeypatch) -> None:

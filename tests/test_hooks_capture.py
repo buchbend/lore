@@ -817,24 +817,24 @@ def no_subprocess(monkeypatch):
 
 CURATOR_PARAMS = [
     pytest.param("a", id="curator-a"),
-    pytest.param("b", id="curator-b"),
+    pytest.param("transcripts", id="transcripts"),
 ]
 
 
 def _stamp_path(lore_root: Path, role: str) -> Path:
-    # Post-Task-2: stamp moved from last-curator-<role>-spawn to
-    # curator-<role>.spawn.stamp (flock-based throttle; see lockfile.py).
+    # Stamp lives at curator-<role>.spawn.stamp (flock-based throttle; see
+    # lockfile.py).
     return lore_root / ".lore" / f"curator-{role}.spawn.stamp"
 
 
 def _invoke_spawn(role: str, lore_root: Path, cooldown_s: int) -> bool:
     from lore_cli.hooks import (
         _spawn_detached_curator_a,
-        _spawn_detached_curator_b,
+        _spawn_detached_transcript_sync,
     )
     if role == "a":
         return _spawn_detached_curator_a(lore_root, cooldown_s=cooldown_s)
-    return _spawn_detached_curator_b(lore_root, "testwiki", cooldown_s=cooldown_s)
+    return _spawn_detached_transcript_sync(lore_root, cooldown_s=cooldown_s)
 
 
 @pytest.mark.parametrize("role", CURATOR_PARAMS)

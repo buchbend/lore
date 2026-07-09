@@ -269,10 +269,8 @@ def run_curator_a(
             """Inner loop body — shared by dry-run and locked paths.
 
             Closures over the locals so the two call sites stay one line
-            each; pre-Phase-11 they were ~22 lines of nearly-identical
-            code that drifted the moment a bug fix touched only one
-            branch (the same shape the Phase 6 ``run_curator_c``
-            decomposition targeted, missed in this function).
+            each, instead of duplicating the loop body — duplicated
+            branches drift the moment a bug fix touches only one.
             """
             pending = tledger.pending(resolver=resolver)
             for entry in pending:

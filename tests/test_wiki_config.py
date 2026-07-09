@@ -19,8 +19,6 @@ class TestWikiConfigDefaults:
         assert cfg.curator.threshold_pending_turns == 30
         assert cfg.curator.max_pending_age_s == 600
         assert cfg.curator.a_noteworthy_tier == "middle"
-        assert cfg.curator.curator_c.enabled is False
-        assert cfg.curator.curator_c.mode == "local"
         assert cfg.models.simple == "claude-haiku-4-5"
         assert cfg.models.middle == "claude-sonnet-4-6"
         assert cfg.models.high == "claude-opus-4-7"
@@ -74,14 +72,6 @@ class TestWikiConfigPartialMerge:
 
 
 class TestWikiConfigNestedDataclasses:
-    def test_load_curator_c_enabled_parsed(self, tmp_path: Path):
-        """YAML with curator.curator_c.enabled=true → parsed correctly."""
-        config_file = tmp_path / ".lore-wiki.yml"
-        config_file.write_text("curator:\n  curator_c:\n    enabled: true\n")
-        cfg = load_wiki_config(tmp_path)
-        assert cfg.curator.curator_c.enabled is True
-        assert cfg.curator.curator_c.mode == "local"  # default
-
     def test_load_models_high_off_parsed(self, tmp_path: Path):
         """YAML with models.high="off" → parsed correctly."""
         config_file = tmp_path / ".lore-wiki.yml"
