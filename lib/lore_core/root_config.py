@@ -101,10 +101,23 @@ class JournalConfig:
 
 
 @dataclass
+class TierConfig:
+    """Model-tier overrides -- user escape hatch over the shipped tier table.
+
+    Keyed by host then tier, e.g. ``claude: {frontier: claude-opus-4-9}``.
+    Only present keys override; everything else falls through to
+    ``lore_core.tiers.table.TABLE``. See :func:`lore_core.tiers.resolve_tier`.
+    """
+
+    overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+
+
+@dataclass
 class RootConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     curator: CuratorBackendConfig = field(default_factory=CuratorBackendConfig)
     journal: JournalConfig = field(default_factory=JournalConfig)
+    tiers: TierConfig = field(default_factory=TierConfig)
 
 
 def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:

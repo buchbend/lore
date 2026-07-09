@@ -1,7 +1,7 @@
 {
   "name": "lore",
   "description": "LLM-optimized knowledge graph for AI-coding teams \u2014 session notes, auto-extracted knowledge, pluggable briefings, magic context injection at session start.",
-  "version": "0.57.0",
+  "version": "0.58.0",
   "author": {
     "name": "Christof Buchbender"
   },
@@ -77,6 +77,17 @@
           {
             "type": "command",
             "command": "lore hook stop"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Task|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook spawn-model-gate"
           }
         ]
       }

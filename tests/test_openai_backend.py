@@ -583,6 +583,13 @@ def test_make_llm_client_openai_missing_api_key_raises(monkeypatch):
 
     monkeypatch.setenv("LORE_OPENAI_BASE_URL", "https://example.local/v1")
     monkeypatch.delenv("LORE_OPENAI_API_KEY", raising=False)
+    # make_llm_client(lore_root=None) hydrates os.environ from
+    # $LORE_ROOT/.lore/secrets.env (see _resolve_openai_settings). On a
+    # dev machine with $LORE_ROOT pointed at a real vault that has a
+    # secrets.env with LORE_OPENAI_API_KEY set, that hydration silently
+    # re-populates the key this test just deleted. Clear LORE_ROOT so the
+    # "missing key" scenario is actually exercised regardless of host env.
+    monkeypatch.delenv("LORE_ROOT", raising=False)
 
     with pytest.raises(LlmClientError, match="LORE_OPENAI_API_KEY"):
         make_llm_client(backend="openai")

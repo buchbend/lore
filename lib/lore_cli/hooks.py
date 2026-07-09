@@ -994,6 +994,7 @@ from lore_adapters import get_adapter  # noqa: E402
 from lore_core.hook_log import HookEventLogger  # noqa: E402
 from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry  # noqa: E402
 from lore_core.scope_resolver import resolve_scope  # noqa: E402
+from lore_core.spawn_gate import check_spawn  # noqa: E402
 from lore_cli._argv_compat import argv_main  # noqa: E402
 
 # Re-export the spawn machinery so hooks-internal heartbeat code and any
@@ -1184,6 +1185,21 @@ def cmd_session_start(
         return
     cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(str(cwd_resolved))
+
+    # Refresh the local, gitignored CODEMAP.md for this repo. Deterministic,
+    # no LLM, no network; the fingerprint no-op fast path makes an unchanged
+    # tree cheap, so it is safe to run inline. Never allowed to crash
+    # SessionStart.
+    # ponytail: inline generate; if a very large repo's first-run parse adds
+    # perceptible startup latency, move this to a detached spawn like the
+    # transcript mirror below.
+    if not probe:
+        try:
+            from lore_core import codemap as _codemap
+
+            _codemap.generate(cwd_resolved, quiet=True)
+        except Exception:  # noqa: BLE001 - codemap must never crash SessionStart
+            pass
 
     # Surface pending `.lore.yml` offers at the top of the banner.
     # Defensive: offer rendering reads multiple files and classifies state;
@@ -1425,6 +1441,26 @@ def cmd_stop(
         return
     out = _stop()
     _emit("Stop", out, plain=plain)
+
+
+@hook_app.command("spawn-model-gate")
+@_shield_hook("PreToolUse")
+def cmd_spawn_model_gate() -> None:
+    """PreToolUse gate: deny Task/Agent spawns that omit an explicit model.
+
+    Reads the PreToolUse payload from stdin. Denial protocol (Claude
+    Code): exit code 2 blocks the tool call and routes stderr back to
+    the model as feedback; exit 0 allows it. See
+    :mod:`lore_core.spawn_gate` for the deny/allow rule itself — this
+    command is just the stdin/stdout/exit-code plumbing, matching the
+    other `lore hook ...` entry points.
+    """
+    payload = _read_hook_payload()
+    deny_message = check_spawn(payload)
+    if deny_message is None:
+        return
+    sys.stderr.write(deny_message)
+    raise typer.Exit(code=2)
 
 
 @hook_app.command("context-log")

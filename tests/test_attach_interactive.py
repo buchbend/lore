@@ -96,7 +96,7 @@ def test_manual_pick_existing(lore_env: Path, tmp_path: Path) -> None:
     # wikis sorted: ccat=1, private=2, science=3
     # 1=ccat wiki, "ccat:newscope"=scope (bare input, no scopes in registry),
     # Enter=default backend, n=no .lore.yml, y=proceed
-    input_lines = "1\nccat:newscope\n\nn\ny\n"
+    input_lines = "1\nccat:newscope\n\nn\nn\ny\n"
     result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
     assert result.exit_code == 0, result.output
     assert "Attached" in result.output
@@ -115,7 +115,7 @@ def test_manual_custom_wiki(lore_env: Path, tmp_path: Path) -> None:
 
     # c=custom wiki, "newwiki"=name, "newwiki:sub"=scope (bare input),
     # Enter=default backend, n=no .lore.yml, y=proceed
-    input_lines = "c\nnewwiki\nnewwiki:sub\n\nn\ny\n"
+    input_lines = "c\nnewwiki\nnewwiki:sub\n\nn\nn\ny\n"
     result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
     assert result.exit_code == 0, result.output
     assert "Attached" in result.output
@@ -135,7 +135,7 @@ def test_manual_write_lore_yml(lore_env: Path, tmp_path: Path) -> None:
     # wikis sorted: ccat=1, private=2, science=3
     # 2=private wiki, "lore:test"=scope (bare input), Enter=default backend,
     # y=write .lore.yml, y=proceed
-    input_lines = "2\nlore:test\n\ny\ny\n"
+    input_lines = "2\nlore:test\n\ny\nn\ny\n"
     result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
     assert result.exit_code == 0, result.output
     assert (repo / FILENAME).exists()
@@ -146,7 +146,7 @@ def test_abort(lore_env: Path, tmp_path: Path) -> None:
     repo.mkdir()
 
     # 2=private wiki, "test"=scope (bare input), Enter=backend, n=no yml, n=abort
-    input_lines = "2\ntest\n\nn\nn\n"
+    input_lines = "2\ntest\n\nn\nn\nn\n"
     result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
     assert result.exit_code == 0
     assert "Aborted" in result.output
@@ -249,7 +249,7 @@ def test_step_through_overrides_suggestion(
     # s = step through, then: Enter (wiki=ccat default), c=custom scope,
     # "ccat:custom"=custom value, Enter (backend=github default),
     # n (no .lore.yml), y (proceed).
-    input_lines = "s\n\nc\nccat:custom\n\nn\ny\n"
+    input_lines = "s\n\nc\nccat:custom\n\nn\nn\ny\n"
     result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
     assert result.exit_code == 0, result.output
     assert "Proposed config" in result.output
@@ -290,7 +290,7 @@ def test_no_suggestion_when_no_ancestor_attached(
     repo = tmp_path / "lonely"
     repo.mkdir()
     # 1=ccat wiki, custom scope, default backend (now github), no .lore.yml, proceed
-    input_lines = "1\nccat:lonely\n\nn\ny\n"
+    input_lines = "1\nccat:lonely\n\nn\nn\ny\n"
     result = runner.invoke(app, ["attach", "--cwd", str(repo)], input=input_lines)
     assert result.exit_code == 0, result.output
     assert "Suggested from parent attachment" not in result.output

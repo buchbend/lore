@@ -159,6 +159,8 @@ github-source plugins, the plugin manifest's version always wins
 silently and a duplicate in the marketplace is ignored (per the
 Claude Code plugin docs' explicit warning).
 
+The repo also ships `lore-workflow`, a second plugin with its own manifest at `lore-workflow/.claude-plugin/plugin.json` and an independent version axis — bumping `lore` does not require bumping `lore-workflow`, and vice versa. `tests/test_version_sync.py` checks both manifests are present and marketplace-wired; it does not force them to agree. Dependency direction is one-way: `lore-workflow` may depend on `lore`'s CLI/MCP surface, `lore` never depends on `lore-workflow`.
+
 The `_lore_schema_version` field inside `mcpServers.lore`
 (installed into `~/.cursor/mcp.json` etc.) is a separate concern —
 bump that only when the *managed-block shape* changes, not on every
@@ -170,6 +172,23 @@ release.
 python -m pytest          # full suite
 python -m pytest tests/test_install_*.py -v   # installer-only
 ```
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push and pull request. It
+mirrors the local dev commands exactly — no separate CI-only config:
+
+```bash
+pip install -e .[dev]
+pytest -q
+ruff check .
+ruff format --check .
+```
+
+`pytest` is a blocking gate. `ruff check` / `ruff format --check` run
+as advisory (`continue-on-error: true`) until the repo-wide lint and
+formatting cleanup tracked in #196 lands — new code you write should
+still pass both locally before you push.
 
 For end-to-end testing on a clean container, the canonical checklist
 lives in the PR description that lands a release (or in
