@@ -63,6 +63,7 @@ __all__ = [
 
 CHAPTER_MAX_ATTEMPTS = 2
 CHAPTER_MAX_OUTPUT_TOKENS = 4000
+_QUOTE_MAX_CHARS = 240
 
 # Sentinel anchor for a block whose model output carried no usable turn
 # index. It can never satisfy the in-slice lint (turn indices are >= 0),
@@ -173,6 +174,26 @@ def chapter_same_anchor_lint(chapter: Chapter) -> int | None:
     return None
 
 
+def _attach_quotes(chapter: Chapter, turns_by_index: dict[int, str] | None) -> None:
+    """Fill each block's verbatim quote from its anchor turn's text.
+
+    Called after anchor lint passes, so every ``anchor_turn`` is a valid
+    key into ``turns_by_index`` — and before the chapter is rendered, so
+    the same single gate scan covers the quote too. Deterministic given
+    the same (chapter, turns_by_index); truncated to a fixed length so
+    one long paste can't dominate the note.
+    """
+    if not turns_by_index:
+        return
+    for block in chapter.blocks:
+        text = (turns_by_index.get(block.anchor_turn) or "").strip()
+        if not text:
+            continue
+        if len(text) > _QUOTE_MAX_CHARS:
+            text = text[:_QUOTE_MAX_CHARS].rstrip() + "…"
+        block.quote = text
+
+
 # ---------------------------------------------------------------------------
 # Compose loop
 # ---------------------------------------------------------------------------
@@ -190,8 +211,14 @@ def compose_chapter(
     logger: RunLogger | None = None,
     transcript_id: str = "",
     max_output_tokens: int = CHAPTER_MAX_OUTPUT_TOKENS,
+    turns_by_index: dict[int, str] | None = None,
 ) -> ComposeResult:
     """Compose one chapter in a single LLM call, with a bounded retry.
+
+    ``turns_by_index`` maps turn index to raw transcript text; when given,
+    each block's verbatim ``quote`` is code-attached from its anchor
+    turn after the anchor lint passes, before the chapter is rendered
+    for the gate. The model never writes this text.
 
     Attempt 1 composes; a deterministic anchor lint and the injected
     gate then judge the result. An anchor-lint miss or a gate withhold
@@ -269,6 +296,7 @@ def compose_chapter(
                 )
             continue
 
+        _attach_quotes(chapter, turns_by_index)
         chapter_text = render_chapter_body(chapter)
         verdict = gate.evaluate(chapter_text)
         if verdict.passed:

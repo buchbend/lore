@@ -397,6 +397,90 @@ def test_persistent_same_anchor_still_publishes():
 
 
 # ---------------------------------------------------------------------------
+# Verbatim quote skeleton — code-attached, never model-authored
+# ---------------------------------------------------------------------------
+
+
+def test_turns_by_index_fills_verbatim_quote_from_anchor_turn():
+    msgs = _RecordingMessages([_valid_payload()])
+    client = _FakeClient(msgs)
+
+    result = compose_chapter(
+        slice_text="[user@2] hi\n[assistant@4] yo",
+        slice_from_turn=2,
+        slice_to_turn=4,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+        turns_by_index={2: "hi", 4: "yo"},
+    )
+    assert result.status is ComposeStatus.COMPOSED
+    quotes = {b.anchor_turn: b.quote for b in result.chapter.blocks}
+    assert quotes == {2: "hi", 4: "yo"}
+
+
+def test_missing_turns_by_index_leaves_quote_empty():
+    msgs = _RecordingMessages([_valid_payload()])
+    client = _FakeClient(msgs)
+
+    result = compose_chapter(
+        slice_text="[user@2] hi\n[assistant@4] yo",
+        slice_from_turn=2,
+        slice_to_turn=4,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+    )
+    assert result.status is ComposeStatus.COMPOSED
+    assert all(b.quote == "" for b in result.chapter.blocks)
+
+
+def test_long_quote_is_truncated_deterministically():
+    long_text = "x" * 500
+    msgs = _RecordingMessages([_valid_payload()])
+    client = _FakeClient(msgs)
+
+    result = compose_chapter(
+        slice_text="[user@2] hi\n[assistant@4] yo",
+        slice_from_turn=2,
+        slice_to_turn=4,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+        turns_by_index={2: long_text, 4: "yo"},
+    )
+    block = next(b for b in result.chapter.blocks if b.anchor_turn == 2)
+    assert block.quote.endswith("…")
+    assert len(block.quote) <= 241
+
+
+def test_gate_sees_the_verbatim_quote_text():
+    # The quote is attached before the single gate scan — a token that
+    # appears only in the quoted turn (never in lead/body) must still
+    # reach the gate, proving the quote slot cannot bypass it.
+    class _TokenGate:
+        def evaluate(self, chapter_text: str) -> GateResult:
+            if "PLANTED_TOKEN" in chapter_text:
+                return GateResult.withheld("secret", "token present")
+            return GateResult.ok()
+
+    msgs = _RecordingMessages([_valid_payload(), _valid_payload()])
+    client = _FakeClient(msgs)
+
+    result = compose_chapter(
+        slice_text="[user@2] hi\n[assistant@4] yo",
+        slice_from_turn=2,
+        slice_to_turn=4,
+        note_so_far="note",
+        llm_client=client,
+        model="m",
+        gate=_TokenGate(),
+        turns_by_index={2: "contains PLANTED_TOKEN here", 4: "yo"},
+    )
+    assert result.status is ComposeStatus.WITHHELD
+
+
+# ---------------------------------------------------------------------------
 # Gate seam — withhold drives the retry with feedback; two withholds defer
 # ---------------------------------------------------------------------------
 

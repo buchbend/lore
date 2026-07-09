@@ -169,6 +169,30 @@ def test_inplace_flush_composes_one_call_and_appends_chapter(tmp_path):
     assert buf.read_sidecar().state == "accumulating"
 
 
+def test_inplace_flush_writes_verbatim_quote_at_anchor_turn(tmp_path):
+    # End-to-end wiring proof: the flush passes each unflushed turn's raw
+    # text through to compose_chapter, which attaches it as the block's
+    # quote — landing in the note body verbatim, code-attached.
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 4)
+    buf = _append(lore_root, all_turns)
+    client = _Client([_chapter_payload("Traced the flush race", "prose.", 2)])
+
+    outcome = synth_in_place(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+    assert outcome.status == "composed"
+    view = nd.read_note(outcome.note_path)
+    assert '"line 2"' in view.body
+
+
 def test_note_so_far_carries_prior_chapter_into_next_compose(tmp_path):
     lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"

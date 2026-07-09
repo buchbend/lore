@@ -90,7 +90,10 @@ class TopicBlock:
     ``lead`` is a bold one-sentence self-sufficient statement (no
     pronouns reaching into the body). ``body`` is short prose.
     ``anchor_turn`` is the transcript turn where the topic starts,
-    rendered as a single ``@N`` anchor at the block's end.
+    rendered as a single ``@N`` anchor at the block's end. ``quote``,
+    when set, is a verbatim excerpt from that anchor turn — code-
+    attached from the transcript, never model-authored (see
+    ``compose_chapter``'s ``turns_by_index``).
 
     A continuation block (``continued=True``) resumes or corrects an
     earlier topic; it renders a ``Continued: <continued_topic>`` lead
@@ -102,6 +105,7 @@ class TopicBlock:
     anchor_turn: int = 0
     continued: bool = False
     continued_topic: str = ""
+    quote: str = ""
 
 
 @dataclass
@@ -148,6 +152,9 @@ def _render_block(block: TopicBlock) -> str:
     body = (block.body or "").strip()
     if body:
         parts.append(body)
+    quote = (block.quote or "").strip()
+    if quote:
+        parts.append(f'> "{quote}"')
     if block.anchor_turn:
         parts.append(f"@{int(block.anchor_turn)}")
     return "\n\n".join(parts)
