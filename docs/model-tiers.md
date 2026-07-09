@@ -7,9 +7,10 @@ currently running. That indirection is what lets a plugin move from
 Claude Code to another host without editing every prompt — only the
 table in `lib/lore_core/tiers/table.py` changes.
 
-Ported from `ccat-agent-workflow`'s `MODEL-TIERS.md`; see that repo for
-the CI/enforcement side (no skill may name a concrete model — not yet
-ported here, tracked separately).
+The no-hardcoded-model-name contract is enforced in this repo by
+`tests/test_workflow_plugin_structural.py`. For which workflow *stage*
+runs at which tier, and how strictly that mapping is enforced, see
+["Model tiers"](conventions.md#model-tiers) in `docs/conventions.md`.
 
 ## Tiers
 

@@ -31,6 +31,43 @@ pipeline. Ratified decisions live in the connected repo's ADRs/PRDs,
 pulled on demand via MCP — Lore does not extract decisions from
 transcripts.
 
+## Two plugins: `lore` + `lore-workflow`
+
+This repo ships **two marketplace entries**, versioned and installed
+independently:
+
+| Plugin | What it's for | Depends on |
+|---|---|---|
+| **`lore`** | The notes/vault system above: session capture, search, MCP, briefings. | nothing else |
+| **`lore-workflow`** | An opinionated planning chain — epics, PRDs, TDD — that calls `lore`'s deterministic substrate (code map, model tiers). | `lore` |
+
+`lore-workflow` is opt-in: install `lore` alone for the notes pipeline, or
+add `lore-workflow` on top once you also want the planning chain. The
+dependency only runs one way — nothing in `lore` core imports or requires
+`lore-workflow`.
+
+The chain it bundles:
+
+```
+seed-epic → orient → grill-with-docs → to-epic → orchestrate-epic → document-epic
+```
+
+with `implement-issue` as a lighter-weight track for one well-understood
+issue, and `tdd` as the discipline every implementation teammate follows.
+See [`docs/conventions.md`](docs/conventions.md) for the full chain, the
+artifact-home contract (PRD/ADR/`AGENTS.md` placement), and the tier
+vocabulary; [`docs/how-to/`](docs/how-to/) for task recipes
+(run an epic, use the fast path, resume a broken epic, onboard a repo); and
+[`lore-workflow/README.md`](lore-workflow/README.md) for the skill roster.
+
+Install both from this one marketplace:
+
+```text
+/plugin marketplace add buchbend/lore
+/plugin install lore@lore
+/plugin install lore-workflow@lore
+```
+
 ## Canonical shape
 
 ```
@@ -133,7 +170,9 @@ The repo is a self-describing marketplace:
 /plugin install lore@lore
 ```
 
-That alone gives you the plugin (hooks, skills, subagents, MCP) — it
+That alone gives you the `lore` plugin (hooks, skills, subagents, MCP); add
+`/plugin install lore-workflow@lore` for the planning-chain skills too — see
+[§ Two plugins](#two-plugins-lore--lore-workflow). Installing `lore` alone
 does not install the `lore` CLI itself. Run
 `pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"`
 separately, or use `lore install --integration claude` once `lore` is on
