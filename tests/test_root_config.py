@@ -163,6 +163,21 @@ def test_schema_tree_covers_all_leaves() -> None:
     assert "curator.backend" in paths
     assert "journal.enabled" in paths
     assert "observability.runs.keep" in paths
+    assert "user.display_name" in paths
     # No group should appear (only leaves).
     assert "curator" not in paths
     assert "observability" not in paths
+
+
+def test_user_display_name_defaults_empty(tmp_path: Path) -> None:
+    cfg = load_root_config(tmp_path)
+    assert cfg.user.display_name == ""
+
+
+def test_user_display_name_round_trips_via_set_field(tmp_path: Path) -> None:
+    from lore_core.root_config import get_field, set_field
+
+    root = _fresh_root(tmp_path, "")
+    fi = set_field(root, "user.display_name", "Christof")
+    assert fi.value == "Christof"
+    assert get_field(root, "user.display_name").value == "Christof"

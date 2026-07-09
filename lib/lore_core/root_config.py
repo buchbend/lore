@@ -113,11 +113,23 @@ class TierConfig:
 
 
 @dataclass
+class UserConfig:
+    """Personal identity, used when a wiki has no team-mode `_users.yml`.
+
+    ``display_name`` names the person in authored session notes and
+    briefings instead of falling back to the OS `$USER` login name.
+    """
+
+    display_name: str = ""
+
+
+@dataclass
 class RootConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     curator: CuratorBackendConfig = field(default_factory=CuratorBackendConfig)
     journal: JournalConfig = field(default_factory=JournalConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
+    user: UserConfig = field(default_factory=UserConfig)
 
 
 def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:
