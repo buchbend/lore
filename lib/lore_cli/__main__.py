@@ -60,6 +60,7 @@ def _build_app() -> typer.Typer:
         attachments_cmd,
         backfill_cmd,
         briefing_cmd,
+        codemap_cmd,
         completions_cmd,
         config_cmd,
         curator_cmd,
@@ -129,6 +130,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
     app.add_typer(attachments_cmd.app, name="attachments", rich_help_panel=_ADV)
     app.add_typer(briefing_cmd.app, name="briefing", rich_help_panel=_ADV)
+    app.add_typer(codemap_cmd.app, name="codemap", rich_help_panel=_ADV)
     app.add_typer(completions_cmd.app, name="completions", rich_help_panel=_ADV)
     app.add_typer(detach_cmd.app, name="detach", rich_help_panel=_ADV)
     app.add_typer(drain_cmd.app, name="drain", rich_help_panel=_ADV)
