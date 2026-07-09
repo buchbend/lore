@@ -66,10 +66,15 @@ def resolve_handle(wiki_path: Path, email: str) -> str:
 
 
 def resolve_display_name(wiki_path: Path, handle: str) -> str:
-    """Return the display name for `handle` from `_users.yml`.
+    """Return the display name for `handle`.
 
-    Vault config, not `$USER` — no environment fallback. Empty/missing
-    handle or no matching user returns `""`.
+    Vault config, not `$USER` — no environment fallback. Looks up
+    `_users.yml` first (team mode); when that yields nothing (solo
+    wikis, or a team wiki with no matching user), falls back to the
+    personal `user.display_name` set via `lore config set` at the
+    vault root (`<lore_root>/.lore/config.yml`), derived from
+    `wiki_path` as `<lore_root>/wiki/<name>`. Empty/missing handle
+    returns `""`.
     """
     if not handle:
         return ""
@@ -77,7 +82,10 @@ def resolve_display_name(wiki_path: Path, handle: str) -> str:
     for user in data.get("users") or []:
         if user.get("handle") == handle:
             return str(user.get("display_name") or "")
-    return ""
+    from lore_core.root_config import load_root_config
+
+    lore_root = wiki_path.parent.parent
+    return load_root_config(lore_root).user.display_name
 
 
 def aliased_emails(wiki_path: Path) -> set[str]:

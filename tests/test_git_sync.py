@@ -19,6 +19,7 @@ from lore_core.git_sync import (
     _classify_conflict_path,
     auto_pull,
     auto_push,
+    has_remote,
 )
 
 
@@ -95,6 +96,27 @@ def test_auto_pull_no_remote(tmp_path: Path) -> None:
 
     result = auto_pull(repo)
     assert result.status is SyncStatus.SKIPPED_NO_REMOTE
+
+
+# ---------------------------------------------------------------------------
+# has_remote
+# ---------------------------------------------------------------------------
+
+
+def test_has_remote_false_for_non_git_dir(tmp_path: Path) -> None:
+    assert has_remote(tmp_path / "not-a-repo") is False
+
+
+def test_has_remote_false_for_solo_repo(tmp_path: Path) -> None:
+    repo = tmp_path / "solo"
+    repo.mkdir()
+    _git(repo, "init", "--initial-branch=main")
+    assert has_remote(repo) is False
+
+
+def test_has_remote_true_for_clone(two_hosts) -> None:
+    _origin, host_a, _host_b = two_hosts
+    assert has_remote(host_a) is True
 
 
 def test_auto_pull_already_in_sync(two_hosts) -> None:

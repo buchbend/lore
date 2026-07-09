@@ -153,7 +153,46 @@ def _maybe_scaffold_workflow(lore_root: Path, repo_root: Path, scaffold_workflow
         console.print("[dim]Workflow docs already scaffolded — no changes.[/dim]")
 
 
-def _do_accept(lore_root: Path, cwd_path: Path, scaffold_workflow: bool = False) -> None:
+def _confirm_shared_vault(lore_root: Path, wiki: str, *, assume_yes: bool) -> bool:
+    """Gate routing a scope to a *shared* wiki (has a git remote) behind
+    explicit consent, surfaced at the moment of attaching — that's when
+    session notes start flowing to every teammate with access to it.
+
+    A solo wiki (no remote) is a no-op: nothing to consent to. Otherwise:
+    interactive terminals get a y/N prompt; non-interactive callers must
+    pass ``assume_yes=True`` (``--confirm-shared``) or the attach is
+    refused — fail closed, never silently route to a shared vault.
+    """
+    from lore_core.config import get_wiki_root
+    from lore_core.git_sync import has_remote
+
+    if not has_remote(get_wiki_root() / wiki):
+        return True
+    if assume_yes:
+        return True
+    if not _is_interactive():
+        err_console.print(
+            f"[red]Wiki '{wiki}' is a shared vault[/red] (has a git remote) — "
+            "attaching routes composed session notes there for every "
+            "teammate with access to see.\n"
+            "Re-run with [cyan]--confirm-shared[/cyan] to proceed "
+            "non-interactively, or run `lore attach` in a terminal to "
+            "be prompted."
+        )
+        return False
+    console.print(
+        f"\n[yellow]Wiki '{wiki}' is a shared vault[/yellow] (has a git remote). "
+        "Composed, gate-passed notes committed here are visible to every "
+        "teammate with access — raw transcripts and buffers never leave "
+        "your local state. If a secret leaks into a note, rotate it; "
+        "history keeps deleted lines.\n"
+    )
+    raw = input("  Continue attaching to this shared vault? [y/N]: ").strip().lower()
+    return raw in ("y", "yes")
+
+
+def _do_accept(lore_root: Path, cwd_path: Path, scaffold_workflow: bool = False,
+                confirm_shared: bool = False) -> None:
     from datetime import UTC, datetime
 
     from lore_core.consent import ConsentState, classify_state
@@ -183,6 +222,9 @@ def _do_accept(lore_root: Path, cwd_path: Path, scaffold_workflow: bool = False)
             "Accept anyway with `lore attach accept --cwd <path>` after "
             "removing the decline, or wait until the `.lore.yml` changes."
         )
+        raise typer.Exit(1)
+
+    if not _confirm_shared_vault(lore_root, offer.wiki, assume_yes=confirm_shared):
         raise typer.Exit(1)
 
     try:
@@ -248,12 +290,16 @@ def _do_decline(lore_root: Path, cwd_path: Path) -> None:
 
 
 def _do_manual(
-    lore_root: Path, cwd_path: Path, wiki: str, scope: str, scaffold_workflow: bool = False
+    lore_root: Path, cwd_path: Path, wiki: str, scope: str, scaffold_workflow: bool = False,
+    confirm_shared: bool = False,
 ) -> None:
     from datetime import UTC, datetime
 
     from lore_core.state.attachments import Attachment, AttachmentsFile
     from lore_core.state.scopes import ScopeConflict, ScopesFile
+
+    if not _confirm_shared_vault(lore_root, wiki, assume_yes=confirm_shared):
+        raise typer.Exit(1)
 
     attachments = AttachmentsFile(lore_root)
     attachments.load()
@@ -777,9 +823,14 @@ def cmd_accept(
         "--scaffold-workflow",
         help="Also scaffold docs/prd, docs/adr, and the AGENTS.md shim.",
     ),
+    confirm_shared: bool = typer.Option(
+        False,
+        "--confirm-shared",
+        help="Consent to attaching to a shared (git-remote) wiki non-interactively.",
+    ),
 ) -> None:
     """Accept the `.lore.yml` offer covering ``cwd``."""
-    _do_accept(_lore_root_or_die(), _cwd_arg(cwd), scaffold_workflow)
+    _do_accept(_lore_root_or_die(), _cwd_arg(cwd), scaffold_workflow, confirm_shared)
 
 
 @app.command("decline")
@@ -800,11 +851,16 @@ def cmd_manual(
         "--scaffold-workflow",
         help="Also scaffold docs/prd, docs/adr, and the AGENTS.md shim.",
     ),
+    confirm_shared: bool = typer.Option(
+        False,
+        "--confirm-shared",
+        help="Consent to attaching to a shared (git-remote) wiki non-interactively.",
+    ),
 ) -> None:
     """Attach ``cwd`` manually with no ``.lore.yml`` required."""
     cwd_path = _cwd_arg(cwd)
     resolved = cwd_path.resolve() if cwd_path.exists() else cwd_path.absolute()
-    _do_manual(_lore_root_or_die(), resolved, wiki, scope, scaffold_workflow)
+    _do_manual(_lore_root_or_die(), resolved, wiki, scope, scaffold_workflow, confirm_shared)
 
 
 @app.command("offer")
