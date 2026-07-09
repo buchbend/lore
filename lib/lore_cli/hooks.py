@@ -1185,6 +1185,21 @@ def cmd_session_start(
     cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(str(cwd_resolved))
 
+    # Refresh the local, gitignored CODEMAP.md for this repo. Deterministic,
+    # no LLM, no network; the fingerprint no-op fast path makes an unchanged
+    # tree cheap, so it is safe to run inline. Never allowed to crash
+    # SessionStart.
+    # ponytail: inline generate; if a very large repo's first-run parse adds
+    # perceptible startup latency, move this to a detached spawn like the
+    # transcript mirror below.
+    if not probe:
+        try:
+            from lore_core import codemap as _codemap
+
+            _codemap.generate(cwd_resolved, quiet=True)
+        except Exception:  # noqa: BLE001 - codemap must never crash SessionStart
+            pass
+
     # Surface pending `.lore.yml` offers at the top of the banner.
     # Defensive: offer rendering reads multiple files and classifies state;
     # we explicitly never let any failure here crash the SessionStart hook.
