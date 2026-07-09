@@ -509,12 +509,16 @@ def handle_briefing_gather(
     wiki: str,
     since: str | None = None,
     include_body_sections: bool = True,
+    epic: int | None = None,
 ) -> dict[str, Any]:
     """Read-only briefing gather. Delegates to lore_core.briefing.gather()."""
     from lore_core.briefing import gather
 
     return gather(
-        wiki=wiki, since=since, include_body_sections=include_body_sections
+        wiki=wiki,
+        since=since,
+        include_body_sections=include_body_sections,
+        epic=epic,
     )
 
 
@@ -1297,6 +1301,13 @@ def _tool_schema() -> list[dict]:
                         "type": "boolean",
                         "default": True,
                         "description": "Extract H2 sections per session",
+                    },
+                    "epic": {
+                        "type": "integer",
+                        "description": (
+                            "Filter to sessions whose `linkage.epics` "
+                            "names this epic number."
+                        ),
                     },
                 },
                 "required": ["wiki"],

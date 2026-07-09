@@ -107,7 +107,14 @@ def _build_prompt(gather_result: dict[str, Any]) -> str:
         fm = s.get("frontmatter") or {}
         summary = fm.get("summary") or fm.get("description") or ""
         body = s.get("body") or ""
-        lines.append(f"- {d} · {slug}")
+        linkage = s.get("linkage") or {}
+        refs = [linkage["author"]] if linkage.get("author") else []
+        refs += [f"epic #{n}" for n in linkage.get("epics") or []]
+        refs += [f"#{n}" for n in linkage.get("issues") or []]
+        header = f"- {d} · {slug}"
+        if refs:
+            header += f" ({', '.join(refs)})"
+        lines.append(header)
         if summary:
             lines.append(f"  summary: {_shorten(str(summary), _SUMMARY_CAP)}")
         if body:

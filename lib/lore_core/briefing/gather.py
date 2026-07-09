@@ -110,12 +110,19 @@ def gather(
     since: str | None = None,
     include_body_sections: bool = True,
     user: str | None = None,
+    epic: int | None = None,
 ) -> dict[str, Any]:
     """Collect new session notes since the last briefing.
 
     Read-only — does NOT write the ledger. The caller composes the
     briefing prose, publishes via `lore briefing publish`, then commits
     the ledger update via `lore briefing mark`.
+
+    Each entry carries its `linkage` frontmatter (author, repo, branch,
+    issues, prs, epics) verbatim — the join key for keying digests by
+    author/scope/epic and for drill-down onward to ADRs/PRDs/issues.
+    `epic`, when given, filters to sessions whose linkage names that
+    epic (mirrors the existing `user` filter).
 
     Returns:
       {
@@ -129,6 +136,7 @@ def gather(
             "date": str,
             "slug": str,
             "frontmatter": dict,
+            "linkage": dict,
             "body": str  (when include_body_sections)
           },
           ...
@@ -172,13 +180,18 @@ def gather(
             if md.name in incorporated or stem + ".md" in incorporated:
                 continue
             text = md.read_text(errors="replace")
+            frontmatter = parse_frontmatter(text)
+            linkage = frontmatter.get("linkage") or {}
             entry: dict[str, Any] = {
                 "path": rel,
                 "date": d.isoformat(),
                 "slug": slug or stem,
-                "frontmatter": parse_frontmatter(text),
+                "frontmatter": frontmatter,
+                "linkage": linkage,
             }
             if user and entry["frontmatter"].get("user") != user:
+                continue
+            if epic is not None and epic not in (linkage.get("epics") or []):
                 continue
             if include_body_sections:
                 # Session notes carry no human-only region — machine-written

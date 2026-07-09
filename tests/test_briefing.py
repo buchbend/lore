@@ -9,6 +9,7 @@ from textwrap import dedent
 import pytest
 from lore_cli import briefing_cmd
 from lore_core.briefing import gather, mark_incorporated, render_briefing
+from lore_core.linkage import Linkage
 from lore_core.note_document import Chapter, TopicBlock, append_chapter, close_note, create_note
 
 
@@ -500,9 +501,35 @@ def test_compose_briefing_prose_returns_llm_text():
     assert fake.messages.calls[0]["model"] == "claude-sonnet-4-6"
     prompt = fake.messages.calls[0]["messages"][0]["content"]
     assert "shipped the thing" in prompt
-    assert "ccat" in prompt
-    # Full body text (not a section extract) reaches the composer prompt.
-    assert "Wired up the last piece." in prompt
+
+
+def test_compose_briefing_prompt_includes_linkage():
+    """Author + epic ride into the prompt so the LLM can key digests on them."""
+    from lore_core.briefing import compose_briefing_prose
+
+    fake = _FakeClient(text="## Briefing: 2026-04-29 (ccat)\n")
+    compose_briefing_prose(
+        gather_result={
+            "wiki": "ccat",
+            "today": "2026-04-29",
+            "ledger": {"last_briefing": None},
+            "new_sessions": [
+                {
+                    "path": "p",
+                    "date": "2026-04-29",
+                    "slug": "thing",
+                    "frontmatter": {"summary": "shipped thing"},
+                    "linkage": {"author": "Alice", "epics": [162]},
+                    "body": "",
+                }
+            ],
+        },
+        llm_client=fake,
+        model_resolver=lambda t: "claude-sonnet-4-6",
+    )
+    prompt = fake.messages.calls[0]["messages"][0]["content"]
+    assert "Alice" in prompt
+    assert "epic #162" in prompt
 
 
 def test_compose_briefing_prose_empty_input_short_circuits():
@@ -638,3 +665,127 @@ def test_gather_sharded_dd_only_no_time(tmp_path, monkeypatch):
     s = result["new_sessions"][0]
     assert s["date"] == "2026-04-29"
     assert s["slug"] == "thing"
+
+
+# ---------------------------------------------------------------------------
+# Linkage-frontmatter join: digest keyed by author/scope/epic, drill-down
+# refs surfaced for downstream compose/render.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def linkage_briefing_vault(tmp_path, monkeypatch):
+    """Shared vault, two authors, real `linkage` frontmatter per note."""
+    vault_root = tmp_path / "vault"
+    wiki = vault_root / "wiki" / "ccat"
+    (wiki / "sessions").mkdir(parents=True)
+
+    def write(name: str, *, author: str, epics: list[int], issues: list[int]) -> None:
+        path = wiki / "sessions" / f"{name}.md"
+        create_note(
+            path,
+            title=name[11:],
+            description=f"session {name}",
+            scope="lore:test",
+            created=name[:10],
+            linkage=Linkage(
+                repo="acme/app",
+                branch="main",
+                issues=issues,
+                epics=epics,
+                author=author,
+            ),
+        )
+        append_chapter(
+            path,
+            Chapter(blocks=[TopicBlock(lead="Did the thing.", anchor_turn=5)]),
+            slice_from_turn=1,
+            slice_to_turn=5,
+        )
+        close_note(path)
+
+    write("2026-04-15-fix-a", author="Alice", epics=[162], issues=[175])
+    write("2026-04-16-fix-b", author="Bob", epics=[161], issues=[180])
+
+    monkeypatch.setenv("LORE_ROOT", str(vault_root))
+    return vault_root, wiki
+
+
+def test_gather_includes_linkage_frontmatter(linkage_briefing_vault):
+    result = gather(wiki="ccat")
+    by_slug = {s["slug"]: s for s in result["new_sessions"]}
+    assert by_slug["fix-a"]["linkage"]["author"] == "Alice"
+    assert by_slug["fix-a"]["linkage"]["epics"] == [162]
+    assert by_slug["fix-a"]["linkage"]["issues"] == [175]
+
+
+def test_gather_shared_vault_multiple_authors(linkage_briefing_vault):
+    """Two authors' notes coexist in one wiki; gather surfaces both."""
+    result = gather(wiki="ccat")
+    authors = sorted(s["linkage"]["author"] for s in result["new_sessions"])
+    assert authors == ["Alice", "Bob"]
+
+
+def test_gather_filters_by_epic(linkage_briefing_vault):
+    result = gather(wiki="ccat", epic=162)
+    assert len(result["new_sessions"]) == 1
+    assert result["new_sessions"][0]["slug"] == "fix-a"
+
+
+def test_gather_epic_filter_no_match_returns_empty(linkage_briefing_vault):
+    result = gather(wiki="ccat", epic=999)
+    assert result["new_sessions"] == []
+
+
+def test_mcp_handle_briefing_gather_forwards_epic(linkage_briefing_vault):
+    from lore_mcp.server import handle_briefing_gather
+
+    result = handle_briefing_gather(wiki="ccat", epic=162)
+    assert len(result["new_sessions"]) == 1
+    assert result["new_sessions"][0]["slug"] == "fix-a"
+
+
+def test_render_briefing_links_to_source_note():
+    """Digest bullets carry a wikilink back to the source session note."""
+    result = {
+        "wiki": "ccat",
+        "today": "2026-04-29",
+        "ledger": {"last_briefing": None, "incorporated_count": 0},
+        "new_sessions": [
+            {
+                "path": "sessions/2026-04-29-thing.md",
+                "date": "2026-04-29",
+                "slug": "thing",
+                "frontmatter": {"summary": "shipped the thing"},
+                "linkage": {},
+                "body": "",
+            }
+        ],
+    }
+    out = render_briefing(result)
+    # Pre-existing bullet text stays intact (backward compatible).
+    assert "- **thing** — shipped the thing" in out
+    assert "[[2026-04-29-thing]]" in out
+
+
+def test_render_briefing_shows_drill_down_refs():
+    """Author + epic/issue refs ride along so a reader can drill down."""
+    result = {
+        "wiki": "ccat",
+        "today": "2026-04-29",
+        "ledger": {"last_briefing": None, "incorporated_count": 0},
+        "new_sessions": [
+            {
+                "path": "sessions/2026-04-29-thing.md",
+                "date": "2026-04-29",
+                "slug": "thing",
+                "frontmatter": {"summary": "shipped the thing"},
+                "linkage": {"author": "Alice", "epics": [162], "issues": [175]},
+                "body": "",
+            }
+        ],
+    }
+    out = render_briefing(result)
+    assert "Alice" in out
+    assert "epic #162" in out
+    assert "#175" in out

@@ -30,6 +30,7 @@ deterministic fallback formatter stays frontmatter-only.
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 
@@ -42,6 +43,18 @@ def _session_summary(session: dict[str, Any]) -> str:
     if isinstance(description, str) and description.strip():
         return description.strip()
     return ""
+
+
+def _drill_down_refs(session: dict[str, Any]) -> list[str]:
+    """Author + epic/issue refs — the digest's onward links per note."""
+    linkage = session.get("linkage") or {}
+    refs = []
+    author = linkage.get("author")
+    if author:
+        refs.append(str(author))
+    refs += [f"epic #{n}" for n in linkage.get("epics") or []]
+    refs += [f"#{n}" for n in linkage.get("issues") or []]
+    return refs
 
 
 def render_briefing(gather_result: dict[str, Any]) -> str:
@@ -79,10 +92,13 @@ def render_briefing(gather_result: dict[str, Any]) -> str:
         for s in by_date[d]:
             slug = s.get("slug") or "(unknown)"
             summary = _session_summary(s)
-            if summary:
-                lines.append(f"- **{slug}** — {summary}")
-            else:
-                lines.append(f"- **{slug}**")
+            bullet = f"- **{slug}** — {summary}" if summary else f"- **{slug}**"
+            stem = Path(s.get("path") or slug).stem
+            bullet += f" [[{stem}]]"
+            refs = _drill_down_refs(s)
+            if refs:
+                bullet += f" ({' · '.join(refs)})"
+            lines.append(bullet)
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
