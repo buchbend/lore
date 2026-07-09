@@ -432,6 +432,7 @@ def flush_chapter(
             gate=gate,
             logger=logger,
             transcript_id=sidecar.transcript_id,
+            turns_by_index={t.index: t.text for t in unflushed},
         )
     else:
         # No readable turns / no client: bound the span to the buffer's

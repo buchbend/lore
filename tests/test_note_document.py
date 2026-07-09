@@ -235,6 +235,25 @@ def test_continuation_block_renders_continued_lead(tmp_path):
     assert "The cap-trip now flushes in place." in body
 
 
+def test_block_quote_renders_between_body_and_anchor(tmp_path):
+    path = _create(tmp_path)
+    chapter = nd.Chapter(
+        blocks=[
+            _block(
+                lead="Found the root cause.",
+                body="The cache never invalidated.",
+                anchor=12,
+                quote="the cache never gets cleared on deploy",
+            ),
+        ]
+    )
+    nd.append_chapter(path, chapter, slice_from_turn=1, slice_to_turn=40)
+    body = strip_frontmatter(path.read_text())
+    assert '"the cache never gets cleared on deploy"' in body
+    assert body.index("The cache never invalidated.") < body.index("the cache never gets cleared")
+    assert body.index("the cache never gets cleared") < body.index("@12")
+
+
 def test_append_updates_session_facts(tmp_path):
     path = _create(tmp_path, facts=nd.SessionFacts(commits=["aaa0001 first"]))
     nd.append_chapter(
