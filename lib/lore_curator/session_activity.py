@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from lore_core.gh import gh_issues
-from lore_core.git import current_repo
+from lore_core.git import current_branch, current_repo
 from lore_core.types import Turn
 
 if TYPE_CHECKING:
@@ -122,7 +122,7 @@ def collect_commits_by_sha(
     if log.returncode != 0:
         return []
 
-    branch = _current_branch(repo_root, timeout_seconds)
+    branch = current_branch(repo_root)
     repo_name = current_repo(repo_root) or ""
 
     # Map full-SHA → CommitRef so we can return in the order the caller asked.
@@ -160,20 +160,6 @@ def collect_commits_by_sha(
                 out.append(ref)
                 break
     return out
-
-
-def _current_branch(repo_root: Path, timeout_seconds: float) -> str:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True,
-            timeout=timeout_seconds, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    if result.returncode != 0:
-        return ""
-    return result.stdout.strip()
 
 
 def render_commits_section(commits: list[CommitRef]) -> list[str]:

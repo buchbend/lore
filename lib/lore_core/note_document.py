@@ -32,6 +32,7 @@ from typing import Any
 import yaml
 
 from lore_core.io import atomic_write_text
+from lore_core.linkage import Linkage
 from lore_core.schema import parse_frontmatter, strip_frontmatter
 
 __all__ = [
@@ -42,6 +43,7 @@ __all__ = [
     "TopicBlock",
     "Chapter",
     "SessionFacts",
+    "Linkage",
     "NoteView",
     "create_note",
     "append_chapter",
@@ -224,6 +226,20 @@ def _apply_facts(fm: dict[str, Any], facts: SessionFacts | None) -> None:
         fm["duration_seconds"] = int(facts.duration_seconds)
 
 
+def _apply_linkage(fm: dict[str, Any], linkage: Linkage | None) -> None:
+    if linkage is None:
+        return
+    fm["linkage"] = {
+        "schema_version": linkage.schema_version,
+        "repo": linkage.repo,
+        "branch": linkage.branch,
+        "issues": list(linkage.issues),
+        "prs": list(linkage.prs),
+        "epics": list(linkage.epics),
+        "author": linkage.author,
+    }
+
+
 def _today() -> str:
     return date.today().isoformat()
 
@@ -267,6 +283,7 @@ def create_note(
     handle: str | None = None,
     created: str | None = None,
     facts: SessionFacts | None = None,
+    linkage: Linkage | None = None,
     extra_frontmatter: dict[str, Any] | None = None,
     wiki_root: Path | None = None,
 ) -> None:
@@ -290,6 +307,7 @@ def create_note(
     if handle:
         fm["user"] = handle
     _apply_facts(fm, facts)
+    _apply_linkage(fm, linkage)
     if extra_frontmatter:
         for k, v in extra_frontmatter.items():
             fm.setdefault(k, v)
@@ -306,6 +324,7 @@ def append_chapter(
     slice_from_turn: int,
     slice_to_turn: int,
     facts: SessionFacts | None = None,
+    linkage: Linkage | None = None,
     wiki_root: Path | None = None,
 ) -> int:
     """Append a chapter of topic blocks; record its slice turn range.
@@ -331,6 +350,7 @@ def append_chapter(
     )
     fm["chapters"] = chapters
     _apply_facts(fm, facts)
+    _apply_linkage(fm, linkage)
     fm["last_reviewed"] = _today()
 
     _write(path, fm, new_body, wiki_root=wiki_root)
@@ -345,6 +365,7 @@ def append_marker_chapter(
     slice_from_turn: int,
     slice_to_turn: int,
     facts: SessionFacts | None = None,
+    linkage: Linkage | None = None,
     wiki_root: Path | None = None,
 ) -> int:
     """Append a deterministic marker chapter (failed or withheld).
@@ -374,6 +395,7 @@ def append_marker_chapter(
     )
     fm["chapters"] = chapters
     _apply_facts(fm, facts)
+    _apply_linkage(fm, linkage)
     fm["last_reviewed"] = _today()
 
     _write(path, fm, new_body, wiki_root=wiki_root)
@@ -384,6 +406,7 @@ def close_note(
     path: Path,
     *,
     facts: SessionFacts | None = None,
+    linkage: Linkage | None = None,
     wiki_root: Path | None = None,
 ) -> None:
     """Finalize the note: mark it closed and immutable.
@@ -396,6 +419,7 @@ def close_note(
 
     fm["note_status"] = _CLOSED
     _apply_facts(fm, facts)
+    _apply_linkage(fm, linkage)
     fm["last_reviewed"] = _today()
     _write(path, fm, body, wiki_root=wiki_root)
 

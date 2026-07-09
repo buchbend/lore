@@ -103,6 +103,54 @@ def test_create_includes_handle_when_team_mode(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# linkage frontmatter (schema-versioned, round-trips)
+# ---------------------------------------------------------------------------
+
+
+def test_create_writes_linkage_block(tmp_path):
+    path = _create(tmp_path, linkage=nd.Linkage(
+        repo="buchbend/lore", branch="feat/175-linkage-frontmatter",
+        issues=[175], epics=[162], author="Christof Buchbender",
+    ))
+    fm = parse_frontmatter(path.read_text())
+    assert fm["linkage"] == {
+        "schema_version": 1,
+        "repo": "buchbend/lore",
+        "branch": "feat/175-linkage-frontmatter",
+        "issues": [175],
+        "prs": [],
+        "epics": [162],
+        "author": "Christof Buchbender",
+    }
+
+
+def test_create_without_linkage_omits_block(tmp_path):
+    path = _create(tmp_path)
+    fm = parse_frontmatter(path.read_text())
+    assert "linkage" not in fm
+
+
+def test_append_chapter_updates_linkage(tmp_path):
+    path = _create(tmp_path, linkage=nd.Linkage(branch="main"))
+    nd.append_chapter(
+        path,
+        nd.Chapter(blocks=[_block()]),
+        slice_from_turn=1,
+        slice_to_turn=10,
+        linkage=nd.Linkage(branch="main", issues=[175]),
+    )
+    fm = parse_frontmatter(path.read_text())
+    assert fm["linkage"]["issues"] == [175]
+
+
+def test_close_note_can_record_final_linkage(tmp_path):
+    path = _create(tmp_path)
+    nd.close_note(path, linkage=nd.Linkage(repo="buchbend/lore", branch="main"))
+    fm = parse_frontmatter(path.read_text())
+    assert fm["linkage"]["repo"] == "buchbend/lore"
+
+
+# ---------------------------------------------------------------------------
 # append chapter
 # ---------------------------------------------------------------------------
 
