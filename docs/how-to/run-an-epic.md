@@ -46,7 +46,10 @@ small, clear change, use the [fast path](use-the-fast-path.md) instead.
   (**HITL**), a crosscheck that keeps failing, or an unresolvable conflict.
 - **Read the run in the supervision trail.** The orchestrator keeps a single
   status comment on the epic issue, updated in place, recording each
-  feature's state and every tier or escalation decision.
+  feature's state in a machine-readable table. Its own working context — the
+  tier and escalation decisions, crosscheck verdicts, in-flight markers —
+  rides a separate composed epic note, so a resumed run rehydrates its
+  reasoning, not just the checklist.
 - **If the run breaks off, resume — do not restart.** See
   [Resume a broken epic](resume-a-broken-epic.md).
 
