@@ -366,6 +366,29 @@ def validate_roadmap(markdown: str) -> ValidationResult:
     return ValidationResult(ok=not problems, problems=problems, rows=rows)
 
 
+@dataclass(frozen=True)
+class RoadmapCounts:
+    """Shape of a roadmap for planners: feature rows, distinct repos, and
+    dependency edges (blocked-by tokens). Read off already-parsed rows so
+    ``/orchestrate-epic`` sizes batches from a count, not from prose."""
+
+    rows: int
+    repos: int
+    edges: int
+
+
+def roadmap_counts(result: ValidationResult) -> RoadmapCounts:
+    """Count features, distinct repos, and blocked-by edges of a validated
+    roadmap. Uses ``result.rows`` — no second table parse. On a column-level
+    failure ``rows`` is empty, so every count is zero."""
+    rows = list(result.rows)
+    return RoadmapCounts(
+        rows=len(rows),
+        repos=len({row.repo for row in rows}),
+        edges=sum(len(row.blocked_by) for row in rows),
+    )
+
+
 def validate_roadmap_or_raise(markdown: str) -> ValidationResult:
     """Validate *markdown*, raising :class:`RoadmapError` if it is invalid.
 
