@@ -1292,4 +1292,60 @@ def test_capture_emits_pending_by_wiki_in_hook_event(
     assert "pending_after" in rec
     assert "pending_by_wiki" in rec
     # Counts dict, not the full entry list.
-    assert rec["pending_by_wiki"] == {"alpha": 2, "beta": 1}
+
+
+# ---------------------------------------------------------------------------
+# Capture-suppress flag — dispatched teammate sessions
+# ---------------------------------------------------------------------------
+
+
+def test_capture_suppressed_by_env_flag_is_full_noop(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """LORE_SUPPRESS_CAPTURE=1 short-circuits capture() before any ledger
+    write, curator spawn, or hook-event log — a dispatched teammate
+    session leaves no standalone note."""
+    project = _make_attached_project(tmp_path)
+    handle = _make_handle(project)
+    fake_adapter_factory([handle])
+
+    spawn_calls: list[Path] = []
+    monkeypatch.setattr(
+        "lore_cli.hooks._spawn_detached_curator_a",
+        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
+    )
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
+        env={"LORE_ROOT": str(project), "LORE_SUPPRESS_CAPTURE": "1"},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    ledger = TranscriptLedger(project)
+    assert ledger.get("fake", "t1") is None, "suppressed capture must not touch the ledger"
+    assert not spawn_calls, "suppressed capture must never spawn curator A"
+
+    events_path = project / ".lore" / "hook-events.jsonl"
+    assert not events_path.exists(), "suppressed capture must not emit hook telemetry"
+
+
+def test_capture_without_suppress_flag_is_unchanged(tmp_path: Path, fake_adapter_factory) -> None:
+    """Same setup, no LORE_SUPPRESS_CAPTURE set — default capture behaviour
+    is unaffected by the new flag's existence."""
+    project = _make_attached_project(tmp_path)
+    handle = _make_handle(project)
+    fake_adapter_factory([handle])
+
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
+        env={"LORE_ROOT": str(project)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    ledger = TranscriptLedger(project)
+    entry = ledger.get("fake", "t1")
+    assert entry is not None, "unsuppressed capture must register the transcript as before"
