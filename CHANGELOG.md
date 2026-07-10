@@ -10,6 +10,43 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-07-10
+
+Epic #162 — deterministic context, lights-out notes (PRD 0004).
+
+### Added
+- **Deterministic linkage frontmatter at capture** (`schema_version=1`): repo, branch,
+  issue/PR/epic refs, files touched, commits, and author display name are extracted
+  adapter-level with zero LLM/network cost and written on every session note.
+- **`lore_context_pack` MCP tool**: given cwd/branch/issue, returns a bounded pointer
+  pack (recent notes, co-touching ADRs/PRDs, open epic state) with relevance computed as
+  a deterministic join on linkage keys — never an LLM call, never ambient injection. The
+  front door planning skills call before spawning an explorer.
+- **Compose hardening**: notes are built on a byte-stable deterministic skeleton with
+  verbatim transcript quotes code-attached at their anchor turn; the model writes only
+  connecting narrative. The publish gate stays fail-closed, and a usable skeleton note is
+  produced even when the model call fails.
+- **Display-name onboarding**: `lore init` captures `user.display_name`; note authorship
+  and briefings use it instead of `$USER`.
+- **Shared-vault sharing consent**: routing a scope to a shared (git-remote) wiki is an
+  explicit opt-in that surfaces a consent prompt (team-visible; the gate reduces but does
+  not eliminate leaks; a leaked secret persists in git history — remedy is rotation).
+  `--confirm-shared` covers non-interactive callers.
+- **Multi-author sync hardening**: collision-free note paths (author + session id) via an
+  atomic `O_CREAT|O_EXCL` claim; lights-out fetch/rebase/retry under concurrent writers;
+  unreachable-remote writes queue locally and recover on the next sync.
+- **Briefings on linkage**: gather keys digests by linkage frontmatter (author, scope,
+  epic, repos) rather than recency/FTS alone, with a drill-down chain
+  (briefing → notes → ADRs/PRDs/issues → code). New `docs/architecture/briefing-compression-channel.md`.
+
+### Changed
+- Curator is now session-note compose (Curator A) only.
+
+### Removed
+- **Curator B (transcript decision curation) and Curator C (concept elevation)** deleted
+  outright — code paths, CLI/MCP surfaces, and tests. Decisions enter context only through
+  the ratified channel: ADRs/PRDs in connected repos, pulled on demand.
+
 ## [0.58.0] - 2026-07-09
 
 ### Added
