@@ -62,6 +62,7 @@ rather than silently falling back to `~/lore`.
 | `LORE_LLM_BACKEND` | `auto` \| `subscription` \| `api` \| `openai` | `auto` | `lore_curator/llm_client.py:make_llm_client` | `.lore/config.yml:curator.backend` |
 | `LORE_CURATOR_MODE` | `1` \| unset | unset | `lore_cli/hooks.py:_in_curator_mode` | (internal — set by the curator's own detached-subprocess spawns, not a user knob) |
 | `LORE_CLAUDE_TIMEOUT_S` | float seconds | `300.0` | `llm_client.py:_resolve_claude_timeout` | constructor arg |
+| `LORE_SUPPRESS_CAPTURE` | `1` \| unset | unset | `lore_cli/hooks.py:_capture_suppressed`, checked first thing in `capture()` | (dispatch contract — set by an orchestrator when it launches a teammate session whose transcript should not become its own standalone note; unset leaves capture unchanged) |
 
 #### OpenAI-compatible backend (when `LORE_LLM_BACKEND=openai`)
 

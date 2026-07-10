@@ -1066,6 +1066,13 @@ def _in_curator_mode() -> bool:
     return os.environ.get("LORE_CURATOR_MODE") == "1"
 
 
+def _capture_suppressed() -> bool:
+    """True when the dispatching orchestrator opted this session out of
+    standalone capture (e.g. a teammate whose work is meant to land in a
+    shared epic note instead of its own fragment)."""
+    return os.environ.get("LORE_SUPPRESS_CAPTURE") == "1"
+
+
 def _session_off_all() -> bool:
     """True iff `/lore:off` (scope=all) is active for the current session.
 
@@ -2327,7 +2334,7 @@ def capture(
     curator when pending work exceeds threshold. No LLM, no network,
     bounded FS walk (8 levels).
     """
-    if _in_curator_mode():
+    if _in_curator_mode() or _capture_suppressed():
         return
     _read_hook_payload()
     if _session_off_all():
