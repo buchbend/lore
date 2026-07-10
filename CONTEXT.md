@@ -209,6 +209,13 @@ not from anything injected ambiently:
   `docs/adr/` and `docs/prd/`. Ratified decisions live in the repo, not
   in the vault; Lore reads them on request instead of re-deriving them
   from session transcripts.
+- `lore_context_pack` (`lore_core/context_pack.py`) — deterministic
+  context resolver: given a scope, repo state, and issue/PR/epic, returns
+  a pointer pack — recent session notes for this scope, ADRs/PRDs that
+  bear on it, open epic state — with one-line summaries and selective
+  body pulls, zero LLM cost. Fed into orchestration skills before any
+  explorer subagent runs.
+
 
 ## Retrieval substrate
 
@@ -245,3 +252,40 @@ above:
 | SessionStart / PreCompact banner + hooks | `lore_cli/hooks.py` |
 | Freshness classification | `lore_core/freshness.py` |
 | Vault/wiki/scope resolution | `lore_core/scope_resolver.py`, `lore_core/state/` |
+
+## Glossary
+
+Terms used in the workflow layer and orchestration:
+
+- **Workflow** — a skill-bundled planning chain: `seed-epic → orient →
+  grill-with-docs → to-epic → orchestrate-epic → document-epic`. Each step
+  is a callable skill, with checkpoints between shaping (human-controlled)
+  and autonomous build. See `docs/conventions.md` for the stage vocabulary,
+  artifact homes, and tier assignments.
+- **Skill** — a callable, namespaced Claude Code automation block (e.g.,
+  `lore-workflow:orient`, `lore:verify`). Skills are registered in
+  `plugin.json` and dispatched by CLI invocation or intra-skill routing.
+  Workflow skills are bundled in the `lore-workflow` plugin.
+- **Lore context pack** — synonym for `lore_context_pack` (see above).
+- **Codemap excerpt** — a bounded, ranked slice of the `lore codemap`
+  output, token-budgeted (~1k tokens) and curated for a specific feature
+  or epic. Passed once at `orchestrate-epic` Map time and reused by every
+  teammate, instead of having each teammate discover symbols independently.
+  Distinct from a full `lore_context_pack`, which joins session notes and
+  ADRs/PRDs; the codemap excerpt is the code-navigation half only.
+- **Epic note** — a single, composed session note that records the
+  orchestration of an epic: the roadmap DAG, per-feature tier decisions,
+  crosscheck verdicts, and any escalations. Distinct from the per-feature
+  implementation notes written by teammate agents; the epic note is the
+  orchestrator's record of supervision.
+- **Handover (session)** — a working-context handover from one Claude Code
+  session to a cold session starting fresh. The source session ends with a
+  `/lore:handover` invoke, which drafts a structured note of context
+  (problem framing, attempted paths, current blockers). A cold session
+  resumes with `/lore:continue`, which loads the handover note and carries
+  its facts into the new session's work.
+- **Handover (epic seed)** — a tracker issue linking an epic seed (the
+  source of structured context for the `orient` step). Distinct from
+  session handover: the epic seed is filed in the issue tracker and is
+  one-time context for a shaped body of work, not a carry-forward between
+  sessions.
