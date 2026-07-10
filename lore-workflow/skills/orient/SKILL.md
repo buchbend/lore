@@ -22,23 +22,33 @@ Take the user's stated goal as the seed, verbatim. Don't expand it or jump to so
 If they pass an issue reference (e.g. an epic seed from `/lore-workflow:seed-epic`), fetch and read it
 (`gh ... --json`) and treat its Intent + Findings as the seed.
 
-### 2. Explore in parallel (subagents)
-Fan out read-only `Explore` subagents concurrently — one per facet, in a single message — and
-keep only their findings here (drop the file dumps). This fan-out runs at **mid-tier
-(REQUIRED)**: resolve the tier to a concrete model with `lore tier resolve mid` and set each
-spawn's model parameter to that resolution — see
-[TIER-DELEGATION.md](../../TIER-DELEGATION.md) for the no-implicit-inherit rule this enforces.
-Default facets:
+### 2. Pull the context pack, then fan out only what's thin
+Before spawning anything, pull the deterministic context pack **once, up front**:
+`lore_context_pack` (cold-start-safe — an empty repo/vault returns a well-formed empty pack,
+never an error) plus `lore_repo_docs_list` / `lore_repo_docs_fetch` for the full ADR/PRD
+listing and any body worth reading in full. Two facets are served straight from that pull, no
+subagent:
+- **Docs & decisions** — the pack's `adr` / `prd` entries (already linked to the focus
+  issue/epic), CONTEXT.md / glossary read directly, `lore_repo_docs_list` for anything the
+  pack's focus filter missed.
+- **Prior art** — the pack's `sessions` (recent related session notes) and `epic_state`
+  (linked issue/epic status) as the trace of related work.
+
+Spawn a facet's `Explore` subagent only when the pack came back thin or empty for it (no
+matching ADR/PRD, no matching sessions) — it then searches beyond what the deterministic join
+found. The remaining facets fan out unconditionally, as before:
 - **Code map** — where this touches the codebase: key modules, interfaces, current behavior,
   relevant tests. Start from `lore codemap` (or the `lore_codemap` MCP tool) for a ranked,
   deterministic index instead of a blind directory walk.
-- **Docs & decisions** — CONTEXT.md / glossary, `docs/adr`, relevant guides; what is already
-  decided or constrained.
-- **Prior art** — related issues/PRs and similar existing features.
 - **Cross-repo / external** — only when the intent plausibly spans repos or downstream consumers.
 
-Scale the fan-out to the ask: a small change may need a single Explore pass; a broad feature
-warrants all facets.
+Whatever subagents this leaves running go out concurrently, in a single message, at **mid-tier
+(REQUIRED)**: resolve the tier to a concrete model with `lore tier resolve mid` and set each
+spawn's model parameter to that resolution — see
+[TIER-DELEGATION.md](../../TIER-DELEGATION.md) for the no-implicit-inherit rule this enforces.
+
+Scale the fan-out to the ask: a small change may need a single Explore pass (or none, if the
+pack already covers it); a broad feature warrants all facets.
 
 ### 3. Reflect back
 Present a tight brief in the conversation:
