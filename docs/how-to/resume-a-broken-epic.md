@@ -22,7 +22,11 @@ comment — precisely so a second run heals rather than duplicates.
    a fresh session at the epic and run it exactly as you did the first time.
 2. **It finds the prior run's supervision trail.** It lists the epic issue's
    comments and looks for the status comment carrying its per-feature state
-   table from the earlier run.
+   table from the earlier run. That table is written in a machine-readable
+   format (a marked table with fixed columns), so the resume reads it
+   deterministically with `lore workflow parse-board` rather than
+   re-interpreting it by eye — a malformed board is reported as an error,
+   never silently misread.
 3. **It reconciles against reality.** It compares that table's
    merged / queued / blocked rows against the epic branch's actual state:
    - a feature already merged into `epic/<issue>` is **done** — it is
@@ -34,6 +38,12 @@ comment — precisely so a second run heals rather than duplicates.
 4. **It continues in the same status comment.** It edits that one existing
    comment in place for every further update; a resumed run never opens a
    second status comment.
+
+The board comment carries only the durable per-feature state. The
+orchestrator's own working context — tier decisions, crosscheck verdicts,
+in-flight markers — rides a single composed **epic note** keyed to the epic,
+which the resumed run rehydrates through `lore_context_pack`. So its
+reasoning survives the interruption too, not just the feature checklist.
 
 ## If no prior run is found
 
