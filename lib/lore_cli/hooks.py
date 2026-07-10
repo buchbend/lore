@@ -30,6 +30,30 @@ from lore_core.config import get_lore_root, get_wiki_root
 
 
 def _lore_version() -> str:
+    """Version for the SessionStart banner.
+
+    Prefer the on-disk source manifest (``.claude-plugin/plugin.json``) so an
+    editable install's banner tracks the checked-out code straight after a
+    ``git pull`` — no reinstall needed. ``resolve_lore_source_root`` walks up
+    from the installed package, so it only resolves for editable (or
+    marketplace-cache) installs; a plain PyPI install returns ``None`` and we
+    fall back to the installed package metadata, which is the only source
+    there.
+    """
+    from lore_core.install._helpers import (
+        read_claude_manifest,
+        resolve_lore_source_root,
+    )
+
+    root = resolve_lore_source_root()
+    if root is not None:
+        try:
+            manifest_version = str(read_claude_manifest(root).get("version") or "")
+        except (OSError, ValueError):
+            manifest_version = ""
+        if manifest_version:
+            return manifest_version
+
     from importlib.metadata import PackageNotFoundError, version
 
     try:
