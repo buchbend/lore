@@ -24,6 +24,7 @@ seams here.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -32,6 +33,7 @@ from typing import Any
 import yaml
 
 from lore_core.io import atomic_write_text
+from lore_core.linkage import Linkage
 from lore_core.schema import parse_frontmatter, strip_frontmatter
 
 __all__ = [
@@ -42,6 +44,7 @@ __all__ = [
     "TopicBlock",
     "Chapter",
     "SessionFacts",
+    "Linkage",
     "NoteView",
     "create_note",
     "append_chapter",
@@ -88,7 +91,10 @@ class TopicBlock:
     ``lead`` is a bold one-sentence self-sufficient statement (no
     pronouns reaching into the body). ``body`` is short prose.
     ``anchor_turn`` is the transcript turn where the topic starts,
-    rendered as a single ``@N`` anchor at the block's end.
+    rendered as a single ``@N`` anchor at the block's end. ``quote``,
+    when set, is a verbatim excerpt from that anchor turn — code-
+    attached from the transcript, never model-authored (see
+    ``compose_chapter``'s ``turns_by_index``).
 
     A continuation block (``continued=True``) resumes or corrects an
     earlier topic; it renders a ``Continued: <continued_topic>`` lead
@@ -100,6 +106,7 @@ class TopicBlock:
     anchor_turn: int = 0
     continued: bool = False
     continued_topic: str = ""
+    quote: str = ""
 
 
 @dataclass
@@ -146,6 +153,9 @@ def _render_block(block: TopicBlock) -> str:
     body = (block.body or "").strip()
     if body:
         parts.append(body)
+    quote = (block.quote or "").strip()
+    if quote:
+        parts.append(f'> "{quote}"')
     if block.anchor_turn:
         parts.append(f"@{int(block.anchor_turn)}")
     return "\n\n".join(parts)
@@ -224,18 +234,45 @@ def _apply_facts(fm: dict[str, Any], facts: SessionFacts | None) -> None:
         fm["duration_seconds"] = int(facts.duration_seconds)
 
 
+def _apply_linkage(fm: dict[str, Any], linkage: Linkage | None) -> None:
+    if linkage is None:
+        return
+    fm["linkage"] = {
+        "schema_version": linkage.schema_version,
+        "repo": linkage.repo,
+        "branch": linkage.branch,
+        "issues": list(linkage.issues),
+        "prs": list(linkage.prs),
+        "epics": list(linkage.epics),
+        "author": linkage.author,
+    }
+
+
 def _today() -> str:
     return date.today().isoformat()
 
 
-def _write(path: Path, fm: dict[str, Any], body: str, *, wiki_root: Path | None) -> None:
+def _write(
+    path: Path, fm: dict[str, Any], body: str, *, wiki_root: Path | None, exclusive: bool = False
+) -> None:
     dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
     text = f"---\n{dumped}\n---\n\n{body.rstrip()}\n"
     if wiki_root is not None:
         from lore_core.wikilinks import sanitize_for_write
 
         text = sanitize_for_write(text, wiki_root)
-    atomic_write_text(path, text)
+    if not exclusive:
+        atomic_write_text(path, text)
+        return
+    # Exclusive create: refuse to clobber a file a concurrent writer just
+    # claimed. Raises FileExistsError instead of silently overwriting —
+    # callers creating a brand-new note (never an update) retry elsewhere.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        os.write(fd, text.encode("utf-8"))
+    finally:
+        os.close(fd)
 
 
 def _load(path: Path) -> tuple[dict[str, Any], str]:
@@ -267,14 +304,21 @@ def create_note(
     handle: str | None = None,
     created: str | None = None,
     facts: SessionFacts | None = None,
+    linkage: Linkage | None = None,
     extra_frontmatter: dict[str, Any] | None = None,
     wiki_root: Path | None = None,
+    exclusive: bool = False,
 ) -> None:
     """Create the session note: disclaimer + machine-first frontmatter.
 
     The note starts ``open`` (append-only). Session facts, when supplied,
     are recorded in frontmatter. The body carries the fixed disclaimer
     and no chapters yet.
+
+    ``exclusive=True`` refuses to overwrite an existing file at ``path``,
+    raising ``FileExistsError`` instead — for callers where two
+    authors/sessions might race on the same first-write path (default
+    ``False`` preserves plain overwrite for known-fresh paths).
     """
     created = created or _today()
     fm: dict[str, Any] = {
@@ -290,13 +334,14 @@ def create_note(
     if handle:
         fm["user"] = handle
     _apply_facts(fm, facts)
+    _apply_linkage(fm, linkage)
     if extra_frontmatter:
         for k, v in extra_frontmatter.items():
             fm.setdefault(k, v)
     fm["chapters"] = []
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    _write(path, fm, DISCLAIMER, wiki_root=wiki_root)
+    _write(path, fm, DISCLAIMER, wiki_root=wiki_root, exclusive=exclusive)
 
 
 def append_chapter(
@@ -306,6 +351,7 @@ def append_chapter(
     slice_from_turn: int,
     slice_to_turn: int,
     facts: SessionFacts | None = None,
+    linkage: Linkage | None = None,
     wiki_root: Path | None = None,
 ) -> int:
     """Append a chapter of topic blocks; record its slice turn range.
@@ -331,6 +377,7 @@ def append_chapter(
     )
     fm["chapters"] = chapters
     _apply_facts(fm, facts)
+    _apply_linkage(fm, linkage)
     fm["last_reviewed"] = _today()
 
     _write(path, fm, new_body, wiki_root=wiki_root)
@@ -345,6 +392,7 @@ def append_marker_chapter(
     slice_from_turn: int,
     slice_to_turn: int,
     facts: SessionFacts | None = None,
+    linkage: Linkage | None = None,
     wiki_root: Path | None = None,
 ) -> int:
     """Append a deterministic marker chapter (failed or withheld).
@@ -374,6 +422,7 @@ def append_marker_chapter(
     )
     fm["chapters"] = chapters
     _apply_facts(fm, facts)
+    _apply_linkage(fm, linkage)
     fm["last_reviewed"] = _today()
 
     _write(path, fm, new_body, wiki_root=wiki_root)
@@ -384,6 +433,7 @@ def close_note(
     path: Path,
     *,
     facts: SessionFacts | None = None,
+    linkage: Linkage | None = None,
     wiki_root: Path | None = None,
 ) -> None:
     """Finalize the note: mark it closed and immutable.
@@ -396,6 +446,7 @@ def close_note(
 
     fm["note_status"] = _CLOSED
     _apply_facts(fm, facts)
+    _apply_linkage(fm, linkage)
     fm["last_reviewed"] = _today()
     _write(path, fm, body, wiki_root=wiki_root)
 

@@ -99,6 +99,19 @@ def _has_remote(wiki_dir: Path) -> bool:
     return _git(wiki_dir, "remote").stdout.strip() != ""
 
 
+def has_remote(wiki_dir: Path) -> bool:
+    """Public: True iff ``wiki_dir`` is a git repo with at least one remote.
+
+    A wiki with a remote is a *shared* vault — content pushed to it is
+    visible to every other clone/teammate. Callers outside this module
+    (the attach flow's shared-vault consent gate) use this instead of
+    reaching into the private ``_has_remote``.
+    """
+    if not (wiki_dir / ".git").exists():
+        return False
+    return _has_remote(wiki_dir)
+
+
 def _is_clean(wiki_dir: Path) -> bool:
     return _git(wiki_dir, "status", "--porcelain").stdout.strip() == ""
 

@@ -215,28 +215,15 @@ def test_backward_compat_no_role_defaults_to_a(tmp_path: Path):
     assert records[-1]["role"] == "a"
 
 
-def test_curator_b_counters(tmp_path: Path):
-    with RunLogger(tmp_path, trigger="hook", role="b") as logger:
-        logger.emit("cluster-formed", surface_names=["decisions"], note_count=3)
-        logger.emit("cluster-formed", surface_names=["concepts"], note_count=2)
-        logger.emit("surface-filed", surface_name="decisions", title="Auth migration", path="d.md")
-        logger.emit("skip", reason="validation")
-    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    records = [json.loads(l) for l in archival.read_text().splitlines()]
-    end = records[-1]
-    assert end["clusters_formed"] == 2
-    assert end["surfaces_emitted"] == 1
-    assert end["skipped"] == 1
-
-
-def test_curator_c_counters(tmp_path: Path):
+def test_hygiene_pass_counters(tmp_path: Path):
+    """The retained `lore curator [--wiki] [--apply]` hygiene pass tags its
+    run-log entries role="c" and counts action-applied/action-skipped.
+    """
     with RunLogger(tmp_path, trigger="hook", role="c") as logger:
         logger.emit("wiki-start", wiki="private")
         logger.emit("action-applied", kind="review_stale", path="n.md", reason="90d")
         logger.emit("action-applied", kind="mark_superseded", path="m.md", reason="newer")
         logger.emit("action-skipped", path="x.md", reason="mtime changed")
-        logger.emit("defrag-pass", wiki="private", summary={"adjacent_merge": 1})
-        logger.emit("wiki-skip", wiki="ccat", reason="already_ran_this_iso_week")
     archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
     records = [json.loads(l) for l in archival.read_text().splitlines()]
     end = records[-1]
@@ -244,20 +231,19 @@ def test_curator_c_counters(tmp_path: Path):
     assert end["actions_skipped"] == 1
     kinds = [r["type"] for r in records[1:-1]]
     assert "wiki-start" in kinds
-    assert "defrag-pass" in kinds
-    assert "wiki-skip" in kinds
 
 
-def test_new_record_types_not_downgraded(tmp_path: Path):
-    """New B/C record types should not be downgraded to 'warning'."""
-    new_types = ["cluster-formed", "surface-filed", "action-applied",
-                 "action-skipped", "defrag-pass", "wiki-start", "wiki-skip"]
-    with RunLogger(tmp_path, trigger="hook", role="b") as logger:
-        for rt in new_types:
+def test_retired_record_types_downgraded_to_warning(tmp_path: Path):
+    """Curator B/C ambition record types are gone; emitting them now falls
+    back to 'warning' rather than being written verbatim.
+    """
+    retired_types = ["cluster-formed", "surface-filed", "defrag-pass", "wiki-skip"]
+    with RunLogger(tmp_path, trigger="hook", role="a") as logger:
+        for rt in retired_types:
             logger.emit(rt, detail="test")
     archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
     records = [json.loads(l) for l in archival.read_text().splitlines()]
     emitted_types = [r["type"] for r in records]
-    for rt in new_types:
-        assert rt in emitted_types, f"{rt} was downgraded to warning"
-    assert "warning" not in emitted_types
+    for rt in retired_types:
+        assert rt not in emitted_types
+    assert emitted_types.count("warning") == len(retired_types)

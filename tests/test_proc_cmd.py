@@ -40,12 +40,12 @@ def test_list_no_logs(lore_root: Path) -> None:
 
 def test_list_with_logs(proc_dir: Path) -> None:
     (proc_dir / "a.log").write_text("some output\n")
-    (proc_dir / "b.log").write_text("")
+    (proc_dir / "transcripts.log").write_text("")
 
     result = runner.invoke(_get_app(), ["list"])
     assert result.exit_code == 0
     assert "a" in result.output
-    assert "b" in result.output
+    assert "transcripts" in result.output
 
 
 def test_list_detects_errors(proc_dir: Path) -> None:

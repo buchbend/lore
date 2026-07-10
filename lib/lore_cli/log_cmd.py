@@ -88,13 +88,7 @@ def _read_hook_events(lore_root: Path, since: datetime) -> list[TimelineEntry]:
     return entries
 
 
-def _run_end_label(role: str, rec: dict) -> str:
-    if role == "b":
-        n = rec.get("surfaces_emitted", 0)
-        return f"{n} surface{'s' if n != 1 else ''}"
-    if role == "c":
-        n = rec.get("actions_applied", 0)
-        return f"{n} action{'s' if n != 1 else ''}"
+def _run_end_label(rec: dict) -> str:
     n = rec.get("notes_new", 0)
     return f"{n} note{'s' if n != 1 else ''}"
 
@@ -141,7 +135,7 @@ def _read_run_events(
                     duration = rec.get("duration_ms", 0)
                     entries.append(TimelineEntry(
                         ts=ts, kind="run-end", event=event_name,
-                        outcome=_run_end_label(role, rec),
+                        outcome=_run_end_label(rec),
                         detail=f"{duration / 1000:.1f}s",
                         raw=rec,
                     ))
@@ -166,7 +160,7 @@ def _read_proc_events(lore_root: Path, since: datetime) -> list[TimelineEntry]:
     if not proc_dir.exists():
         return []
     entries: list[TimelineEntry] = []
-    for role in ("a", "b", "c", "transcripts"):
+    for role in ("a", "transcripts"):
         for meta_path in sorted(proc_dir.glob(f"{role}.meta.json*")):
             try:
                 meta = json.loads(meta_path.read_text())

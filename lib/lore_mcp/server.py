@@ -22,6 +22,8 @@ Exposed tools:
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
     lore_repo_docs_fetch    — fetch one ADR or PRD's content (pull-only)
     lore_codemap            — bounded code-map query (symbols/directory/top-N)
+    lore_context_pack       — bounded pointer pack (sessions/ADR/PRD/epic state)
+                              joined from linkage frontmatter, given cwd/branch/issue
 
 Start:
     lore mcp
@@ -507,12 +509,16 @@ def handle_briefing_gather(
     wiki: str,
     since: str | None = None,
     include_body_sections: bool = True,
+    epic: int | None = None,
 ) -> dict[str, Any]:
     """Read-only briefing gather. Delegates to lore_core.briefing.gather()."""
     from lore_core.briefing import gather
 
     return gather(
-        wiki=wiki, since=since, include_body_sections=include_body_sections
+        wiki=wiki,
+        since=since,
+        include_body_sections=include_body_sections,
+        epic=epic,
     )
 
 
@@ -1043,6 +1049,23 @@ def handle_repo_docs_fetch(kind: str, path: str, repo_path: str | None = None) -
     return {"schema": "lore.repo_docs.fetch/1", "kind": kind, **doc}
 
 
+def handle_context_pack(
+    cwd: str | None = None,
+    branch: str | None = None,
+    issue: int | None = None,
+    repo_path: str | None = None,
+) -> dict[str, Any]:
+    """Bounded pointer pack for cwd/branch/issue, joined on linkage frontmatter.
+
+    Cold start (no git repo, no vault, no attached scope) degrades to a
+    well-formed empty pack rather than an error — this is a planning
+    front door and must always return something usable.
+    """
+    from lore_core.context_pack import gather
+
+    return gather(cwd=cwd, branch=branch, issue=issue, repo_path=repo_path)
+
+
 def handle_codemap(
     mode: str,
     repo_path: str | None = None,
@@ -1278,6 +1301,13 @@ def _tool_schema() -> list[dict]:
                         "type": "boolean",
                         "default": True,
                         "description": "Extract H2 sections per session",
+                    },
+                    "epic": {
+                        "type": "integer",
+                        "description": (
+                            "Filter to sessions whose `linkage.epics` "
+                            "names this epic number."
+                        ),
                     },
                 },
                 "required": ["wiki"],
@@ -1526,6 +1556,45 @@ def _tool_schema() -> list[dict]:
                 "required": ["kind", "path"],
             },
         },
+        {
+            "name": "lore_context_pack",
+            "description": (
+                "Bounded pointer pack (recent session notes, ADR/PRD entries, "
+                "epic state) for a cwd/branch/issue, joined purely on linkage "
+                "frontmatter — never an LLM call, never FTS ranking dressed up "
+                "as a join. Cold start (no repo, no vault, no attached scope) "
+                "returns a well-formed empty pack, never an error. Bodies are "
+                "pulled selectively afterward via `lore_read`/`lore_repo_docs_fetch`."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "cwd": {
+                        "type": "string",
+                        "description": (
+                            "Working directory to resolve repo/scope from. "
+                            "Defaults to the server's cwd."
+                        ),
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Override branch (defaults to the repo's current branch).",
+                    },
+                    "issue": {
+                        "type": "integer",
+                        "description": "Explicit issue/epic number to widen the focus set.",
+                    },
+                    "repo_path": {
+                        "type": "string",
+                        "description": (
+                            "Override the repo root. Defaults to the git repo "
+                            "containing the server's working directory."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
     ]
 
 
@@ -1577,6 +1646,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_tier_resolve(**args)
         case "lore_codemap":
             return handle_codemap(**args)
+        case "lore_context_pack":
+            return handle_context_pack(**args)
         case _:
             return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
 

@@ -104,6 +104,30 @@ def test_first_heartbeat_creates_note_document_note(tmp_path):
     assert view.frontmatter["scope"] == "proj:x"
 
 
+def test_first_heartbeat_records_linkage_frontmatter(tmp_path):
+    (tmp_path / ".lore" / "buffers").mkdir(parents=True)
+    wiki_root = tmp_path / "wiki" / "private"
+    result = ensure_note(
+        outcome=_append(tmp_path),
+        scope=_scope(),
+        transcript=_handle(tmp_path),
+        wiki_root=wiki_root,
+        work_time=_NOW,
+        handle_label="",
+        integration="claude-code",
+    )
+    view = nd.read_note(result.path)
+    assert view.frontmatter["linkage"] == {
+        "schema_version": 1,
+        "repo": "",
+        "branch": "",
+        "issues": [],
+        "prs": [],
+        "epics": [],
+        "author": "",
+    }
+
+
 def test_stub_path_is_stamped_and_reused(tmp_path):
     (tmp_path / ".lore" / "buffers").mkdir(parents=True)
     wiki_root = tmp_path / "wiki" / "private"
@@ -132,6 +156,42 @@ def test_stub_path_is_stamped_and_reused(tmp_path):
     assert second.path == first.path
     notes = list((wiki_root / "sessions").rglob("*.md"))
     assert len(notes) == 1
+
+
+def test_two_authors_same_minute_same_slug_both_get_notes(tmp_path, monkeypatch):
+    """Two authors' first heartbeats racing on an identical slug in the
+    same minute must not have the second clobber the first's note.
+
+    Neither is in team mode (no _users.yml), so both land in the same
+    flat sessions/ dir — the collision scenario AC1 guards against.
+    """
+    (tmp_path / ".lore" / "buffers").mkdir(parents=True)
+    wiki_root = tmp_path / "wiki" / "private"
+    monkeypatch.setattr("lore_curator.session_note._derive_slug", lambda **kw: "fixed-a-bug")
+
+    alice = ensure_note(
+        outcome=_append(tmp_path, tid="alice-session"),
+        scope=_scope(),
+        transcript=_handle(tmp_path),
+        wiki_root=wiki_root,
+        work_time=_NOW,
+        handle_label="alice",
+        integration="claude-code",
+    )
+    bob = ensure_note(
+        outcome=_append(tmp_path, tid="bob-session"),
+        scope=_scope(),
+        transcript=_handle(tmp_path),
+        wiki_root=wiki_root,
+        work_time=_NOW,
+        handle_label="bob",
+        integration="claude-code",
+    )
+    assert alice.path != bob.path
+    assert alice.path.exists()
+    assert bob.path.exists()
+    assert nd.read_note(alice.path).frontmatter["user"] == "alice"
+    assert nd.read_note(bob.path).frontmatter["user"] == "bob"
 
 
 def test_noop_heartbeat_returns_none(tmp_path):

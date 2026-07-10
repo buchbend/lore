@@ -237,16 +237,16 @@ def test_legacy_stamp_migration_unlinks_old_files(tmp_path: Path) -> None:
 
 
 def test_per_role_locks_are_independent(tmp_path: Path) -> None:
-    """Curator A lock does not block Curator B spawn, and vice versa."""
+    """Curator A lock does not block a transcript-sync spawn, and vice versa."""
     lore_root = _make_lore_root(tmp_path)
 
     from unittest.mock import patch
-    from lore_cli.hooks import _spawn_detached_curator_a, _spawn_detached_curator_b
+    from lore_cli.hooks import _spawn_detached_curator_a, _spawn_detached_transcript_sync
 
     with patch("subprocess.Popen") as popen:
         a_result = _spawn_detached_curator_a(lore_root, cooldown_s=60)
-        b_result = _spawn_detached_curator_b(lore_root, "testwiki", cooldown_s=60)
+        transcripts_result = _spawn_detached_transcript_sync(lore_root, cooldown_s=60)
 
     assert a_result is True
-    assert b_result is True
+    assert transcripts_result is True
     assert popen.call_count == 2, "both roles should have independently spawned"

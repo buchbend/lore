@@ -20,15 +20,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lore_core import note_document as nd
+from lore_core.linkage import Linkage, extract_linkage
 from lore_core.note_document import SessionFacts
 from lore_core.types import Scope, TranscriptHandle
 
 from lore_curator.buffer_append import AppendOutcome
 from lore_curator.buffer_store import Buffer, ReplayedBuffer, Sidecar
+from lore_curator.session_activity import collect_commits_by_sha
 from lore_curator.stub_note import (
+    _claim_first_write_slot,
     _derive_slug,
     _placeholder_title,
-    _resolve_first_write_path,
 )
 
 if TYPE_CHECKING:
@@ -40,6 +42,7 @@ __all__ = [
     "ensure_note",
     "ensure_note_from_sidecar",
     "facts_from_replay",
+    "linkage_from_replay",
 ]
 
 
@@ -65,6 +68,31 @@ def facts_from_replay(rb: ReplayedBuffer, *, duration_seconds: int = 0) -> Sessi
         files_read=list(rb.files_read),
         projects=list(rb.projects),
         duration_seconds=duration_seconds,
+    )
+
+
+def linkage_from_replay(
+    rb: ReplayedBuffer,
+    *,
+    cwd: str,
+    wiki_root: Path,
+    handle: str,
+) -> Linkage:
+    """Build the deterministic linkage snapshot from a replayed buffer.
+
+    Resolves commit subject/body text via ``collect_commits_by_sha`` (this
+    module's own curator layer), then hands off to
+    ``lore_core.linkage.extract_linkage`` for repo/branch/ref classification —
+    keeping that module free of any curator-layer import.
+    """
+    repo_root = Path(cwd) if cwd else None
+    commits = collect_commits_by_sha(repo_root, list(rb.commit_shas))
+    commit_texts = [f"{c.subject}\n{c.body}".strip() for c in commits]
+    return extract_linkage(
+        cwd=cwd or None,
+        commit_texts=commit_texts,
+        wiki_root=wiki_root,
+        handle=handle,
     )
 
 
@@ -105,26 +133,34 @@ def ensure_note(
         scope=scope,
         work_time=work_time,
     )
-    path = _resolve_first_write_path(
+
+    def _write(candidate: Path) -> None:
+        nd.create_note(
+            candidate,
+            title=_placeholder_title(scope, work_time),
+            description="Lab-notebook session note.",
+            scope=scope.scope,
+            handle=handle_label or None,
+            created=work_time.date().isoformat(),
+            facts=facts_from_replay(rb),
+            linkage=linkage_from_replay(
+                rb, cwd=sidecar.cwd, wiki_root=wiki_root, handle=handle_label
+            ),
+            extra_frontmatter={
+                "transcript_id": sidecar.transcript_id or transcript.id,
+                "integration": integration or transcript.integration,
+                "buffer_stem": buffer.stem,
+            },
+            wiki_root=wiki_root,
+            exclusive=True,
+        )
+
+    path = _claim_first_write_slot(
         wiki_root=wiki_root,
         handle_label=handle_label,
         work_time=work_time,
         slug=slug,
-    )
-    nd.create_note(
-        path,
-        title=_placeholder_title(scope, work_time),
-        description="Lab-notebook session note.",
-        scope=scope.scope,
-        handle=handle_label or None,
-        created=work_time.date().isoformat(),
-        facts=facts_from_replay(rb),
-        extra_frontmatter={
-            "transcript_id": sidecar.transcript_id or transcript.id,
-            "integration": integration or transcript.integration,
-            "buffer_stem": buffer.stem,
-        },
-        wiki_root=wiki_root,
+        write_fn=_write,
     )
     with buffer.with_lock():
         buffer.patch(stub_path=str(path))
@@ -188,26 +224,34 @@ def ensure_note_from_sidecar(
         scope=scope,
         work_time=work_time,
     )
-    path = _resolve_first_write_path(
+
+    def _write(candidate: Path) -> None:
+        nd.create_note(
+            candidate,
+            title=_placeholder_title(scope, work_time),
+            description="Lab-notebook session note.",
+            scope=sidecar.scope,
+            handle=sidecar.handle or None,
+            created=work_time.date().isoformat(),
+            facts=facts_from_replay(rb),
+            linkage=linkage_from_replay(
+                rb, cwd=sidecar.cwd, wiki_root=wiki_root, handle=sidecar.handle
+            ),
+            extra_frontmatter={
+                "transcript_id": sidecar.transcript_id,
+                "integration": sidecar.integration,
+                "buffer_stem": buffer.stem,
+            },
+            wiki_root=wiki_root,
+            exclusive=True,
+        )
+
+    path = _claim_first_write_slot(
         wiki_root=wiki_root,
         handle_label=sidecar.handle,
         work_time=work_time,
         slug=slug,
-    )
-    nd.create_note(
-        path,
-        title=_placeholder_title(scope, work_time),
-        description="Lab-notebook session note.",
-        scope=sidecar.scope,
-        handle=sidecar.handle or None,
-        created=work_time.date().isoformat(),
-        facts=facts_from_replay(rb),
-        extra_frontmatter={
-            "transcript_id": sidecar.transcript_id,
-            "integration": sidecar.integration,
-            "buffer_stem": buffer.stem,
-        },
-        wiki_root=wiki_root,
+        write_fn=_write,
     )
     buffer.patch(stub_path=str(path))
     if logger is not None:

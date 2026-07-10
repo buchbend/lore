@@ -90,6 +90,7 @@ OPTIONAL_FIELDS: set[str] = {
     "source",  # str — original filename for extracted notes
     "publish",  # bool — for Quartz / static-site filtering
     "aliases",  # list[str] — alternative names (Obsidian convention)
+    "linkage",  # dict — deterministic capture-time linkage (linkage.py, schema_version=1)
     # v2 session-note additions
     "user",  # str — canonical handle (identity-aliasing.md)
     "implements",  # list[str] — proposal slugs this session realizes

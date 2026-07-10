@@ -26,12 +26,8 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from lore_core.hook_log import HookEventLogger
-
-if TYPE_CHECKING:
-    from datetime import datetime
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +39,7 @@ if TYPE_CHECKING:
 def _stamp_within_cooldown(stamp: Path, cooldown_s: int) -> bool:
     """True if stamp exists and is younger than cooldown_s seconds."""
     import time as _time
+
     try:
         last = float(stamp.read_text().strip())
     except (OSError, ValueError):
@@ -53,6 +50,7 @@ def _stamp_within_cooldown(stamp: Path, cooldown_s: int) -> bool:
 def _write_stamp(stamp: Path) -> None:
     """Atomic write of current unix timestamp into stamp. Best-effort."""
     import time as _time
+
     stamp.parent.mkdir(parents=True, exist_ok=True)
     tmp = stamp.with_suffix(stamp.suffix + ".tmp")
     tmp.write_text(f"{_time.time():.6f}")
@@ -115,6 +113,7 @@ def _open_proc_log(lore_root: Path, role: str, *, keep: int = 3) -> int | None:
 def _rotate_meta_sidecar(proc_dir: Path, role: str, *, keep: int = 3) -> None:
     """Rotate <role>.meta.json alongside proc logs. Best-effort."""
     import contextlib
+
     with contextlib.suppress(OSError):
         (proc_dir / f"{role}.meta.json.{keep}").unlink(missing_ok=True)
     for i in range(keep, 1, -1):
@@ -154,9 +153,7 @@ def _process_is_ours(pid: int) -> bool:
     return b"lore_cli" in cmdline
 
 
-def _prior_spawn_runaway(
-    lore_root: Path, role: str, *, runaway_age_s: int
-) -> dict | None:
+def _prior_spawn_runaway(lore_root: Path, role: str, *, runaway_age_s: int) -> dict | None:
     """Return runaway-process info if the prior spawn for ``role`` is hung.
 
     "Hung" = sidecar meta.json says ``exit_code is None`` AND its recorded
@@ -221,22 +218,16 @@ def _spawn_detached(
     import subprocess
     from lore_core.lockfile import try_acquire_spawn_lock
 
-    effective_runaway = (
-        runaway_age_s if runaway_age_s is not None else cooldown_s * 5
-    )
+    effective_runaway = runaway_age_s if runaway_age_s is not None else cooldown_s * 5
 
     with try_acquire_spawn_lock(lore_root, role) as (held, stamp):
         if not held:
             return False
         if _stamp_within_cooldown(stamp, cooldown_s):
             return False
-        runaway = _prior_spawn_runaway(
-            lore_root, role, runaway_age_s=effective_runaway
-        )
+        runaway = _prior_spawn_runaway(lore_root, role, runaway_age_s=effective_runaway)
         if runaway is not None:
-            warn_stamp = (
-                lore_root / ".lore" / f"curator-{role}.runaway.stamp"
-            )
+            warn_stamp = lore_root / ".lore" / f"curator-{role}.runaway.stamp"
             if not _stamp_within_cooldown(warn_stamp, cooldown_s * 10):
                 try:
                     HookEventLogger(lore_root).emit(
@@ -271,8 +262,12 @@ def _spawn_detached(
         meta_path = proc_dir / f"{role}.meta.json"
         _rotate_meta_sidecar(proc_dir, role)
         wrapped_cmd = [
-            sys.executable, "-m", "lore_cli._proc_wrapper",
-            str(meta_path), "--", *cmd,
+            sys.executable,
+            "-m",
+            "lore_cli._proc_wrapper",
+            str(meta_path),
+            "--",
+            *cmd,
         ]
         try:
             subprocess.Popen(
@@ -296,36 +291,6 @@ def _spawn_detached(
 
 
 # ---------------------------------------------------------------------------
-# Curator-C scheduling helpers — co-located with the role definition that
-# uses them (PRD §11). Pure functions, no I/O beyond ``git config``.
-# ---------------------------------------------------------------------------
-
-
-def _curator_c_email() -> str:
-    """Resolve git user.email → hostname fallback → empty (offset=0)."""
-    from lore_core.git import git_user_email
-    return git_user_email(fallback_hostname=True)
-
-
-def _curator_c_jitter_seconds(email: str) -> int:
-    """Deterministic 0-48h offset from SHA-256(email). Empty → 0 (fire at Monday 00Z)."""
-    import hashlib
-    if not email:
-        return 0
-    h = hashlib.sha256(email.encode()).hexdigest()[:8]
-    return int(h, 16) % 172800  # 48h in seconds
-
-
-def _iso_week_monday_utc(ts: "datetime") -> "datetime":
-    """Monday 00:00Z of the ISO week containing ts."""
-    from datetime import UTC, datetime as _dt
-    from datetime import timedelta
-    weekday = ts.isocalendar().weekday  # 1..7, Monday=1
-    date = ts.date() - timedelta(days=weekday - 1)
-    return _dt(date.year, date.month, date.day, tzinfo=UTC)
-
-
-# ---------------------------------------------------------------------------
 # SpawnRole registry + the single public ``spawn()`` entry point
 # ---------------------------------------------------------------------------
 
@@ -335,9 +300,9 @@ class SpawnRole:
     """One row in the spawn-role registry.
 
     ``argv_builder`` is called with the keyword arguments forwarded from
-    :func:`spawn` (currently only Curator B uses one — ``wiki_name``).
-    The returned argv is the *child* command; ``_spawn_detached`` wraps it
-    in ``python -m lore_cli._proc_wrapper`` for sidecar lifecycle tracking.
+    :func:`spawn`. The returned argv is the *child* command;
+    ``_spawn_detached`` wraps it in ``python -m lore_cli._proc_wrapper``
+    for sidecar lifecycle tracking.
     """
 
     name: str
@@ -350,32 +315,23 @@ SPAWN_ROLES: dict[str, SpawnRole] = {
     "a": SpawnRole(
         name="a",
         argv_builder=lambda: [
-            sys.executable, "-m", "lore_cli", "curator", "run",
+            sys.executable,
+            "-m",
+            "lore_cli",
+            "curator",
+            "run",
         ],
         default_cooldown_s=60,
         migrate_stamp=True,
     ),
-    "b": SpawnRole(
-        name="b",
-        argv_builder=lambda *, wiki_name: [
-            sys.executable, "-m", "lore_cli",
-            "curator", "run", "--abstract", "--wiki", wiki_name,
-        ],
-        default_cooldown_s=300,
-        migrate_stamp=True,
-    ),
-    "c": SpawnRole(
-        name="c",
-        argv_builder=lambda: [
-            sys.executable, "-m", "lore_cli",
-            "curator", "run", "--defrag",
-        ],
-        default_cooldown_s=3600,
-    ),
     "transcripts": SpawnRole(
         name="transcripts",
         argv_builder=lambda: [
-            sys.executable, "-m", "lore_cli", "transcripts", "sync",
+            sys.executable,
+            "-m",
+            "lore_cli",
+            "transcripts",
+            "sync",
         ],
         default_cooldown_s=300,
     ),
@@ -386,16 +342,18 @@ SPAWN_ROLES: dict[str, SpawnRole] = {
     "sweep": SpawnRole(
         name="sweep",
         argv_builder=lambda: [
-            sys.executable, "-m", "lore_cli", "curator", "sweep",
+            sys.executable,
+            "-m",
+            "lore_cli",
+            "curator",
+            "sweep",
         ],
         default_cooldown_s=60,
     ),
 }
 
 
-def spawn(
-    role: str, lore_root: Path, *, cooldown_s: int | None = None, **extra
-) -> bool:
+def spawn(role: str, lore_root: Path, *, cooldown_s: int | None = None, **extra) -> bool:
     """Public entry point — fire-and-forget the registered subprocess for ``role``.
 
     Looks up :data:`SPAWN_ROLES`, builds the argv (forwarding ``**extra``
@@ -409,9 +367,7 @@ def spawn(
         lore_root,
         role_def.name,
         role_def.argv_builder(**extra),
-        cooldown_s=(
-            cooldown_s if cooldown_s is not None else role_def.default_cooldown_s
-        ),
+        cooldown_s=(cooldown_s if cooldown_s is not None else role_def.default_cooldown_s),
         migrate_stamp=role_def.migrate_stamp,
     )
 
@@ -428,23 +384,7 @@ def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
     return spawn("a", lore_root, cooldown_s=cooldown_s)
 
 
-def _spawn_detached_curator_b(
-    lore_root: Path, wiki_name: str, *, cooldown_s: int = 300
-) -> bool:
-    """Fire-and-forget `lore curator run --abstract --wiki <name>` subprocess."""
-    return spawn("b", lore_root, cooldown_s=cooldown_s, wiki_name=wiki_name)
-
-
-def _spawn_detached_curator_c(
-    lore_root: Path, *, cooldown_s: int = 3600
-) -> bool:
-    """Fire-and-forget `lore curator run --defrag` subprocess (Curator C)."""
-    return spawn("c", lore_root, cooldown_s=cooldown_s)
-
-
-def _spawn_detached_transcript_sync(
-    lore_root: Path, *, cooldown_s: int = 300
-) -> bool:
+def _spawn_detached_transcript_sync(lore_root: Path, *, cooldown_s: int = 300) -> bool:
     """Fire-and-forget ``lore transcripts sync`` subprocess.
 
     Runs on the same spawn-lock + cooldown pattern as the curators, so

@@ -139,6 +139,38 @@ in O(n log n) over registered attachments.
 This file answers: "on this host, when I'm in directory X, which
 wiki+scope am I working in?"
 
+### Shared-vault consent & leak semantics
+
+A wiki with no git remote is **private by default** — nothing it holds
+ever leaves the machine. A wiki with a git remote is a **shared
+vault**: every teammate with read access to that remote can see every
+composed session note committed there.
+
+Attaching a scope to a shared vault is the moment sharing starts, so
+it's the moment consent is asked. `lore attach accept` / `lore attach
+manual` route through `_confirm_shared_vault()`
+(`lore_cli/attach_cmd.py`), which checks `git_sync.has_remote()` on the
+target wiki before writing the attachment row:
+
+- **No remote** — no-op, nothing to consent to.
+- **Remote, interactive terminal** — a y/N prompt, printed before the
+  row is written.
+- **Remote, non-interactive** — refused (exit 1) unless the caller
+  passes `--confirm-shared`; non-interactive callers never get routed
+  to a shared vault silently.
+
+**The gate reduces but cannot eliminate leaks.** It stops accidental
+first-time routing to a shared vault; it does not scan note content.
+If a secret ends up in a composed note, git history retains it even
+after the note is edited or deleted — the remedy is **rotating the
+credential**, not scrubbing history.
+
+**Transcripts and buffers never leave local state.** They live under
+`<lore_root>/.lore/` (`transcript-ledger.json`, `buffers/`), a sibling
+of `wiki/` — never a descendant — so a `git push` of a wiki directory
+structurally cannot ship them. Only composed, gate-passed notes
+written into `wiki/<name>/sessions/` are ever pushed.
+
 ---
 
 ## How they collaborate

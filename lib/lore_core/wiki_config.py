@@ -18,13 +18,6 @@ class GitConfig:
 
 
 @dataclass
-class CuratorCConfig:
-    enabled: bool = False
-    mode: str = "local"                 # local | central
-    defrag_body_writes: bool = False    # gates orphan-link in-place body rewrites
-
-
-@dataclass
 class CuratorConfig:
     # Spawn gate — Curator A fires when EITHER condition is true per wiki:
     #   new_turns ≥ threshold_pending_turns   (sum across pending entries)
@@ -36,8 +29,6 @@ class CuratorConfig:
     max_pending_age_s: int = 600
     a_noteworthy_tier: str = "middle"    # middle | simple
     curator_a_cooldown_s: int = 60
-    curator_b_cooldown_s: int = 300
-    curator_c: CuratorCConfig = field(default_factory=CuratorCConfig)
     # Buffer-and-flush curator (per the very-good-thats-the-mossy-lobster plan).
     # All knobs land here so a wiki using a low-capacity local LLM can shrink
     # the cap without touching the global flag (which lives in root_config).

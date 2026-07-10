@@ -281,7 +281,6 @@ def test_wiki_ledger_defaults_on_missing_file(tmp_path: Path) -> None:
     entry = wl.read()
     assert entry.wiki == "myproject"
     assert entry.last_curator_a is None
-    assert entry.last_curator_b is None
     assert entry.last_briefing is None
     assert entry.pending_transcripts == 0
     assert entry.pending_tokens_est == 0
@@ -297,7 +296,6 @@ def test_wiki_ledger_write_read_roundtrip(tmp_path: Path) -> None:
     entry = WikiLedgerEntry(
         wiki="proj",
         last_curator_a=datetime(2026, 4, 18, 9, 0, 0, tzinfo=UTC),
-        last_curator_b=datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC),
         last_briefing=datetime(2026, 4, 18, 11, 0, 0, tzinfo=UTC),
         pending_transcripts=3,
         pending_tokens_est=15000,
@@ -306,7 +304,6 @@ def test_wiki_ledger_write_read_roundtrip(tmp_path: Path) -> None:
     result = wl.read()
     assert result.wiki == "proj"
     assert result.last_curator_a == datetime(2026, 4, 18, 9, 0, 0, tzinfo=UTC)
-    assert result.last_curator_b == datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
     assert result.last_briefing == datetime(2026, 4, 18, 11, 0, 0, tzinfo=UTC)
     assert result.pending_transcripts == 3
     assert result.pending_tokens_est == 15000
