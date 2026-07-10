@@ -156,6 +156,22 @@ def _lead_for_rename(chapter: Chapter) -> str:
     return lead.strip()
 
 
+def _topic_title(scope_label: str, chapter: Chapter) -> str:
+    """Return the scope-prefixed frontmatter title for a composed chapter.
+
+    Note-format v2 (#222): `scope: name` — the linkage scope first, then a
+    compiled human-readable name from the chapter's first lead. Reuses
+    ``_lead_for_rename``'s same-source, same-fallback text so the filename
+    slug and the frontmatter title always describe the same topic. Returns
+    ``""`` under the same no-usable-lead conditions — the caller keeps the
+    placeholder title in that case.
+    """
+    lead = _lead_for_rename(chapter)
+    if not lead:
+        return ""
+    return f"{scope_label}: {lead.rstrip('.').strip()}"
+
+
 def _resolve_renamed_path(note_path: Path, slug: str) -> Path:
     """Return the rename target for ``note_path`` once ``slug`` is known.
 

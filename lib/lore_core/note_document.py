@@ -148,11 +148,15 @@ class NoteView:
 
 
 def _render_block(block: TopicBlock) -> str:
+    # Note-format v2 (#222): the lead sentence stays inline with its body in
+    # one paragraph — a reader reads the bold sentence and bails or reads on,
+    # instead of a standalone bold line floating above a blank-line gap.
     lead = f"Continued: {block.continued_topic}" if block.continued else block.lead
-    parts = [f"**{lead.strip()}**"]
+    lead_para = f"**{lead.strip()}**"
     body = (block.body or "").strip()
     if body:
-        parts.append(body)
+        lead_para = f"{lead_para} {body}"
+    parts = [lead_para]
     quote = (block.quote or "").strip()
     if quote:
         parts.append(f'> "{quote}"')
@@ -353,8 +357,14 @@ def append_chapter(
     facts: SessionFacts | None = None,
     linkage: Linkage | None = None,
     wiki_root: Path | None = None,
+    title: str | None = None,
 ) -> int:
     """Append a chapter of topic blocks; record its slice turn range.
+
+    ``title``, if given, replaces the placeholder frontmatter title — but
+    only on chapter 1 (note-format v2, #222). The LLM never composes a
+    title; the flush derives one deterministically from the first chapter's
+    lead and passes it here.
 
     Returns the 1-based chapter number. Raises :class:`NoteClosedError`
     if the note is closed — the file is left untouched in that case.
@@ -363,6 +373,8 @@ def append_chapter(
     _guard_open(fm, path)
 
     n = _next_chapter_n(fm)
+    if title and n == 1:
+        fm["title"] = title
     segment = _render_topic_chapter(n, chapter, slice_from_turn, slice_to_turn)
     new_body = f"{body.rstrip()}\n\n{segment}"
 
