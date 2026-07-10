@@ -16,6 +16,7 @@ from lore_workflow.board_parser import BoardParseError, parse_board
 from lore_workflow.epic_policy import resolve_epic_policy
 from lore_workflow.prd_docs import create_prd
 from lore_workflow.roadmap_validator import roadmap_counts, validate_roadmap
+from lore_workflow.seed_epic import compose_seed_lift
 from rich.console import Console
 
 from lore_cli._argv_compat import argv_main
@@ -114,6 +115,32 @@ def epic_policy_cmd(
     print(
         json.dumps(
             {"target_branch": policy.target_branch, "deploy_gate": policy.deploy_gate}
+        )
+    )
+
+
+@app.command("seed-lift")
+def seed_lift_cmd(
+    note_path: Path = typer.Argument(..., help="Path to the session note to lift from."),
+    wiki_root: Path | None = typer.Option(
+        None, "--wiki-root", help="Wiki root; when given, source_note is recorded wiki-relative."
+    ),
+) -> None:
+    """Lift Origin/Findings for a seed issue from a session note.
+
+    Prints `{origin, findings, source_note}` as JSON on success. Exits 1
+    when the note is missing or too thin to say anything a freehand pass
+    wouldn't already have — the skill's signal to fall back to freehand.
+    """
+    lift = compose_seed_lift(note_path, wiki_root=wiki_root)
+    if lift is None:
+        console.print("[yellow]no usable note[/yellow]: fall back to freehand Origin/Findings")
+        raise typer.Exit(code=1)
+    # Plain (uncolored) JSON: this is machine output for the skill to parse,
+    # not a human-facing message like the other subcommands' console.print.
+    typer.echo(
+        json.dumps(
+            {"origin": lift.origin, "findings": lift.findings, "source_note": lift.source_note}
         )
     )
 
