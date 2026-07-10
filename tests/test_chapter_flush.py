@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from lore_core import note_document as nd
 from lore_core import quarantine
+from lore_core.schema import parse_frontmatter
 from lore_core.types import Turn
 from lore_core.wiki_config import WikiConfig
 from lore_curator.buffer_append import append_chunk
@@ -328,6 +329,36 @@ def test_first_chapter_rename_reflects_topic_lead(tmp_path):
 
     reopened = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
     assert reopened.read_sidecar().stub_path == str(outcome.note_path)
+
+
+def test_first_chapter_sets_scope_prefixed_title(tmp_path):
+    """Note-format v2 (#222): frontmatter title becomes `scope: name` —
+    scope first, then the composed name — and the body's lead sentence
+    stays inline with its prose rather than a standalone bold line.
+    """
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 4)
+    buf = _append(lore_root, all_turns)
+    client = _Client(
+        [_chapter_payload("Traced the flush race", "Found the race in the reaper.", 2)]
+    )
+
+    outcome = synth_in_place(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+    assert outcome.status == "composed"
+
+    text = outcome.note_path.read_text()
+    fm = parse_frontmatter(text)
+    assert fm["title"] == "proj:x: Traced the flush race"
+    assert "**Traced the flush race** Found the race in the reaper." in text
 
 
 def test_second_chapter_does_not_rename_again(tmp_path):
