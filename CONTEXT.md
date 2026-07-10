@@ -68,6 +68,8 @@ kind), and a cumulative `SessionFacts` snapshot (commits, PRs,
 files touched/read, duration) that only ever grows. Nothing in
 frontmatter is re-narrated in the body.
 
+Exact title and body rendering shape: `CONTEXT-FORMAT.md`.
+
 ## Writing a note — buffer, flush, compose
 
 A session's turns accumulate in a per-transcript **buffer**

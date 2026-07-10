@@ -74,7 +74,7 @@ from lore_curator.session_note import (
     facts_from_replay,
     linkage_from_replay,
 )
-from lore_curator.stub_note import _lead_for_rename, _resolve_renamed_path
+from lore_curator.stub_note import _lead_for_rename, _resolve_renamed_path, _topic_title
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
@@ -548,6 +548,7 @@ def _apply_outcome(
             facts=facts,
             linkage=linkage,
             wiki_root=wiki_root,
+            title=_topic_title(sidecar.scope, compose_result.chapter),
         )
         if out.chapter_n == 1:
             note_path = _rename_to_topic_slug(buffer, note_path, compose_result.chapter)
