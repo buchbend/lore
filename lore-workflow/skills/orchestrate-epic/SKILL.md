@@ -122,7 +122,7 @@ Post with `gh pr comment <n> --body …`. On **PASS**, advance to Merge. On **FA
 the numbered fix list and re-review once it reports back — **max 2 fix rounds**. A round that doesn't move the
 verdict → send the `/lore-workflow:debug` method (reproduce, isolate root cause, heed its circuit breaker),
 not a vaguer "try again". Still FAIL after the second → mark the feature blocked and escalate. The Dispatch
-tier is advisory; a reviewer-tier deviation is allowed but recorded in your epic note (full contract:
+tier is advisory; a reviewer tier deviation is allowed but recorded in your epic note (full contract:
 [TIER-DELEGATION.md](../../TIER-DELEGATION.md), `docs/model-tiers.md`).
 
 **Merge.** Merge crosscheck-passed PRs into `epic/<issue>` in dependency order; rebase later siblings on the
