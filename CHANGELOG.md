@@ -10,6 +10,40 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-07-11
+
+Epic #229 — workflow lightening & deepening on the lore substrate (PRD 0006).
+Rewires the workflow skills to consume the deterministic substrate instead of
+re-deriving state in prose.
+
+### Added
+- **`lore workflow` mechanics** — `epic-policy` (per-repo `{target_branch,
+  deploy_gate}` resolved from git branch state + `AGENTS.md` markers),
+  `validate-roadmap --json` (emits `{rows, repos, edges}` counts), `parse-board`
+  (deterministic parser for the machine-readable supervision-board comment), and
+  `seed-lift` (lifts a seed's Origin/Findings from the current session note).
+- **`LORE_SUPPRESS_CAPTURE`** — env flag that makes SessionEnd/PreCompact capture
+  a no-op, so dispatched teammate sessions leave no scattered notes; the default
+  (unset) path is unchanged. Documented in `docs/architecture/config.md`.
+- **Note-format v2** — session-note title is scope-prefixed (`scope: name`) and the
+  body opens with an inline bold lead sentence; specified in `CONTEXT-FORMAT.md`.
+- **ADR 0002** — supervision-state split: board on the GitHub issue, orchestrator
+  working context on its own composed epic note, same-session writes only.
+
+### Changed
+- **`orchestrate-epic`** — put on a prose diet (293→192 lines): resolves
+  target-branch/deploy-gate via `lore workflow epic-policy`, effort band via
+  `validate-roadmap --json`, resume via `parse-board`; the homegrown "context
+  pack" is renamed "codemap excerpt" (reserving "context pack" for the
+  `lore_context_pack` MCP tool).
+- **`orient` / `to-epic`** — fan-out is gated on `lore_context_pack`: the pack is
+  pulled up front and a per-facet explorer spawns only when it comes back thin.
+- **`seed-epic`** — Origin/Findings are lifted from the session note (freehand
+  fallback preserved); the seed records a source-note reference.
+- **`CONTEXT.md`** — glossary sync: `lore_context_pack`, codemap excerpt, epic note,
+  the two handover senses, `workflow`, and `skill`; `TIER-DELEGATION.md` tier-choice
+  review pass.
+
 ## [0.59.0] - 2026-07-10
 
 Epic #162 — deterministic context, lights-out notes (PRD 0004).
