@@ -53,9 +53,11 @@ from typing import TYPE_CHECKING, Any
 from lore_adapters import Adapter, get_adapter
 from lore_core import note_document as nd
 from lore_core import publish_gate as pg
+from lore_core.flush_store import FlushState, FlushStore
 from lore_core.lockfile import LockContendedError, curator_lock
 from lore_core.publish_gate import GateResult, PublishGate
 from lore_core.session_writer import FiledNote
+from lore_core.spine import ErrorCode, SpineWriter
 from lore_core.types import TranscriptHandle, Turn
 
 from lore_curator._auto_commit import maybe_auto_commit
@@ -75,8 +77,6 @@ from lore_curator.session_note import (
     linkage_from_replay,
 )
 from lore_curator.stub_note import _lead_for_rename, _resolve_renamed_path, _topic_title
-from lore_core.flush_store import FlushState, FlushStore
-from lore_core.spine import ErrorCode, SpineWriter
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
@@ -655,7 +655,7 @@ def _apply_outcome(
                     out.chapter_n = nd.append_marker_chapter(
                         note_path,
                         kind=nd.MARKER_FAILED,
-                        reason="composition failed after retries; span recorded and the buffer reset",
+                        reason="composition failed after retries; span recorded and buffer reset",
                         slice_from_turn=slice_from,
                         slice_to_turn=slice_to,
                         facts=facts,

@@ -44,8 +44,8 @@ _CARET_RE = re.compile(r"^\^(\d+)$")
 def list_archival_runs(lore_root: Path) -> list[Path]:
     """Return archival run files sorted oldest → newest (chronological).
 
-    Used by ``resolve_run_id`` for prefix matching and by retention for
-    FIFO deletion. For newest-first iteration (the common case for
+    Used by the retention janitor for FIFO deletion (run *resolution* now
+    reads spine run_ids, not files). For newest-first iteration (the common case for
     renderers) use :func:`iter_archival_runs`.
 
     Excludes ``.trace.jsonl`` companions. Returns empty list if the
