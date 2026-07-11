@@ -157,6 +157,37 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
         banner = f"lore!: {state.hook_errors_24h} hook error{suffix} today (lore doctor)"
         return _prepend(session_end_line, banner)
 
+    scope_warning = _scope_drift_warning(ctx)
+    if scope_warning:
+        return _prepend(session_end_line, scope_warning)
+
     return session_end_line
+
+
+def _scope_drift_warning(ctx: BannerContext) -> str | None:
+    """Warn when this repo's checked-in ``.lore.yml`` still declares a
+    scope the registry no longer has this attachment under.
+
+    ``lore scopes rename`` rewrites vault-local state only — it never
+    edits a checked-in offer file (that file may live on a different
+    host entirely). Left uncorrected, a future ``lore attach accept``
+    re-derives the stale scope from the file and resurrects it. This
+    mirrors the fingerprint-DRIFT notice SessionStart already prints
+    for content changes, but catches the case fingerprint-matching
+    can't: the file's content hasn't changed, only the registry's
+    idea of this attachment's scope has (via rename).
+    """
+    from lore_core.offer import FILENAME, parse_lore_yml
+
+    repo_root = ctx.scope.claude_md_path.parent
+    offer = parse_lore_yml(repo_root / FILENAME)
+    if offer is None or offer.scope == ctx.scope.scope:
+        return None
+    return (
+        f"lore: {repo_root / FILENAME} still declares scope `{offer.scope}`, "
+        f"but this repo is registered under `{ctx.scope.scope}` (renamed?). "
+        f"Update the file's `scope:` field, then run "
+        f"`lore attach accept --cwd {repo_root}` to resync."
+    )
 
 

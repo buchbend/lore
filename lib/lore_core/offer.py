@@ -35,8 +35,11 @@ class Offer:
     accept/decline decisions.
     """
 
-    wiki: str
-    scope: str
+    # Defaulted (not truly optional — `parse_lore_yml`/`validate_offer_raw`
+    # enforce non-empty) so `config_schema.validate_raw` can build a
+    # zero-arg default instance to walk the field tree.
+    wiki: str = ""
+    scope: str = ""
     backend: str = "none"
     wiki_source: str | None = None
     issues: str | None = None
@@ -76,6 +79,40 @@ def parse_lore_yml(path: Path) -> Offer | None:
         schema_version=int(raw.get("schema_version", 1)),
         inherit=raw.get("inherit") is True,
     )
+
+
+def validate_offer_raw(path: Path) -> list[str]:
+    """Strict schema check for a `.lore.yml` file — named-key errors.
+
+    Reuses ``config_schema.validate_raw`` (unknown keys w/ suggestions,
+    type mismatches) against the ``Offer`` field tree, same validator
+    that backs ``lore config edit``. ``validate_raw`` only checks keys
+    that are *present*; it has no notion of "required", so ``wiki``/
+    ``scope`` presence is checked here to match ``parse_lore_yml``.
+
+    Empty list means valid. Unreadable/malformed-YAML/non-mapping files
+    return ``[]`` too — ``parse_lore_yml`` already treats those as
+    "absent", and that path owns the "no offer found" message; this is
+    only for a *present, parseable, but schema-invalid* file.
+    """
+    if not path.exists() or not path.is_file():
+        return []
+    try:
+        import yaml
+        raw = yaml.safe_load(path.read_text())
+    except Exception:
+        return []
+    if not isinstance(raw, dict):
+        return []
+
+    from lore_core.config_schema import validate_raw
+
+    errors = validate_raw(Offer, raw)
+    for required in ("wiki", "scope"):
+        value = raw.get(required)
+        if not isinstance(value, str) or not value:
+            errors.append(f"{required!r} is required and must be a non-empty string")
+    return errors
 
 
 def find_lore_yml(cwd: Path, *, max_depth: int = 8) -> tuple[Path, Offer] | None:

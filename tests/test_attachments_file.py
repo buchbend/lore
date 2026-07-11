@@ -156,9 +156,9 @@ def test_decline_and_is_declined(lore_root: Path, tmp_path: Path) -> None:
     af.load()
     p = tmp_path / "repo"
     p.mkdir()
-    af.decline(p, "sha256:abc")
-    assert af.is_declined(p, "sha256:abc") is True
-    assert af.is_declined(p, "sha256:xyz") is False
+    af.decline(p, "a:b")
+    assert af.is_declined(p, "a:b") is True
+    assert af.is_declined(p, "a:c") is False
 
 
 def test_decline_is_upsert(lore_root: Path, tmp_path: Path) -> None:
@@ -166,14 +166,14 @@ def test_decline_is_upsert(lore_root: Path, tmp_path: Path) -> None:
     af.load()
     p = tmp_path / "repo"
     p.mkdir()
-    af.decline(p, "sha256:abc")
-    af.decline(p, "sha256:abc")  # same key — no duplicate
+    af.decline(p, "a:b")
+    af.decline(p, "a:b")  # same key — no duplicate
     af.save()
 
     af2 = AttachmentsFile(lore_root)
     af2.load()
-    # Different fingerprint doesn't invalidate the first
-    assert af2.is_declined(p, "sha256:abc") is True
+    # Re-declining the same scope doesn't invalidate the first
+    assert af2.is_declined(p, "a:b") is True
 
 
 def test_decline_survives_save_load(lore_root: Path, tmp_path: Path) -> None:
@@ -181,12 +181,36 @@ def test_decline_survives_save_load(lore_root: Path, tmp_path: Path) -> None:
     af.load()
     p = tmp_path / "repo"
     p.mkdir()
-    af.decline(p, "sha256:foo")
+    af.decline(p, "a:b")
     af.save()
 
     af2 = AttachmentsFile(lore_root)
     af2.load()
-    assert af2.is_declined(p, "sha256:foo") is True
+    assert af2.is_declined(p, "a:b") is True
+
+
+def test_decline_legacy_fingerprint_record_round_trips(lore_root: Path, tmp_path: Path) -> None:
+    """A pre-scope-keying record (``offer_fingerprint`` instead of
+    ``scope``) is never dropped on load/save, even though it won't
+    match new ``(path, scope)`` lookups — the original scope string
+    isn't recoverable from a fingerprint."""
+    import json
+
+    p = tmp_path / "repo"
+    p.mkdir()
+    raw = {
+        "attachments": [],
+        "declined": [{"path": str(p), "offer_fingerprint": "sha256:legacy"}],
+    }
+    (lore_root / ".lore" / "attachments.json").write_text(json.dumps(raw))
+
+    af = AttachmentsFile(lore_root)
+    af.load()
+    assert af.is_declined(p, "a:b") is False  # doesn't match any real scope
+    af.save()
+
+    saved = json.loads((lore_root / ".lore" / "attachments.json").read_text())
+    assert len(saved["declined"]) == 1  # row preserved, not dropped
 
 
 def test_get_exact_match(lore_root: Path, tmp_path: Path) -> None:

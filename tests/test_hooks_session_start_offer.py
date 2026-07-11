@@ -77,11 +77,10 @@ def test_returns_none_dormant(lore_root: Path, tmp_path: Path) -> None:
     repo.mkdir()
     _write_offer(repo)
     offer = parse_lore_yml(repo / FILENAME)
-    fp = offer_fingerprint(offer)
 
     af = AttachmentsFile(lore_root)
     af.load()
-    af.decline(repo, fp)
+    af.decline(repo, offer.scope)
     af.save()
 
     assert _offer_notice_line(repo) is None
