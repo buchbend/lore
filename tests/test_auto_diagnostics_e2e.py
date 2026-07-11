@@ -163,10 +163,10 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
         hooks_mod.capture(event="session-end", cwd_override=cwd, integration="fake", transcript=None)
 
         # ------------------------------------------------------------------
-        # Step 4 — assert hook-events.jsonl contains the session-end record
+        # Step 4 — assert the spine contains the session-end record
         # ------------------------------------------------------------------
-        events_path = lore_root / ".lore" / "hook-events.jsonl"
-        assert events_path.exists(), "hook-events.jsonl should be created"
+        events_path = lore_root / ".lore" / "spine.jsonl"
+        assert events_path.exists(), "spine.jsonl should be created"
         event_records = [json.loads(line) for line in events_path.read_text().splitlines()]
         assert any(r["event"] == "session-end" for r in event_records), (
             f"No session-end record found; got: {event_records}"

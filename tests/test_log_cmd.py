@@ -26,9 +26,22 @@ def _seed_vault(tmp_path: Path) -> Path:
     return lore_root
 
 
+def _spine_env(row: dict) -> dict:
+    """Wrap an old-style hook row as a spine envelope."""
+    data = {k: v for k, v in row.items() if k not in ("ts", "event", "schema_version")}
+    outcome = data.get("outcome")
+    return {
+        "ts": row.get("ts"), "v": 1, "source": "hook", "event": row.get("event"),
+        "level": "error" if outcome == "error" else "info",
+        "trace_id": None, "session_id": None, "run_id": None,
+        "wiki": None, "scope": None, "error_code": None, "data": data,
+    }
+
+
 def _seed_hook_events(lore_root: Path, events: list[dict]) -> None:
-    p = lore_root / ".lore" / "hook-events.jsonl"
-    p.write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    p = lore_root / ".lore" / "spine.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("\n".join(json.dumps(_spine_env(e)) for e in events) + "\n")
 
 
 def _seed_run(lore_root: Path, *, ago: timedelta, notes_new: int = 1, suffix: str = "abc123") -> None:

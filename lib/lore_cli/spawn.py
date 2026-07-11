@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from lore_core.hook_log import HookEventLogger
+from lore_core.spine import ErrorCode, emit_hook_event
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ def _write_stamp(stamp: Path) -> None:
 
 
 def _migrate_legacy_spawn_stamp(lore_root: Path, role: str) -> None:
-    """Unlink the pre-flock stamp file if present; log to hook-events on failure."""
+    """Unlink the pre-flock stamp file if present; log to the spine on failure."""
     old = lore_root / ".lore" / f"last-curator-{role}-spawn"
     try:
         old.unlink()
@@ -71,9 +71,11 @@ def _migrate_legacy_spawn_stamp(lore_root: Path, role: str) -> None:
         return
     except OSError as exc:
         try:
-            HookEventLogger(lore_root).emit(
+            emit_hook_event(
+                lore_root,
                 event="spawn-throttle",
                 outcome="warning",
+                error_code=ErrorCode.SPAWN_STAMP_MIGRATION_FAILED,
                 error={
                     "type": "LegacyStampMigrationFailed",
                     "message": str(exc),
@@ -209,7 +211,7 @@ def _spawn_detached(
 
     The runaway gate is the safety net for "child hangs and cooldown keeps
     green-lighting fresh spawns" — once tripped, a single warning event is
-    appended to ``hook-events.jsonl`` per ``cooldown_s * 10`` window
+    appended to the event spine per ``cooldown_s * 10`` window
     (throttled via ``curator-<role>.runaway.stamp``) so users running
     ``lore status`` / grepping the log can see the issue without it
     spamming on every UserPromptSubmit.
@@ -230,9 +232,11 @@ def _spawn_detached(
             warn_stamp = lore_root / ".lore" / f"curator-{role}.runaway.stamp"
             if not _stamp_within_cooldown(warn_stamp, cooldown_s * 10):
                 try:
-                    HookEventLogger(lore_root).emit(
+                    emit_hook_event(
+                        lore_root,
                         event="spawn-throttle",
                         outcome="prior-runaway",
+                        error_code=ErrorCode.SPAWN_RUNAWAY,
                         role=role,
                         error={
                             "type": "PriorSpawnAlive",

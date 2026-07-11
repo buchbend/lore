@@ -198,11 +198,11 @@ def test_status_stale_note_red_at_4d(tmp_path: Path, monkeypatch) -> None:
 def test_status_hook_log_failed_red(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
     _seed_happy_run(lore_root, ago=timedelta(hours=1), notes_new=1)
-    marker = lore_root / ".lore" / "hook-log-failed.marker"
+    marker = lore_root / ".lore" / "spine-failed.marker"
     marker.touch()
 
     out = _invoke(lore_root, project, monkeypatch=monkeypatch)
-    assert "hook log" in out.lower()
+    assert "spine write" in out.lower()
     assert "x " in out
 
 
@@ -210,12 +210,14 @@ def test_status_hook_body_line_renders_recent_event(tmp_path: Path, monkeypatch)
     """Healthy path: Hook body line shows most recent hook-event summary."""
     lore_root, project = _seed_vault(tmp_path)
     _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
-    events = lore_root / ".lore" / "hook-events.jsonl"
+    events = lore_root / ".lore" / "spine.jsonl"
     events.write_text(
         json.dumps({
             "ts": _iso(_NOW - timedelta(minutes=12)),
-            "event": "session-start",
-            "outcome": "spawned-curator",
+            "v": 1, "source": "hook", "event": "session-start",
+            "level": "info", "trace_id": None, "session_id": None,
+            "run_id": None, "wiki": None, "scope": None, "error_code": None,
+            "data": {"outcome": "spawned-curator"},
         }) + "\n"
     )
 
@@ -292,11 +294,13 @@ def test_status_hook_alert_when_pending_and_hook_events_all_old(tmp_path: Path, 
             curator_a_run=None, noteworthy=None, session_note=None,
         )
     )
-    (lore_root / ".lore" / "hook-events.jsonl").write_text(
+    (lore_root / ".lore" / "spine.jsonl").write_text(
         json.dumps({
             "ts": _iso(_NOW - timedelta(days=2)),
-            "event": "session-start",
-            "outcome": "below-threshold",
+            "v": 1, "source": "hook", "event": "session-start",
+            "level": "info", "trace_id": None, "session_id": None,
+            "run_id": None, "wiki": None, "scope": None, "error_code": None,
+            "data": {"outcome": "below-threshold"},
         }) + "\n"
     )
 
@@ -409,10 +413,13 @@ def test_verbose_shows_curator_schedule(tmp_path: Path, monkeypatch) -> None:
 def test_verbose_shows_recent_hooks(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
     _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
-    events = lore_root / ".lore" / "hook-events.jsonl"
+    events = lore_root / ".lore" / "spine.jsonl"
     records = [
         json.dumps({"ts": _iso(_NOW - timedelta(minutes=i * 10)),
-                     "event": f"session-start", "outcome": "ok"})
+                    "v": 1, "source": "hook", "event": "session-start",
+                    "level": "info", "trace_id": None, "session_id": None,
+                    "run_id": None, "wiki": None, "scope": None,
+                    "error_code": None, "data": {"outcome": "ok"}})
         for i in range(7)
     ]
     events.write_text("\n".join(records) + "\n")

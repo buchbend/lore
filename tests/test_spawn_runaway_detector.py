@@ -186,19 +186,20 @@ def test_spawn_detached_skips_when_prior_runaway(tmp_path: Path) -> None:
     assert popen_calls == []  # no subprocess launched
 
     # Warning event was emitted to hook-events.jsonl.
-    events_path = tmp_path / ".lore" / "hook-events.jsonl"
+    events_path = tmp_path / ".lore" / "spine.jsonl"
     assert events_path.exists(), "spawn-throttle event should be logged"
     lines = events_path.read_text().strip().splitlines()
     records = [json.loads(line) for line in lines]
     runaway_records = [
         r for r in records
-        if r.get("event") == "spawn-throttle" and r.get("outcome") == "prior-runaway"
+        if r.get("event") == "spawn-throttle"
+        and r.get("data", {}).get("outcome") == "prior-runaway"
     ]
     assert len(runaway_records) == 1
     rec = runaway_records[0]
-    assert rec["role"] == "a"
-    assert rec["error"]["pid"] == 12345
-    assert rec["error"]["age_s"] == 9999
+    assert rec["data"]["role"] == "a"
+    assert rec["data"]["error"]["pid"] == 12345
+    assert rec["data"]["error"]["age_s"] == 9999
 
 
 def test_spawn_detached_runaway_warning_throttled(tmp_path: Path) -> None:
@@ -222,7 +223,7 @@ def test_spawn_detached_runaway_warning_throttled(tmp_path: Path) -> None:
                 cooldown_s=60,
             )
 
-    events_path = tmp_path / ".lore" / "hook-events.jsonl"
+    events_path = tmp_path / ".lore" / "spine.jsonl"
     if not events_path.exists():
         records = []
     else:
@@ -233,7 +234,8 @@ def test_spawn_detached_runaway_warning_throttled(tmp_path: Path) -> None:
         ]
     runaway_records = [
         r for r in records
-        if r.get("event") == "spawn-throttle" and r.get("outcome") == "prior-runaway"
+        if r.get("event") == "spawn-throttle"
+        and r.get("data", {}).get("outcome") == "prior-runaway"
     ]
     assert len(runaway_records) == 1, (
         f"Expected exactly one warning across 3 attempts; got {len(runaway_records)}"

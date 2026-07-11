@@ -211,11 +211,11 @@ def _render_alerts(state: CaptureState, now: datetime) -> list[str]:
             f"— lore runs show {zero_runs[0]}"
         )
 
-    if state.hook_log_failed_marker_age_s is not None:
-        if state.hook_log_failed_marker_age_s < 86400:
+    if state.spine_write_failed_marker_age_s is not None:
+        if state.spine_write_failed_marker_age_s < 86400:
             alerts.append(
-                f"{_ERROR} hook log write failed "
-                f"{relative_time(now - timedelta(seconds=state.hook_log_failed_marker_age_s), now=now)} "
+                f"{_ERROR} spine write failed "
+                f"{relative_time(now - timedelta(seconds=state.spine_write_failed_marker_age_s), now=now)} "
                 f"— check disk / permissions"
             )
 
@@ -351,23 +351,11 @@ def _render_verbose_curator_schedule(lore_root: Path, now: datetime) -> list[str
 
 def _render_verbose_recent_hooks(lore_root: Path, n: int = 5) -> list[str]:
     lines = ["  Recent Hooks"]
-    events_path = lore_root / ".lore" / "hook-events.jsonl"
-    if not events_path.exists():
-        lines.append("no hook events")
-        return lines
+    from lore_core.spine import read_spine
 
-    records: list[dict] = []
-    try:
-        for raw_line in events_path.read_text().splitlines():
-            raw_line = raw_line.strip()
-            if not raw_line:
-                continue
-            try:
-                records.append(json.loads(raw_line))
-            except json.JSONDecodeError:
-                continue
-    except OSError:
-        lines.append("read error")
+    records = read_spine(lore_root, source="hook")
+    if not records:
+        lines.append("no hook events")
         return lines
 
     tail = records[-n:]
@@ -375,7 +363,7 @@ def _render_verbose_recent_hooks(lore_root: Path, n: int = 5) -> list[str]:
     for rec in tail:
         ts_raw = rec.get("ts")
         event = rec.get("event", "?")
-        outcome = rec.get("outcome", "?")
+        outcome = (rec.get("data") or {}).get("outcome", "?")
         if ts_raw:
             try:
                 ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
@@ -468,20 +456,8 @@ def _verbose_json_data(lore_root: Path, now: datetime) -> dict:
     except OSError:
         pass
 
-    recent_hooks: list[dict] = []
-    events_path = lore_root / ".lore" / "hook-events.jsonl"
-    if events_path.exists():
-        try:
-            raw_lines = events_path.read_text().splitlines()
-            for line in raw_lines[-5:]:
-                line = line.strip()
-                if line:
-                    try:
-                        recent_hooks.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
-        except OSError:
-            pass
+    from lore_core.spine import read_spine
+    recent_hooks: list[dict] = read_spine(lore_root, source="hook")[-5:]
 
     pending: dict[str, int] = {}
     try:

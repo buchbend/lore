@@ -228,17 +228,32 @@ def test_doctor_capture_panel_lock_free_removed_smoke(tmp_path):
     tests for free-lock / hook-errors / marker are superseded by
     tests/test_capture_state.py (CaptureState field coverage).
     """
-    events = tmp_path / ".lore" / "hook-events.jsonl"
+    events = tmp_path / ".lore" / "spine.jsonl"
     events.parent.mkdir(parents=True, exist_ok=True)
     events.write_text(
         json.dumps({
-            "schema_version": 1,
-            "ts": "2026-04-20T14:32:05Z",
-            "event": "session-end",
-            "outcome": "ledger-advanced",
+            "ts": "2026-04-20T14:32:05Z", "v": 1, "source": "hook",
+            "event": "session-end", "level": "info", "trace_id": None,
+            "session_id": None, "run_id": None, "wiki": None, "scope": None,
+            "error_code": None, "data": {"outcome": "ledger-advanced"},
         }) + "\n"
     )
     # Post-Task-12a: capture-pipeline details now live in CaptureState /
     # `lore status`; nothing to assert about the doctor panel here.
     # Kept as a smoke fixture so future test additions have a starting
     # point; delete the whole test if it starts rotting.
+
+
+def test_check_spine_writable_reports_degrade_marker(tmp_path, monkeypatch):
+    """AC4: a spine write-failure degrade marker is surfaced by doctor."""
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    (tmp_path / ".lore").mkdir(parents=True, exist_ok=True)
+
+    ok, msg = doctor_cmd._check_spine_writable(str(tmp_path))
+    assert ok is True
+    assert "spine" in msg.lower()
+
+    (tmp_path / ".lore" / "spine-failed.marker").touch()
+    ok, msg = doctor_cmd._check_spine_writable(str(tmp_path))
+    assert ok is False
+    assert "spine write failed" in msg.lower()

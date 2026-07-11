@@ -59,32 +59,22 @@ def _parse_ts(raw: str | None) -> datetime | None:
 
 
 def _read_hook_events(lore_root: Path, since: datetime) -> list[TimelineEntry]:
-    path = lore_root / ".lore" / "hook-events.jsonl"
-    if not path.exists():
-        return []
+    from lore_core.spine import read_spine
+
     entries: list[TimelineEntry] = []
-    try:
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            ts = _parse_ts(rec.get("ts"))
-            if ts is None or ts < since:
-                continue
-            entries.append(TimelineEntry(
-                ts=ts,
-                kind="hook",
-                event=rec.get("event", "?"),
-                outcome=rec.get("outcome", "?"),
-                detail=f"pid {rec['pid']}" if "pid" in rec else "",
-                raw=rec,
-            ))
-    except OSError:
-        pass
+    for rec in read_spine(lore_root, source="hook"):
+        ts = _parse_ts(rec.get("ts"))
+        if ts is None or ts < since:
+            continue
+        data = rec.get("data") or {}
+        entries.append(TimelineEntry(
+            ts=ts,
+            kind="hook",
+            event=rec.get("event", "?"),
+            outcome=data.get("outcome", "?"),
+            detail=f"pid {data['pid']}" if "pid" in data else "",
+            raw=rec,
+        ))
     return entries
 
 

@@ -57,9 +57,22 @@ def _write_runs(
     return paths
 
 
+def _spine_env(row: dict) -> dict:
+    """Wrap an old-style {ts, event, outcome, ...} hook row as a spine envelope."""
+    data = {k: v for k, v in row.items() if k not in ("ts", "event", "schema_version")}
+    outcome = data.get("outcome")
+    return {
+        "ts": row.get("ts"), "v": 1, "source": "hook", "event": row.get("event"),
+        "level": "error" if outcome == "error" else "info",
+        "trace_id": None, "session_id": None, "run_id": None,
+        "wiki": None, "scope": None, "error_code": None, "data": data,
+    }
+
+
 def _write_hook_events(lore_root: Path, events: list[dict]) -> Path:
-    path = lore_root / ".lore" / "hook-events.jsonl"
-    path.write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    path = lore_root / ".lore" / "spine.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(_spine_env(e)) for e in events) + "\n")
     return path
 
 
@@ -77,7 +90,7 @@ def test_capture_state_empty_vault(tmp_path: Path) -> None:
     assert state.pending_transcripts == 0
     assert state.hook_errors_24h == 0
     assert state.last_note_filed is None
-    assert state.hook_log_failed_marker_age_s is None
+    assert state.spine_write_failed_marker_age_s is None
     assert state.simple_tier_fallback_active is False
     assert len(state.curators) == 1
     assert [c.role for c in state.curators] == ["a"]
@@ -161,7 +174,7 @@ def test_capture_state_overdue_calculation_per_role(
 
 
 def test_capture_state_hook_liveness_absent_when_file_missing(tmp_path: Path) -> None:
-    """No hook-events.jsonl → last_hook_event_ts is None."""
+    """No spine records → last_hook_event_ts is None."""
     lore_root = _seed_lore_root(tmp_path)
     state = query_capture_state(lore_root, now=_NOW)
     assert state.last_hook_event_ts is None
@@ -170,7 +183,7 @@ def test_capture_state_hook_liveness_absent_when_file_missing(tmp_path: Path) ->
 
 
 def test_capture_state_hook_liveness_from_newest_event(tmp_path: Path) -> None:
-    """Last hook fields read the newest record in hook-events.jsonl."""
+    """Last hook fields read the newest hook record on the event spine."""
     lore_root = _seed_lore_root(tmp_path)
     # Mix of ages; newest should win regardless of file order.
     _write_hook_events(
@@ -200,14 +213,14 @@ def test_capture_state_hook_liveness_from_newest_event(tmp_path: Path) -> None:
 
 
 def test_capture_state_hook_liveness_skips_malformed_lines(tmp_path: Path) -> None:
-    """Garbled lines in hook-events.jsonl don't crash or mask a real newest."""
+    """Garbled lines on the spine don't crash or mask a real newest."""
     lore_root = _seed_lore_root(tmp_path)
-    path = lore_root / ".lore" / "hook-events.jsonl"
-    good = {
+    path = lore_root / ".lore" / "spine.jsonl"
+    good = _spine_env({
         "ts": _iso(_NOW - timedelta(minutes=5)),
         "event": "session-start",
         "outcome": "no-scope",
-    }
+    })
     path.write_text("{not json\n" + json.dumps(good) + "\n\n")
     state = query_capture_state(lore_root, now=_NOW)
     assert state.last_hook_event_ts == _NOW - timedelta(minutes=5)
@@ -331,18 +344,18 @@ def test_capture_state_work_lock_held(tmp_path: Path) -> None:
 
 def test_capture_state_hook_log_failed_marker(tmp_path: Path) -> None:
     lore_root = _seed_lore_root(tmp_path)
-    marker = lore_root / ".lore" / "hook-log-failed.marker"
+    marker = lore_root / ".lore" / "spine-failed.marker"
     marker.touch()
 
     state = query_capture_state(lore_root, now=_NOW)
-    assert state.hook_log_failed_marker_age_s is not None
-    assert state.hook_log_failed_marker_age_s >= 0
+    assert state.spine_write_failed_marker_age_s is not None
+    assert state.spine_write_failed_marker_age_s >= 0
 
 
 def test_capture_state_hook_log_failed_marker_absent(tmp_path: Path) -> None:
     lore_root = _seed_lore_root(tmp_path)
     state = query_capture_state(lore_root, now=_NOW)
-    assert state.hook_log_failed_marker_age_s is None
+    assert state.spine_write_failed_marker_age_s is None
 
 
 # ---------------------------------------------------------------------------
@@ -374,8 +387,8 @@ def test_capture_state_query_is_readonly(tmp_path: Path) -> None:
     """Snapshot .lore/ mtimes before and after query; they must be identical."""
     lore_root = _seed_lore_root(tmp_path)
     # Populate with one of everything.
-    (lore_root / ".lore" / "hook-events.jsonl").write_text(
-        json.dumps({"ts": _iso(_NOW), "event": "session-start", "outcome": "ok"}) + "\n"
+    (lore_root / ".lore" / "spine.jsonl").write_text(
+        json.dumps(_spine_env({"ts": _iso(_NOW), "event": "session-start", "outcome": "ok"})) + "\n"
     )
     _write_runs(
         lore_root,

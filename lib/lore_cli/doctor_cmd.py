@@ -280,6 +280,35 @@ def _check_recent_crashes(cwd: str) -> Check:
     )
 
 
+def _check_spine_writable(cwd: str) -> Check:
+    """Surface a spine write-failure degrade marker, if present.
+
+    The event spine (`lore_core.spine.SpineWriter`) is best-effort and
+    never raises on the hot path; a failed write touches
+    ``.lore/spine-failed.marker`` instead. Doctor reads that marker so a
+    telemetry blackout (full disk, bad permissions) is not itself silent.
+
+    Advisory only — the marker records a *past* failure; the writer
+    retries on the next event.
+    """
+    from datetime import UTC, datetime
+
+    from lore_core.config import get_lore_root
+
+    marker = get_lore_root() / ".lore" / "spine-failed.marker"
+    if not marker.exists():
+        return True, "event spine writes OK"
+    try:
+        mtime = datetime.fromtimestamp(marker.stat().st_mtime, tz=UTC)
+        when = mtime.isoformat().replace("+00:00", "Z")
+    except OSError:
+        when = "unknown time"
+    return False, (
+        f"spine write failed (last at {when}) \u2014 check disk / permissions; "
+        f"clear {marker} once resolved"
+    )
+
+
 def _check_hook_runnable(cwd: str) -> Check:
     """Run `lore hook session-start --plain --probe` and confirm it produces output.
 
@@ -642,6 +671,9 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     # "why isn't curator A firing?" at a glance.
     ("pending", _check_pending, False),
     ("SessionStart hook", _check_hook_runnable, True),
+    # Advisory: surfaces a past event-spine write failure via its degrade
+    # marker so a telemetry blackout is not itself silent.
+    ("event spine", _check_spine_writable, False),
     # Advisory: surfaces silent failures Claude Code hides behind the
     # friendly hook banner. Doesn't fail the install — the user may
     # already be triaging.
