@@ -230,17 +230,18 @@ attach`) and offer evaluation.
 Two state files outside the scope/attachments triple are written from
 hot paths and need to survive multiple concurrent Claude sessions:
 
-- **`$LORE_ROOT/.lore/hook-events.jsonl`** — append-only hook-firing
-  log. Concurrent appends are safe by POSIX semantics: every write is
+- **`$LORE_ROOT/.lore/spine.jsonl`** — the append-only event spine.
+  All background-pipeline telemetry shares one envelope here (hook
+  events are the first producer; curator/drain/janitor follow).
+  Concurrent appends are safe by POSIX semantics: every write is
   ``O_APPEND``-atomic for records ≤ ``PIPE_BUF`` (typically 4096
-  bytes), and JSONL records are well under that. No application-level
-  lock needed for appends.
-- **`$LORE_ROOT/.lore/hook-events.jsonl.rotate.lock`** — sibling
-  flock target for the rotation race. When the log crosses
-  ``max_size_mb``, two hooks would otherwise both call
-  ``os.replace()`` and lose a rotation window. ``HookEventLogger``
-  takes a non-blocking ``fcntl.LOCK_EX`` here; losers skip and
-  retry on the next emit.
+  bytes), and envelope records are well under that. No application-
+  level lock needed for appends.
+- **`$LORE_ROOT/.lore/spine.rotate.lock`** — sibling flock target
+  for the rotation race. When the spine crosses ``max_size_mb``, two
+  writers would otherwise both call ``os.replace()`` and lose a
+  rotation window. ``SpineWriter`` takes a non-blocking
+  ``fcntl.LOCK_EX`` here; losers skip and retry on the next emit.
 
 The same pattern (``LOCK_EX | LOCK_NB`` on a sibling lock file) is
 used by ``lore_core.lockfile.try_acquire_spawn_lock`` to serialise

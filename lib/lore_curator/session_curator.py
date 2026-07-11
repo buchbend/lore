@@ -659,7 +659,7 @@ def _process_chunk(
         # heartbeat keeps folding into the same buffer and the same note.
         from lore_curator.synthesis import spawn_detached_flush
 
-        spawned = spawn_detached_flush(
+        flush_trace_id = spawn_detached_flush(
             outcome.buffer.sidecar_path, lore_root=lore_root,
         )
         if logger is not None:
@@ -668,7 +668,8 @@ def _process_chunk(
                 trigger="cap-trip",
                 transcript_id=entry.transcript_id,
                 buffer_stem=outcome.buffer.stem,
-                spawned=spawned,
+                spawned=bool(flush_trace_id),
+                trace_id=flush_trace_id,
             )
 
     if note_result is not None:

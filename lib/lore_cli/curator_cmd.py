@@ -94,7 +94,7 @@ def _print_backend_label(con: Console, llm_client: object) -> None:
 def run_command(
     scope: str = typer.Option(None, "--scope", help="Filter to one scope, e.g. 'mywiki:subproject'."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Classify but don't write notes or advance ledger."),
-    trace_llm: bool = typer.Option(False, "--trace-llm", help="Capture LLM prompts/responses to runs/<id>.trace.jsonl (equivalent to LORE_TRACE_LLM=1)."),
+    trace_llm: bool = typer.Option(False, "--trace-llm", help="Emit LLM call metadata onto the event spine (equivalent to LORE_TRACE_LLM=1)."),
     backend: str = typer.Option(None, "--backend", help="LLM backend: subscription | api | openai | auto. Overrides LORE_LLM_BACKEND and curator.backend config."),
 ) -> None:
     """Run the curator: classify pending transcripts and file session notes."""
@@ -268,6 +268,9 @@ def flush_command(
         trigger="flush",
         pending_count=1,
         config_snapshot={"buffer_stem": buffer.stem, "mode": mode},
+        # Delivered across the process boundary by spawn_detached_flush so
+        # this run's events join the spawning session's flush (#188).
+        trace_id=os.environ.get("LORE_TRACE_ID"),
     ) as logger:
         outcome = synth_fn(
             buffer_path,
@@ -277,6 +280,15 @@ def flush_command(
             model=model,
             logger=logger,
         )
+
+    # Opportunistic retention sweep (#190) at curator-run end — flock-guarded,
+    # daemon-free; a contended lock just skips this cycle.
+    try:
+        from lore_cli._janitor_entry import run_opportunistic_janitor
+
+        run_opportunistic_janitor(lore_root)
+    except Exception:  # noqa: BLE001 - janitor must never crash a flush run
+        pass
 
     console.print(
         f"[bold]flush[/bold] {outcome.buffer_stem} — "

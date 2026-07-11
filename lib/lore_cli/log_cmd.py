@@ -16,12 +16,19 @@ from lore_cli._argv_compat import argv_main
 from lore_core.timefmt import relative_time
 
 console = Console()
+err_console = Console(stderr=True)
 
 app = typer.Typer(
     add_completion=False,
     help="Chronological timeline of hook events and curator runs.",
     no_args_is_help=False,
     rich_markup_mode="rich",
+)
+
+_DEPRECATION_NOTICE = (
+    "[yellow]lore log is deprecated — use `lore trace` for a correlated "
+    "flush drill-down instead. This alias will be removed in a future "
+    "release.[/yellow]"
 )
 
 _DURATION_RE = re.compile(r"^(\d+)(m|h|d)$")
@@ -59,32 +66,22 @@ def _parse_ts(raw: str | None) -> datetime | None:
 
 
 def _read_hook_events(lore_root: Path, since: datetime) -> list[TimelineEntry]:
-    path = lore_root / ".lore" / "hook-events.jsonl"
-    if not path.exists():
-        return []
+    from lore_core.spine import read_spine
+
     entries: list[TimelineEntry] = []
-    try:
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            ts = _parse_ts(rec.get("ts"))
-            if ts is None or ts < since:
-                continue
-            entries.append(TimelineEntry(
-                ts=ts,
-                kind="hook",
-                event=rec.get("event", "?"),
-                outcome=rec.get("outcome", "?"),
-                detail=f"pid {rec['pid']}" if "pid" in rec else "",
-                raw=rec,
-            ))
-    except OSError:
-        pass
+    for rec in read_spine(lore_root, source="hook"):
+        ts = _parse_ts(rec.get("ts"))
+        if ts is None or ts < since:
+            continue
+        data = rec.get("data") or {}
+        entries.append(TimelineEntry(
+            ts=ts,
+            kind="hook",
+            event=rec.get("event", "?"),
+            outcome=data.get("outcome", "?"),
+            detail=f"pid {data['pid']}" if "pid" in data else "",
+            raw=rec,
+        ))
     return entries
 
 
@@ -96,22 +93,20 @@ def _run_end_label(rec: dict) -> str:
 def _read_run_events(
     lore_root: Path, since: datetime, *, role_filter: str | None = None,
 ) -> list[TimelineEntry]:
-    from lore_core.run_reader import iter_archival_runs, read_run
+    from lore_core.run_reader import read_curator_runs
 
     entries: list[TimelineEntry] = []
+    grouped = read_curator_runs(lore_root)
     try:
-        for run_path in iter_archival_runs(lore_root):
-            try:
-                records = read_run(run_path, strict_schema=False)
-            except Exception:
-                continue
+        for run_id in sorted(grouped.keys(), reverse=True):  # newest-first
+            records = grouped[run_id]
             if not records:
                 continue
             first_ts = _parse_ts(records[0].get("ts"))
             if first_ts and first_ts < since:
                 break
 
-            short_id = run_path.stem.split("-")[-1]
+            short_id = run_id.split("-")[-1]
             run_role: str | None = None
             for rec in records:
                 rtype = rec.get("type")
@@ -195,6 +190,8 @@ def log(
 ) -> None:
     """Chronological timeline of hook events and curator runs."""
     from lore_core.config import get_lore_root
+
+    err_console.print(_DEPRECATION_NOTICE, highlight=False)
 
     try:
         lore_root = get_lore_root()

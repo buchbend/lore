@@ -35,6 +35,12 @@ app = typer.Typer(
 )
 
 
+_DEPRECATION_NOTICE = (
+    "[yellow]lore news is deprecated — use `lore status` for the health "
+    "dashboard instead. This alias will be removed in a future "
+    "release.[/yellow]"
+)
+
 # Human-facing labels for the machine event vocabulary. Display-only.
 _COPY = {
     "note-filed": "new note",
@@ -119,6 +125,7 @@ def cmd_news(
     limit: int = typer.Option(50, "--limit", help="Max events to display."),
 ) -> None:
     """Show events from the current session + system work since the cursor."""
+    err_console.print(_DEPRECATION_NOTICE, highlight=False)
     if ctx.invoked_subcommand is not None:
         return  # a subcommand (e.g., `latest`) was invoked — skip default behavior
     lore_root = _lore_root_or_die()

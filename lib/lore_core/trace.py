@@ -1,0 +1,178 @@
+"""Business logic for `lore trace` — correlated drill-down of one flush.
+
+Reconstructs a flush's story purely by reading two existing stores — the
+event spine (:mod:`lore_core.spine`, #185/#188) and the flush lifecycle
+record (:mod:`lore_core.flush_store`, #189) — never writes. A flush's
+steps are simply every spine record sharing its ``trace_id``, ordered by
+timestamp; there is no new storage or correlation mechanism here, only a
+selector that maps the five ways a user names a flush onto that
+``trace_id``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from lore_core.flush_store import FlushRecord, FlushState, FlushStore
+from lore_core.note_document import read_note
+from lore_core.spine import read_spine
+
+
+class TraceNotFound(ValueError):
+    """No flush, session, or note matches the given selector."""
+
+
+@dataclass(frozen=True)
+class TraceStep:
+    """One spine record belonging to a flush, in the shape the renderer needs."""
+
+    ts: str
+    source: str
+    event: str
+    level: str
+    error_code: str | None
+    data: dict[str, Any]
+    raw: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class FlushTrace:
+    trace_id: str
+    record: FlushRecord | None
+    steps: list[TraceStep]
+
+    @property
+    def status(self) -> str:
+        """Current state-machine status — 'unknown' when no record exists
+
+        (a flush whose spine events outlived its record, or a synthetic
+        trace_id with only stray events).
+        """
+        return self.record.state if self.record is not None else "unknown"
+
+
+def flush_by_trace_id(lore_root: Path, trace_id: str) -> FlushTrace:
+    """Every spine record for ``trace_id``, chronological, plus its flush record.
+
+    A dead-lettered or otherwise partial flush simply has fewer steps —
+    there is nothing to truncate, the tree ends wherever the last emitted
+    event does.
+    """
+    steps = [
+        TraceStep(
+            ts=r.get("ts", ""),
+            source=r.get("source", "?"),
+            event=r.get("event", "?"),
+            level=r.get("level", "info"),
+            error_code=r.get("error_code"),
+            data=r.get("data") or {},
+            raw=r,
+        )
+        for r in read_spine(lore_root)
+        if r.get("trace_id") == trace_id
+    ]
+    steps.sort(key=lambda s: s.ts)
+    record = next((rec for rec in FlushStore(lore_root).list() if rec.trace_id == trace_id), None)
+    return FlushTrace(trace_id=trace_id, record=record, steps=steps)
+
+
+def trace_ids_for_session(lore_root: Path, session_id: str) -> list[str]:
+    """Distinct trace_ids touched by ``session_id``, most-recently-active first."""
+    latest_ts: dict[str, str] = {}
+    for r in read_spine(lore_root):
+        if r.get("session_id") != session_id:
+            continue
+        tid = r.get("trace_id")
+        if not tid:
+            continue
+        ts = r.get("ts", "")
+        if ts > latest_ts.get(tid, ""):
+            latest_ts[tid] = ts
+    return sorted(latest_ts, key=lambda t: latest_ts[t], reverse=True)
+
+
+def last_trace_id(lore_root: Path) -> str | None:
+    """The most-recently-updated flush's trace_id, or None if no flush has one."""
+    for rec in FlushStore(lore_root).list():  # already newest-updated-first
+        if rec.trace_id:
+            return rec.trace_id
+    return None
+
+
+def dead_flushes(lore_root: Path) -> list[FlushRecord]:
+    """Dead-lettered flush records, newest-updated first."""
+    return FlushStore(lore_root).list(state=FlushState.DEAD_LETTERED)
+
+
+def _resolve_note_path(lore_root: Path, note_ref: str) -> Path | None:
+    """Resolve a note path or ``[[wikilink]]`` to a file. None if nothing matches."""
+    ref = note_ref.strip()
+    if ref.startswith("[[") and ref.endswith("]]"):
+        ref = ref[2:-2].split("|", 1)[0].strip()
+
+    def _try(name: str) -> Path | None:
+        for candidate in (Path(name), lore_root / name, Path.cwd() / name):
+            if candidate.is_file():
+                return candidate
+        return None
+
+    found = _try(ref)
+    if found is not None:
+        return found
+    if not ref.endswith(".md"):
+        found = _try(f"{ref}.md")
+        if found is not None:
+            return found
+        ref = f"{ref}.md"
+    # Bare slug: search every wiki (wikilink resolution is per-wiki, but a
+    # reverse CLI lookup has no wiki context yet — search all of them).
+    wiki_dir = lore_root / "wiki"
+    if wiki_dir.is_dir():
+        matches = sorted(wiki_dir.glob(f"*/**/{ref}"))
+        if matches:
+            return matches[0]
+    return None
+
+
+def trace_id_for_note(lore_root: Path, note_ref: str) -> str | None:
+    """Reverse lookup: a note's ``linkage.trace_id`` frontmatter field."""
+    path = _resolve_note_path(lore_root, note_ref)
+    if path is None:
+        return None
+    linkage = read_note(path).frontmatter.get("linkage") or {}
+    tid = linkage.get("trace_id")
+    return tid if isinstance(tid, str) else None
+
+
+def resolve_selector(lore_root: Path, selector: str) -> str | list[str]:
+    """Map a `lore trace` argument onto trace_id(s).
+
+    Returns the literal ``"dead"`` for the dead-letter listing (a
+    different output shape from a flush tree — a list, not one story);
+    otherwise a list of one or more trace_ids, newest first.
+    """
+    if selector == "dead":
+        return "dead"
+    if selector == "last":
+        tid = last_trace_id(lore_root)
+        if tid is None:
+            raise TraceNotFound("no flush records yet")
+        return [tid]
+
+    note_tid = trace_id_for_note(lore_root, selector)
+    if note_tid is not None:
+        return [note_tid]
+
+    known_trace_ids = {rec.trace_id for rec in FlushStore(lore_root).list() if rec.trace_id}
+    if selector in known_trace_ids or any(
+        r.get("trace_id") == selector for r in read_spine(lore_root)
+    ):
+        return [selector]
+
+    session_tids = trace_ids_for_session(lore_root, selector)
+    if session_tids:
+        return session_tids
+
+    raise TraceNotFound(f"no flush, session, or note matches {selector!r}")

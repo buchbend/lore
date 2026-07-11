@@ -2,8 +2,8 @@ import warnings
 from pathlib import Path
 
 import pytest
-
-from lore_core.root_config import RootConfig, ObservabilityConfig, load_root_config
+import yaml
+from lore_core.root_config import load_root_config
 
 
 def test_defaults_when_file_absent(tmp_path: Path):
@@ -15,17 +15,31 @@ def test_defaults_when_file_absent(tmp_path: Path):
     assert cfg.observability.runs.keep_trace == 30
 
 
+def test_retention_defaults_when_file_absent(tmp_path: Path):
+    cfg = load_root_config(tmp_path)
+    assert cfg.observability.retention.hot_days == 7
+    assert cfg.observability.retention.cold_days == 30
+    assert cfg.observability.retention.cold_max_mb == 20
+    assert cfg.observability.retention.crash_log_days == 30
+    assert cfg.observability.retention.dead_letter_hard_cap == 50
+
+
+def test_retention_partial_override(tmp_path: Path):
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    (lore_dir / "config.yml").write_text("observability:\n  retention:\n    hot_days: 3\n")
+    cfg = load_root_config(tmp_path)
+    assert cfg.observability.retention.hot_days == 3  # overridden
+    assert cfg.observability.retention.cold_days == 30  # default preserved
+
+
 def test_partial_override(tmp_path: Path):
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text(
-        "observability:\n"
-        "  runs:\n"
-        "    keep: 50\n"
-    )
+    (lore_dir / "config.yml").write_text("observability:\n  runs:\n    keep: 50\n")
     cfg = load_root_config(tmp_path)
-    assert cfg.observability.runs.keep == 50            # overridden
-    assert cfg.observability.runs.max_total_mb == 100   # default preserved
+    assert cfg.observability.runs.keep == 50  # overridden
+    assert cfg.observability.runs.max_total_mb == 100  # default preserved
     assert cfg.observability.hook_events.max_size_mb == 10  # default preserved
 
 
@@ -43,14 +57,10 @@ def test_unknown_key_warns(tmp_path: Path, recwarn):
     warnings.simplefilter("always")
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text(
-        "observability:\n"
-        "  bogus_section: 42\n"
-    )
+    (lore_dir / "config.yml").write_text("observability:\n  bogus_section: 42\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.runs.keep == 200  # still defaults
-    assert any("bogus_section" in str(w.message) for w in recwarn), \
-        "should warn about unknown key"
+    assert any("bogus_section" in str(w.message) for w in recwarn), "should warn about unknown key"
 
 
 # ---------------------------------------------------------------------------
@@ -181,3 +191,89 @@ def test_user_display_name_round_trips_via_set_field(tmp_path: Path) -> None:
     fi = set_field(root, "user.display_name", "Christof")
     assert fi.value == "Christof"
     assert get_field(root, "user.display_name").value == "Christof"
+
+
+# ---------------------------------------------------------------------------
+# unset_field
+# ---------------------------------------------------------------------------
+
+
+def test_unset_field_reverts_to_default(tmp_path: Path) -> None:
+    from lore_core.root_config import get_field, set_field, unset_field
+
+    root = _fresh_root(tmp_path, "")
+    set_field(root, "journal.enabled", "true")
+    assert get_field(root, "journal.enabled").value is True
+
+    fi = unset_field(root, "journal.enabled")
+    assert fi.value is False
+    assert fi.source == "default"
+    assert get_field(root, "journal.enabled").value is False
+
+
+def test_unset_field_preserves_siblings(tmp_path: Path) -> None:
+    from lore_core.root_config import get_field, unset_field
+
+    root = _fresh_root(tmp_path, "curator:\n  backend: openai\njournal:\n  enabled: true\n")
+    unset_field(root, "journal.enabled")
+    assert get_field(root, "journal.enabled").value is False
+    assert get_field(root, "curator.backend").value == "openai"  # untouched
+
+
+def test_unset_field_noop_when_not_set(tmp_path: Path) -> None:
+    from lore_core.root_config import unset_field
+
+    root = _fresh_root(tmp_path, "")
+    fi = unset_field(root, "journal.enabled")
+    assert fi.value is False
+    assert fi.source == "default"
+
+
+def test_unset_field_noop_when_file_absent(tmp_path: Path) -> None:
+    from lore_core.root_config import unset_field
+
+    # No .lore/config.yml at all.
+    fi = unset_field(tmp_path, "journal.enabled")
+    assert fi.value is False
+
+
+def test_unset_field_unknown_path_raises_and_leaves_file_unchanged(tmp_path: Path) -> None:
+    from lore_core.root_config import unset_field
+
+    root = _fresh_root(tmp_path, "journal:\n  enabled: true\n")
+    cfg_path = root / ".lore" / "config.yml"
+    before = cfg_path.read_text()
+    with pytest.raises(KeyError, match="unknown config path"):
+        unset_field(root, "journal.no_such_field")
+    assert cfg_path.read_text() == before
+
+
+def test_unset_field_prunes_empty_parent_mapping(tmp_path: Path) -> None:
+    from lore_core.root_config import unset_field
+
+    root = _fresh_root(tmp_path, "journal:\n  enabled: true\n")
+    unset_field(root, "journal.enabled")
+    cfg_path = root / ".lore" / "config.yml"
+    raw = yaml.safe_load(cfg_path.read_text()) or {}
+    assert "journal" not in raw
+
+
+# ---------------------------------------------------------------------------
+# unknown-path suggestions
+# ---------------------------------------------------------------------------
+
+
+def test_get_field_unknown_path_suggests_nearest(tmp_path: Path) -> None:
+    from lore_core.root_config import get_field
+
+    root = _fresh_root(tmp_path, "")
+    with pytest.raises(KeyError, match="did you mean.*curator.backend"):
+        get_field(root, "curator.backand")
+
+
+def test_set_field_unknown_path_suggests_nearest(tmp_path: Path) -> None:
+    from lore_core.root_config import set_field
+
+    root = _fresh_root(tmp_path, "")
+    with pytest.raises(KeyError, match="did you mean.*curator.backend"):
+        set_field(root, "curator.backand", "openai")

@@ -125,6 +125,7 @@ def test_first_heartbeat_records_linkage_frontmatter(tmp_path):
         "prs": [],
         "epics": [],
         "author": "",
+        "trace_id": None,
     }
 
 

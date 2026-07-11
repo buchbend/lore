@@ -34,3 +34,16 @@ def test_lore_new_wiki_legacy_form_is_gone(lore_root: Path) -> None:
     """`lore new-wiki <name>` no longer exists; only `lore wiki new` remains."""
     result = runner.invoke(app, ["new-wiki", "test-wiki"])
     assert result.exit_code != 0
+
+
+def test_scaffold_wiki_writes_commented_scopes_yml(lore_root: Path) -> None:
+    """A new wiki gets a `_scopes.yml` seeded with a commented example — a
+    starting point that parses to an empty tree (no phantom scopes)."""
+    from lore_cli.wiki_cmd import scaffold_wiki
+    from lore_core.scopes import load_scopes_yml
+
+    target = scaffold_wiki("mywiki", mode="personal")
+    scopes = target / "_scopes.yml"
+    assert scopes.exists()
+    assert "scopes:" in scopes.read_text()  # example present (commented)
+    assert load_scopes_yml(target) == {}  # commented-only → empty tree

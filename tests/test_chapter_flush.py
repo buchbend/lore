@@ -444,7 +444,7 @@ def test_same_minute_rename_collision_gets_numeric_suffix(tmp_path, monkeypatch)
 # ---------------------------------------------------------------------------
 
 
-def test_failed_midsession_flush_defers_silently(tmp_path):
+def test_failed_midsession_flush_defers_without_marker(tmp_path):
     lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"
     all_turns = _turns(0, 2)
@@ -467,6 +467,8 @@ def test_failed_midsession_flush_defers_silently(tmp_path):
     sidecar = buf.read_sidecar()
     assert sidecar.state == "accumulating"
     assert sidecar.flush_attempts == 1  # the failed attempt is remembered
+    # No marker while a retry chance remains, but no longer silent: a queued
+    # flush record + spine event are asserted in test_flush_silent_paths.py.
     assert sidecar.flush_requested is None  # request slot re-opened for next trigger
 
 
@@ -510,41 +512,35 @@ def test_next_trigger_retries_with_accumulated_slice(tmp_path):
     assert buf.read_sidecar().flush_attempts == 0  # progress cleared the memory
 
 
-def test_give_up_at_double_cap_writes_marker_and_fresh_buffer(tmp_path):
-    lore_root = _lore_root(tmp_path, cap_turns=2)  # 2x cap == 4 turns
+def test_give_up_after_max_attempts_writes_marker_and_fresh_buffer(tmp_path):
+    from lore_core.flush_store import MAX_ATTEMPTS
+
+    lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 3)  # 4 turns -> at 2x cap
+    all_turns = _turns(0, 2)
     buf = _append(lore_root, all_turns)
     adapter = _Adapter(all_turns)
 
-    # First flush fails -> deferred (flush_attempts -> 1).
-    synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=_Client([None, None]),
-        model="m",
-        adapter_lookup=_lookup(adapter),
-        auto_commit=False,
-    )
-    assert buf.read_sidecar().flush_attempts == 1
-
-    # Second flush at 2x cap with a prior failure -> give up.
-    outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=_Client([None, None]),
-        model="m",
-        adapter_lookup=_lookup(adapter),
-        auto_commit=False,
-    )
+    # Bounded retries with backoff replace the old give-up-at-2x-cap rule:
+    # each failed flush re-queues; the MAX_ATTEMPTS-th failure dead-letters.
+    outcome = None
+    for _ in range(MAX_ATTEMPTS):
+        assert buf.read_sidecar().state == "accumulating"
+        outcome = synth_in_place(
+            buf.sidecar_path,
+            lore_root=lore_root,
+            wiki_root=wiki_root,
+            llm_client=_Client([None, None]),
+            model="m",
+            adapter_lookup=_lookup(adapter),
+            auto_commit=False,
+        )
     assert outcome.status == "gave-up"
 
     view = nd.read_note(outcome.note_path)
     markers = [c for c in view.chapters if c.get("kind") == "marker"]
     assert len(markers) == 1 and markers[0]["marker"] == nd.MARKER_FAILED
-    assert markers[0]["to_turn"] == 3
+    assert markers[0]["to_turn"] == 2
     # Fresh buffer: log truncated + counters reset, still accumulating, one note.
     sidecar = buf.read_sidecar()
     assert sidecar.state == "accumulating"

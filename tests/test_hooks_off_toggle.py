@@ -155,7 +155,7 @@ def test_capture_noop_when_off(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_resolve = MagicMock()
     mock_logger = MagicMock()
     with patch("lore_cli.hooks._resolve_cwd_capture", mock_resolve), \
-         patch("lore_cli.hooks.HookEventLogger", mock_logger):
+         patch("lore_cli.hooks.emit_hook_event", mock_logger):
         from lore_cli.hooks import capture
         capture(event="session-end")
 

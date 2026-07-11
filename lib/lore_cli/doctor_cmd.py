@@ -13,6 +13,12 @@ Checks:
   5. MCP server module imports (`lore mcp` would start it)
   6. lore_search index responds (FtsBackend.stats() succeeds)
   7. Current cwd's `## Lore` block parses (if attached; else skipped)
+
+`--fix` additionally repairs: rebuilds scopes.json from attachments.json,
+re-stamps drifted offer fingerprints, and migrates attachment path
+prefixes. Every repair prints what it will change and is individually
+declinable (prompt per repair, `--yes` to skip). Plain `doctor` (no
+`--fix`) never writes state — see docs/architecture/state.md.
 """
 
 from __future__ import annotations
@@ -29,7 +35,11 @@ from rich.console import Console
 
 from lore_cli._argv_compat import argv_main
 
-console = Console()
+# emoji=False: scope IDs are colon-separated (`lore:a:b`) and Rich's emoji
+# shortcode parser reads `:a:` as the letter-A emoji, silently corrupting
+# any scope chain with a single-character segment when printed. Markup
+# ([green]/[bold]/etc.) still works — only :shortcode: substitution is off.
+console = Console(emoji=False)
 
 app = typer.Typer(
     add_completion=False,
@@ -280,6 +290,35 @@ def _check_recent_crashes(cwd: str) -> Check:
     )
 
 
+def _check_spine_writable(cwd: str) -> Check:
+    """Surface a spine write-failure degrade marker, if present.
+
+    The event spine (`lore_core.spine.SpineWriter`) is best-effort and
+    never raises on the hot path; a failed write touches
+    ``.lore/spine-failed.marker`` instead. Doctor reads that marker so a
+    telemetry blackout (full disk, bad permissions) is not itself silent.
+
+    Advisory only — the marker records a *past* failure; the writer
+    retries on the next event.
+    """
+    from datetime import UTC, datetime
+
+    from lore_core.config import get_lore_root
+
+    marker = get_lore_root() / ".lore" / "spine-failed.marker"
+    if not marker.exists():
+        return True, "event spine writes OK"
+    try:
+        mtime = datetime.fromtimestamp(marker.stat().st_mtime, tz=UTC)
+        when = mtime.isoformat().replace("+00:00", "Z")
+    except OSError:
+        when = "unknown time"
+    return False, (
+        f"spine write failed (last at {when}) \u2014 check disk / permissions; "
+        f"clear {marker} once resolved"
+    )
+
+
 def _check_hook_runnable(cwd: str) -> Check:
     """Run `lore hook session-start --plain --probe` and confirm it produces output.
 
@@ -340,8 +379,9 @@ def _check_attach(cwd: str) -> Check:
 
 def _check_attachments(cwd: str) -> Check:
     """Validate every attachments.json row: path exists, wiki dir exists,
-    scope in scopes.json, fingerprint matches current `.lore.yml` if one
-    exists at the attachment path.
+    scope in scopes.json (and its registered wiki matches the attachment's),
+    fingerprint matches current `.lore.yml` if one exists at the
+    attachment path.
     """
     from lore_core.config import get_lore_root, get_wiki_root
     from lore_core.offer import offer_fingerprint, parse_lore_yml, FILENAME as LORE_YML
@@ -370,6 +410,13 @@ def _check_attachments(cwd: str) -> Check:
             issues.append(f"{a.path}: wiki `{a.wiki}` does not exist in {wiki_root}")
         if sf.get(a.scope) is None:
             issues.append(f"{a.path}: scope `{a.scope}` not in scopes.json")
+        else:
+            resolved_wiki = sf.resolve_wiki(a.scope)
+            if resolved_wiki != a.wiki:
+                issues.append(
+                    f"{a.path}: wiki `{a.wiki}` doesn't match scope registry "
+                    f"(scope `{a.scope}` resolves to wiki `{resolved_wiki}`)"
+                )
         # Fingerprint check — only when a .lore.yml is present at the attachment root
         if a.offer_fingerprint is not None:
             lore_yml = a.path / LORE_YML
@@ -504,6 +551,204 @@ def _check_pending(cwd: str) -> Check:
     if not parts:
         return True, "no attached-wiki pending"
     return True, " · ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# `--fix` repairs.
+#
+# Each repair is self-contained: it reads state, prints what it would
+# change, asks for consent (`typer.confirm`, skippable with `--yes`), and
+# only writes after consent. attachments.json is the non-regenerable
+# consent record (docs/architecture/state.md) — no repair here may ever
+# drop a row, only rebuild scopes.json or update fields on an existing
+# row in place.
+# ---------------------------------------------------------------------------
+
+
+def _fix_rebuild_scopes(lore_root: Path, *, yes: bool) -> bool:
+    """Rebuild scopes.json from every accepted attachment.
+
+    scopes.json is regenerable; re-derives each attachment's scope chain
+    via the same `ingest_chain` `lore attach accept` uses, additively
+    repairing missing or corrupt entries (a corrupt file parses to empty,
+    so this also self-heals a corrupt scopes.json). Mutation stays
+    in-memory until confirmed — a decline leaves the file untouched.
+
+    ponytail: additive only, doesn't prune scope entries whose attachment
+    was later removed. Add a prune pass if orphaned scopes become a
+    problem in practice.
+    """
+    from lore_core.state.attachments import AttachmentsFile
+    from lore_core.state.scopes import ScopeConflict, ScopesFile
+
+    af = AttachmentsFile(lore_root)
+    af.load()
+    attachments = af.all()
+    if not attachments:
+        return False
+
+    sf = ScopesFile(lore_root)
+    sf.load()
+    before_ids = set(sf.all_ids())
+
+    conflicts: list[str] = []
+    for a in attachments:
+        try:
+            sf.ingest_chain(a.scope, a.wiki)
+        except ScopeConflict as exc:
+            conflicts.append(str(exc))
+
+    added = sorted(set(sf.all_ids()) - before_ids)
+    if not added and not conflicts:
+        return False
+
+    console.print("\n[bold]Repair: rebuild scopes.json[/bold] from attachments.json")
+    for sid in added:
+        console.print(f"  [green]+ {sid}[/green]")
+    for c in conflicts:
+        console.print(f"  [yellow]! {c} (skipped)[/yellow]")
+
+    if not yes and not typer.confirm("Apply?", default=False):
+        console.print("  [yellow]declined — no changes written[/yellow]")
+        return False
+
+    sf.save()
+    console.print("  [green]written[/green]")
+    return True
+
+
+def _fix_restamp_fingerprints(lore_root: Path, *, yes: bool) -> bool:
+    """Re-stamp offer_fingerprint for attachments whose `.lore.yml` has
+    drifted, after showing what would change and getting consent.
+
+    Mirrors `lore attach accept`'s re-acceptance: re-parses the current
+    offer and updates wiki/scope/offer_fingerprint to match it. Never
+    drops the attachment row — only updates fields in place.
+    """
+    from lore_core.offer import FILENAME as LORE_YML
+    from lore_core.offer import offer_fingerprint, parse_lore_yml
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+    from lore_core.state.scopes import ScopeConflict, ScopesFile
+
+    af = AttachmentsFile(lore_root)
+    af.load()
+    sf = ScopesFile(lore_root)
+    sf.load()
+
+    changed = False
+    for a in af.all():
+        if a.offer_fingerprint is None:
+            continue
+        lore_yml = a.path / LORE_YML
+        if not lore_yml.exists():
+            continue
+        offer = parse_lore_yml(lore_yml)
+        if offer is None:
+            continue
+        new_fp = offer_fingerprint(offer)
+        if new_fp == a.offer_fingerprint:
+            continue
+
+        console.print(f"\n[bold]Repair: re-stamp offer fingerprint[/bold] for {a.path}")
+        console.print(f"  wiki:        {a.wiki} -> {offer.wiki}")
+        console.print(f"  scope:       {a.scope} -> {offer.scope}")
+        console.print(f"  fingerprint: {a.offer_fingerprint} -> {new_fp}")
+
+        if not yes and not typer.confirm("Apply?", default=False):
+            console.print("  [yellow]declined — no changes written[/yellow]")
+            continue
+
+        try:
+            sf.ingest_chain(offer.scope, offer.wiki)
+        except ScopeConflict as exc:
+            console.print(f"  [red]scope conflict: {exc} — skipped[/red]")
+            continue
+
+        af.add(
+            Attachment(
+                path=a.path,
+                wiki=offer.wiki,
+                scope=offer.scope,
+                attached_at=a.attached_at,
+                source=a.source,
+                offer_fingerprint=new_fp,
+            )
+        )
+        changed = True
+        console.print("  [green]re-stamped[/green]")
+
+    if changed:
+        af.save()
+        sf.save()
+    return changed
+
+
+def _fix_migrate_paths(lore_root: Path, old_prefix: str, new_prefix: str, *, yes: bool) -> bool:
+    """Rewrite attachment paths after a vault/repo move.
+
+    Any attachment path under `old_prefix` is rewritten to the same
+    relative path under `new_prefix`. attachments.json is host-local and
+    not portable (docs/architecture/state.md) — this is the explicit
+    migration path when a host's paths changed but its consent records
+    should carry over.
+    """
+    from lore_core.state.attachments import Attachment, AttachmentsFile
+
+    old_path = Path(old_prefix)
+    new_path = Path(new_prefix)
+
+    af = AttachmentsFile(lore_root)
+    af.load()
+
+    rewrites: list[tuple[Attachment, Path]] = []
+    for a in af.all():
+        try:
+            rel = a.path.relative_to(old_path)
+        except ValueError:
+            continue
+        rewrites.append((a, new_path / rel))
+
+    if not rewrites:
+        return False
+
+    console.print(f"\n[bold]Repair: migrate attachment paths[/bold] {old_prefix} -> {new_prefix}")
+    for a, new in rewrites:
+        console.print(f"  {a.path} -> {new}")
+
+    if not yes and not typer.confirm("Apply?", default=False):
+        console.print("  [yellow]declined — no changes written[/yellow]")
+        return False
+
+    for a, new in rewrites:
+        af.remove(a.path)
+        af.add(
+            Attachment(
+                path=new,
+                wiki=a.wiki,
+                scope=a.scope,
+                attached_at=a.attached_at,
+                source=a.source,
+                offer_fingerprint=a.offer_fingerprint,
+            )
+        )
+    af.save()
+    console.print("  [green]migrated[/green]")
+    return True
+
+
+def _run_repairs(*, yes: bool, migrate_path_from: str | None, migrate_path_to: str | None) -> None:
+    """Entry point for `--fix`. Runs before the check pass so a single
+    invocation both repairs and reports the post-repair state."""
+    from lore_core.config import get_lore_root
+
+    lore_root = get_lore_root()
+    if not lore_root.exists():
+        return
+
+    _fix_rebuild_scopes(lore_root, yes=yes)
+    _fix_restamp_fingerprints(lore_root, yes=yes)
+    if migrate_path_from and migrate_path_to:
+        _fix_migrate_paths(lore_root, migrate_path_from, migrate_path_to, yes=yes)
 
 
 # ---------------------------------------------------------------------------
@@ -642,6 +887,9 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     # "why isn't curator A firing?" at a glance.
     ("pending", _check_pending, False),
     ("SessionStart hook", _check_hook_runnable, True),
+    # Advisory: surfaces a past event-spine write failure via its degrade
+    # marker so a telemetry blackout is not itself silent.
+    ("event spine", _check_spine_writable, False),
     # Advisory: surfaces silent failures Claude Code hides behind the
     # friendly hook banner. Doesn't fail the install — the user may
     # already be triaging.
@@ -653,10 +901,11 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     # upgraded pip; the message itself is the value (it tells them
     # to run /plugin update lore).
     ("plugin manifest", _check_plugin_manifest_sync, False),
-    # Advisory: catches the inverse — user ran `claude plugin update`
-    # but didn't refresh the pipx binary. Banner silently reports the
-    # old version; this names the fix command.
-    ("plugin cache", _check_claude_plugin_cache_drift, False),
+    # Failing (was advisory): catches the inverse — user ran `claude
+    # plugin update` but didn't refresh the pipx binary. Banner silently
+    # reports the old version; this names the fix command. The drift is
+    # common enough in practice that it should block a green `doctor` run.
+    ("plugin cache", _check_claude_plugin_cache_drift, True),
     # Cursor integration checks. All advisory: a Claude-only user has
     # no ~/.cursor dir and these all skip cleanly.
     ("cursor plugin", _check_cursor_plugin_dir, False),
@@ -678,9 +927,34 @@ def doctor(
         "--json",
         help="Emit JSON envelope on stdout (lore.doctor/1).",
     ),
+    fix: bool = typer.Option(
+        False,
+        "--fix",
+        help="Repair fixable issues: rebuild scopes.json, re-stamp drifted "
+        "offer fingerprints, migrate attachment paths. Prompts per repair "
+        "unless --yes.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Skip repair confirmation prompts (non-interactive --fix).",
+    ),
+    migrate_path_from: str = typer.Option(
+        None,
+        "--migrate-path-from",
+        help="Old absolute path prefix to rewrite in attachments.json (used with --fix).",
+    ),
+    migrate_path_to: str = typer.Option(
+        None,
+        "--migrate-path-to",
+        help="New absolute path prefix (used with --fix).",
+    ),
 ) -> None:
     """Walk the most common breakage points and print one line per check."""
     cwd = cwd or os.getcwd()
+
+    if fix:
+        _run_repairs(yes=yes, migrate_path_from=migrate_path_from, migrate_path_to=migrate_path_to)
 
     results: list[dict] = []
     all_ok = True

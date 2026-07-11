@@ -183,7 +183,7 @@ because it's read-only on a clean tree.
 | Mode | Behaviour | Surfaced via |
 |---|---|---|
 | No remote configured | Skip silently | (none) |
-| Remote unreachable | Skip silently, retry on next trigger | `hook-events.jsonl` |
+| Remote unreachable | Skip silently, retry on next trigger | `spine.jsonl` |
 | Dirty working tree (uncommitted user edits) | Skip pull, log it | `lore status` warning |
 | Clean tree, fast-forwardable | Fetch + ff | `lore status` (silent unless new commits pulled) |
 | Clean tree, diverged (we have local commits, remote has different commits) | Skip pull, surface to user | `lore status` `· wiki diverged — git pull manually` |

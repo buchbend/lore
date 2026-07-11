@@ -66,7 +66,6 @@ def _build_app() -> typer.Typer:
         curator_cmd,
         detach_cmd,
         doctor_cmd,
-        drain_cmd,
         drill_cmd,
         hooks,
         inbox_cmd,
@@ -92,6 +91,7 @@ def _build_app() -> typer.Typer:
         session_cmd,
         status_cmd,
         tier_cmd,
+        trace_cmd,
         transcripts_cmd,
         wiki_cmd,
         workflow_cmd,
@@ -136,7 +136,6 @@ def _build_app() -> typer.Typer:
     app.add_typer(codemap_cmd.app, name="codemap", rich_help_panel=_ADV)
     app.add_typer(completions_cmd.app, name="completions", rich_help_panel=_ADV)
     app.add_typer(detach_cmd.app, name="detach", rich_help_panel=_ADV)
-    app.add_typer(drain_cmd.app, name="drain", rich_help_panel=_ADV)
     app.add_typer(hooks.hook_app, name="hook", rich_help_panel=_ADV)
     app.add_typer(inbox_cmd.app, name="inbox", rich_help_panel=_ADV)
     app.add_typer(journal_cmd.app, name="journal", rich_help_panel=_KN)
@@ -149,6 +148,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(registry_cmd.app, name="registry", rich_help_panel=_ADV)
     app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
     app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
+    app.add_typer(trace_cmd.app, name="trace", rich_help_panel=_ADV)
     app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
     app.add_typer(workflow_cmd.app, name="workflow", rich_help_panel=_ADV)
 

@@ -277,14 +277,19 @@ def test_banner_all_skips_is_silent(tmp_path: Path) -> None:
 
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir(parents=True)
-    runs = lore_dir / "runs"
-    runs.mkdir(parents=True)
-    (runs / "2026-04-20T14-32-05-skipsr.jsonl").write_text(
-        json.dumps({"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"}) + "\n"
-        + json.dumps({"type": "run-end", "ts": "2026-04-20T14:32:09Z",
-                      "duration_ms": 4000, "notes_new": 0, "notes_merged": 0,
-                      "skipped": 3, "errors": 0}) + "\n"
-    )
+    run_id = "2026-04-20T14-32-05-skipsr"
+
+    def _env(rec):
+        data = {k: v for k, v in rec.items() if k not in ("type", "ts")}
+        return {"ts": rec["ts"], "v": 1, "source": "curator", "event": rec["type"],
+                "level": "info", "trace_id": None, "session_id": None, "run_id": run_id,
+                "wiki": None, "scope": None, "error_code": None, "data": data}
+
+    (lore_dir / "spine.jsonl").write_text("\n".join(json.dumps(_env(r)) for r in [
+        {"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"},
+        {"type": "run-end", "ts": "2026-04-20T14:32:09Z", "duration_ms": 4000,
+         "notes_new": 0, "notes_merged": 0, "skipped": 3, "errors": 0},
+    ]) + "\n")
     from lore_cli.breadcrumb import render_banner
     now = datetime(2026, 4, 20, 15, 0, 0, tzinfo=UTC)
     scope = Scope(
@@ -315,14 +320,19 @@ def test_banner_last_run_error_prefix(tmp_path: Path) -> None:
 
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir(parents=True)
-    runs = lore_dir / "runs"
-    runs.mkdir(parents=True)
-    (runs / "2026-04-20T14-32-05-errrun.jsonl").write_text(
-        json.dumps({"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"}) + "\n"
-        + json.dumps({"type": "run-end", "ts": "2026-04-20T14:32:09Z",
-                      "duration_ms": 4000, "notes_new": 0, "notes_merged": 0,
-                      "skipped": 0, "errors": 2}) + "\n"
-    )
+    run_id = "2026-04-20T14-32-05-errrun"
+
+    def _env(rec):
+        data = {k: v for k, v in rec.items() if k not in ("type", "ts")}
+        return {"ts": rec["ts"], "v": 1, "source": "curator", "event": rec["type"],
+                "level": "info", "trace_id": None, "session_id": None, "run_id": run_id,
+                "wiki": None, "scope": None, "error_code": None, "data": data}
+
+    (lore_dir / "spine.jsonl").write_text("\n".join(json.dumps(_env(r)) for r in [
+        {"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"},
+        {"type": "run-end", "ts": "2026-04-20T14:32:09Z", "duration_ms": 4000,
+         "notes_new": 0, "notes_merged": 0, "skipped": 0, "errors": 2},
+    ]) + "\n")
     from lore_cli.breadcrumb import render_banner
     now = datetime(2026, 4, 20, 15, 0, 0, tzinfo=UTC)
     scope = Scope(
@@ -357,11 +367,13 @@ def test_banner_hook_error_trailing_segment(tmp_path: Path) -> None:
 
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir(parents=True)
-    events = lore_dir / "hook-events.jsonl"
+    events = lore_dir / "spine.jsonl"
     recent = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     events.write_text(
-        json.dumps({"schema_version": 1, "ts": recent, "event": "session-end",
-                    "outcome": "error"}) + "\n"
+        json.dumps({"ts": recent, "v": 1, "source": "hook",
+                    "event": "session-end", "level": "error", "trace_id": None,
+                    "session_id": None, "run_id": None, "wiki": None, "scope": None,
+                    "error_code": None, "data": {"outcome": "error"}}) + "\n"
     )
     from lore_cli.breadcrumb import render_banner
     now = datetime.now(UTC)
@@ -444,16 +456,19 @@ def test_pending_breadcrumb_absent_returns_none(tmp_path: Path) -> None:
 
 def test_pending_breadcrumb_stale_returns_none(tmp_path: Path) -> None:
     """A breadcrumb written >1 hour ago is treated as stale and skipped."""
+    import json
     from datetime import UTC, datetime as _dt, timedelta
-    from lore_core.hook_log import HookEventLogger
 
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
     stale_ts = (_dt.now(UTC) - timedelta(hours=2)).isoformat().replace("+00:00", "Z")
-    HookEventLogger(tmp_path).emit(
-        event="pending-breadcrumb-written",
-        line="old line",
-        ts=stale_ts,
+    # Raw envelope with an injected stale ts (the writer stamps ts itself).
+    (lore_dir / "spine.jsonl").write_text(
+        json.dumps({"ts": stale_ts, "v": 1, "source": "hook",
+                    "event": "pending-breadcrumb-written", "level": "info",
+                    "trace_id": None, "session_id": None, "run_id": None,
+                    "wiki": None, "scope": None, "error_code": None,
+                    "data": {"line": "old line"}}) + "\n"
     )
     assert consume_pending_breadcrumb(tmp_path) is None
 
@@ -486,6 +501,70 @@ def test_render_banner_prepends_session_end_error(tmp_path: Path) -> None:
     banner = render_banner(ctx)
     assert banner is not None
     assert "capture error" in banner
+
+
+# ---------------------------------------------------------------------------
+# 15. Scope-drift warning — checked-in `.lore.yml` vs registry scope
+# ---------------------------------------------------------------------------
+
+
+def test_banner_no_scope_drift_when_offer_matches(
+    lore_root: Path, wiki_config_normal: WikiConfig,
+) -> None:
+    """Checked-in offer's scope agrees with the registry — silent."""
+    (lore_root / ".lore.yml").write_text("wiki: private\nscope: private:root\n")
+    scope = Scope(
+        wiki="private", scope="private:root", backend="none",
+        claude_md_path=lore_root / "CLAUDE.md",
+    )
+    now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
+    ctx = BannerContext(lore_root=lore_root, scope=scope, wiki_config=wiki_config_normal, now=now)
+    assert render_banner(ctx) is None
+
+
+def test_banner_no_scope_drift_when_no_checked_in_file(
+    lore_root: Path, wiki_config_normal: WikiConfig, scope: Scope,
+) -> None:
+    """No `.lore.yml` on disk (e.g. a manual attachment) — nothing to warn about."""
+    now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
+    ctx = BannerContext(lore_root=lore_root, scope=scope, wiki_config=wiki_config_normal, now=now)
+    assert render_banner(ctx) is None
+
+
+def test_banner_warns_on_scope_drift_after_rename(
+    lore_root: Path, wiki_config_normal: WikiConfig,
+) -> None:
+    """`lore scopes rename` moved this attachment to a new scope, but the
+    checked-in `.lore.yml` (this repo's attachment root == lore_root in
+    this fixture) still declares the old one — the exact residue a
+    rename leaves behind since it never edits attached repos' files."""
+    (lore_root / ".lore.yml").write_text("wiki: private\nscope: old:scope\n")
+    scope = Scope(
+        wiki="private", scope="new:scope", backend="none",
+        claude_md_path=lore_root / "CLAUDE.md",
+    )
+    now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
+    ctx = BannerContext(lore_root=lore_root, scope=scope, wiki_config=wiki_config_normal, now=now)
+    banner = render_banner(ctx)
+    assert banner is not None
+    assert "old:scope" in banner
+    assert "new:scope" in banner
+    assert "lore attach accept" in banner
+
+
+def test_banner_scope_drift_suppressed_in_quiet_mode(
+    lore_root: Path, wiki_config_quiet: WikiConfig,
+) -> None:
+    """Same tier as the hook-error count: quiet mode suppresses it too —
+    only the last-run-error prefix bypasses quiet."""
+    (lore_root / ".lore.yml").write_text("wiki: private\nscope: old:scope\n")
+    scope = Scope(
+        wiki="private", scope="new:scope", backend="none",
+        claude_md_path=lore_root / "CLAUDE.md",
+    )
+    now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
+    ctx = BannerContext(lore_root=lore_root, scope=scope, wiki_config=wiki_config_quiet, now=now)
+    assert render_banner(ctx) is None
 
 
 def test_render_banner_quiet_with_session_end_error(tmp_path: Path) -> None:

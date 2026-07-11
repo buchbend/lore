@@ -44,7 +44,7 @@ def flocked(path: Path, *, blocking: bool = True):
     lock held — no stale-lock recovery is needed.
 
     Replaces three near-identical call sites (this module's spawn lock,
-    ``hook_log`` rotation, ``install/_helpers._flocked``).
+    ``spine`` rotation, ``install/_helpers._flocked``).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd: int | None = None

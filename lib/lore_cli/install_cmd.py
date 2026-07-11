@@ -385,110 +385,6 @@ def _is_interactive(args: SimpleNamespace) -> bool:
     return sys.stdin.isatty() and not args.yes and not args.json and not args.quiet
 
 
-def _post_install_setup() -> None:
-    """Interactive vault + wiki scaffolding after a successful integration install.
-
-    Only called in interactive mode for fresh installs. Skipped silently
-    if the vault already exists and has wikis.
-    """
-    from lore_core.config import get_lore_root
-
-    # --- Vault setup ---------------------------------------------------
-    try:
-        lore_root = get_lore_root()
-        has_vault = (lore_root / "wiki").is_dir()
-    except Exception:
-        has_vault = False
-
-    if has_vault:
-        wiki_root = lore_root / "wiki"
-        existing_wikis = [
-            d.name for d in wiki_root.iterdir() if d.is_dir()
-        ]
-        if existing_wikis:
-            # Vault exists and has wikis — nothing to do
-            return
-
-    console.print()
-    console.print("[bold]Vault setup[/bold]", markup=True)
-
-    default_root = Path.home() / "lore"
-    vault_input = input(
-        f"  Where to store your vault? [{default_root}]: "
-    ).strip()
-    vault_path = Path(vault_input).expanduser().resolve() if vault_input else default_root
-
-    from lore_cli.init_cmd import init_vault  # lazy to avoid circular imports
-
-    init_vault(vault_path, force=False)
-
-    # --- Wiki setup ----------------------------------------------------
-    wiki_root = vault_path / "wiki"
-    existing_wikis = (
-        [d.name for d in wiki_root.iterdir() if d.is_dir()]
-        if wiki_root.exists()
-        else []
-    )
-
-    if not existing_wikis:
-        console.print()
-        console.print("  Do you have a team wiki to connect?")
-        console.print("    [g] Clone from GitHub URL")
-        console.print("    [f] Link existing folder")
-        console.print("    [s] Skip — create a personal wiki only")
-        team_choice = input("  Choice [s]: ").strip().lower() or "s"
-
-        if team_choice == "g":
-            url = input("  GitHub URL: ").strip()
-            if url:
-                import subprocess as _sp
-
-                wiki_name = (
-                    url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
-                )
-                target = wiki_root / wiki_name
-                _sp.run(["git", "clone", url, str(target)], check=True)
-                console.print(
-                    f"  [green]✓[/green] Team wiki '{rich_escape(wiki_name)}' cloned",
-                    markup=True,
-                )
-        elif team_choice == "f":
-            folder = input("  Folder path: ").strip()
-            if folder:
-                source = Path(folder).expanduser().resolve()
-                wiki_name = source.name
-                target = wiki_root / wiki_name
-                target.symlink_to(source)
-                console.print(
-                    f"  [green]✓[/green] Wiki '{rich_escape(wiki_name)}' linked",
-                    markup=True,
-                )
-
-        # Personal wiki
-        personal = input("  Create a personal wiki too? [Y/n]: ").strip().lower()
-        if personal != "n":
-            name = input("  Personal wiki name [personal]: ").strip() or "personal"
-            from lore_cli.new_wiki_cmd import scaffold_wiki  # lazy import
-
-            scaffold_wiki(name, mode="personal")
-            console.print(
-                f"  [green]✓[/green] Wiki '{rich_escape(name)}' created",
-                markup=True,
-            )
-
-    # --- Final handoff -------------------------------------------------
-    console.print()
-    console.print(
-        "  [bold]Next:[/bold] run [cyan]lore attach[/cyan] in any repo "
-        "to start capturing sessions.",
-        markup=True,
-    )
-    console.print(
-        "  [bold]Verify:[/bold] [cyan]lore doctor[/cyan]",
-        markup=True,
-    )
-
-
 _INSTALL_SH_URL = "https://raw.githubusercontent.com/buchbend/lore/main/install.sh"
 
 
@@ -542,6 +438,34 @@ def _run_self_upgrade(*, quiet: bool) -> int:
         return 1
 
 
+def _loud_plugin_cache_failure(detail: str) -> None:
+    """Plugin-cache refresh failed — never silent.
+
+    A stale cache means hooks, skills, and the MCP server keep serving the
+    previous manifest with no error at all (exactly the silent-failure
+    class this epic targets), so surface it loudly and name the manual
+    fix plus the required Claude Code restart. Printed even under
+    ``--quiet``: this is an error, not a per-action line.
+    """
+    from rich.panel import Panel
+
+    console.print(
+        Panel(
+            "Claude's plugin cache was NOT refreshed:\n"
+            f"  {detail}\n\n"
+            "Hooks, skills, and the MCP server may keep serving the old "
+            "version.\n"
+            "If Lore isn't installed as a plugin yet, add it via /plugin.\n"
+            "Otherwise fix it manually, then restart Claude Code:\n"
+            "  claude plugin update lore@lore",
+            title="plugin cache stale — restart Claude Code",
+            border_style="red",
+            expand=False,
+        ),
+        markup=False,
+    )
+
+
 def _refresh_claude_plugin_cache(*, quiet: bool) -> None:
     """Run `claude plugin update lore@lore` so Claude re-fetches the manifest.
 
@@ -581,24 +505,13 @@ def _refresh_claude_plugin_cache(*, quiet: bool) -> None:
             timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        if not quiet:
-            console.print(
-                f"  [yellow]claude plugin update failed: {exc}[/yellow] "
-                "Run [cyan]claude plugin update lore@lore[/cyan] manually.",
-                markup=True,
-            )
+        _loud_plugin_cache_failure(str(exc))
         return
 
     if result.returncode != 0:
-        if not quiet:
-            stderr = (result.stderr or result.stdout or "").strip().splitlines()
-            tail = stderr[-1] if stderr else f"exit {result.returncode}"
-            console.print(
-                f"  [yellow]claude plugin update lore@lore: {rich_escape(tail)}[/yellow]\n"
-                "  If the plugin isn't installed yet, add it from the Claude "
-                "marketplace via [cyan]/plugin[/cyan].",
-                markup=True,
-            )
+        stderr = (result.stderr or result.stdout or "").strip().splitlines()
+        tail = stderr[-1] if stderr else f"exit {result.returncode}"
+        _loud_plugin_cache_failure(tail)
         return
 
     if not quiet:
@@ -719,21 +632,11 @@ def _cmd_install(args: SimpleNamespace, mode: str) -> int:
         # Claude integration was actually part of the run.
         if any(name == "claude" for name, _ in plans) and not args.json:
             _refresh_claude_plugin_cache(quiet=args.quiet)
-        if interactive:
-            try:
-                _post_install_setup()
-            except (KeyboardInterrupt, EOFError):
-                console.print(
-                    "\n\n  [yellow]Setup interrupted.[/yellow] "
-                    "Run [cyan]lore init[/cyan] later to finish vault setup.",
-                    markup=True,
-                )
-        else:
-            console.print(
-                "\n[bold]Next:[/bold] run [cyan]lore init[/cyan] to scaffold "
-                "your vault.",
-                markup=True,
-            )
+        console.print(
+            "\n[bold]Next:[/bold] run [cyan]lore init[/cyan] to scaffold "
+            "your vault and finish onboarding.",
+            markup=True,
+        )
     return 0 if overall_failures == 0 else 1
 
 

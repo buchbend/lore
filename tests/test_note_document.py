@@ -146,6 +146,7 @@ def test_create_writes_linkage_block(tmp_path):
         "prs": [],
         "epics": [162],
         "author": "Christof Buchbender",
+        "trace_id": None,
     }
 
 

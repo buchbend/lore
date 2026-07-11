@@ -1,7 +1,11 @@
 """Read-side of the run-log subsystem.
 
-- resolve_run_id():    user identifier → archival file Path
-- read_run():          JSONL → list[dict] with tolerant parsing
+Curator runs now live on the event spine (``source="curator"``), grouped
+by ``run_id``; ``read_curator_runs`` / ``run_ids`` / ``read_run_by_id``
+reconstruct a run's legacy-shaped record list from it. ``resolve_run_id``
+maps a user identifier to a ``run_id`` (not a file path). The file-based
+``list_archival_runs`` / ``iter_archival_runs`` / ``read_run`` helpers
+remain for the retention janitor and any on-disk archives.
 """
 
 from __future__ import annotations
@@ -40,8 +44,8 @@ _CARET_RE = re.compile(r"^\^(\d+)$")
 def list_archival_runs(lore_root: Path) -> list[Path]:
     """Return archival run files sorted oldest → newest (chronological).
 
-    Used by ``resolve_run_id`` for prefix matching and by retention for
-    FIFO deletion. For newest-first iteration (the common case for
+    Used by the retention janitor for FIFO deletion (run *resolution* now
+    reads spine run_ids, not files). For newest-first iteration (the common case for
     renderers) use :func:`iter_archival_runs`.
 
     Excludes ``.trace.jsonl`` companions. Returns empty list if the
@@ -87,38 +91,79 @@ def iter_archival_runs(
         count += 1
 
 
-def resolve_run_id(lore_root: Path, identifier: str) -> Path:
-    """Resolve a user identifier to a run file path.
+def read_curator_runs(lore_root: Path) -> dict[str, list[dict]]:
+    """Group curator spine events by ``run_id`` into legacy-shaped records.
+
+    Each spine envelope becomes a ``{type, ts, schema_version, **data}`` record
+    (the shape the run renderers already consume); records stay in spine append
+    order, i.e. chronological within a run. Envelopes without a ``run_id`` (the
+    flush-state-machine and spawn events) are not part of any run.
+    """
+    from lore_core.spine import read_spine
+
+    grouped: dict[str, list[dict]] = {}
+    for rec in read_spine(lore_root, source="curator"):
+        rid = rec.get("run_id")
+        if not rid:
+            continue
+        legacy = dict(rec.get("data") or {})
+        legacy["type"] = rec.get("event")
+        legacy["ts"] = rec.get("ts")
+        legacy.setdefault("schema_version", 1)
+        grouped.setdefault(rid, []).append(legacy)
+    return grouped
+
+
+def run_ids(
+    lore_root: Path, *, newest_first: bool = True, limit: int | None = None
+) -> list[str]:
+    """Return run_ids seen on the spine. run_id is ts-prefixed, so lexicographic
+    order is chronological."""
+    ids = sorted(read_curator_runs(lore_root).keys())
+    if newest_first:
+        ids = list(reversed(ids))
+    if limit is not None:
+        ids = ids[:limit]
+    return ids
+
+
+def read_run_by_id(lore_root: Path, run_id: str) -> list[dict]:
+    """Return one run's reconstructed records, or [] if unknown."""
+    return read_curator_runs(lore_root).get(run_id, [])
+
+
+def resolve_run_id(lore_root: Path, identifier: str) -> str:
+    """Resolve a user identifier to a ``run_id`` from the spine.
 
     Accepts:
       - 'latest'         → most recent run
       - '^1', '^2', …    → N-th most recent (^1 == latest)
-      - full ID          → exact file
+      - full ID          → exact
       - 6-char suffix    → unique short ID (e.g. 'a1b2c3')
       - any prefix       → if unique
     """
-    runs = _list_runs(lore_root)
-    if not runs:
-        raise RunIdNotFound("no runs on disk")
+    ids = run_ids(lore_root, newest_first=False)  # chronological
+    if not ids:
+        raise RunIdNotFound("no runs on the spine")
     if identifier == "latest":
-        return runs[-1]
+        return ids[-1]
     m = _CARET_RE.match(identifier)
     if m:
         n = int(m.group(1))
-        if n < 1 or n > len(runs):
-            raise RunIdNotFound(f"^{n} out of range (have {len(runs)} runs)")
-        return runs[-n]
+        if n < 1 or n > len(ids):
+            raise RunIdNotFound(f"^{n} out of range (have {len(ids)} runs)")
+        return ids[-n]
     if re.fullmatch(r"[a-z0-9]{6}", identifier):
-        matches = [p for p in runs if p.stem.endswith(f"-{identifier}")]
+        matches = [rid for rid in ids if rid.endswith(f"-{identifier}")]
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
-            raise RunIdAmbiguous([p.stem for p in matches])
-    matches = [p for p in runs if p.stem.startswith(identifier)]
+            raise RunIdAmbiguous(matches)
+    matches = [rid for rid in ids if rid.startswith(identifier)]
     if not matches:
         raise RunIdNotFound(identifier)
     if len(matches) > 1:
-        raise RunIdAmbiguous([p.stem for p in matches])
+        raise RunIdAmbiguous(matches)
     return matches[0]
 
 

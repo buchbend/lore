@@ -95,6 +95,44 @@ def test_rename_propagates_to_attachments(lore_root: Path, tmp_path: Path) -> No
     assert entries[0].scope == "ccat:infra:computers"
 
 
+def test_rename_reports_stale_checked_in_offer(lore_root: Path, tmp_path: Path) -> None:
+    """Rename never edits files inside an attached repo — it should name
+    the checked-in `.lore.yml` that's now left declaring the old scope,
+    since a future `lore attach accept` there would otherwise resurrect
+    the renamed-away scope."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".lore.yml").write_text("wiki: team-alpha\nscope: ccat:data-center\n")
+    _seed_scope(lore_root, "ccat:data-center", "team-alpha")
+    _seed_attachment(lore_root, repo, wiki="team-alpha", scope="ccat:data-center")
+
+    result = runner.invoke(
+        app,
+        ["scopes", "rename", "ccat:data-center", "ccat:infra", "--yes"],
+    )
+    assert result.exit_code == 0
+    assert "still reference the old scope" in result.stdout
+    # Rich's path highlighter splits dir/filename into separate ANSI
+    # spans, so match the filename token rather than the full string.
+    assert "repo" in result.stdout
+    assert ".lore.yml" in result.stdout
+
+
+def test_rename_no_stale_report_without_checked_in_file(lore_root: Path, tmp_path: Path) -> None:
+    """A manual attachment (no `.lore.yml` on disk) has nothing to report."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _seed_scope(lore_root, "ccat:data-center", "team-alpha")
+    _seed_attachment(lore_root, repo, wiki="team-alpha", scope="ccat:data-center")
+
+    result = runner.invoke(
+        app,
+        ["scopes", "rename", "ccat:data-center", "ccat:infra", "--yes"],
+    )
+    assert result.exit_code == 0
+    assert "still reference the old scope" not in result.stdout
+
+
 def test_rename_missing_scope_fails(lore_root: Path) -> None:
     result = runner.invoke(app, ["scopes", "rename", "nope", "other", "--yes"])
     assert result.exit_code == 1

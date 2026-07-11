@@ -223,16 +223,16 @@ def test_capture_unattached_cwd_returns_without_ledger_write(tmp_path: Path) -> 
     ledger_path = tmp_path / ".lore" / "transcript-ledger.json"
     assert not ledger_path.exists(), "unattached cwd must not touch the ledger"
 
-    events_path = tmp_path / ".lore" / "hook-events.jsonl"
+    events_path = tmp_path / ".lore" / "spine.jsonl"
     assert events_path.exists(), "no-scope path must still log a hook event"
     records = [_json.loads(ln) for ln in events_path.read_text().splitlines() if ln.strip()]
     assert len(records) == 1
     ev = records[0]
-    assert ev["outcome"] == "no-scope"
+    assert ev["data"]["outcome"] == "no-scope"
     assert ev["event"] == "session-end"
-    assert ev["cwd"] == str(unattached)
+    assert ev["data"]["cwd"] == str(unattached)
     assert ev["scope"] is None
-    assert ev.get("error") is None
+    assert ev["error_code"] is None
 
 
 def test_capture_under_100ms(tmp_path: Path, fake_adapter_factory, monkeypatch) -> None:
@@ -392,7 +392,7 @@ def test_capture_spawns_when_threshold_exceeded(
 
 
 def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_factory) -> None:
-    """capture emits hook-events record with pid, cwd, schema_version=2."""
+    """capture emits spine record with pid, cwd, schema_version=2."""
     project = _make_attached_project(tmp_path)
     handle = _make_handle(project)
     fake_adapter_factory([handle])
@@ -407,7 +407,7 @@ def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_
 
     import json
     import os
-    events_path = project / ".lore" / "hook-events.jsonl"
+    events_path = project / ".lore" / "spine.jsonl"
     assert events_path.exists()
     # Post-Task-9b the event log can contain pending-breadcrumb-* records
     # after the capture event; assert provenance on the capture event
@@ -418,11 +418,11 @@ def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_
     capture_records = [r for r in records if r.get("event") == "session-end"]
     assert capture_records, f"expected a session-end capture record; got {records}"
     record = capture_records[-1]
-    assert record["schema_version"] == 2
-    assert record["pid"] == os.getpid()
-    assert record["cwd"] == str(project)
+    assert record["v"] == 1
+    assert record["data"]["pid"] == os.getpid()
+    assert record["data"]["cwd"] == str(project)
     # ppid_cmd is present (may be None on some systems)
-    assert "ppid_cmd" in record
+    assert "ppid_cmd" in record["data"]
 
 
 def test_capture_does_not_spawn_when_under_threshold(
@@ -611,7 +611,7 @@ def test_capture_handles_unknown_host_gracefully(tmp_path: Path) -> None:
 
 
 def test_capture_emits_hook_event_happy_path(tmp_path: Path, fake_adapter_factory, monkeypatch) -> None:
-    """capture() writes one line to hook-events.jsonl with expected outcome."""
+    """capture() writes one line to the spine with expected outcome."""
     import json
     from lore_cli.hooks import capture
 
@@ -622,15 +622,15 @@ def test_capture_emits_hook_event_happy_path(tmp_path: Path, fake_adapter_factor
     monkeypatch.setenv("LORE_ROOT", str(project))
     capture(event="session-end", cwd_override=project, integration="fake")
 
-    log = project / ".lore" / "hook-events.jsonl"
-    assert log.exists(), "hook-events.jsonl should be created"
+    log = project / ".lore" / "spine.jsonl"
+    assert log.exists(), "spine.jsonl should be created"
     records = [json.loads(line) for line in log.read_text().splitlines()]
     assert len(records) >= 1
     latest = records[-1]
     assert latest["event"] == "session-end"
-    assert latest["outcome"] in {"ledger-advanced", "below-threshold", "spawned-curator", "no-new-turns"}
-    assert "duration_ms" in latest
-    assert latest["error"] is None
+    assert latest["data"]["outcome"] in {"ledger-advanced", "below-threshold", "spawned-curator", "no-new-turns"}
+    assert "duration_ms" in latest["data"]
+    assert latest["error_code"] is None
 
 
 def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_factory, monkeypatch) -> None:
@@ -652,11 +652,11 @@ def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_facto
     with pytest.raises(RuntimeError, match="boom"):
         hooks.capture(event="session-end", cwd_override=project, integration="fake")
 
-    log = project / ".lore" / "hook-events.jsonl"
+    log = project / ".lore" / "spine.jsonl"
     records = [json.loads(line) for line in log.read_text().splitlines()]
-    errors = [r for r in records if r["outcome"] == "error"]
+    errors = [r for r in records if r.get("data", {}).get("outcome") == "error"]
     assert errors, "expected at least one error record"
-    assert errors[-1]["error"]["type"] == "RuntimeError"
+    assert errors[-1]["data"]["error"]["type"] == "RuntimeError"
 
 
 # ---------------------------------------------------------------------------
@@ -702,7 +702,7 @@ def test_capture_session_end_no_breadcrumb_when_below_threshold(
     assert result.exit_code == 0, result.output
 
     import json as _json
-    events_path = project / ".lore" / "hook-events.jsonl"
+    events_path = project / ".lore" / "spine.jsonl"
     if events_path.exists():
         events = [_json.loads(l) for l in events_path.read_text().splitlines() if l.strip()]
         written = [e for e in events if e.get("event") == "pending-breadcrumb-written"]
@@ -916,7 +916,7 @@ def test_capture_does_not_write_to_real_lore_root(tmp_path, monkeypatch) -> None
     """Regression: capture() must not leak records to the user's real vault.
 
     Verifies that when LORE_ROOT is monkeypatched to tmp_path, no writes
-    reach the real production hook-events.jsonl.
+    reach the real production spine.jsonl.
     """
     import json
     import os
@@ -925,7 +925,7 @@ def test_capture_does_not_write_to_real_lore_root(tmp_path, monkeypatch) -> None
 
     real_lore_root = os.environ.get("LORE_ROOT", "")
     real_events = (
-        Path(real_lore_root) / ".lore" / "hook-events.jsonl"
+        Path(real_lore_root) / ".lore" / "spine.jsonl"
         if real_lore_root
         else None
     )
@@ -947,8 +947,8 @@ def test_capture_does_not_write_to_real_lore_root(tmp_path, monkeypatch) -> None
         _REGISTRY.pop("fake", None)
 
     # Verify the record went to the isolated tmp location, not the real vault.
-    # LORE_ROOT is set to tmp_path, so HookEventLogger writes to tmp_path/.lore/
-    isolated_log = tmp_path / ".lore" / "hook-events.jsonl"
+    # LORE_ROOT is set to tmp_path, so the spine writer writes to tmp_path/.lore/
+    isolated_log = tmp_path / ".lore" / "spine.jsonl"
     assert isolated_log.exists(), "capture() should write to the isolated tmp_path"
     records = [json.loads(line) for line in isolated_log.read_text().splitlines()]
     assert len(records) >= 1, "expected at least one record in isolated log"
@@ -1284,13 +1284,13 @@ def test_capture_emits_pending_by_wiki_in_hook_event(
     )
     assert result.exit_code == 0, result.output
 
-    log = lore_root / ".lore" / "hook-events.jsonl"
+    log = lore_root / ".lore" / "spine.jsonl"
     records = [json.loads(l) for l in log.read_text().splitlines() if l.strip()]
     capture_records = [r for r in records if r.get("event") == "session-end"]
     assert capture_records
     rec = capture_records[-1]
-    assert "pending_after" in rec
-    assert "pending_by_wiki" in rec
+    assert "pending_after" in rec["data"]
+    assert "pending_by_wiki" in rec["data"]
     # Counts dict, not the full entry list.
 
 
@@ -1327,7 +1327,7 @@ def test_capture_suppressed_by_env_flag_is_full_noop(
     assert ledger.get("fake", "t1") is None, "suppressed capture must not touch the ledger"
     assert not spawn_calls, "suppressed capture must never spawn curator A"
 
-    events_path = project / ".lore" / "hook-events.jsonl"
+    events_path = project / ".lore" / "spine.jsonl"
     assert not events_path.exists(), "suppressed capture must not emit hook telemetry"
 
 
