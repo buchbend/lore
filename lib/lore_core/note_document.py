@@ -249,6 +249,7 @@ def _apply_linkage(fm: dict[str, Any], linkage: Linkage | None) -> None:
         "prs": list(linkage.prs),
         "epics": list(linkage.epics),
         "author": linkage.author,
+        "trace_id": linkage.trace_id,
     }
 
 

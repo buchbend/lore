@@ -39,19 +39,29 @@ def _write_legacy_system_row(lore_root: Path, *, event: str, wiki: str,
     guard. The reader path keeps surfacing them so users notice
     pollution and can prune it.
     """
-    path = lore_root / ".lore" / "drain" / "_system.jsonl"
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # Post-#188 the drain lives on the spine; plant a raw source="drain"
+    # envelope directly (bypassing DrainStore.emit()'s _system guard) to
+    # simulate a system-stream drain event the banner must still surface.
+    spine = lore_root / ".lore" / "spine.jsonl"
+    spine.parent.mkdir(parents=True, exist_ok=True)
     data = dict(extra)
     if wikilink is not None:
         data["wikilink"] = wikilink
     record = {
-        "ts": datetime.now(UTC).isoformat(),
+        "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "v": 1,
+        "source": "drain",
         "event": event,
-        "wiki": wiki,
+        "level": "info",
+        "trace_id": None,
         "session_id": SYSTEM_SESSION,
+        "run_id": None,
+        "wiki": wiki,
+        "scope": None,
+        "error_code": None,
         "data": data,
     }
-    with path.open("a") as fp:
+    with spine.open("a") as fp:
         fp.write(json.dumps(record) + "\n")
 
 

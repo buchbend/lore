@@ -1,22 +1,23 @@
 """Per-session drain store — append-only event log surfaced by `lore news`.
 
-Each Claude Code session owns a drain file at
-``<lore_root>/.lore/drain/<session-id>.jsonl`` that records what Lore
-did on its behalf since the session began. A separate `_system.jsonl`
-captures events that aren't tied to a specific session (Curator B
-surface consolidation, transcript sync, future cross-session work).
+Drain events — what Lore did on a session's behalf, surfaced by
+`lore news` — are emitted onto the unified event spine with
+``source="drain"`` (issue #188). Each event carries the resolving
+``session_id`` so per-session and ``_system`` streams stay separable on
+one shared log. There is no longer a per-session ``<session-id>.jsonl``
+writer; :class:`DrainStore` is a thin producer/reader adapter over the
+spine, keeping only the news *cursor* files under ``.lore/drain/``.
 
 Design invariants:
 
-* **Append-only.** Every entry is one line of JSON; the file is never
-  rewritten. Crash-safety comes from `O_APPEND` + a hard per-line size
-  cap so a partial final line can only ever be a single malformed
-  record the reader skips.
-* **Line size cap.** ``MAX_DRAIN_LINE`` bytes. On overflow we truncate
-  the ``data`` payload and set ``"truncated": true`` so the reader can
-  surface "data elided" rather than silently dropping.
-* **Fresh-install safe.** ``DrainStore(...)`` creates the parent dir
-  eagerly so the first emit doesn't race the filesystem.
+* **On the spine.** ``emit`` appends one envelope via
+  :class:`~lore_core.spine.SpineWriter` (POSIX-atomic ``O_APPEND``);
+  ``read`` filters the spine to ``source="drain"`` and this session's id.
+* **Never raises, but visible.** A failed write is swallowed by the spine
+  writer *and* leaves the ``spine-failed.marker`` — a dropped drain event
+  is no longer invisible.
+* **Fresh-install safe.** ``DrainStore(...)`` creates ``.lore/drain/``
+  eagerly (for the cursor files) so the first read doesn't race the fs.
 
 Session-id resolution is its own function (:func:`resolve_session_id`)
 because the "who is this session?" question has four distinct sources
@@ -24,7 +25,6 @@ with a deterministic priority order.
 """
 from __future__ import annotations
 
-import json
 import os
 import time
 from dataclasses import dataclass
@@ -32,7 +32,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-MAX_DRAIN_LINE = 4096  # bytes per record, including trailing newline
+from lore_core.spine import SpineWriter, read_spine
+
 SYSTEM_SESSION = "_system"
 
 
@@ -62,14 +63,12 @@ class DrainStore:
     def __init__(self, lore_root: Path, session_id: str) -> None:
         self._lore_root = lore_root
         self._session_id = session_id
+        # `.lore/drain/` now holds only the news cursor files; drain *events*
+        # live on the shared spine. Created eagerly so a cursor read/write
+        # never races the filesystem on a fresh install.
         self._dir = lore_root / ".lore" / "drain"
         self._dir.mkdir(parents=True, exist_ok=True)
-        self._path = self._dir / f"{session_id}.jsonl"
         self._cursor_path = self._dir / f"{session_id}.cursor"
-
-    @property
-    def path(self) -> Path:
-        return self._path
 
     @property
     def session_id(self) -> str:
@@ -80,16 +79,22 @@ class DrainStore:
         event: str,
         *,
         wiki: str | None = None,
+        trace_id: str | None = None,
         **data: Any,
     ) -> None:
-        """Append one event record to the drain.
+        """Emit one drain event onto the spine (``source="drain"``).
 
         Raises ValueError on an unknown ``event`` name, or when a
-        non-``transcript-synced`` event is targeted at the system
-        drain (``SYSTEM_SESSION``). The system stream is shared
-        across all sessions, so per-note events written there would
-        haunt every future SessionStart — only ``transcript-synced``
-        belongs in ``_system``.
+        non-``transcript-synced`` event is targeted at the system drain
+        (``SYSTEM_SESSION``) — the shared stream, where per-note events would
+        haunt every future SessionStart. The spine write itself never raises:
+        a failure is swallowed *and* marked (``spine-failed.marker``), so a
+        dropped drain event is no longer invisible.
+
+        ``trace_id`` correlates a note event with the flush that produced it
+        (#188); ``None`` for events outside a traced flush. Callers must keep
+        ``data`` small — a drain record shares the spine's PIPE_BUF atomicity
+        budget (only bounded metadata is ever passed today).
         """
         if event not in EVENT_VOCAB:
             raise ValueError(f"unknown drain event: {event!r}")
@@ -97,38 +102,17 @@ class DrainStore:
             raise ValueError(
                 f"system drain accepts only 'transcript-synced'; got {event!r}"
             )
-
-        record: dict[str, Any] = {
-            "ts": datetime.now(UTC).isoformat(),
-            "event": event,
-            "wiki": wiki,
-            "session_id": self._session_id,
-            "data": data,
-        }
-        line = (json.dumps(record) + "\n").encode("utf-8")
-        if len(line) > MAX_DRAIN_LINE:
-            # Retry with truncated payload.
-            record["data"] = {"truncated_from_keys": sorted(data.keys())}
-            record["truncated"] = True
-            line = (json.dumps(record) + "\n").encode("utf-8")
-            # If even the shell is too big (pathological), drop data entirely.
-            if len(line) > MAX_DRAIN_LINE:
-                record["data"] = {}
-                line = (json.dumps(record) + "\n").encode("utf-8")
-
-        # O_APPEND on a local POSIX fs delivers atomic per-write semantics
-        # for writes <= PIPE_BUF (4096 on Linux). Our cap is 4096 bytes
-        # INCLUDING the newline, so a single write() is safe. The `with`
-        # block close-flushes before return.
-        try:
-            fd = os.open(str(self._path), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
-            try:
-                os.write(fd, line)
-            finally:
-                os.close(fd)
-        except OSError:
-            # Drain is telemetry; never block real work.
-            pass
+        # ponytail: no per-record size cap here; drain producers only ever pass
+        # bounded metadata (wiki, wikilink, note path, transcript id). Add a
+        # truncate-in-adapter guard if a large-payload producer ever appears.
+        SpineWriter(self._lore_root).emit(
+            source="drain",
+            event=event,
+            trace_id=trace_id,
+            session_id=self._session_id,
+            wiki=wiki,
+            data=dict(data),
+        )
 
     def read(
         self,
@@ -136,48 +120,32 @@ class DrainStore:
         since: datetime | None = None,
         limit: int = 50,
     ) -> list[DrainEvent]:
-        """Return up to ``limit`` events, optionally filtered by ``since``.
+        """Return up to ``limit`` of this session's drain events from the spine.
 
-        Malformed lines are silently skipped (see the atomicity note in
-        the module docstring). Returns chronological order, oldest first.
+        Filtered to ``source="drain"`` and this store's ``session_id``,
+        optionally since ``since``. Chronological (oldest first); malformed
+        spine lines are skipped by the reader.
         """
-        if not self._path.exists():
-            return []
         out: list[DrainEvent] = []
-        try:
-            with self._path.open("r", encoding="utf-8", errors="replace") as fp:
-                for raw in fp:
-                    line = raw.strip()
-                    if not line:
-                        continue
-                    try:
-                        obj = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if not isinstance(obj, dict):
-                        continue
-                    ts_raw = obj.get("ts")
-                    if not isinstance(ts_raw, str):
-                        continue
-                    try:
-                        ts = datetime.fromisoformat(ts_raw)
-                    except ValueError:
-                        continue
-                    if since is not None and ts < since:
-                        continue
-                    out.append(
-                        DrainEvent(
-                            ts=ts,
-                            event=str(obj.get("event", "")),
-                            wiki=obj.get("wiki"),
-                            session_id=str(obj.get("session_id", "")),
-                            data=obj.get("data") or {},
-                            truncated=bool(obj.get("truncated", False)),
-                        )
-                    )
-        except OSError:
-            return []
-        # Tail ``limit`` entries.
+        for rec in read_spine(self._lore_root, source="drain"):
+            if rec.get("session_id") != self._session_id:
+                continue
+            ts = _parse_ts(rec.get("ts"))
+            if ts is None:
+                continue
+            if since is not None and ts < since:
+                continue
+            data = rec.get("data") or {}
+            out.append(
+                DrainEvent(
+                    ts=ts,
+                    event=str(rec.get("event", "")),
+                    wiki=rec.get("wiki"),
+                    session_id=str(rec.get("session_id", "")),
+                    data=data,
+                    truncated=bool(data.get("truncated", False)),
+                )
+            )
         if limit > 0:
             out = out[-limit:]
         return out
@@ -222,6 +190,16 @@ class DrainStore:
         anchor = now if now is not None else datetime.now(UTC)
         self.write_cursor(anchor)
         return anchor
+
+
+def _parse_ts(raw: Any) -> datetime | None:
+    """Parse a spine ``ts`` (ISO-8601, possibly ``Z``-suffixed)."""
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def resolve_session_id(

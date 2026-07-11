@@ -27,15 +27,26 @@ def _write_legacy_system_row(lore_root: Path, *, event: str, wiki: str,
     written before the guard. The reader path must continue to handle
     them gracefully — those tests need to plant exactly that shape.
     """
-    path = lore_root / ".lore" / "drain" / "_system.jsonl"
+    # Post-#188 the drain lives on the spine; plant a raw source="drain"
+    # envelope (bypassing DrainStore.emit()'s _system guard) so the reader
+    # still surfaces a legacy system-stream drain event.
+    spine = lore_root / ".lore" / "spine.jsonl"
+    spine.parent.mkdir(parents=True, exist_ok=True)
     record = {
-        "ts": (ts or datetime.now(UTC)).isoformat(),
+        "ts": (ts or datetime.now(UTC)).isoformat().replace("+00:00", "Z"),
+        "v": 1,
+        "source": "drain",
         "event": event,
-        "wiki": wiki,
+        "level": "info",
+        "trace_id": None,
         "session_id": SYSTEM_SESSION,
+        "run_id": None,
+        "wiki": wiki,
+        "scope": None,
+        "error_code": None,
         "data": {"wikilink": wikilink},
     }
-    with path.open("a") as fp:
+    with spine.open("a") as fp:
         fp.write(json.dumps(record) + "\n")
 
 

@@ -163,7 +163,7 @@ def test_spawn_failure_emits_event(tmp_path, monkeypatch):
 
     monkeypatch.setattr("subprocess.Popen", boom)
     ok = spawn_detached_flush(buf.sidecar_path, lore_root=lore_root)
-    assert ok is False
+    assert ok is None
     errs = [
         e for e in _curator_events(lore_root) if e.get("error_code") == ErrorCode.SPAWN_FAILED.value
     ]

@@ -268,6 +268,9 @@ def flush_command(
         trigger="flush",
         pending_count=1,
         config_snapshot={"buffer_stem": buffer.stem, "mode": mode},
+        # Delivered across the process boundary by spawn_detached_flush so
+        # this run's events join the spawning session's flush (#188).
+        trace_id=os.environ.get("LORE_TRACE_ID"),
     ) as logger:
         outcome = synth_fn(
             buffer_path,
