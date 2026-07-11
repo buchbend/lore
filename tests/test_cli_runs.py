@@ -137,11 +137,23 @@ def test_runs_list_schema_mismatch_dimmed(tmp_path, monkeypatch):
             or "upgrade" in result.stdout.lower())
 
 
+def _spine_env(row: dict) -> dict:
+    """Wrap an old-style hook row as a spine envelope."""
+    data = {k: v for k, v in row.items() if k not in ("ts", "event", "schema_version")}
+    outcome = data.get("outcome")
+    return {
+        "ts": row.get("ts"), "v": 1, "source": "hook", "event": row.get("event"),
+        "level": "error" if outcome == "error" else "info",
+        "trace_id": None, "session_id": None, "run_id": None,
+        "wiki": None, "scope": None, "error_code": None, "data": data,
+    }
+
+
 def _seed_hook_events(tmp_path: Path, rows: list):
-    """Write hook-events.jsonl rows to tmp_path."""
-    events = tmp_path / ".lore" / "hook-events.jsonl"
+    """Write spine hook records to tmp_path."""
+    events = tmp_path / ".lore" / "spine.jsonl"
     events.parent.mkdir(parents=True, exist_ok=True)
-    events.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    events.write_text("\n".join(json.dumps(_spine_env(r)) for r in rows) + "\n")
     return events
 
 
@@ -212,8 +224,8 @@ def test_runs_list_hooks_only_runs_no_hook_events(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "a1b2c3" in result.stdout
     assert "1 new" in result.stdout
-    # New: diagnostic banner when hook-events.jsonl is empty/missing.
-    assert "hook-events" in result.output.lower()
+    # New: diagnostic banner when the spine has no hook events.
+    assert "spine" in result.output.lower()
     assert "may not be firing" in result.output.lower()
 
 

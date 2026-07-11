@@ -256,16 +256,16 @@ def test_ledger_write_failure_emits_warning_event(tmp_path: Path) -> None:
         # Must not raise past the helper — the whole point is observability, not crash.
         wledger.update_last_curator("a", at=_NOW)
 
-    events_path = tmp_path / ".lore" / "hook-events.jsonl"
-    assert events_path.exists(), "hook-events.jsonl must exist after write failure"
+    events_path = tmp_path / ".lore" / "spine.jsonl"
+    assert events_path.exists(), "spine.jsonl must exist after write failure"
     lines = [json.loads(l) for l in events_path.read_text().splitlines() if l.strip()]
     warnings = [
         e
         for e in lines
-        if e.get("event") == "wiki-ledger" and e.get("outcome") == "warning"
+        if e.get("event") == "wiki-ledger" and e.get("data", {}).get("outcome") == "warning"
     ]
     assert warnings, f"expected a wiki-ledger/warning event, got events={lines}"
-    err = warnings[0].get("error") or {}
+    err = warnings[0].get("data", {}).get("error") or {}
     assert "fake disk error" in (err.get("message") or "")
 
 

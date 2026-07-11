@@ -78,10 +78,9 @@ def list_runs(
         # Build combined list of (ts_str, kind, data) tuples.
         combined: list[tuple[str, str, object]] = []
         has_runs = False
-        hook_events_path = lore_root / ".lore" / "hook-events.jsonl"
-        has_hook_events = (
-            hook_events_path.exists() and hook_events_path.stat().st_size > 0
-        )
+        from lore_core.spine import read_spine
+        hook_rows = read_spine(lore_root, source="hook")
+        has_hook_events = bool(hook_rows)
 
         # Load runs.
         if runs_dir.exists():
@@ -113,32 +112,21 @@ def list_runs(
                     "schema_mismatch": schema_mismatch,
                 }))
 
-        # Load hook events.
-        events_path = lore_root / ".lore" / "hook-events.jsonl"
-        if events_path.exists():
-            try:
-                for line in events_path.read_text().splitlines():
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    ts = row.get("ts", "")
-                    cwd = row.get("cwd")
-                    where = _os.path.basename(cwd) if cwd else "\u2014"
-                    pid_val = row.get("pid")
-                    pid = str(pid_val) if pid_val is not None else "\u2014"
-                    combined.append((ts, "hook", {
-                        "started": _relative_time_cli(ts),
-                        "event": row.get("event", "?"),
-                        "outcome": row.get("outcome", "?"),
-                        "where": where,
-                        "pid": pid,
-                    }))
-            except OSError:
-                pass
+        # Load hook events from the spine.
+        for row in hook_rows:
+            data = row.get("data") or {}
+            ts = row.get("ts", "")
+            cwd = data.get("cwd")
+            where = _os.path.basename(cwd) if cwd else "\u2014"
+            pid_val = data.get("pid")
+            pid = str(pid_val) if pid_val is not None else "\u2014"
+            combined.append((ts, "hook", {
+                "started": _relative_time_cli(ts),
+                "event": row.get("event", "?"),
+                "outcome": data.get("outcome", "?"),
+                "where": where,
+                "pid": pid,
+            }))
 
         if not combined:
             console.print("[dim]No capture activity yet.[/dim]")
@@ -153,7 +141,7 @@ def list_runs(
         # that SessionStart isn't invoking `lore hook capture`.
         if has_runs and not has_hook_events:
             console.print(
-                "[yellow]! hook-events.jsonl is empty — SessionStart capture "
+                "[yellow]! spine has no hook events — SessionStart capture "
                 "hook may not be firing.[/yellow]\n"
                 "  [dim]Try: lore doctor · check $CLAUDE_PROJECT_DIR · "
                 "verify plugin hooks are installed[/dim]"

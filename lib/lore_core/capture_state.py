@@ -51,11 +51,11 @@ class CaptureState:
     last_briefing_ts: datetime | None = None  # newest across all WikiLedgers
     pending_transcripts: int = 0
     hook_errors_24h: int = 0
-    hook_log_failed_marker_age_s: int | None = None
+    spine_write_failed_marker_age_s: int | None = None
     simple_tier_fallback_active: bool = False
     # Liveness of the capture hook itself — answers "did Claude Code actually
     # invoke our SessionStart/PreCompact/SessionEnd hook recently?". All
-    # three fields come from the newest record in hook-events.jsonl.
+    # three fields come from the newest hook record on the event spine.
     last_hook_event_ts: datetime | None = None
     last_hook_event_outcome: str | None = None    # e.g. "spawned-curator" | "no-scope"
     last_hook_event_kind: str | None = None       # e.g. "session-start"
@@ -167,70 +167,48 @@ def _last_run_summary(
 
 
 def _count_hook_errors_24h(lore_root: Path, now: datetime) -> int:
-    path = lore_root / ".lore" / "hook-events.jsonl"
-    if not path.exists():
-        return 0
+    from lore_core.spine import read_spine
+
     threshold = now - timedelta(hours=24)
     count = 0
-    try:
-        for line in path.read_text().splitlines():
-            if not line.strip():
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if rec.get("outcome") != "error":
-                continue
-            ts = _parse_iso(rec.get("ts"))
-            if ts is None:
-                continue
-            if ts >= threshold:
-                count += 1
-    except OSError:
-        return 0
+    for rec in read_spine(lore_root, source="hook"):
+        if rec.get("level") != "error":
+            continue
+        ts = _parse_iso(rec.get("ts"))
+        if ts is not None and ts >= threshold:
+            count += 1
     return count
 
 
 def _newest_hook_event(
     lore_root: Path,
 ) -> tuple[datetime | None, str | None, str | None]:
-    """Return (ts, outcome, event-kind) of the newest record in
-    hook-events.jsonl, or (None, None, None) if the file is missing,
-    empty, or has no parseable records.
+    """Return (ts, outcome, event-kind) of the newest hook record on the
+    event spine, or (None, None, None) if there are no parseable records.
 
     Scans the whole file because records are append-only but not
     guaranteed to be strictly time-ordered (rotations, clock skew).
-    At ~10 MB cap (see hook_log.HookEventLogger) this is fine.
+    At ~10 MB rotation cap this is fine. ``outcome`` is a hook-domain
+    field living in the envelope ``data``; ``event`` is the record kind.
     """
-    path = lore_root / ".lore" / "hook-events.jsonl"
-    if not path.exists():
-        return (None, None, None)
+    from lore_core.spine import read_spine
+
     newest_ts: datetime | None = None
     newest_outcome: str | None = None
     newest_kind: str | None = None
-    try:
-        for line in path.read_text().splitlines():
-            if not line.strip():
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            ts = _parse_iso(rec.get("ts"))
-            if ts is None:
-                continue
-            if newest_ts is None or ts > newest_ts:
-                newest_ts = ts
-                newest_outcome = rec.get("outcome")
-                newest_kind = rec.get("event")
-    except OSError:
-        return (None, None, None)
+    for rec in read_spine(lore_root, source="hook"):
+        ts = _parse_iso(rec.get("ts"))
+        if ts is None:
+            continue
+        if newest_ts is None or ts > newest_ts:
+            newest_ts = ts
+            newest_outcome = (rec.get("data") or {}).get("outcome")
+            newest_kind = rec.get("event")
     return (newest_ts, newest_outcome, newest_kind)
 
 
 def _marker_age_s(lore_root: Path, now: datetime) -> int | None:
-    marker = lore_root / ".lore" / "hook-log-failed.marker"
+    marker = lore_root / ".lore" / "spine-failed.marker"
     if not marker.exists():
         return None
     try:
@@ -343,7 +321,7 @@ def query_capture_state(
         last_briefing_ts=_newest_across_wikis(lore_root, "last_briefing"),
         pending_transcripts=_pending_transcripts(lore_root),
         hook_errors_24h=_count_hook_errors_24h(lore_root, now),
-        hook_log_failed_marker_age_s=_marker_age_s(lore_root, now),
+        spine_write_failed_marker_age_s=_marker_age_s(lore_root, now),
         simple_tier_fallback_active=_simple_tier_fallback_active(lore_root),
         last_hook_event_ts=last_hook_ts,
         last_hook_event_outcome=last_hook_outcome,

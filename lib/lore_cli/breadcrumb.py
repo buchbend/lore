@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -44,49 +43,35 @@ def render_session_end_breadcrumb(
 
 
 def write_pending_breadcrumb(lore_root: Path, line: str) -> None:
-    """Emit a ``pending-breadcrumb-written`` event to hook-events.jsonl.
+    """Emit a ``pending-breadcrumb-written`` event onto the event spine.
 
-    Best-effort; never raises (HookEventLogger swallows OSError internally).
+    Best-effort; never raises (the spine writer swallows OSError internally).
     """
-    from lore_core.hook_log import HookEventLogger
+    from lore_core.spine import emit_hook_event
 
-    HookEventLogger(lore_root).emit(event=_EV_WRITTEN, line=line)
+    emit_hook_event(lore_root, event=_EV_WRITTEN, line=line)
 
 
 def consume_pending_breadcrumb(lore_root: Path) -> str | None:
     """Return the most recent unconsumed pending-breadcrumb line.
 
-    Scans ``hook-events.jsonl`` for the most recent written/consumed pair.
+    Scans the event spine for the most recent written/consumed pair.
     Returns the written line iff it is newer than the last consumed event
     AND younger than ``_PENDING_BREADCRUMB_MAX_AGE_S``. On success, appends
     a ``pending-breadcrumb-consumed`` event so the line is shown at most
     once.
     """
     from datetime import UTC, datetime as _dt
-    from lore_core.hook_log import HookEventLogger
-
-    events_path = lore_root / ".lore" / "hook-events.jsonl"
-    if not events_path.exists():
-        return None
+    from lore_core.spine import emit_hook_event, read_spine
 
     last_written: dict | None = None
     last_consumed_ts: str | None = None
-    try:
-        for raw in events_path.read_text().splitlines():
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                rec = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            ev = rec.get("event")
-            if ev == _EV_WRITTEN:
-                last_written = rec
-            elif ev == _EV_CONSUMED:
-                last_consumed_ts = rec.get("ts")
-    except OSError:
-        return None
+    for rec in read_spine(lore_root, source="hook"):
+        ev = rec.get("event")
+        if ev == _EV_WRITTEN:
+            last_written = rec
+        elif ev == _EV_CONSUMED:
+            last_consumed_ts = rec.get("ts")
 
     if last_written is None:
         return None
@@ -105,8 +90,8 @@ def consume_pending_breadcrumb(lore_root: Path) -> str | None:
     if age > _PENDING_BREADCRUMB_MAX_AGE_S:
         return None  # stale
 
-    HookEventLogger(lore_root).emit(event=_EV_CONSUMED)
-    return last_written.get("line") or None
+    emit_hook_event(lore_root, event=_EV_CONSUMED)
+    return (last_written.get("data") or {}).get("line") or None
 
 
 @dataclass

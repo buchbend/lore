@@ -357,11 +357,13 @@ def test_banner_hook_error_trailing_segment(tmp_path: Path) -> None:
 
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir(parents=True)
-    events = lore_dir / "hook-events.jsonl"
+    events = lore_dir / "spine.jsonl"
     recent = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     events.write_text(
-        json.dumps({"schema_version": 1, "ts": recent, "event": "session-end",
-                    "outcome": "error"}) + "\n"
+        json.dumps({"ts": recent, "v": 1, "source": "hook",
+                    "event": "session-end", "level": "error", "trace_id": None,
+                    "session_id": None, "run_id": None, "wiki": None, "scope": None,
+                    "error_code": None, "data": {"outcome": "error"}}) + "\n"
     )
     from lore_cli.breadcrumb import render_banner
     now = datetime.now(UTC)
@@ -444,16 +446,19 @@ def test_pending_breadcrumb_absent_returns_none(tmp_path: Path) -> None:
 
 def test_pending_breadcrumb_stale_returns_none(tmp_path: Path) -> None:
     """A breadcrumb written >1 hour ago is treated as stale and skipped."""
+    import json
     from datetime import UTC, datetime as _dt, timedelta
-    from lore_core.hook_log import HookEventLogger
 
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()
     stale_ts = (_dt.now(UTC) - timedelta(hours=2)).isoformat().replace("+00:00", "Z")
-    HookEventLogger(tmp_path).emit(
-        event="pending-breadcrumb-written",
-        line="old line",
-        ts=stale_ts,
+    # Raw envelope with an injected stale ts (the writer stamps ts itself).
+    (lore_dir / "spine.jsonl").write_text(
+        json.dumps({"ts": stale_ts, "v": 1, "source": "hook",
+                    "event": "pending-breadcrumb-written", "level": "info",
+                    "trace_id": None, "session_id": None, "run_id": None,
+                    "wiki": None, "scope": None, "error_code": None,
+                    "data": {"line": "old line"}}) + "\n"
     )
     assert consume_pending_breadcrumb(tmp_path) is None
 

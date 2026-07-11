@@ -414,7 +414,7 @@ class WikiLedger:
         """Write last_curator_a for this wiki; best-effort telemetry.
 
         Read-modify-write: preserves other fields. On I/O failure, emits a
-        warning event to hook-events.jsonl and returns — never raises past
+        warning event to the event spine and returns — never raises past
         this call. The update is observability, not a correctness path, so
         a crashed curator must never be prevented from completing because
         the ledger disk is full.
@@ -433,10 +433,12 @@ class WikiLedger:
             self.write(entry)
         except Exception as exc:
             try:
-                from lore_core.hook_log import HookEventLogger
-                HookEventLogger(self._lore_root).emit(
+                from lore_core.spine import ErrorCode, emit_hook_event
+                emit_hook_event(
+                    self._lore_root,
                     event="wiki-ledger",
                     outcome="warning",
+                    error_code=ErrorCode.LEDGER_WRITE_FAILED,
                     error={
                         "type": type(exc).__name__,
                         "message": str(exc),

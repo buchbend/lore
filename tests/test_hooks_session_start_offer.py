@@ -162,14 +162,14 @@ def test_logs_offered_hook_event(lore_root: Path, tmp_path: Path) -> None:
     _write_offer(repo, wiki="team-alpha", scope="ccat:ds")
     _offer_notice_line(repo)
 
-    events_path = lore_root / ".lore" / "hook-events.jsonl"
+    events_path = lore_root / ".lore" / "spine.jsonl"
     assert events_path.exists()
     records = [json.loads(line) for line in events_path.read_text().splitlines() if line]
     matching = [r for r in records if r.get("event") == "lore-yml-offered"]
     assert len(matching) == 1
-    assert matching[0]["outcome"] == "offered"
-    assert matching[0]["detail"]["wiki"] == "team-alpha"
-    assert matching[0]["detail"]["scope"] == "ccat:ds"
+    assert matching[0]["data"]["outcome"] == "offered"
+    assert matching[0]["data"]["detail"]["wiki"] == "team-alpha"
+    assert matching[0]["data"]["detail"]["scope"] == "ccat:ds"
 
 
 def test_logs_drift_hook_event(lore_root: Path, tmp_path: Path) -> None:
@@ -182,8 +182,8 @@ def test_logs_drift_hook_event(lore_root: Path, tmp_path: Path) -> None:
     _write_offer(repo, wiki="new-wiki", scope="new:s")
     _offer_notice_line(repo)
 
-    events_path = lore_root / ".lore" / "hook-events.jsonl"
+    events_path = lore_root / ".lore" / "spine.jsonl"
     records = [json.loads(line) for line in events_path.read_text().splitlines() if line]
     matching = [r for r in records if r.get("event") == "lore-yml-offered"]
     assert len(matching) == 1
-    assert matching[0]["outcome"] == "drift"
+    assert matching[0]["data"]["outcome"] == "drift"
