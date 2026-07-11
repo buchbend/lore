@@ -10,38 +10,89 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-Epic #183 (sub-issue #195) — command consolidation, deprecation aliases, and
-observability docs. The finish line for the event-spine epic: seven
-observability read surfaces become three.
+## [0.61.0] - 2026-07-11
+
+Epic #183 — onboarding, connection config & observability revamp (PRD 0005).
+Replaces three fragmented surfaces — first-run onboarding, write-once connection
+config, and a seven-surface observability CLI — with one event spine, three
+commands, one idempotent wizard, and writable validated config.
 
 ### Added
 
-- **`docs/architecture/observability.md`** — the event spine's envelope
-  schema, producer list, trace_id lifecycle, retention tiers, and the
-  three-command surface, in one place.
-- **`docs/how-to/onboarding.md`** and **`docs/how-to/troubleshooting.md`** —
-  install → `lore init` → first attach → verify, and a symptom-driven
-  escalation guide (hooks not firing, a note never appeared, a flush looks
-  stuck).
-- `session-note-lifecycle.md` gained a "How failures surface" section tying
-  note-level marker chapters to the spine-level dead-letter state machine.
+- **Event spine** (`lore_core.spine`) — one append-only JSONL family under
+  `.lore/` behind a single mandatory envelope `{ts, v, source, event, level,
+  trace_id, session_id, run_id, wiki, scope, error_code, data}` with a closed
+  `ErrorCode` enum. O_APPEND-atomic (≤ PIPE_BUF) appends with flock-guarded
+  rotation; a spine write failure degrades to a marker and never blocks the hook.
+  Hook events, curator run logs, and drain telemetry all flow through it.
+- **`lore trace`** — correlated drill-down of one flush, selected by trace-id,
+  session-id, `last`, `dead`, or note path/wikilink: a chronological tree of the
+  flush's spine events with per-step durations, highlighted error codes, and the
+  flush's state-machine status.
+- **`lore status` v2** — one glanceable health dashboard (capture, flushes,
+  wikis, retention, news, alerts); per-wiki connection health with a time-boxed
+  network probe and `--offline`; exit code mirrors alerts. Absorbs `lore news`.
+- **`lore doctor --fix`** — state repair: rebuild `scopes.json` from accepted
+  attachments, re-stamp drifted offer fingerprints, and migrate attachment paths
+  after a vault/repo move (each repair shown before it runs and individually
+  declinable). Plugin-cache drift is now a failing check.
+- **`lore config get/set/unset/edit`** — writable, schema-validated config for
+  root and `--wiki`; unknown keys and bad values are rejected naming the nearest
+  valid alternatives; `edit` validates on editor close.
+- **`lore init` wizard** — one idempotent, resumable guided path (vault → wiki →
+  integrations → optional first attach → automatic doctor → handoff), with full
+  flag parity (`--yes`, `--vault`, `--wiki-new|--wiki-clone|--wiki-link`,
+  `--attach`, `--plain`). `_scopes.yml` is scaffolded with a commented example.
+- **trace_id propagation** — minted at hook fire, carried via env to the detached
+  curator, stamped on every run/drain/flush event and the published note's
+  linkage frontmatter; concurrent flushes stay separable.
+- **Flush lifecycle state machine** (`lore_core.flush_store`) — a persisted
+  per-flush record `queued → running → published | withheld | dead-lettered
+  (reason)` with an attempt counter and bounded backoff retries; formerly-silent
+  failure paths (sidecar read, spawn, chapter append) now emit events or dead
+  letters, and in-flight flushes are listable.
+- **Unified retention janitor** (`lore_core.janitor`) — one flock-guarded,
+  daemon-free, tiered (hot/cold + size caps) retention pass over the whole spine,
+  driven by config (`observability.retention.*`); deletions are logged, delete
+  failures warned, and unresolved dead letters are preserved.
+- **Attach/offer hardening** — `.lore.yml` schema validation at attach time,
+  `lore attach offer --dry-run`, `lore attach manual --write-offer`, declines
+  keyed on `(path, scope)` instead of content fingerprint, a `lore scopes rename`
+  stale-offer report, and an in-session offer-drift warning.
+- **`docs/architecture/observability.md`**, **`docs/how-to/onboarding.md`**, and
+  **`docs/how-to/troubleshooting.md`** — the event spine's envelope schema,
+  producer list, trace_id lifecycle, retention tiers, and the three-command
+  surface; install → `lore init` → first attach → verify; and a symptom-driven
+  escalation guide. `session-note-lifecycle.md` gained a "How failures surface"
+  section tying note-level marker chapters to the spine-level dead-letter state
+  machine.
+
+### Changed
+
+- `lore install`'s interactive vault setup now delegates to the single `lore
+  init` wizard — exactly one onboarding path. `install.sh` exits non-zero when
+  `lore` is not runnable on PATH afterwards and chains into `lore init` on first
+  install.
 
 ### Deprecated
 
-- **`lore log`, `lore news`, `lore runs`, `lore proc`** are now thin aliases
-  for `lore trace` / `lore status` — each prints a one-line pointer to its
+- **`lore log`, `lore news`, `lore runs`, `lore proc`** are now thin aliases for
+  `lore trace` / `lore status` — each prints a one-line pointer to its
   replacement on stderr, then still runs its original behavior. Kept for one
   minor release; will be removed in `0.62.0`.
 
 ### Removed
 
-- **`lore drain prune`** (and the `lore drain` command group, now empty
-  without it). Vestigial since #188 moved drain-event emission onto the
-  spine: nothing has written `.lore/drain/_system.jsonl` since, and spine
-  drain events already get the same tiered retention as every other family.
-  `lore_core.janitor.prune_orphans` (moved from `lore_cli.drain_cmd`) still
-  runs automatically as part of every opportunistic janitor pass — no
-  functionality lost, just the redundant manual trigger.
+- **`lore drain prune`** (and the now-empty `lore drain` command group).
+  Vestigial since drain-event emission moved onto the spine: nothing has written
+  `.lore/drain/_system.jsonl` since, and spine drain events already get the same
+  tiered retention as every other family. `lore_core.janitor.prune_orphans`
+  (moved from `lore_cli.drain_cmd`) still runs automatically on every
+  opportunistic janitor pass — no functionality lost, just the redundant manual
+  trigger.
+- The legacy `hook_log`, per-session run-log (`runs/<id>.jsonl` + `runs-live.jsonl`
+  tee + `.trace.jsonl`), and per-session drain writers — all replaced by the
+  spine.
 
 ## [0.60.0] - 2026-07-11
 
