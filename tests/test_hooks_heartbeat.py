@@ -33,17 +33,25 @@ def _emit(lore_root: Path, event: str, wiki: str = "private", **data) -> None:
     if event == "transcript-synced":
         store.emit("transcript-synced", wiki=wiki, **data)
         return
-    drain_dir = lore_root / ".lore" / "drain"
-    drain_dir.mkdir(parents=True, exist_ok=True)
+    # Post-#188 drain rows live on the spine; write a raw source="drain"
+    # envelope (bypassing the _system emit guard) so the reader sees it.
+    spine = lore_root / ".lore" / "spine.jsonl"
+    spine.parent.mkdir(parents=True, exist_ok=True)
     record = {
-        "ts": datetime.now(UTC).isoformat(),
+        "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "v": 1,
+        "source": "drain",
         "event": event,
+        "level": "info",
+        "trace_id": None,
         "wiki": wiki,
         "session_id": SYSTEM_SESSION,
+        "run_id": None,
+        "scope": None,
+        "error_code": None,
         "data": dict(data),
     }
-    path = drain_dir / f"{SYSTEM_SESSION}.jsonl"
-    with open(path, "a") as f:
+    with open(spine, "a") as f:
         f.write(json.dumps(record) + "\n")
 
 

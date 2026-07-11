@@ -45,7 +45,7 @@ module consumes a request and drives the composer + gate + note.
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -57,7 +57,7 @@ from lore_core.flush_store import FlushState, FlushStore
 from lore_core.lockfile import LockContendedError, curator_lock
 from lore_core.publish_gate import GateResult, PublishGate
 from lore_core.session_writer import FiledNote
-from lore_core.spine import ErrorCode, SpineWriter
+from lore_core.spine import ErrorCode, SpineWriter, new_trace_id
 from lore_core.types import TranscriptHandle, Turn
 
 from lore_curator._auto_commit import maybe_auto_commit
@@ -516,6 +516,11 @@ def _apply_outcome(
     sidecar = buffer.read_sidecar() or Sidecar(transcript_id=buffer.stem)
     facts = facts_from_replay(rb)
     linkage = linkage_from_replay(rb, cwd=sidecar.cwd, wiki_root=wiki_root, handle=sidecar.handle)
+    # The logger carries this flush's trace_id (minted at spawn, delivered via
+    # env). Stamp it onto the note's linkage and the flush record so run
+    # events, the drain event and the note all share one id (#188).
+    trace_id = logger.trace_id if logger is not None else None
+    linkage = replace(linkage, trace_id=trace_id)
     out = FlushOutcome(
         buffer_stem=buffer.stem,
         state_before=state_before,
@@ -540,7 +545,7 @@ def _apply_outcome(
     # dead-lettered transition below. The record is the source of truth for
     # "what is in-flight right now"; every transition also emits a spine event.
     store = FlushStore(lore_root)
-    flush_rec = store.begin(buffer.stem, wiki=sidecar.wiki)
+    flush_rec = store.begin(buffer.stem, wiki=sidecar.wiki, trace_id=trace_id)
     if FlushState(flush_rec.state) is FlushState.QUEUED:
         flush_rec = store.transition(flush_rec, FlushState.RUNNING)
 
@@ -824,6 +829,7 @@ def _post_flush(
         DrainStore(lore_root, sid).emit(
             "note-filed" if close else "note-appended",
             wiki=sidecar.wiki,
+            trace_id=logger.trace_id if logger is not None else None,
             wikilink=outcome.wikilink,
             path=str(outcome.note_path),
             transcript_id=sidecar.transcript_id,
@@ -1052,13 +1058,17 @@ def _emit_spawn_failed(buffer_path: Path, lore_root: Path, exc: Exception) -> No
     )
 
 
-def spawn_detached_flush(buffer_path: Path, *, lore_root: Path) -> bool:
+def spawn_detached_flush(
+    buffer_path: Path, *, lore_root: Path, trace_id: str | None = None
+) -> str | None:
     """Fire-and-forget ``lore curator flush <buffer-path> --config-from-buffer``.
 
-    Returns True on successful Popen, False on OSError. Never blocks the
-    caller. A per-buffer spawn-lock under ``<stem>.spawn.lock`` prevents a
-    double-spawn when a reaper races cap-trip; a held lock skips rather
-    than queueing.
+    Mints a ``trace_id`` (unless the caller supplies one) and delivers it to
+    the detached curator via ``LORE_TRACE_ID`` — the one place the id crosses
+    the process boundary. Returns the trace_id on a successful Popen, or
+    ``None`` on a skipped/failed spawn. Never blocks the caller. A per-buffer
+    spawn-lock under ``<stem>.spawn.lock`` prevents a double-spawn when a
+    reaper races cap-trip; a held lock skips rather than queueing.
     """
     import os
     import subprocess
@@ -1070,7 +1080,8 @@ def spawn_detached_flush(buffer_path: Path, *, lore_root: Path) -> bool:
     try:
         with flocked(spawn_lock, blocking=False) as held:
             if not held:
-                return False
+                return None
+            trace_id = trace_id or new_trace_id()
             cmd = [
                 sys.executable,
                 "-m",
@@ -1083,6 +1094,7 @@ def spawn_detached_flush(buffer_path: Path, *, lore_root: Path) -> bool:
             env = os.environ.copy()
             env["LORE_ROOT"] = str(lore_root)
             env["LORE_CURATOR_MODE"] = "1"
+            env["LORE_TRACE_ID"] = trace_id
             try:
                 subprocess.Popen(
                     cmd,
@@ -1093,10 +1105,10 @@ def spawn_detached_flush(buffer_path: Path, *, lore_root: Path) -> bool:
                     stdin=subprocess.DEVNULL,
                     env=env,
                 )
-                return True
+                return trace_id
             except (OSError, subprocess.SubprocessError) as exc:
                 _emit_spawn_failed(buffer_path, lore_root, exc)
-                return False
+                return None
     except OSError as exc:
         _emit_spawn_failed(buffer_path, lore_root, exc)
-        return False
+        return None

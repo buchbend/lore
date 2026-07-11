@@ -118,6 +118,7 @@ class RunLogger:
         trace_llm: bool = False,
         ledger_snapshot_hash: str | None = None,
         run_id: str | None = None,
+        trace_id: str | None = None,
         on_record: RecordCallback | None = None,
     ):
         self._lore_root = lore_root
@@ -130,6 +131,9 @@ class RunLogger:
         self._trace_llm = trace_llm
         self._ledger_snapshot_hash = ledger_snapshot_hash
         self.run_id = run_id or generate_run_id()
+        # One correlation id for the whole flush; stamped on every emit so a
+        # run's events join the drain event and the published note (#188).
+        self.trace_id = trace_id
         self._counts = {
             "notes_new": 0,
             "notes_merged": 0,
@@ -202,7 +206,7 @@ class RunLogger:
             event=record_type,
             level=self._level(record_type),
             run_id=self.run_id,
-            trace_id=None,  # #188 stamps this
+            trace_id=self.trace_id,
             wiki=fields.get("wiki"),
             scope=fields.get("scope") if isinstance(fields.get("scope"), str) else None,
             data=self._spine_data(record_type, fields),
