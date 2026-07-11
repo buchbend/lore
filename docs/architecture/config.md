@@ -29,6 +29,30 @@ how Lore is configured globally.
 
 ---
 
+## Reading & writing config — `lore config`
+
+Config is both readable and writable from the CLI; every write is validated
+against the typed schema (`root_config.py` / `wiki_config.py`) **before** it
+touches disk. This surface adds *mutation* only — the precedence/resolution
+above is unchanged.
+
+- `lore config show` — print the fully resolved config with provenance (which
+  layer each value came from).
+- `lore config get <key>` — read one resolved value.
+- `lore config set <key> <value>` — set a value in the target config file.
+- `lore config unset <key>` — remove a key (reverts to the next-lower layer /
+  code default).
+- `lore config edit` — open the target file in `$EDITOR`; validated on close, an
+  invalid result is refused (re-edit or abort), so a typo can't silently persist.
+- `lore config schema` — list the settable keys and their expected types.
+
+All accept `--wiki <name>` to target that wiki's `<wiki>/.lore-wiki.yml` instead
+of the vault-root `$LORE_ROOT/.lore/config.yml`. On a rejected write the file on
+disk is left unchanged: an unknown key is rejected naming the nearest valid keys,
+and an invalid value is rejected naming the expected type/choices.
+
+---
+
 ## Sources of truth
 
 ### 1. Versioning triple
@@ -117,6 +141,12 @@ Vault-wide policy. Schema lives in
 - `observability.hook_events.{max_size_mb, keep_rotations}`
 - `observability.runs.{keep, max_total_mb, keep_trace}`
 - `observability.proc.keep_generations`
+- `observability.retention.{hot_days, cold_days, cold_max_mb, crash_log_days,
+  dead_letter_hard_cap}` — the unified spine retention janitor: a hot tier keeps
+  detailed events ~`hot_days`, a cold tier keeps compact summaries ~`cold_days`
+  under a `cold_max_mb` size cap; `crash_log_days` bounds crash-log retention and
+  `dead_letter_hard_cap` caps unresolved dead letters. See
+  `docs/architecture/observability.md`.
 - `curator.backend` — `auto` | `subscription` | `api` | `openai`
 - `curator.openai.{base_url, api_key_env, model_simple, model_middle, model_high, reasoning_effort_simple, reasoning_effort_middle, reasoning_effort_high}`
 - `journal.enabled`
