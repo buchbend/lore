@@ -17,7 +17,6 @@ a single render).
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -120,25 +119,18 @@ def _last_run_summary(
     "Last note filed" walks newest→oldest runs for the first session-note
     record with action=filed.
     """
-    from lore_core.run_reader import iter_archival_runs
+    from lore_core.run_reader import read_curator_runs
 
     summary = _RunSummary(None, None, None, None, None, None)
     last_note: tuple[datetime, str] | None = None
 
-    for i, path in enumerate(iter_archival_runs(lore_root)):
-        try:
-            lines = path.read_text().splitlines()
-        except OSError:
-            continue
+    grouped = read_curator_runs(lore_root)
+    # run_id is timestamp-prefixed, so reverse-sorted keys are newest-first.
+    for i, run_id in enumerate(sorted(grouped.keys(), reverse=True)):
+        records = grouped[run_id]
 
         run_end: dict | None = None
-        for line in reversed(lines):
-            if not line.strip():
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for rec in reversed(records):
             t = rec.get("type")
             if run_end is None and t == "run-end":
                 run_end = rec
@@ -157,7 +149,7 @@ def _last_run_summary(
                 notes_merged=run_end.get("notes_merged"),
                 skipped=run_end.get("skipped"),
                 errors=run_end.get("errors"),
-                short_id=path.stem.split("-")[-1],
+                short_id=run_id.split("-")[-1],
             )
 
         if last_note is not None and i > 0:

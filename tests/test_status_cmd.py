@@ -156,15 +156,14 @@ def test_status_zero_notes_alert(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
     from lore_core.ledger import WikiLedger
 
-    runs_dir = lore_root / ".lore" / "runs"
-    runs_dir.mkdir(parents=True, exist_ok=True)
+    from lore_core.spine import SpineWriter
+    w = SpineWriter(lore_root)
     for i, suffix in enumerate(["aaa111", "bbb222"]):
         run_ts = _NOW - timedelta(hours=3 - i)
-        stem = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{suffix}"
-        (runs_dir / f"{stem}.jsonl").write_text(
-            json.dumps({"type": "run-start", "ts": _iso(run_ts), "schema_version": 1}) + "\n"
-            + json.dumps({"type": "run-end", "ts": _iso(run_ts), "notes_new": 0, "errors": 0}) + "\n"
-        )
+        run_id = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{suffix}"
+        w.emit(source="curator", event="run-start", run_id=run_id, data={"ts": _iso(run_ts)})
+        w.emit(source="curator", event="run-end", run_id=run_id,
+               data={"notes_new": 0, "notes_merged": 0, "errors": 0})
     WikiLedger(lore_root, "private").update_last_curator("a", at=_NOW - timedelta(hours=2))
 
     out = _invoke(lore_root, project, monkeypatch=monkeypatch)
@@ -176,19 +175,25 @@ def test_status_stale_note_red_at_4d(tmp_path: Path, monkeypatch) -> None:
     """Last note 4 days ago → red alert (>3d threshold)."""
     lore_root, project = _seed_vault(tmp_path)
     run_ts = _NOW - timedelta(days=4)
-    runs_dir = lore_root / ".lore" / "runs"
-    runs_dir.mkdir(parents=True, exist_ok=True)
-    stem = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + "-xxx999"
-    (runs_dir / f"{stem}.jsonl").write_text(
-        "\n".join(
-            json.dumps(r)
-            for r in [
-                {"type": "run-start", "ts": _iso(run_ts), "schema_version": 1},
-                {"type": "session-note", "ts": _iso(run_ts), "action": "filed", "wikilink": "[[stale]]"},
-                {"type": "run-end", "ts": _iso(run_ts), "notes_new": 1, "errors": 0},
-            ]
-        ) + "\n"
-    )
+    run_id = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + "-xxx999"
+
+    def _env(event, data):
+        # Raw envelope with a controlled ts (SpineWriter stamps real-now).
+        return {
+            "ts": _iso(run_ts), "v": 1, "source": "curator", "event": event,
+            "level": "info", "trace_id": None, "session_id": None, "run_id": run_id,
+            "wiki": None, "scope": None, "error_code": None, "data": data,
+        }
+
+    spine = lore_root / ".lore" / "spine.jsonl"
+    spine.parent.mkdir(parents=True, exist_ok=True)
+    with spine.open("a") as f:
+        for env in [
+            _env("run-start", {}),
+            _env("session-note", {"action": "filed", "wikilink": "[[stale]]"}),
+            _env("run-end", {"notes_new": 1, "errors": 0}),
+        ]:
+            f.write(json.dumps(env) + "\n")
 
     out = _invoke(lore_root, project, monkeypatch=monkeypatch)
     # Red glyph marks the line; also an alert block at bottom.

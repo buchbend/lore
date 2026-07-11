@@ -94,7 +94,7 @@ def _print_backend_label(con: Console, llm_client: object) -> None:
 def run_command(
     scope: str = typer.Option(None, "--scope", help="Filter to one scope, e.g. 'mywiki:subproject'."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Classify but don't write notes or advance ledger."),
-    trace_llm: bool = typer.Option(False, "--trace-llm", help="Capture LLM prompts/responses to runs/<id>.trace.jsonl (equivalent to LORE_TRACE_LLM=1)."),
+    trace_llm: bool = typer.Option(False, "--trace-llm", help="Emit LLM call metadata onto the event spine (equivalent to LORE_TRACE_LLM=1)."),
     backend: str = typer.Option(None, "--backend", help="LLM backend: subscription | api | openai | auto. Overrides LORE_LLM_BACKEND and curator.backend config."),
 ) -> None:
     """Run the curator: classify pending transcripts and file session notes."""

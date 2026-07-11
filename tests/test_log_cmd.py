@@ -44,19 +44,29 @@ def _seed_hook_events(lore_root: Path, events: list[dict]) -> None:
     p.write_text("\n".join(json.dumps(_spine_env(e)) for e in events) + "\n")
 
 
+def _curator_env(event: str, run_id: str, ts: str, data: dict) -> dict:
+    """A curator spine envelope with a controlled timestamp."""
+    return {
+        "ts": ts, "v": 1, "source": "curator", "event": event, "level": "info",
+        "trace_id": None, "session_id": None, "run_id": run_id,
+        "wiki": None, "scope": None, "error_code": None, "data": data,
+    }
+
+
 def _seed_run(lore_root: Path, *, ago: timedelta, notes_new: int = 1, suffix: str = "abc123") -> None:
+    # Curator runs live on the spine now (role omitted -> log defaults to a).
     run_ts = _NOW - ago
-    runs_dir = lore_root / ".lore" / "runs"
-    runs_dir.mkdir(parents=True, exist_ok=True)
-    stem = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{suffix}"
-    records = [
-        {"type": "run-start", "ts": _iso(run_ts), "schema_version": 1, "run_id": stem},
-        {"type": "run-end", "ts": _iso(run_ts + timedelta(seconds=15)), "schema_version": 1,
-         "notes_new": notes_new, "notes_merged": 0, "duration_ms": 15000, "errors": 0},
+    run_id = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{suffix}"
+    envs = [
+        _curator_env("run-start", run_id, _iso(run_ts), {"trigger": "hook"}),
+        _curator_env("run-end", run_id, _iso(run_ts + timedelta(seconds=15)),
+                     {"notes_new": notes_new, "notes_merged": 0, "duration_ms": 15000, "errors": 0}),
     ]
-    (runs_dir / f"{stem}.jsonl").write_text(
-        "\n".join(json.dumps(r) for r in records) + "\n"
-    )
+    spine = lore_root / ".lore" / "spine.jsonl"
+    spine.parent.mkdir(parents=True, exist_ok=True)
+    with spine.open("a") as f:
+        for e in envs:
+            f.write(json.dumps(e) + "\n")
 
 
 def _invoke(lore_root: Path, *extra: str, monkeypatch) -> str:

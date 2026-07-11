@@ -86,22 +86,20 @@ def _run_end_label(rec: dict) -> str:
 def _read_run_events(
     lore_root: Path, since: datetime, *, role_filter: str | None = None,
 ) -> list[TimelineEntry]:
-    from lore_core.run_reader import iter_archival_runs, read_run
+    from lore_core.run_reader import read_curator_runs
 
     entries: list[TimelineEntry] = []
+    grouped = read_curator_runs(lore_root)
     try:
-        for run_path in iter_archival_runs(lore_root):
-            try:
-                records = read_run(run_path, strict_schema=False)
-            except Exception:
-                continue
+        for run_id in sorted(grouped.keys(), reverse=True):  # newest-first
+            records = grouped[run_id]
             if not records:
                 continue
             first_ts = _parse_ts(records[0].get("ts"))
             if first_ts and first_ts < since:
                 break
 
-            short_id = run_path.stem.split("-")[-1]
+            short_id = run_id.split("-")[-1]
             run_role: str | None = None
             for rec in records:
                 rtype = rec.get("type")

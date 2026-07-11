@@ -606,7 +606,7 @@ def test_curator_a_duration_recorded(tmp_path):
 
 
 def test_run_curator_a_creates_run_log(tmp_path):
-    """After run_curator_a finishes, a runs/<id>.jsonl file exists with run-start/run-end."""
+    """After run_curator_a finishes, the spine holds a curator run with run-start/run-end."""
     import json
 
     from lore_curator.session_curator import run_curator_a
@@ -631,11 +631,10 @@ def test_run_curator_a_creates_run_log(tmp_path):
         now=_NOW,
     )
 
-    runs_dir = tmp_path / ".lore" / "runs"
-    runs = list(runs_dir.glob("*.jsonl"))
-    archival = [p for p in runs if not p.name.endswith(".trace.jsonl")]
-    assert len(archival) == 1, f"expected 1 run file, got {runs}"
-    records = [json.loads(l) for l in archival[0].read_text().splitlines()]
+    from lore_core.run_reader import read_curator_runs
+    runs = list(read_curator_runs(tmp_path).values())
+    assert len(runs) == 1, f"expected 1 run on the spine, got {len(runs)}"
+    records = runs[0]
     types = [r["type"] for r in records]
     assert types[0] == "run-start"
     assert types[-1] == "run-end"

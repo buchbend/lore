@@ -277,14 +277,19 @@ def test_banner_all_skips_is_silent(tmp_path: Path) -> None:
 
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir(parents=True)
-    runs = lore_dir / "runs"
-    runs.mkdir(parents=True)
-    (runs / "2026-04-20T14-32-05-skipsr.jsonl").write_text(
-        json.dumps({"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"}) + "\n"
-        + json.dumps({"type": "run-end", "ts": "2026-04-20T14:32:09Z",
-                      "duration_ms": 4000, "notes_new": 0, "notes_merged": 0,
-                      "skipped": 3, "errors": 0}) + "\n"
-    )
+    run_id = "2026-04-20T14-32-05-skipsr"
+
+    def _env(rec):
+        data = {k: v for k, v in rec.items() if k not in ("type", "ts")}
+        return {"ts": rec["ts"], "v": 1, "source": "curator", "event": rec["type"],
+                "level": "info", "trace_id": None, "session_id": None, "run_id": run_id,
+                "wiki": None, "scope": None, "error_code": None, "data": data}
+
+    (lore_dir / "spine.jsonl").write_text("\n".join(json.dumps(_env(r)) for r in [
+        {"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"},
+        {"type": "run-end", "ts": "2026-04-20T14:32:09Z", "duration_ms": 4000,
+         "notes_new": 0, "notes_merged": 0, "skipped": 3, "errors": 0},
+    ]) + "\n")
     from lore_cli.breadcrumb import render_banner
     now = datetime(2026, 4, 20, 15, 0, 0, tzinfo=UTC)
     scope = Scope(
@@ -315,14 +320,19 @@ def test_banner_last_run_error_prefix(tmp_path: Path) -> None:
 
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir(parents=True)
-    runs = lore_dir / "runs"
-    runs.mkdir(parents=True)
-    (runs / "2026-04-20T14-32-05-errrun.jsonl").write_text(
-        json.dumps({"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"}) + "\n"
-        + json.dumps({"type": "run-end", "ts": "2026-04-20T14:32:09Z",
-                      "duration_ms": 4000, "notes_new": 0, "notes_merged": 0,
-                      "skipped": 0, "errors": 2}) + "\n"
-    )
+    run_id = "2026-04-20T14-32-05-errrun"
+
+    def _env(rec):
+        data = {k: v for k, v in rec.items() if k not in ("type", "ts")}
+        return {"ts": rec["ts"], "v": 1, "source": "curator", "event": rec["type"],
+                "level": "info", "trace_id": None, "session_id": None, "run_id": run_id,
+                "wiki": None, "scope": None, "error_code": None, "data": data}
+
+    (lore_dir / "spine.jsonl").write_text("\n".join(json.dumps(_env(r)) for r in [
+        {"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"},
+        {"type": "run-end", "ts": "2026-04-20T14:32:09Z", "duration_ms": 4000,
+         "notes_new": 0, "notes_merged": 0, "skipped": 0, "errors": 2},
+    ]) + "\n")
     from lore_cli.breadcrumb import render_banner
     now = datetime(2026, 4, 20, 15, 0, 0, tzinfo=UTC)
     scope = Scope(

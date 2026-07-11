@@ -96,6 +96,12 @@ class ErrorCode(StrEnum):
     # The spine failing to write itself — surfaced via the degrade marker,
     # never emitted onto the (unwritable) spine.
     SPINE_WRITE_FAILED = "spine-write-failed"
+    # Flush lifecycle state machine (issue #189). Dead-letter reasons —
+    # the flush pipeline's formerly-silent failure paths, now structured.
+    COMPOSE_FAILED = "compose-failed"
+    SPAWN_FAILED = "spawn-failed"
+    SIDECAR_READ_FAILED = "sidecar-read-failed"
+    CHAPTER_APPEND_FAILED = "chapter-append-failed"
 
 
 _ERROR_CODE_VALUES: frozenset[str] = frozenset(c.value for c in ErrorCode)

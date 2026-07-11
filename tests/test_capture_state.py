@@ -36,25 +36,41 @@ def _seed_lore_root(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _append_spine(lore_root: Path, envelopes: list[dict]) -> None:
+    path = lore_root / ".lore" / "spine.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as f:
+        for e in envelopes:
+            f.write(json.dumps(e) + "\n")
+
+
+def _curator_env(record: dict, run_id: str) -> dict:
+    data = {k: v for k, v in record.items() if k not in ("type", "ts", "schema_version")}
+    return {
+        "ts": record.get("ts"), "v": 1, "source": "curator", "event": record.get("type"),
+        "level": "info", "trace_id": None, "session_id": None, "run_id": run_id,
+        "wiki": None, "scope": None, "error_code": None, "data": data,
+    }
+
+
 def _write_runs(
     lore_root: Path,
     records_per_run: list[list[dict]],
     ts_start: datetime | None = None,
-) -> list[Path]:
-    """Write synthetic archival run files. Returns paths (newest last)."""
-    runs_dir = lore_root / ".lore" / "runs"
-    runs_dir.mkdir(parents=True, exist_ok=True)
+) -> list[str]:
+    """Seed curator runs onto the event spine. Returns run_ids (newest last)."""
     if ts_start is None:
         ts_start = _NOW - timedelta(hours=len(records_per_run))
-    paths: list[Path] = []
+    run_ids: list[str] = []
+    envs: list[dict] = []
     for i, records in enumerate(records_per_run):
         file_ts = ts_start + timedelta(minutes=i)
         short = f"{chr(ord('a') + i)}{chr(ord('a') + i)}{chr(ord('a') + i)}111"
-        stem = file_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{short}"
-        path = runs_dir / f"{stem}.jsonl"
-        path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
-        paths.append(path)
-    return paths
+        run_id = file_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{short}"
+        run_ids.append(run_id)
+        envs.extend(_curator_env(r, run_id) for r in records)
+    _append_spine(lore_root, envs)
+    return run_ids
 
 
 def _spine_env(row: dict) -> dict:
@@ -70,10 +86,9 @@ def _spine_env(row: dict) -> dict:
 
 
 def _write_hook_events(lore_root: Path, events: list[dict]) -> Path:
-    path = lore_root / ".lore" / "spine.jsonl"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(json.dumps(_spine_env(e)) for e in events) + "\n")
-    return path
+    # Append so seeded curator runs on the same spine are preserved.
+    _append_spine(lore_root, [_spine_env(e) for e in events])
+    return lore_root / ".lore" / "spine.jsonl"
 
 
 # ---------------------------------------------------------------------------
