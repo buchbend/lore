@@ -92,6 +92,7 @@ def _build_app() -> typer.Typer:
         session_cmd,
         status_cmd,
         tier_cmd,
+        trace_cmd,
         transcripts_cmd,
         wiki_cmd,
         workflow_cmd,
@@ -149,6 +150,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(registry_cmd.app, name="registry", rich_help_panel=_ADV)
     app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
     app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
+    app.add_typer(trace_cmd.app, name="trace", rich_help_panel=_ADV)
     app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
     app.add_typer(workflow_cmd.app, name="workflow", rich_help_panel=_ADV)
 
