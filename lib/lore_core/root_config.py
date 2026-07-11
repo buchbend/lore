@@ -14,6 +14,13 @@ from typing import Any
 
 import yaml
 
+from lore_core.config_schema import ConfigSchema, FieldInfo
+from lore_core.config_schema import get_field as _cs_get_field
+from lore_core.config_schema import schema_tree as _cs_schema_tree
+from lore_core.config_schema import set_field as _cs_set_field
+from lore_core.config_schema import unset_field as _cs_unset_field
+from lore_core.config_schema import walk_fields as _cs_walk_fields
+
 
 @dataclass
 class HookEventsConfig:
@@ -170,234 +177,48 @@ def load_root_config(lore_root: Path) -> RootConfig:
 
 
 # ---------------------------------------------------------------------------
-# Introspection helpers — backing `lore config show / get / set / schema`.
+# Introspection helpers — backing `lore config show / get / set / unset /
+# schema`. Thin bindings over lore_core.config_schema's generic dataclass
+# walker; see that module's docstring for why it's generic (wiki config and
+# a future `.lore.yml` offer-validation slice share the same plumbing).
 # ---------------------------------------------------------------------------
 
-
-@dataclass
-class FieldInfo:
-    """One leaf field in the resolved RootConfig tree.
-
-    Used by ``walk_fields`` and the ``lore config`` subcommands. ``source``
-    is one of ``"file"`` (present in the loaded YAML) or ``"default"``
-    (using the dataclass default). Env-var overrides are deliberately not
-    chased here — the per-call resolvers (e.g. ``_resolve_backend``)
-    interpret env vars and would require duplicating their logic to
-    surface them as a field source. The docstrings on each *Config
-    dataclass already document the env-var override for that field.
-    """
-
-    path: str
-    value: Any
-    default: Any
-    type_name: str
-    doc: str
-    source: str
+ROOT_SCHEMA = ConfigSchema(
+    default_factory=RootConfig,
+    load_fn=load_root_config,
+    config_path_fn=lambda lore_root: lore_root / ".lore" / "config.yml",
+)
 
 
-def _doc_for(parent_cls: type, field_name: str) -> str:
-    """Best-effort one-line docstring for a field.
-
-    Strategy: take the parent dataclass docstring if any (covers
-    nested-config groups), trimmed to one line. Field-level docs live
-    as inline ``# ...`` comments on the dataclass body which Python
-    introspection can't reach without source parsing — out of scope
-    here. Callers that need richer descriptions read the source file.
-
-    Filters out the dataclass auto-generated ``Cls(field: type = ...,)``
-    signature that appears when no explicit docstring is set.
-    """
-    raw = (parent_cls.__doc__ or "").strip()
-    if not raw:
-        return ""
-    # Auto-generated signature strings start with "<ClassName>(".
-    if raw.startswith(f"{parent_cls.__name__}("):
-        return ""
-    return raw.splitlines()[0].strip()
-
-
-def _walk(
-    obj: Any, prefix: str, raw_at_path: dict | None, defaults_obj: Any
-) -> "list[FieldInfo]":
-    out: list[FieldInfo] = []
-    cls = type(obj)
-    for f in fields(obj):
-        path = f.name if not prefix else f"{prefix}.{f.name}"
-        value = getattr(obj, f.name)
-        default_value = getattr(defaults_obj, f.name)
-        if is_dataclass(value):
-            sub_raw = None
-            if isinstance(raw_at_path, dict) and isinstance(raw_at_path.get(f.name), dict):
-                sub_raw = raw_at_path[f.name]
-            out.extend(_walk(value, path, sub_raw, default_value))
-            continue
-        present_in_file = bool(
-            isinstance(raw_at_path, dict) and f.name in raw_at_path
-        )
-        out.append(
-            FieldInfo(
-                path=path,
-                value=value,
-                default=default_value,
-                type_name=type(value).__name__,
-                doc=_doc_for(cls, f.name),
-                source="file" if present_in_file else "default",
-            )
-        )
-    return out
-
-
-def walk_fields(lore_root: Path) -> "list[FieldInfo]":
-    """Yield FieldInfo for every leaf in the resolved RootConfig.
-
-    Reads ``$LORE_ROOT/.lore/config.yml`` (if present) to mark which
-    fields were explicitly set vs. defaulted. Result is suitable for
-    rendering by ``lore config show``.
-    """
-    cfg = load_root_config(lore_root)
-    path = lore_root / ".lore" / "config.yml"
-    raw: dict | None = None
-    if path.exists():
-        try:
-            parsed = yaml.safe_load(path.read_text())
-            if isinstance(parsed, dict):
-                raw = parsed
-        except yaml.YAMLError:
-            raw = None
-    return _walk(cfg, "", raw, RootConfig())
-
-
-def _navigate(obj: Any, parts: list[str]) -> Any:
-    cur = obj
-    for p in parts:
-        if not is_dataclass(cur):
-            raise KeyError(f"path enters a non-dataclass at {p!r}")
-        if p not in {f.name for f in fields(cur)}:
-            raise KeyError(p)
-        cur = getattr(cur, p)
-    return cur
+def walk_fields(lore_root: Path) -> list[FieldInfo]:
+    """Yield FieldInfo for every leaf in the resolved RootConfig."""
+    return _cs_walk_fields(ROOT_SCHEMA, lore_root)
 
 
 def get_field(lore_root: Path, dotted_path: str) -> FieldInfo:
     """Resolve one dotted path to a FieldInfo. Raises KeyError if absent."""
-    parts = dotted_path.split(".")
-    if not parts or not all(parts):
-        raise KeyError(dotted_path)
-    for fi in walk_fields(lore_root):
-        if fi.path == dotted_path:
-            return fi
-    # Try to give a useful error: did the path navigate into the schema
-    # but stop at a dataclass (i.e. a group rather than a leaf)?
-    cfg = load_root_config(lore_root)
-    try:
-        target = _navigate(cfg, parts)
-    except KeyError:
-        raise KeyError(f"unknown config path: {dotted_path}") from None
-    if is_dataclass(target):
-        raise KeyError(
-            f"{dotted_path!r} is a config group, not a leaf — "
-            f"try one of its fields"
-        )
-    raise KeyError(f"unknown config path: {dotted_path}")
-
-
-def _coerce_value(raw: str, target_type: type) -> Any:
-    """Coerce a CLI string to the dataclass field's expected type.
-
-    Strict — refuses to set a typed field with a value that doesn't
-    parse cleanly. ``bool`` accepts the usual on/off/yes/no/true/false/0/1
-    spellings (case-insensitive); ``int`` and ``float`` use Python
-    parsers; ``str`` is pass-through.
-    """
-    if target_type is bool:
-        s = raw.strip().lower()
-        if s in {"true", "yes", "on", "1"}:
-            return True
-        if s in {"false", "no", "off", "0"}:
-            return False
-        raise ValueError(f"cannot parse {raw!r} as bool")
-    if target_type is int:
-        return int(raw)
-    if target_type is float:
-        return float(raw)
-    if target_type is str:
-        return raw
-    raise ValueError(
-        f"unsupported type {target_type.__name__!r} — only bool/int/float/str "
-        f"are settable from the CLI today"
-    )
+    return _cs_get_field(ROOT_SCHEMA, lore_root, dotted_path)
 
 
 def set_field(lore_root: Path, dotted_path: str, raw_value: str) -> FieldInfo:
     """Persist a value to ``$LORE_ROOT/.lore/config.yml``.
 
     Validates ``dotted_path`` against the schema and coerces
-    ``raw_value`` to the field's declared type before writing.
-    Existing file content is preserved at the YAML node level (other
-    keys untouched), but inline comments may be lost — PyYAML doesn't
-    round-trip them. Returns the FieldInfo for the updated value.
-
+    ``raw_value`` to the field's declared type before writing — an
+    unknown path or bad value leaves the file on disk unchanged.
     Raises ``KeyError`` for unknown paths and ``ValueError`` for type
-    mismatches (the underlying ``_coerce_value`` failure surfaces with
-    its message).
+    mismatches.
     """
-    parts = dotted_path.split(".")
-    if not parts or not all(parts):
-        raise KeyError(dotted_path)
-    # Validate the path resolves to a dataclass leaf.
-    cfg = load_root_config(lore_root)
-    parent = _navigate(cfg, parts[:-1])
-    if not is_dataclass(parent):
-        raise KeyError(f"path enters a non-dataclass at {parts[-2]!r}")
-    parent_cls = type(parent)
-    field_map = {f.name: f for f in fields(parent_cls)}
-    if parts[-1] not in field_map:
-        raise KeyError(f"unknown config path: {dotted_path}")
-    field_def = field_map[parts[-1]]
-    coerced = _coerce_value(raw_value, field_def.type if isinstance(field_def.type, type) else type(getattr(parent, parts[-1])))
-    # Read existing YAML, mutate the nested dict, write back. Missing
-    # parents are created on demand.
-    cfg_path = lore_root / ".lore" / "config.yml"
-    raw: dict[str, Any] = {}
-    if cfg_path.exists():
-        try:
-            parsed = yaml.safe_load(cfg_path.read_text())
-            if isinstance(parsed, dict):
-                raw = parsed
-        except yaml.YAMLError as exc:
-            raise RuntimeError(f"cannot parse {cfg_path}: {exc}") from exc
-    cur = raw
-    for p in parts[:-1]:
-        nxt = cur.get(p)
-        if not isinstance(nxt, dict):
-            nxt = {}
-            cur[p] = nxt
-        cur = nxt
-    cur[parts[-1]] = coerced
-    cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(yaml.safe_dump(raw, sort_keys=False))
-    return get_field(lore_root, dotted_path)
+    return _cs_set_field(ROOT_SCHEMA, lore_root, dotted_path, raw_value)
 
 
-def schema_tree() -> "list[tuple[str, str, Any, str]]":
+def unset_field(lore_root: Path, dotted_path: str) -> FieldInfo:
+    """Remove a persisted override so the field reverts to its default."""
+    return _cs_unset_field(ROOT_SCHEMA, lore_root, dotted_path)
+
+
+def schema_tree() -> list[tuple[str, str, Any, str]]:
     """Return [(dotted_path, type_name, default, group_doc), ...] for the
     full RootConfig schema. Pure introspection — no IO.
-
-    Group docstrings appear once per group with empty path-prefix
-    semantics: the leaf rows carry the closest enclosing group's
-    docstring as their `group_doc`. Suitable for ``lore config schema``.
     """
-    cfg = RootConfig()
-    rows: list[tuple[str, str, Any, str]] = []
-
-    def visit(obj: Any, prefix: str) -> None:
-        for f in fields(obj):
-            path = f.name if not prefix else f"{prefix}.{f.name}"
-            value = getattr(obj, f.name)
-            if is_dataclass(value):
-                visit(value, path)
-                continue
-            rows.append((path, type(value).__name__, value, _doc_for(type(obj), f.name)))
-
-    visit(cfg, "")
-    return rows
+    return _cs_schema_tree(ROOT_SCHEMA)
