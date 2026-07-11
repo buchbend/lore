@@ -321,3 +321,22 @@ def test_complete_run_id_graceful_on_missing_root(tmp_path, monkeypatch):
     results = runs_cmd._complete_run_id(None, None, "")
     assert "latest" in results
     assert "^1" in results
+
+
+# ---------------------------------------------------------------------------
+# Deprecation — thin alias pointing at `lore trace` (#195)
+# ---------------------------------------------------------------------------
+
+
+def test_runs_deprecation_pointer_and_delegation(tmp_path, monkeypatch):
+    """`lore runs` prints a pointer to `lore trace` on stderr, then still
+    runs its own subcommand — the deprecation window keeps it functional."""
+    from lore_cli import runs_cmd
+
+    _seed_run(tmp_path)
+    monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(runs_cmd.app, ["list"])
+    assert "deprecated" in result.stderr
+    assert "lore trace" in result.stderr
+    assert "a1b2c3" in result.stdout  # delegation: old behavior intact

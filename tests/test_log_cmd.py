@@ -73,8 +73,10 @@ def _invoke(lore_root: Path, *extra: str, monkeypatch) -> str:
     from lore_cli.log_cmd import app
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
     monkeypatch.setenv("_LORE_LOG_NOW", _iso(_NOW))
+    # stdout only — the deprecation pointer (added #195) goes to stderr so
+    # `--json` piping stays clean; keep it out of these content assertions.
     result = runner.invoke(app, list(extra), catch_exceptions=False)
-    return result.output
+    return result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -217,3 +219,26 @@ def test_log_proc_events(tmp_path: Path, monkeypatch) -> None:
     out = _invoke(lore_root, monkeypatch=monkeypatch)
     assert "proc-a" in out
     assert "exit 0" in out
+
+
+# ---------------------------------------------------------------------------
+# Deprecation — thin alias pointing at `lore trace` (#195)
+# ---------------------------------------------------------------------------
+
+
+def test_log_deprecation_pointer_and_delegation(tmp_path: Path, monkeypatch) -> None:
+    """`lore log` prints a pointer to `lore trace` on stderr, then still
+    runs its own timeline — the deprecation window keeps it functional."""
+    from lore_cli.log_cmd import app
+
+    lore_root = _seed_vault(tmp_path)
+    _seed_hook_events(lore_root, [
+        {"ts": _iso(_NOW - timedelta(minutes=5)), "event": "session-start", "outcome": "ok",
+         "schema_version": 2},
+    ])
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    monkeypatch.setenv("_LORE_LOG_NOW", _iso(_NOW))
+    result = runner.invoke(app, [], catch_exceptions=False)
+    assert "deprecated" in result.stderr
+    assert "lore trace" in result.stderr
+    assert "session-start" in result.stdout  # delegation: old behavior intact

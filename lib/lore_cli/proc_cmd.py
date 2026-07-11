@@ -28,6 +28,13 @@ app = typer.Typer(
 )
 
 console = Console()
+err_console = Console(stderr=True)
+
+_DEPRECATION_NOTICE = (
+    "[yellow]lore proc is deprecated — use `lore trace` for a correlated "
+    "flush drill-down instead. This alias will be removed in a future "
+    "release.[/yellow]"
+)
 
 _ROLES = ("a", "transcripts")
 _ERROR_MARKERS = ("Traceback", "Error:", "FATAL")
@@ -76,6 +83,12 @@ def _format_size(n: int) -> str:
     if n < 1024 * 1024:
         return f"{n / 1024:.1f} KB"
     return f"{n / (1024 * 1024):.1f} MB"
+
+
+@app.callback()
+def _deprecation_pointer() -> None:
+    """Print the deprecation pointer before any subcommand runs."""
+    err_console.print(_DEPRECATION_NOTICE, highlight=False)
 
 
 @app.command("list")

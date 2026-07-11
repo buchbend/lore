@@ -162,10 +162,48 @@ fallback name.
 
 ---
 
+## How failures surface
+
+A flush can fail in two different places, and each surfaces differently.
+
+**Inside compose — a marker chapter in the note itself.** This is the
+give-up semantics from "Writing a note" above: mid-session failure is
+silent while a retry chance remains, but a buffer that grows to 2x the
+cap with a prior failed attempt gets a deterministic **failed marker**
+chapter, and a publish-gate withhold gets a **withheld marker** chapter
+(the full composed text goes to the private quarantine sidecar instead).
+Either way the note stays open and readable — the marker chapter *is*
+the failure record, right where a reader would look for the missing
+content.
+
+**Outside compose — a dead-lettered flush on the spine.** Everything
+between "a hook decides a flush is needed" and "compose starts" —
+spawn failures, buffer-sidecar read errors, chapter-append I/O errors —
+used to fail silently. The flush lifecycle state machine
+(`lore_core/flush_store.py`, issue #189) makes this queryable instead: a
+flush that exhausts its bounded retries (3 attempts, exponential
+backoff) becomes a `dead-lettered` record with a structured reason
+instead of vanishing. `lore trace dead` lists them; `lore status`'s
+alerts section surfaces a nonzero dead-letter count and names that same
+command. Every transition — including the ones that don't dead-letter —
+also lands on the event spine (`source="curator"`,
+`event="flush-<state>"`), so `lore trace <trace-id-or-session-id>`
+replays the whole path a specific flush took, marker chapter or not.
+
+A hard failure of the spine *writer* itself (an `OSError` mid-`emit`) is
+the one thing that can't be a spine event — it touches
+`spine-failed.marker` instead, which `lore doctor` and `lore status`
+check for directly.
+
+---
+
 ## See also
 
 - `CONTEXT.md` — the note vocabulary (buffer, flush, chapter, block,
   anchor, marker) and the buffer/flush/compose write path.
+- [`observability.md`](observability.md) — the event spine's full
+  envelope shape, producer list, trace_id lifecycle, and retention
+  policy behind the dead-letter/marker distinction above.
 - [ADR 0001](../adr/0001-session-note-reopen-relaxes-close-immutability.md)
   — the close-immutability carve-out, its alternatives, and its
   concurrency and trade-off analysis.

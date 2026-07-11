@@ -1,10 +1,11 @@
 """Tests for the CLI-layer janitor composer (issue #190).
 
-``lore_core.janitor`` doesn't know about crash logs (they live under the
-global ``$LORE_CACHE``, not a specific ``lore_root``) or drain orphan
-pruning (owned by ``lore_cli.drain_cmd``) — this composer wires the core
-sweep together with those two lore_cli-only families for the opportunistic
-entry points (hook fire, curator run end).
+``lore_core.janitor.run_janitor`` doesn't know about crash logs — they live
+under the global ``$LORE_CACHE``, not a specific ``lore_root`` — so this
+composer wires in ``lore_cli._crash_log`` alongside the core sweep, plus
+``lore_core.janitor.prune_orphans`` (drain-orphan cleanup, composed rather
+than folded into ``run_janitor``'s own critical section), for the
+opportunistic entry points (hook fire, curator run end).
 """
 
 from __future__ import annotations

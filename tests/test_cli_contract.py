@@ -78,3 +78,19 @@ def test_main_dispatcher_only_mounts() -> None:
         "Inline handlers belong in lore_cli/<verb>_cmd.py. "
         "Offending sites:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_drain_cmd_removed_deprecated_verbs_still_mounted() -> None:
+    """`lore drain` was removed outright (#195) — vestigial once #188 moved
+    drain-event emission onto the spine, where the janitor already
+    retention-manages it. Guards against the module or its mount creeping
+    back, and that the four *aliased* verbs (still functional during their
+    deprecation window) weren't accidentally dropped in the same change."""
+    assert not (CLI_DIR / "drain_cmd.py").exists()
+    text = (CLI_DIR / "__main__.py").read_text()
+    assert "drain_cmd" not in text
+    assert 'name="drain"' not in text
+    for verb in ("log", "news", "runs", "proc"):
+        assert f'name="{verb}"' in text, (
+            f"lore {verb} must stay mounted during its deprecation window"
+        )

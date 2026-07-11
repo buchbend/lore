@@ -113,6 +113,39 @@ harness:
 Both are import-time-cheap; they exist so individual verbs don't have
 to repeat plumbing.
 
+## Deprecating a verb
+
+The pattern behind `lore log` / `lore news` / `lore runs` / `lore proc`
+(#195 — absorbed by `lore trace` / `lore status`, see
+`docs/architecture/observability.md`): keep the verb's `<verb>_cmd.py`
+and its `app` exactly as they are — don't delete or rewrite the
+behavior — and add one line at the top of the callback (or an
+`@app.callback()` for a multi-command app that doesn't already have
+one) that prints a pointer to the replacement on **stderr**:
+
+```python
+err_console = Console(stderr=True)  # separate from the stdout `console`
+
+@app.callback(invoke_without_command=True)
+def <verb>(...) -> None:
+    err_console.print(
+        "[yellow]lore <verb> is deprecated — use `lore <replacement>` "
+        "instead. This alias will be removed in a future release.[/yellow]",
+        highlight=False,
+    )
+    ...  # original behavior, unchanged
+```
+
+Stderr (never stdout) keeps `--json`/piped output script-safe. Record
+the introduction and the planned removal version in `CHANGELOG.md`'s
+`### Deprecated` section — that's the one place the exact version number
+lives; the runtime message stays version-agnostic so it can't go stale.
+A verb with no replacement to point at (`lore drain prune`, once its
+one job — orphan-row pruning — was already running automatically inside
+the retention janitor) is removed outright instead of aliased; its
+CLI-owned business logic, if any is still needed by a lower layer,
+moves into `lore_core` rather than surviving as a phantom `app`.
+
 ## When to break the rules
 
 **Adding a new file that isn't `<verb>_cmd.py`.** `hooks.py` is the
@@ -130,6 +163,11 @@ directly, move it back to a lower layer.
 
 ## History
 
+- **#195** — `lore log` / `lore news` / `lore runs` / `lore proc` became
+  deprecated thin aliases for `lore trace` / `lore status` (see
+  "Deprecating a verb" above); `lore drain` (and its sole subcommand,
+  `prune`) was removed outright — the janitor already ran it
+  automatically, so the CLI surface was redundant, not deprecated.
 - **v0.13.0** — typer apps lifted out of `lore_core/lint`,
   `lore_core/migrate`, `lore_curator/defrag_curator`, `lore_mcp/server`,
   `lore_search/cli`. The `lore_runtime` package was deleted; its
