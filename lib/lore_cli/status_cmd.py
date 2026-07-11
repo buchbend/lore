@@ -105,30 +105,17 @@ def _last_two_zero_note_runs(lore_root: Path) -> list[str] | None:
 
     Used for the "loud-on-earning" 0-note alert. Returns None otherwise.
     """
-    from lore_core.run_reader import iter_archival_runs
+    from lore_core.run_reader import read_run_by_id, run_ids
 
     short_ids: list[str] = []
-    for path in iter_archival_runs(lore_root, limit=2):
-        try:
-            lines = path.read_text().splitlines()
-        except OSError:
-            return None
-        end = None
-        for line in reversed(lines):
-            if not line.strip():
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if rec.get("type") == "run-end":
-                end = rec
-                break
+    for run_id in run_ids(lore_root, limit=2):
+        records = read_run_by_id(lore_root, run_id)
+        end = next((r for r in reversed(records) if r.get("type") == "run-end"), None)
         if end is None:
             return None
         if end.get("notes_new", 0) != 0 or end.get("notes_merged", 0) != 0:
             return None
-        short_ids.append(path.stem.split("-")[-1])
+        short_ids.append(run_id.split("-")[-1])
     return short_ids if len(short_ids) == 2 else None
 
 

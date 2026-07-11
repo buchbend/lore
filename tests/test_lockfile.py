@@ -216,10 +216,10 @@ def test_skip_lock_held_includes_holder(tmp_path):
             adapter_lookup=lambda h: None,
         )
 
-    runs = list((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    archival = [p for p in runs if not p.name.endswith(".trace.jsonl")]
-    assert archival, "Expected at least one run log"
-    records = [json.loads(l) for l in archival[0].read_text().splitlines() if l.strip()]
+    from lore_core.run_reader import read_curator_runs
+    runs = list(read_curator_runs(tmp_path).values())
+    assert runs, "Expected at least one run on the spine"
+    records = runs[0]
     skip_records = [
         r for r in records
         if r.get("type") == "skip" and r.get("reason") == "lock-held"
