@@ -335,6 +335,33 @@ def _print_rename_preview(preview: dict) -> None:
             console.print(f"  - {a.path}  [dim]({a.scope})[/dim]")
     else:
         console.print("\n[dim]No attachments reference this subtree.[/dim]")
+    _print_stale_offer_report(ats)
+
+
+def _print_stale_offer_report(affected_attachments: list) -> None:
+    """Name the checked-in `.lore.yml` files a rename leaves behind.
+
+    Rename only rewrites *this host's* vault-local state (scopes.json,
+    attachments.json, wiki frontmatter) — it never edits a `.lore.yml`
+    checked into an attached repo, which may not even be on this host.
+    Left un-updated, that file still declares the pre-rename scope; a
+    future `lore attach accept` re-derives it from the file and
+    resurrects the renamed-away scope in scopes.json.
+    """
+    from lore_core.offer import FILENAME
+
+    stale = [a.path / FILENAME for a in affected_attachments if (a.path / FILENAME).exists()]
+    if not stale:
+        return
+    console.print(
+        f"\n[yellow]Checked-in offers still reference the old scope[/yellow] ({len(stale)}):"
+    )
+    for p in stale:
+        console.print(f"  - {p}")
+    console.print(
+        "  [dim]Update each file's `scope:` field and commit — otherwise a future "
+        "`lore attach accept` will resurrect the old scope.[/dim]"
+    )
 
 
 def _apply_scope_rewrites(

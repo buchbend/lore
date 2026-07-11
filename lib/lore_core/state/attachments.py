@@ -32,8 +32,16 @@ class Attachment:
 
 @dataclass
 class Declined:
+    """A recorded decline, keyed by ``(path, scope)`` — not by offer
+    content fingerprint. Declining is a per-scope decision: editing an
+    offer's non-routing content (or even a routing field like
+    ``wiki_source``) must not re-prompt someone who already said no,
+    but a changed ``scope`` is a materially different offer and
+    legitimately re-asks.
+    """
+
     path: Path
-    offer_fingerprint: str
+    scope: str
 
 
 class AttachmentsFile:
@@ -129,21 +137,21 @@ class AttachmentsFile:
         self._attachments = [a for a in self._attachments if a.path != normalised]
         return len(self._attachments) != before
 
-    def decline(self, path: Path, offer_fingerprint: str) -> None:
-        """Record a declined offer. Path + fingerprint pair is the key."""
+    def decline(self, path: Path, scope: str) -> None:
+        """Record a declined offer. Path + scope pair is the key."""
         self._ensure_loaded()
         normalised = _normalise_path(path)
         self._declined = [
             d for d in self._declined
-            if not (d.path == normalised and d.offer_fingerprint == offer_fingerprint)
+            if not (d.path == normalised and d.scope == scope)
         ]
-        self._declined.append(Declined(path=normalised, offer_fingerprint=offer_fingerprint))
+        self._declined.append(Declined(path=normalised, scope=scope))
 
-    def is_declined(self, path: Path, offer_fingerprint: str) -> bool:
+    def is_declined(self, path: Path, scope: str) -> bool:
         self._ensure_loaded()
         normalised = _normalise_path(path)
         return any(
-            d.path == normalised and d.offer_fingerprint == offer_fingerprint
+            d.path == normalised and d.scope == scope
             for d in self._declined
         )
 
@@ -228,11 +236,17 @@ def _attachment_from_raw(raw: dict[str, Any]) -> Attachment:
 
 
 def _declined_to_raw(d: Declined) -> dict[str, Any]:
-    return {"path": str(d.path), "offer_fingerprint": d.offer_fingerprint}
+    return {"path": str(d.path), "scope": d.scope}
 
 
 def _declined_from_raw(raw: dict[str, Any]) -> Declined:
-    return Declined(path=Path(raw["path"]), offer_fingerprint=raw["offer_fingerprint"])
+    # Pre-scope-keying records stored `offer_fingerprint` instead of
+    # `scope` — preserved verbatim (never drop a consent row) rather
+    # than migrated, since the original scope string isn't recoverable
+    # from a fingerprint. Round-trips fine; just won't match new
+    # (path, scope) lookups, so the offer re-prompts once after upgrade.
+    scope = raw.get("scope", raw.get("offer_fingerprint", ""))
+    return Declined(path=Path(raw["path"]), scope=scope)
 
 
 def _parse_dt(s: str) -> datetime:

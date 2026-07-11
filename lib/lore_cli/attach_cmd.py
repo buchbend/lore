@@ -106,10 +106,14 @@ def _cwd_arg(cwd_opt: str | None) -> Path:
 def _no_applicable_offer_message(cwd_path: Path) -> None:
     """Print a diagnostic explaining why no offer applies to ``cwd_path``.
 
-    Distinguishes "no file anywhere" from "file at ancestor without
-    ``inherit: true``" so users hit by the migration get a clear hint.
+    Distinguishes "no file anywhere" from "file exists but fails schema
+    validation" from "file at ancestor without ``inherit: true``" so
+    users hit by any of these get a clear, actionable hint instead of a
+    generic "not found" (which a broken-but-present file would
+    otherwise produce, since ``parse_lore_yml`` treats malformed input
+    as absence).
     """
-    from lore_core.offer import find_lore_yml_raw
+    from lore_core.offer import find_lore_yml_raw, validate_offer_raw
 
     raw = find_lore_yml_raw(cwd_path)
     if raw is None:
@@ -118,6 +122,12 @@ def _no_applicable_offer_message(cwd_path: Path) -> None:
             "Use `lore attach manual --wiki ... --scope ...` for a repo "
             "without a checked-in offer."
         )
+        return
+    errors = validate_offer_raw(raw)
+    if errors:
+        err_console.print(f"[red]Invalid {raw}:[/red]")
+        for e in errors:
+            err_console.print(f"  - {e}")
         return
     err_console.print(
         f"[red]No applicable .lore.yml for[/red] {cwd_path}.\n"
@@ -267,7 +277,7 @@ def _do_accept(lore_root: Path, cwd_path: Path, scaffold_workflow: bool = False,
 
 
 def _do_decline(lore_root: Path, cwd_path: Path) -> None:
-    from lore_core.offer import find_lore_yml, offer_fingerprint
+    from lore_core.offer import find_lore_yml
     from lore_core.state.attachments import AttachmentsFile
 
     found = find_lore_yml(cwd_path)
@@ -277,11 +287,10 @@ def _do_decline(lore_root: Path, cwd_path: Path) -> None:
     offer_path, offer = found
 
     repo_root = offer_path.parent
-    fp = offer_fingerprint(offer)
 
     attachments = AttachmentsFile(lore_root)
     attachments.load()
-    attachments.decline(repo_root, fp)
+    attachments.decline(repo_root, offer.scope)
     attachments.save()
 
     console.print(
@@ -591,13 +600,14 @@ def _execute_attach(
     backend: str,
     write_offer: bool,
     scaffold_workflow: bool = False,
+    confirm_shared: bool = False,
 ) -> None:
     """Shared executor: register the attachment, optionally write a
     ``.lore.yml`` and stamp its fingerprint onto the row so the very
     next session doesn't see it as DRIFT."""
     from lore_core.offer import FILENAME
 
-    _do_manual(lore_root, resolved, wiki, scope, scaffold_workflow)
+    _do_manual(lore_root, resolved, wiki, scope, scaffold_workflow, confirm_shared)
 
     if write_offer:
         import yaml
@@ -856,11 +866,25 @@ def cmd_manual(
         "--confirm-shared",
         help="Consent to attaching to a shared (git-remote) wiki non-interactively.",
     ),
+    write_offer: bool = typer.Option(
+        False,
+        "--write-offer",
+        help="Also write a `.lore.yml` at cwd so other contributors get this config "
+             "(the non-interactive equivalent of the wizard's write-offer step).",
+    ),
+    backend: str = typer.Option(
+        "none", "--backend", help="Offer backend: github|none (used with --write-offer)."
+    ),
 ) -> None:
     """Attach ``cwd`` manually with no ``.lore.yml`` required."""
     cwd_path = _cwd_arg(cwd)
     resolved = cwd_path.resolve() if cwd_path.exists() else cwd_path.absolute()
-    _do_manual(_lore_root_or_die(), resolved, wiki, scope, scaffold_workflow, confirm_shared)
+    _execute_attach(
+        _lore_root_or_die(), resolved,
+        wiki=wiki, scope=scope, backend=backend,
+        write_offer=write_offer, scaffold_workflow=scaffold_workflow,
+        confirm_shared=confirm_shared,
+    )
 
 
 @app.command("offer")
@@ -871,6 +895,9 @@ def cmd_offer(
     wiki_source: str = typer.Option(None, "--wiki-source", help="Optional URL for clone-on-accept."),
     backend: str = typer.Option("none", "--backend", help="github|none."),
     force: bool = typer.Option(False, "--force", help="Overwrite an existing `.lore.yml`."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the payload that would be written; write nothing."
+    ),
 ) -> None:
     """Write a ``.lore.yml`` at ``cwd`` declaring a shareable offer."""
     import yaml
@@ -878,6 +905,16 @@ def cmd_offer(
     from lore_core.offer import FILENAME
 
     cwd_path = _cwd_arg(cwd)
+
+    payload: dict = {"wiki": wiki, "scope": scope, "backend": backend}
+    if wiki_source:
+        payload["wiki_source"] = wiki_source
+
+    if dry_run:
+        console.print(f"[dim]Dry run — would write {cwd_path / FILENAME}:[/dim]")
+        console.print(yaml.safe_dump(payload, sort_keys=False), end="")
+        return
+
     if not cwd_path.exists():
         err_console.print(f"[red]Directory does not exist:[/red] {cwd_path}")
         raise typer.Exit(1)
@@ -891,10 +928,6 @@ def cmd_offer(
             f"[red]{target} already exists.[/red] Pass --force to overwrite."
         )
         raise typer.Exit(1)
-
-    payload: dict = {"wiki": wiki, "scope": scope, "backend": backend}
-    if wiki_source:
-        payload["wiki_source"] = wiki_source
 
     target.write_text(yaml.safe_dump(payload, sort_keys=False))
     console.print(

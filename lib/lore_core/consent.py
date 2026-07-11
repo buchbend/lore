@@ -104,7 +104,7 @@ def classify_state(cwd: Path, attachments: AttachmentsFile) -> ConsentResult:
     repo_root = offer_path.parent
     fp = offer_fingerprint(offer)
 
-    if attachments.is_declined(repo_root, fp):
+    if attachments.is_declined(repo_root, offer.scope):
         return ConsentResult(
             state=ConsentState.DORMANT,
             offer=offer,
