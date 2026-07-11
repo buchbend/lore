@@ -41,9 +41,35 @@ class ProcConfig:
 
 
 @dataclass
+class RetentionConfig:
+    """Tiered janitor policy for the event spine + adjacent log families
+    (issue #190).
+
+    Hot tier = the live ``spine.jsonl`` (detailed events); size cap is
+    ``hook_events.max_size_mb`` (single source of truth, not duplicated
+    here). Cold tier = the rotated ``spine.jsonl.1`` — a hot->cold
+    downgrade (age- or size-triggered) moves data there; ``cold_days`` /
+    ``cold_max_mb`` bound how long it survives before outright deletion
+    (there is no tier below cold).
+
+    ``crash_log_days`` bounds ``$LORE_CACHE/crashes/``. ``dead_letter_hard_cap``
+    is the escape valve for flush dead letters: unresolved dead letters are
+    exempt from normal age-based retention (a human needs to see them) but
+    a permanently-stuck pipeline still can't grow the store forever.
+    """
+
+    hot_days: int = 7
+    cold_days: int = 30
+    cold_max_mb: int = 20
+    crash_log_days: int = 30
+    dead_letter_hard_cap: int = 50
+
+
+@dataclass
 class ObservabilityConfig:
     hook_events: HookEventsConfig = field(default_factory=HookEventsConfig)
     runs: RunsConfig = field(default_factory=RunsConfig)
+    retention: RetentionConfig = field(default_factory=RetentionConfig)
     proc: ProcConfig = field(default_factory=ProcConfig)
 
 

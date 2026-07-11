@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,10 @@ from lore_core.spine import (
 
 def _read(path: Path) -> list[dict]:
     return [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +197,52 @@ def test_rotation_crosses_threshold(tmp_path: Path) -> None:
     assert rotated.exists()
     assert path.exists()
     assert path.stat().st_size < 2000
+
+
+# ---------------------------------------------------------------------------
+# #190 — janitor-triggered rotation: age or the currently-configured size
+# cap, independent of the fixed cap a writer was constructed with.
+# ---------------------------------------------------------------------------
+
+
+def test_janitor_rotate_if_due_by_age(tmp_path: Path) -> None:
+    writer = SpineWriter(tmp_path)
+    path = tmp_path / ".lore" / "spine.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old_rec = {**_template(), "ts": "2020-01-01T00:00:00Z"}
+    path.write_text(json.dumps(old_rec) + "\n")
+    rotated = writer.janitor_rotate_if_due(max_age_days=7, max_size_mb=10)
+    assert rotated is True
+    assert (tmp_path / ".lore" / "spine.jsonl.1").exists()
+    # Rotation is a rename; the hot path only reappears on the next emit().
+    assert not path.exists()
+
+
+def test_janitor_rotate_if_due_by_configured_size(tmp_path: Path) -> None:
+    writer = SpineWriter(tmp_path, max_size_mb=10)  # writer's own fixed cap
+    path = tmp_path / ".lore" / "spine.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x" * 2000 + "\n")
+    # Janitor re-checks against a tighter, currently-configured cap.
+    rotated = writer.janitor_rotate_if_due(max_age_days=365, max_size_mb=0.001)
+    assert rotated is True
+    assert (tmp_path / ".lore" / "spine.jsonl.1").exists()
+
+
+def test_janitor_rotate_if_due_noop_within_window(tmp_path: Path) -> None:
+    writer = SpineWriter(tmp_path)
+    path = tmp_path / ".lore" / "spine.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fresh_rec = {**_template(), "ts": _now_iso()}
+    path.write_text(json.dumps(fresh_rec) + "\n")
+    rotated = writer.janitor_rotate_if_due(max_age_days=7, max_size_mb=10)
+    assert rotated is False
+    assert not (tmp_path / ".lore" / "spine.jsonl.1").exists()
+
+
+def test_janitor_rotate_if_due_missing_file_is_noop(tmp_path: Path) -> None:
+    writer = SpineWriter(tmp_path)
+    assert writer.janitor_rotate_if_due(max_age_days=7, max_size_mb=10) is False
 
 
 def test_rotation_race_no_data_loss(tmp_path: Path) -> None:

@@ -281,6 +281,15 @@ def flush_command(
             logger=logger,
         )
 
+    # Opportunistic retention sweep (#190) at curator-run end — flock-guarded,
+    # daemon-free; a contended lock just skips this cycle.
+    try:
+        from lore_cli._janitor_entry import run_opportunistic_janitor
+
+        run_opportunistic_janitor(lore_root)
+    except Exception:  # noqa: BLE001 - janitor must never crash a flush run
+        pass
+
     console.print(
         f"[bold]flush[/bold] {outcome.buffer_stem} — "
         f"phase1={'ok' if outcome.phase1_completed else 'skipped'}, "

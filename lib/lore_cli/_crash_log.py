@@ -108,3 +108,58 @@ def recent_crashes(within_days: int = 7) -> list[Path]:
         return []
     out.sort(key=lambda t: t[0], reverse=True)
     return [p for _, p in out]
+
+
+def purge_old_crashes(within_days: int, *, lore_root: Path | None = None) -> tuple[int, int]:
+    """Delete crash logs older than ``within_days``. Returns (deleted, failed).
+
+    Crash logs live under the global ``$LORE_CACHE``, not a specific
+    ``lore_root`` — so a caller without a resolved root still gets the
+    deletion (pure best-effort, matching :func:`write_crash`'s degrade
+    contract) but no spine visibility, since there's nowhere to log it.
+    With ``lore_root``, every deletion/failure is a ``source="janitor"``
+    spine event (issue #190) — crash logs no longer accumulate silently.
+    """
+    cdir = _crash_dir()
+    if not cdir.exists():
+        return 0, 0
+    cutoff = datetime.now(UTC).timestamp() - within_days * 86400
+    writer = None
+    if lore_root is not None:
+        from lore_core.spine import SpineWriter
+
+        writer = SpineWriter(lore_root)
+
+    deleted = 0
+    failed = 0
+    try:
+        candidates = [p for p in cdir.iterdir() if p.is_file() and p.name.endswith(".log")]
+    except OSError:
+        return 0, 0
+    for p in candidates:
+        try:
+            mtime = p.stat().st_mtime
+            size = p.stat().st_size
+        except OSError:
+            continue
+        if mtime >= cutoff:
+            continue
+        try:
+            p.unlink()
+            deleted += 1
+            if writer is not None:
+                writer.emit(
+                    source="janitor",
+                    event="retention-delete",
+                    data={"family": "crash-log", "path": p.name, "bytes": size},
+                )
+        except OSError as exc:
+            failed += 1
+            if writer is not None:
+                writer.emit(
+                    source="janitor",
+                    event="retention-delete-failed",
+                    level="warn",
+                    data={"family": "crash-log", "path": p.name, "error": str(exc)},
+                )
+    return deleted, failed

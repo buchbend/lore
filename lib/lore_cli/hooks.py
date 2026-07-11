@@ -1272,6 +1272,16 @@ def cmd_session_start(
         except Exception:  # noqa: BLE001 — pull must never crash SessionStart
             auto_pull_warning = None
 
+    # Opportunistic retention sweep (#190) — flock-guarded, daemon-free; a
+    # contended lock just skips this cycle, the next SessionStart retries.
+    if scope is not None and lore_root is not None and not probe:
+        try:
+            from lore_cli._janitor_entry import run_opportunistic_janitor
+
+            run_opportunistic_janitor(lore_root)
+        except Exception:  # noqa: BLE001 - janitor must never crash SessionStart
+            pass
+
     # Buffer-and-flush handover-poll: when a sibling session ended
     # mid-flush, wait briefly for ``state=closed`` so the resulting
     # wikilink lands in this SessionStart's context rather than only in
