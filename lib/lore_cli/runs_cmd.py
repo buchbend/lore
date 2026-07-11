@@ -44,6 +44,20 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 console = Console()
+err_console = Console(stderr=True)
+
+_DEPRECATION_NOTICE = (
+    "[yellow]lore runs is deprecated — use `lore trace` for a correlated "
+    "flush drill-down instead. This alias will be removed in a future "
+    "release.[/yellow]"
+)
+
+
+@app.callback()
+def _deprecation_pointer() -> None:
+    """Print the deprecation pointer before any subcommand runs."""
+    err_console.print(_DEPRECATION_NOTICE, highlight=False)
+
 
 _POLL_INTERVAL_S = 0.2
 _IDLE_TIMEOUT_S = 30 * 60  # 30 min

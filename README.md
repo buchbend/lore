@@ -314,45 +314,48 @@ and add knobs only as you need them. Briefings publish manually
 
 ## Observability
 
-The capture pipeline writes structured logs so you can inspect what it did — and
-why. Four commands cover the common scenarios:
+Every background producer (hooks, curator runs, drain events, the
+retention janitor) writes one envelope onto one append-only event log,
+the **spine**, correlated end-to-end by a `trace_id` minted at hook fire.
+Three commands cover the common scenarios:
 
 | Scenario | Command |
 |---|---|
-| **"Is Lore doing anything for me right now?"** | **`lore status`** |
-| "I had a session and no note appeared" | `lore runs show latest` |
-| "Hook plumbing feels off" | `lore doctor` |
+| **"Is Lore healthy right now?"** | **`lore status`** |
+| "I had a session and no note appeared" | `lore trace last` (or `lore trace dead` for stuck flushes) |
+| "Hook plumbing feels off" | `lore doctor` (`--fix` repairs what it can) |
 | "I'm tuning noteworthy/merge config" | `lore curator run --dry-run --trace-llm` |
 
 `lore status` is the first thing to run when you're wondering whether Lore is
-alive. It prints a 7-line activity-first dashboard: pending transcripts, last
-hook event time, last curator run, hook backlog age. Decay-ordered, loud-on-
-earning — silent lines mean nothing wrong, prominent lines mean attention
-warranted.
+alive: capture liveness, flush queue (queued/running/dead-lettered), per-wiki
+connection health, retention usage, and an alerts section where every warning
+names its own drill-down command.
 
-`lore runs list` prints a table of recent curator runs. `lore runs show <id>`
-accepts the alias `latest`, carets `^1`..`^N`, the 6-char random suffix
-(e.g. `a1b2c3`), or any unique prefix of the full ID.
+`lore trace <selector>` renders the chronological, correlated story of one
+flush — hook fire, spawn, LLM calls, gate outcome, note append — for a
+trace_id, session_id, `last`, `dead` (lists dead-lettered flushes), or a note
+path / `[[wikilink]]`.
 
-Logs live under `$LORE_ROOT/.lore/`:
+`lore log` / `lore news` / `lore runs` / `lore proc` are deprecated thin
+aliases for `lore trace` / `lore status` — still functional for one
+minor-version window (see `CHANGELOG.md`), each printing a pointer to its
+replacement.
 
-- `hook-events.jsonl` — one line per hook invocation
-- `runs/<id>.jsonl` — one file per curator run (decision trace)
-- `runs/<id>.trace.jsonl` — optional LLM prompt/response trace (enabled by
-  `LORE_TRACE_LLM=1` or `--trace-llm` on `lore curator run`)
-
-Retention is count + MB capped; configure at `$LORE_ROOT/.lore/config.yml`:
+Structured logs live under `$LORE_ROOT/.lore/spine.jsonl`, tiered
+hot → cold → deleted; configure retention at `$LORE_ROOT/.lore/config.yml`:
 
 ~~~yaml
 observability:
-  hook_events:
-    max_size_mb: 10
-    keep_rotations: 1
-  runs:
-    keep: 200
-    max_total_mb: 100
-    keep_trace: 30
+  retention:
+    hot_days: 7
+    cold_days: 30
 ~~~
+
+Full envelope schema, producer list, trace_id lifecycle, and retention
+tiers: [`docs/architecture/observability.md`](docs/architecture/observability.md).
+Onboarding and troubleshooting walkthroughs:
+[`docs/how-to/onboarding.md`](docs/how-to/onboarding.md),
+[`docs/how-to/troubleshooting.md`](docs/how-to/troubleshooting.md).
 
 ## Two onboarding recipes
 

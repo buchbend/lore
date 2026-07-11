@@ -157,3 +157,18 @@ def test_show_prev_is_gen_1(proc_dir: Path) -> None:
     result = runner.invoke(_get_app(), ["show", "a", "--prev"])
     assert result.exit_code == 0
     assert "gen 1 content" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Deprecation — thin alias pointing at `lore trace` (#195)
+# ---------------------------------------------------------------------------
+
+
+def test_deprecation_pointer_and_delegation(proc_dir: Path) -> None:
+    """`lore proc` prints a pointer to `lore trace` on stderr, then still
+    runs its own subcommand — the deprecation window keeps it functional."""
+    (proc_dir / "a.log").write_text("hello world\n")
+    result = runner.invoke(_get_app(), ["show", "a"])
+    assert "deprecated" in result.stderr
+    assert "lore trace" in result.stderr
+    assert "hello world" in result.stdout  # delegation: old behavior intact

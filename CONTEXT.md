@@ -123,6 +123,10 @@ sweep). See `FLUSH_DEFAULT_CAP_TURNS` / `FLUSH_DEFAULT_CAP_CHARS` in
   or failed marker) — a crashed session never leaves an open note
   behind. `lore curator sweep` runs this by hand.
 
+Everything upstream of compose (hook fire, spawn, run decisions) is
+correlated by one **trace_id** per flush and queryable via `lore trace` /
+`lore status` / `lore doctor`; full model: `docs/architecture/observability.md`.
+
 ## The publish gate + quarantine
 
 Every composed chapter passes `lore_core/publish_gate.py:evaluate`

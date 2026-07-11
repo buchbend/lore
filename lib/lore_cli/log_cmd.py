@@ -16,12 +16,19 @@ from lore_cli._argv_compat import argv_main
 from lore_core.timefmt import relative_time
 
 console = Console()
+err_console = Console(stderr=True)
 
 app = typer.Typer(
     add_completion=False,
     help="Chronological timeline of hook events and curator runs.",
     no_args_is_help=False,
     rich_markup_mode="rich",
+)
+
+_DEPRECATION_NOTICE = (
+    "[yellow]lore log is deprecated — use `lore trace` for a correlated "
+    "flush drill-down instead. This alias will be removed in a future "
+    "release.[/yellow]"
 )
 
 _DURATION_RE = re.compile(r"^(\d+)(m|h|d)$")
@@ -183,6 +190,8 @@ def log(
 ) -> None:
     """Chronological timeline of hook events and curator runs."""
     from lore_core.config import get_lore_root
+
+    err_console.print(_DEPRECATION_NOTICE, highlight=False)
 
     try:
         lore_root = get_lore_root()

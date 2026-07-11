@@ -28,10 +28,11 @@ Legacy run-archival files and crash logs are separate families with their
 own age/count windows (see :mod:`lore_core.run_retention` and
 ``lore_cli._crash_log``); this module composes run-archival + the flush
 store's dead-letter/terminal purge under ONE lock since both live under
-``lore_root/.lore/``. Crash-log purge and drain-orphan pruning are
-independently safe under light concurrency (atomic replace / tolerant of
-FileNotFoundError) so they're composed alongside this, not inside the same
-critical section — see ``lore_cli._janitor_entry.run_opportunistic_janitor``.
+``lore_root/.lore/``. Crash-log purge and :func:`prune_orphans` (drain
+orphans) are independently safe under light concurrency (atomic replace /
+tolerant of FileNotFoundError) so they're composed alongside this, not
+inside the same critical section — see
+``lore_cli._janitor_entry.run_opportunistic_janitor``.
 
 Every deletion and tier-downgrade emits a ``source="janitor"`` spine event;
 a delete failure emits a warn-level event instead of failing silently.
@@ -40,12 +41,14 @@ a delete failure emits a warn-level event instead of failing silently.
 from __future__ import annotations
 
 import json
+import os
 import time
-from contextlib import contextmanager
-from dataclasses import dataclass
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from lore_core.drain import SYSTEM_SESSION
 from lore_core.flush_store import FlushStore
 from lore_core.lockfile import flocked
 from lore_core.root_config import ObservabilityConfig
@@ -198,3 +201,127 @@ def read_janitor_status(lore_root: Path) -> dict | None:
         return json.loads(status_path.read_text())
     except (OSError, json.JSONDecodeError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Drain-orphan pruning — cleanup for the legacy `.lore/drain/_system.jsonl`
+#
+# Pre-#188 installs wrote note/surface events straight into `_system.jsonl`.
+# #188 moved drain emission onto the spine (`source="drain"`), so nothing
+# writes this file any more, and spine drain events already get the tiered
+# retention above. This function is upgrade cleanup only, for rows a
+# pre-migration install left behind. #195 removed its CLI surface
+# (`lore drain prune`, redundant with the automatic sweep below) — it now
+# runs opportunistically like every other family in this module, via
+# ``lore_cli._janitor_entry.run_opportunistic_janitor``.
+# ---------------------------------------------------------------------------
+
+_PRUNABLE_DRAIN_EVENTS = frozenset({"note-filed", "note-appended", "surface-proposed"})
+
+
+@dataclass
+class PruneResult:
+    """Outcome of one :func:`prune_orphans` pass."""
+
+    file_existed: bool = False
+    dropped: list[dict] = field(default_factory=list)
+    applied: bool = False  # True iff the file was actually rewritten
+    failed: bool = False
+    error: str | None = None
+
+    @property
+    def dropped_count(self) -> int:
+        return len(self.dropped)
+
+
+def _is_orphan_drain_row(obj: dict) -> bool:
+    """True if ``obj`` is a note-style row whose referenced path is gone.
+
+    Conservative: rows missing ``event``/``data``, rows with no
+    ``data.path``, and rows whose path still exists are all kept.
+    """
+    event = obj.get("event")
+    if event not in _PRUNABLE_DRAIN_EVENTS:
+        return False
+    data = obj.get("data")
+    if not isinstance(data, dict):
+        return False
+    path = data.get("path")
+    if not isinstance(path, str) or not path:
+        return False
+    return not Path(path).exists()
+
+
+def prune_orphans(lore_root: Path, *, dry_run: bool = False) -> PruneResult:
+    """Drop legacy `_system.jsonl` rows whose referenced note is gone.
+
+    Scope is intentionally narrow:
+
+    * Only ``_system.jsonl`` — per-session drains die with their session,
+      so orphans there self-clean (and no longer exist post-#188 anyway).
+    * Only events in ``{note-filed, note-appended, surface-proposed}`` with
+      a ``data.path`` field — ``transcript-synced`` rows have no path and
+      are kept regardless.
+    * ``Path(data.path).exists()`` is the single eviction predicate. Rows
+      without ``data.path`` and rows whose path still exists are kept.
+
+    Atomic rewrite: survivors go to ``_system.jsonl.tmp``, then
+    ``os.replace`` over the original. A non-dry-run pass that actually
+    drops rows emits ONE aggregate ``source="janitor"`` spine event (not
+    one per row); a write failure emits a warn event instead of the
+    caller silently losing it.
+    """
+    target = lore_root / ".lore" / "drain" / f"{SYSTEM_SESSION}.jsonl"
+    if not target.exists():
+        return PruneResult(file_existed=False)
+
+    survivors: list[str] = []
+    dropped: list[dict] = []
+    with target.open("r", encoding="utf-8", errors="replace") as fp:
+        for raw in fp:
+            line = raw.rstrip("\n")
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                # Malformed lines: keep — prune is not a validator.
+                survivors.append(line)
+                continue
+            if isinstance(obj, dict) and _is_orphan_drain_row(obj):
+                dropped.append(obj)
+                continue
+            survivors.append(line)
+
+    result = PruneResult(file_existed=True, dropped=dropped)
+    if not dropped or dry_run:
+        return result
+
+    tmp = target.with_suffix(".jsonl.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as out:
+            for line in survivors:
+                out.write(line + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, target)
+    except OSError as exc:
+        with suppress(OSError):
+            tmp.unlink()
+        result.failed = True
+        result.error = str(exc)
+        SpineWriter(lore_root).emit(
+            source="janitor",
+            event="retention-delete-failed",
+            level="warn",
+            data={"family": "drain-orphans", "error": str(exc)},
+        )
+        return result
+
+    result.applied = True
+    SpineWriter(lore_root).emit(
+        source="janitor",
+        event="retention-delete",
+        data={"family": "drain-orphans", "dropped": len(dropped)},
+    )
+    return result

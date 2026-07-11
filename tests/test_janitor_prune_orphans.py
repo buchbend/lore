@@ -1,9 +1,11 @@
-"""Tests for the reusable orphan-pruning core behind `lore drain prune`.
+"""Tests for `lore_core.janitor.prune_orphans` — legacy drain-orphan cleanup.
 
-`prune_orphans` is the extracted logic `cmd_prune` (the CLI command) and
-the retention janitor (#190) both call — the janitor folds orphan pruning
-into its opportunistic sweep instead of leaving it as a manual-only
-escape hatch.
+There is no more `lore drain prune` CLI (#195 removed it as vestigial —
+`.lore/drain/_system.jsonl` hasn't had a writer since #188 moved drain
+emission onto the spine). `prune_orphans` now lives here and is called
+opportunistically by the retention janitor
+(`lore_cli._janitor_entry.run_opportunistic_janitor`) as pure upgrade
+cleanup for rows a pre-migration install left behind.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from lore_cli.drain_cmd import prune_orphans
+from lore_core.janitor import prune_orphans
 from lore_core.spine import read_spine, validate_envelope
 
 
@@ -79,6 +81,49 @@ def test_prune_orphans_dry_run_emits_no_spine_event(tmp_path: Path):
     _write_system_jsonl(tmp_path, [{"event": "note-filed", "data": {"path": str(gone)}}])
     prune_orphans(tmp_path, dry_run=True)
     assert read_spine(tmp_path, source="janitor") == []
+
+
+def test_prune_orphans_keeps_rows_without_path(tmp_path: Path):
+    """A note-style row with no `data.path` is suspicious but kept —
+    prune evicts on path-existence, not on schema completeness."""
+    _write_system_jsonl(tmp_path, [{"event": "note-filed", "data": {"wikilink": "[[no-path]]"}}])
+    result = prune_orphans(tmp_path)
+    assert result.dropped_count == 0
+
+
+def test_prune_orphans_drops_multiple_orphan_types_in_one_pass(tmp_path: Path):
+    a, b, c = (tmp_path / n for n in ("a-gone.md", "b-gone.md", "c-gone.md"))
+    target = _write_system_jsonl(
+        tmp_path,
+        [
+            {"event": "note-filed", "data": {"path": str(a), "wikilink": "[[a]]"}},
+            {"event": "note-appended", "data": {"path": str(b), "wikilink": "[[b]]"}},
+            {"event": "surface-proposed", "data": {"path": str(c), "wikilink": "[[c]]"}},
+            {"event": "transcript-synced", "data": {}},
+        ],
+    )
+    result = prune_orphans(tmp_path)
+    assert result.dropped_count == 3
+    lines = [json.loads(x) for x in target.read_text().splitlines() if x.strip()]
+    assert len(lines) == 1
+    assert lines[0]["event"] == "transcript-synced"
+
+
+def test_prune_orphans_preserves_malformed_lines(tmp_path: Path):
+    """Malformed JSON is kept verbatim — prune is not a validator."""
+    target = _write_system_jsonl(
+        tmp_path, [{"event": "note-filed", "data": {"path": str(tmp_path / "gone.md")}}]
+    )
+    with target.open("a") as fp:
+        fp.write("NOT JSON\n")
+        fp.write(json.dumps({"event": "transcript-synced", "data": {}}) + "\n")
+
+    result = prune_orphans(tmp_path)
+    assert result.dropped_count == 1
+
+    raw = target.read_text().splitlines()
+    assert "NOT JSON" in raw
+    assert any("transcript-synced" in line for line in raw)
 
 
 def test_prune_orphans_write_failure_emits_warn_event(tmp_path: Path, monkeypatch):
