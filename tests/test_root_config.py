@@ -15,6 +15,24 @@ def test_defaults_when_file_absent(tmp_path: Path):
     assert cfg.observability.runs.keep_trace == 30
 
 
+def test_retention_defaults_when_file_absent(tmp_path: Path):
+    cfg = load_root_config(tmp_path)
+    assert cfg.observability.retention.hot_days == 7
+    assert cfg.observability.retention.cold_days == 30
+    assert cfg.observability.retention.cold_max_mb == 20
+    assert cfg.observability.retention.crash_log_days == 30
+    assert cfg.observability.retention.dead_letter_hard_cap == 50
+
+
+def test_retention_partial_override(tmp_path: Path):
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    (lore_dir / "config.yml").write_text("observability:\n  retention:\n    hot_days: 3\n")
+    cfg = load_root_config(tmp_path)
+    assert cfg.observability.retention.hot_days == 3  # overridden
+    assert cfg.observability.retention.cold_days == 30  # default preserved
+
+
 def test_partial_override(tmp_path: Path):
     lore_dir = tmp_path / ".lore"
     lore_dir.mkdir()

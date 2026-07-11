@@ -230,6 +230,132 @@ def test_begin_reopens_after_terminal(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# #190 — retention purge: terminal records age out, dead letters survive
+# unless over the hard cap.
+# ---------------------------------------------------------------------------
+
+
+def _age(lore_root: Path, rec: FlushRecord, days: float) -> None:
+    """Backdate a persisted record's updated_at for purge-window tests."""
+    path = lore_root / ".lore" / "flushes" / f"{rec.flush_id}.json"
+    raw = json.loads(path.read_text())
+    raw["updated_at"] = (
+        (datetime.now(UTC) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+    )
+    path.write_text(json.dumps(raw))
+
+
+def test_purge_deletes_old_terminal_records(tmp_path: Path):
+    store = FlushStore(tmp_path)
+    rec = store.begin("old__20260101")
+    store.transition(rec, FlushState.RUNNING)
+    rec = store.transition(rec, FlushState.PUBLISHED)
+    _age(tmp_path, rec, days=40)
+
+    result = store.purge(terminal_max_age_days=30, dead_letter_hard_cap=50)
+    assert store.get(rec.flush_id) is None
+    assert result.deleted == 1
+
+
+def test_purge_keeps_recent_terminal_records(tmp_path: Path):
+    store = FlushStore(tmp_path)
+    rec = store.begin("recent__20260101")
+    store.transition(rec, FlushState.RUNNING)
+    store.transition(rec, FlushState.WITHHELD)
+
+    result = store.purge(terminal_max_age_days=30, dead_letter_hard_cap=50)
+    assert store.get(rec.flush_id) is not None
+    assert result.deleted == 0
+
+
+def test_purge_never_touches_in_flight_records(tmp_path: Path):
+    store = FlushStore(tmp_path)
+    queued = store.begin("queued__20260101")
+    _age(tmp_path, queued, days=999)
+    running = store.begin("running__20260101")
+    store.transition(running, FlushState.RUNNING)
+    _age(tmp_path, running, days=999)
+
+    store.purge(terminal_max_age_days=1, dead_letter_hard_cap=1)
+    assert store.get(queued.flush_id) is not None
+    assert store.get(running.flush_id) is not None
+
+
+def test_purge_dead_letters_survive_normal_age_window(tmp_path: Path):
+    store = FlushStore(tmp_path)
+    rec = store.begin("dead__20260101")
+    for _ in range(MAX_ATTEMPTS):
+        store.transition(rec, FlushState.RUNNING)
+        rec = store.record_failure(rec, error_code=ErrorCode.COMPOSE_FAILED)
+    _age(tmp_path, rec, days=999)  # ancient, but unresolved — must survive
+
+    result = store.purge(terminal_max_age_days=1, dead_letter_hard_cap=50)
+    assert store.get(rec.flush_id) is not None
+    assert result.deleted == 0
+
+
+def test_purge_dead_letters_capped_beyond_hard_cap(tmp_path: Path):
+    store = FlushStore(tmp_path)
+    dead_letters = []
+    for i in range(5):
+        rec = store.begin(f"dead{i}__20260101")
+        for _ in range(MAX_ATTEMPTS):
+            store.transition(rec, FlushState.RUNNING)
+            rec = store.record_failure(rec, error_code=ErrorCode.COMPOSE_FAILED)
+        _age(tmp_path, rec, days=i)  # dead0 newest .. dead4 oldest
+        dead_letters.append(rec)
+
+    result = store.purge(terminal_max_age_days=9999, dead_letter_hard_cap=3)
+    remaining = store.list(state=FlushState.DEAD_LETTERED)
+    assert len(remaining) == 3
+    assert result.deleted == 2
+    # Oldest (largest artificial age) purged first.
+    remaining_ids = {r.flush_id for r in remaining}
+    assert dead_letters[4].flush_id not in remaining_ids
+    assert dead_letters[3].flush_id not in remaining_ids
+    assert dead_letters[0].flush_id in remaining_ids
+
+
+def test_purge_deletion_emits_janitor_spine_event(tmp_path: Path):
+    store = FlushStore(tmp_path)
+    rec = store.begin("old__20260101")
+    store.transition(rec, FlushState.RUNNING)
+    rec = store.transition(rec, FlushState.PUBLISHED)
+    _age(tmp_path, rec, days=40)
+
+    store.purge(terminal_max_age_days=30, dead_letter_hard_cap=50)
+    events = [r for r in read_spine(tmp_path, source="janitor") if r["event"] == "retention-delete"]
+    assert events
+    assert events[0]["data"]["family"] == "flush-record"
+    validate_envelope(events[0])
+
+
+def test_purge_failure_emits_warn_spine_event(tmp_path: Path, monkeypatch):
+    store = FlushStore(tmp_path)
+    rec = store.begin("old__20260101")
+    store.transition(rec, FlushState.RUNNING)
+    rec = store.transition(rec, FlushState.PUBLISHED)
+    _age(tmp_path, rec, days=40)
+
+    real_unlink = Path.unlink
+
+    def bad_unlink(self, *args, **kwargs):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(Path, "unlink", bad_unlink)
+    result = store.purge(terminal_max_age_days=30, dead_letter_hard_cap=50)
+    monkeypatch.setattr(Path, "unlink", real_unlink)
+
+    assert result.failed == 1
+    failures = [
+        r for r in read_spine(tmp_path, source="janitor") if r["event"] == "retention-delete-failed"
+    ]
+    assert failures
+    assert failures[0]["level"] == "warn"
+    assert failures[0]["data"]["family"] == "flush-record"
+
+
 def test_is_retry_due(tmp_path: Path):
     now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
     future = (now + timedelta(seconds=120)).isoformat().replace("+00:00", "Z")

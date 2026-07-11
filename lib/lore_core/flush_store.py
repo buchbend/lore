@@ -140,6 +140,14 @@ class FlushRecord:
         return cls(**known)
 
 
+@dataclass
+class PurgeResult:
+    """Outcome of one :meth:`FlushStore.purge` pass."""
+
+    deleted: int = 0
+    failed: int = 0
+
+
 def is_retry_due(rec: FlushRecord, *, now: datetime | None = None) -> bool:
     """True when a queued record's backoff has elapsed (retry may proceed)."""
     if FlushState(rec.state) is not FlushState.QUEUED:
@@ -273,6 +281,75 @@ class FlushStore:
         level = "error" if to is FlushState.DEAD_LETTERED else "info"
         self._emit(rec, level=level)
         return rec
+
+    # -- retention (issue #190) ---------------------------------------------
+    def purge(self, *, terminal_max_age_days: float, dead_letter_hard_cap: int) -> PurgeResult:
+        """Delete resolved records past their window; cap unresolved ones.
+
+        PUBLISHED/WITHHELD are resolved — deleted once older than
+        ``terminal_max_age_days`` (by ``updated_at``). DEAD_LETTERED is
+        exempt from the age window (a human still needs to act on it) but
+        capped by count: beyond ``dead_letter_hard_cap`` the oldest are
+        dropped so a permanently-stuck pipeline can't grow the store
+        forever. QUEUED/RUNNING (in-flight) are never touched here — that's
+        the flush pipeline's job, not retention's.
+        """
+        result = PurgeResult()
+        writer = SpineWriter(self._lore_root)
+        now = _now()
+
+        terminal_ok = (FlushState.PUBLISHED, FlushState.WITHHELD)
+        for rec in self.list():
+            state = FlushState(rec.state)
+            if state not in terminal_ok:
+                continue
+            updated = _parse_iso(rec.updated_at)
+            age_days = (now - updated).total_seconds() / 86400 if updated else 0
+            if age_days > terminal_max_age_days:
+                self._purge_one(rec, writer=writer, result=result)
+
+        dead = sorted(self.list(state=FlushState.DEAD_LETTERED), key=lambda r: r.updated_at)
+        overflow = len(dead) - dead_letter_hard_cap
+        for rec in dead[: max(overflow, 0)]:
+            self._purge_one(rec, writer=writer, result=result)
+
+        return result
+
+    def _purge_one(self, rec: FlushRecord, *, writer: SpineWriter, result: PurgeResult) -> None:
+        path = self._path(rec.flush_id)
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = 0
+        with flocked(self._lock_path(rec.flush_id)):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                result.failed += 1
+                writer.emit(
+                    source="janitor",
+                    event="retention-delete-failed",
+                    level="warn",
+                    trace_id=rec.trace_id,
+                    wiki=rec.wiki or None,
+                    data={"family": "flush-record", "flush_id": rec.flush_id, "error": str(exc)},
+                )
+                return
+        result.deleted += 1
+        writer.emit(
+            source="janitor",
+            event="retention-delete",
+            trace_id=rec.trace_id,
+            wiki=rec.wiki or None,
+            data={
+                "family": "flush-record",
+                "flush_id": rec.flush_id,
+                "bytes": size,
+                "state": rec.state,
+            },
+        )
 
     def record_failure(self, rec: FlushRecord, *, error_code: ErrorCode) -> FlushRecord:
         """Register a failed run: schedule a backed-off retry, or dead-letter.

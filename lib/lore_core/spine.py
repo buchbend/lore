@@ -123,6 +123,30 @@ def new_trace_id() -> str:
     return secrets.token_hex(8)
 
 
+def _oldest_record_age_days(path: Path) -> float | None:
+    """Age in days of the first record's ``ts``, or None if unreadable.
+
+    Only the first line is read — cheap enough for the janitor's
+    opportunistic per-hook check even on a multi-MB spine file.
+    """
+    try:
+        with path.open("r") as f:
+            first = f.readline()
+    except OSError:
+        return None
+    first = first.strip()
+    if not first:
+        return None
+    try:
+        rec = json.loads(first)
+        ts = datetime.fromisoformat(str(rec["ts"]).replace("Z", "+00:00"))
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - ts).total_seconds() / 86400
+
+
 class SpineWriter:
     """Single-record appender for the event spine. Never raises.
 
@@ -187,21 +211,57 @@ class SpineWriter:
             return
         if size < self._max_size:
             return
-        # Non-blocking flock — loser skips rotation this cycle.
+        self._rotate_locked(due=lambda: self._over_size(self._max_size))
+
+    def janitor_rotate_if_due(self, *, max_age_days: float, max_size_mb: float) -> bool:
+        """Force a hot->cold downgrade if age or the CURRENT config's size
+        cap is exceeded. Returns True iff a rotation happened.
+
+        Used by the retention janitor (#190), distinct from the size-only
+        trigger baked into ``emit()`` at construction time: re-checking
+        against live config here means a user who tightens
+        ``observability.hook_events.max_size_mb`` gets it enforced on the
+        next opportunistic pass, and a low-traffic spine that never trips
+        the size cap still ages out of the hot tier.
+        """
+        max_bytes = max_size_mb * 1024 * 1024
+
+        def _due() -> bool:
+            if self._over_size(max_bytes):
+                return True
+            oldest = _oldest_record_age_days(self._path)
+            return oldest is not None and oldest > max_age_days
+
+        if not self._path.exists() or not _due():
+            return False
+        return self._rotate_locked(due=_due)
+
+    def _over_size(self, max_bytes: float) -> bool:
+        try:
+            return self._path.stat().st_size >= max_bytes
+        except OSError:
+            return False
+
+    def _rotate_locked(self, *, due) -> bool:
+        """Rename hot -> cold under the rotation flock. Returns True iff
+        this call performed the rotation.
+
+        ``due`` is re-evaluated *after* the lock is held — a TOCTOU guard:
+        the caller's outer check can go stale between "size looked over
+        cap" and "lock acquired" if another writer rotated (and a fresh,
+        small file was recreated) in between. A contended/lost race also
+        yields False — the loser skips, matching ``emit()``'s semantics.
+        """
         from lore_core.lockfile import flocked
 
         try:
             with flocked(self._rotate_lock, blocking=False) as held:
-                if not held:
-                    return
-                try:
-                    if self._path.stat().st_size < self._max_size:
-                        return
-                except OSError:
-                    return
+                if not held or not self._path.exists() or not due():
+                    return False
                 os.replace(self._path, self._rotated)
+                return True
         except OSError:
-            pass
+            return False
 
     def _touch_marker(self) -> None:
         try:

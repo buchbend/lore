@@ -5,6 +5,8 @@ Today the only subcommand is ``prune``, which drops orphan rows from
 append-only by design; ``prune`` is the explicit escape hatch for
 cleanup. The producer-side guard in ``DrainStore.emit()`` (Change C)
 prevents new pollution; ``prune`` excises legacy rows that predate it.
+The retention janitor (#190) folds this into its opportunistic sweep too
+— :func:`prune_orphans` is the shared core both callers use.
 
 Scope is intentionally narrow:
 
@@ -24,14 +26,16 @@ from __future__ import annotations
 import json
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import typer
+from lore_core.drain import SYSTEM_SESSION
+from lore_core.spine import SpineWriter
 from rich.console import Console
 from rich.markup import escape
 
 from lore_cli._argv_compat import argv_main
-from lore_core.drain import SYSTEM_SESSION
 
 console = Console()
 err_console = Console(stderr=True)
@@ -79,18 +83,35 @@ def _is_orphan_row(obj: dict) -> bool:
     return not Path(path).exists()
 
 
-@app.command("prune", help="Drop orphan rows from `_system.jsonl`.")
-def cmd_prune(
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Report what would be dropped without rewriting.",
-    ),
-) -> None:
-    """Walk `_system.jsonl`; drop note-style rows whose `data.path` is gone."""
-    lore_root = _lore_root_or_die()
+@dataclass
+class PruneResult:
+    """Outcome of one :func:`prune_orphans` pass."""
+
+    file_existed: bool = False
+    dropped: list[dict] = field(default_factory=list)
+    applied: bool = False  # True iff the file was actually rewritten
+    failed: bool = False
+    error: str | None = None
+
+    @property
+    def dropped_count(self) -> int:
+        return len(self.dropped)
+
+
+def prune_orphans(lore_root: Path, *, dry_run: bool = False) -> PruneResult:
+    """Drop `_system.jsonl` rows whose referenced note is gone.
+
+    Shared core for ``lore drain prune`` and the retention janitor's
+    opportunistic sweep (#190) — folding orphan pruning into the janitor's
+    policy means it no longer requires a manual invocation to happen.
+    A non-dry-run pass that actually drops rows emits ONE aggregate
+    ``source="janitor"`` spine event (not one per row — the drain itself
+    already narrated each note's own event); a write failure emits a warn
+    event instead of the caller silently losing it.
+    """
     target = lore_root / ".lore" / "drain" / f"{SYSTEM_SESSION}.jsonl"
     if not target.exists():
-        console.print("[dim]nothing to prune (no _system.jsonl)[/dim]")
-        return
+        return PruneResult(file_existed=False)
 
     survivors: list[str] = []
     dropped: list[dict] = []
@@ -110,22 +131,9 @@ def cmd_prune(
                 continue
             survivors.append(line)
 
-    if not dropped:
-        console.print("[dim]nothing to prune[/dim]")
-        return
-
-    if dry_run:
-        console.print(
-            f"[yellow]would prune {len(dropped)} orphan row"
-            f"{'s' if len(dropped) != 1 else ''}[/yellow]"
-        )
-        for obj in dropped:
-            wikilink = (obj.get("data") or {}).get("wikilink", "?")
-            path = (obj.get("data") or {}).get("path", "?")
-            console.print(
-                f"  · {escape(str(wikilink))} [dim](path: {escape(str(path))})[/dim]"
-            )
-        return
+    result = PruneResult(file_existed=True, dropped=dropped)
+    if not dropped or dry_run:
+        return result
 
     # Atomic rewrite: write the survivors, fsync, replace.
     tmp = target.with_suffix(".jsonl.tmp")
@@ -137,16 +145,66 @@ def cmd_prune(
             os.fsync(out.fileno())
         os.replace(tmp, target)
     except OSError as exc:
-        err_console.print(f"[red]prune failed: {exc}[/red]")
         try:
             tmp.unlink()
         except OSError:
             pass
+        result.failed = True
+        result.error = str(exc)
+        SpineWriter(lore_root).emit(
+            source="janitor",
+            event="retention-delete-failed",
+            level="warn",
+            data={"family": "drain-orphans", "error": str(exc)},
+        )
+        return result
+
+    result.applied = True
+    SpineWriter(lore_root).emit(
+        source="janitor",
+        event="retention-delete",
+        data={"family": "drain-orphans", "dropped": len(dropped)},
+    )
+    return result
+
+
+@app.command("prune", help="Drop orphan rows from `_system.jsonl`.")
+def cmd_prune(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would be dropped without rewriting.",
+    ),
+) -> None:
+    """Walk `_system.jsonl`; drop note-style rows whose `data.path` is gone."""
+    lore_root = _lore_root_or_die()
+    result = prune_orphans(lore_root, dry_run=dry_run)
+
+    if not result.file_existed:
+        console.print("[dim]nothing to prune (no _system.jsonl)[/dim]")
+        return
+    if not result.dropped:
+        console.print("[dim]nothing to prune[/dim]")
+        return
+
+    if dry_run:
+        console.print(
+            f"[yellow]would prune {result.dropped_count} orphan row"
+            f"{'s' if result.dropped_count != 1 else ''}[/yellow]"
+        )
+        for obj in result.dropped:
+            wikilink = (obj.get("data") or {}).get("wikilink", "?")
+            path = (obj.get("data") or {}).get("path", "?")
+            console.print(
+                f"  · {escape(str(wikilink))} [dim](path: {escape(str(path))})[/dim]"
+            )
+        return
+
+    if result.failed:
+        err_console.print(f"[red]prune failed: {result.error}[/red]")
         raise typer.Exit(1)
 
-    noun = "row" if len(dropped) == 1 else "rows"
-    console.print(f"[green]pruned {len(dropped)} orphan {noun}[/green]")
-    for obj in dropped:
+    noun = "row" if result.dropped_count == 1 else "rows"
+    console.print(f"[green]pruned {result.dropped_count} orphan {noun}[/green]")
+    for obj in result.dropped:
         wikilink = (obj.get("data") or {}).get("wikilink", "?")
         console.print(f"  · {escape(str(wikilink))}")
 
