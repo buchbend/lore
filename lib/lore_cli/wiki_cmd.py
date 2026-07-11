@@ -36,6 +36,26 @@ class WikiMode(str, Enum):
 
 SUBDIRS = ("projects", "concepts", "decisions", "sessions", "inbox")
 
+# Seeded on wiki creation. Fully commented so `load_scopes_yml` parses it
+# to an empty tree — a starting point, never a phantom scope. The shape
+# mirrors what `lore_core.scopes.walk_scope_leaves` reads: a top-level
+# `scopes:` map whose leaves carry a `repo:` and may nest via `children:`.
+_SCOPES_YML_TEMPLATE = """\
+# _scopes.yml — declare which repos live under which scope path.
+#
+# Scopes are colon-separated and hierarchical
+# (e.g. ccat:data-center:data-transfer). Each leaf with a `repo:` maps a
+# git repo slug (owner/name) onto a scope path; nest deeper with
+# `children:`. Uncomment and adapt the example below to get started.
+#
+# scopes:
+#   my-project:
+#     repo: your-org/my-project
+#     children:
+#       backend:
+#         repo: your-org/my-project-backend
+"""
+
 
 def _plugin_templates_dir() -> Path:
     from lore_core.templates import templates_dir
@@ -66,6 +86,13 @@ def scaffold_wiki(
         claude_md.write_text((templates_src / "wiki-CLAUDE.md").read_text())
         (target / "templates").mkdir(exist_ok=True)
         shutil.copy(templates_src / "session.md", target / "templates" / "session.md")
+
+        # Seed a commented `_scopes.yml` so the scope registry has an
+        # obvious home the moment the wiki exists (never overwrite one a
+        # cloned/linked wiki already carries).
+        scopes_yml = target / "_scopes.yml"
+        if not scopes_yml.exists():
+            scopes_yml.write_text(_SCOPES_YML_TEMPLATE)
 
         (target / "_index.txt").write_text(
             f"# {name.upper()} Knowledge Index\n\n"
