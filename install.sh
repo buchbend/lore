@@ -118,8 +118,8 @@ fi
 
 if ! command -v lore >/dev/null 2>&1; then
     warn "lore is installed but not on PATH yet."
-    warn "Add ~/.local/bin (pipx) or ~/.local/share/uv/tools/bin (uv) to PATH, then run: lore install"
-    exit 0
+    warn "Add ~/.local/bin (pipx) or ~/.local/share/uv/tools/bin (uv) to PATH, then re-run this installer."
+    die "install did not leave a runnable 'lore' on PATH."
 fi
 
 # Detect first-time vs re-run: if Claude already lists lore@lore, skip the
@@ -141,6 +141,6 @@ if [ "$HAS_PLUGIN" -eq 1 ]; then
     fi
     say "Done. Restart Claude Code to load the refreshed plugin."
 else
-    say "Configuring integrations..."
-    exec lore install
+    say "Starting the lore init wizard..."
+    exec lore init
 fi
