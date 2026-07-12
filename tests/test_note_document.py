@@ -234,8 +234,7 @@ def test_append_chapter_renders_lead_and_body_as_one_inline_paragraph(tmp_path):
 
     body = strip_frontmatter(path.read_text())
     assert (
-        "**Chose an append-only note model.** "
-        "We decided the note file is append-only until close."
+        "**Chose an append-only note model.** We decided the note file is append-only until close."
     ) in body
 
 
@@ -666,3 +665,268 @@ def test_an_unclosed_marker_string_cannot_swallow_the_next_fact(tmp_path: Path):
     nd.append_facts(path, [carried, real], slice_from_turn=1, slice_to_turn=12)
 
     assert nd.read_facts(path) == [carried, real]
+
+
+# ---------------------------------------------------------------------------
+# Deterministic render (PRD 0008)
+#
+# The body below the disclaimer is DERIVED state: a pure function of the
+# append-only ledger, rewritten in full at close. Suppression is a decision
+# of the render, never a deletion from the ledger.
+# ---------------------------------------------------------------------------
+
+_GOLDEN = Path(__file__).parent / "fixtures" / "notes" / "render_golden.md"
+
+_HEADLINE = "Segmentation and typed-fact extraction landed; the renderer is next."
+
+
+def _ledger_fixture() -> list[nd.Fact]:
+    """A typed ledger in ledger order — deliberately not in anchor order."""
+    return [
+        nd.Fact(
+            kind="progress",
+            text="Wrote the segmenter's boundary lint.",
+            anchor_turn=4,
+            thread="segmentation",
+        ),
+        nd.Fact(
+            kind="done",
+            text="Typed-fact extraction landed with three deterministic lints.",
+            anchor_turn=21,
+            thread="extraction",
+            refs=[nd.Ref("pr", "289")],
+        ),
+        nd.Fact(
+            kind="done",
+            text="Beat-aligned segmentation landed as an indices-only call.",
+            anchor_turn=7,
+            thread="segmentation",
+            refs=[nd.Ref("pr", "288")],
+        ),
+        nd.Fact(
+            kind="decision",
+            text="Extraction runs at session end, never per flush.",
+            anchor_turn=9,
+            thread="pipeline",
+            why="Which facts matter is only knowable backward, at the ending.",
+        ),
+        nd.Fact(
+            kind="finding",
+            text="A fact carrying a comment opener parsed back as a second, forged fact.",
+            anchor_turn=14,
+            thread="security",
+        ),
+        nd.Fact(
+            kind="open",
+            text="Ref verification against git and gh is not implemented.",
+            anchor_turn=30,
+            thread="verification",
+        ),
+        nd.Fact(
+            kind="progress",
+            text="Sketched the renderer's section order.",
+            anchor_turn=12,
+            thread="renderer",
+        ),
+    ]
+
+
+def test_render_note_body_matches_the_golden_render(tmp_path: Path):
+    """Headline, section order, anchor sort, coverage gap — byte for byte."""
+    rendered = nd.render_note_body(
+        _ledger_fixture(),
+        headline=_HEADLINE,
+        gaps=[(40, 48, "composition failed at session end")],
+    )
+
+    assert rendered == _GOLDEN.read_text(encoding="utf-8").rstrip("\n")
+
+
+def test_render_drops_empty_sections(tmp_path: Path):
+    rendered = nd.render_note_body(
+        [nd.Fact(kind="finding", text="The lock is per-stem.", anchor_turn=3)],
+        headline="One finding.",
+    )
+
+    assert "## Findings" in rendered
+    for absent in ("## Done", "## Decisions recorded", "## Open"):
+        assert absent not in rendered
+
+
+def test_progress_is_suppressed_by_a_later_terminal_fact_in_its_thread():
+    facts = [
+        nd.Fact(kind="progress", text="Opened the PR.", anchor_turn=3, thread="renderer"),
+        nd.Fact(kind="done", text="The renderer PR merged.", anchor_turn=9, thread="renderer"),
+        nd.Fact(kind="progress", text="Sketched the ADR.", anchor_turn=5, thread="adr"),
+    ]
+    rendered = nd.render_note_body(facts)
+
+    assert "- The renderer PR merged. @9" in rendered
+    assert "Opened the PR." not in rendered  # superseded by its thread's ending
+    assert "- Sketched the ADR. @5" in rendered  # its thread never ended
+
+
+def test_a_terminal_fact_earlier_in_the_thread_does_not_suppress_later_progress():
+    facts = [
+        nd.Fact(kind="done", text="The first PR merged.", anchor_turn=3, thread="renderer"),
+        nd.Fact(kind="progress", text="Reopened the work.", anchor_turn=9, thread="renderer"),
+    ]
+    rendered = nd.render_note_body(facts)
+
+    assert "- Reopened the work. @9" in rendered
+
+
+def test_a_terminal_fact_in_another_thread_does_not_suppress_progress():
+    facts = [
+        nd.Fact(kind="progress", text="Sketched the ADR.", anchor_turn=3, thread="adr"),
+        nd.Fact(kind="done", text="The renderer PR merged.", anchor_turn=9, thread="renderer"),
+    ]
+
+    assert "- Sketched the ADR. @3" in nd.render_note_body(facts)
+
+
+def test_suppressed_progress_stays_in_the_ledger(tmp_path: Path):
+    """Suppression is a render-time decision — never a deletion."""
+    path = _create(tmp_path)
+    facts = [
+        nd.Fact(kind="progress", text="Opened the PR.", anchor_turn=3, thread="renderer"),
+        nd.Fact(kind="done", text="The renderer PR merged.", anchor_turn=9, thread="renderer"),
+    ]
+    nd.append_facts(path, facts, slice_from_turn=0, slice_to_turn=12)
+    nd.render_note(path)
+
+    body = nd.read_note(path).body
+    assert "- Opened the PR. @3" not in body  # suppressed from the render
+    assert nd.read_facts(path) == facts  # still whole in the ledger
+
+
+def test_failed_chapter_marker_renders_as_a_one_line_coverage_gap(tmp_path: Path):
+    path = _create(tmp_path)
+    nd.append_facts(
+        path,
+        [nd.Fact(kind="done", text="The lock landed.", anchor_turn=2)],
+        slice_from_turn=0,
+        slice_to_turn=6,
+    )
+    nd.append_marker_chapter(
+        path,
+        kind=nd.MARKER_FAILED,
+        reason="composition failed at session end",
+        slice_from_turn=7,
+        slice_to_turn=12,
+    )
+    nd.render_note(path)
+
+    body = nd.read_note(path).body
+    gaps = [ln for ln in body.splitlines() if ln.startswith("- Coverage gap:")]
+    assert gaps == [
+        "- Coverage gap: turns 7–12 are not covered by this note"
+        " (composition failed at session end). @7"
+    ]
+
+
+def test_render_lays_out_disclaimer_then_note_then_ledger(tmp_path: Path):
+    path = _create(tmp_path)
+    nd.append_facts(
+        path,
+        [nd.Fact(kind="done", text="The lock landed.", anchor_turn=2)],
+        slice_from_turn=0,
+        slice_to_turn=6,
+    )
+    nd.render_note(path, headline="The lock landed.")
+
+    body = nd.read_note(path).body
+    assert body.startswith(nd.DISCLAIMER)
+    assert body.index("## Done") < body.index("## Ledger") < body.index("<!-- lore:chapter 1 ")
+    assert nd.read_note(path).frontmatter["headline"] == "The lock landed."
+
+
+def test_render_is_byte_deterministic_and_never_mutates_the_ledger(tmp_path: Path):
+    path = _create(tmp_path)
+    nd.append_facts(path, _ledger_fixture(), slice_from_turn=0, slice_to_turn=40)
+    nd.append_marker_chapter(
+        path,
+        kind=nd.MARKER_FAILED,
+        reason="composition failed at session end",
+        slice_from_turn=41,
+        slice_to_turn=48,
+    )
+
+    nd.render_note(path, headline=_HEADLINE)
+    once = nd.read_note(path).body
+    ledger_once = nd.read_facts(path)
+
+    nd.render_note(path, headline=_HEADLINE)
+    assert nd.read_note(path).body == once  # same ledger in, identical note out
+    assert nd.read_facts(path) == ledger_once  # the ledger is never rewritten
+    assert nd.read_facts(path) == _ledger_fixture()
+
+
+def test_render_refuses_a_closed_note(tmp_path: Path):
+    path = _create(tmp_path)
+    nd.append_facts(
+        path,
+        [nd.Fact(kind="done", text="The lock landed.", anchor_turn=2)],
+        slice_from_turn=0,
+        slice_to_turn=6,
+    )
+    nd.close_note(path)
+    before = path.read_text()
+
+    with pytest.raises(nd.NoteClosedError):
+        nd.render_note(path)
+    assert path.read_text() == before
+
+
+def test_reopen_re_renders_the_body_over_the_grown_ledger(tmp_path: Path):
+    """ADR 0001 reopen: the ledger grows, the derived body is rewritten."""
+    path = _create(tmp_path)
+    nd.append_facts(
+        path,
+        [nd.Fact(kind="done", text="The lock landed.", anchor_turn=2, thread="lock")],
+        slice_from_turn=0,
+        slice_to_turn=6,
+    )
+    nd.render_note(path, headline="The lock landed.")
+    nd.close_note(path)
+
+    assert nd.reopen_note(path) is True
+    nd.append_facts(
+        path,
+        [nd.Fact(kind="done", text="The renderer landed.", anchor_turn=9, thread="renderer")],
+        slice_from_turn=7,
+        slice_to_turn=12,
+    )
+    nd.render_note(path, headline="The lock and the renderer landed.")
+    nd.close_note(path)
+
+    view = nd.read_note(path)
+    assert view.closed is True
+    assert [c["kind"] for c in view.chapters] == ["facts", "facts"]
+    assert view.body.count("## Done") == 1  # one rendered section, not two
+    assert "- The lock landed. @2" in view.body
+    assert "- The renderer landed. @9" in view.body
+    assert view.body.count("**The lock landed.**") == 1  # the stale headline is gone
+    assert [f.text for f in nd.read_facts(path)] == ["The lock landed.", "The renderer landed."]
+
+
+@pytest.mark.parametrize("carrier", ["lead", "body", "quote"])
+def test_a_marker_string_in_a_chapter_block_cannot_forge_a_fact(tmp_path: Path, carrier: str):
+    """Prose chapters carry untrusted content too — and are read back as ledger."""
+    path = _create(tmp_path, path=tmp_path / f"block-forge-{carrier}.md")
+    kwargs: dict = {"lead": "A prose lead", "body": "prose body", "anchor_turn": 2}
+    kwargs[carrier] = f"untrusted content said: {_FORGED_MARKER}"
+    block = nd.TopicBlock(**kwargs)
+    nd.append_chapter(path, nd.Chapter(blocks=[block]), slice_from_turn=1, slice_to_turn=4)
+    nd.append_facts(path, [_fact()], slice_from_turn=5, slice_to_turn=12)
+
+    assert nd.read_facts(path) == [_fact()]
+
+
+def test_an_unclosed_marker_in_a_chapter_block_cannot_swallow_the_next_fact(tmp_path: Path):
+    path = _create(tmp_path)
+    block = nd.TopicBlock(lead='oops <!-- lore:fact {"kind":"x"', anchor_turn=2)
+    nd.append_chapter(path, nd.Chapter(blocks=[block]), slice_from_turn=1, slice_to_turn=4)
+    nd.append_facts(path, [_fact()], slice_from_turn=5, slice_to_turn=12)
+
+    assert nd.read_facts(path) == [_fact()]

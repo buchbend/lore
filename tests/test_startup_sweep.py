@@ -139,11 +139,17 @@ def _uncertain_owner() -> OwnerInfo:
     return OwnerInfo(pid=0, host="", start_ts=0.0)
 
 
-def test_sweep_composes_and_closes_dead_session(tmp_path):
+def test_sweep_extracts_and_closes_dead_session(tmp_path):
     lore_root = _lore_root(tmp_path)
     all_turns = _turns(0, 12)  # above the trivial-session gate
     buf = _seed(lore_root, all_turns, tid="dead1", owner=_dead_owner())
-    client = _Client([{"blocks": [{"lead": "Recorded the crash", "body": "prose.", "anchor": 2}]}])
+    client = _Client(
+        [
+            {"boundaries": []},
+            {"facts": [{"kind": "done", "text": "The crash is fixed.", "anchor": 2}]},
+            {"headline": "The crash is fixed."},
+        ]
+    )
 
     report = sweep_dead_sessions(
         lore_root,
@@ -151,11 +157,12 @@ def test_sweep_composes_and_closes_dead_session(tmp_path):
         adapter_lookup=_lookup(_Adapter(all_turns)),
     )
     assert report.swept == 1
-    # The dead session's note is composed AND closed; the buffer archived.
+    # The dead session's note is extracted AND closed; the buffer archived.
     note_path = next((tmp_path / "wiki" / "private" / "sessions").rglob("*.md"))
     view = nd.read_note(note_path)
     assert view.closed is True
-    assert len([c for c in view.chapters if c.get("kind") == "topic"]) == 1
+    assert len([c for c in view.chapters if c.get("kind") == "facts"]) == 1
+    assert "- The crash is fixed. @2" in view.body
     assert not buf.sidecar_path.exists()  # moved to _done/
     assert (tmp_path / ".lore" / "buffers" / "_done" / f"{buf.stem}.state.json").exists()
 

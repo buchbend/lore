@@ -274,7 +274,13 @@ def test_resumed_session_reattaches_and_appends_to_same_note(tmp_path):
         buf.sidecar_path,
         lore_root=lore_root,
         wiki_root=wiki_root,
-        llm_client=_Client([_chapter_payload("Recorded the publish gate", "gate prose.", 4)]),
+        llm_client=_Client(
+            [
+                {"boundaries": []},
+                {"facts": [{"kind": "done", "text": "The publish gate landed.", "anchor": 4}]},
+                {"headline": "The publish gate landed."},
+            ]
+        ),
         model="m",
         adapter_lookup=_lookup(adapter),
         auto_commit=False,
@@ -299,7 +305,11 @@ def test_resumed_session_reattaches_and_appends_to_same_note(tmp_path):
         lore_root=lore_root,
         wiki_root=wiki_root,
         llm_client=_Client(
-            [_chapter_payload("Recorded the essence rewrite", "essence prose.", 15)]
+            [
+                {"boundaries": []},
+                {"facts": [{"kind": "done", "text": "The essence rewrite landed.", "anchor": 15}]},
+                {"headline": "The gate and the essence rewrite landed."},
+            ]
         ),
         model="m",
         adapter_lookup=_lookup(adapter),
@@ -309,14 +319,26 @@ def test_resumed_session_reattaches_and_appends_to_same_note(tmp_path):
     # Still exactly one note file — no sibling minted.
     assert list((wiki_root / "sessions").rglob("*.md")) == [note_path]
     view = nd.read_note(note_path)
-    topic = [c for c in view.chapters if c.get("kind") == "topic"]
-    assert len(topic) == 2
-    assert topic[0]["from_turn"] == 0 and topic[0]["to_turn"] == 12
-    assert topic[1]["from_turn"] == 13 and topic[1]["to_turn"] == 20
+    chapters = [c for c in view.chapters if c.get("kind") == "facts"]
+    assert len(chapters) == 2
+    assert chapters[0]["from_turn"] == 0 and chapters[0]["to_turn"] == 12
+    assert chapters[1]["from_turn"] == 13 and chapters[1]["to_turn"] == 20
+    # One rendered reading over the whole ledger, rewritten by the second close.
+    assert view.body.count("## Done") == 1
+    assert "- The publish gate landed. @4" in view.body
+    assert "- The essence rewrite landed. @15" in view.body
     assert view.closed is True
 
 
-def test_continued_compose_receives_existing_body_as_note_so_far(tmp_path):
+def test_continued_extraction_never_reads_the_existing_note_body(tmp_path):
+    """Stille-Post: no model call re-reads what an earlier model wrote.
+
+    Continuation used to be seeded with the note so far. In end mode the
+    extraction reads the transcript chunk and nothing else — the note's own
+    prose is never handed back to a model, so it cannot be restated into
+    authority. Its facts are still not re-narrated, but structurally: the
+    resumed close only reads the turns no chapter covers yet.
+    """
     lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"
     adapter = _Adapter(_turns(0, 20))
@@ -328,16 +350,27 @@ def test_continued_compose_receives_existing_body_as_note_so_far(tmp_path):
         lore_root=lore_root,
         wiki_root=wiki_root,
         llm_client=_Client(
-            [_chapter_payload("Recorded the publish gate design", "unique-marker-alpha.", 4)]
+            [
+                {"boundaries": []},
+                {"facts": [{"kind": "done", "text": "unique-marker-alpha landed.", "anchor": 4}]},
+                {"headline": "unique-marker-alpha landed."},
+            ]
         ),
         model="m",
         adapter_lookup=_lookup(adapter),
         auto_commit=False,
     )
     assert out1.note_path is not None
+    assert "unique-marker-alpha" in nd.read_note(out1.note_path).body
 
     _append(lore_root, _turns(13, 20))
-    c2 = _Client([_chapter_payload("Recorded the continuation", "beta prose.", 15)])
+    c2 = _Client(
+        [
+            {"boundaries": []},
+            {"facts": [{"kind": "done", "text": "The continuation landed.", "anchor": 15}]},
+            {"headline": "The continuation landed."},
+        ]
+    )
     synth_and_close(
         buf.sidecar_path,
         lore_root=lore_root,
@@ -347,11 +380,14 @@ def test_continued_compose_receives_existing_body_as_note_so_far(tmp_path):
         adapter_lookup=_lookup(adapter),
         auto_commit=False,
     )
-    # The continuation compose was seeded with the existing body, so the
-    # first chapter is present in note-so-far and never re-narrated.
-    prompt = c2.messages.calls[0]["messages"][0]["content"]
-    assert "Recorded the publish gate design" in prompt
-    assert "unique-marker-alpha" in prompt
+
+    prompts = [call["messages"][0]["content"] for call in c2.messages.calls]
+    assert prompts  # the continuation did call the model
+    for prompt in prompts:
+        assert "unique-marker-alpha" not in prompt
+    # And it only read the turns the note does not cover yet.
+    for prompt in prompts[:2]:
+        assert "line 4" not in prompt
 
 
 def test_0605_0608_split_reproduced_as_single_note(tmp_path):
@@ -380,19 +416,31 @@ def test_0605_0608_split_reproduced_as_single_note(tmp_path):
         lore_root=lore_root,
         wiki_root=wiki_root,
         llm_client=_Client(
-            [_chapter_payload("Recorded record-the-work-not-the-working", "essence prose.", 1400)]
+            # 47 turns exceed one chunk's ceiling, so the segmenter's single
+            # beat normalizes into two chunks — one call each, then the headline.
+            [
+                {"boundaries": []},
+                {
+                    "facts": [
+                        {"kind": "done", "text": "The essence rewrite landed.", "anchor": 1400}
+                    ]
+                },
+                {"facts": [{"kind": "done", "text": "The note format shipped.", "anchor": 1420}]},
+                {"headline": "The essence rewrite landed."},
+            ]
         ),
         model="m",
         adapter_lookup=_lookup(_Adapter(_turns(1384, 1430))),
         auto_commit=False,
     )
-    # The split is healed: still exactly one note file, now two chapters.
+    # The split is healed: still exactly one note file, now two chapters —
+    # the seeded prose chapter and the resumed session's facts, one ledger.
     assert list((wiki_root / "sessions").rglob("*.md")) == [note_path]
     view = nd.read_note(note_path)
-    topic = [c for c in view.chapters if c.get("kind") == "topic"]
-    assert len(topic) == 2
-    assert topic[0]["to_turn"] == 1383
-    assert topic[1]["from_turn"] == 1384 and topic[1]["to_turn"] == 1430
+    assert [c["kind"] for c in view.chapters] == ["topic", "facts", "facts"]
+    assert view.chapters[0]["to_turn"] == 1383
+    assert view.chapters[1]["from_turn"] == 1384
+    assert view.chapters[2]["to_turn"] == 1430  # the resumed span is covered whole
 
 
 def test_resume_after_discarded_note_starts_fresh(tmp_path):

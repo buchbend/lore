@@ -1,17 +1,30 @@
 """Chapter flush lifecycle for the buffer-and-flush curator.
 
-One flush turns the buffer's unflushed transcript slice into exactly one
-chapter of the session's append-only note:
+A flush folds the buffer's unflushed transcript slice into the session's
+append-only note. What that means depends on whether the session is over.
+
+**At close** the whole slice is read backward, which is the only vantage
+from which its facts can be told apart from its noise:
+
+    segment_session (indices only)  ->  extract_session (one call per
+    chunk, typed facts)  ->  publish gate  ->  append_facts | withheld
+    marker + quarantine | failed marker  ->  render_note
+
+The render is deterministic code over the ledger — no LLM decides layout,
+order, or what a session ended up establishing (see ``docs/adr/0003``).
+
+**Mid-session** (cap-trip, pre-compact) a flush still composes one prose
+chapter forward, since the session's ending is not yet available to read:
 
     read note-so-far + slice  ->  compose_chapter (one LLM call, bounded
     retry)  ->  publish gate  ->  append_chapter | withheld marker +
     quarantine | failed marker
 
+Both paths share one ledger, and a note may hold chapters of either kind.
 The gate is the real :class:`~lore_core.publish_gate.PublishGate`; the
-text it scans is exactly ``render_chapter_body(chapter)`` — the same
-bytes that land in the note. The composer already retries twice against
-the gate internally, so a gate withhold that reaches this layer is
-terminal (marker + quarantine).
+text it scans is exactly the bytes that land in the note. Composer and
+extractor each retry against the gate internally, so a gate withhold that
+reaches this layer is terminal (marker + quarantine).
 
 Failure semantics
 -----------------
@@ -70,13 +83,20 @@ from lore_curator.buffer_store import (
     iter_all,
 )
 from lore_curator.chapter_compose import ComposeStatus, Gate, compose_chapter
+from lore_curator.chunker import segment_session
+from lore_curator.fact_extract import ExtractStatus, SessionExtraction, extract_session
 from lore_curator.session_filer import _slug
 from lore_curator.session_note import (
     ensure_note_from_sidecar,
     facts_from_replay,
     linkage_from_replay,
 )
-from lore_curator.stub_note import _lead_for_rename, _resolve_renamed_path, _topic_title
+from lore_curator.stub_note import (
+    _lead_for_rename,
+    _resolve_renamed_path,
+    _scope_title,
+    _topic_title,
+)
 
 if TYPE_CHECKING:
     from lore_core.run_log import RunLogger
@@ -412,25 +432,38 @@ def flush_chapter(
             logger=logger,
         )
 
-    # ---- Compose (LLM, outside the flock) -------------------------------
+    # ---- Compose / extract (LLM, outside the flock) ----------------------
     turns = _read_buffered_turns(sidecar=sidecar, rb=rb, adapter_lookup=adapter_lookup)
     unflushed = [t for t in turns if t.index > flushed_to]
     compose_result = None
+    extraction = None
     if unflushed and llm_client is not None and model:
         slice_from = min(t.index for t in unflushed)
         slice_to = max(t.index for t in unflushed)
-        compose_result = compose_chapter(
-            slice_text=_slice_text(unflushed),
-            slice_from_turn=slice_from,
-            slice_to_turn=slice_to,
-            note_so_far=note_so_far,
-            llm_client=llm_client,
-            model=model,
-            gate=gate,
-            logger=logger,
-            transcript_id=sidecar.transcript_id,
-            turns_by_index={t.index: t.text for t in unflushed},
-        )
+        if close:
+            # End mode: which facts matter is only knowable backward, so the
+            # ending — not each flush — is where the model reads the session.
+            extraction = _extract_at_close(
+                turns=unflushed,
+                llm_client=llm_client,
+                model=model,
+                gate=gate,
+                logger=logger,
+                transcript_id=sidecar.transcript_id,
+            )
+        else:
+            compose_result = compose_chapter(
+                slice_text=_slice_text(unflushed),
+                slice_from_turn=slice_from,
+                slice_to_turn=slice_to,
+                note_so_far=note_so_far,
+                llm_client=llm_client,
+                model=model,
+                gate=gate,
+                logger=logger,
+                transcript_id=sidecar.transcript_id,
+                turns_by_index={t.index: t.text for t in unflushed},
+            )
     else:
         # No readable turns / no client: bound the span to the buffer's
         # reach so a failed marker still records the right turn range.
@@ -443,6 +476,7 @@ def flush_chapter(
             buffer=buffer,
             note_path=note_path,
             compose_result=compose_result,
+            extraction=extraction,
             slice_from=slice_from,
             slice_to=slice_to,
             rb=rb,
@@ -466,6 +500,39 @@ def flush_chapter(
     return outcome
 
 
+def _extract_at_close(
+    *,
+    turns: list[Turn],
+    llm_client: Any,
+    model: str,
+    gate: Gate,
+    logger: RunLogger | None,
+    transcript_id: str,
+) -> SessionExtraction:
+    """Segment the session, then extract each chunk's typed facts.
+
+    Every LLM call of a session note happens here: a segmenter that emits
+    indices, one extraction per chunk, and one headline. Nothing downstream of
+    this call is generative — the note body is rendered from the facts by code.
+    """
+    chunks = segment_session(
+        turns=turns,
+        llm_client=llm_client,
+        model=model,
+        logger=logger,
+        transcript_id=transcript_id,
+    )
+    return extract_session(
+        chunks=chunks,
+        turns=turns,
+        llm_client=llm_client,
+        model=model,
+        gate=gate,
+        logger=logger,
+        transcript_id=transcript_id,
+    )
+
+
 def _read_note_body(note_path: Path) -> str:
     try:
         return nd.read_note(note_path).body
@@ -473,18 +540,18 @@ def _read_note_body(note_path: Path) -> str:
         return ""
 
 
-def _rename_to_topic_slug(buffer: Buffer, note_path: Path, chapter: nd.Chapter) -> Path:
-    """Rename a note to its first chapter's topic, once that topic exists.
+def _rename_to_topic_slug(buffer: Buffer, note_path: Path, lead: str) -> Path:
+    """Rename a note to its topic, once that topic exists.
 
     The note is created (and first named) at the first heartbeat, well
-    before any chapter — so its filename starts as an incidental guess (a
-    commit subject, a touched file's basename, or a bare timestamp). Once
-    the first chapter composes, its opening lead names the session's
-    actual topic; this makes the filename match. A chapter with no usable
-    lead text (shouldn't happen for a COMPOSED result, but defensive)
-    leaves the filename untouched rather than risk an empty slug.
+    before any content — so its filename starts as an incidental guess (a
+    commit subject, a touched file's basename, or a bare timestamp). The
+    topic that finally names it is the first chapter's lead mid-session, or
+    the session's headline at close. Empty topic text (shouldn't happen for
+    a successful result, but defensive) leaves the filename untouched rather
+    than risk an empty slug.
     """
-    lead = _lead_for_rename(chapter)
+    lead = lead.strip()
     if not lead:
         return note_path
     slug = _slug(lead)
@@ -546,12 +613,110 @@ def _apply_composed(ctx: _ApplyContext, out: FlushOutcome, compose_result, flush
     if out.chapter_n == 1:
         # The note was born with a placeholder slug; its first chapter is
         # what finally names it.
-        note_path = _rename_to_topic_slug(ctx.buffer, ctx.note_path, compose_result.chapter)
+        note_path = _rename_to_topic_slug(
+            ctx.buffer, ctx.note_path, _lead_for_rename(compose_result.chapter)
+        )
         out.note_path = note_path
         out.wikilink = f"[[{note_path.stem}]]"
     out.status = "composed"
     _clear_after_progress(ctx.buffer, close=ctx.close)
     ctx.store.transition(flush_rec, FlushState.PUBLISHED)
+    return True
+
+
+def _apply_extracted(
+    ctx: _ApplyContext, out: FlushOutcome, extraction: SessionExtraction, flush_rec
+) -> bool:
+    """Fold a session's extracted facts into the ledger, then render the note.
+
+    One ledger chapter per chunk: facts where the chunk extracted, a withheld
+    marker (plus quarantine) where the gate refused it, a failed marker where
+    it could not be extracted at all — the last of which the render reads back
+    as a coverage gap. The body is then rewritten from the whole ledger, so a
+    reopened session re-renders instead of stacking a second reading on top.
+    """
+    # Read before writing: an unnamed note is one this flush gets to name.
+    names_the_note = _flushed_to(ctx.note_path) < 0
+    extracted = withheld = failed = False
+
+    try:
+        for res in extraction.results:
+            span = {
+                "slice_from_turn": res.chunk.from_turn,
+                "slice_to_turn": res.chunk.to_turn,
+            }
+            if res.status is ExtractStatus.EXTRACTED:
+                out.chapter_n = nd.append_facts(
+                    ctx.note_path,
+                    res.facts,
+                    session_facts=ctx.facts,
+                    linkage=ctx.linkage,
+                    wiki_root=ctx.wiki_root,
+                    **span,
+                )
+                extracted = True
+            elif res.status is ExtractStatus.WITHHELD:
+                w = pg.apply_withhold(
+                    ctx.note_path,
+                    result=GateResult.withheld(res.withheld_category, res.withheld_feedback),
+                    composed_text=res.withheld_text,
+                    lore_root=ctx.lore_root,
+                    wiki_root=ctx.wiki_root,
+                    **span,
+                )
+                out.chapter_n = w.chapter_n
+                withheld = True
+            elif res.status is ExtractStatus.FAILED:
+                out.chapter_n = nd.append_marker_chapter(
+                    ctx.note_path,
+                    kind=nd.MARKER_FAILED,
+                    reason=res.failure_reason or "extraction failed at session end",
+                    facts=ctx.facts,
+                    linkage=ctx.linkage,
+                    wiki_root=ctx.wiki_root,
+                    **span,
+                )
+                failed = True
+    except OSError:
+        ctx.store.transition(
+            flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.CHAPTER_APPEND_FAILED
+        )
+        out.status = "failed"
+        return False
+
+    if not (extracted or withheld or failed):
+        # Every chunk answered "nothing worth recording" — the model's EMPTY.
+        return _apply_empty(ctx, out, flush_rec)
+
+    headline = extraction.headline
+    nd.render_note(
+        ctx.note_path,
+        headline=headline,
+        title=_scope_title(ctx.sidecar.scope, headline) if names_the_note else None,
+        wiki_root=ctx.wiki_root,
+    )
+    if names_the_note and headline:
+        note_path = _rename_to_topic_slug(ctx.buffer, ctx.note_path, headline)
+        out.note_path = note_path
+        out.wikilink = f"[[{note_path.stem}]]"
+
+    if extracted:
+        out.status = "composed"
+        ctx.store.transition(flush_rec, FlushState.PUBLISHED)
+    elif withheld:
+        out.status = "withheld"
+        ctx.store.transition(flush_rec, FlushState.WITHHELD)
+    else:
+        out.status = "failed"
+        ctx.store.transition(flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED)
+    if ctx.logger is not None:
+        ctx.logger.emit(
+            "flush-extracted",
+            buffer_stem=ctx.buffer.stem,
+            transcript_id=ctx.sidecar.transcript_id,
+            chunks=len(extraction.results),
+            fact_count=len(extraction.facts),
+        )
     return True
 
 
@@ -633,9 +798,7 @@ def _apply_failed(ctx: _ApplyContext, out: FlushOutcome, flush_rec) -> bool:
         # Last chance: no retry left, so the span is recorded as it stands.
         _mark_failed_span(ctx, out, "composition failed at session end")
         out.status = "failed"
-        ctx.store.transition(
-            flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED
-        )
+        ctx.store.transition(flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED)
         return True
 
     # Bounded retry with backoff. record_failure() re-queues with a scheduled
@@ -724,9 +887,7 @@ def _begin_apply(
     # events, the drain event and the note all share one id.
     trace_id = logger.trace_id if logger is not None else None
     linkage = replace(
-        linkage_from_replay(
-            rb, cwd=sidecar.cwd, wiki_root=wiki_root, handle=sidecar.handle
-        ),
+        linkage_from_replay(rb, cwd=sidecar.cwd, wiki_root=wiki_root, handle=sidecar.handle),
         trace_id=trace_id,
     )
 
@@ -776,6 +937,7 @@ def _apply_outcome(
     buffer: Buffer,
     note_path: Path,
     compose_result,
+    extraction: SessionExtraction | None = None,
     slice_from: int,
     slice_to: int,
     rb: ReplayedBuffer,
@@ -797,7 +959,11 @@ def _apply_outcome(
         note_path=note_path,
         wikilink=f"[[{note_path.stem}]]",
     )
-    out.attempts = getattr(compose_result, "attempts", 0)
+    out.attempts = (
+        sum(r.attempts for r in extraction.results)
+        if extraction is not None
+        else getattr(compose_result, "attempts", 0)
+    )
 
     if not close and _back_off_if_covered(buffer, sidecar, note_path, slice_to, out):
         return out
@@ -814,6 +980,12 @@ def _apply_outcome(
         lore_root=lore_root,
         logger=logger,
     )
+
+    if extraction is not None:
+        sealable = _apply_extracted(ctx, out, extraction, flush_rec)
+        if sealable and close:
+            _seal_note(ctx, out)
+        return out
 
     status = compose_result.status if compose_result is not None else ComposeStatus.FAILED
     if status is ComposeStatus.COMPOSED:

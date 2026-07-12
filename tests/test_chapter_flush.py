@@ -575,30 +575,6 @@ def test_session_end_failure_writes_marker_and_closes(tmp_path):
     assert not buf.sidecar_path.exists()
 
 
-def test_session_end_success_appends_chapter_and_closes(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 12)  # above the trivial-session gate
-    buf = _append(lore_root, all_turns)
-    client = _Client([_chapter_payload("Wrapped the session", "final prose.", 3)])
-
-    outcome = synth_and_close(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-    assert outcome.status == "composed"
-    assert outcome.closed is True
-    view = nd.read_note(outcome.note_path)
-    assert len([c for c in view.chapters if c.get("kind") == "topic"]) == 1
-    assert view.closed is True
-    assert not buf.sidecar_path.exists()
-
-
 # ---------------------------------------------------------------------------
 # No note is better than a noise note: trivial gate + empty compose
 # ---------------------------------------------------------------------------
@@ -631,36 +607,9 @@ def test_session_end_trivial_session_leaves_no_note(tmp_path):
     assert not buf.sidecar_path.exists()  # archived to _done/
 
 
-def test_session_end_empty_compose_with_no_chapters_leaves_no_note(tmp_path):
-    # Above the trivial gate, but the model answers "nothing of
-    # substance" (zero blocks): the stub note is removed, not closed
-    # around manufactured content — and empty is an answer, not retried.
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 12)
-    buf = _append(lore_root, all_turns)
-    client = _Client([{"blocks": []}])
-
-    outcome = synth_and_close(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-    assert outcome.status == "empty"
-    assert outcome.discarded is True
-    assert outcome.closed is True
-    assert len(client.messages.calls) == 1
-    assert not list((wiki_root / "sessions").rglob("*.md"))
-    assert not buf.sidecar_path.exists()
-
-
-def test_session_end_empty_compose_after_real_chapter_closes_note(tmp_path):
-    # A session that produced a real chapter earlier, then nothing of
-    # substance at close: the note closes with the real chapter only.
+def test_session_end_empty_extraction_after_real_chapter_closes_note(tmp_path):
+    # A session that produced a real chapter earlier, then nothing worth
+    # recording at close: the note closes with the real chapter only.
     lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"
     adapter = _Adapter(_turns(0, 20))
@@ -682,7 +631,7 @@ def test_session_end_empty_compose_after_real_chapter_closes_note(tmp_path):
         buf.sidecar_path,
         lore_root=lore_root,
         wiki_root=wiki_root,
-        llm_client=_Client([{"blocks": []}]),
+        llm_client=_Client([{"boundaries": []}, {"facts": []}]),
         model="m",
         adapter_lookup=_lookup(adapter),
         auto_commit=False,
@@ -778,3 +727,219 @@ def test_concurrent_flush_covering_the_span_is_skipped(tmp_path):
 
     # The buffer is untouched: the session stays live and keeps accumulating.
     assert buf.read_sidecar().state == "accumulating"
+
+
+# ---------------------------------------------------------------------------
+# End-mode close: segment -> extract -> render (PRD 0008)
+#
+# At close no chapter is composed. The session is segmented, each chunk is
+# extracted into typed facts, the facts append to the ledger, and the note
+# body is rendered from that ledger by code alone.
+# ---------------------------------------------------------------------------
+
+
+def _fact_item(kind: str, text: str, anchor: int, thread: str = "", why: str = "") -> dict:
+    item: dict[str, Any] = {"kind": kind, "text": text, "anchor": anchor}
+    if thread:
+        item["thread"] = thread
+    if why:
+        item["why"] = why
+    return item
+
+
+def test_session_end_extracts_typed_facts_and_renders_the_note(tmp_path):
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 12)
+    buf = _append(lore_root, all_turns)
+    client = _Client(
+        [
+            {"boundaries": []},  # segmentation: one beat
+            {
+                "facts": [
+                    _fact_item("progress", "Patched the buffer lock.", 2, thread="flush"),
+                    _fact_item("done", "The flush race is fixed.", 4, thread="flush"),
+                    _fact_item("finding", "The reaper races the cap-trip.", 6, thread="flush"),
+                ]
+            },
+            {"headline": "The flush race is fixed."},
+        ]
+    )
+
+    outcome = synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+
+    assert outcome.status == "composed"
+    assert outcome.closed is True
+    view = nd.read_note(outcome.note_path)
+    # The ledger holds one facts chapter spanning the chunk — no prose chapter.
+    assert [c["kind"] for c in view.chapters] == ["facts"]
+    assert view.chapters[0]["from_turn"] == 0 and view.chapters[0]["to_turn"] == 12
+    # The body is the render: headline, sections, ledger below.
+    assert "**The flush race is fixed.**" in view.body
+    assert "- The flush race is fixed. @4" in view.body
+    assert "- The reaper races the cap-trip. @6" in view.body
+    assert view.body.index("## Done") < view.body.index("## Ledger")
+    # Suppression is render-time only: absent from the note, whole in the ledger.
+    assert "- Patched the buffer lock. @2" not in view.body
+    assert [f.text for f in nd.read_facts(outcome.note_path)] == [
+        "Patched the buffer lock.",
+        "The flush race is fixed.",
+        "The reaper races the cap-trip.",
+    ]
+    assert view.closed is True
+    assert not buf.sidecar_path.exists()
+
+
+def test_session_end_names_the_note_from_the_headline(tmp_path):
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 12)
+    buf = _append(lore_root, all_turns)
+    client = _Client(
+        [
+            {"boundaries": []},
+            {"facts": [_fact_item("done", "The publish gate landed.", 4, thread="gate")]},
+            {"headline": "The publish gate landed."},
+        ]
+    )
+
+    outcome = synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+
+    assert outcome.note_path.stem.endswith("the-publish-gate-landed")
+    fm = parse_frontmatter(outcome.note_path.read_text())
+    assert fm["title"] == "proj:x: The publish gate landed"
+    assert fm["headline"] == "The publish gate landed."
+
+
+def test_a_chunk_that_cannot_be_extracted_becomes_a_coverage_gap(tmp_path):
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 12)
+    buf = _append(lore_root, all_turns)
+    client = _Client(
+        [
+            {"boundaries": [7]},  # two chunks: 0-6 and 7-12
+            {"facts": [_fact_item("done", "The lock landed.", 2, thread="lock")]},
+            None,  # chunk 2: the model fails ...
+            None,  # ... and fails its one corrective retry
+            {"headline": "The lock landed."},
+        ]
+    )
+
+    outcome = synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+
+    assert outcome.status == "composed"  # one chunk failing never loses the rest
+    view = nd.read_note(outcome.note_path)
+    assert [c["kind"] for c in view.chapters] == ["facts", "marker"]
+    marker = view.chapters[1]
+    assert marker["marker"] == nd.MARKER_FAILED
+    assert marker["from_turn"] == 7 and marker["to_turn"] == 12
+    gaps = [ln for ln in view.body.splitlines() if ln.startswith("- Coverage gap:")]
+    assert len(gaps) == 1
+    assert "turns 7–12" in gaps[0]
+    assert view.closed is True
+
+
+def test_session_end_with_no_facts_leaves_no_note(tmp_path):
+    # Every chunk answers "nothing worth recording": the stub is removed
+    # rather than closed around an empty render.
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 12)
+    buf = _append(lore_root, all_turns)
+    client = _Client([{"boundaries": []}, {"facts": []}])
+
+    outcome = synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+
+    assert outcome.status == "empty"
+    assert outcome.discarded is True
+    assert outcome.closed is True
+    assert not list((wiki_root / "sessions").rglob("*.md"))
+    assert len(client.messages.calls) == 2  # no headline call without facts
+
+
+def test_reopened_session_re_renders_the_note_over_the_grown_ledger(tmp_path):
+    # ADR 0001 reopen, end-mode: the second close appends to the same ledger
+    # and rewrites the body from all of it — one note, one rendered reading.
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    adapter = _Adapter(_turns(0, 20))
+
+    _append(lore_root, _turns(0, 12))
+    buf = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
+    out1 = synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=_Client(
+            [
+                {"boundaries": []},
+                {"facts": [_fact_item("done", "The lock landed.", 4, thread="lock")]},
+                {"headline": "The lock landed."},
+            ]
+        ),
+        model="m",
+        adapter_lookup=_lookup(adapter),
+        auto_commit=False,
+    )
+    note_path = out1.note_path
+    assert nd.is_closed(note_path) is True
+
+    _append(lore_root, _turns(13, 20))  # the session resumes: note reopened
+    assert nd.is_closed(note_path) is False
+    synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=_Client(
+            [
+                {"boundaries": []},
+                {"facts": [_fact_item("done", "The renderer landed.", 15, thread="render")]},
+                {"headline": "The lock and the renderer landed."},
+            ]
+        ),
+        model="m",
+        adapter_lookup=_lookup(adapter),
+        auto_commit=False,
+    )
+
+    assert list((wiki_root / "sessions").rglob("*.md")) == [note_path]
+    view = nd.read_note(note_path)
+    assert [c["kind"] for c in view.chapters] == ["facts", "facts"]
+    assert view.body.count("## Done") == 1  # one rendered reading, not two
+    assert "- The lock landed. @4" in view.body
+    assert "- The renderer landed. @15" in view.body
+    assert "**The lock and the renderer landed.**" in view.body
+    assert view.closed is True
