@@ -189,7 +189,7 @@ Matrix sink walkthrough.
 ## Ambient banner vs. MCP pull
 
 SessionStart injects a deliberately small, deterministic banner
-(`lore_cli/hooks.py:render_session_banner`) — no LLM call, no network
+(`lore_core/session_start.py:render_session_banner`) — no LLM call, no network
 call: a status line, an optional `## Focus` block for the attached
 project, at most two last-session hints, freshness lines only when
 there's positive evidence (see below), and a fixed two-line directive
@@ -260,7 +260,9 @@ above:
 | Briefing gather (read-only) | `lore_core/briefing/gather.py` |
 | Repo ADR/PRD pull (filesystem side) | `lore_core/repo_docs.py` |
 | MCP server (tool dispatch) | `lore_mcp/server.py` |
-| SessionStart / PreCompact banner + hooks | `lore_cli/hooks.py` |
+| Hook dispatch (the seven `lore hook ...` entry points) | `lore_cli/hooks.py` |
+| SessionStart context assembly + banner | `lore_core/session_start.py` |
+| Capture routing (transcripts, flush, spawn gate) | `lore_curator/capture_routing.py` |
 | Freshness classification | `lore_core/freshness.py` |
 | Vault/wiki/scope resolution | `lore_core/scope_resolver.py`, `lore_core/state/` |
 

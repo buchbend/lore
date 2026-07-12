@@ -18,7 +18,7 @@ preference reordering:
 
 from pathlib import Path
 
-from lore_cli.hooks import _last_session_hint
+from lore_core.session_start import last_session_hint as _last_session_hint
 
 
 def _write_session_flat(

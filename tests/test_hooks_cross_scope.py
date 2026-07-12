@@ -6,7 +6,7 @@ from pathlib import Path
 
 from lore_core.drain import DrainStore, SYSTEM_SESSION
 
-from lore_cli.hooks import _cross_scope_breadcrumbs
+from lore_core.session_start import cross_scope_breadcrumbs as _cross_scope_breadcrumbs
 
 
 def _emit_event(lore_root: Path, event: str, wiki: str) -> None:

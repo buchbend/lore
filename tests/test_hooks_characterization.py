@@ -12,19 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from lore_core.ledger import TranscriptLedgerEntry
-from lore_core.wiki_config import WikiConfig
-
 # --- under test -------------------------------------------------------------
-from lore_cli.hooks import (
-    _format_drain_summary as format_drain_summary,
-    _maybe_auto_pull_for_scope as maybe_auto_pull_for_scope,
-    _tally_drain as tally_drain,
-    _wiki_should_spawn as wiki_should_spawn,
-    _wiki_suffix as wiki_suffix,
-    collect_session_facts,
-)
-
+from lore_core.drain_banner import format_drain_summary, tally_drain, wiki_suffix
+from lore_core.ledger import TranscriptLedgerEntry
+from lore_core.session_start import collect_session_facts, maybe_auto_pull_for_scope
+from lore_core.wiki_config import WikiConfig
+from lore_curator.capture_routing import wiki_should_spawn
 
 NOW = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
 

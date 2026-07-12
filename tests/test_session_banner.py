@@ -10,15 +10,17 @@ from __future__ import annotations
 
 import pytest
 
-from lore_cli import hooks
-from lore_cli.hooks import SessionFacts, render_session_banner
+from lore_core import session_start
+from lore_core.session_start import SessionFacts, render_session_banner
 
 
 @pytest.fixture(autouse=True)
 def _deterministic_directive(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(hooks, "_lore_version", lambda: "9.9.9")
+    monkeypatch.setattr(session_start, "lore_version", lambda: "9.9.9")
     monkeypatch.setattr(
-        hooks, "_load_directive_lines", lambda: ["## Directive", "- pull, not push"]
+        session_start,
+        "load_directive_lines",
+        lambda: ["## Directive", "- pull, not push"],
     )
 
 
