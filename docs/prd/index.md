@@ -11,5 +11,6 @@ PRDs are the source of truth for decisions. Each PRD lives at
 0003-lore-workflow-plugin-and-deterministic-substrate
 0004-deterministic-context-lights-out-notes
 0005-onboarding-config-observability
+0006-workflow-lightening-deepening
 0007-substrate-trim
 ```
