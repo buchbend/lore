@@ -12,7 +12,6 @@ from pathlib import Path
 
 from lore_core.types import TranscriptHandle
 
-
 # ---------------------------------------------------------------------------
 # ToolCall dataclass — category field exists with a safe default
 # ---------------------------------------------------------------------------
@@ -147,24 +146,3 @@ def test_manual_send_preserves_explicit_category(tmp_path):
 
     turns = list(ManualSendAdapter().read_from(jsonl, tmp_path, declared_integration="future"))
     assert turns[0].tool_call.category == "agent_spawn"
-
-
-def test_cursor_adapter_populates_category(tmp_path):
-    """Smoke test: the Cursor adapter, when given a tool-call block with
-    name='edit_file', emits a ToolCall with category='file_edit'.
-
-    If Cursor's adapter isn't reachable without heavy fixtures we skip —
-    but the ClaudeCodeAdapter test above is the primary regression guard."""
-    import pytest
-    try:
-        from lore_adapters.cursor_agent import CursorAgentAdapter  # noqa: F401
-    except Exception:
-        pytest.skip("cursor_agent adapter not importable")
-
-    # Minimal Cursor-shaped transcript; format is adapter-internal, and
-    # the point of this test is just that category is filled — if the
-    # cursor adapter changes its format we can adjust. Until then,
-    # the classify_tool_name function itself is covered by
-    # test_tool_categories.py and the Cursor adapter just needs to call it.
-    from lore_core.tool_categories import classify_tool_name
-    assert classify_tool_name("cursor", "edit_file") == "file_edit"
