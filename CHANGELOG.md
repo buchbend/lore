@@ -32,6 +32,14 @@ removed surface has a direct replacement below.
   slugs`. The frontmatter one-shot flags (`--add-schema-version`,
   `--minimal-status`, `--strip-broken-wikilinks`) moved from bare `lore
   migrate` to `lore migrate frontmatter`.
+- **`lore completions`** — superseded by Typer's native
+  `--install-completion` / `--show-completion` on the root command.
+
+### Changed
+
+- **`lore journal`** no longer appears in `lore --help` — it's a parked,
+  off-by-default feature now mounted `hidden=True`. Still fully invocable
+  (`lore journal --help` works) for anyone who already turned it on.
 
 ## [0.61.1] - 2026-07-12
 
