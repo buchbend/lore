@@ -6,21 +6,19 @@ Windsurf, Zed, etc.) can register this and query the vault.
 Exposed tools:
     lore_search             — hybrid ranked search, top-k paths
     lore_read               — read one note by wiki/path
-    lore_index              — return a wiki's _index.txt
-    lore_catalog            — return a wiki's _catalog.json
     lore_resume             — unified context gather (recent/wiki/keyword/scope)
-    lore_wikilinks          — in/out wikilinks for a note
     lore_drill              — composite multi-stage retrieval (search→read→
                               expand→read_expanded) in one envelope with a
                               structured trace
-    lore_briefing_gather    — read-only briefing gather (new sessions since last
-                              briefing + sink config + ledger); skill writes
-                              prose, then shells out to publish + mark
     lore_inbox_classify     — read-only inbox walk (file list with type +
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
+    lore_journal_write      — append a freeform entry to the AI or human journal
+    lore_pending_verdicts   — enumerate wiki-wide pending freshness verdicts
+    lore_verdict            — record a freshness verdict (confirm/stale/clear-stale)
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
     lore_repo_docs_fetch    — fetch one ADR or PRD's content (pull-only)
+    lore_tier_resolve       — resolve a semantic model tier to a concrete model
     lore_codemap            — bounded code-map query (symbols/directory/top-N)
     lore_context_pack       — bounded pointer pack (sessions/ADR/PRD/epic state)
                               joined from linkage frontmatter, given cwd/branch/issue
@@ -447,42 +445,6 @@ def _extract_section(text: str, query: str) -> tuple[str | None, list[str]]:
     return "\n".join(lines[start:end]), all_heading_strs
 
 
-def handle_index(wiki: str | None = None) -> dict[str, Any]:
-    wiki_path = _resolve_wiki(wiki)
-    if wiki_path is None:
-        return _mcp_error(
-            "wiki_not_found",
-            f"wiki not found: {wiki}",
-            next_="run `lore status` to list configured wikis",
-        )
-    index = wiki_path / "_index.txt"
-    if not index.exists():
-        return _mcp_error(
-            "catalog_missing",
-            "no _index.txt",
-            next_="run `lore lint` to regenerate the index",
-        )
-    return {"wiki": wiki_path.name, "content": index.read_text(errors="replace")}
-
-
-def handle_catalog(wiki: str | None = None) -> dict[str, Any]:
-    wiki_path = _resolve_wiki(wiki)
-    if wiki_path is None:
-        return _mcp_error(
-            "wiki_not_found",
-            f"wiki not found: {wiki}",
-            next_="run `lore status` to list configured wikis",
-        )
-    cat = wiki_path / "_catalog.json"
-    if not cat.exists():
-        return _mcp_error(
-            "catalog_missing",
-            "no _catalog.json",
-            next_="run `lore lint` to regenerate the catalog",
-        )
-    return json.loads(cat.read_text())
-
-
 def handle_resume(
     wiki: str | None = None,
     days: int = 3,
@@ -502,23 +464,6 @@ def handle_resume(
         keyword=keyword,
         days=days,
         k=k,
-    )
-
-
-def handle_briefing_gather(
-    wiki: str,
-    since: str | None = None,
-    include_body_sections: bool = True,
-    epic: int | None = None,
-) -> dict[str, Any]:
-    """Read-only briefing gather. Delegates to lore_core.briefing.gather()."""
-    from lore_core.briefing import gather
-
-    return gather(
-        wiki=wiki,
-        since=since,
-        include_body_sections=include_body_sections,
-        epic=epic,
     )
 
 
@@ -554,25 +499,6 @@ def handle_journal_write(
     except ValueError as e:
         return _mcp_error("invalid_entry", str(e))
     return {"schema": "lore.journal.write/1", "data": result}
-
-
-def handle_journal_read(
-    kind: str = "ai",
-    limit: int = 10,
-) -> dict[str, Any]:
-    """Read recent entries from the AI or human journal (newest-first)."""
-    from lore_core import journal
-
-    if kind not in journal.VALID_KINDS:
-        return _mcp_error(
-            "invalid_kind",
-            f"journal kind must be one of {journal.VALID_KINDS!r}, got {kind!r}",
-        )
-    entries = journal.read(kind, limit=limit)  # type: ignore[arg-type]
-    return {
-        "schema": "lore.journal.read/1",
-        "data": {"kind": kind, "entries": entries},
-    }
 
 
 def handle_drill(
@@ -631,9 +557,8 @@ def handle_drill(
     # Stage 2: read top hits
     # Drill is the user-invoked deep-dive surface (PRD #92 retrieval
     # contract): pass ``include_human=True`` so the full note — including
-    # the human-only region — is returned. ``handle_search`` /
-    # ``handle_briefing_gather`` are the auto-load surfaces where
-    # redaction is enforced.
+    # the human-only region — is returned. ``handle_search`` is the
+    # auto-load surface where redaction is enforced instead.
     t0 = _time.monotonic()
     top_paths = [h["path"] for h in hits]
     read_failed_top: list[str] = []
@@ -931,45 +856,6 @@ def handle_pending_verdicts(wiki: str | None = None) -> dict[str, Any]:
     }
 
 
-def handle_wikilinks(note: str, wiki: str | None = None) -> dict[str, Any]:
-    wiki_path = _resolve_wiki(wiki)
-    if wiki_path is None:
-        return _mcp_error(
-            "wiki_not_found",
-            f"wiki not found: {wiki}",
-            next_="run `lore status` to list configured wikis",
-        )
-    cat_path = wiki_path / "_catalog.json"
-    if not cat_path.exists():
-        return _mcp_error(
-            "catalog_missing",
-            "no _catalog.json",
-            next_="run `lore lint` to regenerate the catalog",
-        )
-    catalog = json.loads(cat_path.read_text())
-    for entries in catalog.get("sections", {}).values():
-        for entry in entries:
-            if entry["name"] == note or entry["path"] == note:
-                return {
-                    "wiki": wiki_path.name,
-                    "note": entry["name"],
-                    "links_out": entry.get("links_out", []),
-                    "links_in": entry.get("links_in", []),
-                }
-    # Fall back to live parse
-    candidates = list(wiki_path.rglob(f"{note}.md"))
-    if candidates:
-        text = candidates[0].read_text(errors="replace")
-        return {
-            "wiki": wiki_path.name,
-            "note": note,
-            "links_out": extract_wikilinks(text),
-            "links_in": [],
-            "note_missing_from_catalog": True,
-        }
-    return _mcp_error("note_not_found", f"note not found: {note}")
-
-
 def _resolve_repo_root(repo_path: str | None) -> Path | None:
     """Resolve the connected repo's root for the repo-docs pull tools.
 
@@ -1174,22 +1060,6 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
-            "name": "lore_index",
-            "description": "Return the wiki's _index.txt (LLM-scannable knowledge map; markdown body with wikilinks).",
-            "inputSchema": {
-                "type": "object",
-                "properties": {"wiki": {"type": "string"}},
-            },
-        },
-        {
-            "name": "lore_catalog",
-            "description": "Return the wiki's _catalog.json (full machine-readable metadata + link graph).",
-            "inputSchema": {
-                "type": "object",
-                "properties": {"wiki": {"type": "string"}},
-            },
-        },
-        {
             "name": "lore_resume",
             "description": (
                 "Load working context from the vault. Modes (priority "
@@ -1224,18 +1094,6 @@ def _tool_schema() -> list[dict]:
                         "description": "Top-k results for keyword search",
                     },
                 },
-            },
-        },
-        {
-            "name": "lore_wikilinks",
-            "description": "Return incoming and outgoing [[wikilinks]] for a note (graph traversal).",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "note": {"type": "string"},
-                    "wiki": {"type": "string"},
-                },
-                "required": ["note"],
             },
         },
         {
@@ -1281,39 +1139,6 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
-            "name": "lore_briefing_gather",
-            "description": (
-                "Read-only briefing gather: returns the new session "
-                "notes (since the last briefing) plus the wiki's sink "
-                "config and ledger state. Caller composes the briefing "
-                "prose, then shells out to `lore briefing publish` and "
-                "`lore briefing mark`. No LLM call inside the tool."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "wiki": {"type": "string"},
-                    "since": {
-                        "type": "string",
-                        "description": "ISO date floor (YYYY-MM-DD)",
-                    },
-                    "include_body_sections": {
-                        "type": "boolean",
-                        "default": True,
-                        "description": "Extract H2 sections per session",
-                    },
-                    "epic": {
-                        "type": "integer",
-                        "description": (
-                            "Filter to sessions whose `linkage.epics` "
-                            "names this epic number."
-                        ),
-                    },
-                },
-                "required": ["wiki"],
-            },
-        },
-        {
             "name": "lore_inbox_classify",
             "description": (
                 "Read-only inbox walk: returns every file in the root "
@@ -1353,25 +1178,6 @@ def _tool_schema() -> list[dict]:
                     },
                 },
                 "required": ["kind", "text"],
-            },
-        },
-        {
-            "name": "lore_journal_read",
-            "description": (
-                "Read recent entries from the AI or human journal "
-                "(newest-first). Use sparingly — the journal is for "
-                "*writing*, not for self-referential reading."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "kind": {
-                        "type": "string",
-                        "enum": ["ai", "human"],
-                        "default": "ai",
-                    },
-                    "limit": {"type": "integer", "default": 10},
-                },
             },
         },
         {
@@ -1616,24 +1422,14 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_search(**args)
         case "lore_read":
             return handle_read(**args)
-        case "lore_index":
-            return handle_index(**args)
-        case "lore_catalog":
-            return handle_catalog(**args)
         case "lore_resume":
             return handle_resume(**args)
-        case "lore_wikilinks":
-            return handle_wikilinks(**args)
         case "lore_drill":
             return handle_drill(**args)
-        case "lore_briefing_gather":
-            return handle_briefing_gather(**args)
         case "lore_inbox_classify":
             return handle_inbox_classify(**args)
         case "lore_journal_write":
             return handle_journal_write(**args)
-        case "lore_journal_read":
-            return handle_journal_read(**args)
         case "lore_verdict":
             return handle_verdict(**args)
         case "lore_pending_verdicts":

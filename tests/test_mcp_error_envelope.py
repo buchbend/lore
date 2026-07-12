@@ -15,13 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from lore_mcp.server import (
-    _mcp_error,
-    handle_catalog,
-    handle_index,
-    handle_read,
-    handle_wikilinks,
-)
+from lore_mcp.server import _mcp_error, handle_read
 
 
 # ---- helper itself ----
@@ -71,22 +65,6 @@ def _assert_envelope(result: dict, code: str, *, want_next: bool = False) -> Non
     assert isinstance(err["message"], str) and err["message"], "message empty"
     if want_next:
         assert err.get("next"), f"expected 'next' hint for code={code!r}"
-
-
-def test_handle_index_missing_catalog_envelope(empty_vault: Path) -> None:
-    result = handle_index(wiki="private")
-    _assert_envelope(result, "catalog_missing", want_next=True)
-    assert "lore lint" in result["error"]["next"]
-
-
-def test_handle_catalog_missing_envelope(empty_vault: Path) -> None:
-    result = handle_catalog(wiki="private")
-    _assert_envelope(result, "catalog_missing", want_next=True)
-
-
-def test_handle_wikilinks_missing_catalog_envelope(empty_vault: Path) -> None:
-    result = handle_wikilinks(note="anything", wiki="private")
-    _assert_envelope(result, "catalog_missing", want_next=True)
 
 
 def test_handle_read_unknown_wiki_envelope(empty_vault: Path) -> None:
