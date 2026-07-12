@@ -107,8 +107,8 @@ harness:
   `click.exceptions.*` back to integer exit codes.
 
 - **`lore_core.run_render`** — pure renderers (no I/O) for run-log
-  records. Used by `runs_cmd` and `curator_cmd` for the live trail
-  during a curator run.
+  records. Used by `curator_cmd` for the live trail during a curator
+  run.
 
 Both are import-time-cheap; they exist so individual verbs don't have
 to repeat plumbing.
@@ -163,6 +163,10 @@ directly, move it back to a lower layer.
 
 ## History
 
+- **Substrate trim** — the `lore log` / `lore news` / `lore runs` /
+  `lore proc` deprecation aliases below were removed outright once their
+  one-release grace window closed; `lore trace` / `lore status` are now
+  the only entry points for that debugging role.
 - **#195** — `lore log` / `lore news` / `lore runs` / `lore proc` became
   deprecated thin aliases for `lore trace` / `lore status` (see
   "Deprecating a verb" above); `lore drain` (and its sole subcommand,

@@ -10,6 +10,29 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+Substrate trim (PRD 0007): folds redundant CLI groups into their parents and
+drops MCP tools with no caller anywhere. No loss of capability — every
+removed surface has a direct replacement below.
+
+### Removed
+
+- **`lore log` / `lore news` / `lore runs` / `lore proc`** — the aliases
+  0.61.0 deprecated are now gone outright; `lore trace` / `lore status`
+  fully absorbed their role.
+- **Five no-caller MCP tools**: `lore_index`, `lore_catalog`,
+  `lore_wikilinks`, `lore_journal_read`, `lore_briefing_gather`. 13 tools
+  remain exposed (`lore_mcp/server.py` is the authoritative list).
+- **`lore registry`** — folded into `lore scopes wikis` / `lore scopes
+  doctor`.
+- **`lore attachments`** — folded into `lore attach attachments`.
+- **`lore detach`** — folded into `lore attach remove`; its `--json`
+  envelope schema is renamed `lore.detach/1` → `lore.attach.remove/1`.
+- **`lore curator --migrate-open-items`** and **`lore curator
+  backfill-slugs`** — moved to `lore migrate open-items` / `lore migrate
+  slugs`. The frontmatter one-shot flags (`--add-schema-version`,
+  `--minimal-status`, `--strip-broken-wikilinks`) moved from bare `lore
+  migrate` to `lore migrate frontmatter`.
+
 ## [0.61.1] - 2026-07-12
 
 Epic #183 polish (#255).

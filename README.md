@@ -274,9 +274,9 @@ Once attached with a wiki present:
 - `lore curator [--wiki <name>] [--apply]` — the frontmatter-only
   hygiene pass (supersession, `implements:` back-links, git-date
   backfill, team-mode hint); dry-run by default.
-- `lore registry ls` / `lore registry doctor` —
+- `lore scopes wikis` / `lore scopes doctor` —
   list configured wikis and validate them. (For looking up the
-  attachment covering a specific path, use `lore attachments show
+  attachment covering a specific path, use `lore attach attachments show
   <path>`.)
 
 ### Per-wiki configuration
@@ -336,10 +336,9 @@ flush — hook fire, spawn, LLM calls, gate outcome, note append — for a
 trace_id, session_id, `last`, `dead` (lists dead-lettered flushes), or a note
 path / `[[wikilink]]`.
 
-`lore log` / `lore news` / `lore runs` / `lore proc` are deprecated thin
-aliases for `lore trace` / `lore status` — still functional for one
-minor-version window (see `CHANGELOG.md`), each printing a pointer to its
-replacement.
+`lore log` / `lore news` / `lore runs` / `lore proc` have been removed —
+their debugging role is fully absorbed by `lore trace` / `lore status`
+above (see `CHANGELOG.md` for the removal).
 
 Structured logs live under `$LORE_ROOT/.lore/spine.jsonl`, tiered
 hot → cold → deleted; configure retention at `$LORE_ROOT/.lore/config.yml`:
@@ -516,12 +515,12 @@ costs tokens; no default forces a cost on you.
 
 Point `LORE_ROOT` at your vault (anything matching the canonical shape
 — a directory with a `wiki/` subfolder containing at least one mounted
-wiki) and add `schema_version: 1` to existing notes:
+wiki) and add `schema_version: 2` to existing notes:
 
 ```
-LORE_ROOT=/path/to/your/vault lore migrate --add-schema-version
+LORE_ROOT=/path/to/your/vault lore migrate frontmatter --add-schema-version
 # review the dry-run diff, then:
-LORE_ROOT=/path/to/your/vault lore migrate --add-schema-version --apply
+LORE_ROOT=/path/to/your/vault lore migrate frontmatter --add-schema-version --apply
 ```
 
 No files move. If your vault does not yet match the canonical shape,
