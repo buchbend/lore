@@ -419,57 +419,78 @@ def check_hierarchy(
     return issues
 
 
-def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
-    """Phase 7: surface drift between project orientation and the
-    attached repo's AGENTS.md / CLAUDE.md.
+def _repo_by_project_slug(wiki_name: str) -> dict[str, Path]:
+    """Map each project slug in this wiki to the repo path attached to it.
 
-    For each project orientation note carrying a ``## Agent guidance``
-    H2 section, locate the attached repo path via ``attachments.json``
-    and compare normalised content. Drift → ``WARNING`` issue.
-
-    Best-effort: missing attachments file, missing repos, malformed
-    notes, etc. all skip silently rather than fail the lint. The check
-    targets the user-visible action ("here's a drift, run sync") not
-    consistency enforcement.
+    Empty when nothing is attached, or when the attachment machinery isn't
+    importable — a drift check is advisory and never fails the lint.
     """
-    issues: list[Issue] = []
-
     try:
         from lore_core.config import resolve_lore_root
-        from lore_core.projects.agent_sync import compute_sync_status
         from lore_core.state.attachments import AttachmentsFile
     except ImportError:
-        return issues
+        return {}
 
     lore_root = resolve_lore_root()
     if lore_root is None or not lore_root.exists():
-        return issues
+        return {}
     af = AttachmentsFile(lore_root)
     af.load()
 
-    # Map: project slug → attached repo path (last scope segment).
-    repo_by_slug: dict[str, Path] = {}
+    repos: dict[str, Path] = {}
     for a in af.all():
-        if a.wiki != wiki_name:
-            continue
-        if not a.scope:
+        if a.wiki != wiki_name or not a.scope:
             continue
         slug = a.scope.rsplit(":", 1)[-1]
         if slug:
-            repo_by_slug[slug] = a.path
+            repos[slug] = a.path
+    return repos
 
-    projects_dir_path = wiki_path / "projects"
-    if not projects_dir_path.is_dir():
-        return issues
 
-    for project_dir in sorted(projects_dir_path.iterdir()):
+def _orientation_notes(projects_dir: Path) -> list[tuple[Path, str]]:
+    """Every project orientation note in a wiki, as (path, slug) pairs.
+
+    Covers both layouts: the current ``projects/<slug>/<slug>.md`` folder
+    and the legacy flat ``projects/<slug>.md``.
+    """
+    found: list[tuple[Path, str]] = []
+    for project_dir in sorted(projects_dir.iterdir()):
         if not project_dir.is_dir():
-            # Legacy flat ``projects/<slug>.md`` — covered below.
             continue
         slug = project_dir.name
         orientation = project_dir / f"{slug}.md"
-        if not orientation.is_file():
-            continue
+        if orientation.is_file():
+            found.append((orientation, slug))
+    for legacy in sorted(projects_dir.glob("*.md")):
+        if not legacy.name.startswith("_"):
+            found.append((legacy, legacy.stem))
+    return found
+
+
+def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
+    """Surface drift between a project's orientation note and its repo.
+
+    For each project orientation note carrying a ``## Agent guidance``
+    H2 section, locate the attached repo via ``attachments.json`` and
+    compare normalised content against its AGENTS.md / CLAUDE.md.
+
+    Best-effort: a missing attachments file, missing repo, or malformed
+    note skips silently rather than failing the lint. The check targets
+    the user-visible action ("here's a drift, run sync"), not consistency
+    enforcement.
+    """
+    try:
+        from lore_core.projects.agent_sync import compute_sync_status
+    except ImportError:
+        return []
+
+    projects_dir = wiki_path / "projects"
+    if not projects_dir.is_dir():
+        return []
+
+    repo_by_slug = _repo_by_project_slug(wiki_name)
+    issues: list[Issue] = []
+    for orientation, slug in _orientation_notes(projects_dir):
         repo_root = repo_by_slug.get(slug)
         if repo_root is None or not repo_root.exists():
             continue
@@ -477,52 +498,22 @@ def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
             status = compute_sync_status(orientation, repo_root)
         except Exception:  # noqa: BLE001 - never fail lint on sync drift
             continue
-        if status.orientation_has_section and not status.in_sync:
-            issues.append(
-                Issue(
-                    severity="WARNING",
-                    wiki=wiki_name,
-                    file=str(orientation.relative_to(wiki_path)),
-                    check="agent_guidance_drift",
-                    message=(
-                        f"`## Agent guidance` in orientation differs from "
-                        f"repo's AGENTS.md/CLAUDE.md. Run "
-                        f"`lore project sync {slug} --to-repo` "
-                        f"or `--from-repo` to reconcile."
-                    ),
-                )
+        if not (status.orientation_has_section and not status.in_sync):
+            continue
+        issues.append(
+            Issue(
+                severity="WARNING",
+                wiki=wiki_name,
+                file=str(orientation.relative_to(wiki_path)),
+                check="agent_guidance_drift",
+                message=(
+                    f"`## Agent guidance` in orientation differs from "
+                    f"repo's AGENTS.md/CLAUDE.md. Run "
+                    f"`lore project sync {slug} --to-repo` "
+                    f"or `--from-repo` to reconcile."
+                ),
             )
-
-    # Legacy flat ``projects/<slug>.md`` — same check, no project subfolder.
-    for legacy in sorted(projects_dir_path.glob("*.md")):
-        if legacy.parent != projects_dir_path:
-            continue
-        if legacy.name.startswith("_"):
-            continue
-        slug = legacy.stem
-        repo_root = repo_by_slug.get(slug)
-        if repo_root is None or not repo_root.exists():
-            continue
-        try:
-            status = compute_sync_status(legacy, repo_root)
-        except Exception:  # noqa: BLE001
-            continue
-        if status.orientation_has_section and not status.in_sync:
-            issues.append(
-                Issue(
-                    severity="WARNING",
-                    wiki=wiki_name,
-                    file=str(legacy.relative_to(wiki_path)),
-                    check="agent_guidance_drift",
-                    message=(
-                        f"`## Agent guidance` in orientation differs from "
-                        f"repo's AGENTS.md/CLAUDE.md. Run "
-                        f"`lore project sync {slug} --to-repo` "
-                        f"or `--from-repo` to reconcile."
-                    ),
-                )
-            )
-
+        )
     return issues
 
 
@@ -854,6 +845,197 @@ def generate_type_collection_txt(
 # ---------------------------------------------------------------------------
 
 
+def _parse_note(fpath: Path, wiki_path: Path, wiki_name: str) -> NoteInfo:
+    """Read one note file into its catalog record."""
+    text = fpath.read_text(errors="replace")
+    fm = parse_frontmatter(text)
+
+    parts = fpath.relative_to(wiki_path).parts
+    parent_folder: str | None = None
+    if len(parts) >= 3 and parts[0] in KNOWLEDGE_DIRS:
+        parent_folder = parts[1]
+
+    note = NoteInfo(
+        path=str(fpath.relative_to(wiki_path)),
+        filename=fpath.stem,
+        wiki=wiki_name,
+        note_type=fm.get("type"),
+        status=fm.get("status"),
+        lifecycle=compute_lifecycle(fm),
+        superseded_by=fm.get("superseded_by"),
+        description=fm.get("description"),
+        tags=fm.get("tags", []) or [],
+        created=str(fm["created"]) if fm.get("created") else None,
+        last_reviewed=str(fm["last_reviewed"]) if fm.get("last_reviewed") else None,
+        lines=count_lines(text),
+        links_out=extract_wikilinks(text),
+        parent_folder=parent_folder,
+    )
+    # A folder's index note is the one named after the folder (or prefixed
+    # with it), e.g. concepts/lore/lore.md or concepts/lore/lore-mcp.md.
+    if parent_folder and (
+        fpath.stem == parent_folder or fpath.stem.startswith(parent_folder + "-")
+    ):
+        note.is_index = True
+    return note
+
+
+def _scan_notes(
+    wikis: list[Path],
+) -> tuple[dict[str, NoteInfo], dict[str, list[NoteInfo]]]:
+    """Parse every note in every wiki, keyed by slug and grouped by wiki.
+
+    Always scans *all* wikis even when the lint is scoped to one, because
+    wikilink targets resolve across the whole vault.
+    """
+    all_notes: dict[str, NoteInfo] = {}
+    notes_by_wiki: dict[str, list[NoteInfo]] = defaultdict(list)
+    for wiki_path in wikis:
+        wiki_name = wiki_path.name
+        for fpath in discover_notes(wiki_path):
+            note = _parse_note(fpath, wiki_path, wiki_name)
+            all_notes[fpath.stem] = note
+            notes_by_wiki[wiki_name].append(note)
+    return all_notes, notes_by_wiki
+
+
+def _build_link_graph(
+    all_notes: dict[str, NoteInfo],
+    notes_by_wiki: dict[str, list[NoteInfo]],
+) -> None:
+    """Fill in backlinks and index children from the parsed link lists."""
+    for name, note in all_notes.items():
+        for link in note.links_out:
+            if link in all_notes:
+                all_notes[link].links_in.append(name)
+
+    for note in all_notes.values():
+        if not (note.is_index and note.parent_folder):
+            continue
+        # parent_folder is just the basename; require sibling notes to
+        # share the index's full directory prefix so that, e.g.,
+        # ``concepts/lore/`` and ``decisions/lore/`` don't bleed
+        # children into each other's indexes.
+        note_dir = note.path.rsplit("/", 1)[0] + "/" if "/" in note.path else ""
+        note.children = [
+            n.filename
+            for n in notes_by_wiki[note.wiki]
+            if n.parent_folder == note.parent_folder
+            and n.filename != note.filename
+            and n.path.startswith(note_dir)
+        ]
+
+
+def _collect_issues(
+    wikis: list[Path],
+    all_notes: dict[str, NoteInfo],
+    notes_by_wiki: dict[str, list[NoteInfo]],
+) -> list[Issue]:
+    """Run every check over the scoped wikis; also records issues on each note."""
+    all_issues: list[Issue] = []
+    for wiki_path in wikis:
+        wiki_name = wiki_path.name
+        for note in notes_by_wiki[wiki_name]:
+            fm = parse_frontmatter((wiki_path / note.path).read_text(errors="replace"))
+            note_issues = [
+                *check_frontmatter(note, fm, wiki_name),
+                *check_staleness(note, fm, wiki_name),
+                *check_description(note, fm, wiki_name),
+            ]
+            all_issues.extend(note_issues)
+            note.issues = [f"{i.check}: {i.message}" for i in note_issues]
+        all_issues.extend(check_hierarchy(notes_by_wiki, wiki_name, wiki_path))
+        all_issues.extend(check_agent_guidance_sync(wiki_path, wiki_name))
+
+    all_issues.extend(check_wikilinks(all_notes, {w.name for w in wikis}))
+    return all_issues
+
+
+def _orphan_paths(wiki_path: Path) -> list[str]:
+    """Wiki-relative paths of notes holding orphan links.
+
+    Cached into the catalog so the read-time freshness check is an O(1)
+    membership test instead of a whole-wiki walk on every retrieval.
+    """
+    try:
+        from lore_core.wikilinks import find_orphan_links
+
+        return sorted(
+            {str(p.relative_to(wiki_path)) for p, _slug, _off in find_orphan_links(wiki_path)}
+        )
+    except Exception:
+        # An orphan-scan failure must not break lint.
+        return []
+
+
+def _drop_legacy_artifacts(wiki_path: Path) -> None:
+    """Remove generated files older lore versions wrote, so vaults self-heal.
+
+    ``_index.md`` (a god-object in Obsidian's graph) and ``llms.txt`` (a
+    markdown-in-txt mirror) are superseded by ``_index.txt``; ``threads.md``
+    by ``_threads.txt``; ``sessions/_recent.md`` by its ``.txt`` sibling.
+    The ``.md`` collections used to be wikilink-graph nodes — the ``.txt``
+    versions are not.
+    """
+    for legacy in ("_index.md", "llms.txt", "threads.md", "sessions/_recent.md"):
+        stale = wiki_path / legacy
+        if stale.exists():
+            stale.unlink()
+
+
+def _regenerate_wiki(
+    wiki_path: Path, notes: list[NoteInfo], all_issues: list[Issue]
+) -> None:
+    """Rewrite one wiki's catalog, index and collection files."""
+    wiki_name = wiki_path.name
+
+    catalog = build_catalog(wiki_name, notes, all_issues)
+    catalog["orphan_set"] = _orphan_paths(wiki_path)
+    atomic_write_text(
+        wiki_path / "_catalog.json", json.dumps(catalog, indent=2, default=str)
+    )
+
+    atomic_write_text(wiki_path / "_index.txt", generate_index_txt(wiki_name, notes))
+    _drop_legacy_artifacts(wiki_path)
+
+    # sessions/_recent.txt — last 20 session notes as wikilinks
+    recent_txt = generate_recent_txt(wiki_path)
+    if recent_txt is not None:
+        atomic_write_text(wiki_path / "sessions" / "_recent.txt", recent_txt)
+
+    # _concepts.txt, _decisions.txt — flat per-type collections at wiki root.
+    # The ``.txt`` extension excludes them from the wikilink graph (which
+    # globs ``.md`` only), so they don't become god-nodes.
+    for note_type, title, filename in (
+        ("concept", "Concepts", "_concepts.txt"),
+        ("decision", "Decisions", "_decisions.txt"),
+    ):
+        body = generate_type_collection_txt(
+            wiki_name, notes, note_type=note_type, title=title
+        )
+        if body is not None:
+            atomic_write_text(wiki_path / filename, body)
+
+
+def _build_report(
+    wikis: list[Path], all_notes: dict[str, NoteInfo], all_issues: list[Issue]
+) -> dict:
+    """Assemble the machine-readable lint report."""
+    return {
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "schema_version": 1,
+        "wikis_scanned": [w.name for w in wikis],
+        "total_notes": len(all_notes),
+        "total_issues": len(all_issues),
+        "by_severity": {
+            "errors": sum(1 for i in all_issues if i.severity == "ERROR"),
+            "warnings": sum(1 for i in all_issues if i.severity == "WARNING"),
+            "infos": sum(1 for i in all_issues if i.severity == "INFO"),
+        },
+        "issues": [asdict(i) for i in all_issues],
+    }
+
+
 def run_lint(
     wiki_filter: str | None = None,
     check_only: bool = False,
@@ -869,173 +1051,15 @@ def run_lint(
             next_=f"create a wiki under {get_wiki_root()} or run `lore init`",
         )
 
-    all_wikis = discover_wikis(None)
-    all_notes: dict[str, NoteInfo] = {}
-    notes_by_wiki: dict[str, list[NoteInfo]] = defaultdict(list)
+    all_notes, notes_by_wiki = _scan_notes(discover_wikis(None))
+    _build_link_graph(all_notes, notes_by_wiki)
+    all_issues = _collect_issues(wikis, all_notes, notes_by_wiki)
 
-    # Phase 1: discover and parse every note across every wiki
-    for wiki_path in all_wikis:
-        wiki_name = wiki_path.name
-        for fpath in discover_notes(wiki_path):
-            text = fpath.read_text(errors="replace")
-            fm = parse_frontmatter(text)
-            links = extract_wikilinks(text)
-            rel_path = str(fpath.relative_to(wiki_path))
-
-            parts = fpath.relative_to(wiki_path).parts
-            parent_folder: str | None = None
-            if len(parts) >= 3 and parts[0] in KNOWLEDGE_DIRS:
-                parent_folder = parts[1]
-
-            note = NoteInfo(
-                path=rel_path,
-                filename=fpath.stem,
-                wiki=wiki_name,
-                note_type=fm.get("type"),
-                status=fm.get("status"),
-                lifecycle=compute_lifecycle(fm),
-                superseded_by=fm.get("superseded_by"),
-                description=fm.get("description"),
-                tags=fm.get("tags", []) or [],
-                created=str(fm["created"]) if fm.get("created") else None,
-                last_reviewed=str(fm["last_reviewed"]) if fm.get("last_reviewed") else None,
-                lines=count_lines(text),
-                links_out=links,
-                parent_folder=parent_folder,
-            )
-
-            if parent_folder and (
-                fpath.stem == parent_folder or fpath.stem.startswith(parent_folder + "-")
-            ):
-                note.is_index = True
-
-            all_notes[fpath.stem] = note
-            notes_by_wiki[wiki_name].append(note)
-
-    # Phase 2: link graph
-    for name, note in all_notes.items():
-        for link in note.links_out:
-            if link in all_notes:
-                all_notes[link].links_in.append(name)
-
-    for note in all_notes.values():
-        if note.is_index and note.parent_folder:
-            # parent_folder is just the basename; require sibling notes to
-            # share the index's full directory prefix so that, e.g.,
-            # ``concepts/lore/`` and ``decisions/lore/`` don't bleed
-            # children into each other's indexes.
-            note_dir = note.path.rsplit("/", 1)[0] + "/" if "/" in note.path else ""
-            note.children = [
-                n.filename
-                for n in notes_by_wiki[note.wiki]
-                if n.parent_folder == note.parent_folder
-                and n.filename != note.filename
-                and n.path.startswith(note_dir)
-            ]
-
-    # Phase 3: checks
-    all_issues: list[Issue] = []
-    for wiki_path in wikis:
-        wiki_name = wiki_path.name
-        for note in notes_by_wiki[wiki_name]:
-            text = (wiki_path / note.path).read_text(errors="replace")
-            fm = parse_frontmatter(text)
-            note_issues: list[Issue] = []
-            note_issues.extend(check_frontmatter(note, fm, wiki_name))
-            note_issues.extend(check_staleness(note, fm, wiki_name))
-            note_issues.extend(check_description(note, fm, wiki_name))
-            all_issues.extend(note_issues)
-            note.issues = [f"{i.check}: {i.message}" for i in note_issues]
-        all_issues.extend(check_hierarchy(notes_by_wiki, wiki_name, wiki_path))
-        all_issues.extend(check_agent_guidance_sync(wiki_path, wiki_name))
-
-    scoped_wiki_names = {w.name for w in wikis}
-    all_issues.extend(check_wikilinks(all_notes, scoped_wiki_names))
-
-    # Phase 4: regenerate catalogs + index, drop legacy filenames
     if not check_only:
         for wiki_path in wikis:
-            wiki_name = wiki_path.name
-            notes = notes_by_wiki[wiki_name]
+            _regenerate_wiki(wiki_path, notes_by_wiki[wiki_path.name], all_issues)
 
-            catalog = build_catalog(wiki_name, notes, all_issues)
-            # Slice 4 of PRD #65: cache the orphan set so the read-time
-            # freshness check can do an O(1) membership test instead of
-            # walking the whole wiki on every retrieval. Stored as
-            # wiki-relative paths for portability.
-            try:
-                from lore_core.wikilinks import find_orphan_links
-
-                orphan_paths = sorted({
-                    str(p.relative_to(wiki_path))
-                    for p, _slug, _off in find_orphan_links(wiki_path)
-                })
-            except Exception:
-                # Defensive: an orphan-scan failure must not break lint.
-                orphan_paths = []
-            catalog["orphan_set"] = orphan_paths
-
-            atomic_write_text(
-                wiki_path / "_catalog.json",
-                json.dumps(catalog, indent=2, default=str),
-            )
-
-            index_txt = generate_index_txt(wiki_name, notes)
-            atomic_write_text(wiki_path / "_index.txt", index_txt)
-
-            # Clean up legacy index files. Older lore versions wrote
-            # ``_index.md`` (god-object in Obsidian's graph) and
-            # ``llms.txt`` (markdown-in-txt mirror). Both are superseded
-            # by ``_index.txt`` — remove if present so vaults self-heal
-            # on the next lint after upgrade.
-            #
-            # Also clean legacy ``threads.md`` (replaced by ``_threads.txt``)
-            # and ``sessions/_recent.md`` (replaced by the ``.txt`` sibling).
-            # These ``.md`` collections used to be wikilink-graph nodes;
-            # the ``.txt`` version is not.
-            for legacy in ("_index.md", "llms.txt", "threads.md"):
-                stale = wiki_path / legacy
-                if stale.exists():
-                    stale.unlink()
-            legacy_recent = wiki_path / "sessions" / "_recent.md"
-            if legacy_recent.exists():
-                legacy_recent.unlink()
-
-            # sessions/_recent.txt — last 20 session notes as wikilinks
-            recent_txt = generate_recent_txt(wiki_path)
-            if recent_txt is not None:
-                atomic_write_text(wiki_path / "sessions" / "_recent.txt", recent_txt)
-
-            # _concepts.txt, _decisions.txt — flat per-type collections at
-            # wiki root. ``.txt`` extension excludes them from the wikilink
-            # graph (``wikilinks.py:49`` globs ``.md`` only), so they
-            # don't become god-nodes.
-            concepts_txt = generate_type_collection_txt(
-                wiki_name, notes, note_type="concept", title="Concepts",
-            )
-            if concepts_txt is not None:
-                atomic_write_text(wiki_path / "_concepts.txt", concepts_txt)
-
-            decisions_txt = generate_type_collection_txt(
-                wiki_name, notes, note_type="decision", title="Decisions",
-            )
-            if decisions_txt is not None:
-                atomic_write_text(wiki_path / "_decisions.txt", decisions_txt)
-
-    # Phase 5: build report
-    report = {
-        "generated": datetime.now().isoformat(timespec="seconds"),
-        "schema_version": 1,
-        "wikis_scanned": [w.name for w in wikis],
-        "total_notes": len(all_notes),
-        "total_issues": len(all_issues),
-        "by_severity": {
-            "errors": sum(1 for i in all_issues if i.severity == "ERROR"),
-            "warnings": sum(1 for i in all_issues if i.severity == "WARNING"),
-            "infos": sum(1 for i in all_issues if i.severity == "INFO"),
-        },
-        "issues": [asdict(i) for i in all_issues],
-    }
+    report = _build_report(wikis, all_notes, all_issues)
 
     if json_output:
         print(

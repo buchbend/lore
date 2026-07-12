@@ -498,6 +498,279 @@ def _rename_to_topic_slug(buffer: Buffer, note_path: Path, chapter: nd.Chapter) 
     return new_path
 
 
+@dataclass(frozen=True)
+class _ApplyContext:
+    """Inputs every outcome handler in one `_apply_outcome` call shares."""
+
+    buffer: Buffer
+    note_path: Path
+    slice_from: int
+    slice_to: int
+    rb: ReplayedBuffer
+    close: bool
+    wiki_root: Path
+    lore_root: Path
+    logger: RunLogger | None
+    sidecar: Sidecar
+    facts: Any
+    linkage: Any
+    store: FlushStore
+
+
+def _apply_composed(ctx: _ApplyContext, out: FlushOutcome, compose_result, flush_rec) -> bool:
+    """Fold a composed chapter into the note.
+
+    Returns False when the append hit the disk and failed — the note must
+    not then be closed, and no further writes are attempted.
+    """
+    try:
+        out.chapter_n = nd.append_chapter(
+            ctx.note_path,
+            compose_result.chapter,
+            slice_from_turn=ctx.slice_from,
+            slice_to_turn=ctx.slice_to,
+            facts=ctx.facts,
+            linkage=ctx.linkage,
+            wiki_root=ctx.wiki_root,
+            title=_topic_title(ctx.sidecar.scope, compose_result.chapter),
+        )
+    except OSError:
+        # A note write that fails on disk is a dead-letter, not a crash:
+        # record it and stop writing to a failing filesystem.
+        ctx.store.transition(
+            flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.CHAPTER_APPEND_FAILED
+        )
+        out.status = "failed"
+        return False
+
+    if out.chapter_n == 1:
+        # The note was born with a placeholder slug; its first chapter is
+        # what finally names it.
+        note_path = _rename_to_topic_slug(ctx.buffer, ctx.note_path, compose_result.chapter)
+        out.note_path = note_path
+        out.wikilink = f"[[{note_path.stem}]]"
+    out.status = "composed"
+    _clear_after_progress(ctx.buffer, close=ctx.close)
+    ctx.store.transition(flush_rec, FlushState.PUBLISHED)
+    return True
+
+
+def _apply_empty(ctx: _ApplyContext, out: FlushOutcome, flush_rec) -> bool:
+    """Record a span the composer judged substance-free."""
+    out.status = "empty"
+    if ctx.close:
+        if _flushed_to(ctx.note_path) < 0:
+            # The whole session produced nothing of substance: the stub
+            # note is removed rather than closed empty.
+            with contextlib.suppress(OSError):
+                ctx.note_path.unlink()
+            out.discarded = True
+            out.wikilink = ""
+    else:
+        # Consume the span (buffer reset, watermark kept) so the same turns
+        # are never recomposed; the session stays live.
+        _reset_buffer_fresh(ctx.buffer)
+
+    if ctx.logger is not None:
+        ctx.logger.emit(
+            "flush-empty",
+            buffer_stem=ctx.buffer.stem,
+            transcript_id=ctx.sidecar.transcript_id,
+            discarded=out.discarded,
+        )
+    # "Nothing of substance" is a completed flush, not a failure.
+    ctx.store.transition(flush_rec, FlushState.PUBLISHED)
+    return True
+
+
+def _apply_withheld(ctx: _ApplyContext, out: FlushOutcome, compose_result, flush_rec) -> bool:
+    """Quarantine unsafe composed text and leave a marker in its place."""
+    verdict = GateResult.withheld(
+        compose_result.withheld_category,
+        compose_result.withheld_feedback,
+    )
+    w = pg.apply_withhold(
+        ctx.note_path,
+        result=verdict,
+        composed_text=compose_result.withheld_text,
+        slice_from_turn=ctx.slice_from,
+        slice_to_turn=ctx.slice_to,
+        lore_root=ctx.lore_root,
+        wiki_root=ctx.wiki_root,
+    )
+    out.chapter_n = w.chapter_n
+    out.status = "withheld"
+    _clear_after_progress(ctx.buffer, close=ctx.close)
+    if ctx.logger is not None:
+        ctx.logger.emit(
+            "flush-withheld",
+            buffer_stem=ctx.buffer.stem,
+            transcript_id=ctx.sidecar.transcript_id,
+            category=verdict.category,
+        )
+    ctx.store.transition(flush_rec, FlushState.WITHHELD)
+    return True
+
+
+def _mark_failed_span(ctx: _ApplyContext, out: FlushOutcome, reason: str) -> None:
+    """Record an uncomposable span as a marker chapter, best-effort."""
+    with contextlib.suppress(OSError):
+        out.chapter_n = nd.append_marker_chapter(
+            ctx.note_path,
+            kind=nd.MARKER_FAILED,
+            reason=reason,
+            slice_from_turn=ctx.slice_from,
+            slice_to_turn=ctx.slice_to,
+            facts=ctx.facts,
+            linkage=ctx.linkage,
+            wiki_root=ctx.wiki_root,
+        )
+
+
+def _apply_failed(ctx: _ApplyContext, out: FlushOutcome, flush_rec) -> bool:
+    """Handle a failed composition — mark at close, else retry with backoff."""
+    if ctx.close:
+        # Last chance: no retry left, so the span is recorded as it stands.
+        _mark_failed_span(ctx, out, "composition failed at session end")
+        out.status = "failed"
+        ctx.store.transition(
+            flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED
+        )
+        return True
+
+    # Bounded retry with backoff. record_failure() re-queues with a scheduled
+    # next-eligible-retry (emitting a spine event — never silent) until
+    # MAX_ATTEMPTS failures, then dead-letters.
+    flush_rec = ctx.store.record_failure(flush_rec, error_code=ErrorCode.COMPOSE_FAILED)
+    ctx.buffer.patch(
+        flush_attempts=ctx.sidecar.flush_attempts + 1,
+        last_error="compose-failed",
+        flush_requested=None,
+    )
+
+    if FlushState(flush_rec.state) is FlushState.DEAD_LETTERED:
+        # Retries exhausted: record the failed span with a marker and reset
+        # the buffer — the note stays open, one session one note.
+        _mark_failed_span(
+            ctx, out, "composition failed after retries; span recorded and buffer reset"
+        )
+        _reset_buffer_fresh(ctx.buffer)
+        out.status = "gave-up"
+        if ctx.logger is not None:
+            ctx.logger.emit(
+                "flush-gave-up",
+                buffer_stem=ctx.buffer.stem,
+                transcript_id=ctx.sidecar.transcript_id,
+                turn_count=ctx.rb.turn_count,
+                prompt_chars=ctx.rb.prompt_chars,
+            )
+        return True
+
+    out.status = "deferred"
+    if ctx.logger is not None:
+        ctx.logger.emit(
+            "flush-deferred",
+            buffer_stem=ctx.buffer.stem,
+            transcript_id=ctx.sidecar.transcript_id,
+            flush_attempts=ctx.sidecar.flush_attempts + 1,
+        )
+    return True
+
+
+def _back_off_if_covered(
+    buffer: Buffer,
+    sidecar: Sidecar,
+    note_path: Path,
+    slice_to: int,
+    out: FlushOutcome,
+) -> bool:
+    """True when a concurrent flush already published this span.
+
+    The in-place cap-trip can race the reaper: both read the same buffer and
+    one publishes while the other is still composing. The loser re-reads the
+    note watermark here and drops its own write, or the same turns land as
+    two chapters. Only meaningful mid-session — a closing flush has no peer.
+    """
+    if _flushed_to(note_path) < slice_to:
+        return False
+    out.status = "skipped"
+    out.skipped_reason = "span-already-covered"
+    if sidecar.flush_requested is not None:
+        buffer.patch(flush_requested=None)
+    return True
+
+
+def _begin_apply(
+    *,
+    buffer: Buffer,
+    note_path: Path,
+    sidecar: Sidecar,
+    slice_from: int,
+    slice_to: int,
+    rb: ReplayedBuffer,
+    close: bool,
+    wiki_root: Path,
+    lore_root: Path,
+    logger: RunLogger | None,
+) -> tuple[_ApplyContext, Any]:
+    """Open a flush record and bundle the inputs the outcome handlers share.
+
+    Returns the context plus the flush record, which every branch drives to
+    a terminal state.
+    """
+    facts = facts_from_replay(rb)
+    # The logger carries this flush's trace_id (minted at spawn, delivered via
+    # env). Stamp it onto the note's linkage and the flush record so run
+    # events, the drain event and the note all share one id.
+    trace_id = logger.trace_id if logger is not None else None
+    linkage = replace(
+        linkage_from_replay(
+            rb, cwd=sidecar.cwd, wiki_root=wiki_root, handle=sidecar.handle
+        ),
+        trace_id=trace_id,
+    )
+
+    # Track this flush as an explicit, queryable state machine: begin (queued)
+    # -> running for this attempt, then a terminal published / withheld /
+    # dead-lettered transition. The record is the source of truth for "what is
+    # in-flight right now"; every transition also emits a spine event.
+    store = FlushStore(lore_root)
+    flush_rec = store.begin(buffer.stem, wiki=sidecar.wiki, trace_id=trace_id)
+    if FlushState(flush_rec.state) is FlushState.QUEUED:
+        flush_rec = store.transition(flush_rec, FlushState.RUNNING)
+
+    ctx = _ApplyContext(
+        buffer=buffer,
+        note_path=note_path,
+        slice_from=slice_from,
+        slice_to=slice_to,
+        rb=rb,
+        close=close,
+        wiki_root=wiki_root,
+        lore_root=lore_root,
+        logger=logger,
+        sidecar=sidecar,
+        facts=facts,
+        linkage=linkage,
+        store=store,
+    )
+    return ctx, flush_rec
+
+
+def _seal_note(ctx: _ApplyContext, out: FlushOutcome) -> None:
+    """Close the note and the buffer at session end."""
+    # out.note_path, not ctx.note_path: a first chapter renames the note.
+    if not out.discarded and not nd.is_closed(out.note_path):
+        nd.close_note(
+            out.note_path,
+            facts=ctx.facts,
+            linkage=ctx.linkage,
+            wiki_root=ctx.wiki_root,
+        )
+    ctx.buffer.transition("closed")
+    out.closed = True
+
+
 def _apply_outcome(
     *,
     buffer: Buffer,
@@ -512,14 +785,12 @@ def _apply_outcome(
     lore_root: Path,
     logger: RunLogger | None,
 ) -> FlushOutcome:
+    """Fold one compose result into the note and the buffer.
+
+    Dispatches on the compose status; every branch drives the flush record
+    to a terminal state, and `close` then seals the note.
+    """
     sidecar = buffer.read_sidecar() or Sidecar(transcript_id=buffer.stem)
-    facts = facts_from_replay(rb)
-    linkage = linkage_from_replay(rb, cwd=sidecar.cwd, wiki_root=wiki_root, handle=sidecar.handle)
-    # The logger carries this flush's trace_id (minted at spawn, delivered via
-    # env). Stamp it onto the note's linkage and the flush record so run
-    # events, the drain event and the note all share one id (#188).
-    trace_id = logger.trace_id if logger is not None else None
-    linkage = replace(linkage, trace_id=trace_id)
     out = FlushOutcome(
         buffer_stem=buffer.stem,
         state_before=state_before,
@@ -528,167 +799,34 @@ def _apply_outcome(
     )
     out.attempts = getattr(compose_result, "attempts", 0)
 
-    # Guard against a concurrent flush having already covered this span
-    # (in-place cap-trip racing the reaper): re-read the note watermark.
-    if _flushed_to(note_path) >= slice_to and not close:
-        out.status = "skipped"
-        out.skipped_reason = "span-already-covered"
-        if sidecar.flush_requested is not None:
-            buffer.patch(flush_requested=None)
+    if not close and _back_off_if_covered(buffer, sidecar, note_path, slice_to, out):
         return out
 
+    ctx, flush_rec = _begin_apply(
+        buffer=buffer,
+        note_path=note_path,
+        sidecar=sidecar,
+        slice_from=slice_from,
+        slice_to=slice_to,
+        rb=rb,
+        close=close,
+        wiki_root=wiki_root,
+        lore_root=lore_root,
+        logger=logger,
+    )
+
     status = compose_result.status if compose_result is not None else ComposeStatus.FAILED
-
-    # Track this flush as an explicit, queryable state machine: begin (queued)
-    # -> running for this attempt, then a terminal published / withheld /
-    # dead-lettered transition below. The record is the source of truth for
-    # "what is in-flight right now"; every transition also emits a spine event.
-    store = FlushStore(lore_root)
-    flush_rec = store.begin(buffer.stem, wiki=sidecar.wiki, trace_id=trace_id)
-    if FlushState(flush_rec.state) is FlushState.QUEUED:
-        flush_rec = store.transition(flush_rec, FlushState.RUNNING)
-
     if status is ComposeStatus.COMPOSED:
-        try:
-            out.chapter_n = nd.append_chapter(
-                note_path,
-                compose_result.chapter,
-                slice_from_turn=slice_from,
-                slice_to_turn=slice_to,
-                facts=facts,
-                linkage=linkage,
-                wiki_root=wiki_root,
-                title=_topic_title(sidecar.scope, compose_result.chapter),
-            )
-        except OSError:
-            # A note write that fails on disk is a dead-letter, not a crash:
-            # record it and stop writing to a failing filesystem.
-            store.transition(
-                flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.CHAPTER_APPEND_FAILED
-            )
-            out.status = "failed"
-            return out
-        if out.chapter_n == 1:
-            note_path = _rename_to_topic_slug(buffer, note_path, compose_result.chapter)
-            out.note_path = note_path
-            out.wikilink = f"[[{note_path.stem}]]"
-        out.status = "composed"
-        _clear_after_progress(buffer, close=close)
-        store.transition(flush_rec, FlushState.PUBLISHED)
+        sealable = _apply_composed(ctx, out, compose_result, flush_rec)
     elif status is ComposeStatus.EMPTY:
-        out.status = "empty"
-        if close:
-            if _flushed_to(note_path) < 0:
-                # The whole session produced nothing of substance: the
-                # stub note is removed rather than closed empty.
-                with contextlib.suppress(OSError):
-                    note_path.unlink()
-                out.discarded = True
-                out.wikilink = ""
-        else:
-            # The span was judged substance-free: consume it (buffer
-            # reset, watermark kept) so the same turns are never
-            # recomposed; the session stays live.
-            _reset_buffer_fresh(buffer)
-        if logger is not None:
-            logger.emit(
-                "flush-empty",
-                buffer_stem=buffer.stem,
-                transcript_id=sidecar.transcript_id,
-                discarded=out.discarded,
-            )
-        # "Nothing of substance" is a completed flush, not a failure.
-        store.transition(flush_rec, FlushState.PUBLISHED)
+        sealable = _apply_empty(ctx, out, flush_rec)
     elif status is ComposeStatus.WITHHELD:
-        verdict = GateResult.withheld(
-            compose_result.withheld_category,
-            compose_result.withheld_feedback,
-        )
-        w = pg.apply_withhold(
-            note_path,
-            result=verdict,
-            composed_text=compose_result.withheld_text,
-            slice_from_turn=slice_from,
-            slice_to_turn=slice_to,
-            lore_root=lore_root,
-            wiki_root=wiki_root,
-        )
-        out.chapter_n = w.chapter_n
-        out.status = "withheld"
-        _clear_after_progress(buffer, close=close)
-        if logger is not None:
-            logger.emit(
-                "flush-withheld",
-                buffer_stem=buffer.stem,
-                transcript_id=sidecar.transcript_id,
-                category=verdict.category,
-            )
-        store.transition(flush_rec, FlushState.WITHHELD)
-    else:  # FAILED
-        if close:
-            with contextlib.suppress(OSError):
-                out.chapter_n = nd.append_marker_chapter(
-                    note_path,
-                    kind=nd.MARKER_FAILED,
-                    reason="composition failed at session end",
-                    slice_from_turn=slice_from,
-                    slice_to_turn=slice_to,
-                    facts=facts,
-                    linkage=linkage,
-                    wiki_root=wiki_root,
-                )
-            out.status = "failed"
-            store.transition(flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED)
-        else:
-            # Bounded retry with backoff replaces the old silent-defer /
-            # give-up-at-2x-cap heuristic. record_failure() re-queues with a
-            # scheduled next-eligible-retry (emitting a spine event — never
-            # silent) until MAX_ATTEMPTS failures, then dead-letters.
-            flush_rec = store.record_failure(flush_rec, error_code=ErrorCode.COMPOSE_FAILED)
-            buffer.patch(
-                flush_attempts=sidecar.flush_attempts + 1,
-                last_error="compose-failed",
-                flush_requested=None,
-            )
-            if FlushState(flush_rec.state) is FlushState.DEAD_LETTERED:
-                # Retries exhausted: record the failed span with a marker and
-                # reset the buffer — the note stays open, one session one note.
-                with contextlib.suppress(OSError):
-                    out.chapter_n = nd.append_marker_chapter(
-                        note_path,
-                        kind=nd.MARKER_FAILED,
-                        reason="composition failed after retries; span recorded and buffer reset",
-                        slice_from_turn=slice_from,
-                        slice_to_turn=slice_to,
-                        facts=facts,
-                        linkage=linkage,
-                        wiki_root=wiki_root,
-                    )
-                _reset_buffer_fresh(buffer)
-                out.status = "gave-up"
-                if logger is not None:
-                    logger.emit(
-                        "flush-gave-up",
-                        buffer_stem=buffer.stem,
-                        transcript_id=sidecar.transcript_id,
-                        turn_count=rb.turn_count,
-                        prompt_chars=rb.prompt_chars,
-                    )
-            else:
-                out.status = "deferred"
-                if logger is not None:
-                    logger.emit(
-                        "flush-deferred",
-                        buffer_stem=buffer.stem,
-                        transcript_id=sidecar.transcript_id,
-                        flush_attempts=sidecar.flush_attempts + 1,
-                    )
+        sealable = _apply_withheld(ctx, out, compose_result, flush_rec)
+    else:
+        sealable = _apply_failed(ctx, out, flush_rec)
 
-    if close:
-        if not out.discarded and not nd.is_closed(note_path):
-            nd.close_note(note_path, facts=facts, linkage=linkage, wiki_root=wiki_root)
-        buffer.transition("closed")
-        out.closed = True
+    if sealable and close:
+        _seal_note(ctx, out)
     return out
 
 
