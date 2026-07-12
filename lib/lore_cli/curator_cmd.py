@@ -67,7 +67,7 @@ def _discover_wikis(lore_root: Path) -> list[str]:
 
 
 def _make_live_renderer(con: Console):
-    """Return an on_record callback that prints the same format as ``lore runs tail``."""
+    """Return an on_record callback that prints the flat run-log format."""
     icons = pick_icon_set()
     use_color = should_use_color()
 

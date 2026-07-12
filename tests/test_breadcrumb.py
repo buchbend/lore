@@ -352,7 +352,7 @@ def test_banner_last_run_error_prefix(tmp_path: Path) -> None:
     assert banner is not None
     assert banner.startswith("lore!:")
     assert "2 errors" in banner
-    assert "errrun" in banner
+    assert "lore trace last" in banner
 
 
 # ---------------------------------------------------------------------------

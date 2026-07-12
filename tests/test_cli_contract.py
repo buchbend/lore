@@ -80,17 +80,17 @@ def test_main_dispatcher_only_mounts() -> None:
     )
 
 
-def test_drain_cmd_removed_deprecated_verbs_still_mounted() -> None:
-    """`lore drain` was removed outright (#195) — vestigial once #188 moved
-    drain-event emission onto the spine, where the janitor already
-    retention-manages it. Guards against the module or its mount creeping
-    back, and that the four *aliased* verbs (still functional during their
-    deprecation window) weren't accidentally dropped in the same change."""
+def test_drain_cmd_and_deprecated_verbs_removed() -> None:
+    """`lore drain` was removed outright — vestigial once drain-event
+    emission moved onto the spine, where the janitor already
+    retention-manages it. The four aliased verbs (`log`/`news`/`runs`/
+    `proc`) have since completed their deprecation window and were
+    removed too, in favor of `lore trace` / `lore status`. Guards
+    against any of the five modules or mounts creeping back."""
     assert not (CLI_DIR / "drain_cmd.py").exists()
     text = (CLI_DIR / "__main__.py").read_text()
     assert "drain_cmd" not in text
     assert 'name="drain"' not in text
     for verb in ("log", "news", "runs", "proc"):
-        assert f'name="{verb}"' in text, (
-            f"lore {verb} must stay mounted during its deprecation window"
-        )
+        assert not (CLI_DIR / f"{verb}_cmd.py").exists(), f"{verb}_cmd.py should be deleted"
+        assert f'name="{verb}"' not in text, f"lore {verb} should no longer be mounted"

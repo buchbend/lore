@@ -1,4 +1,4 @@
-"""End-to-end: hook → curator → run-log → lore runs show."""
+"""End-to-end: hook → curator → run-log on the spine."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from lore_adapters import register
 from lore_adapters.registry import _REGISTRY
@@ -101,8 +100,8 @@ class FakeAnthropicNoteworthyTrue:
 # ---------------------------------------------------------------------------
 
 
-def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
-    """Fire a hook + run curator synchronously + assert `lore runs show latest` works."""
+def test_e2e_capture_to_curator_run(tmp_path: Path, monkeypatch) -> None:
+    """Fire a hook + run curator synchronously + assert the run lands on the spine."""
 
     # ------------------------------------------------------------------
     # Step 1 — set up attached wiki + project directory
@@ -204,21 +203,6 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
         session_notes = list((wiki_dir / "sessions").rglob("*.md"))
         assert len(session_notes) == 1, (
             f"Expected 1 session note, got {[p.name for p in session_notes]}"
-        )
-
-        # ------------------------------------------------------------------
-        # Step 7 — invoke `lore runs show latest` via CliRunner
-        # ------------------------------------------------------------------
-        from lore_cli import runs_cmd
-
-        monkeypatch.setattr(runs_cmd, "_get_lore_root", lambda: lore_root)
-
-        runner = CliRunner()
-        result = runner.invoke(runs_cmd.app, ["show", "latest"])
-        assert result.exit_code == 0, f"lore runs show latest failed:\n{result.output}"
-        # Output should mention the run; basic sanity check
-        assert "trigger" in result.output.lower() or "start" in result.output.lower(), (
-            f"Expected 'trigger' or 'start' in output:\n{result.output}"
         )
 
     finally:
