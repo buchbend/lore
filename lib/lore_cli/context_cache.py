@@ -85,7 +85,7 @@ def _proc_cmdline(pid: int) -> str:
 def _claude_code_pid() -> int | None:
     """Walk process ancestry to find the Claude Code process PID.
 
-    Works from any descendant (the hook process, or `lore hook why`
+    Works from any descendant (the hook process, or `lore hook context-log`
     invoked via the Bash tool). Returns None if /proc is unavailable or
     no Claude Code ancestor is found.
 

@@ -1,4 +1,4 @@
-"""Tests for the one-shot ``lore curator backfill-slugs`` pass."""
+"""Tests for the one-shot ``lore migrate slugs`` pass."""
 from __future__ import annotations
 
 from pathlib import Path
