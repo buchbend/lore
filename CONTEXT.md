@@ -70,7 +70,7 @@ frontmatter is re-narrated in the body.
 
 Exact title and body rendering shape: `CONTEXT-FORMAT.md`.
 
-## Writing a note — buffer, flush, compose
+## Writing a note — buffer, flush, extract
 
 A session's turns accumulate in a per-transcript **buffer**
 (`lore_curator/buffer_store.py`), driven by Curator A's heartbeat
@@ -101,28 +101,30 @@ body is rendered from the fact ledger by code, and each fact's refs are
 verified (`lore_core/ref_verify.py`) so a line's authority is code-stamped,
 never model-authored.
 
-Flush triggers (unchanged, buffer cap 120 turns / 240K chars,
-pre-compact, session-end) fire either an **in-place** flush (buffer
-stays open, note keeps growing — cap-trip, pre-compact) or a
-**close** flush (buffer archives, note closes — session-end, reaper,
-sweep). See `FLUSH_DEFAULT_CAP_TURNS` / `FLUSH_DEFAULT_CAP_CHARS` in
-`chapter_flush.py`; per-wiki overrides live in `.lore-wiki.yml` under
+The only flush is the close flush (buffer archives, note closes):
+**session-end**, the reaper, and the startup sweep. Cap-trip (buffer cap
+120 turns / 240K chars) and pre-compact **bookkeep only** — they record
+the event and leave the buffer accumulating, so the close path still
+reads the session whole. `capture_routing.CLOSE_TRIGGERS` is the single
+authority for which trigger flushes. Cap defaults live on `WikiConfig`;
+per-wiki overrides live in `.lore-wiki.yml` under
 `curator.synthesis_buffer_cap_*`.
 
-### Failure and give-up semantics
+### Failure semantics
 
-- **Mid-session failure is silent.** No marker while a retry chance
-  remains — the buffer keeps accumulating and the next trigger retries
-  with the grown slice (`flush_attempts` counts the misses).
-- **Give-up bound.** A buffer with a prior failed attempt that grows to
-  2x the cap gets a deterministic *failed* marker chapter for that span
-  and a fresh buffer — the note stays open, one session stays one note.
-- **Session-end failure** writes the failed marker and closes the note
-  regardless.
+- **A chunk that cannot be extracted** becomes a *failed* marker for its
+  span, which the render reads back as a **coverage gap** — one bad chunk
+  never costs the rest of the session.
+- **A chunk the gate withholds** becomes a *withheld* marker plus a
+  quarantine entry. The extractor retries against the gate internally, so
+  a withhold that reaches the flush is terminal.
+- **Every non-`facts` chapter is a coverage gap.** A note whose ledger the
+  facts do not cover in full says so; a partial reading never presents
+  itself as complete.
 - **Startup sweep.** Lore acts as a singleton at start (global lock,
   `lore_core.lockfile.curator_lock`): `chapter_flush.startup_sweep`
   finds buffers whose owning process is provably dead, gives each one
-  compose attempt, and closes its note either way (composed, withheld,
+  extraction attempt, and closes its note either way (facts, withheld,
   or failed marker) — a crashed session never leaves an open note
   behind. `lore curator sweep` runs this by hand.
 

@@ -45,7 +45,6 @@ from lore_core.publish_gate import Gate, PassThroughGate
 from lore_curator.chunker import Chunk
 
 if TYPE_CHECKING:
-
     from lore_core.run_log import RunLogger
     from lore_core.types import Turn
 

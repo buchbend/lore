@@ -50,7 +50,6 @@ __all__ = [
     "PassThroughGate",
     "PublishGate",
     "Detector",
-
     "LlmPiiDetector",
     "WithholdOutcome",
     "has_secret",
@@ -219,7 +218,6 @@ class PassThroughGate:
 
 @runtime_checkable
 class Detector(Protocol):
-
     """A fuzzy PII/secret detector.
 
     ``detect`` returns a category string on a hit (e.g. ``"pii"`` or

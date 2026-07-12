@@ -195,7 +195,6 @@ def test_an_untracked_file_in_the_repo_is_unchecked(repo: Path):
     assert verify_refs([ref], repo_root=repo)[ref] == UNCHECKED
 
 
-
 # ---------------------------------------------------------------------------
 # PRs and issues — best-effort via gh, never promoted on failure
 # ---------------------------------------------------------------------------

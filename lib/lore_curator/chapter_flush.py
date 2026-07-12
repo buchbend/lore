@@ -39,6 +39,7 @@ No note is better than a noise note
 Flush triggers live elsewhere; this module consumes a request and drives the
 segmenter + extractor + gate + note.
 """
+
 from __future__ import annotations
 
 import contextlib

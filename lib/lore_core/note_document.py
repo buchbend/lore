@@ -560,7 +560,6 @@ _DEFAULT_GAP_REASON = "no facts were extracted from this span"
 
 
 def _gap_line(from_turn: int, to_turn: int, reason: str) -> str:
-
     """A failed chapter, rendered as what it costs the reader: a coverage gap."""
     detail = _neutralize_marker(reason.strip().rstrip("."))
     tail = f" ({detail})" if detail else ""
@@ -649,7 +648,6 @@ def _coverage_gaps(fm: dict[str, Any]) -> list[tuple[int, int, str]]:
         reason = str(c.get("reason") or "") or _DEFAULT_GAP_REASON
         gaps.append((from_turn, to_turn, reason))
     return gaps
-
 
 
 # ---------------------------------------------------------------------------

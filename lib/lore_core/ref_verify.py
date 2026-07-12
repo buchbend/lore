@@ -142,7 +142,6 @@ def _verify_file(value: str, files: Sequence[str], repo_root: Path | None) -> st
     return VERIFIED if code == 0 else UNCHECKED
 
 
-
 def _verify_number(kind: str, value: str, repo_root: Path | None, repo: str) -> str:
     """PRs and issues: ``gh`` is the only oracle, best-effort.
 
