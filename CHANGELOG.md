@@ -8,6 +8,87 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.63.0] - 2026-07-12
+
+Typed-fact session notes (PRD 0008, epic #282). All LLM work moves to session
+end, and everything after extraction is deterministic. Notes used to be composed
+*forward*, per flush, as prose chapters — so they recorded the **working** rather
+than the **work**: process narration, interim states that later turned out false,
+and model-authored phrasing that the next session ingested as authority. That last
+one is the real hazard: circular context poisoning.
+
+### Added
+
+- **Logical chunker** (`lore_curator.chunker`) — at session end a cheap model reads
+  a collapsed transcript view and returns **turn indices only**. Deterministic lints
+  normalize them (monotone, in range, size band); oversized transcripts are windowed
+  and stitched; any model failure degrades to fixed-size windows. The model's entire
+  output surface is a list of integers — `Chunk` is a frozen two-int dataclass, with
+  nowhere to put prose.
+- **Typed-fact extraction** (`lore_curator.fact_extract`) — one call per chunk emits
+  `Fact(kind, text, anchor_turn, thread, refs, why, quote)`, `kind` being one of
+  `progress | done | decision | finding | open`. Three deterministic lints
+  (anchor-in-chunk, kind-enum, decision-without-why) each earn exactly one corrective
+  retry. The tool schema has **no quote field**: quotes are code-attached from the
+  anchor turn, so the model cannot author the verbatim evidence for its own claim.
+  Terminal-state rule — commits, PRs and verified-green states are `done`; edits en
+  route are `progress`.
+- **Deterministic note renderer** (`lore_core.note_document.render_note`) — the note
+  body is written **once**, at close, as a pure function of the ledger: headline, then
+  **Done**, **Decisions recorded**, **Findings**, **Open**. Items sort by anchor, empty
+  sections drop. A `progress` fact is suppressed when its thread carries a later
+  terminal fact — at render time only; the fact stays in the ledger. Failed chunks and
+  any non-`facts` chapter render as one-line coverage gaps, so a partial note can never
+  present itself as complete. No LLM call anywhere in the render path.
+- **Ref verification + epistemic stamping** (`lore_core.ref_verify`) — commits, tags and
+  files are verified against local git and the session's frontmatter facts; PRs and
+  issues best-effort via `gh`, stamped `(unchecked)` when unreachable and **never**
+  silently promoted. Phrasing templates are keyed on `(kind, verification)` and owned by
+  code, so a hallucinated ref **demotes to hedged phrasing instead of acquiring
+  authority**. A ref-less `decision` routes to **Open** as "Agreed in discussion,
+  recorded nowhere". Offline never fails a render.
+
+### Changed
+
+- **`session-end` is now the only flush.** `capture_routing.CLOSE_TRIGGERS` is the single
+  authority for which trigger flushes. Cap-trip and pre-compact **bookkeep only** — the
+  buffer keeps accumulating, no chapter is appended, no model is called — so the close
+  path reads the session whole. Session-end's unconditional drain is preserved: a buffer
+  that trips the cap and keeps growing still drains the entire session at close.
+- Nothing is written while a session runs. The note appears once, complete.
+
+### Removed
+
+- **`lore_curator.chapter_compose`** and the whole mid-session prose path (`synth_in_place`,
+  `note_so_far`, `_slice_text`, `_apply_composed`, `_apply_withheld`). Forward composition
+  is gone; notes are rendered from the ledger.
+
+### Security
+
+- Model and transcript content reaching a note body is marker-neutralized. A literal
+  `<!-- lore:fact ... -->` string in fact text, `why`, a quote, a ref value, a prose
+  chapter body or the headline would otherwise parse back as a **forged fact** carrying an
+  attacker-chosen `kind`/`refs` and a **self-authored quote**, and an unclosed opener would
+  **swallow the next legitimate fact**. Reachable with no model complicity, since the
+  extraction view carries tool payloads. `_neutralize_marker` escapes the opener on every
+  body-reaching path.
+- A hallucinated `file` ref can no longer buy authority. Verification now requires presence
+  in the session's captured files, or a path resolving inside the repo that is a regular file
+  **and** tracked by git; traversal and directories are rejected. Previously any path that
+  merely existed on the machine — `/etc/passwd`, `../../../etc/hosts`, `/tmp` — verified.
+- PR and issue existence is checked with `gh ... --json state`, never `--json number`: `gh`
+  answers `number` from the argument itself without contacting GitHub, so every fabricated PR
+  number used to earn a check mark. Issue numbers scraped from agent-authored commit messages
+  are no longer treated as existence evidence — `gh` is the sole oracle, and `UNCHECKED` is
+  the correct degradation.
+
+### Decisions
+
+- **ADR 0003** — the note body is a deterministic render of the ledger. Append-only applies to
+  the ledger; the rendered body is derived state (extends ADR 0001's carve-out).
+- **ADR 0004** — authority phrasing is code-stamped from verifiable refs, never model-authored.
+  The context-poisoning defense that constrains all future note features.
+
 ## [0.62.0] - 2026-07-12
 
 Substrate trim (PRD 0007): folds redundant CLI groups into their parents and
