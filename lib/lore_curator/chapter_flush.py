@@ -634,6 +634,8 @@ def _apply_extracted(
     it could not be extracted at all — the last of which the render reads back
     as a coverage gap. The body is then rewritten from the whole ledger, so a
     reopened session re-renders instead of stacking a second reading on top.
+    The render verifies each fact's refs and stamps the phrasing accordingly —
+    the last step of the pipeline, and the first one with no model in it.
     """
     # Read before writing: an unnamed note is one this flush gets to name.
     names_the_note = _flushed_to(ctx.note_path) < 0
@@ -694,6 +696,10 @@ def _apply_extracted(
         headline=headline,
         title=_scope_title(ctx.sidecar.scope, headline) if names_the_note else None,
         wiki_root=ctx.wiki_root,
+        # The session's own working directory is the repo its facts point at, so
+        # it is where their refs are checked. Without it the render still writes,
+        # with every ref unchecked (ADR 0004).
+        repo_root=Path(ctx.sidecar.cwd) if ctx.sidecar.cwd else None,
     )
     if names_the_note and headline:
         note_path = _rename_to_topic_slug(ctx.buffer, ctx.note_path, headline)

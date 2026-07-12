@@ -325,8 +325,8 @@ def test_resumed_session_reattaches_and_appends_to_same_note(tmp_path):
     assert chapters[1]["from_turn"] == 13 and chapters[1]["to_turn"] == 20
     # One rendered reading over the whole ledger, rewritten by the second close.
     assert view.body.count("## Done") == 1
-    assert "- The publish gate landed. @4" in view.body
-    assert "- The essence rewrite landed. @15" in view.body
+    assert "The publish gate landed. @4" in view.body
+    assert "The essence rewrite landed. @15" in view.body
     assert view.closed is True
 
 
