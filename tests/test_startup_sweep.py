@@ -162,7 +162,7 @@ def test_sweep_extracts_and_closes_dead_session(tmp_path):
     view = nd.read_note(note_path)
     assert view.closed is True
     assert len([c for c in view.chapters if c.get("kind") == "facts"]) == 1
-    assert "- The crash is fixed. @2" in view.body
+    assert "The crash is fixed. @2" in view.body
     assert not buf.sidecar_path.exists()  # moved to _done/
     assert (tmp_path / ".lore" / "buffers" / "_done" / f"{buf.stem}.state.json").exists()
 

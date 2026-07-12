@@ -16,6 +16,15 @@ the reading is written once at close and rewritten if a reopened session
 grows the ledger. No LLM runs in that path: section order, anchor sort,
 and thread suppression are code.
 
+So is every word that carries epistemic weight (see ``docs/adr/0004``).
+A fact's refs are verified against git, the filesystem and ``gh``
+(:mod:`lore_core.ref_verify`), and the phrasing template is chosen by code
+from ``(kind, verification)``: an artifact-backed fact states itself
+plainly and shows its pointer, an unverifiable one is stamped
+``(unchecked)``, a ref that does not exist demotes its line, and a fact
+with no refs at all is attributed to the session that said it. The model
+authors ``text`` and ``why``, never the words around them.
+
 *Marker chapters* record failed and withheld chapters in deterministic
 text — no LLM decides their wording.
 
@@ -50,6 +59,7 @@ import yaml
 
 from lore_core.io import atomic_write_text
 from lore_core.linkage import Linkage
+from lore_core.ref_verify import MISSING, UNCHECKED, VERIFIED, verify_refs
 from lore_core.schema import parse_frontmatter, strip_frontmatter
 
 __all__ = [
@@ -63,6 +73,7 @@ __all__ = [
     "Fact",
     "FACT_KINDS",
     "REF_TYPES",
+    "NO_REFS",
     "SessionFacts",
     "Linkage",
     "NoteView",
@@ -362,6 +373,10 @@ def _render_topic_chapter(n: int, chapter: Chapter, from_turn: int, to_turn: int
 
 def _render_marker_chapter(n: int, kind: str, reason: str, from_turn: int, to_turn: int) -> str:
     span = f"@{from_turn}–@{to_turn}"
+    # Every call site passes a code-owned literal today. Neutralized anyway:
+    # the day a reason carries an upstream error string (a tool payload, a
+    # model message), a raw comment opener here would forge a fact.
+    reason = _neutralize_marker(reason)
     if kind == MARKER_WITHHELD:
         text = (
             f"> **Withheld chapter.** A chapter covering turns {span} was"
@@ -431,10 +446,105 @@ def _suppressed(facts: list[Fact]) -> set[int]:
     }
 
 
-def _fact_line(fact: Fact) -> str:
-    line = _neutralize_marker(fact.text.strip())
-    if fact.why.strip():
-        line = f"{line} Why: {_neutralize_marker(fact.why.strip())}"
+# ---------------------------------------------------------------------------
+# Epistemic stamping (see docs/adr/0004)
+#
+# The phrasing templates are code's, keyed on (kind, verification). The model
+# contributes `text` and `why` and nothing else, so no phrasing it emits can
+# claim more authority than its refs support: a verified ref buys a plain
+# statement plus its pointer, an unverifiable one is stamped `(unchecked)`, a
+# ref that does not exist demotes the whole line, and a fact with no ref is
+# attributed to the session that said it.
+# ---------------------------------------------------------------------------
+
+# A fact with no refs at all. Not a verdict `ref_verify` can return — there was
+# nothing to verify — but the fourth column of the template matrix.
+NO_REFS = "no_refs"
+
+# Session-attributed, stative phrasing for a fact no artifact backs. A ref-less
+# `decision` is the most poison-prone claim in the system (a musing an
+# extraction over-read as settled), so its template says exactly that, and
+# `_section_for` routes it under Open rather than Decisions recorded.
+_NO_REF_LEADS = {
+    "done": "Reported done in session, recorded nowhere:",
+    "progress": "Reported in session:",
+    "decision": "Agreed in discussion, recorded nowhere:",
+    "finding": "Observed in session:",
+    "open": "Left open in session:",
+}
+
+# A ref that was checked and is not there. Positive evidence ran out, so the
+# claim is handed back to the session that made it.
+_MISSING_LEAD = "Claimed in session, ref not found:"
+
+_STAMPS = {VERIFIED: "✓", UNCHECKED: "(unchecked)", MISSING: "(not found)"}
+
+
+def _verdict_of(fact: Fact, verdicts: dict[tuple[str, str], str]) -> str:
+    """A fact's verification: its weakest ref, or ``NO_REFS`` when it has none.
+
+    A ref the verifier said nothing about counts as ``UNCHECKED``. Absence of a
+    verdict is not a pass — that default is what makes a forgotten or crashed
+    verification degrade phrasing instead of forging a check mark.
+    """
+    if not fact.refs:
+        return NO_REFS
+    seen = [verdicts.get((r.type, r.value), UNCHECKED) for r in fact.refs]
+    for verdict in (MISSING, UNCHECKED):
+        if verdict in seen:
+            return verdict
+    return VERIFIED
+
+
+def _lead(kind: str, verification: str) -> str:
+    """The code-owned opening words for a ``(kind, verification)`` cell.
+
+    Empty for a verified or unchecked fact: it states itself, and its pointer
+    (stamped per ref) carries the epistemic load.
+    """
+    if verification == MISSING:
+        return _MISSING_LEAD
+    if verification == NO_REFS:
+        return _NO_REF_LEADS.get(kind, _NO_REF_LEADS["progress"])
+    return ""
+
+
+def _ref_clause(refs: list[Ref], verdicts: dict[tuple[str, str], str]) -> str:
+    """The fact's pointers, each carrying its own verdict's stamp.
+
+    Ref values are model-authored and land in the body, so they are neutralized
+    like any other transcript-derived string, and folded to one line — a fact is
+    one line, and a value with a newline in it would not be.
+    """
+    out = []
+    for ref in refs:
+        value = _neutralize_marker(" ".join(ref.value.split()))
+        stamp = _STAMPS[verdicts.get((ref.type, ref.value), UNCHECKED)]
+        out.append(f"{ref.type} {value} {stamp}".strip())
+    return ", ".join(out)
+
+
+def _section_for(fact: Fact, verification: str) -> str | None:
+    """Where the fact reads. A decision no artifact records is not a decision."""
+    if fact.kind == "decision" and verification == NO_REFS:
+        return "Open"
+    return _SECTION_OF.get(fact.kind)
+
+
+def _fact_line(fact: Fact, verification: str, verdicts: dict[tuple[str, str], str]) -> str:
+    text = _neutralize_marker(fact.text.strip())
+    why = _neutralize_marker(fact.why.strip())
+    lead = _lead(fact.kind, verification)
+    line = f"{lead} {text}" if lead else text
+    if why:
+        # The ref-less decision reads as one sentence — the claim and the reason
+        # it was believed, with nothing between them that could look like a
+        # citation. Every other line keeps `why` as an aside before its refs.
+        sep = " — " if lead == _NO_REF_LEADS["decision"] else " Why: "
+        line = f"{line}{sep}{why}"
+    clause = _ref_clause(fact.refs, verdicts)
+    if clause:
+        line = f"{line} — {clause}"
     return f"- {line} @{int(fact.anchor_turn)}"
 
 
@@ -453,25 +563,34 @@ def render_note_body(
     *,
     headline: str = "",
     gaps: list[tuple[int, int, str]] | None = None,
+    verdicts: dict[tuple[str, str], str] | None = None,
 ) -> str:
     """Render the typed ledger to the note a reader reads. Pure and total.
 
     Sections in fixed order, items sorted by anchor, empty sections dropped,
     one anchor at each line's end. ``gaps`` are the ``(from, to, reason)``
     spans of failed chapters, which read as coverage gaps under Open. Every
-    string that lands in the body is neutralized: text, why, headline and
-    reason all carry content the session did not author.
+    string that lands in the body is neutralized: text, why, headline, reason
+    and ref values all carry content the session did not author.
 
-    The same ledger renders to the same bytes, always — that is what lets the
-    body be thrown away and rebuilt at every close.
+    ``verdicts`` maps a ``(type, value)`` ref to what
+    :func:`lore_core.ref_verify.verify_refs` could establish about it, and it
+    picks each line's phrasing template. Omitting it renders every ref
+    ``(unchecked)`` — the safe direction, and the one an offline or failed
+    verification takes.
+
+    The same ledger and verdicts render to the same bytes, always — that is what
+    lets the body be thrown away and rebuilt at every close.
     """
+    verdicts = verdicts or {}
     dropped = _suppressed(facts)
     sections: dict[str, list[tuple[int, int, str]]] = {name: [] for name, _ in _SECTIONS}
     for pos, fact in enumerate(facts):
-        section = _SECTION_OF.get(fact.kind)
+        verification = _verdict_of(fact, verdicts)
+        section = _section_for(fact, verification)
         if section is None or pos in dropped:
             continue  # an unknown kind stays in the ledger; the body skips it
-        sections[section].append((fact.anchor_turn, pos, _fact_line(fact)))
+        sections[section].append((fact.anchor_turn, pos, _fact_line(fact, verification, verdicts)))
     for i, (from_turn, to_turn, reason) in enumerate(gaps or []):
         sections["Open"].append((from_turn, len(facts) + i, _gap_line(from_turn, to_turn, reason)))
 
@@ -786,19 +905,52 @@ def append_marker_chapter(
     return n
 
 
+def _verdicts_for(
+    facts: list[Fact], fm: dict[str, Any], repo_root: Path | None
+) -> dict[tuple[str, str], str]:
+    """Verify every distinct ref in the ledger against the world, once.
+
+    The session's own frontmatter facts are the offline evidence; ``repo_root``
+    (the cwd the session ran in) opens the local git and filesystem checks, and
+    the recorded repo lets ``gh`` be asked about PRs and issues. None of it is
+    required: whatever cannot be checked renders ``(unchecked)``.
+    """
+    refs = {(r.type, r.value) for f in facts for r in f.refs}
+    if not refs:
+        return {}
+    linkage = fm.get("linkage")
+    linkage = linkage if isinstance(linkage, dict) else {}
+    return verify_refs(
+        sorted(refs),
+        commits=[str(c) for c in fm.get("commits") or []],
+        prs=[str(p) for p in fm.get("prs") or []],
+        issues=[str(i) for i in linkage.get("issues") or []],
+        files=[str(f) for f in [*(fm.get("files_modified") or []), *(fm.get("files_read") or [])]],
+        repo_root=repo_root,
+        repo=str(linkage.get("repo") or ""),
+    )
+
+
 def render_note(
     path: Path,
     *,
     headline: str | None = None,
     title: str | None = None,
     wiki_root: Path | None = None,
+    repo_root: Path | None = None,
 ) -> None:
-    """Rewrite the note's derived body from its ledger. No LLM, no I/O but this.
+    """Rewrite the note's derived body from its ledger. No LLM in this path.
 
     The file becomes disclaimer + rendered note + ledger. Append-only governs
     the LEDGER; the body above it is derived state, thrown away and recomputed
     here — so a reopened session's later facts re-render the whole note instead
     of stranding a stale reading of it above them (extends ADR 0001).
+
+    Each fact's refs are verified first (git, the filesystem, ``gh``) and the
+    verdicts choose the phrasing (ADR 0004). ``repo_root`` is the session's
+    working directory — without it nothing local is consulted, so nothing is
+    promoted. Verification never raises and never blocks the render: an offline
+    machine writes the same note with hedged lines.
 
     ``headline`` is recorded in frontmatter so a later re-render reproduces the
     same note without a model; passing ``None`` keeps the one already there.
@@ -814,10 +966,12 @@ def render_note(
         fm["title"] = title
 
     ledger = _ledger_of(body)
+    facts = parse_facts(ledger)
     rendered = render_note_body(
-        parse_facts(ledger),
+        facts,
         headline=str(fm.get("headline") or ""),
         gaps=_coverage_gaps(fm),
+        verdicts=_verdicts_for(facts, fm, repo_root),
     )
     parts = [DISCLAIMER]
     if rendered:

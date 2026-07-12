@@ -9,6 +9,7 @@ harness shape). The publish gate is the real deterministic gate.
 from __future__ import annotations
 
 import secrets as _secrets
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -738,12 +739,21 @@ def test_concurrent_flush_covering_the_span_is_skipped(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _fact_item(kind: str, text: str, anchor: int, thread: str = "", why: str = "") -> dict:
+def _fact_item(
+    kind: str,
+    text: str,
+    anchor: int,
+    thread: str = "",
+    why: str = "",
+    refs: list[dict] | None = None,
+) -> dict:
     item: dict[str, Any] = {"kind": kind, "text": text, "anchor": anchor}
     if thread:
         item["thread"] = thread
     if why:
         item["why"] = why
+    if refs:
+        item["refs"] = refs
     return item
 
 
@@ -784,11 +794,12 @@ def test_session_end_extracts_typed_facts_and_renders_the_note(tmp_path):
     assert view.chapters[0]["from_turn"] == 0 and view.chapters[0]["to_turn"] == 12
     # The body is the render: headline, sections, ledger below.
     assert "**The flush race is fixed.**" in view.body
-    assert "- The flush race is fixed. @4" in view.body
-    assert "- The reaper races the cap-trip. @6" in view.body
+    # No refs on these facts, so code stamps them as session talk (never as fact).
+    assert "- Reported done in session, recorded nowhere: The flush race is fixed. @4" in view.body
+    assert "- Observed in session: The reaper races the cap-trip. @6" in view.body
     assert view.body.index("## Done") < view.body.index("## Ledger")
     # Suppression is render-time only: absent from the note, whole in the ledger.
-    assert "- Patched the buffer lock. @2" not in view.body
+    assert "Reported in session: Patched the buffer lock." not in view.body
     assert [f.text for f in nd.read_facts(outcome.note_path)] == [
         "Patched the buffer lock.",
         "The flush race is fixed.",
@@ -939,7 +950,64 @@ def test_reopened_session_re_renders_the_note_over_the_grown_ledger(tmp_path):
     view = nd.read_note(note_path)
     assert [c["kind"] for c in view.chapters] == ["facts", "facts"]
     assert view.body.count("## Done") == 1  # one rendered reading, not two
-    assert "- The lock landed. @4" in view.body
-    assert "- The renderer landed. @15" in view.body
+    assert "recorded nowhere: The lock landed. @4" in view.body
+    assert "recorded nowhere: The renderer landed. @15" in view.body
     assert "**The lock and the renderer landed.**" in view.body
     assert view.closed is True
+
+
+def test_the_close_path_verifies_refs_against_the_repo_the_session_ran_in(tmp_path):
+    """A real commit earns its check mark; an invented one demotes its line."""
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    subprocess.run(["git", "init", "-q"], cwd=lore_root, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=lore_root, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=lore_root, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "--allow-empty", "-m", "seed"], cwd=lore_root, check=True
+    )
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=lore_root, capture_output=True, text=True, check=True
+    ).stdout.strip()[:7]
+
+    all_turns = _turns(0, 12)
+    buf = _append(lore_root, all_turns)  # the session's cwd is this repo
+    client = _Client(
+        [
+            {"boundaries": []},
+            {
+                "facts": [
+                    _fact_item(
+                        "done",
+                        "The seed landed.",
+                        2,
+                        refs=[{"type": "commit", "value": head}],
+                    ),
+                    _fact_item(
+                        "done",
+                        "The phantom landed.",
+                        4,
+                        refs=[{"type": "commit", "value": "deadbeefdeadbeef"}],
+                    ),
+                ]
+            },
+            {"headline": "The seed landed."},
+        ]
+    )
+
+    outcome = synth_and_close(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+
+    body = nd.read_note(outcome.note_path).body
+    assert f"- The seed landed. — commit {head} ✓ @2" in body
+    assert (
+        "- Claimed in session, ref not found: The phantom landed."
+        " — commit deadbeefdeadbeef (not found) @4" in body
+    )
