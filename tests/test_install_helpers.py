@@ -1,27 +1,30 @@
-"""Tests for `lore_core.install._helpers` — the JSON merge, flock,
-managed-markers, pipx cascade, per-platform path resolution, and
-content-hash primitives that everything else builds on.
+"""Tests for the install helpers and the file primitives under them.
+
+Covers `lore_core.install._helpers` (pipx cascade, per-platform path
+resolution, MCP entry) and `lore_core.managed_files` (JSON merge, flock,
+managed markers, content hash) — the primitives everything else builds on.
 """
 
 from __future__ import annotations
 
 import json
-import multiprocessing
 import os
 from pathlib import Path
 
 import pytest
 from lore_core.install import _helpers
 from lore_core.install._helpers import (
+    cursor_config_dir,
+    cursor_rules_dir,
+    install_self_via,
+    lore_mcp_entry,
+)
+from lore_core.managed_files import (
     MANAGED_BLOCK_END,
     MANAGED_BLOCK_START,
     MalformedConfigError,
     content_hash,
-    cursor_config_dir,
-    cursor_rules_dir,
-    install_self_via,
     json_merge_atomic,
-    lore_mcp_entry,
     managed_block_content,
     remove_managed_block,
     write_managed_markdown,

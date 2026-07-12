@@ -60,6 +60,7 @@ Adding a new host (Codex, Gemini, OpenCode, …) is one Python file.
    functions:
 
    ```python
+   from lore_core import managed_files
    from lore_core.install import _helpers
    from lore_core.install.base import Action, InstallContext, LegacyArtifact
 
@@ -90,17 +91,24 @@ Adding a new host (Codex, Gemini, OpenCode, …) is one Python file.
 3. **Add a `_binary_for()` mapping** in `lib/lore_cli/install_cmd.py`
    so `--host all` can detect the host's CLI on PATH.
 
-4. **Use the existing primitives in `_helpers.py`** rather than rolling
-   your own:
+4. **Use the existing primitives** rather than rolling your own.
+   Writing into files the user owns lives in `lore_core.managed_files`:
    - `json_merge_atomic(path, mutator, validate=…)` for JSON config
      files (handles flock + symlink realpath + retry-after-validate)
    - `write_managed_markdown(path, body)` / `remove_managed_block(path)`
      for rules / system-prompt files (preserves user content outside
      the managed markers)
+   - `copy_dir_atomic(src, dst)` / `remove_managed_dir(path)` for plugin
+     trees — both refuse to touch a tree without Lore's sentinel
+
+   Install-specific pieces live in `lore_core.install._helpers`:
    - `lore_mcp_entry(SCHEMA_VERSION)` for the canonical MCP server
      block — distinguishes Lore-managed from user-authored entries
      via `_lore_schema_version`
    - `check_lore_on_path()` if your host needs `lore` reachable
+
+   Finding the on-disk Lore source tree (skills, plugin manifest) is
+   `lore_core.source_root.resolve_lore_source_root()`.
 
 5. **Tests** in `tests/test_install_<host>.py` — follow the
    `test_install_cursor.py` shape: monkeypatch `sys.platform` for

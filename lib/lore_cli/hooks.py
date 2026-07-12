@@ -40,7 +40,7 @@ def _lore_version() -> str:
     fall back to the installed package metadata, which is the only source
     there.
     """
-    from lore_core.install._helpers import (
+    from lore_core.source_root import (
         read_claude_manifest,
         resolve_lore_source_root,
     )
