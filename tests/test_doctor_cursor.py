@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 from lore_cli import doctor_cmd
-from lore_core.install._helpers import PLUGIN_SENTINEL
+from lore_core.managed_files import PLUGIN_SENTINEL
 
 
 @pytest.fixture

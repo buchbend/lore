@@ -1,32 +1,35 @@
-"""Shared helpers for the per-integration install modules.
+"""Install-specific helpers for the per-integration install modules.
 
-Three groups of utilities:
+What lives here is what only an *installer* needs:
 
   Path resolution         per-platform config paths for each integration
-  File primitives         atomic JSON merge with flock + retry,
-                          markdown-with-managed-markers writer,
-                          content-hash for change detection
+  Self-install            installer cascade + binary-presence checks
+  Cursor packaging        translate the Claude plugin manifest into
+                          Cursor's manifest + hooks schema
+  Legacy detection        find install.sh-era state still on disk
   Action execution        switch on Action.kind to preview / apply / undo
 
-Everything here is stdlib-only except for `lore_core.io.atomic_write_text`.
-No imports from `lore_cli` (the CLI dispatcher imports from us, not
-the other way).
+The general-purpose file primitives these executors are built on (atomic
+JSON merge, managed markdown blocks, sentinel-gated trees) live in
+`lore_core.managed_files`; source-tree resolution lives in
+`lore_core.source_root`. Both are used outside install and are imported,
+not re-exported, here.
+
+No imports from `lore_cli` (the CLI dispatcher imports from us, not the
+other way).
 """
 
 from __future__ import annotations
 
-import contextlib
-import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from lore_core import managed_files
 from lore_core.install.base import (
     KIND_CHECK,
     KIND_DELETE,
@@ -39,22 +42,11 @@ from lore_core.install.base import (
     LegacyArtifact,
 )
 from lore_core.io import atomic_write_text
+from lore_core.source_root import check_lore_version_match
 
 # ---------------------------------------------------------------------------
 # Per-platform path resolution
 # ---------------------------------------------------------------------------
-
-# `_lore_schema_version` field marker — distinguishes Lore-managed
-# blocks from user-authored ones inside shared JSON config files.
-SCHEMA_VERSION_KEY = "_lore_schema_version"
-
-# Standard Lore-managed-rules-file marker pair. Anything between these
-# two markers is replaced on upgrade and removed on uninstall; anything
-# outside the pair is preserved.
-MANAGED_BLOCK_START = (
-    "<!-- lore-managed-start; uninstall via lore uninstall -->"
-)
-MANAGED_BLOCK_END = "<!-- lore-managed-end -->"
 
 
 def claude_config_dir() -> Path:
@@ -121,157 +113,6 @@ def cursor_plugin_dir() -> Path:
     return Path.home() / ".cursor" / "plugins" / "local" / "lore"
 
 
-# Sentinel file written at the root of a lore-managed plugin tree.
-# uninstall refuses to remove a directory tree that lacks this marker
-# (defends against blowing away unrelated user content if a path
-# collision happens).
-PLUGIN_SENTINEL = ".lore-managed"
-
-
-# ---------------------------------------------------------------------------
-# File primitives
-# ---------------------------------------------------------------------------
-
-
-def content_hash(text: str) -> str:
-    """Stable SHA-256 of UTF-8 bytes, hex digest. Used for change detection."""
-    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
-
-
-@contextlib.contextmanager
-def _flocked(path: Path) -> Iterator[None]:
-    """fcntl.flock context manager on a sibling lock file.
-
-    We lock a sibling ``.lock`` file so the lock survives ``os.replace``
-    (which ``atomic_write_text`` does) — locking the target path itself
-    would lose the lock when the file is replaced.
-
-    Thin wrapper over ``lore_core.lockfile.flocked``; kept for the
-    sibling-path convention specific to ``json_merge_atomic``.
-    """
-    from lore_core.lockfile import flocked
-
-    lock_path = path.with_suffix(path.suffix + ".lock")
-    with flocked(lock_path, blocking=True):
-        yield
-
-
-def json_merge_atomic(
-    path: Path,
-    mutator: callable,  # type: ignore[type-arg]
-    validate: callable | None = None,  # type: ignore[type-arg]
-) -> dict[str, Any]:
-    """Read-modify-write a JSON file under flock, with optional validation.
-
-    `mutator(data: dict) -> dict` returns the new data. If `validate`
-    is given, it runs on the freshly-read-back file after write; if
-    it returns False, retry the merge once. If still failing, raises
-    ConcurrentEditError.
-
-    Resolves symlinks before mutating (so chezmoi/Stow users don't
-    have their symlinks replaced with regular files by os.replace).
-    Refuses to load malformed JSON — the caller sees a clean error.
-    """
-    real_path = Path(os.path.realpath(path))
-    real_path.parent.mkdir(parents=True, exist_ok=True)
-
-    def _do_one_pass() -> dict[str, Any]:
-        data: dict[str, Any]
-        if real_path.exists():
-            try:
-                data = json.loads(real_path.read_text())
-            except json.JSONDecodeError as e:
-                raise MalformedConfigError(
-                    f"{real_path} is not valid JSON: {e}"
-                ) from e
-            if not isinstance(data, dict):
-                raise MalformedConfigError(
-                    f"{real_path} root must be a JSON object, got "
-                    f"{type(data).__name__}"
-                )
-        else:
-            data = {}
-        new_data = mutator(data)
-        atomic_write_text(real_path, json.dumps(new_data, indent=2) + "\n")
-        return new_data
-
-    with _flocked(real_path):
-        result = _do_one_pass()
-        if validate is None:
-            return result
-        if validate(result):
-            return result
-        # Validate-after-write failed — retry once
-        result = _do_one_pass()
-        if validate(result):
-            return result
-        raise ConcurrentEditError(
-            f"{real_path} keys missing after write; concurrent edit detected. "
-            "Quit Claude Code (or other writer) and retry."
-        )
-
-
-class MalformedConfigError(RuntimeError):
-    pass
-
-
-class ConcurrentEditError(RuntimeError):
-    pass
-
-
-def write_managed_markdown(path: Path, body: str) -> None:
-    """Write a markdown file wrapped in lore-managed-start/end markers.
-
-    Atomic. Creates parent dirs. Resolves symlinks before writing.
-    """
-    real_path = Path(os.path.realpath(path)) if path.exists() else path
-    real_path.parent.mkdir(parents=True, exist_ok=True)
-    full = (
-        f"{MANAGED_BLOCK_START}\n{body.rstrip()}\n{MANAGED_BLOCK_END}\n"
-    )
-    atomic_write_text(real_path, full)
-
-
-_MANAGED_BLOCK_RE = re.compile(
-    re.escape(MANAGED_BLOCK_START)
-    + r"\n(.*?)\n"
-    + re.escape(MANAGED_BLOCK_END)
-    + r"\n?",
-    re.DOTALL,
-)
-
-
-def remove_managed_block(path: Path) -> bool:
-    """Remove the lore-managed range from a markdown file.
-
-    Preserves any user content outside the managed markers. Returns
-    True if a block was removed, False if the file had no managed
-    block (no-op). If no content remains outside the block, the file
-    is removed entirely.
-    """
-    real_path = Path(os.path.realpath(path)) if path.exists() else path
-    if not real_path.exists():
-        return False
-    text = real_path.read_text()
-    new_text, n = _MANAGED_BLOCK_RE.subn("", text, count=1)
-    if n == 0:
-        return False
-    new_text = new_text.strip()
-    if not new_text:
-        real_path.unlink()
-    else:
-        atomic_write_text(real_path, new_text + "\n")
-    return True
-
-
-def managed_block_content(path: Path) -> str | None:
-    """Return the text inside lore-managed markers, or None if absent."""
-    if not path.exists():
-        return None
-    m = _MANAGED_BLOCK_RE.search(path.read_text())
-    return m.group(1) if m else None
-
-
 # ---------------------------------------------------------------------------
 # Self-install + binary-presence checks
 # ---------------------------------------------------------------------------
@@ -284,13 +125,21 @@ INSTALLERS = ("pipx", "uv", "pip")  # cascade order
 # the GitHub repo.
 LORE_GIT_URL = "git+https://github.com/buchbend/lore.git"
 
+# Per-installer argv prefix. The editable flag and the source argument are
+# appended by `install_self_via`; all three installers spell them the same.
+_INSTALL_ARGV = {
+    "pipx": ["pipx", "install", "--force"],
+    "uv": ["uv", "tool", "install", "--force"],
+    "pip": ["pip", "install", "--user", "--force-reinstall"],
+}
+
 
 def install_self_via(target: Path | None = None) -> tuple[str, list[str]]:
     """Pick the first available installer and return its argv.
 
     `target` is the editable source path for dev installs (or None to
     install from the GitHub repo via git+ URL — PyPI publish is blocked
-    on the `lore` name being squatted). Mirrors install.sh:49–62.
+    on the `lore` name being squatted).
 
     Returns `(installer_name, argv)`. Caller invokes via subprocess.
     Raises RuntimeError if none are available.
@@ -298,21 +147,10 @@ def install_self_via(target: Path | None = None) -> tuple[str, list[str]]:
     src = str(target) if target else LORE_GIT_URL
     for installer in INSTALLERS:
         if shutil.which(installer):
-            if installer == "pipx":
-                argv = ["pipx", "install", "--force"]
-                if target:
-                    argv += ["--editable"]
-                argv.append(src)
-            elif installer == "uv":
-                argv = ["uv", "tool", "install", "--force"]
-                if target:
-                    argv += ["--editable"]
-                argv.append(src)
-            else:  # pip
-                argv = ["pip", "install", "--user", "--force-reinstall"]
-                if target:
-                    argv += ["--editable"]
-                argv.append(src)
+            argv = list(_INSTALL_ARGV[installer])
+            if target:
+                argv.append("--editable")
+            argv.append(src)
             return installer, argv
     raise RuntimeError(
         "No Python installer found (tried pipx, uv, pip). "
@@ -328,66 +166,6 @@ def check_lore_on_path() -> tuple[bool, str]:
         "lore not on PATH. Run: pipx ensurepath; then reopen your shell "
         "and re-run lore install. (If pipx isn't installed, the "
         "claude integration self-install bootstrap will offer to add it.)"
-    )
-
-
-def check_lore_version_match(
-    lore_repo: "Path | str | None" = None,
-) -> tuple[bool, str]:
-    """Compare the installed Python package version against the on-disk source.
-
-    Closes the install-side counterpart to ``tests/test_version_sync.py``:
-    that pytest guard catches drift between ``pyproject.toml``,
-    ``plugin.json``, and ``CHANGELOG.md`` *in the source tree*; this check
-    catches drift between the installed pipx/pip/uv binary and that
-    source tree on the user's machine.
-
-    The hook footgun: ``claude plugin update lore@lore`` refreshes the
-    Claude Code plugin (skills/hooks/MCP wiring) but does not reinstall
-    the Python ``lore`` CLI. SessionStart's status line reads via
-    ``importlib.metadata.version(\"lore\")`` — i.e. the installed binary
-    — so a stale binary silently shows the old version forever.
-
-    Returns (ok, message). The message includes a copy-pasteable fix
-    command tailored to the install method (editable vs. non-editable).
-    Returns (True, "...skipped...") when no on-disk source is available
-    to compare against (e.g. user installed from PyPI without a clone).
-    """
-    from importlib.metadata import PackageNotFoundError, version
-
-    try:
-        installed = version("lore")
-    except PackageNotFoundError:
-        return False, (
-            "lore Python package not installed in this environment. "
-            "Run: pipx install --force --editable <path-to-lore-repo>"
-        )
-
-    repo_path = Path(lore_repo).expanduser() if lore_repo else None
-    if repo_path is None or not (repo_path / "pyproject.toml").is_file():
-        return True, f"lore CLI version {installed} (no source tree to compare against)"
-
-    pyproject = repo_path / "pyproject.toml"
-    try:
-        import tomllib
-
-        on_disk = tomllib.loads(pyproject.read_text())["project"]["version"]
-    except (OSError, KeyError, tomllib.TOMLDecodeError) as exc:
-        return True, (
-            f"lore CLI version {installed} "
-            f"(could not read on-disk pyproject.toml: {exc})"
-        )
-
-    if installed == on_disk:
-        return True, f"lore CLI version {installed} (matches source)"
-
-    # The installed and on-disk versions disagree. Pick the right fix
-    # command based on whether the install looks editable or not.
-    fix_cmd = f"pipx install --force --editable {repo_path}"
-    return False, (
-        f"lore CLI version drift: installed {installed}, source at {repo_path} "
-        f"is {on_disk}. The Claude Code plugin will silently use the older "
-        f"installed binary for `lore hook session-start` etc. Run: {fix_cmd}"
     )
 
 
@@ -412,55 +190,8 @@ def lore_mcp_entry(schema_version: str) -> dict[str, Any]:
     return {
         "command": shutil.which("lore") or "lore",
         "args": ["mcp"],
-        SCHEMA_VERSION_KEY: schema_version,
+        managed_files.SCHEMA_VERSION_KEY: schema_version,
     }
-
-
-def resolve_lore_source_root(lore_repo: Path | None = None) -> Path | None:
-    """Locate the lore source-of-truth root containing skills/ + .claude-plugin/.
-
-    Resolution order:
-      1. ``lore_repo`` (passed by ``lore install --lore-repo`` for dev installs)
-      2. Walk up from this file looking for a directory containing both
-         ``skills/`` and ``.claude-plugin/plugin.json`` (editable pip install)
-      3. ``~/.claude/plugins/cache/lore/lore/<version>/`` (Claude Code
-         marketplace install — newest version dir wins)
-
-    Returns ``None`` if nothing resolves; callers decide whether that's
-    fatal or a warning.
-    """
-    if lore_repo:
-        candidate = Path(lore_repo).expanduser().resolve()
-        if (candidate / "skills").is_dir() and (
-            candidate / ".claude-plugin" / "plugin.json"
-        ).is_file():
-            return candidate
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "skills").is_dir() and (
-            parent / ".claude-plugin" / "plugin.json"
-        ).is_file():
-            return parent
-    cache_root = Path.home() / ".claude" / "plugins" / "cache" / "lore" / "lore"
-    if cache_root.is_dir():
-        version_dirs = sorted(
-            (d for d in cache_root.iterdir() if d.is_dir()),
-            key=lambda d: d.name,
-            reverse=True,
-        )
-        for version_dir in version_dirs:
-            if (version_dir / "skills").is_dir() and (
-                version_dir / ".claude-plugin" / "plugin.json"
-            ).is_file():
-                return version_dir
-    return None
-
-
-def read_claude_manifest(source_root: Path) -> dict[str, Any]:
-    """Read ``.claude-plugin/plugin.json`` from a resolved source root."""
-    return json.loads(
-        (source_root / ".claude-plugin" / "plugin.json").read_text()
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -515,16 +246,36 @@ def generate_cursor_plugin_manifest(
     return out
 
 
+def _flatten_hook_group(group: Any) -> list[dict[str, Any]]:
+    """Flatten one Claude hook group into Cursor's per-entry hook list.
+
+    Claude nests hooks under a group that carries the matcher; Cursor has
+    no group level, so the group matcher is propagated onto each entry.
+    """
+    if not isinstance(group, dict):
+        return []
+    group_matcher = group.get("matcher")
+    flat: list[dict[str, Any]] = []
+    for hook in group.get("hooks") or []:
+        if not isinstance(hook, dict):
+            continue
+        cmd = hook.get("command")
+        if not cmd:
+            continue
+        entry: dict[str, Any] = {
+            "type": hook.get("type", "command"),
+            "command": _resolve_lore_in_command(cmd),
+        }
+        if group_matcher:
+            entry["matcher"] = group_matcher
+        flat.append(entry)
+    return flat
+
+
 def generate_cursor_hooks_json(
     claude_manifest: dict[str, Any],
 ) -> dict[str, Any]:
     """Generate a Cursor ``hooks.json`` from the Claude manifest's hooks block.
-
-    Claude's shape: each event maps to an array of "hook groups", each
-    group has an inner ``hooks`` list and an optional group-level
-    ``matcher``. Cursor's shape: each event maps directly to a flat
-    list of hook entries (with per-entry ``matcher``). We flatten by
-    propagating the group matcher onto each inner hook.
 
     Hook commands of the form ``lore <subcmd>`` are rewritten with the
     absolute ``lore`` path (same reason as MCP entries — GUI subprocess
@@ -542,77 +293,10 @@ def generate_cursor_hooks_json(
             continue
         flat: list[dict[str, Any]] = []
         for group in groups or []:
-            if not isinstance(group, dict):
-                continue
-            group_matcher = group.get("matcher")
-            for hook in group.get("hooks") or []:
-                if not isinstance(hook, dict):
-                    continue
-                cmd = hook.get("command")
-                if not cmd:
-                    continue
-                entry: dict[str, Any] = {
-                    "type": hook.get("type", "command"),
-                    "command": _resolve_lore_in_command(cmd),
-                }
-                if group_matcher:
-                    entry["matcher"] = group_matcher
-                flat.append(entry)
+            flat.extend(_flatten_hook_group(group))
         if flat:
             out_hooks[cursor_event] = flat
     return {"version": 1, "hooks": out_hooks}
-
-
-# ---------------------------------------------------------------------------
-# Directory-tree copy with managed sentinel — used for skills/rules bundling
-# ---------------------------------------------------------------------------
-
-
-def copy_dir_atomic(src: Path, dst: Path) -> None:
-    """Copy a directory tree from src to dst, idempotent on re-run.
-
-    Uses ``shutil.copytree(dirs_exist_ok=True)`` semantics: re-running
-    install overwrites, files removed from src disappear from dst on
-    next install only if we wipe-and-recopy, so we wipe first to keep
-    dst exactly mirroring src. The wipe is gated on the
-    ``PLUGIN_SENTINEL`` file at dst's parent (not dst itself — the
-    parent is the plugin root that owns the whole tree).
-
-    Resolves symlinks in src so the dst is always a real tree.
-    """
-    src_real = Path(os.path.realpath(src))
-    if not src_real.is_dir():
-        raise FileNotFoundError(f"copy source not found or not a dir: {src}")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    if dst.exists():
-        # Refuse to wipe dst if the plugin root has no sentinel — that
-        # means we don't own this tree.
-        plugin_root = dst.parent
-        if not (plugin_root / PLUGIN_SENTINEL).exists():
-            raise PermissionError(
-                f"refusing to overwrite {dst}: plugin root {plugin_root} "
-                f"has no {PLUGIN_SENTINEL} sentinel (not lore-managed)"
-            )
-        shutil.rmtree(dst)
-    shutil.copytree(src_real, dst, symlinks=False)
-
-
-def remove_managed_dir(path: Path) -> None:
-    """Remove a lore-managed directory tree, gated on the sentinel.
-
-    Only removes ``path`` if a ``PLUGIN_SENTINEL`` file exists at
-    ``path`` itself (the plugin root). Any other path raises so we
-    never wipe user content by accident.
-    """
-    real = Path(os.path.realpath(path)) if path.exists() else path
-    if not real.exists():
-        return
-    if not (real / PLUGIN_SENTINEL).exists():
-        raise PermissionError(
-            f"refusing to remove {real}: no {PLUGIN_SENTINEL} sentinel "
-            f"(not lore-managed)"
-        )
-    shutil.rmtree(real)
 
 
 # ---------------------------------------------------------------------------
@@ -626,104 +310,104 @@ _LEGACY_PERMISSION_RULES = {
 }
 
 
+def _legacy_symlinks(
+    directory: Path,
+    *,
+    name_prefix: str,
+    kind: str,
+    lore_repo: Path | None,
+) -> list[LegacyArtifact]:
+    """Lore-owned symlinks install.sh dropped into a ~/.claude subdirectory.
+
+    `lore_repo` narrows the match to links pointing into that repo; with
+    no repo given, any target under a `/lore/` path counts.
+    """
+    if not directory.is_dir():
+        return []
+    found: list[LegacyArtifact] = []
+    for entry in sorted(directory.iterdir()):
+        if not entry.name.startswith(name_prefix) or not entry.is_symlink():
+            continue
+        target = os.readlink(entry)
+        if lore_repo is not None and str(lore_repo) not in target:
+            continue
+        if "/lore/" not in target and lore_repo is None:
+            continue
+        found.append(LegacyArtifact(kind=kind, path=str(entry), detail=target))
+    return found
+
+
+def _legacy_settings_artifacts(settings_path: Path) -> list[LegacyArtifact]:
+    """Hook entries, permission rules and env vars install.sh wrote into settings.json."""
+    if not settings_path.exists():
+        return []
+    try:
+        cfg = json.loads(settings_path.read_text())
+    except json.JSONDecodeError:
+        cfg = {}
+
+    found: list[LegacyArtifact] = []
+    for event, group_list in (cfg.get("hooks") or {}).items():
+        for grp in group_list:
+            for h in grp.get("hooks") or []:
+                cmd = h.get("command", "")
+                if isinstance(cmd, str) and cmd.startswith(
+                    _LEGACY_HOOK_COMMAND_PREFIX
+                ):
+                    found.append(
+                        LegacyArtifact(
+                            kind="hook_entry",
+                            path=str(settings_path),
+                            detail=f"{event}: {cmd}",
+                        )
+                    )
+
+    allow = (cfg.get("permissions") or {}).get("allow") or []
+    for rule in allow:
+        if rule in _LEGACY_PERMISSION_RULES:
+            found.append(
+                LegacyArtifact(
+                    kind="permission_rule",
+                    path=str(settings_path),
+                    detail=rule,
+                )
+            )
+
+    if "LORE_ROOT" in (cfg.get("env") or {}):
+        found.append(
+            LegacyArtifact(
+                kind="env_entry",
+                path=str(settings_path),
+                detail=f"LORE_ROOT={cfg['env']['LORE_ROOT']}",
+            )
+        )
+    return found
+
+
 def detect_install_sh_artifacts(
     lore_repo: Path | None = None,
 ) -> list[LegacyArtifact]:
     """Scan ~/.claude for install.sh-era state.
 
-    Returns artifacts in a stable order. `lore_repo` filters skill /
-    agent symlinks to those pointing into that repo (or any "lore"
-    repo if None — symlink target contains `/lore/`).
+    Returns artifacts in a stable order: skill symlinks, then agent
+    symlinks, then settings.json mutations.
     """
-    artifacts: list[LegacyArtifact] = []
-    home = Path.home()
-
-    # 1. Skill symlinks
-    skills_dir = home / ".claude" / "skills"
-    if skills_dir.is_dir():
-        for entry in sorted(skills_dir.iterdir()):
-            if not entry.name.startswith("lore:"):
-                continue
-            if not entry.is_symlink():
-                continue
-            target = os.readlink(entry)
-            if lore_repo is not None and str(lore_repo) not in target:
-                continue
-            if "/lore/" not in target and lore_repo is None:
-                continue
-            artifacts.append(
-                LegacyArtifact(
-                    kind="skill_symlink",
-                    path=str(entry),
-                    detail=target,
-                )
-            )
-
-    # 2. Agent symlinks
-    agents_dir = home / ".claude" / "agents"
-    if agents_dir.is_dir():
-        for entry in sorted(agents_dir.iterdir()):
-            if not entry.name.startswith("lore-"):
-                continue
-            if not entry.is_symlink():
-                continue
-            target = os.readlink(entry)
-            if lore_repo is not None and str(lore_repo) not in target:
-                continue
-            if "/lore/" not in target and lore_repo is None:
-                continue
-            artifacts.append(
-                LegacyArtifact(
-                    kind="agent_symlink",
-                    path=str(entry),
-                    detail=target,
-                )
-            )
-
-    # 3. settings.json mutations
-    settings_path = home / ".claude" / "settings.json"
-    if settings_path.exists():
-        try:
-            cfg = json.loads(settings_path.read_text())
-        except json.JSONDecodeError:
-            cfg = {}
-        # Hook entries
-        for event, group_list in (cfg.get("hooks") or {}).items():
-            for grp in group_list:
-                for h in grp.get("hooks") or []:
-                    cmd = h.get("command", "")
-                    if isinstance(cmd, str) and cmd.startswith(
-                        _LEGACY_HOOK_COMMAND_PREFIX
-                    ):
-                        artifacts.append(
-                            LegacyArtifact(
-                                kind="hook_entry",
-                                path=str(settings_path),
-                                detail=f"{event}: {cmd}",
-                            )
-                        )
-        # Permission rules
-        allow = (cfg.get("permissions") or {}).get("allow") or []
-        for rule in allow:
-            if rule in _LEGACY_PERMISSION_RULES:
-                artifacts.append(
-                    LegacyArtifact(
-                        kind="permission_rule",
-                        path=str(settings_path),
-                        detail=rule,
-                    )
-                )
-        # LORE_ROOT env entry
-        if "LORE_ROOT" in (cfg.get("env") or {}):
-            artifacts.append(
-                LegacyArtifact(
-                    kind="env_entry",
-                    path=str(settings_path),
-                    detail=f"LORE_ROOT={cfg['env']['LORE_ROOT']}",
-                )
-            )
-
-    return artifacts
+    claude = Path.home() / ".claude"
+    return [
+        *_legacy_symlinks(
+            claude / "skills",
+            name_prefix="lore:",
+            kind="skill_symlink",
+            lore_repo=lore_repo,
+        ),
+        *_legacy_symlinks(
+            claude / "agents",
+            name_prefix="lore-",
+            kind="agent_symlink",
+            lore_repo=lore_repo,
+        ),
+        *_legacy_settings_artifacts(claude / "settings.json"),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -774,157 +458,220 @@ def preview_action(action: Action) -> str:
     raise ValueError(f"unknown action kind: {action.kind}")
 
 
+def _real_path(path: Path) -> Path:
+    """Resolve symlinks for an existing path, else leave it alone.
+
+    Writes follow the symlink so dotfile managers (chezmoi, Stow) keep
+    their links instead of having them replaced by a regular file.
+    """
+    return Path(os.path.realpath(path)) if path.exists() else path
+
+
+def _set_key(key_path: list, value: Any) -> callable:  # type: ignore[type-arg]
+    """Mutator that writes `value` at the nested `key_path`, creating parents."""
+
+    def _mutator(data: dict) -> dict:
+        cur = data
+        for key in key_path[:-1]:
+            cur = cur.setdefault(key, {})
+        cur[key_path[-1]] = value
+        return data
+
+    return _mutator
+
+
+def _del_key(key_path: list) -> callable:  # type: ignore[type-arg]
+    """Mutator that removes the nested `key_path`; a no-op when it is absent."""
+
+    def _mutator(data: dict) -> dict:
+        cur = data
+        for key in key_path[:-1]:
+            if not isinstance(cur, dict) or key not in cur:
+                return data
+            cur = cur[key]
+        if isinstance(cur, dict) and key_path[-1] in cur:
+            del cur[key_path[-1]]
+        return data
+
+    return _mutator
+
+
+def _has_key(key_path: list) -> callable:  # type: ignore[type-arg]
+    """Validator asserting the nested `key_path` survived the write."""
+
+    def _validator(data: dict) -> bool:
+        cur = data
+        for key in key_path:
+            if not isinstance(cur, dict) or key not in cur:
+                return False
+            cur = cur[key]
+        return True
+
+    return _validator
+
+
+def _exec_new(action: Action, schema_version: str) -> ApplyResult:
+    path = Path(action.payload["path"]).expanduser()
+    copy_from = action.payload.get("copy_from")
+    if copy_from:
+        managed_files.copy_dir_atomic(Path(copy_from).expanduser(), path)
+        return ApplyResult(ok=True)
+    real = _real_path(path)
+    real.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(real, action.payload["content"])
+    return ApplyResult(ok=True)
+
+
+def _exec_merge(action: Action, schema_version: str) -> ApplyResult:
+    path = Path(action.payload["path"]).expanduser()
+    key_path = list(action.payload["key_path"])
+    managed_files.json_merge_atomic(
+        path,
+        _set_key(key_path, action.payload["value"]),
+        validate=_has_key(key_path),
+    )
+    return ApplyResult(ok=True)
+
+
+def _exec_replace(action: Action, schema_version: str) -> ApplyResult:
+    # Replace behaves exactly like merge on disk; the two kinds differ only
+    # in how the dispatcher prompts the user before getting here.
+    return execute_action(
+        Action(
+            kind=KIND_MERGE,
+            description=action.description,
+            target=action.target,
+            summary=action.summary,
+            payload={
+                "path": action.payload["path"],
+                "key_path": action.payload["key_path"],
+                "value": action.payload["new_value"],
+                "schema_version": schema_version,
+            },
+        ),
+        schema_version=schema_version,
+    )
+
+
+def _exec_run(action: Action, schema_version: str) -> ApplyResult:
+    argv = action.payload["argv"]
+    fallback = action.payload.get("fallback_message")
+    try:
+        result = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=action.payload.get("timeout", 60),
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        msg = f"{e} — {fallback}" if fallback else f"{e}"
+        return ApplyResult(ok=False, error=msg)
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip()[:300]
+        msg = f"exit {result.returncode}: {err}"
+        if fallback:
+            msg = f"{msg} — {fallback}"
+        return ApplyResult(ok=False, error=msg)
+    return ApplyResult(ok=True, diff=result.stdout.strip()[:500] or None)
+
+
+def _exec_check(action: Action, schema_version: str) -> ApplyResult:
+    check = action.payload["check"]
+    if check == "lore_on_path":
+        ok, msg = check_lore_on_path()
+        return ApplyResult(ok=ok, error=None if ok else msg)
+    if check == "lore_version_match":
+        ok, msg = check_lore_version_match(action.payload.get("lore_repo"))
+        # Surface the message even when ok so the user sees the version
+        # they're running.
+        return ApplyResult(ok=ok, error=None if ok else msg, diff=msg if ok else None)
+    if check == "binary_on_path":
+        bin_name = action.payload["args"]["binary"]
+        if shutil.which(bin_name):
+            return ApplyResult(ok=True)
+        return ApplyResult(
+            ok=False,
+            error=action.payload.get("fail_message", f"{bin_name} not on PATH"),
+        )
+    if check == "always_advisory":
+        # Surfaces the fail_message as informational; paired with
+        # on_failure="continue" at the call site.
+        return ApplyResult(
+            ok=False, error=action.payload.get("fail_message", "advisory")
+        )
+    return ApplyResult(ok=False, error=f"unknown check: {check}")
+
+
+def _exec_delete(action: Action, schema_version: str) -> ApplyResult:
+    real = _real_path(Path(action.payload["path"]).expanduser())
+    kp = action.payload.get("key_path")
+    if kp:
+        if real.exists():
+            managed_files.json_merge_atomic(real, _del_key(list(kp)))
+        return ApplyResult(ok=True)
+    if action.payload.get("recursive"):
+        # Only lore-managed plugin trees (sentinel present) may be removed.
+        managed_files.remove_managed_dir(real)
+        return ApplyResult(ok=True)
+    if real.exists():
+        # Managed block first, else the whole file.
+        if managed_files.managed_block_content(real) is not None:
+            managed_files.remove_managed_block(real)
+        else:
+            real.unlink()
+    return ApplyResult(ok=True)
+
+
+_EXECUTORS = {
+    KIND_NEW: _exec_new,
+    KIND_MERGE: _exec_merge,
+    KIND_REPLACE: _exec_replace,
+    KIND_RUN: _exec_run,
+    KIND_CHECK: _exec_check,
+    KIND_DELETE: _exec_delete,
+}
+
+
 def execute_action(action: Action, *, schema_version: str = "1") -> ApplyResult:
     """Apply an Action; idempotent for kinds that should be."""
+    executor = _EXECUTORS.get(action.kind)
+    if executor is None:
+        return ApplyResult(ok=False, error=f"unknown action kind: {action.kind}")
     try:
-        if action.kind == KIND_NEW:
-            path = Path(action.payload["path"]).expanduser()
-            copy_from = action.payload.get("copy_from")
-            if copy_from:
-                src = Path(copy_from).expanduser()
-                copy_dir_atomic(src, path)
-                return ApplyResult(ok=True)
-            content = action.payload["content"]
-            real = Path(os.path.realpath(path)) if path.exists() else path
-            real.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(real, content)
-            return ApplyResult(ok=True)
-        if action.kind == KIND_MERGE:
-            path = Path(action.payload["path"]).expanduser()
-            key_path = list(action.payload["key_path"])
-            value = action.payload["value"]
-
-            def _mutator(data: dict) -> dict:
-                cur = data
-                for key in key_path[:-1]:
-                    cur = cur.setdefault(key, {})
-                cur[key_path[-1]] = value
-                return data
-
-            def _validator(data: dict) -> bool:
-                cur = data
-                for key in key_path:
-                    if not isinstance(cur, dict) or key not in cur:
-                        return False
-                    cur = cur[key]
-                return True
-
-            json_merge_atomic(path, _mutator, validate=_validator)
-            return ApplyResult(ok=True)
-        if action.kind == KIND_REPLACE:
-            # For now treat replace identically to merge; the prompt
-            # difference happens at the dispatcher level.
-            return execute_action(
-                Action(
-                    kind=KIND_MERGE,
-                    description=action.description,
-                    target=action.target,
-                    summary=action.summary,
-                    payload={
-                        "path": action.payload["path"],
-                        "key_path": action.payload["key_path"],
-                        "value": action.payload["new_value"],
-                        "schema_version": schema_version,
-                    },
-                ),
-                schema_version=schema_version,
-            )
-        if action.kind == KIND_RUN:
-            argv = action.payload["argv"]
-            timeout = action.payload.get("timeout", 60)
-            try:
-                result = subprocess.run(
-                    argv,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                    check=False,
-                )
-            except (OSError, subprocess.TimeoutExpired) as e:
-                fallback = action.payload.get("fallback_message")
-                msg = f"{e}"
-                if fallback:
-                    msg = f"{e} — {fallback}"
-                return ApplyResult(ok=False, error=msg)
-            if result.returncode != 0:
-                fallback = action.payload.get("fallback_message")
-                err = (result.stderr or result.stdout or "").strip()[:300]
-                msg = f"exit {result.returncode}: {err}"
-                if fallback:
-                    msg = f"{msg} — {fallback}"
-                return ApplyResult(ok=False, error=msg)
-            return ApplyResult(ok=True, diff=result.stdout.strip()[:500] or None)
-        if action.kind == KIND_CHECK:
-            check = action.payload["check"]
-            if check == "lore_on_path":
-                ok, msg = check_lore_on_path()
-                return ApplyResult(ok=ok, error=None if ok else msg)
-            if check == "lore_version_match":
-                lore_repo = action.payload.get("lore_repo")
-                ok, msg = check_lore_version_match(lore_repo)
-                # Surface the message even when ok so the user sees
-                # the version they're running.
-                return ApplyResult(
-                    ok=ok,
-                    error=None if ok else msg,
-                    diff=msg if ok else None,
-                )
-            if check == "binary_on_path":
-                bin_name = action.payload["args"]["binary"]
-                if shutil.which(bin_name):
-                    return ApplyResult(ok=True)
-                return ApplyResult(
-                    ok=False,
-                    error=action.payload.get(
-                        "fail_message", f"{bin_name} not on PATH"
-                    ),
-                )
-            if check == "always_advisory":
-                # Always-advisory check — surfaces the fail_message as
-                # informational (paired with on_failure="continue").
-                return ApplyResult(
-                    ok=False,
-                    error=action.payload.get("fail_message", "advisory"),
-                )
-            return ApplyResult(ok=False, error=f"unknown check: {check}")
-        if action.kind == KIND_DELETE:
-            path = Path(action.payload["path"]).expanduser()
-            real = Path(os.path.realpath(path)) if path.exists() else path
-            kp = action.payload.get("key_path")
-            if kp:
-                # JSON key removal
-                if not real.exists():
-                    return ApplyResult(ok=True)  # nothing to remove
-
-                def _mutator(data: dict) -> dict:
-                    cur = data
-                    for key in kp[:-1]:
-                        if not isinstance(cur, dict) or key not in cur:
-                            return data
-                        cur = cur[key]
-                    if isinstance(cur, dict) and kp[-1] in cur:
-                        del cur[kp[-1]]
-                    return data
-
-                json_merge_atomic(real, _mutator)
-                return ApplyResult(ok=True)
-            if action.payload.get("recursive"):
-                # Recursive directory removal — only allowed on
-                # lore-managed plugin trees marked with PLUGIN_SENTINEL.
-                remove_managed_dir(real)
-                return ApplyResult(ok=True)
-            # File removal — managed block first, else whole file
-            if real.exists():
-                if managed_block_content(real) is not None:
-                    remove_managed_block(real)
-                else:
-                    real.unlink()
-            return ApplyResult(ok=True)
-    except (MalformedConfigError, ConcurrentEditError) as e:
+        return executor(action, schema_version)
+    except (managed_files.MalformedConfigError, managed_files.ConcurrentEditError) as e:
         return ApplyResult(ok=False, error=str(e))
     except Exception as e:  # noqa: BLE001
         return ApplyResult(ok=False, error=f"{type(e).__name__}: {e}")
-    return ApplyResult(ok=False, error=f"unknown action kind: {action.kind}")
+
+
+def _undo_new(action: Action) -> ApplyResult:
+    real = _real_path(Path(action.payload["path"]).expanduser())
+    if action.payload.get("copy_from"):
+        # Tree-copy undo: remove the dst tree if it's still lore-managed
+        # (parent sentinel present). Only the dst dir goes, not the
+        # plugin root.
+        if real.is_dir() and (real.parent / managed_files.PLUGIN_SENTINEL).exists():
+            shutil.rmtree(real)
+        return ApplyResult(ok=True)
+    if real.exists():
+        # Managed markers mean the file is shared with the user: strip
+        # only our block. Otherwise the file is ours and goes entirely.
+        if managed_files.managed_block_content(real) is not None:
+            managed_files.remove_managed_block(real)
+        else:
+            real.unlink()
+    return ApplyResult(ok=True)
+
+
+def _undo_merge(action: Action) -> ApplyResult:
+    real = _real_path(Path(action.payload["path"]).expanduser())
+    if real.exists():
+        managed_files.json_merge_atomic(
+            real, _del_key(list(action.payload["key_path"]))
+        )
+    return ApplyResult(ok=True)
 
 
 def undo_action(action: Action) -> ApplyResult:
@@ -934,51 +681,17 @@ def undo_action(action: Action) -> ApplyResult:
     byte-equivalent file state. User-edited entries are warn-and-
     remove unless `--no-clobber-edits` was passed (handled by
     dispatcher; this function always removes).
+
+    Undoing a run/check is a no-op: the integration's own undo handles the
+    side effect (e.g. `claude plugin uninstall` is its own action, not a
+    reverse of `claude plugin install`).
     """
     try:
         if action.kind == KIND_NEW:
-            path = Path(action.payload["path"]).expanduser()
-            real = Path(os.path.realpath(path)) if path.exists() else path
-            if action.payload.get("copy_from"):
-                # Tree-copy undo: remove the dst tree if it's still
-                # lore-managed (parent sentinel present). We only
-                # remove the dst dir itself, not the plugin root.
-                if real.exists() and real.is_dir():
-                    plugin_root = real.parent
-                    if (plugin_root / PLUGIN_SENTINEL).exists():
-                        shutil.rmtree(real)
-                return ApplyResult(ok=True)
-            if real.exists():
-                # Check whether the file uses managed markers; if yes
-                # remove just that block, else delete the whole file.
-                if managed_block_content(real) is not None:
-                    remove_managed_block(real)
-                else:
-                    real.unlink()
-            return ApplyResult(ok=True)
+            return _undo_new(action)
         if action.kind in (KIND_MERGE, KIND_REPLACE):
-            path = Path(action.payload["path"]).expanduser()
-            key_path = list(action.payload["key_path"])
-
-            def _mutator(data: dict) -> dict:
-                cur = data
-                for key in key_path[:-1]:
-                    if not isinstance(cur, dict) or key not in cur:
-                        return data
-                    cur = cur[key]
-                if isinstance(cur, dict) and key_path[-1] in cur:
-                    del cur[key_path[-1]]
-                return data
-
-            real = Path(os.path.realpath(path)) if path.exists() else path
-            if real.exists():
-                json_merge_atomic(real, _mutator)
-            return ApplyResult(ok=True)
+            return _undo_merge(action)
         if action.kind in (KIND_RUN, KIND_CHECK):
-            # Undoing a run/check is a no-op (the integration's own undo
-            # handles the side effect — e.g. `claude plugin uninstall`
-            # is its own action, not a reverse of `claude plugin
-            # install`).
             return ApplyResult(ok=True)
     except Exception as e:  # noqa: BLE001
         return ApplyResult(ok=False, error=f"{type(e).__name__}: {e}")

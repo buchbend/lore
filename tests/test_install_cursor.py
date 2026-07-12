@@ -9,13 +9,14 @@ from pathlib import Path
 
 import pytest
 from lore_core.install import _helpers, cursor
-from lore_core.install._helpers import (
+from lore_core.install._helpers import execute_action
+from lore_core.install.base import InstallContext
+from lore_core.managed_files import (
     MANAGED_BLOCK_END,
     MANAGED_BLOCK_START,
     SCHEMA_VERSION_KEY,
-    execute_action,
+    write_managed_markdown,
 )
-from lore_core.install.base import InstallContext
 
 
 @pytest.fixture
@@ -35,7 +36,7 @@ def cursor_home(tmp_path, monkeypatch):
     (tmp_path / ".cursor" / "rules").mkdir()
     # By default, no source root resolved — tests that want plugin
     # packaging exercised will override this.
-    monkeypatch.setattr(_helpers, "resolve_lore_source_root", lambda *a, **kw: None)
+    monkeypatch.setattr(cursor, "resolve_lore_source_root", lambda *a, **kw: None)
     return tmp_path
 
 
@@ -103,7 +104,7 @@ def test_plan_present_same_schema_emits_only_check(cursor_home):
         / "integration-rules"
         / "default.md"
     ).read_text().rstrip("\n")
-    _helpers.write_managed_markdown(rules_path, body)
+    write_managed_markdown(rules_path, body)
     actions = cursor.plan(InstallContext())
     # No merge, no new — only the trailing check
     kinds = [a.kind for a in actions]
@@ -278,7 +279,7 @@ def test_plan_emits_plugin_dir_actions(cursor_home, fake_source_root, monkeypatc
     """When source resolves, plan() emits actions to materialize the
     Cursor plugin dir (sentinel, manifest, skills, rules, mcp, hooks)."""
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root",
+        cursor, "resolve_lore_source_root",
         lambda *a, **kw: fake_source_root,
     )
     actions = cursor.plan(InstallContext())
@@ -297,7 +298,7 @@ def test_plugin_manifest_mirrors_claude_manifest_version(
     """The generated Cursor plugin manifest carries the Claude
     manifest's version (single source of truth)."""
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root",
+        cursor, "resolve_lore_source_root",
         lambda *a, **kw: fake_source_root,
     )
     actions = cursor.plan(InstallContext())
@@ -345,7 +346,7 @@ def test_skills_copied_as_real_dir(cursor_home, fake_source_root, monkeypatch):
     """After install, the plugin's skills/ is a real dir (not a
     symlink) and the parent has a .lore-managed sentinel."""
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root",
+        cursor, "resolve_lore_source_root",
         lambda *a, **kw: fake_source_root,
     )
     for a in cursor.plan(InstallContext()):
@@ -364,7 +365,7 @@ def test_uninstall_removes_plugin_dir_only_with_sentinel(
     """Uninstall removes the plugin dir when the sentinel is present;
     refuses (and leaves contents intact) when sentinel is missing."""
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root",
+        cursor, "resolve_lore_source_root",
         lambda *a, **kw: fake_source_root,
     )
     # Install so the plugin dir exists with the sentinel
@@ -398,7 +399,7 @@ def test_global_mcp_entry_skipped_when_plugin_packages(
     mcpServers.lore to the global mcp.json — only the plugin-local
     one is canonical."""
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root",
+        cursor, "resolve_lore_source_root",
         lambda *a, **kw: fake_source_root,
     )
     actions = cursor.plan(InstallContext())
@@ -416,7 +417,7 @@ def test_global_mcp_entry_deleted_when_legacy_present(
     """When plugin packaging runs and a legacy global entry exists,
     plan() emits a delete to dedupe."""
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root",
+        cursor, "resolve_lore_source_root",
         lambda *a, **kw: fake_source_root,
     )
     global_mcp_path = cursor_home / ".cursor" / "mcp.json"

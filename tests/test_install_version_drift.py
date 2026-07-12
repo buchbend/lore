@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from lore_core.install._helpers import check_lore_version_match
+from lore_core.source_root import check_lore_version_match
 
 
 def _write_pyproject(repo: Path, version: str) -> None:
@@ -128,13 +128,13 @@ def test_banner_version_prefers_source_manifest(
     """With a resolvable source tree the banner reads plugin.json, not the
     (possibly stale) installed package metadata."""
     from lore_cli import hooks
-    from lore_core.install import _helpers
+    from lore_core import source_root
 
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root", lambda lore_repo=None: tmp_path
+        source_root, "resolve_lore_source_root", lambda lore_repo=None: tmp_path
     )
     monkeypatch.setattr(
-        _helpers, "read_claude_manifest", lambda root: {"version": "1.2.3"}
+        source_root, "read_claude_manifest", lambda root: {"version": "1.2.3"}
     )
     # Installed metadata deliberately differs — source must win.
     monkeypatch.setattr("importlib.metadata.version", lambda name: "0.0.1")
@@ -147,10 +147,10 @@ def test_banner_version_falls_back_to_metadata_without_source(
     """A plain PyPI install (no resolvable source tree) reports the installed
     package version."""
     from lore_cli import hooks
-    from lore_core.install import _helpers
+    from lore_core import source_root
 
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root", lambda lore_repo=None: None
+        source_root, "resolve_lore_source_root", lambda lore_repo=None: None
     )
     monkeypatch.setattr("importlib.metadata.version", lambda name: "0.9.9")
     assert hooks._lore_version() == "0.9.9"
@@ -162,14 +162,14 @@ def test_banner_version_falls_back_when_manifest_unreadable(
     """A resolvable source root with a corrupt plugin.json degrades to the
     installed metadata rather than crashing the SessionStart hook."""
     from lore_cli import hooks
-    from lore_core.install import _helpers
+    from lore_core import source_root
 
     def _boom(root: Path) -> dict:
         raise ValueError("bad json")
 
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root", lambda lore_repo=None: tmp_path
+        source_root, "resolve_lore_source_root", lambda lore_repo=None: tmp_path
     )
-    monkeypatch.setattr(_helpers, "read_claude_manifest", _boom)
+    monkeypatch.setattr(source_root, "read_claude_manifest", _boom)
     monkeypatch.setattr("importlib.metadata.version", lambda name: "0.9.9")
     assert hooks._lore_version() == "0.9.9"

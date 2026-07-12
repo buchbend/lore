@@ -118,7 +118,7 @@ def _check_lore_version_drift(cwd: str) -> Check:
     line to silently show the *binary's* old version even after a
     successful plugin update.
     """
-    from lore_core.install._helpers import check_lore_version_match
+    from lore_core.source_root import check_lore_version_match
 
     # Find the source repo root by walking up from this file looking
     # for a pyproject.toml. Returns None gracefully if running from a
@@ -772,7 +772,8 @@ def _check_cursor_plugin_dir(cwd: str) -> Check:
         return True, "skipped: ~/.cursor not present"
 
     from importlib.metadata import PackageNotFoundError, version
-    from lore_core.install._helpers import PLUGIN_SENTINEL, cursor_plugin_dir
+    from lore_core.install._helpers import cursor_plugin_dir
+    from lore_core.managed_files import PLUGIN_SENTINEL
 
     plugin_dir = cursor_plugin_dir()
     if not plugin_dir.exists():

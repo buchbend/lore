@@ -721,3 +721,60 @@ def test_inplace_empty_compose_consumes_the_slice(tmp_path):
     sidecar = buf.read_sidecar()
     assert sidecar.state == "accumulating"
     assert buf.replay().turn_count == 0  # slice consumed, not re-queued
+
+
+def test_concurrent_flush_covering_the_span_is_skipped(tmp_path):
+    """A span another flush already published is dropped, not appended twice.
+
+    The in-place cap-trip can race the reaper: both read the same buffer,
+    one publishes while the other is still inside its (slow) compose call.
+    The loser re-reads the note watermark before writing and must back off,
+    or the same turns land as two chapters.
+    """
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    all_turns = _turns(0, 4)
+    buf = _append(lore_root, all_turns)
+
+    sessions = wiki_root / "sessions"
+
+    class _Racing(_Messages):
+        """Land a competing chapter on the note while this compose is in flight."""
+
+        def create(self, **kwargs: Any) -> _Resp:
+            resp = super().create(**kwargs)
+            note = next(sessions.rglob("*.md"))
+            nd.append_marker_chapter(
+                note,
+                kind=nd.MARKER_FAILED,
+                reason="published by a concurrent flush",
+                slice_from_turn=0,
+                slice_to_turn=4,
+                wiki_root=wiki_root,
+            )
+            return resp
+
+    client = _Client([_chapter_payload("Traced the flush race", "prose.", 2)])
+    client.messages = _Racing([_chapter_payload("Traced the flush race", "prose.", 2)])
+
+    outcome = synth_in_place(
+        buf.sidecar_path,
+        lore_root=lore_root,
+        wiki_root=wiki_root,
+        llm_client=client,
+        model="m",
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+        auto_commit=False,
+    )
+
+    assert outcome.status == "skipped"
+    assert outcome.skipped_reason == "span-already-covered"
+
+    # Only the winner's chapter is on the note — the loser appended nothing.
+    view = nd.read_note(outcome.note_path)
+    assert len(view.chapters) == 1
+    assert view.chapters[0]["marker"] == nd.MARKER_FAILED
+    assert "Traced the flush race" not in view.body
+
+    # The buffer is untouched: the session stays live and keeps accumulating.
+    assert buf.read_sidecar().state == "accumulating"
