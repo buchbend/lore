@@ -167,7 +167,7 @@ def test_session_start_directive_on_when_enabled(vault):
 
 
 def test_mcp_journal_write_round_trip(vault):
-    from lore_mcp.server import handle_journal_read, handle_journal_write
+    from lore_mcp.server import handle_journal_write
 
     out = handle_journal_write(
         kind="ai", text="hello from MCP", author="opus"
@@ -175,9 +175,9 @@ def test_mcp_journal_write_round_trip(vault):
     assert out["schema"] == "lore.journal.write/1"
     assert "error" not in out
 
-    read_out = handle_journal_read(kind="ai", limit=5)
-    assert read_out["schema"] == "lore.journal.read/1"
-    entries = read_out["data"]["entries"]
+    # lore_journal_read has no MCP exposure — verify the write landed
+    # through the core module directly (still the read path in use).
+    entries = journal.read("ai", limit=5)
     assert len(entries) == 1
     assert entries[0]["body"] == "hello from MCP"
     assert entries[0]["author"] == "opus"
