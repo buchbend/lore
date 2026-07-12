@@ -124,15 +124,13 @@ def test_session_start_does_not_include_citation_directive(
     wiki.mkdir()
     (wiki / "_index.txt").write_text("# Index\n")
 
-    from lore_cli import hooks
+    from lore_core import session_start
 
-    monkeypatch.setattr(hooks, "current_repo", lambda _cwd: None)
-    monkeypatch.setattr(hooks, "_cross_scope_breadcrumbs", lambda *a, **kw: [])
-    monkeypatch.setattr(hooks, "_stale_count", lambda _w: 0)
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
 
     block = {"wiki": wiki.name, "scope": wiki.name, "backend": None, "issues": None, "prs": None}
     config = (tmp_path / "CLAUDE.md", block)
-    out = hooks._session_start_from_lore(str(tmp_path), config, tmp_path)
+    out = session_start.session_start_from_lore(str(tmp_path), config, tmp_path)
 
     assert out is not None
     assert "consulted" not in out.lower()

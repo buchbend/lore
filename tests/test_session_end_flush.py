@@ -9,7 +9,9 @@ import pytest
 
 from lore_core.types import Turn
 from lore_core.wiki_config import WikiConfig
-from lore_cli.hooks import _request_flush_for_my_buffers
+from lore_curator.capture_routing import (
+    request_flush_for_my_buffers as _request_flush_for_my_buffers,
+)
 from lore_curator.buffer_append import append_chunk
 
 

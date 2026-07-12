@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from lore_cli.hooks import _pending_verdict_chip
+from lore_core.session_start import pending_verdict_chip as _pending_verdict_chip
 from lore_core.freshness import count_pending_verdicts
 
 

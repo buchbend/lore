@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from lore_cli.hooks import (
-    _filter_session_hints,
-    _last_session_hint_with_freshness,
+from lore_core.session_start import (
+    filter_session_hints as _filter_session_hints,
+    last_session_hint_with_freshness as _last_session_hint_with_freshness,
 )
 
 

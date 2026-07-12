@@ -1,4 +1,4 @@
-"""Tests for ``lore_cli.hooks._pid_alive``.
+"""Tests for ``lore_cli.context_cache._pid_alive``.
 
 Phase 3 of the cleanup roadmap fixed a cross-platform bug: the original
 implementation walked ``/proc`` and returned ``True`` conservatively on
@@ -11,8 +11,7 @@ from __future__ import annotations
 import os
 
 import pytest
-
-from lore_cli.hooks import _pid_alive
+from lore_cli.context_cache import _pid_alive
 
 
 def test_self_pid_is_alive() -> None:

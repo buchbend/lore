@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from lore_cli.hooks import _render_drain_lines
+from lore_core.drain_banner import render_drain_lines as _render_drain_lines
 from lore_core.drain import SYSTEM_SESSION, DrainStore
 
 

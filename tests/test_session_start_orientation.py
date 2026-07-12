@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from lore_cli.hooks import (
+from lore_core.session_start import (
     ORIENTATION_BUDGET_CHARS,
-    _render_project_orientation,
+    render_project_orientation as _render_project_orientation,
 )
 from lore_core.types import Scope
 
