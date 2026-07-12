@@ -1,8 +1,6 @@
-"""lore_cli — command-line dispatch for Lore subcommands.
+"""lore_cli — command-line dispatch for Lore.
 
-    lore lint [options]
-    lore migrate [options]
-    lore search <query>    # (Phase B)
-    lore mcp               # (Phase B — starts MCP server)
-    lore init              # (Phase D)
+Every verb is a typer app in a sibling ``*_cmd`` module, mounted by
+``lore_cli.__main__``. Run ``lore --help`` for the current surface;
+this docstring deliberately doesn't enumerate it, so it can't rot.
 """

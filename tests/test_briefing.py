@@ -737,14 +737,6 @@ def test_gather_epic_filter_no_match_returns_empty(linkage_briefing_vault):
     assert result["new_sessions"] == []
 
 
-def test_mcp_handle_briefing_gather_forwards_epic(linkage_briefing_vault):
-    from lore_mcp.server import handle_briefing_gather
-
-    result = handle_briefing_gather(wiki="ccat", epic=162)
-    assert len(result["new_sessions"]) == 1
-    assert result["new_sessions"][0]["slug"] == "fix-a"
-
-
 def test_render_briefing_links_to_source_note():
     """Digest bullets carry a wikilink back to the source session note."""
     result = {

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from lore_core import managed_files
 from lore_core.install import _helpers
 from lore_core.install.base import (
     KIND_CHECK,
@@ -31,6 +32,7 @@ from lore_core.install.base import (
     InstallContext,
     LegacyArtifact,
 )
+from lore_core.source_root import read_claude_manifest, resolve_lore_source_root
 
 SCHEMA_VERSION = "1"
 
@@ -63,7 +65,7 @@ def plan(ctx: InstallContext) -> list[Action]:
     rules_dir = _helpers.cursor_rules_dir()
     mcp_path = config_dir / "mcp.json"
     rules_path = rules_dir / "lore.md"
-    source_root = _helpers.resolve_lore_source_root(ctx.lore_repo)
+    source_root = resolve_lore_source_root(ctx.lore_repo)
     plugin_will_install = source_root is not None
 
     # 1. Global mcp.json — only when plugin packaging won't run (legacy
@@ -104,7 +106,7 @@ def plan(ctx: InstallContext) -> list[Action]:
                 },
             )
         )
-    elif existing.get(_helpers.SCHEMA_VERSION_KEY) is None:
+    elif existing.get(managed_files.SCHEMA_VERSION_KEY) is None:
         # Absent schema version — legacy or user-authored. Migrate
         # in place silently (kind=merge, no extra prompt).
         actions.append(
@@ -121,7 +123,7 @@ def plan(ctx: InstallContext) -> list[Action]:
                 },
             )
         )
-    elif existing.get(_helpers.SCHEMA_VERSION_KEY) != SCHEMA_VERSION:
+    elif existing.get(managed_files.SCHEMA_VERSION_KEY) != SCHEMA_VERSION:
         # Present-but-old schema — true bump, needs explicit prompt.
         actions.append(
             Action(
@@ -130,7 +132,7 @@ def plan(ctx: InstallContext) -> list[Action]:
                 target=str(mcp_path),
                 summary=(
                     f"replace mcpServers.lore "
-                    f"({existing.get(_helpers.SCHEMA_VERSION_KEY)} "
+                    f"({existing.get(managed_files.SCHEMA_VERSION_KEY)} "
                     f"→ {SCHEMA_VERSION})"
                 ),
                 payload={
@@ -140,7 +142,7 @@ def plan(ctx: InstallContext) -> list[Action]:
                     "new_value": new_value,
                     "reason": (
                         f"_lore_schema_version "
-                        f"{existing.get(_helpers.SCHEMA_VERSION_KEY)} "
+                        f"{existing.get(managed_files.SCHEMA_VERSION_KEY)} "
                         f"→ {SCHEMA_VERSION}"
                     ),
                 },
@@ -194,7 +196,7 @@ def plan(ctx: InstallContext) -> list[Action]:
     #    dispatcher will refuse to clobber without --force.
     body = _read_directive_body()
     full_content = (
-        f"{_helpers.MANAGED_BLOCK_START}\n{body}\n{_helpers.MANAGED_BLOCK_END}\n"
+        f"{managed_files.MANAGED_BLOCK_START}\n{body}\n{managed_files.MANAGED_BLOCK_END}\n"
     )
     if not rules_path.exists():
         actions.append(
@@ -211,7 +213,7 @@ def plan(ctx: InstallContext) -> list[Action]:
             )
         )
     else:
-        existing_managed = _helpers.managed_block_content(rules_path)
+        existing_managed = managed_files.managed_block_content(rules_path)
         if existing_managed is None:
             # File exists with no managed markers — user-authored
             actions.append(
@@ -230,7 +232,7 @@ def plan(ctx: InstallContext) -> list[Action]:
                     },
                 )
             )
-        elif _helpers.content_hash(existing_managed) != _helpers.content_hash(body):
+        elif managed_files.content_hash(existing_managed) != managed_files.content_hash(body):
             # Markers present, content drifted from the canonical
             # template — replace the managed block (preserving any
             # user content outside the markers).
@@ -277,7 +279,7 @@ def _plan_plugin_packaging(ctx: InstallContext) -> list[Action]:
     """
     actions: list[Action] = []
     plugin_dir = _helpers.cursor_plugin_dir()
-    source_root = _helpers.resolve_lore_source_root(ctx.lore_repo)
+    source_root = resolve_lore_source_root(ctx.lore_repo)
     if source_root is None:
         actions.append(
             Action(
@@ -303,14 +305,14 @@ def _plan_plugin_packaging(ctx: InstallContext) -> list[Action]:
         )
         return actions
 
-    claude_manifest = _helpers.read_claude_manifest(source_root)
+    claude_manifest = read_claude_manifest(source_root)
     cursor_manifest = _helpers.generate_cursor_plugin_manifest(claude_manifest)
     cursor_hooks = _helpers.generate_cursor_hooks_json(claude_manifest)
     plugin_mcp = {
         "mcpServers": {"lore": _helpers.lore_mcp_entry(SCHEMA_VERSION)}
     }
 
-    sentinel_path = plugin_dir / _helpers.PLUGIN_SENTINEL
+    sentinel_path = plugin_dir / managed_files.PLUGIN_SENTINEL
     manifest_path = plugin_dir / ".cursor-plugin" / "plugin.json"
     skills_dst = plugin_dir / "skills"
     rules_dst = plugin_dir / "rules"
@@ -324,7 +326,7 @@ def _plan_plugin_packaging(ctx: InstallContext) -> list[Action]:
             kind=KIND_NEW,
             description="Mark plugin dir as lore-managed",
             target=str(sentinel_path),
-            summary=f"sentinel {_helpers.PLUGIN_SENTINEL} (provenance for uninstall)",
+            summary=f"sentinel {managed_files.PLUGIN_SENTINEL} (provenance for uninstall)",
             payload={
                 "path": str(sentinel_path),
                 "content": (
@@ -454,7 +456,7 @@ def _is_lore_managed_entry(existing: dict) -> bool:
         return False
     if cmd != "lore" and Path(cmd).name != "lore":
         return False
-    allowed = {"command", "args", _helpers.SCHEMA_VERSION_KEY}
+    allowed = {"command", "args", managed_files.SCHEMA_VERSION_KEY}
     return set(existing.keys()) <= allowed
 
 
@@ -485,7 +487,7 @@ def uninstall_plan(ctx: InstallContext) -> list[Action]:
                 },
             )
         )
-    if rules_path.exists() and _helpers.managed_block_content(rules_path) is not None:
+    if rules_path.exists() and managed_files.managed_block_content(rules_path) is not None:
         actions.append(
             Action(
                 kind=KIND_DELETE,
@@ -500,14 +502,14 @@ def uninstall_plan(ctx: InstallContext) -> list[Action]:
         )
 
     plugin_dir = _helpers.cursor_plugin_dir()
-    sentinel = plugin_dir / _helpers.PLUGIN_SENTINEL
+    sentinel = plugin_dir / managed_files.PLUGIN_SENTINEL
     if plugin_dir.exists() and sentinel.exists():
         actions.append(
             Action(
                 kind=KIND_DELETE,
                 description="Remove Lore Cursor plugin directory",
                 target=str(plugin_dir),
-                summary=f"rmtree (gated on {_helpers.PLUGIN_SENTINEL} sentinel)",
+                summary=f"rmtree (gated on {managed_files.PLUGIN_SENTINEL} sentinel)",
                 payload={
                     "path": str(plugin_dir),
                     "recursive": True,

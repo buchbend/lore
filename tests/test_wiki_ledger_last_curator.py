@@ -311,7 +311,7 @@ def test_banner_renders_real_last_curator_time(tmp_path: Path) -> None:
         )
     )
 
-    from lore_cli.breadcrumb import BannerContext, render_banner
+    from lore_core.breadcrumb import BannerContext, render_banner
     from lore_core.types import Scope as ScopeType
     from lore_core.wiki_config import load_wiki_config
 

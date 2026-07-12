@@ -33,7 +33,7 @@ def test_session_banner_render_is_unaffected_by_repo_docs(tmp_path, monkeypatch)
     (tmp_path / "docs/adr").mkdir(parents=True)
     (tmp_path / "docs/adr/0001-x.md").write_text("---\ntitle: X\n---\nbody\n")
 
-    from lore_cli.hooks import SessionFacts, render_session_banner
+    from lore_core.session_start import SessionFacts, render_session_banner
 
     facts = SessionFacts(wiki_name="private", repo=None)
     banner = render_session_banner(facts)

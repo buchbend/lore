@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from textwrap import dedent
 
-from lore_cli.hooks import _filter_session_hints
+from lore_core.session_start import filter_session_hints as _filter_session_hints
 from lore_core.verdicts_sidecar import set_confirmed
 from lore_mcp.server import handle_read, handle_search
 

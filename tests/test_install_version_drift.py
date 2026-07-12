@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from lore_core.install._helpers import check_lore_version_match
+from lore_core.source_root import check_lore_version_match
 
 
 def _write_pyproject(repo: Path, version: str) -> None:
@@ -116,7 +116,7 @@ def test_doctor_check_finds_repo_via_walk_up() -> None:
 
 
 # ---------------------------------------------------------------------------
-# SessionStart banner version — `_lore_version` prefers the on-disk source
+# SessionStart banner version — `lore_version` prefers the on-disk source
 # manifest so the status line tracks a `git pull` without a reinstall. The
 # drift check above *warns* about staleness; this is what the banner shows.
 # ---------------------------------------------------------------------------
@@ -127,18 +127,17 @@ def test_banner_version_prefers_source_manifest(
 ) -> None:
     """With a resolvable source tree the banner reads plugin.json, not the
     (possibly stale) installed package metadata."""
-    from lore_cli import hooks
-    from lore_core.install import _helpers
+    from lore_core import session_start, source_root
 
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root", lambda lore_repo=None: tmp_path
+        source_root, "resolve_lore_source_root", lambda lore_repo=None: tmp_path
     )
     monkeypatch.setattr(
-        _helpers, "read_claude_manifest", lambda root: {"version": "1.2.3"}
+        source_root, "read_claude_manifest", lambda root: {"version": "1.2.3"}
     )
     # Installed metadata deliberately differs — source must win.
     monkeypatch.setattr("importlib.metadata.version", lambda name: "0.0.1")
-    assert hooks._lore_version() == "1.2.3"
+    assert session_start.lore_version() == "1.2.3"
 
 
 def test_banner_version_falls_back_to_metadata_without_source(
@@ -146,14 +145,13 @@ def test_banner_version_falls_back_to_metadata_without_source(
 ) -> None:
     """A plain PyPI install (no resolvable source tree) reports the installed
     package version."""
-    from lore_cli import hooks
-    from lore_core.install import _helpers
+    from lore_core import session_start, source_root
 
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root", lambda lore_repo=None: None
+        source_root, "resolve_lore_source_root", lambda lore_repo=None: None
     )
     monkeypatch.setattr("importlib.metadata.version", lambda name: "0.9.9")
-    assert hooks._lore_version() == "0.9.9"
+    assert session_start.lore_version() == "0.9.9"
 
 
 def test_banner_version_falls_back_when_manifest_unreadable(
@@ -161,15 +159,14 @@ def test_banner_version_falls_back_when_manifest_unreadable(
 ) -> None:
     """A resolvable source root with a corrupt plugin.json degrades to the
     installed metadata rather than crashing the SessionStart hook."""
-    from lore_cli import hooks
-    from lore_core.install import _helpers
+    from lore_core import session_start, source_root
 
     def _boom(root: Path) -> dict:
         raise ValueError("bad json")
 
     monkeypatch.setattr(
-        _helpers, "resolve_lore_source_root", lambda lore_repo=None: tmp_path
+        source_root, "resolve_lore_source_root", lambda lore_repo=None: tmp_path
     )
-    monkeypatch.setattr(_helpers, "read_claude_manifest", _boom)
+    monkeypatch.setattr(source_root, "read_claude_manifest", _boom)
     monkeypatch.setattr("importlib.metadata.version", lambda name: "0.9.9")
-    assert hooks._lore_version() == "0.9.9"
+    assert session_start.lore_version() == "0.9.9"

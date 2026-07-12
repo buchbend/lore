@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from lore_adapters import (
     Adapter,
     UnknownIntegrationError,
@@ -11,7 +10,17 @@ from lore_adapters import (
     register,
     registered_integrations,
 )
+from lore_adapters import registry as _registry
 from lore_adapters.protocol import Adapter as AdapterProtocol
+
+
+@pytest.fixture(autouse=True)
+def _restore_registry():
+    """Snapshot and restore the registry around every test."""
+    saved = dict(_registry._REGISTRY)
+    yield
+    _registry._REGISTRY.clear()
+    _registry._REGISTRY.update(saved)
 
 
 class StubAdapter(AdapterProtocol):
@@ -68,6 +77,12 @@ def test_registered_integrations_lists_v1_set() -> None:
     assert "manual-send" in integrations
     # Should be sorted
     assert integrations == sorted(integrations)
+
+
+def test_registry_contains_exactly_live_adapters() -> None:
+    """Registry registers exactly the two live adapters: claude-code, manual-send."""
+    integrations = registered_integrations()
+    assert integrations == ["claude-code", "manual-send"]
 
 
 def test_register_adds_new_adapter() -> None:

@@ -189,7 +189,7 @@ Matrix sink walkthrough.
 ## Ambient banner vs. MCP pull
 
 SessionStart injects a deliberately small, deterministic banner
-(`lore_cli/hooks.py:render_session_banner`) — no LLM call, no network
+(`lore_core/session_start.py:render_session_banner`) — no LLM call, no network
 call: a status line, an optional `## Focus` block for the attached
 project, at most two last-session hints, freshness lines only when
 there's positive evidence (see below), and a fixed two-line directive
@@ -200,21 +200,26 @@ a session note is a lab record, never an instruction.
 Depth comes from explicit MCP calls (`lore mcp` / `lore_mcp/server.py`),
 not from anything injected ambiently:
 
-- `lore_search`, `lore_read`, `lore_index`, `lore_catalog`,
-  `lore_resume`, `lore_wikilinks` — retrieval primitives.
+- `lore_search`, `lore_read`, `lore_resume` — retrieval primitives.
 - `lore_drill` — one composite `search → read → expand wikilinks →
   read_expanded` call with a structured trace
   (`docs/architecture/lore-drill.md`).
-- `lore_briefing_gather`, `lore_inbox_classify` — read-only gathers
-  that a skill turns into prose, then commits via a CLI verb.
-- `lore_journal_write` / `lore_journal_read` — the AI/human scratch
-  journal (`lore_core/journal.py`); freeform, no LLM abstraction, no
+- `lore_inbox_classify` — read-only gather that a skill turns into
+  prose, then commits via a CLI verb.
+- `lore_journal_write` — the AI/human scratch journal
+  (`lore_core/journal.py`); freeform, no LLM abstraction, no
   propagation, never a source for ambient context.
+- `lore_pending_verdicts` / `lore_verdict` — list and record freshness
+  verdicts; backs `/lore:verify` and the in-passing verdict nudge.
 - `lore_repo_docs_list` / `lore_repo_docs_fetch`
   (`lore_core/repo_docs.py`) — pull-only reads of a connected repo's
   `docs/adr/` and `docs/prd/`. Ratified decisions live in the repo, not
   in the vault; Lore reads them on request instead of re-deriving them
   from session transcripts.
+- `lore_tier_resolve` — resolve a semantic model tier to the concrete
+  model for the current host before spawning a subagent.
+- `lore_codemap` — bounded, cached slice of the connected repo's code
+  map (symbols / directory / callers modes), never the whole map.
 - `lore_context_pack` (`lore_core/context_pack.py`) — deterministic
   context resolver: given a scope, repo state, and issue/PR/epic, returns
   a pointer pack — recent session notes for this scope, ADRs/PRDs that
@@ -255,7 +260,9 @@ above:
 | Briefing gather (read-only) | `lore_core/briefing/gather.py` |
 | Repo ADR/PRD pull (filesystem side) | `lore_core/repo_docs.py` |
 | MCP server (tool dispatch) | `lore_mcp/server.py` |
-| SessionStart / PreCompact banner + hooks | `lore_cli/hooks.py` |
+| Hook dispatch (the seven `lore hook ...` entry points) | `lore_cli/hooks.py` |
+| SessionStart context assembly + banner | `lore_core/session_start.py` |
+| Capture routing (transcripts, flush, spawn gate) | `lore_curator/capture_routing.py` |
 | Freshness classification | `lore_core/freshness.py` |
 | Vault/wiki/scope resolution | `lore_core/scope_resolver.py`, `lore_core/state/` |
 
@@ -264,7 +271,7 @@ above:
 Terms used in the workflow layer and orchestration:
 
 - **Workflow** — a skill-bundled planning chain: `seed-epic → orient →
-  grill-with-docs → to-epic → orchestrate-epic → document-epic`. Each step
+  grilling → to-epic → orchestrate-epic → document-epic`. Each step
   is a callable skill, with checkpoints between shaping (human-controlled)
   and autonomous build. See `docs/conventions.md` for the stage vocabulary,
   artifact homes, and tier assignments.

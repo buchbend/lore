@@ -1,8 +1,8 @@
-"""Per-session drain store — append-only event log surfaced by `lore news`.
+"""Per-session drain store — append-only event log surfaced by `lore status`.
 
-Drain events — what Lore did on a session's behalf, surfaced by
-`lore news` — are emitted onto the unified event spine with
-``source="drain"`` (issue #188). Each event carries the resolving
+Drain events — what Lore did on a session's behalf, surfaced by the
+"news" section of `lore status` — are emitted onto the unified event
+spine with ``source="drain"``. Each event carries the resolving
 ``session_id`` so per-session and ``_system`` streams stay separable on
 one shared log. There is no longer a per-session ``<session-id>.jsonl``
 writer; :class:`DrainStore` is a thin producer/reader adapter over the

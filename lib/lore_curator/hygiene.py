@@ -11,8 +11,6 @@ Runs on the retained ``lore curator [--wiki] [--apply]`` command (and the
     ``git log --follow``.
   - **team_mode_hint** — advise creating ``_users.yml`` when a solo wiki has
     grown multiple git authors.
-  - **staleness** — a no-op: staleness is positive-evidence-only at read time
-    (see :mod:`lore_core.freshness`); age alone never flags.
 
 Writes ``_review.md`` per wiki for SessionStart to surface. Writes are
 mtime-guarded — a note edited mid-run (e.g. open in Obsidian) is skipped
@@ -73,13 +71,6 @@ class CuratorReport:
 
 
 @dataclass(frozen=True)
-class PassContext:
-    """Shared inputs passed to every hygiene pass."""
-
-    today: date
-
-
-@dataclass(frozen=True)
 class PassResult:
     """Output bundle — passes may produce actions, hints, or both."""
 
@@ -92,7 +83,7 @@ class HygienePass:
     """One curator hygiene pass — a named, frontmatter-only wiki walk."""
 
     name: str
-    run: Callable[[Path, PassContext], PassResult]
+    run: Callable[[Path], PassResult]
 
 
 # ---------------------------------------------------------------------------
@@ -199,20 +190,6 @@ def _apply_patch(text: str, patch: dict) -> str:
 # ---------------------------------------------------------------------------
 # Curation passes
 # ---------------------------------------------------------------------------
-
-
-def _pass_staleness(wiki_path: Path, today: date, threshold: int) -> list[CuratorAction]:
-    """No-op since PRD #65 (positive-evidence-only staleness).
-
-    The legacy 90-day age rule is incompatible with the read-time
-    freshness model in :mod:`lore_core.freshness`. Age alone never
-    flags a note now — staleness requires a named cause (authored
-    marker or broken wikilink). The function survives as a hook for
-    future positive-evidence aggregation in Curator C (e.g., rolling
-    up orphan-flagged notes into the report). Arguments are accepted
-    but unused.
-    """
-    return []
 
 
 def _pass_supersession(wiki_path: Path) -> list[CuratorAction]:
@@ -395,36 +372,15 @@ def _pass_git_backfill(wiki_path: Path) -> list[CuratorAction]:
 
 
 # ---------------------------------------------------------------------------
-# Pass-protocol adapters + registry
+# Pass registry
 # ---------------------------------------------------------------------------
 
 
-def _run_staleness(wiki_path: Path, ctx: PassContext) -> PassResult:
-    return PassResult(actions=_pass_staleness(wiki_path, ctx.today, 0))
-
-
-def _run_supersession(wiki_path: Path, ctx: PassContext) -> PassResult:
-    return PassResult(actions=_pass_supersession(wiki_path))
-
-
-def _run_implements(wiki_path: Path, ctx: PassContext) -> PassResult:
-    return PassResult(actions=_pass_implements(wiki_path))
-
-
-def _run_git_backfill(wiki_path: Path, ctx: PassContext) -> PassResult:
-    return PassResult(actions=_pass_git_backfill(wiki_path))
-
-
-def _run_team_mode_hint(wiki_path: Path, ctx: PassContext) -> PassResult:
-    return PassResult(hints=_pass_team_mode_hint(wiki_path))
-
-
 HYGIENE_PASSES: list[HygienePass] = [
-    HygienePass("staleness", _run_staleness),
-    HygienePass("supersession", _run_supersession),
-    HygienePass("implements", _run_implements),
-    HygienePass("git_backfill", _run_git_backfill),
-    HygienePass("team_mode_hint", _run_team_mode_hint),
+    HygienePass("supersession", lambda w: PassResult(actions=_pass_supersession(w))),
+    HygienePass("implements", lambda w: PassResult(actions=_pass_implements(w))),
+    HygienePass("git_backfill", lambda w: PassResult(actions=_pass_git_backfill(w))),
+    HygienePass("team_mode_hint", lambda w: PassResult(hints=_pass_team_mode_hint(w))),
 ]
 
 # ---------------------------------------------------------------------------
@@ -475,7 +431,6 @@ def run_hygiene(
 
     wikis = discover_wikis(wiki_filter)
     reports: list[CuratorReport] = []
-    today = date.today()
     now = _dt.now(UTC)
     rid = run_id or now.strftime("%Y-%m-%dT%H-%M-%S")
 
@@ -513,9 +468,8 @@ def run_hygiene(
                 )
 
             report = CuratorReport(wiki=wiki_path.name)
-            pass_ctx = PassContext(today=today)
             for pass_def in HYGIENE_PASSES:
-                result = pass_def.run(wiki_path, pass_ctx)
+                result = pass_def.run(wiki_path)
                 report.actions.extend(result.actions)
                 report.hints.extend(result.hints)
             reports.append(report)

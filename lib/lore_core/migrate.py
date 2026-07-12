@@ -1,7 +1,7 @@
 """One-shot frontmatter migrations for Lore's schema evolution.
 
 Migrations are idempotent (re-running is a no-op). Each is driven by a
-CLI flag on `lore migrate`. Most users only need `--add-schema-version`
+CLI flag on `lore migrate frontmatter`. Most users only need `--add-schema-version`
 once after upgrading to this version.
 """
 

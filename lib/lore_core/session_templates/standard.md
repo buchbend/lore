@@ -54,10 +54,8 @@ is the status-line preview SessionStart shows in the next session.
 
 ## Body shape (locked)
 
-The session-note layout is *conditional* — Phase-2 selects a
-``NarrativeShape`` from edit activity + user assent (see
-`lore_core.narrative_kind`) and the renderer omits empty sections.
-Two canonical shapes:
+The session-note layout is *conditional* — the renderer omits empty
+sections. Two canonical shapes:
 
 **Work shape** (the slice contains real file edits):
 

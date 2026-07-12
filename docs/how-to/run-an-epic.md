@@ -19,9 +19,9 @@ small, clear change, use the [fast path](use-the-fast-path.md) instead.
 
 1. **Shape it.** In a session pointed at the idea (or the seed issue), run
    `/lore-workflow:orient` to reflect the work back and confirm it, then
-   `/lore-workflow:grill-with-docs` to stress-test the plan and record
-   decisions inline. Do not skip this: an epic built on an unshaped plan
-   wastes the autonomous build.
+   `/lore-workflow:grilling` — say "grill with docs" — to stress-test the plan
+   and record decisions inline. Do not skip this: an epic built on an
+   unshaped plan wastes the autonomous build.
 2. **Cross the checkpoint.** Run `/lore-workflow:to-epic`. It writes the PRD
    to `docs/prd/` via `lore workflow create-prd`, opens the epic tracker
    issue and one sub-issue per feature, and emits the roadmap dependency

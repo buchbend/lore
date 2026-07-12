@@ -178,7 +178,7 @@ written into `wiki/<name>/sessions/` are ever pushed.
 When a Claude Code session starts in `~/git/data-transfer`:
 
 ```
-hooks.py:_session_start
+session_start.py:session_start_text
   ↓
 scope_resolver.py:resolve_scope(cwd)
   ↓

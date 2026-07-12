@@ -9,7 +9,7 @@ here so unrelated tests keep asserting on a stable shape.
 
 from __future__ import annotations
 
-from lore_cli.hooks import _load_directive_lines
+from lore_core.session_start import load_directive_lines as _load_directive_lines
 
 #: Current expected output of the directive loader. Update in lockstep
 #: with ``lore_core/templates/integration-rules/default.md``.
@@ -60,14 +60,16 @@ def test_load_directive_lines_returns_empty_when_template_missing(monkeypatch):
     shield surfaces the actionable hint."""
     from pathlib import Path
 
-    from lore_cli import hooks
+    from lore_core import session_start
 
     # Point the directive path at a path that doesn't exist; read_text
     # raises FileNotFoundError, which the loader must swallow.
     monkeypatch.setattr(
-        hooks, "_DIRECTIVE_PATH", Path("/nonexistent/templates/integration-rules/default.md")
+        session_start,
+        "_DIRECTIVE_PATH",
+        Path("/nonexistent/templates/integration-rules/default.md"),
     )
-    assert hooks._load_directive_lines() == []
+    assert session_start.load_directive_lines() == []
 
 
 def test_session_start_shield_catches_unexpected_exception(monkeypatch, capsys):

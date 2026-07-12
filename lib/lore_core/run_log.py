@@ -3,8 +3,8 @@
 Curator run events are emitted onto the unified event spine
 (``source="curator"``) — one envelope per decision record, keyed by
 ``run_id``. There is no longer a per-run archival file or a ``runs-live``
-tee; ``lore trace`` / ``lore runs`` reconstruct a run by grouping spine
-records on ``run_id`` (see :mod:`lore_core.run_reader`).
+tee; consumers reconstruct a run by grouping spine records on ``run_id``
+(see :mod:`lore_core.run_reader`).
 
 The :class:`RunLogger` context-manager API is unchanged, so every producer
 (``session_curator``, ``hygiene``, ``curator_cmd``) is untouched — only the

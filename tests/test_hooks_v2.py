@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 from lore_cli import hooks
+from lore_core import session_start
 
 SCOPES_YML_SAMPLE = {
     "scopes": {
@@ -241,7 +242,7 @@ def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
     (repo_dir / ".lore.yml").write_text(
         "wiki: ccat\nscope: ccat:data-center:data-transfer\nbackend: github\n"
     )
-    monkeypatch.setattr(hooks, "current_repo", lambda _cwd: "ccatobs/data-transfer")
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: "ccatobs/data-transfer")
 
     out = hooks._session_start(str(repo_dir))
     assert ": active" in out
@@ -275,7 +276,7 @@ def test_status_line_shows_scope_not_project_wikilink(
     (wiki / "data-transfer.md").write_text(
         "---\ntype: project\nrepo: ccatobs/data-transfer\n---\n\nbody\n"
     )
-    monkeypatch.setattr(hooks, "current_repo", lambda _cwd: "ccatobs/data-transfer")
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: "ccatobs/data-transfer")
 
     out = hooks._session_start(str(repo_dir))
     status_line = out.splitlines()[0]
@@ -297,7 +298,7 @@ def test_session_start_never_shows_issue_or_pr_counts(fake_vault, tmp_path, monk
         "wiki: ccat\nscope: ccat:data-center:data-transfer\nbackend: github\n"
         "issues: --assignee @me --state open\nprs: --author @me\n"
     )
-    monkeypatch.setattr(hooks, "current_repo", lambda _cwd: "ccatobs/data-transfer")
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: "ccatobs/data-transfer")
 
     from lore_core import gh as gh_mod
 
@@ -320,7 +321,7 @@ def test_session_start_no_lore_config_emits_attach_hint(fake_vault, tmp_path, mo
     repo_dir = tmp_path / "no-lore"
     repo_dir.mkdir()
     # No CLAUDE.md at all
-    monkeypatch.setattr(hooks, "current_repo", lambda _cwd: None)
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
 
     out = hooks._session_start(str(repo_dir))
     assert "no `## Lore` attach block" in out
@@ -338,7 +339,7 @@ def test_session_start_from_lore_missing_wiki_emits_attach_hint(
     (repo_dir / "CLAUDE.md").write_text(
         "## Lore\n\n- wiki: does-not-exist\n- scope: foo\n"
     )
-    monkeypatch.setattr(hooks, "current_repo", lambda _cwd: None)
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
 
     out = hooks._session_start(str(repo_dir))
     assert "no `## Lore` attach block" in out

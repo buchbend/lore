@@ -57,14 +57,11 @@ def _build_app() -> typer.Typer:
     # unified `lore --help` listing.
     from lore_cli import (
         attach_cmd,
-        attachments_cmd,
         backfill_cmd,
         briefing_cmd,
         codemap_cmd,
-        completions_cmd,
         config_cmd,
         curator_cmd,
-        detach_cmd,
         doctor_cmd,
         drill_cmd,
         hooks,
@@ -74,23 +71,17 @@ def _build_app() -> typer.Typer:
         install_cmd,
         journal_cmd,
         lint_cmd,
-        log_cmd,
         mcp_cmd,
         migrate_cmd,
-        news_cmd,
-        off_cmd,
-        on_cmd,
-        proc_cmd,
         project_cmd,
         quarantine_cmd,
-        registry_cmd,
         resume_cmd,
-        runs_cmd,
         scopes_cmd,
         search_cmd,
         session_cmd,
         status_cmd,
         tier_cmd,
+        toggle_cmd,
         trace_cmd,
         transcripts_cmd,
         wiki_cmd,
@@ -98,7 +89,7 @@ def _build_app() -> typer.Typer:
     )
 
     app = typer.Typer(
-        add_completion=False,
+        add_completion=True,
         help="lore — knowledge-graph tooling for AI-coding teams.",
         no_args_is_help=True,
         rich_markup_mode="rich",
@@ -122,31 +113,25 @@ def _build_app() -> typer.Typer:
     app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
     app.add_typer(project_cmd.app, name="project", rich_help_panel=_KN)
     app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
-    app.add_typer(news_cmd.app, name="news", rich_help_panel=_KN)
     app.add_typer(resume_cmd.app, name="resume", rich_help_panel=_KN)
     app.add_typer(lint_cmd.app, name="lint", rich_help_panel=_KN)
     app.add_typer(curator_cmd.app, name="curator", rich_help_panel=_KN)
-    app.add_typer(on_cmd.app, name="on", rich_help_panel=_KN)
-    app.add_typer(off_cmd.app, name="off", rich_help_panel=_KN)
+    app.add_typer(toggle_cmd.on_app, name="on", rich_help_panel=_KN)
+    app.add_typer(toggle_cmd.off_app, name="off", rich_help_panel=_KN)
 
     app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
     app.add_typer(tier_cmd.app, name="tier", rich_help_panel=_ADV)
-    app.add_typer(attachments_cmd.app, name="attachments", rich_help_panel=_ADV)
     app.add_typer(briefing_cmd.app, name="briefing", rich_help_panel=_ADV)
     app.add_typer(codemap_cmd.app, name="codemap", rich_help_panel=_ADV)
-    app.add_typer(completions_cmd.app, name="completions", rich_help_panel=_ADV)
-    app.add_typer(detach_cmd.app, name="detach", rich_help_panel=_ADV)
     app.add_typer(hooks.hook_app, name="hook", rich_help_panel=_ADV)
     app.add_typer(inbox_cmd.app, name="inbox", rich_help_panel=_ADV)
-    app.add_typer(journal_cmd.app, name="journal", rich_help_panel=_KN)
+    # Parked feature — off by default, so it stays out of `lore --help`.
+    # The verbs keep working for anyone who already turned it on.
+    app.add_typer(journal_cmd.app, name="journal", hidden=True)
     app.add_typer(ingest_cmd.app, name="ingest", rich_help_panel=_ADV)
-    app.add_typer(log_cmd.app, name="log", rich_help_panel=_ADV)
     app.add_typer(mcp_cmd.app, name="mcp", rich_help_panel=_ADV)
     app.add_typer(migrate_cmd.app, name="migrate", rich_help_panel=_ADV)
-    app.add_typer(proc_cmd.app, name="proc", rich_help_panel=_ADV)
     app.add_typer(quarantine_cmd.app, name="quarantine", rich_help_panel=_ADV)
-    app.add_typer(registry_cmd.app, name="registry", rich_help_panel=_ADV)
-    app.add_typer(runs_cmd.app, name="runs", rich_help_panel=_ADV)
     app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
     app.add_typer(trace_cmd.app, name="trace", rich_help_panel=_ADV)
     app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
@@ -166,10 +151,10 @@ def _build_app() -> typer.Typer:
 def __getattr__(name: str):
     """Lazy module-level ``app`` for ``from lore_cli.__main__ import app``.
 
-    Tests and ``lore_cli.completions_cmd`` reach for ``app`` directly;
-    serving it through PEP 562 ``__getattr__`` lets the ``lore hook ...``
-    fast path in :func:`main` skip ``_build_app()`` (and the eager
-    cmd-module import that comes with it) entirely.
+    Tests reach for ``app`` directly; serving it through PEP 562
+    ``__getattr__`` lets the ``lore hook ...`` fast path in :func:`main`
+    skip ``_build_app()`` (and the eager cmd-module import that comes
+    with it) entirely.
     """
     if name == "app":
         global _app

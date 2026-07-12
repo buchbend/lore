@@ -38,8 +38,6 @@ EXPECTED_SKILL_NAMES = {
     "document-epic",
     "domain-modeling",
     "grilling",
-    "grill-me",
-    "grill-with-docs",
     "implement-issue",
     "orchestrate-epic",
     "orient",
@@ -50,8 +48,6 @@ EXPECTED_SKILL_NAMES = {
 
 GRILLING_SKILL_FILES = {
     "grilling": ("SKILL.md",),
-    "grill-me": ("SKILL.md",),
-    "grill-with-docs": ("SKILL.md",),
     "domain-modeling": ("SKILL.md", "CONTEXT-FORMAT.md", "ADR-FORMAT.md"),
 }
 
@@ -209,11 +205,14 @@ def test_grilling_subsystem_cohesion() -> None:
         for filename in files:
             path = SKILLS_ROOT / skill / filename
             assert path.exists(), f"missing required file: {path.relative_to(REPO_ROOT)}"
-    gwd_text = (SKILLS_ROOT / "grill-with-docs" / "SKILL.md").read_text()
-    for referenced in ("grilling", "domain-modeling"):
-        assert referenced in gwd_text, f"grill-with-docs must reference '{referenced}'"
-    grill_me_text = (SKILLS_ROOT / "grill-me" / "SKILL.md").read_text()
-    assert "grilling" in grill_me_text, "grill-me must reference 'grilling'"
+    grilling_text = (SKILLS_ROOT / "grilling" / "SKILL.md").read_text()
+    frontmatter = _parse_frontmatter(grilling_text)
+    description = frontmatter["description"].lower()
+    for phrase in ("grill me", "grill with docs", "grill"):
+        assert phrase in description, f"grilling description must carry trigger phrase '{phrase}'"
+    assert "domain-modeling" in grilling_text, (
+        "grilling must reference 'domain-modeling' for its doc-context mode"
+    )
 
 
 def test_no_hardcoded_model_names() -> None:

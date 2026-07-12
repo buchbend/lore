@@ -20,9 +20,7 @@ delegation conventions shared across skills live in
 |-------|----------------|
 | `ccat-workflow-init` | Onboard a repo — a thin pointer at `lore attach --scaffold-workflow`. |
 | `orient` | First step of a task — homework, then reflect understanding back before planning. |
-| `grilling` | Interview the user relentlessly to stress-test a plan or design. |
-| `grill-me` | Run a `/lore-workflow:grilling` session. |
-| `grill-with-docs` | Run a `/lore-workflow:grilling` session that also drives `domain-modeling`. |
+| `grilling` | Interview the user relentlessly to stress-test a plan or design — "grill with docs" mode also drives `domain-modeling`. |
 | `domain-modeling` | Build and sharpen a project's domain model (CONTEXT.md, ADRs). |
 | `to-epic` | Turn a plan/PRD into a PRD file plus an epic tracker issue with a roadmap DAG. |
 | `orchestrate-epic` | Supervise parallel TDD implementation of an epic — plan, dispatch, crosscheck, land. |

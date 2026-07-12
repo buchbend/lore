@@ -1,10 +1,11 @@
-"""`lore attachments` — inspect and manage the host-local attachments file.
+"""`lore attach attachments` — inspect the host-local attachments file.
 
-Four commands:
+A debug sub-group of `lore attach`, mounted there by ``attach_cmd``:
 
-* ``lore attachments ls``      — list every attachment on this host
-* ``lore attachments show PATH`` — show the attachment that covers PATH
-* ``lore attachments rm PATH``  — remove the attachment at PATH
+* ``lore attach attachments ls``        — list every attachment on this host
+* ``lore attach attachments show PATH`` — show the attachment covering PATH
+* ``lore attach attachments rm PATH``   — remove the attachment at PATH
+* ``lore attach attachments purge-unattached`` — retire orphaned ledger rows
 
 Underlying state lives at ``$LORE_ROOT/.lore/attachments.json`` and is
 mutated through :class:`lore_core.state.attachments.AttachmentsFile`.

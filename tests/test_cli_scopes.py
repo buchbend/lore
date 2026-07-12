@@ -1,7 +1,8 @@
-"""Tests for `lore scopes` CLI (ls / show / rename / reparent / rm)."""
+"""Tests for `lore scopes` CLI (ls / show / rename / reparent / rm / wikis / doctor)."""
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -181,3 +182,39 @@ def test_rm_fails_with_attachments(lore_root: Path, tmp_path: Path) -> None:
 def test_rm_missing(lore_root: Path) -> None:
     result = runner.invoke(app, ["scopes", "rm", "nope"])
     assert result.exit_code == 1
+
+
+# ---- wikis / doctor (folded in from the retired `lore registry` group) ----
+
+def test_wikis_lists_wiki_dirs(lore_root: Path) -> None:
+    (lore_root / "wiki" / "a").mkdir(parents=True)
+    (lore_root / "wiki" / "b").mkdir(parents=True)
+
+    result = runner.invoke(app, ["scopes", "wikis", "--format", "json"])
+    assert result.exit_code == 0, result.output
+
+    names = [entry["wiki"] for entry in json.loads(result.output)]
+    assert names == ["a", "b"]
+
+
+def test_doctor_flags_missing_wiki_root(lore_root: Path) -> None:
+    """No wiki dirs at all — nothing to validate, so it fails."""
+    result = runner.invoke(app, ["scopes", "doctor"])
+    assert result.exit_code == 1
+
+
+def test_doctor_flags_wiki_without_claude_md(lore_root: Path) -> None:
+    (lore_root / "wiki" / "a").mkdir(parents=True)
+
+    result = runner.invoke(app, ["scopes", "doctor"])
+    assert result.exit_code == 1
+    assert "CLAUDE.md" in result.output
+
+
+def test_doctor_passes_healthy_wiki(lore_root: Path) -> None:
+    wiki = lore_root / "wiki" / "a"
+    wiki.mkdir(parents=True)
+    (wiki / "CLAUDE.md").write_text("# a\n")
+
+    result = runner.invoke(app, ["scopes", "doctor"])
+    assert result.exit_code == 0, result.output

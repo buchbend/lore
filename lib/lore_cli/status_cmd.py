@@ -304,18 +304,44 @@ def _retention_lines(lore_root: Path, now: datetime) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# news section — absorbs `lore news` (cursor advance preserved, #193/#188)
+# news section — absorbs the former `lore news` (cursor advance preserved)
 # ---------------------------------------------------------------------------
+
+# Human-facing labels for the drain's machine event vocabulary. Display-only.
+_NEWS_COPY = {
+    "note-filed": "new note",
+    "note-appended": "added to today's note",
+    "surface-proposed": "surface proposed",
+    "transcript-synced": "transcript synced",
+}
+
+
+def _collect_drain_events(lore_root, session_id, cutoff, wiki, limit):
+    """Load session + system drain events since ``cutoff``, filtered by ``wiki``."""
+    from lore_core.drain import SYSTEM_SESSION, DrainStore
+
+    session_store = DrainStore(lore_root, session_id)
+    system_store = DrainStore(lore_root, SYSTEM_SESSION)
+    session_events = session_store.read(since=cutoff, limit=limit)
+    system_events = system_store.read(since=cutoff, limit=limit)
+    if wiki:
+        session_events = [e for e in session_events if e.wiki == wiki]
+        system_events = [e for e in system_events if e.wiki == wiki]
+    return session_store, system_store, session_events, system_events
+
+
+def _advance_drain_cursor(store, events) -> None:
+    """Stamp the store's cursor at the newest ts in ``events``; no-op if empty."""
+    if events:
+        store.write_cursor(max(e.ts for e in events))
 
 
 def _news_lines(lore_root: Path, cwd: Path) -> list[str]:
     from lore_core.drain import DrainStore, resolve_session_id
 
-    from lore_cli.news_cmd import _COPY, _advance_cursor, _collect_events
-
     sid = resolve_session_id(cwd)[0]
     cutoff = DrainStore(lore_root, sid).read_cursor()
-    session_store, system_store, session_events, system_events = _collect_events(
+    session_store, system_store, session_events, system_events = _collect_drain_events(
         lore_root, sid, cutoff, None, limit=10
     )
     events = session_events + system_events
@@ -324,15 +350,15 @@ def _news_lines(lore_root: Path, cwd: Path) -> list[str]:
     else:
         lines = []
         for e in events:
-            label = _COPY.get(e.event, e.event)
+            label = _NEWS_COPY.get(e.event, e.event)
             wiki = f" ({e.wiki})" if e.wiki else ""
             wikilink = e.data.get("wikilink")
             detail = f" {wikilink}" if wikilink else ""
             lines.append(_line(_HEALTHY, f"{label}{wiki}{detail}"))
 
     # Advance both cursors so each event surfaces once (news semantics).
-    _advance_cursor(session_store, session_events)
-    _advance_cursor(system_store, system_events)
+    _advance_drain_cursor(session_store, session_events)
+    _advance_drain_cursor(system_store, system_events)
     return lines
 
 
@@ -386,7 +412,7 @@ def _compute_alerts(state: CaptureState, now: datetime, lore_root: Path) -> list
     if zero_runs:
         alerts.append(
             f"{_WARN} last 2 runs ({zero_runs[0]}, {zero_runs[1]}) filed 0 notes "
-            f"— lore runs show {zero_runs[0]}"
+            "— lore trace last"
         )
 
     if (
@@ -424,7 +450,7 @@ def _compute_alerts(state: CaptureState, now: datetime, lore_root: Path) -> list
                 text = role_log.read_bytes()[-2048:].decode("utf-8", errors="replace")
                 if any(m in text for m in ("Traceback", "Error:", "FATAL")):
                     role = role_log.stem
-                    alerts.append(f"{_ERROR} subprocess {role} has errors — lore proc show {role}")
+                    alerts.append(f"{_ERROR} subprocess {role} has errors — lore trace last")
             except OSError:
                 pass
 

@@ -8,6 +8,12 @@ The shape (lifted in v0.13.0):
         - imports business logic from lower layers (lore_core /
           lore_curator / lore_mcp / lore_search) — never the reverse
 
+    A module owning sibling verbs that share one implementation exposes
+    one named app per verb instead (``toggle_cmd.on_app`` /
+    ``toggle_cmd.off_app`` back the inverse ``lore on`` / ``lore off``).
+    The rule being enforced is that the verb's wiring lives in a
+    ``*_cmd.py`` — not that a file may only carry one verb.
+
     lore_cli/__main__.py
         - mounts every subapp via ``app.add_typer(<cmd>.app, name=…)``
         - never defines inline ``@app.command`` / ``@app.callback``
@@ -33,7 +39,7 @@ CLI_DIR = LIB / "lore_cli"
 # grandfathered exception: it pairs the SessionStart-hook callbacks
 # with a small ``hook_app`` for the `lore hook` verb. Anything new
 # should follow the ``*_cmd.py`` + ``app`` convention.
-APP_DEFINITION_RE = re.compile(r"^app\s*=\s*typer\.Typer\(", re.MULTILINE)
+APP_DEFINITION_RE = re.compile(r"^(?:\w+_)?app\s*=\s*typer\.Typer\(", re.MULTILINE)
 
 # In __main__.py these are forbidden (mounting only, no inline verbs).
 INLINE_HANDLER_RE = re.compile(
@@ -55,7 +61,8 @@ def test_every_verb_module_defines_app(path: Path) -> None:
     text = path.read_text()
     assert APP_DEFINITION_RE.search(text), (
         f"{path.relative_to(REPO_ROOT)} must define a module-level "
-        "`app = typer.Typer(...)` (CLI contract — see "
+        "`app = typer.Typer(...)` — or one `<verb>_app` per verb when the "
+        "module backs sibling verbs (CLI contract — see "
         "docs/architecture/cli-contract.md)."
     )
 
@@ -80,17 +87,17 @@ def test_main_dispatcher_only_mounts() -> None:
     )
 
 
-def test_drain_cmd_removed_deprecated_verbs_still_mounted() -> None:
-    """`lore drain` was removed outright (#195) — vestigial once #188 moved
-    drain-event emission onto the spine, where the janitor already
-    retention-manages it. Guards against the module or its mount creeping
-    back, and that the four *aliased* verbs (still functional during their
-    deprecation window) weren't accidentally dropped in the same change."""
+def test_drain_cmd_and_deprecated_verbs_removed() -> None:
+    """`lore drain` was removed outright — vestigial once drain-event
+    emission moved onto the spine, where the janitor already
+    retention-manages it. The four aliased verbs (`log`/`news`/`runs`/
+    `proc`) have since completed their deprecation window and were
+    removed too, in favor of `lore trace` / `lore status`. Guards
+    against any of the five modules or mounts creeping back."""
     assert not (CLI_DIR / "drain_cmd.py").exists()
     text = (CLI_DIR / "__main__.py").read_text()
     assert "drain_cmd" not in text
     assert 'name="drain"' not in text
     for verb in ("log", "news", "runs", "proc"):
-        assert f'name="{verb}"' in text, (
-            f"lore {verb} must stay mounted during its deprecation window"
-        )
+        assert not (CLI_DIR / f"{verb}_cmd.py").exists(), f"{verb}_cmd.py should be deleted"
+        assert f'name="{verb}"' not in text, f"lore {verb} should no longer be mounted"

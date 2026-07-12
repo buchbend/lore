@@ -12,7 +12,7 @@ description: At the end of a long session — often after /lore-workflow:orchest
 Capture this session's context into an **epic seed** — a tracker issue a fresh session can
 orient on cold. The seed is a **discussion seed, not a spec**: it carries the intent and the
 expensive-to-rebuild context, then the new session forms the epic via
-`/lore-workflow:orient → /lore-workflow:grill-with-docs → /lore-workflow:to-epic → /lore-workflow:orchestrate-epic`. Do NOT pre-slice or pre-decide
+`/lore-workflow:orient → /lore-workflow:grilling → /lore-workflow:to-epic → /lore-workflow:orchestrate-epic`. Do NOT pre-slice or pre-decide
 scope — that is orient/grill/lore-workflow:to-epic's job.
 
 **Tier note:** this step runs in the main session at frontier-tier — it is not delegated to a
