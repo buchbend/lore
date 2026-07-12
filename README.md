@@ -16,10 +16,10 @@ threads live in a chat window that disappears. PRs capture the diff;
 nothing captures *why*. Lore closes the loop:
 
 ```
-Session with AI  →  (auto at SessionEnd / PreCompact / cap-trip)
-                 →  transcript captured into a per-session buffer
-                 →  one chapter composed per flush, gated for PII/
-                    secrets/directive phrasing before it's appended
+Session with AI  →  transcript captured into a per-session buffer
+                 →  (at SessionEnd, once) the whole session is segmented,
+                    extracted into typed facts, gated for PII/secrets/
+                    directive phrasing, and rendered by code
                  →  one lab-notebook session note per session,
                     readable via MCP pull at next SessionStart
 ```
@@ -188,8 +188,9 @@ network egress to PyPI / the marketplace.
 
 Session notes auto-extract from Claude Code transcripts; explicit
 capture commands are no longer needed. Each session's turns accumulate
-in a buffer and are composed into chapters of a single, per-session
-lab-notebook note (see `CONTEXT.md` for the full model). Anything else
+in a buffer, and at session end the whole session is extracted into a
+single, per-session lab-notebook note — nothing is written while the
+session runs (see `CONTEXT.md` for the full model). Anything else
 in a wiki — concepts, decisions, projects, reference notes — is
 written directly, by hand or via `/lore:inbox`; there is no automatic
 daily abstraction pass.
@@ -244,13 +245,16 @@ Interactive — asks for wiki + scope, writes the managed block to
 
 Once attached with a wiki present:
 
-- **Claude Code SessionEnd / PreCompact hooks**, plus ordinary tool
-  activity, drive a per-session buffer-and-flush heartbeat — no cron.
-  A flush composes one chapter (one LLM call) from the buffered slice
-  and appends it to the session's note, behind the publish gate. No
-  LLM runs inline in the hook itself; the flush is detached.
+- **Claude Code hooks**, plus ordinary tool activity, drive a per-session
+  buffer heartbeat — no cron. **SessionEnd is the only flush:** the whole
+  session is segmented into chunks, each chunk extracted into typed facts,
+  and the note body rendered from them by code, behind the publish gate.
+  Mid-session events (a pre-compact, the buffer tripping its cap) only
+  bookkeep — the buffer keeps accumulating and no model is called, because
+  which turns mattered is knowable only from the ending. No LLM runs inline
+  in the hook itself; the flush is detached.
 - **SessionStart** also sweeps any session whose owning process is
-  provably dead (crash, closed laptop lid) — its note gets one compose
+  provably dead (crash, closed laptop lid) — its note gets one extraction
   attempt and closes, under a global singleton lock. All detached —
   SessionStart never blocks.
 - **Banner at SessionStart** is deliberately minimal: a status line, an
@@ -292,9 +296,10 @@ curator:
   threshold_pending_turns: 30   # spawn the heartbeat when ≥ N buffered turns
   max_pending_age_s: 600        # OR the oldest pending entry is this old
   a_noteworthy_tier: middle     # middle (default) | simple (cheap, higher false-neg)
-  synthesis_buffer_cap_turns: 120   # flush a chapter at this many turns...
+  synthesis_buffer_cap_turns: 120   # record a cap-trip at this many turns...
   synthesis_buffer_cap_chars: 240000 # ...or this many transcript chars
-  synthesis_model_tier: middle  # which `models.*` tier composes chapters
+                                     # (bookkeeping — the buffer keeps growing)
+  synthesis_model_tier: middle  # `models.*` tier for segmentation + extraction
 models:
   simple: claude-haiku-4-5
   middle: claude-sonnet-4-6
@@ -414,7 +419,7 @@ curator:
     base_url: https://chat.kiconnect.nrw/api/v1   # your gateway root
     # api_key_env: LORE_OPENAI_API_KEY            # optional override
     model_simple: gpt-4o-mini                     # cheap tier
-    model_middle: gpt-4o                          # default tier (chapter compose at synthesis_model_tier: middle)
+    model_middle: gpt-4o                          # default tier (extraction at synthesis_model_tier: middle)
     model_high:   gpt-4o                          # heaviest tier (synthesis_model_tier: high)
 ```
 

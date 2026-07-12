@@ -29,36 +29,95 @@ Escalate through three commands, each one level deeper:
    `$CLAUDE_PROJECT_DIR` and that the plugin hooks are actually installed
    (`lore install`).
 
-## "A note never appeared"
+## "No note appeared while my session was running"
+
+**Expected — nothing is written until the session ends.** A session's turns
+accumulate in a buffer; mid-session events (the buffer tripping its cap, a
+pre-compact) only bookkeep. Which of a session's turns mattered is knowable
+only backward, from its ending, so the whole session is read in one pass at
+close and the note appears once, complete. `capture_routing.CLOSE_TRIGGERS`
+is the single authority for which trigger flushes, and it holds exactly one
+entry: `session-end`.
+
+You will see a stub note file appear early (frontmatter, disclaimer, no
+content) — that is the placeholder the close path fills in. If the session
+has *ended* and the note is still empty or absent, that is the next entry.
+Background: [why notes are written at session
+end](../explanation/why-notes-are-written-at-session-end.md).
+
+## "A note never appeared" (after the session ended)
 
 1. **`lore status`** — the alerts section fires when there's a
    dead-lettered flush or a diverged wiki; it names the exact
    drill-down command, so start here rather than guessing.
-2. **Check the note itself for a marker chapter.** A mid-session failure
-   is silent while a retry chance remains (by design — see
-   [`session-note-lifecycle.md`, "How failures surface"](../architecture/session-note-lifecycle.md#how-failures-surface)),
-   but a give-up or a publish-gate withhold leaves a **marker chapter**
-   directly in the note. If the note exists and has a withheld-marker
-   chapter, the actual content is sitting in `lore quarantine list` (safe
-   category text only — a reviewer runs `lore quarantine show <id>` to
-   see the redacted text).
-3. **`lore trace dead`** — lists every dead-lettered flush (exhausted its
+2. **Check whether the session was discarded on purpose.** A trivial session
+   (a handful of turns, no files touched, no commits, no issues) is dropped
+   deterministically at close without spending a model call, and a session
+   whose extraction returned zero facts is dropped too — the extractor's
+   "nothing of substance" answer. Both delete the stub rather than close it
+   around an empty note. `lore trace <session-id>` shows `flush-trivial` or
+   `flush-empty` when this is what happened.
+3. **Check the note itself for a coverage gap or a marker chapter.** A chunk
+   the model could not extract becomes a **failed marker** in the ledger and a
+   one-line coverage gap in the reading; a chunk the publish gate withheld
+   becomes a **withheld marker**, and its actual content is sitting in `lore
+   quarantine list` (safe category text only — a reviewer runs `lore quarantine
+   show <id>` to see the redacted text). See
+   [`session-note-lifecycle.md`, "How failures surface"](../architecture/session-note-lifecycle.md#how-failures-surface).
+4. **`lore trace dead`** — lists every dead-lettered flush (exhausted its
    3 retries) with its reason. If the buffer you expected shows up here,
    that's your answer: `data.error`/the reason string names the cause
-   (spawn failure, compose failure, sidecar read error, chapter-append
+   (spawn failure, extraction failure, sidecar read error, chapter-append
    I/O error).
-4. **`lore trace last`** (or a specific trace_id / note path /
+5. **`lore trace last`** (or a specific trace_id / note path /
    `[[wikilink]]` once you have one) — the full chronological story of
    that flush: hook decision, spawn, LLM calls, gate outcome, note
    append, with durations and error codes at each step. `--plain` for a
    script-safe rendering, `--json` for the raw spine records.
 
+## "My note has a coverage gap line"
+
+A line like *"Coverage gap: turns 40–71 are not covered by this note"* means the
+rendered body cannot speak for that span of the session. Two causes:
+
+- **A chunk failed extraction** (or the publish gate withheld it). The span is
+  recorded in the ledger as a marker chapter with its reason, and the gap line
+  carries that reason in parentheses. One bad chunk never costs the rest of the
+  session — the other chunks still rendered.
+- **The ledger holds legacy prose.** A note written before typed facts (or a
+  session that reopened one) carries prose chapters, which contribute no facts.
+  Their spans are gaps by construction. Old notes are not migrated — this is
+  fix-forward.
+
+The gap line is deliberate, not a bug: a partial note that presented itself as
+complete would be worse than one that says where it stops. The transcript turns
+are still there; `@N` anchors point into the archived transcript.
+
+## "A ref in my note says `(unchecked)`"
+
+The ref could not be checked, which is not the same as being wrong. Commits,
+tags and files are verified against local git and the session's captured facts;
+pull requests and issues go to `gh`. When any of that is unavailable — you're
+offline, `gh` isn't installed or authenticated, the note was rendered outside
+the repository — the check cannot run, and the ref is stamped `(unchecked)`.
+
+**Positive evidence only:** a check that could not run never promotes a ref and
+never demotes it either. A failed `gh` call means GitHub was unreachable, not
+that the PR is fake, so it can never render `(not found)` — otherwise an offline
+laptop would rewrite history. Rendering never fails on this; it only hedges. See
+[ADR 0004](../adr/0004-authority-phrasing-is-code-stamped.md).
+
+`(not found)` is the other verdict, and it means the opposite: a check *did*
+run and came back empty. That ref does not exist, and its line is demoted to
+"Claimed in session, ref not found: …".
+
 ## "A flush looks stuck"
 
 `lore status`'s `flushes` line shows `queued` / `running` / `dead-lettered`
 counts. A flush sitting in `queued` or `running` for a long time is
-either genuinely still working (spawn → compose → gate → append can take
-tens of seconds) or waiting out its exponential backoff after a failed
+either genuinely still working (spawn → segment → extract → gate → render
+can take tens of seconds, one model call per chunk) or waiting out its
+exponential backoff after a failed
 attempt (base 60s, doubling, capped at 3600s — see
 `lore_core/flush_store.py`). `lore trace <selector>` shows which: a
 `flush-running` step with no `flush-published`/`flush-dead-lettered`

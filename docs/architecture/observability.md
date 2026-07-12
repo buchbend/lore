@@ -87,7 +87,7 @@ a detached flush needs to run.
    (unless one is already threaded in).
 2. The trace_id crosses the process boundary as `LORE_TRACE_ID` in the
    detached `lore curator flush` subprocess's environment — the *one*
-   place it's handed off (`chapter_flush.py:1097`).
+   place it's handed off (`chapter_flush.py:spawn_detached_flush`).
 3. `lore_cli/curator_cmd.py` reads `LORE_TRACE_ID` and stamps it onto
    every `source="curator"` run event the flush emits (`run-start`,
    `noteworthy`, `session-note`, `run-end`, …).
