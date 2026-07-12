@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import string
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,14 @@ class TestSkApiKeys:
         assert hits[0].kind == "sk-api-key"
         assert "[REDACTED:sk-api-key]" in redacted
 
+    def test_redaction_catches_sk_key_ending_in_dash(self):
+        """A trailing dash is part of the key, not left dangling after it."""
+        token = "a" * 29 + "-"
+        text = f"key: sk-{token} ok"
+        redacted, hits = redact(text)
+        assert len(hits) == 1
+        assert redacted == "key: [REDACTED:sk-api-key] ok"
+
 
 class TestGithubToken:
     """GitHub personal access tokens."""
@@ -52,17 +61,27 @@ class TestGithubToken:
 class TestGoogleApiKey:
     """Google API keys (AIza...)."""
 
-    def test_redaction_catches_aiza_key(self):
-        """Google API key pattern AIza<35 more> replaced."""
-        # AIza followed by 35 alphanumeric chars (per spec: [0-9A-Za-z_-])
-        import string
-        charset = string.ascii_letters + string.digits + "_-"
-        suffix = "".join(secrets.choice(charset) for _ in range(35))
+    # Real keys draw from [A-Za-z0-9_-]; the pattern also admits / and +. The
+    # tail character decides whether a trailing \b can close the match, so the
+    # boundary cases are enumerated rather than sampled.
+    @pytest.mark.parametrize("tail", ["A", "9", "_", "-", "/", "+"])
+    def test_redaction_catches_aiza_key(self, tail):
+        """Google API key pattern AIza<35 more> replaced, whatever the tail."""
+        suffix = "a" * 34 + tail
         text = f"API key AIza{suffix} here"
         redacted, hits = redact(text)
         assert len(hits) == 1
         assert hits[0].kind == "aiza-key"
         assert "[REDACTED:aiza-key]" in redacted
+        assert suffix not in redacted
+
+    def test_redaction_catches_random_aiza_key(self):
+        """A key over the real Google alphabet is redacted whole."""
+        charset = string.ascii_letters + string.digits + "_-"
+        suffix = "".join(secrets.choice(charset) for _ in range(35))
+        text = f"API key AIza{suffix} here"
+        redacted, hits = redact(text)
+        assert len(hits) == 1
         assert suffix not in redacted
 
 
