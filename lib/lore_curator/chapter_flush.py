@@ -1,10 +1,8 @@
 """Chapter flush lifecycle for the buffer-and-flush curator.
 
-A flush folds the buffer's unflushed transcript slice into the session's
-append-only note. What that means depends on whether the session is over.
-
-**At close** the whole slice is read backward, which is the only vantage
-from which its facts can be told apart from its noise:
+A flush folds the buffer's unflushed transcript slice into the session's note.
+There is exactly one, and it runs when the session is over — because which of a
+session's turns mattered is only knowable backward, from its ending:
 
     segment_session (indices only)  ->  extract_session (one call per
     chunk, typed facts)  ->  publish gate  ->  append_facts | withheld
@@ -13,48 +11,34 @@ from which its facts can be told apart from its noise:
 The render is deterministic code over the ledger — no LLM decides layout,
 order, or what a session ended up establishing (see ``docs/adr/0003``).
 
-**Mid-session** (cap-trip, pre-compact) a flush still composes one prose
-chapter forward, since the session's ending is not yet available to read:
-
-    read note-so-far + slice  ->  compose_chapter (one LLM call, bounded
-    retry)  ->  publish gate  ->  append_chapter | withheld marker +
-    quarantine | failed marker
-
-Both paths share one ledger, and a note may hold chapters of either kind.
-The gate is the real :class:`~lore_core.publish_gate.PublishGate`; the
-text it scans is exactly the bytes that land in the note. Composer and
-extractor each retry against the gate internally, so a gate withhold that
-reaches this layer is terminal (marker + quarantine).
+Mid-session triggers (cap-trip, pre-compact) do not flush. They bookkeep and
+leave the buffer accumulating, so the close path still sees the whole session.
+Nothing is written to the note while the session runs; the note appears once,
+complete, at the close.
 
 Failure semantics
 -----------------
-* **Mid-session (in-place) failure is silent.** No marker is written
-  while a retry chance remains: the buffer stays ``accumulating`` and the
-  next trigger retries with the grown slice. A failed attempt is only
-  remembered (``flush_attempts``) so the give-up bound can fire.
-* **Give-up bound.** A buffer with a prior failed attempt that has grown
-  to 2x the cap gets a deterministic *failed* marker chapter for the
-  span and a fresh buffer (log + counters reset) — the note stays open;
-  one session is still one note.
-* **Session-end (close) failure** writes the failed marker and closes the
-  note. Composed / withheld close paths append their chapter / marker and
-  close all the same. Either way a closed session note is immutable.
+* A chunk the model cannot extract becomes a **failed marker** for its span,
+  which the render reads back as a coverage gap — one bad chunk never costs
+  the rest of the session.
+* A chunk the gate withholds becomes a **withheld marker** plus a quarantine
+  entry. The extractor retries against the gate internally, so a withhold that
+  reaches this layer is terminal.
+* Either way the note ends closed and immutable: a closed session note is
+  final.
 
 No note is better than a noise note
 -----------------------------------
-* A **trivial session** (tiny turn count, no file/commit/issue activity,
-  no chapters yet) is discarded deterministically at close: the stub
-  note is removed, no LLM call is spent.
-* A compose that returns **zero blocks** is the model's "nothing of
-  substance" answer (``EMPTY``). In place, the judged span is consumed
-  (buffer reset) so it is never recomposed; at close, a note that never
-  gained a chapter is removed instead of being closed empty.
+* A **trivial session** (tiny turn count, no file/commit/issue activity, no
+  chapters yet) is discarded deterministically at close: the stub note is
+  removed, no LLM call is spent.
+* An extraction that returns **zero facts** is the model's "nothing of
+  substance" answer: a note that never gained a chapter is removed instead of
+  being closed empty.
 
-Markers are terminal-only. Flush triggers (cap 120 turns / 240K chars,
-pre-compact, session-end, reaper) are unchanged and live elsewhere; this
-module consumes a request and drives the composer + gate + note.
+Flush triggers live elsewhere; this module consumes a request and drives the
+segmenter + extractor + gate + note.
 """
-
 from __future__ import annotations
 
 import contextlib
@@ -68,7 +52,7 @@ from lore_core import note_document as nd
 from lore_core import publish_gate as pg
 from lore_core.flush_store import FlushState, FlushStore
 from lore_core.lockfile import LockContendedError, curator_lock
-from lore_core.publish_gate import GateResult, PublishGate
+from lore_core.publish_gate import Gate, GateResult, PublishGate
 from lore_core.session_writer import FiledNote
 from lore_core.spine import ErrorCode, SpineWriter, new_trace_id
 from lore_core.types import TranscriptHandle, Turn
@@ -77,12 +61,10 @@ from lore_curator._auto_commit import maybe_auto_commit
 from lore_curator.buffer_store import (
     Buffer,
     BufferTransitionError,
-    Counters,
     ReplayedBuffer,
     Sidecar,
     iter_all,
 )
-from lore_curator.chapter_compose import ComposeStatus, Gate, compose_chapter
 from lore_curator.chunker import segment_session
 from lore_curator.fact_extract import ExtractStatus, SessionExtraction, extract_session
 from lore_curator.session_filer import _slug
@@ -92,10 +74,8 @@ from lore_curator.session_note import (
     linkage_from_replay,
 )
 from lore_curator.stub_note import (
-    _lead_for_rename,
     _resolve_renamed_path,
     _scope_title,
-    _topic_title,
 )
 
 if TYPE_CHECKING:
@@ -105,21 +85,12 @@ if TYPE_CHECKING:
 __all__ = [
     "FlushOutcome",
     "SweepReport",
-    "flush_chapter",
     "synth_and_close",
-    "synth_in_place",
     "spawn_detached_flush",
     "sweep_dead_sessions",
     "startup_sweep",
-    "FLUSH_DEFAULT_CAP_TURNS",
-    "FLUSH_DEFAULT_CAP_CHARS",
 ]
 
-
-# Fallbacks when a wiki config can't be loaded — mirror the WikiConfig
-# curator defaults. The give-up bound is 2x these.
-FLUSH_DEFAULT_CAP_TURNS = 120
-FLUSH_DEFAULT_CAP_CHARS = 240_000
 
 # Trivial-session gate: a closing session at or below BOTH bounds, with
 # zero repo activity and no chapters yet, leaves no note at all. Kept
@@ -141,14 +112,12 @@ SWEEP_MAX_COMPOSE = 8
 class FlushOutcome:
     """Terminal report of one chapter flush.
 
-    ``status`` names the branch taken:
-    ``composed`` | ``empty`` | ``trivial`` | ``withheld`` | ``failed`` |
-    ``deferred`` | ``gave-up`` | ``closed-empty`` | ``skipped``. On
-    ``discarded`` outcomes (``trivial``, or ``empty`` at close with no
-    chapters) the stub note was deleted; ``note_path`` still names the
-    removed file so the deletion can be committed. The ``phase*`` /
-    ``degraded`` fields are compatibility shims the CLI + dispatch
-    telemetry still read.
+    ``status`` names the branch taken: ``composed`` | ``empty`` | ``trivial``
+    | ``withheld`` | ``failed`` | ``closed-empty`` | ``skipped``. On
+    ``discarded`` outcomes (``trivial``, or ``empty`` with no chapters) the
+    stub note was deleted; ``note_path`` still names the removed file so the
+    deletion can be committed. The ``phase*`` / ``degraded`` fields are
+    compatibility shims the CLI + dispatch telemetry still read.
     """
 
     buffer_stem: str
@@ -173,7 +142,7 @@ class FlushOutcome:
 
     @property
     def degraded(self) -> bool:
-        return self.status in ("failed", "deferred", "gave-up")
+        return self.status == "failed"
 
     @property
     def phase2_attempts(self) -> int:
@@ -240,10 +209,6 @@ def _read_buffered_turns(*, sidecar: Sidecar, rb: ReplayedBuffer, adapter_lookup
     return out
 
 
-def _slice_text(turns: list[Turn]) -> str:
-    return "\n".join(f"[{t.role}@{t.index}] {t.text}" for t in turns if t.text)
-
-
 # ---------------------------------------------------------------------------
 # The flush
 # ---------------------------------------------------------------------------
@@ -261,77 +226,13 @@ def synth_and_close(
     auto_commit: bool = True,
     gate: Gate | None = None,
 ) -> FlushOutcome:
-    """Flush one chapter, then close the note and archive the buffer.
+    """Read the closing session backward, fold its facts into the note, close it.
 
-    Cap-trip does *not* use this (it flushes in place); the reaper and the
-    startup sweep do, plus any caller that has decided the session is over.
-    A composed chapter, a withheld marker, or a failed marker is written —
-    either way the note ends closed and immutable.
-    """
-    return flush_chapter(
-        buffer_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=llm_client,
-        model=model,
-        adapter_lookup=adapter_lookup,
-        logger=logger,
-        auto_commit=auto_commit,
-        close=True,
-        gate=gate,
-    )
-
-
-def synth_in_place(
-    buffer_path: Path,
-    *,
-    lore_root: Path,
-    wiki_root: Path,
-    llm_client: Any = None,
-    model: str | None = None,
-    adapter_lookup=None,
-    logger: RunLogger | None = None,
-    auto_commit: bool = True,
-    gate: Gate | None = None,
-) -> FlushOutcome:
-    """Flush one chapter against the live buffer and keep it accumulating.
-
-    Cap-trip, pre-compact, and session-end fire this so one session yields
-    one growing note. On compose success a chapter is appended; on a gate
-    withhold a marker + quarantine entry are written; on compose failure
-    the flush defers silently (no marker) unless the give-up bound trips.
-    """
-    return flush_chapter(
-        buffer_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=llm_client,
-        model=model,
-        adapter_lookup=adapter_lookup,
-        logger=logger,
-        auto_commit=auto_commit,
-        close=False,
-        gate=gate,
-    )
-
-
-def flush_chapter(
-    buffer_path: Path,
-    *,
-    lore_root: Path,
-    wiki_root: Path,
-    llm_client: Any = None,
-    model: str | None = None,
-    adapter_lookup=None,
-    logger: RunLogger | None = None,
-    auto_commit: bool = True,
-    close: bool,
-    gate: Gate | None = None,
-) -> FlushOutcome:
-    """Compose one chapter and fold it into the session note.
-
-    See the module docstring for the compose -> gate -> append lifecycle
-    and the defer / give-up / close failure semantics.
+    The only flush there is: the session-end hook, the reaper and the startup
+    sweep all land here, and mid-session triggers land nowhere. See the module
+    docstring for the segment -> extract -> gate -> render lifecycle. Facts, a
+    withheld marker, or a failed marker are written — either way the note ends
+    closed and immutable.
     """
     adapter_lookup = adapter_lookup or get_adapter
     gate = gate or PublishGate()
@@ -358,7 +259,7 @@ def flush_chapter(
             skipped_reason="already-closed",
         )
 
-    # ---- Snapshot under the flock: note path, note-so-far, slice bounds -
+    # ---- Snapshot under the flock: note path, slice bounds ---------------
     with buffer.with_lock():
         sidecar = buffer.read_sidecar()
         if sidecar is None or sidecar.state == "closed":
@@ -369,11 +270,10 @@ def flush_chapter(
                 skipped_reason="closed-during-acquire",
             )
         state_before = sidecar.state
-        if close:
-            if sidecar.state == "accumulating":
-                sidecar = buffer.transition("ready")
-            if sidecar.state == "ready":
-                sidecar = buffer.transition("flushing")
+        if sidecar.state == "accumulating":
+            sidecar = buffer.transition("ready")
+        if sidecar.state == "ready":
+            sidecar = buffer.transition("flushing")
         rb = buffer.replay()
         note_path = ensure_note_from_sidecar(
             buffer,
@@ -382,12 +282,11 @@ def flush_chapter(
             wiki_root=wiki_root,
             logger=logger,
         )
-        note_so_far = _read_note_body(note_path)
         flushed_to = _flushed_to(note_path)
         last_idx = max((s.to_index for s in rb.slices), default=-1)
 
-    # ---- Trivial-session gate (close only; deterministic, no LLM) -------
-    if close and _is_trivial(rb, flushed_to):
+    # ---- Trivial-session gate (deterministic, no LLM) --------------------
+    if _is_trivial(rb, flushed_to):
         with buffer.with_lock():
             with contextlib.suppress(OSError):
                 note_path.unlink()
@@ -410,7 +309,6 @@ def flush_chapter(
         _post_flush(
             buffer=buffer,
             outcome=out,
-            close=True,
             lore_root=lore_root,
             wiki_root=wiki_root,
             sidecar=sidecar,
@@ -419,68 +317,48 @@ def flush_chapter(
         )
         return out
 
-    # Nothing new since the last chapter — close (if asked) with no chapter.
+    # Nothing new since the last chapter (a reopen that added no turns) —
+    # close with no chapter.
     if last_idx <= flushed_to:
         return _finish_no_new_turns(
             buffer,
             note_path=note_path,
-            close=close,
             state_before=state_before,
-            lore_root=lore_root,
             wiki_root=wiki_root,
             rb=rb,
             logger=logger,
         )
 
-    # ---- Compose / extract (LLM, outside the flock) ----------------------
+    # ---- Segment + extract (the session's only LLM calls, outside the flock)
     turns = _read_buffered_turns(sidecar=sidecar, rb=rb, adapter_lookup=adapter_lookup)
     unflushed = [t for t in turns if t.index > flushed_to]
-    compose_result = None
     extraction = None
     if unflushed and llm_client is not None and model:
         slice_from = min(t.index for t in unflushed)
         slice_to = max(t.index for t in unflushed)
-        if close:
-            # End mode: which facts matter is only knowable backward, so the
-            # ending — not each flush — is where the model reads the session.
-            extraction = _extract_at_close(
-                turns=unflushed,
-                llm_client=llm_client,
-                model=model,
-                gate=gate,
-                logger=logger,
-                transcript_id=sidecar.transcript_id,
-            )
-        else:
-            compose_result = compose_chapter(
-                slice_text=_slice_text(unflushed),
-                slice_from_turn=slice_from,
-                slice_to_turn=slice_to,
-                note_so_far=note_so_far,
-                llm_client=llm_client,
-                model=model,
-                gate=gate,
-                logger=logger,
-                transcript_id=sidecar.transcript_id,
-                turns_by_index={t.index: t.text for t in unflushed},
-            )
+        extraction = _extract_at_close(
+            turns=unflushed,
+            llm_client=llm_client,
+            model=model,
+            gate=gate,
+            logger=logger,
+            transcript_id=sidecar.transcript_id,
+        )
     else:
-        # No readable turns / no client: bound the span to the buffer's
-        # reach so a failed marker still records the right turn range.
+        # No readable turns / no client: bound the span to the buffer's reach
+        # so a failed marker still records the right turn range.
         slice_from = flushed_to + 1
         slice_to = last_idx
 
-    # ---- Apply the outcome (note + sidecar) under the flock -------------
+    # ---- Apply the outcome (note + sidecar) under the flock ---------------
     with buffer.with_lock():
         outcome = _apply_outcome(
             buffer=buffer,
             note_path=note_path,
-            compose_result=compose_result,
             extraction=extraction,
             slice_from=slice_from,
             slice_to=slice_to,
             rb=rb,
-            close=close,
             state_before=state_before,
             wiki_root=wiki_root,
             lore_root=lore_root,
@@ -490,7 +368,6 @@ def flush_chapter(
     _post_flush(
         buffer=buffer,
         outcome=outcome,
-        close=close,
         lore_root=lore_root,
         wiki_root=wiki_root,
         sidecar=sidecar,
@@ -533,13 +410,6 @@ def _extract_at_close(
     )
 
 
-def _read_note_body(note_path: Path) -> str:
-    try:
-        return nd.read_note(note_path).body
-    except OSError:
-        return ""
-
-
 def _rename_to_topic_slug(buffer: Buffer, note_path: Path, lead: str) -> Path:
     """Rename a note to its topic, once that topic exists.
 
@@ -574,7 +444,6 @@ class _ApplyContext:
     slice_from: int
     slice_to: int
     rb: ReplayedBuffer
-    close: bool
     wiki_root: Path
     lore_root: Path
     logger: RunLogger | None
@@ -582,46 +451,6 @@ class _ApplyContext:
     facts: Any
     linkage: Any
     store: FlushStore
-
-
-def _apply_composed(ctx: _ApplyContext, out: FlushOutcome, compose_result, flush_rec) -> bool:
-    """Fold a composed chapter into the note.
-
-    Returns False when the append hit the disk and failed — the note must
-    not then be closed, and no further writes are attempted.
-    """
-    try:
-        out.chapter_n = nd.append_chapter(
-            ctx.note_path,
-            compose_result.chapter,
-            slice_from_turn=ctx.slice_from,
-            slice_to_turn=ctx.slice_to,
-            facts=ctx.facts,
-            linkage=ctx.linkage,
-            wiki_root=ctx.wiki_root,
-            title=_topic_title(ctx.sidecar.scope, compose_result.chapter),
-        )
-    except OSError:
-        # A note write that fails on disk is a dead-letter, not a crash:
-        # record it and stop writing to a failing filesystem.
-        ctx.store.transition(
-            flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.CHAPTER_APPEND_FAILED
-        )
-        out.status = "failed"
-        return False
-
-    if out.chapter_n == 1:
-        # The note was born with a placeholder slug; its first chapter is
-        # what finally names it.
-        note_path = _rename_to_topic_slug(
-            ctx.buffer, ctx.note_path, _lead_for_rename(compose_result.chapter)
-        )
-        out.note_path = note_path
-        out.wikilink = f"[[{note_path.stem}]]"
-    out.status = "composed"
-    _clear_after_progress(ctx.buffer, close=ctx.close)
-    ctx.store.transition(flush_rec, FlushState.PUBLISHED)
-    return True
 
 
 def _apply_extracted(
@@ -727,20 +556,15 @@ def _apply_extracted(
 
 
 def _apply_empty(ctx: _ApplyContext, out: FlushOutcome, flush_rec) -> bool:
-    """Record a span the composer judged substance-free."""
+    """Record a session the extractor judged substance-free."""
     out.status = "empty"
-    if ctx.close:
-        if _flushed_to(ctx.note_path) < 0:
-            # The whole session produced nothing of substance: the stub
-            # note is removed rather than closed empty.
-            with contextlib.suppress(OSError):
-                ctx.note_path.unlink()
-            out.discarded = True
-            out.wikilink = ""
-    else:
-        # Consume the span (buffer reset, watermark kept) so the same turns
-        # are never recomposed; the session stays live.
-        _reset_buffer_fresh(ctx.buffer)
+    if _flushed_to(ctx.note_path) < 0:
+        # The whole session produced nothing of substance: the stub note is
+        # removed rather than closed around an empty render.
+        with contextlib.suppress(OSError):
+            ctx.note_path.unlink()
+        out.discarded = True
+        out.wikilink = ""
 
     if ctx.logger is not None:
         ctx.logger.emit(
@@ -751,35 +575,6 @@ def _apply_empty(ctx: _ApplyContext, out: FlushOutcome, flush_rec) -> bool:
         )
     # "Nothing of substance" is a completed flush, not a failure.
     ctx.store.transition(flush_rec, FlushState.PUBLISHED)
-    return True
-
-
-def _apply_withheld(ctx: _ApplyContext, out: FlushOutcome, compose_result, flush_rec) -> bool:
-    """Quarantine unsafe composed text and leave a marker in its place."""
-    verdict = GateResult.withheld(
-        compose_result.withheld_category,
-        compose_result.withheld_feedback,
-    )
-    w = pg.apply_withhold(
-        ctx.note_path,
-        result=verdict,
-        composed_text=compose_result.withheld_text,
-        slice_from_turn=ctx.slice_from,
-        slice_to_turn=ctx.slice_to,
-        lore_root=ctx.lore_root,
-        wiki_root=ctx.wiki_root,
-    )
-    out.chapter_n = w.chapter_n
-    out.status = "withheld"
-    _clear_after_progress(ctx.buffer, close=ctx.close)
-    if ctx.logger is not None:
-        ctx.logger.emit(
-            "flush-withheld",
-            buffer_stem=ctx.buffer.stem,
-            transcript_id=ctx.sidecar.transcript_id,
-            category=verdict.category,
-        )
-    ctx.store.transition(flush_rec, FlushState.WITHHELD)
     return True
 
 
@@ -799,73 +594,15 @@ def _mark_failed_span(ctx: _ApplyContext, out: FlushOutcome, reason: str) -> Non
 
 
 def _apply_failed(ctx: _ApplyContext, out: FlushOutcome, flush_rec) -> bool:
-    """Handle a failed composition — mark at close, else retry with backoff."""
-    if ctx.close:
-        # Last chance: no retry left, so the span is recorded as it stands.
-        _mark_failed_span(ctx, out, "composition failed at session end")
-        out.status = "failed"
-        ctx.store.transition(flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED)
-        return True
+    """Record a session that could not be extracted at all.
 
-    # Bounded retry with backoff. record_failure() re-queues with a scheduled
-    # next-eligible-retry (emitting a spine event — never silent) until
-    # MAX_ATTEMPTS failures, then dead-letters.
-    flush_rec = ctx.store.record_failure(flush_rec, error_code=ErrorCode.COMPOSE_FAILED)
-    ctx.buffer.patch(
-        flush_attempts=ctx.sidecar.flush_attempts + 1,
-        last_error="compose-failed",
-        flush_requested=None,
-    )
-
-    if FlushState(flush_rec.state) is FlushState.DEAD_LETTERED:
-        # Retries exhausted: record the failed span with a marker and reset
-        # the buffer — the note stays open, one session one note.
-        _mark_failed_span(
-            ctx, out, "composition failed after retries; span recorded and buffer reset"
-        )
-        _reset_buffer_fresh(ctx.buffer)
-        out.status = "gave-up"
-        if ctx.logger is not None:
-            ctx.logger.emit(
-                "flush-gave-up",
-                buffer_stem=ctx.buffer.stem,
-                transcript_id=ctx.sidecar.transcript_id,
-                turn_count=ctx.rb.turn_count,
-                prompt_chars=ctx.rb.prompt_chars,
-            )
-        return True
-
-    out.status = "deferred"
-    if ctx.logger is not None:
-        ctx.logger.emit(
-            "flush-deferred",
-            buffer_stem=ctx.buffer.stem,
-            transcript_id=ctx.sidecar.transcript_id,
-            flush_attempts=ctx.sidecar.flush_attempts + 1,
-        )
-    return True
-
-
-def _back_off_if_covered(
-    buffer: Buffer,
-    sidecar: Sidecar,
-    note_path: Path,
-    slice_to: int,
-    out: FlushOutcome,
-) -> bool:
-    """True when a concurrent flush already published this span.
-
-    The in-place cap-trip can race the reaper: both read the same buffer and
-    one publishes while the other is still composing. The loser re-reads the
-    note watermark here and drops its own write, or the same turns land as
-    two chapters. Only meaningful mid-session — a closing flush has no peer.
+    Reached when the buffer's turns are unreadable or no model is available (a
+    stale sweep). There is no next attempt — the span is recorded as it stands
+    and the render reads the marker back as a coverage gap.
     """
-    if _flushed_to(note_path) < slice_to:
-        return False
-    out.status = "skipped"
-    out.skipped_reason = "span-already-covered"
-    if sidecar.flush_requested is not None:
-        buffer.patch(flush_requested=None)
+    _mark_failed_span(ctx, out, "extraction failed at session end")
+    out.status = "failed"
+    ctx.store.transition(flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED)
     return True
 
 
@@ -877,7 +614,6 @@ def _begin_apply(
     slice_from: int,
     slice_to: int,
     rb: ReplayedBuffer,
-    close: bool,
     wiki_root: Path,
     lore_root: Path,
     logger: RunLogger | None,
@@ -912,7 +648,6 @@ def _begin_apply(
         slice_from=slice_from,
         slice_to=slice_to,
         rb=rb,
-        close=close,
         wiki_root=wiki_root,
         lore_root=lore_root,
         logger=logger,
@@ -942,21 +677,19 @@ def _apply_outcome(
     *,
     buffer: Buffer,
     note_path: Path,
-    compose_result,
-    extraction: SessionExtraction | None = None,
+    extraction: SessionExtraction | None,
     slice_from: int,
     slice_to: int,
     rb: ReplayedBuffer,
-    close: bool,
     state_before: str,
     wiki_root: Path,
     lore_root: Path,
     logger: RunLogger | None,
 ) -> FlushOutcome:
-    """Fold one compose result into the note and the buffer.
+    """Fold the session's extraction into the note and the buffer, then seal it.
 
-    Dispatches on the compose status; every branch drives the flush record
-    to a terminal state, and `close` then seals the note.
+    Every branch drives the flush record to a terminal state; the note is
+    closed unless a note write failed on disk.
     """
     sidecar = buffer.read_sidecar() or Sidecar(transcript_id=buffer.stem)
     out = FlushOutcome(
@@ -965,14 +698,7 @@ def _apply_outcome(
         note_path=note_path,
         wikilink=f"[[{note_path.stem}]]",
     )
-    out.attempts = (
-        sum(r.attempts for r in extraction.results)
-        if extraction is not None
-        else getattr(compose_result, "attempts", 0)
-    )
-
-    if not close and _back_off_if_covered(buffer, sidecar, note_path, slice_to, out):
-        return out
+    out.attempts = sum(r.attempts for r in extraction.results) if extraction is not None else 0
 
     ctx, flush_rec = _begin_apply(
         buffer=buffer,
@@ -981,7 +707,6 @@ def _apply_outcome(
         slice_from=slice_from,
         slice_to=slice_to,
         rb=rb,
-        close=close,
         wiki_root=wiki_root,
         lore_root=lore_root,
         logger=logger,
@@ -989,21 +714,9 @@ def _apply_outcome(
 
     if extraction is not None:
         sealable = _apply_extracted(ctx, out, extraction, flush_rec)
-        if sealable and close:
-            _seal_note(ctx, out)
-        return out
-
-    status = compose_result.status if compose_result is not None else ComposeStatus.FAILED
-    if status is ComposeStatus.COMPOSED:
-        sealable = _apply_composed(ctx, out, compose_result, flush_rec)
-    elif status is ComposeStatus.EMPTY:
-        sealable = _apply_empty(ctx, out, flush_rec)
-    elif status is ComposeStatus.WITHHELD:
-        sealable = _apply_withheld(ctx, out, compose_result, flush_rec)
     else:
         sealable = _apply_failed(ctx, out, flush_rec)
-
-    if sealable and close:
+    if sealable:
         _seal_note(ctx, out)
     return out
 
@@ -1029,70 +742,38 @@ def _is_trivial(rb: ReplayedBuffer, flushed_to: int) -> bool:
     )
 
 
-def _clear_after_progress(buffer: Buffer, *, close: bool) -> None:
-    """Reset the deferred-failure memory after a chapter / marker landed."""
-    if close:
-        return
-    buffer.patch(flush_attempts=0, last_error=None, flush_requested=None)
-
-
-def _reset_buffer_fresh(buffer: Buffer) -> None:
-    """Reset the buffer's accumulation so one session stays one note.
-
-    The failed span is now recorded as a marker chapter, so the buffer
-    starts over: the append log is truncated and counters zeroed (so it
-    drops back below the cap), while ``last_seen`` — the transcript
-    watermark — is kept so the next heartbeat resumes where it left off.
-    Caller holds the flock.
-    """
-    buffer.log_path.write_text("")
-    buffer.patch(
-        counters=Counters(),
-        flush_attempts=0,
-        last_error=None,
-        flush_requested=None,
-    )
-
-
 def _finish_no_new_turns(
     buffer: Buffer,
     *,
     note_path: Path,
-    close: bool,
     state_before: str,
-    lore_root: Path,
     wiki_root: Path,
     rb: ReplayedBuffer,
     logger: RunLogger | None,
 ) -> FlushOutcome:
+    """Close a session whose turns are all already in the ledger."""
     out = FlushOutcome(
         buffer_stem=buffer.stem,
         state_before=state_before,
         note_path=note_path,
         wikilink=f"[[{note_path.stem}]]",
-        status="closed-empty" if close else "skipped",
-        skipped_reason="" if close else "no-new-turns",
+        status="closed-empty",
     )
     with buffer.with_lock():
         sc = buffer.read_sidecar()
-        if close:
-            if not nd.is_closed(note_path):
-                linkage = linkage_from_replay(
-                    rb,
-                    cwd=sc.cwd if sc else "",
-                    wiki_root=wiki_root,
-                    handle=sc.handle if sc else "",
-                )
-                nd.close_note(
-                    note_path, facts=facts_from_replay(rb), linkage=linkage, wiki_root=wiki_root
-                )
-            buffer.transition("closed")
-            out.closed = True
-        else:
-            if sc is not None and sc.flush_requested is not None:
-                buffer.patch(flush_requested=None)
-    if close:
-        _archive(buffer, logger=logger)
+        if not nd.is_closed(note_path):
+            linkage = linkage_from_replay(
+                rb,
+                cwd=sc.cwd if sc else "",
+                wiki_root=wiki_root,
+                handle=sc.handle if sc else "",
+            )
+            nd.close_note(
+                note_path, facts=facts_from_replay(rb), linkage=linkage, wiki_root=wiki_root
+            )
+        buffer.transition("closed")
+        out.closed = True
+    _archive(buffer, logger=logger)
     return out
 
 
@@ -1100,15 +781,13 @@ def _post_flush(
     *,
     buffer: Buffer,
     outcome: FlushOutcome,
-    close: bool,
     lore_root: Path,
     wiki_root: Path,
     sidecar: Sidecar,
     auto_commit: bool,
     logger: RunLogger | None,
 ) -> None:
-    if close:
-        _archive(buffer, logger=logger)
+    _archive(buffer, logger=logger)
     if outcome.note_path is None:
         return
     if outcome.discarded:
@@ -1140,7 +819,7 @@ def _post_flush(
 
         sid, _ = resolve_session_id(Path(sidecar.cwd))
         DrainStore(lore_root, sid).emit(
-            "note-filed" if close else "note-appended",
+            "note-filed",
             wiki=sidecar.wiki,
             trace_id=logger.trace_id if logger is not None else None,
             wikilink=outcome.wikilink,

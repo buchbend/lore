@@ -679,13 +679,13 @@ def write_or_update(
     text = path.read_text()
     fm = parse_frontmatter(text)
     body_text = strip_frontmatter(text)
-    # ``synth_in_place`` may have applied a Phase-2 narrative against a
-    # live (still-accumulating) buffer. We must NOT clobber that
-    # narrative on the next heartbeat: parse the existing body and
-    # reuse its narrative sections (title, summary, decisions, worked_on,
-    # discussion, loose_ends). Activity sub-sections (commits / issues)
-    # always refresh from the deterministic replay — they're the
-    # whole point of the heartbeat rewrite.
+    # A note may already carry a narrative body (a legacy note, or one a
+    # close path rendered before the session reopened). We must NOT clobber
+    # it on the next heartbeat: parse the existing body and reuse its
+    # narrative sections (title, summary, decisions, worked_on, discussion,
+    # loose_ends). Activity sub-sections (commits / issues) always refresh
+    # from the deterministic replay — they're the whole point of the
+    # heartbeat rewrite.
     existing_body = parse_body_sections(body_text)
 
     fm["last_reviewed"] = work_time.date().isoformat()

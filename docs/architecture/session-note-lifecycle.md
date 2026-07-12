@@ -111,10 +111,9 @@ narrow and its trade-offs are the subject of
 ## Recording only what the session worked on
 
 One session, one note is worthless if that one note reports the wrong
-work. Two compose-side checks keep the record faithful. Both live in
-`lore_curator/chapter_compose.py` and both are written explicitly
-because the compose model is a ~120B open model, weak at implicit
-pragmatics.
+work. Two extraction-side checks keep the record faithful. Both live in
+`lore_curator/fact_extract.py` and both are written explicitly because
+the extraction model is a ~120B open model, weak at implicit pragmatics.
 
 ### Quoted and reference material is not the session's work
 
@@ -212,5 +211,5 @@ check for directly.
   the per-decision rationale.
 - Source: `lore_curator/reaper.py` (liveness),
   `lore_curator/buffer_append.py` + `lore_core/note_document.py`
-  (reopen + continue), `lore_curator/chapter_compose.py` (compose
+  (reopen + continue), `lore_curator/fact_extract.py` (extraction
   fidelity), `lore_curator/chapter_flush.py` (topic slug).

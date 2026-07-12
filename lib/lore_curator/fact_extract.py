@@ -40,11 +40,12 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from lore_core.note_document import FACT_KINDS, REF_TYPES, Fact, Ref, render_fact_body
+from lore_core.publish_gate import Gate, PassThroughGate
 
-from lore_curator.chapter_compose import Gate, PassThroughGate
 from lore_curator.chunker import Chunk
 
 if TYPE_CHECKING:
+
     from lore_core.run_log import RunLogger
     from lore_core.types import Turn
 

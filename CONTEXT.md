@@ -80,23 +80,26 @@ a session creates the note (disclaimer + frontmatter, zero chapters:
 `lore_curator/session_note.py:ensure_note`); later heartbeats just
 grow the buffer.
 
-A **flush** turns the buffer's not-yet-composed slice into one
-chapter (`lore_curator/chapter_flush.py`):
+A **flush** happens once, when the session is over
+(`lore_curator/chapter_flush.py:synth_and_close`). Which of a session's
+turns mattered is only knowable backward, from its ending, so nothing is
+written while it runs — mid-session triggers (cap-trip, pre-compact) only
+bookkeep and leave the buffer accumulating:
 
 ```
-read note-so-far + slice → compose_chapter (1 LLM call, ≤2 attempts)
-                          → publish gate
-                          → append_chapter | withheld marker + quarantine | failed marker
+segment_session (indices only) → extract_session (1 LLM call per chunk,
+                                 typed facts) → publish gate
+                               → append_facts | withheld marker + quarantine
+                                 | failed marker
+                               → render_note (deterministic, no LLM)
 ```
 
-`lore_curator/chapter_compose.py:compose_chapter` is **one LLM call**
-per chapter — every turn is read by an LLM exactly once, no separate
-outline pass. The prompt includes the complete note-so-far (so a topic
-left open earlier and resolved now becomes a continuation block) and
-the unflushed transcript slice. Between the (at most two) attempts, a
-deterministic **anchor lint** (`chapter_anchor_lint`) rejects any `@N`
-outside the slice's turn range, and the publish gate may withhold the
-result — either verdict feeds corrective text into the retry.
+Every LLM call a note costs is in that pipeline: the segmenter
+(`lore_curator/chunker.py`), one extraction per chunk plus one headline
+(`lore_curator/fact_extract.py`). Nothing downstream is generative — the
+body is rendered from the fact ledger by code, and each fact's refs are
+verified (`lore_core/ref_verify.py`) so a line's authority is code-stamped,
+never model-authored.
 
 Flush triggers (unchanged, buffer cap 120 turns / 240K chars,
 pre-compact, session-end) fire either an **in-place** flush (buffer
@@ -251,8 +254,10 @@ above:
 | Session note document (chapters, disclaimer, lifecycle) | `lore_core/note_document.py` |
 | Publish gate (scanners, phrasing lint, detector, withhold) | `lore_core/publish_gate.py` |
 | Private quarantine sidecar | `lore_core/quarantine.py` |
-| One-call chapter composer + anchor lint | `lore_curator/chapter_compose.py` |
-| Flush lifecycle (compose → gate → append/marker), give-up, sweep | `lore_curator/chapter_flush.py` |
+| Session segmentation (beat boundaries, indices only) | `lore_curator/chunker.py` |
+| Typed-fact extraction + anchor lint + headline | `lore_curator/fact_extract.py` |
+| Deterministic ref verification (positive evidence only) | `lore_core/ref_verify.py` |
+| Flush lifecycle (segment → extract → gate → render), sweep | `lore_curator/chapter_flush.py` |
 | Buffer-and-flush heartbeat (Curator A pass) | `lore_curator/session_curator.py` |
 | Buffer storage + sidecar state machine | `lore_curator/buffer_store.py` |
 | Note creation from a buffer (heartbeat + flush both call this) | `lore_curator/session_note.py` |

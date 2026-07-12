@@ -130,8 +130,7 @@ class TopicBlock:
     ``anchor_turn`` is the transcript turn where the topic starts,
     rendered as a single ``@N`` anchor at the block's end. ``quote``,
     when set, is a verbatim excerpt from that anchor turn — code-
-    attached from the transcript, never model-authored (see
-    ``compose_chapter``'s ``turns_by_index``).
+    attached from the transcript, never model-authored.
 
     A continuation block (``continued=True``) resumes or corrects an
     earlier topic; it renders a ``Continued: <continued_topic>`` lead
@@ -555,7 +554,13 @@ def _fact_line(fact: Fact, verification: str, verdicts: dict[tuple[str, str], st
     return f"- {line} @{int(fact.anchor_turn)}"
 
 
+# What a gap line says when the chapter carries no reason of its own — a prose
+# chapter, whose span simply never became facts.
+_DEFAULT_GAP_REASON = "no facts were extracted from this span"
+
+
 def _gap_line(from_turn: int, to_turn: int, reason: str) -> str:
+
     """A failed chapter, rendered as what it costs the reader: a coverage gap."""
     detail = _neutralize_marker(reason.strip().rstrip("."))
     tail = f" ({detail})" if detail else ""
@@ -623,11 +628,28 @@ def _ledger_of(body: str) -> str:
 
 
 def _coverage_gaps(fm: dict[str, Any]) -> list[tuple[int, int, str]]:
-    return [
-        (int(c.get("from_turn", 0)), int(c.get("to_turn", 0)), str(c.get("reason") or ""))
-        for c in fm.get("chapters") or []
-        if c.get("kind") == "marker" and c.get("marker") == MARKER_FAILED
-    ]
+    """The turn spans this note's rendered body does not speak for.
+
+    Every chapter that is not a ``facts`` chapter is a gap: a failed or withheld
+    marker, but equally a prose chapter from a legacy note or a reopen. The body
+    is rendered from the fact ledger alone, so a span that contributed no facts
+    is a span the reader is not seeing — and a partial reading that presents
+    itself as complete is worse than no note. Tolerant of a malformed chapter
+    entry: a gap line is a hint, never a reason to fail a render.
+    """
+    gaps: list[tuple[int, int, str]] = []
+    for c in fm.get("chapters") or []:
+        if c.get("kind") == "facts":
+            continue
+        try:
+            from_turn = int(c.get("from_turn", 0))
+            to_turn = int(c.get("to_turn", 0))
+        except (TypeError, ValueError):
+            continue
+        reason = str(c.get("reason") or "") or _DEFAULT_GAP_REASON
+        gaps.append((from_turn, to_turn, reason))
+    return gaps
+
 
 
 # ---------------------------------------------------------------------------
