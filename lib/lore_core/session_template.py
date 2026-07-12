@@ -1,11 +1,8 @@
 """Per-wiki session-note template loader.
 
-Curator A's noteworthy LLM call injects the active template's section
-norms into its prompt context — see
-``lore_curator.noteworthy._build_prompt_text``. Per-wiki overrides
-live at ``<wiki>/templates/session.md`` and replace the shipped
-``standard.md`` for that wiki only. Other wikis (and any flow without
-a wiki override) fall through to the shipped default.
+Per-wiki overrides live at ``<wiki>/templates/session.md`` and replace
+the shipped ``standard.md`` for that wiki only. Other wikis (and any
+flow without a wiki override) fall through to the shipped default.
 """
 from __future__ import annotations
 
