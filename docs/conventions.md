@@ -24,14 +24,14 @@ the next; the human is the checkpoint between *shaping* and *autonomous
 build*.
 
 ```
-seed-epic → orient → grill-with-docs → to-epic → orchestrate-epic → document-epic
+seed-epic → orient → grilling → to-epic → orchestrate-epic → document-epic
 ```
 
 | Step | What it does |
 |------|--------------|
 | `seed-epic` | End-of-session capture: distils hard-won context into a GitHub **epic seed** issue a cold session can `orient` on. A discussion seed, not a spec. |
 | `orient` | First step of any work. The session does its own homework with read-only subagents, then reflects its understanding back for confirmation. Explores; does not implement or fix scope. |
-| `grill-with-docs` | A relentless, one-question-at-a-time interview that stress-tests a plan against the project's domain model and documented decisions, sharpening terminology and updating `CONTEXT.md`/ADRs inline. Composes `grilling` + `domain-modeling`. |
+| `grilling` | A relentless, one-question-at-a-time interview that stress-tests a plan. Default mode ("grill me") checks whether `domain-modeling` is needed at the end; "grill with docs" mode runs it alongside the interview from the start, sharpening terminology and updating `CONTEXT.md`/ADRs inline. |
 | `to-epic` | The human checkpoint. Turns a shaped plan into an **epic tracker** issue (linking a PRD under `docs/prd/`) plus one sub-issue per feature, emitting the canonical roadmap DAG `orchestrate-epic` consumes. |
 | `orchestrate-epic` | Fully autonomous: fans out one test-first teammate per feature, crosschecks every pull request, integrates onto an `epic/<n>` branch in dependency order, and lands one final pull request to the detected target branch. |
 | `document-epic` | Runs as `orchestrate-epic`'s **final automatic stage** (see below), not a manual step. Updates the Diátaxis docs to match the landed epic. |
@@ -45,8 +45,8 @@ fast path for one well-understood issue, keeping the same discipline (strict
 TDD, ADR check, Diátaxis docs pass) at single-issue weight.
 
 **Bundled skills:** `ccat-workflow-init`, `seed-epic`, `orient`, `grilling`,
-`domain-modeling`, `grill-with-docs`, `grill-me`, `to-epic`,
-`orchestrate-epic`, `document-epic`, `tdd`, `debug`, `implement-issue` — all
+`domain-modeling`, `to-epic`, `orchestrate-epic`, `document-epic`, `tdd`,
+`debug`, `implement-issue` — all
 shipped as `lore-workflow:<name>` skills. `ccat-workflow-init` is a one-time
 onboarding scaffold, not part of the per-epic chain above; see
 [Onboard a repo](how-to/onboard-a-repo.md).

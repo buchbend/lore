@@ -63,9 +63,9 @@ Ask whether this matches. If the user corrects or adds input, re-orient with a *
 re-explore — only the facets that moved, not a full re-run. Repeat until they confirm.
 
 ### 5. Handoff
-On confirmation, carry the shared understanding into the grilling step — default
-`/lore-workflow:grill-with-docs` (it aligns terminology against CONTEXT.md/ADRs, which the downstream
-`/lore-workflow:to-epic` slices depend on). Use `/lore-workflow:grill-me` instead when there is no domain model to align
+On confirmation, carry the shared understanding into the grilling step — default to
+`/lore-workflow:grilling` in its "grill with docs" mode (it aligns terminology against CONTEXT.md/ADRs, which the downstream
+`/lore-workflow:to-epic` slices depend on). Say "grill me" for plain `/lore-workflow:grilling` instead when there is no domain model to align
 against.
 
-Chain: `/lore-workflow:orient` → `/lore-workflow:grill-with-docs` → `/lore-workflow:to-epic` → `/lore-workflow:orchestrate-epic`.
+Chain: `/lore-workflow:orient` → `/lore-workflow:grilling` → `/lore-workflow:to-epic` → `/lore-workflow:orchestrate-epic`.

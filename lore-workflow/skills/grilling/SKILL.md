@@ -1,6 +1,6 @@
 ---
 name: lore-workflow:grilling
-description: Interview the user relentlessly about a plan or design. Use when the user wants to stress-test a plan before building, or uses any 'grill' trigger phrases.
+description: Interview the user relentlessly about a plan or design. Use when the user wants to stress-test a plan before building, says "grill me" or "grill with docs", or uses any other 'grill' trigger phrase.
 ---
 
 **Tier note:** this step runs in the main session at frontier-tier — it is not delegated to a
@@ -14,6 +14,13 @@ If opts to grill slow:
 
 Ask the questions one at a time, waiting for feedback on each question before continuing. Asking multiple questions at once is bewildering.
 
-Else: if all questions solved to satisfaction, check if /lore-workflow:domain-modeling is needed and if need be align with the user before updating the domain model then if all questions and domain modle updates are satisfactory say so and invoke /lore-workflow:to-epic. 
+## Doc-context mode
+
+How much /lore-workflow:domain-modeling runs alongside the interview is a mode, picked by how the user asked to be grilled:
+
+- **Plain ("grill me"), default.** Once all questions are solved to satisfaction, check if /lore-workflow:domain-modeling is needed and, if so, align with the user before updating the domain model.
+- **With docs ("grill with docs").** Run /lore-workflow:domain-modeling alongside the interview from the start — record ADRs and glossary terms as each decision lands, not only at the end.
+
+Else: if all questions and any domain model updates are satisfactory, say so and invoke /lore-workflow:to-epic.
 
 If a question can be answered by exploring the codebase, explore the codebase instead.

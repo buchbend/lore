@@ -49,7 +49,7 @@ dependency only runs one way — nothing in `lore` core imports or requires
 The chain it bundles:
 
 ```
-seed-epic → orient → grill-with-docs → to-epic → orchestrate-epic → document-epic
+seed-epic → orient → grilling → to-epic → orchestrate-epic → document-epic
 ```
 
 with `implement-issue` as a lighter-weight track for one well-understood
