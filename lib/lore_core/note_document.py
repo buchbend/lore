@@ -480,16 +480,23 @@ _MISSING_LEAD = "Claimed in session, ref not found:"
 _STAMPS = {VERIFIED: "✓", UNCHECKED: "(unchecked)", MISSING: "(not found)"}
 
 
-def _verdict_of(fact: Fact, verdicts: dict[tuple[str, str], str]) -> str:
-    """A fact's verification: its weakest ref, or ``NO_REFS`` when it has none.
+def _verdict_for(ref: Ref, verdicts: dict[tuple[str, str], str]) -> str:
+    """The verdict on one ref — the single place the default is decided.
 
     A ref the verifier said nothing about counts as ``UNCHECKED``. Absence of a
-    verdict is not a pass — that default is what makes a forgotten or crashed
-    verification degrade phrasing instead of forging a check mark.
+    verdict is not a pass: that default is what makes a forgotten, skipped or
+    crashed verification degrade phrasing instead of forging a check mark. Both
+    the line's phrasing and its stamp read the verdict from here, so the two can
+    never disagree about what was actually established.
     """
+    return verdicts.get((ref.type, ref.value), UNCHECKED)
+
+
+def _verdict_of(fact: Fact, verdicts: dict[tuple[str, str], str]) -> str:
+    """A fact's verification: its weakest ref, or ``NO_REFS`` when it has none."""
     if not fact.refs:
         return NO_REFS
-    seen = [verdicts.get((r.type, r.value), UNCHECKED) for r in fact.refs]
+    seen = [_verdict_for(r, verdicts) for r in fact.refs]
     for verdict in (MISSING, UNCHECKED):
         if verdict in seen:
             return verdict
@@ -519,7 +526,7 @@ def _ref_clause(refs: list[Ref], verdicts: dict[tuple[str, str], str]) -> str:
     out = []
     for ref in refs:
         value = _neutralize_marker(" ".join(ref.value.split()))
-        stamp = _STAMPS[verdicts.get((ref.type, ref.value), UNCHECKED)]
+        stamp = _STAMPS[_verdict_for(ref, verdicts)]
         out.append(f"{ref.type} {value} {stamp}".strip())
     return ", ".join(out)
 
