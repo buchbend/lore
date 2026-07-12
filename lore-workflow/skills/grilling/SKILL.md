@@ -21,6 +21,6 @@ How much /lore-workflow:domain-modeling runs alongside the interview is a mode, 
 - **Plain ("grill me"), default.** Once all questions are solved to satisfaction, check if /lore-workflow:domain-modeling is needed and, if so, align with the user before updating the domain model.
 - **With docs ("grill with docs").** Run /lore-workflow:domain-modeling alongside the interview from the start — record ADRs and glossary terms as each decision lands, not only at the end.
 
-Else: if all questions and any domain model updates are satisfactory, say so and invoke /lore-workflow:to-epic.
+Once all questions and any domain-model updates are satisfactory, say so and invoke /lore-workflow:to-epic.
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
