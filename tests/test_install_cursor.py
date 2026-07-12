@@ -10,13 +10,13 @@ from pathlib import Path
 import pytest
 from lore_core.install import _helpers, cursor
 from lore_core.install._helpers import execute_action
+from lore_core.install.base import InstallContext
 from lore_core.managed_files import (
     MANAGED_BLOCK_END,
     MANAGED_BLOCK_START,
     SCHEMA_VERSION_KEY,
     write_managed_markdown,
 )
-from lore_core.install.base import InstallContext
 
 
 @pytest.fixture
