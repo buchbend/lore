@@ -166,7 +166,12 @@ def _topic_title(scope_label: str, chapter: Chapter) -> str:
     ``""`` under the same no-usable-lead conditions — the caller keeps the
     placeholder title in that case.
     """
-    lead = _lead_for_rename(chapter)
+    return _scope_title(scope_label, _lead_for_rename(chapter))
+
+
+def _scope_title(scope_label: str, lead: str) -> str:
+    """``scope: name`` from any topic text — a chapter's lead or a headline."""
+    lead = lead.strip()
     if not lead:
         return ""
     return f"{scope_label}: {lead.rstrip('.').strip()}"
