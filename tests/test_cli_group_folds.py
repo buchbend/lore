@@ -27,6 +27,14 @@ def _root() -> typer.main.click.Group:
     return typer.main.get_command(app)
 
 
+def test_root_offers_native_shell_completion() -> None:
+    """The root app must opt into Typer's built-in completion machinery —
+    that's what actually covers the retired `completions` group above.
+    """
+    param_names = {p.name for p in _root().params}
+    assert {"install_completion", "show_completion"} <= param_names
+
+
 @pytest.mark.parametrize("group", RETIRED_GROUPS)
 def test_retired_group_not_registered(group: str) -> None:
     assert group not in _root().commands

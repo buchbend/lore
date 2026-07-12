@@ -2,7 +2,7 @@
 
 **Audience:** contributors debugging why a note didn't appear, adding a
 new spine producer, or wondering why `lore log`/`lore news`/`lore runs`/
-`lore proc` print a deprecation notice.
+`lore proc` no longer exist as commands.
 
 Before this epic, debugging one background flush meant walking seven
 uncorrelated surfaces — `lore log`, `lore proc`, `lore runs`, `lore

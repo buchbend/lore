@@ -81,11 +81,9 @@ states.
   doctor --json` (without `--fix`), or pass `--fix --yes` and parse only
   the trailing JSON line.
 
-## Deprecated commands still work, but check the pointer
+## "No such command" for `lore log` / `lore news` / `lore runs` / `lore proc`
 
-`lore log`, `lore news`, `lore runs`, and `lore proc` still run during
-their deprecation window — each prints a one-line pointer to its
-replacement on stderr, then behaves exactly as before. If a script or
-habit still reaches for one of these, the pointer names what to switch
-to; they're removed on the version named in `CHANGELOG.md`'s
-`### Deprecated` entry for issue #195.
+These are gone, not renamed under a flag — `lore trace` and `lore status`
+fully absorbed their role (see `CHANGELOG.md`'s `### Removed` entry). Reach
+for `lore trace <selector>` for the correlated flush story these used to
+print, or `lore status` for the health snapshot.
