@@ -96,6 +96,16 @@ lower-layer module. If you find yourself writing a real function in
 `<verb>_cmd.py`, that function should live in `lore_<package>` and be
 imported.
 
+**5. Only the root app enables shell completion.**
+The `<verb>_cmd.py` skeleton above sets `add_completion=False`, and every
+sub-app keeps it that way — a sub-app that offered `--install-completion`
+would install a competing script for the same `lore` binary. The root
+`typer.Typer` in `__main__.py` sets `add_completion=True`, and that single
+flag is the entire shell-completion surface: it completes the whole command
+tree, sub-verbs included. Flipping it off silently removes completion for
+users with no error anywhere — do not copy the sub-app template's value onto
+the root.
+
 ## The seam helpers
 
 Two small helpers smooth the boundary between typer and the test

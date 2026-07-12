@@ -87,3 +87,33 @@ These are gone, not renamed under a flag — `lore trace` and `lore status`
 fully absorbed their role (see `CHANGELOG.md`'s `### Removed` entry). Reach
 for `lore trace <selector>` for the correlated flush story these used to
 print, or `lore status` for the health snapshot.
+
+Other verbs that moved rather than vanished:
+
+| You typed | Use instead |
+| :--- | :--- |
+| `lore detach` | `lore attach remove` |
+| `lore attachments <sub>` | `lore attach attachments <sub>` |
+| `lore registry ls` / `lore registry doctor` | `lore scopes wikis` / `lore scopes doctor` |
+| `lore curator backfill-slugs` | `lore migrate slugs` |
+| `lore curator --migrate-open-items` | `lore migrate open-items` |
+| `lore migrate --add-schema-version` | `lore migrate frontmatter --add-schema-version` |
+
+`lore journal` still works; it is only hidden from `lore --help` while the
+feature stays parked.
+
+## "No such command: completions" — shell completion
+
+`lore completions <shell>` is gone. Shell completion now comes from Typer's
+native flags on the root command, which cover every verb including the
+folded ones:
+
+```bash
+lore --install-completion     # install into your shell's rc
+lore --show-completion        # print the script, to source or inspect
+```
+
+If your shell rc carries `eval "$(lore completions bash)"` from an earlier
+version, that line now fails on startup. Replace it — `lore
+--install-completion` writes the wiring for you, so no `eval` line is needed
+at all.
