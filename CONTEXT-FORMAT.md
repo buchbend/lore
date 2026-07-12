@@ -1,57 +1,116 @@
-# Session note format v2 — title and body shape
+# Session note format — title and body shape
 
-Refines the note-essence voice from `CONTEXT.md`'s "The session note"
-section: same vocabulary (chapter, topic block, lead, disclaimer), two
-rendering changes that make a note's *display* title and its *skim
-layer* easier to read at a glance. Grounded in
-`lore_core/note_document.py` and `lore_curator/stub_note.py`.
+The exact shape a session note takes on disk. `CONTEXT.md` owns the
+vocabulary (buffer, flush, chapter, fact, ledger, disclaimer) and the write
+path; this file is the rendering. Grounded in `lore_core/note_document.py`
+and `lore_curator/stub_note.py`.
+
+A note is written **once, at session close** — the whole file below appears
+in one step. Nothing is rendered while the session runs.
 
 ## Title: `scope: name`
 
 A note's frontmatter `title` is a placeholder at creation
-(`stub_note._placeholder_title`, e.g. `proj:x session — 2026-07-10`) —
-the first heartbeat fires before any chapter exists, so there's no
-topic to name yet. Once the first chapter composes, the title is
-replaced with `<scope>: <name>`:
+(`stub_note._placeholder_title`, e.g. `proj:x session — 2026-07-10`) — the
+first heartbeat fires before there is any content to name.
 
-- **scope first** — the linkage scope (repo/project slug, e.g.
-  `proj:x` or `ccat:data-center`) so a list of notes sorts and scans
-  by *where*, not by an arbitrary date stamp.
-- **name second** — a compiled human-readable name taken from the
-  first chapter's opening lead (`stub_note._topic_title`, reusing
-  `_lead_for_rename`'s same source text as the filename slug — title
-  and filename always name the same topic).
+At close, one bounded LLM call writes the session's **headline** from the
+extracted fact table, and the headline names the note:
+`render_note(title=_scope_title(scope, headline))` replaces the placeholder
+with `<scope>: <name>`.
+
+- **scope first** — the linkage scope (repo/project slug, e.g. `proj:x` or
+  `ccat:data-center`) so a list of notes sorts and scans by *where*, not by
+  an arbitrary date stamp.
+- **name second** — the headline, minus its trailing period.
 
 Example: `proj:x: Traced the flush race`.
 
-The rename happens once, on chapter 1 only
-(`note_document.append_chapter`'s `title` kwarg is a no-op past the
-first chapter) — later chapters extend the note but never rename it,
-matching the existing filename-rename behavior
-(`chapter_flush._rename_to_topic_slug`).
+The same headline slugs the filename (`chapter_flush._rename_to_topic_slug`),
+so title and filename always name the same topic. An empty headline leaves
+both at their placeholder.
 
-## Body: inline lead
-
-Each topic block's bold lead sentence opens the same paragraph as its
-body prose — not a standalone bold line sitting above a blank-line
-gap:
+## Body: disclaimer, reading, ledger
 
 ```
-**Chose an append-only note model.** We decided the note file is
-append-only until close.
+> **Lab-notebook session note — not authoritative.** …          ← DISCLAIMER
+
+**Traced the flush race.**                                       ← headline
+
+## Done
+- The chunker landed. — commit 1111111 ✓ @2
+- The extraction PR merged. — pr 289 (unchecked) @4
+
+## Decisions recorded
+- The ledger stays append-only. Why: The grounding tier survives every
+  rewrite. — file docs/adr/0003.md ✓ @10
+
+## Findings
+- The gate scans the marker too. — file lib/lore_core/publish_gate.py ✓ @18
+- Observed in session: The local model returns empty on oversized prompts. @24
+
+## Open
+- Agreed in discussion, recorded nowhere: Curators never edit a note body.
+  — The body is derived state. @16
+- Coverage gap: turns 40–71 are not covered by this note (extraction failed
+  at session end). @40
+
+## Ledger                                                        ← LEDGER_HEADING
+<!-- lore:chapter 1 @0-39 -->
+<!-- lore:fact {"anchor": 2, "kind": "done", …} -->
+**The chunker landed.**
+> "…verbatim quote from turn 2…"
+@2
+…
 ```
 
-not:
+Everything above `## Ledger` is **derived state** — a pure function of the
+ledger below it, recomputed in full at every close (ADR 0003). The ledger is
+append-only. The same ledger renders to the same bytes, always.
+
+### The four sections
+
+Fixed order, which is the reading order: **Done**, **Decisions recorded**,
+**Findings**, **Open**. Items sort by anchor. Empty sections are dropped
+entirely.
+
+- A `progress` fact reads under **Open** — it is unfinished work at the
+  session's ending — *unless* its thread later reached a terminal (`done`)
+  fact, in which case the render suppresses it. Suppression is a decision of
+  the reading only; the fact stays whole in the ledger.
+- A `decision` with no refs is not a decision: it routes to **Open** as
+  *"Agreed in discussion, recorded nowhere: … — <why>"*.
+- Every chapter that is not a `facts` chapter — a failed marker, a withheld
+  marker, or a prose chapter from a legacy note — renders as a one-line
+  **coverage gap** under Open, so a partial reading never presents itself as
+  complete.
+
+### A rendered line
 
 ```
-**Chose an append-only note model.**
-
-We decided the note file is append-only until close.
+- [lead] <text> [Why: <why>] [— <type> <value> <stamp>, …] @<anchor>
 ```
 
-A reader reads the bold sentence and bails, or keeps reading the same
-paragraph for the rest of the topic — no forced stop between claim and
-support. The skim layer (bold leads read top-to-bottom, CONTEXT.md)
-is unchanged: leads are still bold, still self-sufficient, still first
-in their paragraph. Quote and `@N` anchor still follow as their own
-lines. See `note_document._render_block`.
+The `text` and the `why` are the model's. **Every other word is code's**
+(ADR 0004), chosen by a template keyed on `(kind, verification)`:
+
+| Verification | Lead | Ref stamp |
+| :--- | :--- | :--- |
+| verified | *(none — the line states itself)* | `✓` |
+| unchecked | *(none)* | `(unchecked)` |
+| missing | `Claimed in session, ref not found:` | `(not found)` |
+| no refs | `Reported done in session, recorded nowhere:` / `Reported in session:` / `Agreed in discussion, recorded nowhere:` / `Observed in session:` / `Left open in session:` (by kind) | — |
+
+## The ledger
+
+One chapter per extracted chunk, opened by an HTML-comment delimiter carrying
+its turn span. Each fact is stored twice: as a machine-readable
+`<!-- lore:fact {…} -->` marker (the copy `render_note` reads back) and as
+human-readable text — the bold statement, its code-attached verbatim quote
+from the anchor turn, and the `@N` anchor. Drill-down chain: rendered line →
+fact in the ledger → quote → archived transcript turn.
+
+Notes written before typed facts carry **prose chapters** of bold-lead topic
+blocks instead of fact markers. They still parse and still render; contributing
+no facts, their spans appear as coverage gaps in any note that mixes them with
+facts. They are not migrated (fix-forward).
