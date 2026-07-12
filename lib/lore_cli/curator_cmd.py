@@ -2,9 +2,9 @@
 
 Bare `lore curator [--wiki] [--apply]` runs the deterministic hygiene
 passes (supersession, `implements:` back-links, git-backfill of dates,
-team-mode hint; staleness is a positive-evidence-only no-op) and writes
-`_review.md` per wiki. `lore curator run` files session notes from
-pending transcripts. The retired weekly LLM defrag (`--defrag`) is gone.
+team-mode hint) and writes `_review.md` per wiki. `lore curator run`
+files session notes from pending transcripts. The retired weekly LLM
+defrag (`--defrag`) is gone.
 """
 
 from __future__ import annotations

@@ -11,8 +11,6 @@ Runs on the retained ``lore curator [--wiki] [--apply]`` command (and the
     ``git log --follow``.
   - **team_mode_hint** — advise creating ``_users.yml`` when a solo wiki has
     grown multiple git authors.
-  - **staleness** — a no-op: staleness is positive-evidence-only at read time
-    (see :mod:`lore_core.freshness`); age alone never flags.
 
 Writes ``_review.md`` per wiki for SessionStart to surface. Writes are
 mtime-guarded — a note edited mid-run (e.g. open in Obsidian) is skipped
@@ -201,20 +199,6 @@ def _apply_patch(text: str, patch: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _pass_staleness(wiki_path: Path, today: date, threshold: int) -> list[CuratorAction]:
-    """No-op since PRD #65 (positive-evidence-only staleness).
-
-    The legacy 90-day age rule is incompatible with the read-time
-    freshness model in :mod:`lore_core.freshness`. Age alone never
-    flags a note now — staleness requires a named cause (authored
-    marker or broken wikilink). The function survives as a hook for
-    future positive-evidence aggregation in Curator C (e.g., rolling
-    up orphan-flagged notes into the report). Arguments are accepted
-    but unused.
-    """
-    return []
-
-
 def _pass_supersession(wiki_path: Path) -> list[CuratorAction]:
     """When note A says `supersedes [[B]]`, write `superseded_by: [[A]]` on B.
 
@@ -399,10 +383,6 @@ def _pass_git_backfill(wiki_path: Path) -> list[CuratorAction]:
 # ---------------------------------------------------------------------------
 
 
-def _run_staleness(wiki_path: Path, ctx: PassContext) -> PassResult:
-    return PassResult(actions=_pass_staleness(wiki_path, ctx.today, 0))
-
-
 def _run_supersession(wiki_path: Path, ctx: PassContext) -> PassResult:
     return PassResult(actions=_pass_supersession(wiki_path))
 
@@ -420,7 +400,6 @@ def _run_team_mode_hint(wiki_path: Path, ctx: PassContext) -> PassResult:
 
 
 HYGIENE_PASSES: list[HygienePass] = [
-    HygienePass("staleness", _run_staleness),
     HygienePass("supersession", _run_supersession),
     HygienePass("implements", _run_implements),
     HygienePass("git_backfill", _run_git_backfill),

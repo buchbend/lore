@@ -5,8 +5,7 @@ Contract:
     the two opt-in lifecycle signals; lifecycle is derived.
   - Linter: no warnings on missing `status:`; catalog has `lifecycle`;
     index renders DRAFT / SUPERSEDED badges.
-  - Curator: staleness flag (review-only) uses canonical+age; the
-    supersession pass writes only `superseded_by:`.
+  - Curator: the supersession pass writes only `superseded_by:`.
   - Migration: `lore migrate --minimal-status` maps per the decision
     and is idempotent.
 """
@@ -26,7 +25,7 @@ from lore_core.schema import (
     compute_lifecycle,
     parse_frontmatter,
 )
-from lore_curator.hygiene import _pass_staleness, _pass_supersession
+from lore_curator.hygiene import _pass_supersession
 
 # ---------- schema ----------
 
@@ -202,35 +201,7 @@ def test_index_renders_lifecycle_badges(wiki_root: Path):
     assert "SUPERSEDED" not in alpha_line
 
 
-# ---------- curator: staleness + supersession ----------
-
-
-def test_curator_staleness_pass_is_now_a_noop(tmp_path: Path, monkeypatch):
-    """PRD #65: age never flags. The legacy 90-day pass is a no-op now;
-    staleness is positive-evidence-only at read time. Even an ancient
-    `last_reviewed` produces zero actions.
-    """
-    root = tmp_path / "vault"
-    wiki = root / "wiki" / "w"
-    (wiki / "concepts").mkdir(parents=True)
-    monkeypatch.setenv("LORE_ROOT", str(root))
-
-    old = (date.today() - timedelta(days=200)).isoformat()
-    p = wiki / "concepts" / "stale.md"
-    p.write_text(
-        f"""---
-schema_version: 2
-type: concept
-created: 2026-01-01
-last_reviewed: {old}
-description: "stale."
-tags: [topic/test]
----
-body
-"""
-    )
-    actions = _pass_staleness(wiki, date.today(), threshold=180)
-    assert actions == []
+# ---------- curator: supersession ----------
 
 
 def test_curator_supersession_writes_only_superseded_by(tmp_path: Path, monkeypatch):
