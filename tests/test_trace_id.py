@@ -120,7 +120,14 @@ def _append(lore_root: Path, turns: list[Turn], *, tid: str = "abc") -> Buffer:
 def _flush(lore_root: Path, buf: Buffer, turns: list[Turn], trace_id: str):
     """Run a full close flush under a RunLogger carrying ``trace_id``."""
     wiki_root = lore_root / "wiki" / "private"
-    client = _Client([_chapter_payload("Traced the flush", "prose.", turns[len(turns) // 2].index)])
+    anchor = turns[len(turns) // 2].index
+    client = _Client(
+        [
+            {"boundaries": []},
+            {"facts": [{"kind": "done", "text": "The flush is traced.", "anchor": anchor}]},
+            {"headline": "The flush is traced."},
+        ]
+    )
     with RunLogger(lore_root, trigger="flush", trace_id=trace_id) as logger:
         return synth_and_close(
             buf.sidecar_path,

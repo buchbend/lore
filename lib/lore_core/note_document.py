@@ -1,12 +1,20 @@
 """Deterministic session-note document core.
 
-One note per session. The file is append-only until :func:`close_note`,
-then immutable. A note is a fixed machine-written genre *disclaimer*
-followed by chronological *chapters* — one chapter per flush. A chapter
-is a set of *topic blocks*: a bold one-sentence self-sufficient *lead*,
-a short prose body, and one ``@turn`` anchor at the block end pointing
-into the archived transcript. A resumed or corrected topic gets a
-*continuation block* ("Continued: X"); earlier blocks are never edited.
+One note per session: a fixed machine-written genre *disclaimer*, the
+*rendered note*, and below it the *ledger*.
+
+The **ledger** is the record and is append-only until :func:`close_note`:
+chronological *chapters*, one per flush, holding either typed *facts*
+(each with its kind, refs, code-attached verbatim quote and ``@turn``
+anchor) or, for notes composed before typed facts, *topic blocks* of
+prose. Nothing in it is ever edited or deleted.
+
+The **rendered note** above it is derived state — a pure function of the
+ledger, recomputed in full by :func:`render_note` (see ``docs/adr/0003``).
+Which facts matter is only knowable backward, at a session's ending, so
+the reading is written once at close and rewritten if a reopened session
+grows the ledger. No LLM runs in that path: section order, anchor sort,
+and thread suppression are code.
 
 *Marker chapters* record failed and withheld chapters in deterministic
 text — no LLM decides their wording.
@@ -16,10 +24,16 @@ Frontmatter is machine-first and fully deterministic: session facts
 re-narrated in the body, alongside the chapter⇄slice turn ranges.
 
 This module owns storage, rendering, and lifecycle only. It performs no
-LLM work of any kind: composition (the block text) is produced upstream
-and handed in; the publish gate and failure/sweep semantics live in
-their own layers and call the ``append_marker_chapter`` / ``close_note``
-seams here.
+LLM work of any kind: the facts (and, historically, the block text) are
+produced upstream and handed in; the publish gate and failure/sweep
+semantics live in their own layers and call the ``append_marker_chapter``
+/ ``close_note`` seams here.
+
+Every string that reaches the body — a fact's text, why or quote, a
+block's lead or body, a headline — is neutralized on the way in
+(:func:`_neutralize_marker`). Transcript content and tool payloads flow
+through those fields, so an unescaped comment opener inside one would
+parse back out of the file as a forged fact.
 """
 
 from __future__ import annotations
@@ -64,6 +78,8 @@ __all__ = [
     "parse_facts",
     "render_chapter_body",
     "render_fact_body",
+    "render_note",
+    "render_note_body",
 ]
 
 
@@ -203,15 +219,19 @@ def _render_block(block: TopicBlock) -> str:
     # Note-format v2 (#222): the lead sentence stays inline with its body in
     # one paragraph — a reader reads the bold sentence and bails or reads on,
     # instead of a standalone bold line floating above a blank-line gap.
+    #
+    # A block's lead, body, and quote all carry transcript-derived content, so
+    # each is neutralized: a comment opener inside one would otherwise parse
+    # back out of the note as a forged fact (see :func:`_neutralize_marker`).
     lead = f"Continued: {block.continued_topic}" if block.continued else block.lead
-    lead_para = f"**{lead.strip()}**"
-    body = (block.body or "").strip()
+    lead_para = f"**{_neutralize_marker(lead.strip())}**"
+    body = _neutralize_marker((block.body or "").strip())
     if body:
         lead_para = f"{lead_para} {body}"
     parts = [lead_para]
     quote = (block.quote or "").strip()
     if quote:
-        parts.append(f'> "{quote}"')
+        parts.append(f'> "{_neutralize_marker(quote)}"')
     if block.anchor_turn:
         parts.append(f"@{int(block.anchor_turn)}")
     return "\n\n".join(parts)
@@ -355,6 +375,133 @@ def _render_marker_chapter(n: int, kind: str, reason: str, from_turn: int, to_tu
             f" Reason: {reason.strip()}."
         )
     return f"{_chapter_delimiter(n, from_turn, to_turn, marker=kind)}\n\n{text}"
+
+
+# ---------------------------------------------------------------------------
+# The derived note body (pure)
+#
+# The ledger is the record; the note above it is a *reading* of the ledger,
+# recomputed in full from it. No LLM runs here — layout, ordering, and
+# suppression are code, tuned with tests instead of prompts.
+# ---------------------------------------------------------------------------
+
+# Section order is the reading order: what was finished, what was decided,
+# what was learned, what is still out. A `progress` fact that survived
+# suppression is unfinished work at the session's ending, so it reads under
+# Open beside the `open` facts.
+_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Done", ("done",)),
+    ("Decisions recorded", ("decision",)),
+    ("Findings", ("finding",)),
+    ("Open", ("open", "progress")),
+)
+_SECTION_OF = {kind: name for name, kinds in _SECTIONS for kind in kinds}
+
+# `done` is the vocabulary's only terminal kind (see :data:`FACT_KINDS`), so
+# it is the only thing that can end a thread and retire the progress recorded
+# along the way.
+_TERMINAL_KINDS = ("done",)
+
+LEDGER_HEADING = "## Ledger"
+
+
+def _suppressed(facts: list[Fact]) -> set[int]:
+    """Positions of ``progress`` facts their own thread has moved past.
+
+    A thread that reached a terminal fact says what became of the work; the
+    steps en route to it are interim states, false or merely noisy by the
+    time anyone reads the note ("features #514-#516 remain in progress" in a
+    note whose ending merged them). They are dropped from the *render* only —
+    the ledger below keeps every fact, quote and anchor intact.
+
+    Later means later in reading order: a greater anchor, or the same anchor
+    further down the ledger. A fact with no thread key stands alone and is
+    never suppressed.
+    """
+    latest: dict[str, tuple[int, int]] = {}
+    for pos, f in enumerate(facts):
+        if f.thread and f.kind in _TERMINAL_KINDS:
+            latest[f.thread] = max(latest.get(f.thread, (-1, -1)), (f.anchor_turn, pos))
+    return {
+        pos
+        for pos, f in enumerate(facts)
+        if f.kind == "progress"
+        and f.thread
+        and latest.get(f.thread, (-1, -1)) > (f.anchor_turn, pos)
+    }
+
+
+def _fact_line(fact: Fact) -> str:
+    line = _neutralize_marker(fact.text.strip())
+    if fact.why.strip():
+        line = f"{line} Why: {_neutralize_marker(fact.why.strip())}"
+    return f"- {line} @{int(fact.anchor_turn)}"
+
+
+def _gap_line(from_turn: int, to_turn: int, reason: str) -> str:
+    """A failed chapter, rendered as what it costs the reader: a coverage gap."""
+    detail = _neutralize_marker(reason.strip().rstrip("."))
+    tail = f" ({detail})" if detail else ""
+    return (
+        f"- Coverage gap: turns {from_turn}–{to_turn} are not covered by"
+        f" this note{tail}. @{from_turn}"
+    )
+
+
+def render_note_body(
+    facts: list[Fact],
+    *,
+    headline: str = "",
+    gaps: list[tuple[int, int, str]] | None = None,
+) -> str:
+    """Render the typed ledger to the note a reader reads. Pure and total.
+
+    Sections in fixed order, items sorted by anchor, empty sections dropped,
+    one anchor at each line's end. ``gaps`` are the ``(from, to, reason)``
+    spans of failed chapters, which read as coverage gaps under Open. Every
+    string that lands in the body is neutralized: text, why, headline and
+    reason all carry content the session did not author.
+
+    The same ledger renders to the same bytes, always — that is what lets the
+    body be thrown away and rebuilt at every close.
+    """
+    dropped = _suppressed(facts)
+    sections: dict[str, list[tuple[int, int, str]]] = {name: [] for name, _ in _SECTIONS}
+    for pos, fact in enumerate(facts):
+        section = _SECTION_OF.get(fact.kind)
+        if section is None or pos in dropped:
+            continue  # an unknown kind stays in the ledger; the body skips it
+        sections[section].append((fact.anchor_turn, pos, _fact_line(fact)))
+    for i, (from_turn, to_turn, reason) in enumerate(gaps or []):
+        sections["Open"].append((from_turn, len(facts) + i, _gap_line(from_turn, to_turn, reason)))
+
+    parts: list[str] = []
+    if headline.strip():
+        parts.append(f"**{_neutralize_marker(headline.strip())}**")
+    for name, _ in _SECTIONS:
+        items = sorted(sections[name])
+        if items:
+            parts.append(f"## {name}")
+            parts.append("\n".join(line for _, _, line in items))
+    return "\n\n".join(parts)
+
+
+def _ledger_of(body: str) -> str:
+    """The append-only part of the body: everything from chapter 1 on.
+
+    Safe as a text scan because the rendered part above it can hold no
+    comment opener — every string entering it is neutralized first.
+    """
+    start = body.find("<!-- lore:chapter ")
+    return body[start:].strip() if start >= 0 else ""
+
+
+def _coverage_gaps(fm: dict[str, Any]) -> list[tuple[int, int, str]]:
+    return [
+        (int(c.get("from_turn", 0)), int(c.get("to_turn", 0)), str(c.get("reason") or ""))
+        for c in fm.get("chapters") or []
+        if c.get("kind") == "marker" and c.get("marker") == MARKER_FAILED
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -637,6 +784,49 @@ def append_marker_chapter(
 
     _write(path, fm, new_body, wiki_root=wiki_root)
     return n
+
+
+def render_note(
+    path: Path,
+    *,
+    headline: str | None = None,
+    title: str | None = None,
+    wiki_root: Path | None = None,
+) -> None:
+    """Rewrite the note's derived body from its ledger. No LLM, no I/O but this.
+
+    The file becomes disclaimer + rendered note + ledger. Append-only governs
+    the LEDGER; the body above it is derived state, thrown away and recomputed
+    here — so a reopened session's later facts re-render the whole note instead
+    of stranding a stale reading of it above them (extends ADR 0001).
+
+    ``headline`` is recorded in frontmatter so a later re-render reproduces the
+    same note without a model; passing ``None`` keeps the one already there.
+    Raises :class:`NoteClosedError` on a closed note — the render happens
+    before the close, never after it.
+    """
+    fm, body = _load(path)
+    _guard_open(fm, path)
+
+    if headline is not None and headline.strip():
+        fm["headline"] = headline.strip()
+    if title:
+        fm["title"] = title
+
+    ledger = _ledger_of(body)
+    rendered = render_note_body(
+        parse_facts(ledger),
+        headline=str(fm.get("headline") or ""),
+        gaps=_coverage_gaps(fm),
+    )
+    parts = [DISCLAIMER]
+    if rendered:
+        parts.append(rendered)
+    if ledger:
+        parts.extend([LEDGER_HEADING, ledger])
+
+    fm["last_reviewed"] = _today()
+    _write(path, fm, "\n\n".join(parts), wiki_root=wiki_root)
 
 
 def close_note(
