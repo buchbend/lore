@@ -10,6 +10,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.61.1] - 2026-07-12
+
+Epic #183 polish (#255).
+
+### Fixed
+
+- **`flush-spawn-failed` events now carry a `trace_id`** — the trace-id is
+  minted before the spawn lock is taken, so both spawn-failure paths (the
+  detached subprocess failing to start and the spawn-lock flock erroring)
+  emit a traceable event that `lore trace` can correlate with the rest of
+  the flush's story. Previously these events landed on the spine with
+  `trace_id: null`.
+- Stale `_system.jsonl` wording in a `hooks.py` docstring updated to name
+  the shared `_system` spine stream; the now-fixed known-gap passages were
+  removed from the troubleshooting and observability docs.
+
 ## [0.61.0] - 2026-07-11
 
 Epic #183 — onboarding, connection config & observability revamp (PRD 0005).
