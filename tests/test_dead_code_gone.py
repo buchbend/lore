@@ -20,7 +20,6 @@ DEAD_MODULES = [
     "lore_core.topic_files",
     "lore_curator.summary_block",
     "lore_core.projects.router",
-    "lore_workflow.diataxis",
 ]
 
 
