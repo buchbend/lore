@@ -2240,8 +2240,9 @@ def _render_drain_lines(lore_root: Path, cwd: Path) -> list[str]:
     cursor (``{sid}.cursor``) prevents repeat SessionStarts within
     one Claude run from re-rendering session events. The system
     cursor (``_system.cursor``) is the single authoritative
-    "shown through" mark for the shared system stream — without it,
-    a stale row in ``_system.jsonl`` would haunt every fresh session.
+    "shown through" mark for the shared system stream — without it, a
+    stale row on the shared ``_system`` spine stream would haunt every
+    fresh session.
     Cold-start initialises ``_system.cursor`` to ``now`` so the first
     read on a new install never reaches back through history.
     """

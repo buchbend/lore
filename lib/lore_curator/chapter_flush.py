@@ -338,7 +338,6 @@ def flush_chapter(
             skipped_reason="already-closed",
         )
 
-
     # ---- Snapshot under the flock: note path, note-so-far, slice bounds -
     with buffer.with_lock():
         sidecar = buffer.read_sidecar()
@@ -639,9 +638,7 @@ def _apply_outcome(
                     wiki_root=wiki_root,
                 )
             out.status = "failed"
-            store.transition(
-                flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED
-            )
+            store.transition(flush_rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED)
         else:
             # Bounded retry with backoff replaces the old silent-defer /
             # give-up-at-2x-cap heuristic. record_failure() re-queues with a
@@ -864,9 +861,9 @@ class SweepReport:
     swept: int = 0
     alive_skipped: int = 0
     uncertain_skipped: int = 0
-    stale_closed: int = 0   # dead + too old → closed with a marker, no LLM call
-    deferred: int = 0       # recent dead buffers left for the next sweep (budget hit)
-    discarded: int = 0      # trivial / all-empty sessions whose stub was removed
+    stale_closed: int = 0  # dead + too old → closed with a marker, no LLM call
+    deferred: int = 0  # recent dead buffers left for the next sweep (budget hit)
+    discarded: int = 0  # trivial / all-empty sessions whose stub was removed
     contended: bool = False
     swept_stems: list[str] = field(default_factory=list)
 
@@ -1047,12 +1044,13 @@ def _resolve_model(wiki_root: Path) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _emit_spawn_failed(buffer_path: Path, lore_root: Path, exc: Exception) -> None:
+def _emit_spawn_failed(buffer_path: Path, lore_root: Path, exc: Exception, trace_id: str) -> None:
     """A detached-flush spawn that fails is no longer swallowed silently."""
     SpineWriter(lore_root).emit(
         source="curator",
         event="flush-spawn-failed",
         level="error",
+        trace_id=trace_id,
         error_code=ErrorCode.SPAWN_FAILED,
         data={"buffer": buffer_path.name, "error": str(exc)},
     )
@@ -1077,11 +1075,12 @@ def spawn_detached_flush(
     from lore_core.lockfile import flocked
 
     spawn_lock = buffer_path.with_suffix(".spawn.lock")
+    # Minted before the lock so even a flock failure emits a traceable event.
+    trace_id = trace_id or new_trace_id()
     try:
         with flocked(spawn_lock, blocking=False) as held:
             if not held:
                 return None
-            trace_id = trace_id or new_trace_id()
             cmd = [
                 sys.executable,
                 "-m",
@@ -1107,8 +1106,8 @@ def spawn_detached_flush(
                 )
                 return trace_id
             except (OSError, subprocess.SubprocessError) as exc:
-                _emit_spawn_failed(buffer_path, lore_root, exc)
+                _emit_spawn_failed(buffer_path, lore_root, exc, trace_id)
                 return None
     except OSError as exc:
-        _emit_spawn_failed(buffer_path, lore_root, exc)
+        _emit_spawn_failed(buffer_path, lore_root, exc, trace_id)
         return None
