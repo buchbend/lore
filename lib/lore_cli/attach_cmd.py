@@ -1,20 +1,25 @@
-"""`lore attach` — accept, decline, register, or offer a Lore attachment.
+"""`lore attach` — accept, decline, register, remove, or offer a Lore attachment.
 
-Five commands exercise the state-machine:
+Commands exercising the state-machine:
 
 * ``lore attach accept``  — accept the `.lore.yml` offer covering cwd
 * ``lore attach decline`` — record a decline (fingerprint-keyed)
 * ``lore attach manual``  — register an attachment without an offer
 * ``lore attach offer``   — write a `.lore.yml` declaring a shareable offer
+* ``lore attach remove``  — strip the managed ``## Lore`` CLAUDE.md section
 
 Running bare ``lore attach`` (no subcommand) starts an interactive wizard.
 
-The file also exposes :func:`remove_section` used by the migration tool
-and by ``lore detach`` to strip legacy ``## Lore`` CLAUDE.md sections.
+``lore attach attachments`` mounts the host-local ``attachments.json``
+inspector as a debug sub-group — same tree, one entry point.
+
+The file also exposes :func:`remove_section`, which the migration tool
+shares with ``lore attach remove``.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +27,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from lore_cli import attachments_cmd
 from lore_cli._argv_compat import argv_main
 
 console = Console()
@@ -41,10 +47,9 @@ def remove_section(path: Path) -> bool:
     """Remove the `## Lore` section from a CLAUDE.md. Returns True if
     something changed.
 
-    Kept post-Phase-6 because the migration tool and ``lore detach``
-    both need to strip legacy sections. Lives here (not in
-    ``lore_core``) because it writes, and writers in ``lore_core`` are
-    policy-bounded to state files only.
+    Shared by the migration tool and ``lore attach remove``. Lives here
+    (not in ``lore_core``) because it writes, and writers in
+    ``lore_core`` are policy-bounded to state files only.
     """
     if not path.exists():
         return False
@@ -934,6 +939,43 @@ def cmd_offer(
         f"[green]Wrote offer[/green] {target}\n"
         f"Run `lore attach accept --cwd {cwd_path}` to accept on this host."
     )
+
+
+@app.command("remove")
+def cmd_remove(
+    path: str = typer.Option(".", "--path", help="Folder or CLAUDE.md path."),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit a JSON envelope on stdout (lore.attach.remove/1).",
+    ),
+) -> None:
+    """Remove the managed `## Lore` section from CLAUDE.md.
+
+    Inverse of attaching: leaves all content outside the section
+    untouched, and is a no-op when the section is absent.
+    """
+    target = _resolve_claude_md(path)
+    changed = remove_section(target)
+    if json_out:
+        print(
+            json.dumps(
+                {
+                    "schema": "lore.attach.remove/1",
+                    "data": {"path": str(target), "removed": changed},
+                },
+                indent=2,
+            )
+        )
+    elif changed:
+        console.print(f"[green]Detached — removed ## Lore from {target}[/green]")
+    else:
+        console.print(f"[yellow]No ## Lore section found in {target}[/yellow]")
+
+
+# Host-local attachments.json inspector — a debug sub-group of the tree
+# it inspects, not a top-level verb.
+app.add_typer(attachments_cmd.app, name="attachments")
 
 
 main = argv_main(app)

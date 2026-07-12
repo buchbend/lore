@@ -5,7 +5,7 @@ Used in two complementary places:
 * **Forward guard** — curator note writers sanitize LLM output before
   the atomic write, so broken `[[wikilinks]]` never land in the vault
   in the first place.
-* **Backward migration** — ``lore migrate --strip-broken-wikilinks``
+* **Backward migration** — ``lore migrate frontmatter --strip-broken-wikilinks``
   cleans up legacy notes written before the forward guard existed.
 
 Both call :func:`strip_broken_wikilinks`. A "broken" wikilink is one
@@ -130,7 +130,7 @@ def sanitize_for_write(text: str, wiki_root: Path) -> str:
     ``atomic_write_text`` so LLM-hallucinated ``[[noun phrase]]`` and
     ``[[file/path.py]]`` references never land on disk in the first
     place. Pairs with the backward migration
-    ``lore migrate --strip-broken-wikilinks`` for legacy notes; both
+    ``lore migrate frontmatter --strip-broken-wikilinks`` for legacy notes; both
     share the same primitive and the same per-wiki scoping.
 
     Per-wiki scoping is intentional — see :func:`existing_slugs`.
