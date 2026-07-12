@@ -8,7 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
-## [Unreleased]
+## [0.62.0] - 2026-07-12
 
 Substrate trim (PRD 0007): folds redundant CLI groups into their parents and
 drops MCP tools with no caller anywhere. No loss of capability — every
