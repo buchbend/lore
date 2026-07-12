@@ -7,6 +7,7 @@ wrapped stays reachable through other paths: `lore_core/wikilinks.py` backs
 `lore_drill`'s expand stage, `lore briefing gather` is a CLI command, and
 `lore_core.journal` is still written via `lore_journal_write`.
 """
+
 from __future__ import annotations
 
 from lore_mcp.server import _dispatch, _tool_schema
