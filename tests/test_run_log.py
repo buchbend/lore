@@ -1,11 +1,27 @@
-import json
+"""RunLogger emits curator run events onto the event spine (issue #189).
+
+The archival ``runs/<id>.jsonl`` file and the ``runs-live.jsonl`` tee are gone;
+every record is one ``source="curator"`` spine envelope keyed by ``run_id``.
+"""
+
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from lore_core.run_log import RunLogger, generate_run_id
+from lore_core.run_reader import read_curator_runs
+from lore_core.spine import read_spine, validate_envelope
+
+
+def _events(lore_root: Path) -> list[dict]:
+    return read_spine(lore_root, source="curator")
+
+
+def _only_run(lore_root: Path) -> list[dict]:
+    runs = list(read_curator_runs(lore_root).values())
+    assert len(runs) == 1
+    return runs[0]
 
 
 def test_run_id_format():
@@ -19,34 +35,33 @@ def test_run_id_uniqueness():
     assert len(ids) == 1000
 
 
-def test_run_start_written_on_enter(tmp_path: Path):
+def test_run_start_and_end_land_on_the_spine(tmp_path: Path):
     with RunLogger(tmp_path, trigger="manual", pending_count=2) as logger:
         pass
-    archival_files = list((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    archival = [p for p in archival_files if not p.name.endswith(".trace.jsonl")]
-    assert len(archival) == 1
-    lines = archival[0].read_text().splitlines()
-    records = [json.loads(l) for l in lines]
-    assert records[0]["type"] == "run-start"
-    assert records[0]["trigger"] == "manual"
-    assert records[0]["pending_count"] == 2
-    assert records[-1]["type"] == "run-end"
-    live = tmp_path / ".lore" / "runs-live.jsonl"
-    live_records = [json.loads(l) for l in live.read_text().splitlines()]
-    assert all("run_id" in r for r in live_records)
-    assert live_records[0]["type"] == "run-start"
+    evs = _events(tmp_path)
+    assert evs[0]["event"] == "run-start"
+    assert evs[0]["source"] == "curator"
+    assert evs[0]["run_id"] == logger.run_id
+    assert evs[0]["data"]["trigger"] == "manual"
+    assert evs[0]["data"]["pending_count"] == 2
+    assert evs[-1]["event"] == "run-end"
+    for e in evs:
+        validate_envelope(e)  # closed source/level/error_code sets
+    # No legacy files are written any more.
+    assert not (tmp_path / ".lore" / "runs").exists()
+    assert not (tmp_path / ".lore" / "runs-live.jsonl").exists()
 
 
 def test_emit_counters_and_ordering(tmp_path: Path):
     with RunLogger(tmp_path, trigger="hook", pending_count=3) as logger:
         logger.emit("transcript-start", transcript_id="t1", new_turns=10)
         logger.emit("noteworthy", transcript_id="t1", verdict=True, reason="x", tier="middle")
-        logger.emit("session-note", transcript_id="t1", action="filed",
-                    path="p.md", wikilink="[[p]]")
+        logger.emit(
+            "session-note", transcript_id="t1", action="filed", path="p.md", wikilink="[[p]]"
+        )
         logger.emit("transcript-start", transcript_id="t2", new_turns=5)
         logger.emit("skip", transcript_id="t2", reason="noteworthy-false")
-    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    records = [json.loads(l) for l in archival.read_text().splitlines()]
+    records = read_curator_runs(tmp_path)[logger.run_id]
     assert records[0]["type"] == "run-start"
     assert records[-1]["type"] == "run-end"
     assert records[-1]["notes_new"] == 1
@@ -54,85 +69,42 @@ def test_emit_counters_and_ordering(tmp_path: Path):
     assert records[-1]["skipped"] == 1
     assert records[-1]["errors"] == 0
     kinds = [r["type"] for r in records[1:-1]]
-    assert kinds == ["transcript-start", "noteworthy", "session-note",
-                     "transcript-start", "skip"]
+    assert kinds == ["transcript-start", "noteworthy", "session-note", "transcript-start", "skip"]
 
 
 def test_exception_emits_error_and_runend_then_propagates(tmp_path: Path):
-    with pytest.raises(ValueError, match="boom"):
-        with RunLogger(tmp_path, trigger="hook") as logger:
-            logger.emit("transcript-start", transcript_id="t1", new_turns=5)
-            raise ValueError("boom")
-    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    records = [json.loads(l) for l in archival.read_text().splitlines()]
+    with pytest.raises(ValueError, match="boom"), RunLogger(tmp_path, trigger="hook") as logger:
+        logger.emit("transcript-start", transcript_id="t1", new_turns=5)
+        raise ValueError("boom")
+    records = _only_run(tmp_path)
     types = [r["type"] for r in records]
     assert "error" in types
     assert types[-1] == "run-end"
     assert records[-1]["errors"] >= 1
+    # The error record is emitted at error level on the spine.
+    err = next(e for e in _events(tmp_path) if e["event"] == "error")
+    assert err["level"] == "error"
 
 
-def test_write_failure_increments_counter(tmp_path: Path, monkeypatch):
-    real_open = Path.open
-
-    def faulty_open(self, *args, **kwargs):
-        if "runs" in str(self) and not str(self).endswith("runs"):
-            raise OSError("disk full")
-        return real_open(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", faulty_open)
-    with RunLogger(tmp_path, trigger="hook") as logger:
-        logger.emit("transcript-start", transcript_id="t1", new_turns=5)
-    # No raise despite every write failing.
-
-
-def test_trace_llm_writes_companion(tmp_path: Path):
+def test_llm_records_carry_metadata_only(tmp_path: Path):
+    """Full prompt/response text must never hit the spine — the O_APPEND
+    atomicity budget (< PIPE_BUF) assumes small records."""
     with RunLogger(tmp_path, trigger="dry-run", trace_llm=True) as logger:
-        logger.emit("llm-prompt", call="noteworthy", tier="middle",
-                    token_count=100, messages=[{"role": "user", "content": "hi"}])
-        logger.emit("llm-response", call="noteworthy", token_count=5, body="yes")
-    trace_files = list((tmp_path / ".lore" / "runs").glob("*.trace.jsonl"))
-    assert len(trace_files) == 1
-    lines = trace_files[0].read_text().splitlines()
-    types = [json.loads(l)["type"] for l in lines]
-    assert "llm-prompt" in types
-    assert "llm-response" in types
-
-
-def test_trace_llm_off_no_companion(tmp_path: Path):
-    with RunLogger(tmp_path, trigger="hook", trace_llm=False) as logger:
-        logger.emit("llm-prompt", call="noteworthy", tier="middle",
-                    token_count=100, messages=[])
-    assert not list((tmp_path / ".lore" / "runs").glob("*.trace.jsonl"))
-
-
-def test_log_write_failures_surface_in_run_end(tmp_path: Path, monkeypatch):
-    real_open = Path.open
-
-    def faulty_open(self, *args, **kwargs):
-        if str(self).endswith(".jsonl"):
-            raise OSError("disk full")
-        return real_open(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", faulty_open)
-    # All writes fail; run still completes.
-    with RunLogger(tmp_path, trigger="hook") as logger:
-        logger.emit("transcript-start", transcript_id="t1", new_turns=5)
-    # The archival file was never written (OSError). But we can verify the
-    # counter bookkeeping by writing one record manually and checking.
-    # Since every write fails, there's no file to read. So instead test
-    # that the counter is non-zero by probing the logger attribute:
-    logger2 = RunLogger(tmp_path, trigger="hook")
-    # Pre-seed failure
-    logger2._write_failures = 3
-    # The run-end record will include log_write_failures=3; verify via
-    # unit-level check of the emit pathway by writing through logger2's
-    # fresh context:
-    monkeypatch.undo()  # restore real Path.open
-    with logger2 as l:
-        pass
-    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    records = [json.loads(ln) for ln in archival.read_text().splitlines()]
-    assert records[-1]["log_write_failures"] == 3
+        logger.emit(
+            "llm-prompt",
+            call="noteworthy",
+            tier="middle",
+            token_count=100,
+            messages=[{"role": "user", "content": "a very long secret prompt"}],
+        )
+        logger.emit("llm-response", call="noteworthy", token_count=5, body="a long body")
+    evs = _events(tmp_path)
+    prompt = next(e for e in evs if e["event"] == "llm-prompt")
+    assert prompt["data"] == {"call": "noteworthy", "tier": "middle", "token_count": 100}
+    assert "messages" not in prompt["data"]
+    resp = next(e for e in evs if e["event"] == "llm-response")
+    assert "body" not in resp["data"]
+    assert resp["data"]["token_count"] == 5
 
 
 def test_emit_serializes_non_json_native_types(tmp_path: Path):
@@ -143,107 +115,75 @@ def test_emit_serializes_non_json_native_types(tmp_path: Path):
             a_path=Path("/tmp/foo"),
             a_ts=datetime(2026, 1, 1, tzinfo=UTC),
         )
-    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    lines = archival.read_text().splitlines()
-    # The record survives — default=str stringifies the Path and datetime.
-    records = [json.loads(l) for l in lines]
-    warn = [r for r in records if r.get("type") == "warning"]
-    assert warn, "warning record should have landed"
-    assert "/tmp/foo" in warn[0]["a_path"]
-
-
-def test_enter_does_not_raise_on_readonly_fs(tmp_path, monkeypatch):
-    """__enter__ must not raise even if mkdir fails."""
-    real_mkdir = Path.mkdir
-
-    def bad_mkdir(self, *args, **kwargs):
-        if "runs" in str(self):
-            raise OSError("read-only")
-        return real_mkdir(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "mkdir", bad_mkdir)
-    # Must not raise.
-    with RunLogger(tmp_path, trigger="hook") as logger:
-        logger.emit("transcript-start", transcript_id="t1", new_turns=5)
-
-
-def test_enter_does_not_raise_on_collision_after_retry(tmp_path, monkeypatch):
-    """Double-collision in __enter__ must not raise."""
-    # Pre-create both possible run-id paths by monkeypatching generate_run_id
-    # to return the same collision id twice.
-    from lore_core import run_log as run_log_mod
-
-    fixed_id = "2026-04-20T14-32-05-aaaaaa"
-    (tmp_path / ".lore" / "runs").mkdir(parents=True)
-    (tmp_path / ".lore" / "runs" / f"{fixed_id}.jsonl").write_text("x\n")
-
-    call_count = {"n": 0}
-    def collide(*a, **kw):
-        call_count["n"] += 1
-        return fixed_id
-
-    monkeypatch.setattr(run_log_mod, "generate_run_id", collide)
-    # Must not raise despite the second generate_run_id also colliding.
-    with RunLogger(tmp_path, trigger="hook") as logger:
-        logger.emit("transcript-start", transcript_id="t1", new_turns=5)
-    # Collision was detected, _write_failures incremented
-    assert logger._write_failures >= 1
-
-
-# ---------------------------------------------------------------------------
-# Phase 1a: role field + B/C record types + counters
-# ---------------------------------------------------------------------------
+    warn = next(e for e in _events(tmp_path) if e["event"] == "warning")
+    assert "/tmp/foo" in warn["data"]["a_path"]
 
 
 def test_role_field_in_run_start_and_end(tmp_path: Path):
     with RunLogger(tmp_path, trigger="hook", role="b") as logger:
         logger.emit("skip", reason="empty")
-    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    records = [json.loads(l) for l in archival.read_text().splitlines()]
-    assert records[0]["type"] == "run-start"
-    assert records[0]["role"] == "b"
-    assert records[-1]["type"] == "run-end"
-    assert records[-1]["role"] == "b"
+    evs = _events(tmp_path)
+    assert evs[0]["event"] == "run-start"
+    assert evs[0]["data"]["role"] == "b"
+    assert evs[-1]["event"] == "run-end"
+    assert evs[-1]["data"]["role"] == "b"
 
 
 def test_backward_compat_no_role_defaults_to_a(tmp_path: Path):
-    with RunLogger(tmp_path, trigger="hook") as logger:
+    with RunLogger(tmp_path, trigger="hook"):
         pass
-    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    records = [json.loads(l) for l in archival.read_text().splitlines()]
-    assert records[0]["role"] == "a"
-    assert records[-1]["role"] == "a"
+    evs = _events(tmp_path)
+    assert evs[0]["data"]["role"] == "a"
+    assert evs[-1]["data"]["role"] == "a"
 
 
 def test_hygiene_pass_counters(tmp_path: Path):
-    """The retained `lore curator [--wiki] [--apply]` hygiene pass tags its
-    run-log entries role="c" and counts action-applied/action-skipped.
-    """
+    """The `lore curator [--wiki] [--apply]` hygiene pass tags role="c" and
+    counts action-applied / action-skipped."""
     with RunLogger(tmp_path, trigger="hook", role="c") as logger:
         logger.emit("wiki-start", wiki="private")
         logger.emit("action-applied", kind="review_stale", path="n.md", reason="90d")
         logger.emit("action-applied", kind="mark_superseded", path="m.md", reason="newer")
         logger.emit("action-skipped", path="x.md", reason="mtime changed")
-    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    records = [json.loads(l) for l in archival.read_text().splitlines()]
+    records = _only_run(tmp_path)
     end = records[-1]
     assert end["actions_applied"] == 2
     assert end["actions_skipped"] == 1
-    kinds = [r["type"] for r in records[1:-1]]
-    assert "wiki-start" in kinds
+    assert "wiki-start" in [r["type"] for r in records[1:-1]]
 
 
 def test_retired_record_types_downgraded_to_warning(tmp_path: Path):
-    """Curator B/C ambition record types are gone; emitting them now falls
-    back to 'warning' rather than being written verbatim.
-    """
+    """Retired ambition record types fall back to 'warning' rather than being
+    emitted verbatim."""
     retired_types = ["cluster-formed", "surface-filed", "defrag-pass", "wiki-skip"]
     with RunLogger(tmp_path, trigger="hook", role="a") as logger:
         for rt in retired_types:
             logger.emit(rt, detail="test")
-    archival = next((tmp_path / ".lore" / "runs").glob("*.jsonl"))
-    records = [json.loads(l) for l in archival.read_text().splitlines()]
-    emitted_types = [r["type"] for r in records]
+    emitted = [e["event"] for e in _events(tmp_path)]
     for rt in retired_types:
-        assert rt not in emitted_types
-    assert emitted_types.count("warning") == len(retired_types)
+        assert rt not in emitted
+    assert emitted.count("warning") == len(retired_types)
+
+
+def test_wiki_lifts_to_envelope_field(tmp_path: Path):
+    with RunLogger(tmp_path, trigger="hook", role="c") as logger:
+        logger.emit("wiki-start", wiki="private")
+    ev = next(e for e in _events(tmp_path) if e["event"] == "wiki-start")
+    assert ev["wiki"] == "private"
+
+
+def test_emit_survives_unwritable_spine(tmp_path: Path, monkeypatch):
+    """A failing spine write degrades to a marker; RunLogger never raises."""
+    import os as _os
+
+    real_open = _os.open
+
+    def faulty(path, *a, **k):
+        if str(path).endswith("spine.jsonl"):
+            raise OSError("disk full")
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr(_os, "open", faulty)
+    with RunLogger(tmp_path, trigger="hook") as logger:
+        logger.emit("transcript-start", transcript_id="t1", new_turns=5)
+    assert (tmp_path / ".lore" / "spine-failed.marker").exists()

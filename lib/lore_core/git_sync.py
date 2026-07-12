@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from lore_core.schema import parse_frontmatter, split_frontmatter
 
@@ -21,14 +22,14 @@ from lore_core.schema import parse_frontmatter, split_frontmatter
 class SyncStatus(str, Enum):
     """Outcome of an `auto_pull` or `auto_push` call."""
 
-    OK = "ok"                          # change applied (pulled or pushed commits)
-    NOOP = "noop"                      # nothing to do (clean + already in sync)
+    OK = "ok"  # change applied (pulled or pushed commits)
+    NOOP = "noop"  # nothing to do (clean + already in sync)
     SKIPPED_NO_REMOTE = "no-remote"
-    SKIPPED_DIRTY = "dirty"            # uncommitted local changes — refused
-    SKIPPED_DIVERGED = "diverged"      # both sides have unique commits
+    SKIPPED_DIRTY = "dirty"  # uncommitted local changes — refused
+    SKIPPED_DIVERGED = "diverged"  # both sides have unique commits
     SKIPPED_UNREACHABLE = "unreachable"
-    MERGED = "merged"                  # auto_push: LLM resolved one+ conflicts
-    MERGE_BLOCKED = "merge-blocked"    # auto_push: aborted, user action needed
+    MERGED = "merged"  # auto_push: LLM resolved one+ conflicts
+    MERGE_BLOCKED = "merge-blocked"  # auto_push: aborted, user action needed
 
 
 @dataclass(frozen=True)
@@ -44,10 +45,10 @@ class SyncResult:
 
 
 class ConflictKind(str, Enum):
-    SURFACE = "surface"                  # LLM-merge
-    SESSION = "session"                  # LLM-merge (rare — pre-pull eliminates)
-    REGENERABLE = "regenerable"          # ours wins; lint reconciles
-    UNKNOWN = "unknown"                  # bail to user
+    SURFACE = "surface"  # LLM-merge
+    SESSION = "session"  # LLM-merge (rare — pre-pull eliminates)
+    REGENERABLE = "regenerable"  # ours wins; lint reconciles
+    UNKNOWN = "unknown"  # bail to user
 
 
 _REGENERABLE_FILENAMES = {
@@ -562,3 +563,76 @@ def _call_llm_for_merge(llm_client: Any, prompt: str) -> str | None:
             return out.get("text")
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Wiki connection health (issue #193) — one FAST local-first snapshot per wiki
+# for the `lore status` dashboard. Everything except reachability is a cheap
+# local git query; the network probe is opt-in (skipped under `offline`) and
+# time-boxed so a dead remote never stalls the dashboard.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class WikiHealth:
+    is_repo: bool
+    has_remote: bool
+    branch: str | None
+    dirty: bool
+    ahead: int
+    behind: int
+    reachable: bool | None  # None = not probed (offline, or no remote)
+    last_sync: datetime | None  # FETCH_HEAD mtime, best-effort
+
+
+def wiki_health(wiki_dir: Path, *, offline: bool = False, timeout: int = 3) -> WikiHealth:
+    """Snapshot one wiki's git connection health.
+
+    Local queries (branch, dirty, ahead/behind vs the last-known upstream)
+    never touch the network. Reachability runs ``git ls-remote`` behind a
+    short ``timeout`` and only when a remote exists and ``offline`` is False;
+    a timeout or error reads as unreachable, never a raise.
+    """
+    if not (wiki_dir / ".git").exists():
+        return WikiHealth(False, False, None, False, 0, 0, None, None)
+
+    has_rem = _has_remote(wiki_dir)
+    branch = _current_branch(wiki_dir)
+    dirty = not _is_clean(wiki_dir)
+    ahead = behind = 0
+    reachable: bool | None = None
+    if has_rem and branch is not None:
+        upstream = _upstream_for(wiki_dir, branch)
+        if upstream is not None:
+            ahead, behind = _ahead_behind(wiki_dir, branch, upstream)
+        if not offline:
+            reachable = _remote_reachable(wiki_dir, timeout=timeout)
+    return WikiHealth(
+        is_repo=True,
+        has_remote=has_rem,
+        branch=branch,
+        dirty=dirty,
+        ahead=ahead,
+        behind=behind,
+        reachable=reachable,
+        last_sync=_last_fetch_time(wiki_dir),
+    )
+
+
+def _remote_reachable(wiki_dir: Path, *, timeout: int) -> bool:
+    remotes = _git(wiki_dir, "remote").stdout.split()
+    if not remotes:
+        return False
+    try:
+        r = _git(wiki_dir, "ls-remote", "--quiet", remotes[0], timeout=timeout)
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
+        return False
+    return r.returncode == 0
+
+
+def _last_fetch_time(wiki_dir: Path) -> datetime | None:
+    fetch_head = wiki_dir / ".git" / "FETCH_HEAD"
+    try:
+        return datetime.fromtimestamp(fetch_head.stat().st_mtime, tz=UTC)
+    except OSError:
+        return None

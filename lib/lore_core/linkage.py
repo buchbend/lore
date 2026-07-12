@@ -48,6 +48,9 @@ class Linkage:
     prs: list[int] = field(default_factory=list)
     epics: list[int] = field(default_factory=list)
     author: str = ""
+    # Correlation id of the flush that produced the note (#188); the note
+    # carries the id of the run that wrote it. None outside a traced flush.
+    trace_id: str | None = None
 
 
 def classify_refs(text: str) -> tuple[set[int], set[int], set[int]]:

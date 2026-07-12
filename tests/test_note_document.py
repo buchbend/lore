@@ -146,6 +146,7 @@ def test_create_writes_linkage_block(tmp_path):
         "prs": [],
         "epics": [162],
         "author": "Christof Buchbender",
+        "trace_id": None,
     }
 
 
@@ -214,6 +215,65 @@ def test_append_chapter_renders_blocks_and_records_range(tmp_path):
     assert fm["chapters"] == [
         {"n": 1, "kind": "topic", "from_turn": 1, "to_turn": 40},
     ]
+
+
+def test_append_chapter_renders_lead_and_body_as_one_inline_paragraph(tmp_path):
+    """Note-format v2 (#222): lead sentence is inline with its body, not a
+    standalone bold line floating above a blank-line-separated paragraph.
+    """
+    path = _create(tmp_path)
+    chapter = nd.Chapter(
+        blocks=[
+            _block(
+                lead="Chose an append-only note model.",
+                body="We decided the note file is append-only until close.",
+            )
+        ]
+    )
+    nd.append_chapter(path, chapter, slice_from_turn=1, slice_to_turn=10)
+
+    body = strip_frontmatter(path.read_text())
+    assert (
+        "**Chose an append-only note model.** "
+        "We decided the note file is append-only until close."
+    ) in body
+
+
+def test_append_chapter_sets_title_only_on_first_chapter(tmp_path):
+    """Note-format v2 (#222): the LLM never composes a title, so the flush
+    passes a deterministically-derived one; only the first chapter may set
+    it (the placeholder from create_note stands until then).
+    """
+    path = _create(tmp_path, title="lore session — 2026-07-03")
+    nd.append_chapter(
+        path,
+        nd.Chapter(blocks=[_block(lead="First.", anchor=3)]),
+        slice_from_turn=1,
+        slice_to_turn=20,
+        title="lore: Traced the flush race",
+    )
+    fm = parse_frontmatter(path.read_text())
+    assert fm["title"] == "lore: Traced the flush race"
+
+
+def test_append_chapter_title_ignored_after_first_chapter(tmp_path):
+    path = _create(tmp_path, title="lore session — 2026-07-03")
+    nd.append_chapter(
+        path,
+        nd.Chapter(blocks=[_block(lead="First.", anchor=3)]),
+        slice_from_turn=1,
+        slice_to_turn=20,
+        title="lore: Traced the flush race",
+    )
+    nd.append_chapter(
+        path,
+        nd.Chapter(blocks=[_block(lead="Second.", anchor=44)]),
+        slice_from_turn=21,
+        slice_to_turn=60,
+        title="lore: Some later chapter's lead",
+    )
+    fm = parse_frontmatter(path.read_text())
+    assert fm["title"] == "lore: Traced the flush race"
 
 
 def test_append_multiple_chapters_are_chronological_with_ranges(tmp_path):

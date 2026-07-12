@@ -3,7 +3,7 @@
 One record per FTS query (and per reindex-skip event from the MCP
 server). Hot-path; must not raise.
 
-Concurrency design mirrors :mod:`lore_core.hook_log` (audited 2026-04-26):
+Concurrency design mirrors :mod:`lore_core.spine` (audited 2026-04-26):
 
 * **Appends are POSIX-atomic for records ≤ PIPE_BUF (4096 bytes on
   Linux).** ``emit()`` opens the log with ``O_APPEND | O_CREAT`` and

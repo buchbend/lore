@@ -163,10 +163,10 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
         hooks_mod.capture(event="session-end", cwd_override=cwd, integration="fake", transcript=None)
 
         # ------------------------------------------------------------------
-        # Step 4 — assert hook-events.jsonl contains the session-end record
+        # Step 4 — assert the spine contains the session-end record
         # ------------------------------------------------------------------
-        events_path = lore_root / ".lore" / "hook-events.jsonl"
-        assert events_path.exists(), "hook-events.jsonl should be created"
+        events_path = lore_root / ".lore" / "spine.jsonl"
+        assert events_path.exists(), "spine.jsonl should be created"
         event_records = [json.loads(line) for line in events_path.read_text().splitlines()]
         assert any(r["event"] == "session-end" for r in event_records), (
             f"No session-end record found; got: {event_records}"
@@ -193,15 +193,10 @@ def test_e2e_capture_to_runs_show(tmp_path: Path, monkeypatch) -> None:
         # ------------------------------------------------------------------
         # Step 6 — assert runs/<id>.jsonl exists with run-start / run-end
         # ------------------------------------------------------------------
-        runs_dir = lore_root / ".lore" / "runs"
-        run_files = [
-            p for p in runs_dir.glob("*.jsonl")
-            if not p.name.endswith(".trace.jsonl")
-        ]
-        assert len(run_files) == 1, f"Expected 1 run file, got {[p.name for p in run_files]}"
-
-        records = [json.loads(line) for line in run_files[0].read_text().splitlines()]
-        types = [r["type"] for r in records]
+        from lore_core.run_reader import read_curator_runs
+        runs = list(read_curator_runs(lore_root).values())
+        assert len(runs) == 1, f"Expected 1 run on the spine, got {len(runs)}"
+        types = [r["type"] for r in runs[0]]
         assert types[0] == "run-start", f"First record type: {types[0]}"
         assert types[-1] == "run-end", f"Last record type: {types[-1]}"
 

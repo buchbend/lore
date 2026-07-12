@@ -1,10 +1,8 @@
 """Tests for per-wiki config loader."""
 
-import warnings
 from pathlib import Path
 
 import pytest
-
 from lore_core.wiki_config import WikiConfig, load_wiki_config
 
 
@@ -75,7 +73,7 @@ class TestWikiConfigNestedDataclasses:
     def test_load_models_high_off_parsed(self, tmp_path: Path):
         """YAML with models.high="off" → parsed correctly."""
         config_file = tmp_path / ".lore-wiki.yml"
-        config_file.write_text("models:\n  high: \"off\"\n")
+        config_file.write_text('models:\n  high: "off"\n')
         cfg = load_wiki_config(tmp_path)
         assert cfg.models.high == "off"
         assert cfg.models.simple == "claude-haiku-4-5"  # defaults preserved
@@ -85,10 +83,7 @@ class TestWikiConfigNestedDataclasses:
         """YAML with briefing.sinks list → parsed correctly."""
         config_file = tmp_path / ".lore-wiki.yml"
         config_file.write_text(
-            "briefing:\n"
-            "  sinks:\n"
-            "    - matrix:#dev-notes\n"
-            "    - markdown:~/foo.md\n"
+            "briefing:\n  sinks:\n    - matrix:#dev-notes\n    - markdown:~/foo.md\n"
         )
         cfg = load_wiki_config(tmp_path)
         assert cfg.briefing.sinks == ["matrix:#dev-notes", "markdown:~/foo.md"]
@@ -138,3 +133,99 @@ class TestWikiConfigErrorHandling:
         with pytest.warns(UserWarning, match="top-level must be a mapping"):
             cfg = load_wiki_config(tmp_path)
         assert cfg == WikiConfig()
+
+
+# ---------------------------------------------------------------------------
+# Introspection / write-back helpers (lore config get/set/unset --wiki)
+# ---------------------------------------------------------------------------
+
+
+def _fresh_wiki(tmp_path: Path, body: str) -> Path:
+    (tmp_path / ".lore-wiki.yml").write_text(body)
+    return tmp_path
+
+
+class TestWikiConfigWriteBack:
+    def test_walk_fields_marks_file_vs_default(self, tmp_path: Path) -> None:
+        from lore_core.wiki_config import walk_fields
+
+        wiki = _fresh_wiki(tmp_path, "git:\n  auto_push: true\n")
+        fields_by_path = {fi.path: fi for fi in walk_fields(wiki)}
+        assert fields_by_path["git.auto_push"].source == "file"
+        assert fields_by_path["git.auto_push"].value is True
+        assert fields_by_path["git.auto_commit"].source == "default"
+        assert fields_by_path["git.auto_commit"].value is False
+
+    def test_get_field_returns_leaf_info(self, tmp_path: Path) -> None:
+        from lore_core.wiki_config import get_field
+
+        wiki = _fresh_wiki(tmp_path, "")
+        fi = get_field(wiki, "curator.threshold_pending_turns")
+        assert fi.value == 30
+        assert fi.source == "default"
+        assert fi.type_name == "int"
+
+    def test_get_field_unknown_path_raises_with_suggestion(self, tmp_path: Path) -> None:
+        from lore_core.wiki_config import get_field
+
+        wiki = _fresh_wiki(tmp_path, "")
+        with pytest.raises(KeyError, match="did you mean.*models.simple"):
+            get_field(wiki, "models.simpel")
+
+    def test_set_field_persists_and_round_trips(self, tmp_path: Path) -> None:
+        from lore_core.wiki_config import get_field, set_field
+
+        wiki = _fresh_wiki(tmp_path, "briefing:\n  audience: team\n")
+        fi = set_field(wiki, "git.auto_push", "true")
+        assert fi.value is True
+        assert get_field(wiki, "git.auto_push").value is True
+        assert get_field(wiki, "briefing.audience").value == "team"  # untouched
+
+    def test_set_field_rejects_bad_type_file_unchanged(self, tmp_path: Path) -> None:
+        from lore_core.wiki_config import set_field
+
+        wiki = _fresh_wiki(tmp_path, "")
+        cfg_path = wiki / ".lore-wiki.yml"
+        before = cfg_path.read_text()
+        with pytest.raises(ValueError, match="cannot parse"):
+            set_field(wiki, "git.auto_push", "notabool")
+        assert cfg_path.read_text() == before
+
+    def test_set_field_rejects_unknown_path_file_unchanged(self, tmp_path: Path) -> None:
+        from lore_core.wiki_config import set_field
+
+        wiki = _fresh_wiki(tmp_path, "git:\n  auto_push: true\n")
+        cfg_path = wiki / ".lore-wiki.yml"
+        before = cfg_path.read_text()
+        with pytest.raises(KeyError, match="unknown config path"):
+            set_field(wiki, "git.no_such_field", "true")
+        assert cfg_path.read_text() == before
+
+    def test_unset_field_reverts_to_default(self, tmp_path: Path) -> None:
+        from lore_core.wiki_config import get_field, set_field, unset_field
+
+        wiki = _fresh_wiki(tmp_path, "")
+        set_field(wiki, "curator.threshold_pending_turns", "5")
+        assert get_field(wiki, "curator.threshold_pending_turns").value == 5
+        fi = unset_field(wiki, "curator.threshold_pending_turns")
+        assert fi.value == 30
+        assert get_field(wiki, "curator.threshold_pending_turns").value == 30
+
+    def test_unset_field_noop_when_not_set(self, tmp_path: Path) -> None:
+        from lore_core.wiki_config import unset_field
+
+        wiki = _fresh_wiki(tmp_path, "")
+        fi = unset_field(wiki, "curator.threshold_pending_turns")
+        assert fi.value == 30
+
+    def test_schema_tree_covers_all_leaves(self) -> None:
+        from lore_core.wiki_config import schema_tree
+
+        paths = {p for p, _, _, _ in schema_tree()}
+        assert "git.auto_commit" in paths
+        assert "curator.threshold_pending_turns" in paths
+        assert "models.simple" in paths
+        assert "briefing.audience" in paths
+        assert "heartbeat.enabled" in paths
+        assert "breadcrumb.mode" in paths
+        assert "git" not in paths  # groups excluded, leaves only

@@ -40,9 +40,7 @@ def _disable_dev_filter(monkeypatch):
     But these tests are exactly the ones that exercise the write
     path, so they need to opt out.
     """
-    monkeypatch.setattr(
-        "lore_cli._crash_log._is_dev_invocation", lambda: False
-    )
+    monkeypatch.setattr("lore_cli._crash_log._is_dev_invocation", lambda: False)
 
 
 def test_write_crash_persists_traceback(tmp_path, monkeypatch):
@@ -74,9 +72,7 @@ def test_write_crash_skipped_when_pytest_in_argv(tmp_path, monkeypatch):
     """
     # Override the autouse fixture for THIS test only — we want the
     # dev-invocation filter active here.
-    monkeypatch.setattr(
-        "lore_cli._crash_log._is_dev_invocation", lambda: True
-    )
+    monkeypatch.setattr("lore_cli._crash_log._is_dev_invocation", lambda: True)
     monkeypatch.setenv("LORE_CACHE", str(tmp_path))
     from lore_cli._crash_log import write_crash
 
@@ -123,6 +119,7 @@ def test_recent_crashes_returns_newest_first(tmp_path, monkeypatch):
     # Force ordering by mtime even on coarse-resolution filesystems.
     import os
     import time
+
     os.utime(p1, (time.time() - 60, time.time() - 60))
 
     recent = recent_crashes(within_days=7)
@@ -137,9 +134,117 @@ def test_recent_crashes_empty_when_dir_missing(tmp_path, monkeypatch):
     assert recent_crashes() == []
 
 
-def test_shield_writes_crash_log_and_includes_path_in_banner(
-    tmp_path, monkeypatch, capsys
-):
+# ---------------------------------------------------------------------------
+# #190 — explicit retention: crash logs no longer accumulate forever.
+# ---------------------------------------------------------------------------
+
+
+def test_purge_old_crashes_deletes_past_window(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path))
+    from lore_cli._crash_log import purge_old_crashes, write_crash
+
+    try:
+        raise RuntimeError("old")
+    except RuntimeError as exc:
+        old_path = write_crash("SessionStart", exc)
+    import os
+    import time
+
+    os.utime(old_path, (time.time() - 40 * 86400, time.time() - 40 * 86400))
+
+    deleted, failed = purge_old_crashes(30, lore_root=tmp_path)
+    assert deleted == 1
+    assert failed == 0
+    assert not old_path.exists()
+
+
+def test_purge_old_crashes_keeps_recent(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path))
+    from lore_cli._crash_log import purge_old_crashes, write_crash
+
+    try:
+        raise RuntimeError("recent")
+    except RuntimeError as exc:
+        recent_path = write_crash("SessionStart", exc)
+
+    deleted, failed = purge_old_crashes(30, lore_root=tmp_path)
+    assert deleted == 0
+    assert recent_path.exists()
+
+
+def test_purge_old_crashes_emits_janitor_spine_event(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path))
+    from lore_cli._crash_log import purge_old_crashes, write_crash
+    from lore_core.spine import read_spine, validate_envelope
+
+    try:
+        raise RuntimeError("old")
+    except RuntimeError as exc:
+        old_path = write_crash("SessionStart", exc)
+    import os
+    import time
+
+    os.utime(old_path, (time.time() - 40 * 86400, time.time() - 40 * 86400))
+
+    purge_old_crashes(30, lore_root=tmp_path)
+    events = [r for r in read_spine(tmp_path, source="janitor") if r["event"] == "retention-delete"]
+    assert events
+    assert events[0]["data"]["family"] == "crash-log"
+    validate_envelope(events[0])
+
+
+def test_purge_old_crashes_failure_emits_warn_event(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path))
+    from lore_cli._crash_log import purge_old_crashes, write_crash
+    from lore_core.spine import read_spine
+
+    try:
+        raise RuntimeError("old")
+    except RuntimeError as exc:
+        old_path = write_crash("SessionStart", exc)
+    import os
+    import time
+
+    os.utime(old_path, (time.time() - 40 * 86400, time.time() - 40 * 86400))
+
+    real_unlink = Path.unlink
+
+    def bad_unlink(self, *args, **kwargs):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(Path, "unlink", bad_unlink)
+    deleted, failed = purge_old_crashes(30, lore_root=tmp_path)
+    monkeypatch.setattr(Path, "unlink", real_unlink)
+
+    assert failed == 1
+    failures = [
+        r for r in read_spine(tmp_path, source="janitor") if r["event"] == "retention-delete-failed"
+    ]
+    assert failures
+    assert failures[0]["level"] == "warn"
+    assert failures[0]["data"]["family"] == "crash-log"
+
+
+def test_purge_old_crashes_without_lore_root_still_deletes(tmp_path, monkeypatch):
+    """No lore_root -> best-effort deletion, no spine emission (nowhere to write it)."""
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path))
+    from lore_cli._crash_log import purge_old_crashes, write_crash
+
+    try:
+        raise RuntimeError("old")
+    except RuntimeError as exc:
+        old_path = write_crash("SessionStart", exc)
+    import os
+    import time
+
+    os.utime(old_path, (time.time() - 40 * 86400, time.time() - 40 * 86400))
+
+    deleted, failed = purge_old_crashes(30)
+    assert deleted == 1
+    assert not old_path.exists()
+
+
+def test_shield_writes_crash_log_and_includes_path_in_banner(tmp_path, monkeypatch, capsys):
     """End-to-end: shield catches an unexpected exception, writes a
     crash file, and the file path appears in the user-facing banner."""
     monkeypatch.setenv("LORE_CACHE", str(tmp_path))
@@ -201,9 +306,7 @@ def test_main_backstop_catches_pre_dispatch_exception(tmp_path, monkeypatch, cap
     assert "simulated typer dispatch failure" in files[0].read_text()
 
 
-def test_main_backstop_human_caller_writes_log_but_no_envelope(
-    tmp_path, monkeypatch, capsys
-):
+def test_main_backstop_human_caller_writes_log_but_no_envelope(tmp_path, monkeypatch, capsys):
     """For non-hook callers (e.g. a developer running `lore search foo`
     that crashes), main() should write the log + a terse stderr line
     instead of a JSON envelope."""
@@ -243,6 +346,7 @@ def test_doctor_check_recent_crashes_advisory(tmp_path, monkeypatch):
 
     # Drop a crash log in place; check should now report it.
     from lore_cli._crash_log import write_crash
+
     try:
         raise RuntimeError("bang")
     except RuntimeError as exc:

@@ -13,6 +13,7 @@ from lore_core.offer import (
     find_lore_yml_raw,
     offer_fingerprint,
     parse_lore_yml,
+    validate_offer_raw,
 )
 
 
@@ -204,3 +205,42 @@ def test_fingerprint_changes_on_wiki_source_change() -> None:
     a = Offer(wiki="w", scope="a:b", wiki_source="url1")
     b = Offer(wiki="w", scope="a:b", wiki_source="url2")
     assert offer_fingerprint(a) != offer_fingerprint(b)
+
+
+# ---- validate_offer_raw ----
+
+def test_validate_offer_raw_valid_is_empty(tmp_path: Path) -> None:
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: a:b\nbackend: github\n")
+    assert validate_offer_raw(tmp_path / FILENAME) == []
+
+
+def test_validate_offer_raw_unknown_key_names_it(tmp_path: Path) -> None:
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: a:b\nbakcend: github\n")
+    errors = validate_offer_raw(tmp_path / FILENAME)
+    assert len(errors) == 1
+    assert "bakcend" in errors[0]
+    assert "backend" in errors[0]  # suggestion
+
+
+def test_validate_offer_raw_type_mismatch(tmp_path: Path) -> None:
+    (tmp_path / FILENAME).write_text("wiki: w\nscope: a:b\ninherit: not-a-bool\n")
+    errors = validate_offer_raw(tmp_path / FILENAME)
+    assert len(errors) == 1
+    assert "inherit" in errors[0]
+
+
+def test_validate_offer_raw_missing_wiki(tmp_path: Path) -> None:
+    (tmp_path / FILENAME).write_text("scope: a:b\n")
+    errors = validate_offer_raw(tmp_path / FILENAME)
+    assert any("wiki" in e for e in errors)
+
+
+def test_validate_offer_raw_missing_file_is_empty(tmp_path: Path) -> None:
+    """Absence is `parse_lore_yml`'s job to report — not a validation error."""
+    assert validate_offer_raw(tmp_path / FILENAME) == []
+
+
+def test_validate_offer_raw_malformed_yaml_is_empty(tmp_path: Path) -> None:
+    """Malformed YAML is treated as absence, same as `parse_lore_yml`."""
+    (tmp_path / FILENAME).write_text("wiki: [unclosed\n")
+    assert validate_offer_raw(tmp_path / FILENAME) == []

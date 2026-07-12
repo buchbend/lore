@@ -1015,7 +1015,7 @@ def _shield_hook(typer_event: str):
 import typer  # noqa: E402
 
 from lore_adapters import get_adapter  # noqa: E402
-from lore_core.hook_log import HookEventLogger  # noqa: E402
+from lore_core.spine import ErrorCode, emit_hook_event  # noqa: E402
 from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry  # noqa: E402
 from lore_core.scope_resolver import resolve_scope  # noqa: E402
 from lore_core.spawn_gate import check_spawn  # noqa: E402
@@ -1046,6 +1046,21 @@ hook_app = typer.Typer(
 )
 
 
+def _ppid_cmd() -> str | None:
+    """Return /proc/<ppid>/cmdline as a space-joined string, or None.
+
+    Best-effort hook-event provenance (Linux only); any error yields None.
+    """
+    try:
+        ppid = os.getppid()
+        data = Path(f"/proc/{ppid}/cmdline").read_bytes()
+        if not data:
+            return None
+        return data.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+    except (OSError, ValueError):
+        return None
+
+
 def _resolve_cwd(explicit: str | None) -> str:
     """Resolve CWD: explicit --cwd → $CLAUDE_PROJECT_DIR → $CURSOR_PROJECT_DIR → os.getcwd().
 
@@ -1064,6 +1079,13 @@ def _resolve_cwd(explicit: str | None) -> str:
 
 def _in_curator_mode() -> bool:
     return os.environ.get("LORE_CURATOR_MODE") == "1"
+
+
+def _capture_suppressed() -> bool:
+    """True when the dispatching orchestrator opted this session out of
+    standalone capture (e.g. a teammate whose work is meant to land in a
+    shared epic note instead of its own fragment)."""
+    return os.environ.get("LORE_SUPPRESS_CAPTURE") == "1"
 
 
 def _session_off_all() -> bool:
@@ -1249,6 +1271,16 @@ def cmd_session_start(
             auto_pull_warning = _maybe_auto_pull_for_scope(scope, lore_root)
         except Exception:  # noqa: BLE001 — pull must never crash SessionStart
             auto_pull_warning = None
+
+    # Opportunistic retention sweep (#190) — flock-guarded, daemon-free; a
+    # contended lock just skips this cycle, the next SessionStart retries.
+    if scope is not None and lore_root is not None and not probe:
+        try:
+            from lore_cli._janitor_entry import run_opportunistic_janitor
+
+            run_opportunistic_janitor(lore_root)
+        except Exception:  # noqa: BLE001 - janitor must never crash SessionStart
+            pass
 
     # Buffer-and-flush handover-poll: when a sibling session ended
     # mid-flush, wait briefly for ``state=closed`` so the resulting
@@ -1927,7 +1959,8 @@ def _offer_notice_line(cwd: Path) -> str | None:
         return None
 
     try:
-        HookEventLogger(lore_root).emit(
+        emit_hook_event(
+            lore_root,
             event="lore-yml-offered",
             outcome=result.state.value,
             detail={
@@ -2046,9 +2079,11 @@ def _poll_buffer_handover(
         lines.append(f"> Picked up {wikilink} from a prior session.")
     if pending_stems:
         try:
-            HookEventLogger(lore_root).emit(
+            emit_hook_event(
+                lore_root,
                 event="session-start",
                 outcome="flush-handover-timeout",
+                error_code=ErrorCode.FLUSH_HANDOVER_TIMEOUT,
                 cwd=str(cwd),
                 pending=sorted(pending_stems),
             )
@@ -2327,7 +2362,7 @@ def capture(
     curator when pending work exceeds threshold. No LLM, no network,
     bounded FS walk (8 levels).
     """
-    if _in_curator_mode():
+    if _in_curator_mode() or _capture_suppressed():
         return
     _read_hook_payload()
     if _session_off_all():
@@ -2341,7 +2376,6 @@ def capture(
         return
     import time as _time
     from lore_adapters import UnknownIntegrationError
-    from lore_core.hook_log import _ppid_cmd
 
     start = _time.monotonic()
     cwd = cwd_override or _resolve_cwd_capture()
@@ -2368,7 +2402,8 @@ def capture(
         # event so "hook fired but declined" is distinguishable from "hook
         # never fired" in `lore status` / `lore runs list --hooks`.
         try:
-            HookEventLogger(get_lore_root()).emit(
+            emit_hook_event(
+                get_lore_root(),
                 event=event, integration=integration, scope=None,
                 duration_ms=int((_time.monotonic() - start) * 1000),
                 outcome="no-scope",
@@ -2381,7 +2416,9 @@ def capture(
         return
 
     lore_root = _infer_lore_root(scope.claude_md_path)
-    logger = HookEventLogger(lore_root)
+
+    def _emit_hook(**kw: object) -> None:
+        emit_hook_event(lore_root, **kw)
     outcome = "no-new-turns"
     run_id: str | None = None
     pending_after = 0
@@ -2394,11 +2431,12 @@ def capture(
         try:
             adapter = get_adapter(integration)
         except UnknownIntegrationError:
-            logger.emit(
+            _emit_hook(
                 event=event, integration=integration, scope=scope_payload,
                 duration_ms=int((_time.monotonic() - start) * 1000),
                 outcome="error",
                 pending_after=0,
+                error_code=ErrorCode.UNKNOWN_INTEGRATION,
                 error={"type": "UnknownIntegrationError", "message": integration},
                 cwd=str(cwd),
                 pid=_capture_pid,
@@ -2421,10 +2459,11 @@ def capture(
                     lore_root, trigger=event, max_scan=20,
                 )
             except Exception as exc:  # noqa: BLE001 - hook must never fail on this
-                logger.emit(
+                _emit_hook(
                     event=event, integration=integration, scope=scope_payload,
                     duration_ms=int((_time.monotonic() - start) * 1000),
                     outcome="warning",
+                    error_code=ErrorCode.FLUSH_REQUEST_FAILED,
                     error={"type": type(exc).__name__, "message": str(exc)},
                     cwd=str(cwd),
                     pid=_capture_pid,
@@ -2478,10 +2517,11 @@ def capture(
     except typer.Exit:
         raise
     except Exception as exc:
-        logger.emit(
+        _emit_hook(
             event=event, integration=integration, scope=scope_payload,
             duration_ms=int((_time.monotonic() - start) * 1000),
             outcome="error",
+            error_code=ErrorCode.CAPTURE_FAILED,
             pending_after=pending_after,
             pending_by_wiki=pending_by_wiki_counts,
             error={"type": type(exc).__name__, "message": str(exc)},
@@ -2491,7 +2531,7 @@ def capture(
         )
         raise
     else:
-        logger.emit(
+        _emit_hook(
             event=event, integration=integration, scope=scope_payload,
             duration_ms=int((_time.monotonic() - start) * 1000),
             outcome=outcome,

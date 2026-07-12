@@ -124,31 +124,73 @@ def test_attached(lore_root: Path, tmp_path: Path, now: datetime) -> None:
 # ---- DORMANT ----
 
 def test_dormant(lore_root: Path, tmp_path: Path) -> None:
-    """Offer + decline entry with matching fingerprint → DORMANT."""
+    """Offer + decline entry with matching scope → DORMANT."""
     repo = tmp_path / "repo"
     repo.mkdir()
-    _write_offer(repo)
-    offer = parse_lore_yml(repo / FILENAME)
-    fp = offer_fingerprint(offer)
+    _write_offer(repo, scope="a:b")
 
     af = AttachmentsFile(lore_root)
     af.load()
-    af.decline(repo, fp)
+    af.decline(repo, "a:b")
 
     r = classify_state(repo, af)
     assert r.state is ConsentState.DORMANT
 
 
-def test_dormant_decline_for_different_fingerprint_does_not_suppress(
+def test_dormant_decline_for_different_scope_does_not_suppress(
     lore_root: Path, tmp_path: Path,
 ) -> None:
-    """An old decline for a different fingerprint doesn't suppress a new offer."""
+    """An old decline for a different scope doesn't suppress a new offer."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _write_offer(repo, wiki="new-wiki", scope="new:scope")
     af = AttachmentsFile(lore_root)
     af.load()
-    af.decline(repo, "sha256:old-fingerprint")     # stale decline, different offer
+    af.decline(repo, "old:scope")     # stale decline, different offer
+    r = classify_state(repo, af)
+    assert r.state is ConsentState.OFFERED
+
+
+def test_dormant_survives_content_edit_that_changes_fingerprint(
+    lore_root: Path, tmp_path: Path,
+) -> None:
+    """Editing an offer's `wiki_source` (a fingerprint field) after a
+    decline must NOT re-prompt — decline is keyed on (path, scope), not
+    on the content fingerprint that changed."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_offer(repo, wiki="w", scope="a:b")
+    fp_before = offer_fingerprint(parse_lore_yml(repo / FILENAME))
+
+    af = AttachmentsFile(lore_root)
+    af.load()
+    af.decline(repo, "a:b")
+    r = classify_state(repo, af)
+    assert r.state is ConsentState.DORMANT
+
+    # Edit content only — scope unchanged, but wiki_source is a
+    # fingerprint field, so the fingerprint DOES change here.
+    _write_offer(repo, wiki="w", scope="a:b", wiki_source="git@example.com:x.git")
+    fp_after = offer_fingerprint(parse_lore_yml(repo / FILENAME))
+    assert fp_before != fp_after  # sanity: the edit is not a no-op
+
+    r2 = classify_state(repo, af)
+    assert r2.state is ConsentState.DORMANT
+
+
+def test_dormant_reprompts_on_scope_change(lore_root: Path, tmp_path: Path) -> None:
+    """A changed scope IS a materially different offer — re-asks even
+    though the decline for the old scope is still on file."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_offer(repo, wiki="w", scope="a:b")
+
+    af = AttachmentsFile(lore_root)
+    af.load()
+    af.decline(repo, "a:b")
+    assert classify_state(repo, af).state is ConsentState.DORMANT
+
+    _write_offer(repo, wiki="w", scope="a:c")  # scope changed
     r = classify_state(repo, af)
     assert r.state is ConsentState.OFFERED
 

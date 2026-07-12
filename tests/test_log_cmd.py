@@ -26,32 +26,57 @@ def _seed_vault(tmp_path: Path) -> Path:
     return lore_root
 
 
+def _spine_env(row: dict) -> dict:
+    """Wrap an old-style hook row as a spine envelope."""
+    data = {k: v for k, v in row.items() if k not in ("ts", "event", "schema_version")}
+    outcome = data.get("outcome")
+    return {
+        "ts": row.get("ts"), "v": 1, "source": "hook", "event": row.get("event"),
+        "level": "error" if outcome == "error" else "info",
+        "trace_id": None, "session_id": None, "run_id": None,
+        "wiki": None, "scope": None, "error_code": None, "data": data,
+    }
+
+
 def _seed_hook_events(lore_root: Path, events: list[dict]) -> None:
-    p = lore_root / ".lore" / "hook-events.jsonl"
-    p.write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    p = lore_root / ".lore" / "spine.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("\n".join(json.dumps(_spine_env(e)) for e in events) + "\n")
+
+
+def _curator_env(event: str, run_id: str, ts: str, data: dict) -> dict:
+    """A curator spine envelope with a controlled timestamp."""
+    return {
+        "ts": ts, "v": 1, "source": "curator", "event": event, "level": "info",
+        "trace_id": None, "session_id": None, "run_id": run_id,
+        "wiki": None, "scope": None, "error_code": None, "data": data,
+    }
 
 
 def _seed_run(lore_root: Path, *, ago: timedelta, notes_new: int = 1, suffix: str = "abc123") -> None:
+    # Curator runs live on the spine now (role omitted -> log defaults to a).
     run_ts = _NOW - ago
-    runs_dir = lore_root / ".lore" / "runs"
-    runs_dir.mkdir(parents=True, exist_ok=True)
-    stem = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{suffix}"
-    records = [
-        {"type": "run-start", "ts": _iso(run_ts), "schema_version": 1, "run_id": stem},
-        {"type": "run-end", "ts": _iso(run_ts + timedelta(seconds=15)), "schema_version": 1,
-         "notes_new": notes_new, "notes_merged": 0, "duration_ms": 15000, "errors": 0},
+    run_id = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{suffix}"
+    envs = [
+        _curator_env("run-start", run_id, _iso(run_ts), {"trigger": "hook"}),
+        _curator_env("run-end", run_id, _iso(run_ts + timedelta(seconds=15)),
+                     {"notes_new": notes_new, "notes_merged": 0, "duration_ms": 15000, "errors": 0}),
     ]
-    (runs_dir / f"{stem}.jsonl").write_text(
-        "\n".join(json.dumps(r) for r in records) + "\n"
-    )
+    spine = lore_root / ".lore" / "spine.jsonl"
+    spine.parent.mkdir(parents=True, exist_ok=True)
+    with spine.open("a") as f:
+        for e in envs:
+            f.write(json.dumps(e) + "\n")
 
 
 def _invoke(lore_root: Path, *extra: str, monkeypatch) -> str:
     from lore_cli.log_cmd import app
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
     monkeypatch.setenv("_LORE_LOG_NOW", _iso(_NOW))
+    # stdout only — the deprecation pointer (added #195) goes to stderr so
+    # `--json` piping stays clean; keep it out of these content assertions.
     result = runner.invoke(app, list(extra), catch_exceptions=False)
-    return result.output
+    return result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -194,3 +219,26 @@ def test_log_proc_events(tmp_path: Path, monkeypatch) -> None:
     out = _invoke(lore_root, monkeypatch=monkeypatch)
     assert "proc-a" in out
     assert "exit 0" in out
+
+
+# ---------------------------------------------------------------------------
+# Deprecation — thin alias pointing at `lore trace` (#195)
+# ---------------------------------------------------------------------------
+
+
+def test_log_deprecation_pointer_and_delegation(tmp_path: Path, monkeypatch) -> None:
+    """`lore log` prints a pointer to `lore trace` on stderr, then still
+    runs its own timeline — the deprecation window keeps it functional."""
+    from lore_cli.log_cmd import app
+
+    lore_root = _seed_vault(tmp_path)
+    _seed_hook_events(lore_root, [
+        {"ts": _iso(_NOW - timedelta(minutes=5)), "event": "session-start", "outcome": "ok",
+         "schema_version": 2},
+    ])
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    monkeypatch.setenv("_LORE_LOG_NOW", _iso(_NOW))
+    result = runner.invoke(app, [], catch_exceptions=False)
+    assert "deprecated" in result.stderr
+    assert "lore trace" in result.stderr
+    assert "session-start" in result.stdout  # delegation: old behavior intact

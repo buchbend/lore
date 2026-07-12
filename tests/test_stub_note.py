@@ -22,6 +22,7 @@ from lore_curator.stub_note import (
     _claim_first_write_slot,
     _lead_for_rename,
     _resolve_renamed_path,
+    _topic_title,
     write_or_update,
 )
 
@@ -774,6 +775,20 @@ def test_lead_for_rename_empty_when_no_blocks():
 def test_lead_for_rename_empty_when_first_block_blank():
     chapter = Chapter(blocks=[TopicBlock(lead="   ", body="prose", anchor_turn=1)])
     assert _lead_for_rename(chapter) == ""
+
+
+def test_topic_title_prefixes_scope_before_composed_name():
+    """Note-format v2 (#222): frontmatter title is `scope: name` — scope
+    (the linkage repo/project slug) first, then the composed human name.
+    """
+    chapter = Chapter(
+        blocks=[TopicBlock(lead="Traced the flush race.", body="prose", anchor_turn=2)]
+    )
+    assert _topic_title("proj:x", chapter) == "proj:x: Traced the flush race"
+
+
+def test_topic_title_empty_when_no_lead():
+    assert _topic_title("proj:x", Chapter(blocks=[])) == ""
 
 
 def test_resolve_renamed_path_swaps_slug_keeps_prefix(tmp_path: Path):

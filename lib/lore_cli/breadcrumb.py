@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -44,49 +43,35 @@ def render_session_end_breadcrumb(
 
 
 def write_pending_breadcrumb(lore_root: Path, line: str) -> None:
-    """Emit a ``pending-breadcrumb-written`` event to hook-events.jsonl.
+    """Emit a ``pending-breadcrumb-written`` event onto the event spine.
 
-    Best-effort; never raises (HookEventLogger swallows OSError internally).
+    Best-effort; never raises (the spine writer swallows OSError internally).
     """
-    from lore_core.hook_log import HookEventLogger
+    from lore_core.spine import emit_hook_event
 
-    HookEventLogger(lore_root).emit(event=_EV_WRITTEN, line=line)
+    emit_hook_event(lore_root, event=_EV_WRITTEN, line=line)
 
 
 def consume_pending_breadcrumb(lore_root: Path) -> str | None:
     """Return the most recent unconsumed pending-breadcrumb line.
 
-    Scans ``hook-events.jsonl`` for the most recent written/consumed pair.
+    Scans the event spine for the most recent written/consumed pair.
     Returns the written line iff it is newer than the last consumed event
     AND younger than ``_PENDING_BREADCRUMB_MAX_AGE_S``. On success, appends
     a ``pending-breadcrumb-consumed`` event so the line is shown at most
     once.
     """
     from datetime import UTC, datetime as _dt
-    from lore_core.hook_log import HookEventLogger
-
-    events_path = lore_root / ".lore" / "hook-events.jsonl"
-    if not events_path.exists():
-        return None
+    from lore_core.spine import emit_hook_event, read_spine
 
     last_written: dict | None = None
     last_consumed_ts: str | None = None
-    try:
-        for raw in events_path.read_text().splitlines():
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                rec = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            ev = rec.get("event")
-            if ev == _EV_WRITTEN:
-                last_written = rec
-            elif ev == _EV_CONSUMED:
-                last_consumed_ts = rec.get("ts")
-    except OSError:
-        return None
+    for rec in read_spine(lore_root, source="hook"):
+        ev = rec.get("event")
+        if ev == _EV_WRITTEN:
+            last_written = rec
+        elif ev == _EV_CONSUMED:
+            last_consumed_ts = rec.get("ts")
 
     if last_written is None:
         return None
@@ -105,8 +90,8 @@ def consume_pending_breadcrumb(lore_root: Path) -> str | None:
     if age > _PENDING_BREADCRUMB_MAX_AGE_S:
         return None  # stale
 
-    HookEventLogger(lore_root).emit(event=_EV_CONSUMED)
-    return last_written.get("line") or None
+    emit_hook_event(lore_root, event=_EV_CONSUMED)
+    return (last_written.get("data") or {}).get("line") or None
 
 
 @dataclass
@@ -172,6 +157,37 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
         banner = f"lore!: {state.hook_errors_24h} hook error{suffix} today (lore doctor)"
         return _prepend(session_end_line, banner)
 
+    scope_warning = _scope_drift_warning(ctx)
+    if scope_warning:
+        return _prepend(session_end_line, scope_warning)
+
     return session_end_line
+
+
+def _scope_drift_warning(ctx: BannerContext) -> str | None:
+    """Warn when this repo's checked-in ``.lore.yml`` still declares a
+    scope the registry no longer has this attachment under.
+
+    ``lore scopes rename`` rewrites vault-local state only — it never
+    edits a checked-in offer file (that file may live on a different
+    host entirely). Left uncorrected, a future ``lore attach accept``
+    re-derives the stale scope from the file and resurrects it. This
+    mirrors the fingerprint-DRIFT notice SessionStart already prints
+    for content changes, but catches the case fingerprint-matching
+    can't: the file's content hasn't changed, only the registry's
+    idea of this attachment's scope has (via rename).
+    """
+    from lore_core.offer import FILENAME, parse_lore_yml
+
+    repo_root = ctx.scope.claude_md_path.parent
+    offer = parse_lore_yml(repo_root / FILENAME)
+    if offer is None or offer.scope == ctx.scope.scope:
+        return None
+    return (
+        f"lore: {repo_root / FILENAME} still declares scope `{offer.scope}`, "
+        f"but this repo is registered under `{ctx.scope.scope}` (renamed?). "
+        f"Update the file's `scope:` field, then run "
+        f"`lore attach accept --cwd {repo_root}` to resync."
+    )
 
 

@@ -6,12 +6,17 @@ mechanic as prose now call these subcommands and gate on their exit code.
 
 from __future__ import annotations
 
+import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import typer
+from lore_workflow.board_parser import BoardParseError, parse_board
+from lore_workflow.epic_policy import resolve_epic_policy
 from lore_workflow.prd_docs import create_prd
-from lore_workflow.roadmap_validator import validate_roadmap
+from lore_workflow.roadmap_validator import roadmap_counts, validate_roadmap
+from lore_workflow.seed_epic import compose_seed_lift
 from rich.console import Console
 
 from lore_cli._argv_compat import argv_main
@@ -31,12 +36,37 @@ def validate_roadmap_cmd(
     path: str = typer.Argument(
         "-", help="Path to the epic body Markdown, or '-' to read stdin."
     ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine output: {ok, rows, repos, edges, problems}. "
+        "Exit code is unchanged (0 valid, 1 invalid).",
+    ),
 ) -> None:
     """Validate an epic's roadmap table: required columns, fully-qualified
     `owner/repo#n` issue refs, resolvable blocked-by edges, acyclic DAG.
     """
     text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
     result = validate_roadmap(text)
+    if as_json:
+        counts = roadmap_counts(result)
+        # stdout, not rich console: keep it parse-clean (no markup/wrapping).
+        print(
+            json.dumps(
+                {
+                    "ok": result.ok,
+                    "rows": counts.rows,
+                    "repos": counts.repos,
+                    "edges": counts.edges,
+                    "problems": [
+                        {"kind": p.kind, "message": p.message} for p in result.problems
+                    ],
+                }
+            )
+        )
+        if not result.ok:
+            raise typer.Exit(code=1)
+        return
     if result.ok:
         console.print(
             f"[green]roadmap OK[/green]: {len(result.rows)} feature(s), "
@@ -66,6 +96,75 @@ def create_prd_cmd(
         target or Path("."), slug=slug, title=title, epic_url=epic_url, repos=repo or []
     )
     console.print(f"[green]wrote[/green] {path}")
+
+
+@app.command("epic-policy")
+def epic_policy_cmd(
+    repo_root: str = typer.Argument(
+        ".", help="Repo root to resolve policy for (default: cwd)."
+    ),
+) -> None:
+    """Emit a repo's epic-merge policy as JSON: {target_branch, deploy_gate}.
+
+    `target_branch` is `develop` if that branch exists on `origin`, else
+    `main`. `deploy_gate` is true iff `AGENTS.md` declares
+    `epic-merge-policy: confirm` under its `## Epic merge policy` section.
+    """
+    policy = resolve_epic_policy(Path(repo_root))
+    # stdout, not rich console: keep it parse-clean for machine consumers.
+    print(
+        json.dumps(
+            {"target_branch": policy.target_branch, "deploy_gate": policy.deploy_gate}
+        )
+    )
+
+
+@app.command("seed-lift")
+def seed_lift_cmd(
+    note_path: Path = typer.Argument(..., help="Path to the session note to lift from."),
+    wiki_root: Path | None = typer.Option(
+        None, "--wiki-root", help="Wiki root; when given, source_note is recorded wiki-relative."
+    ),
+) -> None:
+    """Lift Origin/Findings for a seed issue from a session note.
+
+    Prints `{origin, findings, source_note}` as JSON on success. Exits 1
+    when the note is missing or too thin to say anything a freehand pass
+    wouldn't already have — the skill's signal to fall back to freehand.
+    """
+    lift = compose_seed_lift(note_path, wiki_root=wiki_root)
+    if lift is None:
+        console.print("[yellow]no usable note[/yellow]: fall back to freehand Origin/Findings")
+        raise typer.Exit(code=1)
+    # Plain (uncolored) JSON: this is machine output for the skill to parse,
+    # not a human-facing message like the other subcommands' console.print.
+    typer.echo(
+        json.dumps(
+            {"origin": lift.origin, "findings": lift.findings, "source_note": lift.source_note}
+        )
+    )
+
+
+@app.command("parse-board")
+def parse_board_cmd(
+    path: str = typer.Argument(
+        "-", help="Path to the board comment body, or '-' to read stdin."
+    ),
+) -> None:
+    """Parse an orchestrate-epic supervision-board comment into JSON rows.
+
+    Emits {rows: [{feature, issue, tier, batch, state, pr}, ...]}. A missing
+    marker, missing columns, or a malformed row exits 1 with a clear error on
+    stderr — never a silent misread.
+    """
+    text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
+    try:
+        rows = parse_board(text)
+    except BoardParseError as exc:
+        print(f"board parse error: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+    # stdout, not rich console: keep it parse-clean for machine consumers.
+    print(json.dumps({"rows": [asdict(row) for row in rows]}))
 
 
 main = argv_main(app)

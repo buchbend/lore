@@ -1,7 +1,6 @@
 """Tests for lore_core.drain — per-session event store + session-id resolver."""
 from __future__ import annotations
 
-import json
 import os
 import time
 from datetime import UTC, datetime, timedelta
@@ -11,12 +10,12 @@ import pytest
 
 from lore_core.drain import (
     EVENT_VOCAB,
-    MAX_DRAIN_LINE,
     SYSTEM_SESSION,
     DrainEvent,
     DrainStore,
     resolve_session_id,
 )
+from lore_core.spine import read_spine
 
 
 # ---------------------------------------------------------------------------
@@ -30,41 +29,28 @@ def test_drain_store_creates_parent_dir_on_init(tmp_path):
     assert (tmp_path / ".lore" / "drain").exists()
     # emit should work even before any other drain activity
     store.emit("note-filed", wiki="w", path="/x")
-    assert store.path.exists()
+    assert len(store.read()) == 1
 
 
-def test_drain_store_emit_writes_valid_json_line(tmp_path):
+def test_drain_store_emit_lands_on_spine_with_source_drain(tmp_path):
     store = DrainStore(tmp_path, "s1")
-    store.emit("note-filed", wiki="ccat", wikilink="[[2026-04-22-foo]]")
-    lines = store.path.read_text().splitlines()
-    assert len(lines) == 1
-    rec = json.loads(lines[0])
+    store.emit("note-filed", wiki="ccat", trace_id="tr-1", wikilink="[[2026-04-22-foo]]")
+    recs = read_spine(tmp_path, source="drain")
+    assert len(recs) == 1
+    rec = recs[0]
+    assert rec["source"] == "drain"
     assert rec["event"] == "note-filed"
     assert rec["wiki"] == "ccat"
     assert rec["session_id"] == "s1"
+    assert rec["trace_id"] == "tr-1"
     assert rec["data"]["wikilink"] == "[[2026-04-22-foo]]"
-    assert "ts" in rec
+    assert rec["ts"]
 
 
 def test_drain_store_rejects_unknown_event(tmp_path):
     store = DrainStore(tmp_path, "s1")
     with pytest.raises(ValueError, match="unknown drain event"):
         store.emit("something-bogus", wiki="w")
-
-
-def test_drain_store_caps_line_at_max_size_with_truncation_marker(tmp_path):
-    """Oversize data payload → truncated marker, line stays within MAX_DRAIN_LINE."""
-    store = DrainStore(tmp_path, "s1")
-    huge = "X" * 10_000  # well over the cap
-    store.emit("note-filed", wiki="w", huge_blob=huge)
-
-    raw = store.path.read_bytes()
-    assert len(raw) <= MAX_DRAIN_LINE, f"line exceeded cap: {len(raw)} bytes"
-    rec = json.loads(raw.decode())
-    assert rec["truncated"] is True
-    # huge_blob must be gone; we still know it existed via truncated_from_keys
-    assert "huge_blob" not in rec["data"]
-    assert "huge_blob" in rec["data"]["truncated_from_keys"]
 
 
 def test_drain_store_emit_survives_unwritable_dir(tmp_path, monkeypatch):
@@ -118,8 +104,9 @@ def test_drain_read_limit_tails(tmp_path):
 def test_drain_read_skips_malformed_lines(tmp_path):
     store = DrainStore(tmp_path, "s1")
     store.emit("note-filed", wiki="w", n=1)
-    # Manually tack on a garbage line + a second good one
-    with store.path.open("a") as fp:
+    # Tack a garbage line onto the spine, then a second good event.
+    spine = tmp_path / ".lore" / "spine.jsonl"
+    with spine.open("a") as fp:
         fp.write("NOT JSON\n")
     store.emit("note-filed", wiki="w", n=2)
     got = store.read()
@@ -151,11 +138,14 @@ def test_drain_session_isolation(tmp_path):
     assert b_events[0].data["marker"] == "B"
 
 
-def test_drain_system_session_path(tmp_path):
-    """The _system session lands at a predictable filename."""
+def test_drain_system_session_reads_back_from_spine(tmp_path):
+    """The _system stream stays separable on the shared spine by session_id."""
     store = DrainStore(tmp_path, SYSTEM_SESSION)
     store.emit("transcript-synced", wiki="w", transcript_id="t1")
-    assert (tmp_path / ".lore" / "drain" / "_system.jsonl").exists()
+    events = store.read()
+    assert len(events) == 1
+    assert events[0].session_id == SYSTEM_SESSION
+    assert events[0].event == "transcript-synced"
 
 
 def test_drain_system_session_rejects_non_transcript_synced(tmp_path):
