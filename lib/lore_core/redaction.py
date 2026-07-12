@@ -49,10 +49,17 @@ class _PatternSpec:
 # Patterns are intentionally conservative: false-positives only cost a
 # redaction marker; false-negatives can leak secrets. Order matters for
 # overlap dedup below — earlier matches win.
+#
+# A trailing `\b` is only safe when the preceding character class is
+# word-only. Where the class admits `-`, `/` or `+`, a key ending in one of
+# them has no word/non-word transition to close on: with an exact count the
+# match fails outright and the secret is emitted verbatim; with an open-ended
+# count the regex backtracks and leaves the tail unredacted. Those patterns
+# close on a negative lookahead over their own alphabet instead.
 _PATTERNS: tuple[_PatternSpec, ...] = (
     _PatternSpec(
         kind="sk-api-key",
-        pattern=re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}\b"),
+        pattern=re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])"),
     ),
     _PatternSpec(
         kind="ghp-token",
@@ -60,7 +67,7 @@ _PATTERNS: tuple[_PatternSpec, ...] = (
     ),
     _PatternSpec(
         kind="aiza-key",
-        pattern=re.compile(r"\bAIza[0-9A-Za-z_\-/+]{35}\b"),
+        pattern=re.compile(r"\bAIza[0-9A-Za-z_\-/+]{35}(?![0-9A-Za-z_\-/+])"),
     ),
     _PatternSpec(
         kind="aws-access-key",
@@ -75,7 +82,8 @@ _PATTERNS: tuple[_PatternSpec, ...] = (
     _PatternSpec(
         kind="jwt",
         pattern=re.compile(
-            r"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"
+            r"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
+            r"(?![A-Za-z0-9_-])"
         ),
         predicate=lambda v: len(v) > 60,
     ),
