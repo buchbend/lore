@@ -103,20 +103,43 @@ def _verify_tag(value: str, repo_root: Path | None) -> str:
 
 
 def _verify_file(value: str, files: Sequence[str], repo_root: Path | None) -> str:
+    """A file ref earns VERIFIED only from positive evidence about *this* repo.
+
+    Existing somewhere on the machine is not that evidence: ``/etc/passwd`` and
+    ``../../etc/hosts`` exist everywhere, and a note that check-marked them
+    would let a hallucinated path buy authority — the one thing ref
+    verification exists to prevent. So a path is promoted only when capture
+    recorded touching it, or when it resolves inside ``repo_root``, is a
+    regular file, and git tracks it.
+
+    Only a path that resolves inside the repo and is not there can be MISSING:
+    that is a check that ran and came back empty. Everything else — an escape,
+    a directory, an untracked file, no repo, no git — is UNCHECKED.
+    """
     value = value.strip()
     if not value:
         return UNCHECKED
     if value in files:
         return VERIFIED  # capture recorded touching it; it existed in this session
-    path = Path(value)
-    if not path.is_absolute():
-        if repo_root is None:
-            return UNCHECKED
-        path = repo_root / path
+    if repo_root is None:
+        return UNCHECKED
     try:
-        return VERIFIED if path.exists() else MISSING
+        root = repo_root.resolve()
+        path = (root / value).resolve()  # an absolute value replaces root
+        if not path.is_relative_to(root):
+            return UNCHECKED  # says nothing about this repo
+        if path.is_dir():
+            return UNCHECKED  # a file ref that names a directory is not a file ref
+        if not path.exists():
+            return MISSING
+        rel = str(path.relative_to(root))
     except OSError:
         return UNCHECKED
+    # Existing is not enough: a build artefact or a scratch file is not the
+    # repo's content. Git tracking is the positive evidence; a git that cannot
+    # answer (no binary, no repo) leaves the ref unchecked, never missing.
+    code = _run(["git", "ls-files", "--error-unmatch", "--", rel], cwd=root)
+    return VERIFIED if code == 0 else UNCHECKED
 
 
 def _verify_number(kind: str, value: str, repo_root: Path | None, repo: str) -> str:

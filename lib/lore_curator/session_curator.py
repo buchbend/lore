@@ -111,9 +111,9 @@ def _dispatch_flush_requested(
 ) -> int:
     """Walk live buffers, run :func:`synth_and_close` for each ``flush_requested``.
 
-    Called at the start of :func:`run_curator_a` so SessionEnd / cap-trip
-    / reaper handover unblocks before the curator-A pass touches the
-    regular pending queue.
+    Called at the start of :func:`run_curator_a` so SessionEnd / reaper
+    handover unblocks before the curator-A pass touches the regular pending
+    queue.
 
     Bounded by ``max_per_pass`` to keep one curator run from getting
     stuck on a runaway buffer queue. Each flush takes the per-buffer
@@ -121,7 +121,7 @@ def _dispatch_flush_requested(
     of flushes actually attempted.
     """
     from lore_curator.buffer_store import iter_all
-    from lore_curator.synthesis import synth_and_close, synth_in_place
+    from lore_curator.synthesis import synth_and_close
 
     flushed = 0
     scanned = 0
@@ -145,14 +145,8 @@ def _dispatch_flush_requested(
         model = {"simple": cfg.models.simple, "middle": cfg.models.middle, "high": cfg.models.high}.get(
             tier, cfg.models.middle,
         )
-        # Mode dispatch: ``in_place`` (session-end / pre-compact) keeps the
-        # buffer alive; ``close`` (cap-trip / reaper) closes and archives.
-        # Defaults to ``close`` for sidecars written before the field
-        # existed.
-        mode = getattr(sidecar.flush_requested, "mode", "close") or "close"
-        synth_fn = synth_in_place if mode == "in_place" else synth_and_close
         try:
-            outcome = synth_fn(
+            outcome = synth_and_close(
                 buf.sidecar_path,
                 lore_root=lore_root,
                 wiki_root=wiki_dir,
@@ -165,15 +159,12 @@ def _dispatch_flush_requested(
                 "flush-requested-dispatched",
                 buffer_stem=buf.stem,
                 trigger=sidecar.flush_requested.trigger if sidecar.flush_requested else "",
-                mode=mode,
                 phase1=outcome.phase1_completed,
                 phase2=outcome.phase2_completed,
                 degraded=outcome.degraded,
             )
-            # In-place mode: ``synth_in_place`` clears its own
-            # ``flush_requested`` marker on success, so the next
-            # heartbeat doesn't loop. Close mode archives to ``_done/``
-            # so the sidecar is gone.
+            # The close path archives the buffer to ``_done/``, so the sidecar
+            # is gone and the next heartbeat can't pick the request up twice.
         except Exception as exc:  # noqa: BLE001 - never abort curator-A on a flush failure
             logger.emit(
                 "warning",
@@ -651,26 +642,6 @@ def _process_chunk(
         session_note=wikilink,
         curator_a_run=now,
     )
-
-    if outcome.cap_tripped:
-        # Spawn the flush worker. Cap-trip requests an in-place flush
-        # (``mode="in_place"`` on the sidecar), so the worker appends a
-        # chapter and leaves the buffer ``accumulating`` — the next
-        # heartbeat keeps folding into the same buffer and the same note.
-        from lore_curator.synthesis import spawn_detached_flush
-
-        flush_trace_id = spawn_detached_flush(
-            outcome.buffer.sidecar_path, lore_root=lore_root,
-        )
-        if logger is not None:
-            logger.emit(
-                "flush-spawned",
-                trigger="cap-trip",
-                transcript_id=entry.transcript_id,
-                buffer_stem=outcome.buffer.stem,
-                spawned=bool(flush_trace_id),
-                trace_id=flush_trace_id,
-            )
 
     if note_result is not None:
         filed = FiledNote(

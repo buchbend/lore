@@ -30,6 +30,10 @@ if TYPE_CHECKING:
 
 
 _HANDOVER_RECENT_S = 3600   # 60 min — "the same Claude project recently"
+
+#: The triggers that flush. Session end is the session boundary: it drains the
+#: buffer through the close path unconditionally. Everything else bookkeeps.
+CLOSE_TRIGGERS = frozenset({"session-end"})
 _HANDOVER_POLL_INTERVAL_S = 0.1
 
 
@@ -206,24 +210,20 @@ def request_flush_for_my_buffers(
     """Stamp ``flush_requested`` on every live buffer owned by this PID.
 
     Walks ``.lore/buffers/*.state.json`` (sidecar-only, bounded by
-    ``max_scan``); for each match, takes the per-buffer flock and stamps
-    a ``FlushRequest`` payload. Returns the count of buffers stamped.
+    ``max_scan``); for each match, takes the per-buffer flock, CASes
+    ``accumulating -> ready`` and stamps a ``FlushRequest`` payload. Returns
+    the count of buffers stamped.
 
-    Mode routing:
-
-    - ``trigger in {"session-end", "pre-compact"}`` → ``mode="in_place"``.
-      The buffer stays in ``accumulating`` and the worker runs
-      :func:`synth_in_place`, which refreshes the on-disk note without
-      closing or archiving. This is what keeps a long-running
-      conversation as one note per ``(transcript_id, local_date)``
-      across infrastructure boundaries.
-    - Other triggers (``cap-trip``, ``reaper``) → ``mode="close"`` plus
-      the legacy ``accumulating -> ready`` CAS so the worker runs
-      :func:`synth_and_close` and archives to ``_done/``.
+    Only :data:`CLOSE_TRIGGERS` flushes. A session's facts can only be told
+    from its noise by reading it backward from its ending, so a mid-session
+    trigger (pre-compact) has nothing to read yet: it bookkeeps, the buffer
+    keeps accumulating, and the close path later reads the session whole.
+    Session end IS the boundary — it drains everything through the close path
+    and the note appears once, complete.
 
     Buffers already in ``ready`` / ``flushing`` / ``closed`` states are
-    untouched — another path (cap-trip, prior session-end) already
-    routed them.
+    untouched — another path (a prior session-end, the reaper) already routed
+    them.
     """
     from lore_curator.buffer_store import (
         BufferTransitionError,
@@ -231,8 +231,8 @@ def request_flush_for_my_buffers(
         iter_for_pid,
     )
 
-    in_place_triggers = {"session-end", "pre-compact"}
-    mode = "in_place" if trigger in in_place_triggers else "close"
+    if trigger not in CLOSE_TRIGGERS:
+        return 0
 
     stamped = 0
     pid = os.getpid()
@@ -257,22 +257,14 @@ def request_flush_for_my_buffers(
                     trigger=trigger,
                     requested_at=now_iso,
                     by_pid=pid,
-                    mode=mode,
                 )
-                if mode == "in_place":
-                    # Stay in ``accumulating`` — the buffer remains live
-                    # and may absorb more chunks before the next close.
-                    if sidecar.state != "accumulating":
+                if sidecar.state == "accumulating":
+                    try:
+                        buf.transition("ready", flush_requested=req)
+                    except BufferTransitionError:
                         continue
+                else:  # "ready" without flush_requested
                     buf.patch(flush_requested=req)
-                else:  # close
-                    if sidecar.state == "accumulating":
-                        try:
-                            buf.transition("ready", flush_requested=req)
-                        except BufferTransitionError:
-                            continue
-                    else:  # "ready" without flush_requested
-                        buf.patch(flush_requested=req)
                 stamped += 1
         except OSError:
             continue
@@ -363,9 +355,10 @@ def route_capture(
     tledger = TranscriptLedger(lore_root)
     register_pending_transcripts(lore_root, cwd, adapter=adapter, transcript=transcript)
 
-    # Buffer-and-flush: at session-end / pre-compact, stamp ``flush_requested``
-    # on this session's live buffers so the detached curator-A spawn (or a
-    # manual ``lore curator flush``) routes them to synthesis. Bounded sidecar
+    # Buffer-and-flush: at session-end, stamp ``flush_requested`` on this
+    # session's live buffers so the detached curator-A spawn (or a manual
+    # ``lore curator flush``) routes them to the close path. Pre-compact is
+    # forwarded too but bookkeeps only (see CLOSE_TRIGGERS). Bounded sidecar
     # reads keep the hook inside its sub-100ms contract.
     flush_error: Exception | None = None
     if event in ("session-end", "pre-compact"):

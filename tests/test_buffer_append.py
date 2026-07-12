@@ -158,7 +158,7 @@ def test_subsequent_heartbeat_advances_counters(lore_root, patch_collectors):
     assert log.count('"type": "append"') == 2
 
 
-def test_cap_trip_requests_in_place_flush(lore_root, patch_collectors):
+def test_cap_trip_bookkeeps_without_requesting_a_flush(lore_root, patch_collectors):
     turns = _make_turns(8)
     cfg = _make_cfg(cap_turns=4)  # tripped on first heartbeat
 
@@ -176,13 +176,14 @@ def test_cap_trip_requests_in_place_flush(lore_root, patch_collectors):
     )
     assert outcome.cap_tripped is True
     sidecar = outcome.buffer.read_sidecar()
-    # A cap-trip is a flush trigger, not a session boundary: the buffer
-    # stays accumulating and the flush is requested in-place so the
-    # session keeps folding into a single note (no Part-N split).
+    # A cap-trip is bookkeeping, not a flush: it is recorded on the buffer's
+    # log and nothing else happens. Writing here would mean composing the
+    # session's first turns before its ending can say which of them mattered —
+    # so the buffer keeps accumulating and the close path reads it whole.
     assert sidecar.state == "accumulating"
-    assert sidecar.flush_requested is not None
-    assert sidecar.flush_requested.trigger == "cap-trip"
-    assert sidecar.flush_requested.mode == "in_place"
+    assert sidecar.flush_requested is None
+    log = (lore_root / ".lore" / "buffers" / f"{outcome.buffer.stem}.jsonl").read_text()
+    assert '"type": "cap-tripped"' in log
 
 
 def test_cap_trip_chars_threshold(lore_root, patch_collectors):
@@ -204,7 +205,7 @@ def test_cap_trip_chars_threshold(lore_root, patch_collectors):
     assert outcome.cap_tripped is True
     sidecar = outcome.buffer.read_sidecar()
     assert sidecar.state == "accumulating"
-    assert sidecar.flush_requested.mode == "in_place"
+    assert sidecar.flush_requested is None
 
 
 def test_cap_trip_keeps_single_buffer_for_session(lore_root, patch_collectors):
