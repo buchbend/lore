@@ -177,7 +177,8 @@ def test_a_pr_gh_can_resolve_is_verified(repo: Path, monkeypatch: pytest.MonkeyP
     verdicts = verify_refs([("pr", "#286")], repo_root=repo, repo="buchbend/lore")
 
     assert verdicts[("pr", "#286")] == VERIFIED
-    assert calls == [["gh", "pr", "view", "286", "--json", "number", "--repo", "buchbend/lore"]]
+    assert calls[0][:4] == ["gh", "pr", "view", "286"]
+    assert "--repo" in calls[0] and "buchbend/lore" in calls[0]
 
 
 def test_a_pr_gh_cannot_resolve_is_unchecked_not_verified(
@@ -206,11 +207,31 @@ def test_an_issue_gh_can_resolve_is_verified(repo: Path, monkeypatch: pytest.Mon
     assert calls[0][:3] == ["gh", "issue", "view"]
 
 
-def test_a_pr_in_the_session_facts_is_verified_without_calling_gh(monkeypatch: pytest.MonkeyPatch):
-    calls = _fake_gh(monkeypatch, 1)
+def test_the_gh_query_never_asks_for_a_field_gh_can_answer_by_itself(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`gh pr view <N> --json number` echoes N back and exits 0 without ever
+    reaching the API — it verifies every number, including invented ones. Any
+    field gh can answer offline is a forged check mark, so none may be asked
+    for."""
+    calls = _fake_gh(monkeypatch, 0)
 
-    assert verify_refs([("pr", "#286")], prs=["286"])[("pr", "#286")] == VERIFIED
-    assert calls == []
+    verify_refs([("pr", "99999")], repo_root=repo, repo="o/r")
+
+    fields = calls[0][calls[0].index("--json") + 1].split(",")
+    assert "number" not in fields
+
+
+def test_a_pr_number_is_only_ever_verified_by_gh(repo: Path, monkeypatch: pytest.MonkeyPatch):
+    """No frontmatter fast-path: `linkage.prs`/`issues` are regexes over commit
+    messages and branch names — text agents write. A commit saying "Closes
+    #99999" is not evidence #99999 exists."""
+    calls = _fake_gh(monkeypatch, None)  # gh cannot answer
+
+    verdicts = verify_refs([("pr", "99999"), ("issue", "99999")], repo_root=repo, repo="o/r")
+
+    assert set(verdicts.values()) == {UNCHECKED}
+    assert len(calls) == 2  # both went to the one oracle that can say
 
 
 def test_a_pr_with_nowhere_to_ask_is_unchecked_and_calls_nothing(monkeypatch: pytest.MonkeyPatch):

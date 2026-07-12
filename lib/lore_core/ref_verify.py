@@ -119,23 +119,19 @@ def _verify_file(value: str, files: Sequence[str], repo_root: Path | None) -> st
         return UNCHECKED
 
 
-def _numbers(values: Sequence[str]) -> set[str]:
-    out = set()
-    for v in values:
-        match = _NUMBER_RE.match(str(v).strip())
-        if match:
-            out.add(match.group(1))
-    return out
+def _verify_number(kind: str, value: str, repo_root: Path | None, repo: str) -> str:
+    """PRs and issues: ``gh`` is the only oracle, best-effort.
 
+    There is no frontmatter fast-path here, unlike commits and files. The
+    session's recorded PR/issue numbers come from regexes over branch names and
+    commit messages — text agents write — so a commit saying "Closes #99999"
+    would launder a fabricated number into a check mark. Existence of a PR or an
+    issue is a question only GitHub can answer.
 
-def _verify_number(
-    kind: str,
-    value: str,
-    known: Sequence[str],
-    repo_root: Path | None,
-    repo: str,
-) -> str:
-    """PRs and issues: frontmatter first, then ``gh``, best-effort.
+    ``--json state`` is load-bearing: ``gh`` answers ``--json number`` from the
+    argument itself and exits 0 without contacting the API, which verifies every
+    number ever invented. The field asked for must be one only the API can
+    supply.
 
     ``gh`` failing means only that ``gh`` failed — an unreachable API, no auth,
     no network. That is never evidence the ref is fake, so a non-zero exit
@@ -144,12 +140,9 @@ def _verify_number(
     match = _NUMBER_RE.match(value.strip())
     if not match:
         return UNCHECKED
-    number = match.group(1)
-    if number in _numbers(known):
-        return VERIFIED
     if repo_root is None and not repo:
         return UNCHECKED
-    cmd = ["gh", kind, "view", number, "--json", "number"]
+    cmd = ["gh", kind, "view", match.group(1), "--json", "state"]
     if repo:
         cmd += ["--repo", repo]
     return VERIFIED if _run(cmd, cwd=repo_root) == 0 else UNCHECKED
@@ -159,19 +152,18 @@ def verify_refs(
     refs: Iterable[tuple[str, str]],
     *,
     commits: Sequence[str] = (),
-    prs: Sequence[str] = (),
-    issues: Sequence[str] = (),
     files: Sequence[str] = (),
     repo_root: Path | None = None,
     repo: str = "",
 ) -> dict[tuple[str, str], str]:
     """Verdict for every ``(type, value)`` ref, checking each distinct ref once.
 
-    ``commits`` / ``prs`` / ``issues`` / ``files`` are the session's own
-    deterministic frontmatter facts — the offline evidence, and the only source
-    consulted when there is no repo to ask. ``repo_root`` gates every git and
-    filesystem check (absent: nothing local is checked, so nothing is promoted);
-    ``repo`` (``owner/name``) is passed to ``gh``.
+    ``commits`` / ``files`` are the session's own deterministic frontmatter
+    facts — captured SHAs and tool-recorded paths, evidence code produced, not
+    prose a model wrote. PRs and issues have no such source and go to ``gh``.
+    ``repo_root`` gates every git and filesystem check (absent: nothing local is
+    checked, so nothing is promoted); ``repo`` (``owner/name``) is passed to
+    ``gh``.
     """
     verdicts: dict[tuple[str, str], str] = {}
     for ref in refs:
@@ -184,10 +176,8 @@ def verify_refs(
             verdict = _verify_tag(value, repo_root)
         elif kind == "file":
             verdict = _verify_file(value, files, repo_root)
-        elif kind == "pr":
-            verdict = _verify_number("pr", value, prs, repo_root, repo)
-        elif kind == "issue":
-            verdict = _verify_number("issue", value, issues, repo_root, repo)
+        elif kind in ("pr", "issue"):
+            verdict = _verify_number(kind, value, repo_root, repo)
         else:
             verdict = UNCHECKED  # a ref type code cannot check is never evidence
         verdicts[ref] = verdict

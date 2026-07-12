@@ -1314,7 +1314,8 @@ def test_render_asks_gh_about_a_pr_and_stamps_what_it_answers(
     nd.render_note(path, repo_root=repo)
 
     assert "- The PR merged. — pr 286 ✓ @2" in nd.read_note(path).body
-    assert calls == [["gh", "pr", "view", "286", "--json", "number", "--repo", "buchbend/lore"]]
+    assert calls[0][:4] == ["gh", "pr", "view", "286"]
+    assert "--repo" in calls[0] and "buchbend/lore" in calls[0]
 
 
 def test_render_makes_no_llm_call_and_the_stamping_path_holds_no_model_seam():
@@ -1360,3 +1361,33 @@ def test_a_marker_string_in_a_marker_chapter_reason_cannot_forge_a_fact(tmp_path
 
     assert nd.read_facts(path) == []
     assert "&lt;!-- lore:fact" in nd.read_note(path).body
+
+
+def test_an_issue_named_in_a_commit_message_still_has_to_face_gh(
+    tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`linkage.issues` is a regex over commit text — model prose. It cannot
+    launder a fabricated issue number into a check mark."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(rv, "_run", lambda cmd, *, cwd=None: (calls.append(cmd), None)[1])
+    path = _create(tmp_path, linkage=Linkage(repo="buchbend/lore", issues=["99999"]))
+    nd.append_facts(
+        path,
+        [
+            nd.Fact(
+                kind="done",
+                text="The issue closed.",
+                anchor_turn=2,
+                refs=[nd.Ref("issue", "99999")],
+            )
+        ],
+        slice_from_turn=0,
+        slice_to_turn=4,
+    )
+
+    nd.render_note(path, repo_root=repo)
+
+    body = nd.read_note(path).body
+    assert "- The issue closed. — issue 99999 (unchecked) @2" in body
+    assert "✓" not in body
+    assert calls and calls[0][:2] == ["gh", "issue"]

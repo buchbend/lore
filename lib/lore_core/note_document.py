@@ -917,10 +917,11 @@ def _verdicts_for(
 ) -> dict[tuple[str, str], str]:
     """Verify every distinct ref in the ledger against the world, once.
 
-    The session's own frontmatter facts are the offline evidence; ``repo_root``
-    (the cwd the session ran in) opens the local git and filesystem checks, and
-    the recorded repo lets ``gh`` be asked about PRs and issues. None of it is
-    required: whatever cannot be checked renders ``(unchecked)``.
+    The session's own frontmatter facts are the offline evidence for commits and
+    files; ``repo_root`` (the cwd the session ran in) opens the local git and
+    filesystem checks, and the recorded repo lets ``gh`` be asked about PRs and
+    issues — the only oracle for those. None of it is required: whatever cannot
+    be checked renders ``(unchecked)``.
     """
     refs = {(r.type, r.value) for f in facts for r in f.refs}
     if not refs:
@@ -930,8 +931,6 @@ def _verdicts_for(
     return verify_refs(
         sorted(refs),
         commits=[str(c) for c in fm.get("commits") or []],
-        prs=[str(p) for p in fm.get("prs") or []],
-        issues=[str(i) for i in linkage.get("issues") or []],
         files=[str(f) for f in [*(fm.get("files_modified") or []), *(fm.get("files_read") or [])]],
         repo_root=repo_root,
         repo=str(linkage.get("repo") or ""),
