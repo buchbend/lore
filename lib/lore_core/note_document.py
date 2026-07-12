@@ -245,15 +245,30 @@ def _fact_marker(fact: Fact) -> str:
     return f"<!-- lore:fact {dumped} -->"
 
 
+def _neutralize_marker(text: str) -> str:
+    """Defuse a comment opener carried inside a fact's own content.
+
+    A fact's text, why, and quote come from the transcript — model output,
+    file contents, tool results — so any of them can carry a literal
+    ``<!-- lore:fact ...`` string the session never authored. Rendered raw
+    into the body, it parses back as an extra forged fact with an invented
+    ref and a self-authored quote, or (left unclosed) swallows the next
+    real fact up to its closer. Escaping the OPENER kills both: nothing but
+    a marker this module wrote can open one. The marker payload itself
+    needs no such treatment — it is JSON, where ``-->`` is already escaped.
+    """
+    return text.replace("<!--", "&lt;!--")
+
+
 def _render_fact(fact: Fact) -> str:
     marker = _fact_marker(fact)
-    line = f"**{fact.text.strip()}**"
+    line = f"**{_neutralize_marker(fact.text.strip())}**"
     if fact.why.strip():
-        line = f"{line} Why: {fact.why.strip()}"
+        line = f"{line} Why: {_neutralize_marker(fact.why.strip())}"
     parts = [marker, line]
     quote = fact.quote.strip()
     if quote:
-        parts.append(f'> "{quote}"')
+        parts.append(f'> "{_neutralize_marker(quote)}"')
     parts.append(f"@{int(fact.anchor_turn)}")
     return "\n\n".join(parts)
 
