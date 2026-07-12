@@ -80,13 +80,6 @@ states.
   and print ahead of the `if json_out` branch. Script against `lore
   doctor --json` (without `--fix`), or pass `--fix --yes` and parse only
   the trailing JSON line.
-- **A Popen-boundary spawn failure can lack a trace_id.** If the detached
-  curator subprocess fails to start at the OS level, the
-  `flush-spawn-failed` event is still written to the spine (so `lore
-  status`/`lore doctor` see it), but it isn't attachable to the rest of
-  that flush's story via `lore trace` — look for `event:
-  flush-spawn-failed` directly in `lore trace <session-id>`'s output
-  instead of expecting it under a specific trace_id.
 
 ## Deprecated commands still work, but check the pointer
 

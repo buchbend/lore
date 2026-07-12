@@ -168,6 +168,24 @@ def test_spawn_failure_emits_event(tmp_path, monkeypatch):
         e for e in _curator_events(lore_root) if e.get("error_code") == ErrorCode.SPAWN_FAILED.value
     ]
     assert errs, "a spawn failure must emit a spine event"
+    assert errs[-1]["trace_id"], "spawn-failed event must carry the minted trace_id"
+
+
+def test_spawn_lock_failure_emits_event_with_trace_id(tmp_path, monkeypatch):
+    lore_root = _lore_root(tmp_path)
+    buf = _append(lore_root, _turns(0, 2))
+
+    def boom(*a, **k):
+        raise OSError("flock denied")
+
+    monkeypatch.setattr("lore_core.lockfile.flocked", boom)
+    ok = spawn_detached_flush(buf.sidecar_path, lore_root=lore_root)
+    assert ok is None
+    errs = [
+        e for e in _curator_events(lore_root) if e.get("error_code") == ErrorCode.SPAWN_FAILED.value
+    ]
+    assert errs, "a spawn-lock failure must emit a spine event"
+    assert errs[-1]["trace_id"], "lock-failure event must carry a trace_id too"
 
 
 # ---------------------------------------------------------------------------

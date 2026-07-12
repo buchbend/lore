@@ -104,13 +104,12 @@ a detached flush needs to run.
 trace_id, sorted by timestamp — there is no separate correlation index,
 the trace *is* the filtered spine.
 
-**Known gap:** the Popen-boundary failure path in `spawn_detached_flush`
-(the subprocess literally fails to start) calls `_emit_spawn_failed`
-without a trace_id, even though one has usually already been minted in
-that scope by the time the `Popen` call fails. That one event surfaces
-under `source="curator"`, `event="flush-spawn-failed"` with
-`trace_id: null` — visible on the spine, just not attachable to the rest
-of that flush's story via `lore trace`.
+Spawn failures are traceable too: `spawn_detached_flush` mints its
+trace_id before taking the spawn lock, so both failure paths — the
+subprocess failing to start at the OS level and the spawn-lock flock
+itself erroring — emit `source="curator"`, `event="flush-spawn-failed"`
+with that trace_id attached, making the event reachable via
+`lore trace` like every other step of the flush's story.
 
 ---
 
