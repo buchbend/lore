@@ -10,7 +10,17 @@ from lore_adapters import (
     register,
     registered_integrations,
 )
+from lore_adapters import registry as _registry
 from lore_adapters.protocol import Adapter as AdapterProtocol
+
+
+@pytest.fixture(autouse=True)
+def _restore_registry():
+    """Snapshot and restore the registry around every test."""
+    saved = dict(_registry._REGISTRY)
+    yield
+    _registry._REGISTRY.clear()
+    _registry._REGISTRY.update(saved)
 
 
 class StubAdapter(AdapterProtocol):
