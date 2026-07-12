@@ -144,7 +144,7 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
         banner = (
             f"lore!: last run had {a.last_run_errors} errors "
             f"({relative_time(a.last_run_ts, now=ctx.now)}) "
-            f"· lore runs show {a.last_run_short_id}"
+            "· lore trace last"
         )
         return _prepend(session_end_line, banner)
 

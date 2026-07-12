@@ -2401,7 +2401,7 @@ def capture(
     if scope is None:
         # Unattached cwd — no ledger work to do, but we still emit a hook
         # event so "hook fired but declined" is distinguishable from "hook
-        # never fired" in `lore status` / `lore runs list --hooks`.
+        # never fired" in `lore status`.
         try:
             emit_hook_event(
                 get_lore_root(),

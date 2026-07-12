@@ -3,12 +3,11 @@
 ``query_capture_state(lore_root, cwd=...)`` returns a frozen ``CaptureState``
 that everything user-facing can render against:
 
-- ``lore status`` (Task 11) — activity-first CLI
-- ``lore doctor``'s capture panel (Task 12a keeps it only for the install-
-  mode footer pointer — doctor itself moves off)
-- SessionStart banner (Task 12b)
-- ``/lore:context`` live-state section (Task 13)
-- ``lore runs list`` stays a history view and does NOT render CaptureState.
+- ``lore status`` — activity-first CLI
+- ``lore doctor``'s capture panel (install-mode footer pointer only —
+  doctor itself doesn't render it)
+- SessionStart banner
+- ``/lore:context`` live-state section
 
 Read-only by construction. The query opens files for reading but never
 writes, so it's safe to call from any context (including repeatedly during
@@ -34,7 +33,7 @@ class CuratorStatus:
     last_run_notes_merged: int | None
     last_run_skipped: int | None
     last_run_errors: int | None
-    last_run_short_id: str | None   # for "lore runs show <id>" hint copy
+    last_run_short_id: str | None   # gates the last-run-errors banner line
     work_lock_held: bool
     overdue: bool                   # >24h since last run
 

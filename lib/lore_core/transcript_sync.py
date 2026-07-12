@@ -244,8 +244,8 @@ def sync_transcripts(
 
         src = entry.path
         if not src.exists():
-            # Source gone (user deleted or reorganized). Skip silently —
-            # `lore runs list --hooks` surfaces broader ledger hygiene.
+            # Source gone (user deleted or reorganized). Skip silently;
+            # this count still surfaces via the caller's summary.
             result.skipped += 1
             continue
 
