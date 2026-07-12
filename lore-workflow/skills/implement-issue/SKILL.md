@@ -7,7 +7,7 @@ description: Fast path for one well-understood GitHub issue — read the issue a
 
 A fast path for a single, well-understood GitHub issue. It is a **second track
 beside the epic chain, not a new chain phase**: the chain
-(`seed-epic → orient → grill-with-docs → to-epic → orchestrate-epic → document-epic`)
+(`seed-epic → orient → grilling → to-epic → orchestrate-epic → document-epic`)
 is the right weight for a shaped body of work, but far too heavy for one small,
 clear change. Bypassing the workflow for that change is the other trap — it drops
 exactly the discipline the workflow exists to keep (test-first development, the
@@ -24,7 +24,7 @@ human stays present, so **merging stays with the user**.
 Reach for this when the user hands you a single GitHub issue they wrote and the
 change is small and clear enough that spinning up the full epic chain would be
 pure overhead. If the work is really several features, or the shape is still
-unsettled, it belongs on the chain (`orient` → `grill-with-docs` → `to-epic`),
+unsettled, it belongs on the chain (`orient` → `grilling` → `to-epic`),
 not here.
 
 ## Flow

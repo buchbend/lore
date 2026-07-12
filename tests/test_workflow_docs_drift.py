@@ -18,7 +18,7 @@ DOCS_FILES = sorted((REPO_ROOT / "docs").rglob("*.md")) + [REPO_ROOT / "README.m
 
 SKILL_REF_RE = re.compile(r"lore-workflow:([a-z][a-z-]*)")
 CHAIN_RE = re.compile(
-    r"seed-epic\s*→\s*orient\s*→\s*grill-with-docs\s*→\s*to-epic\s*→\s*orchestrate-epic\s*→\s*document-epic"
+    r"seed-epic\s*→\s*orient\s*→\s*grilling\s*→\s*to-epic\s*→\s*orchestrate-epic\s*→\s*document-epic"
 )
 
 

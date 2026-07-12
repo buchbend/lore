@@ -264,7 +264,7 @@ above:
 Terms used in the workflow layer and orchestration:
 
 - **Workflow** — a skill-bundled planning chain: `seed-epic → orient →
-  grill-with-docs → to-epic → orchestrate-epic → document-epic`. Each step
+  grilling → to-epic → orchestrate-epic → document-epic`. Each step
   is a callable skill, with checkpoints between shaping (human-controlled)
   and autonomous build. See `docs/conventions.md` for the stage vocabulary,
   artifact homes, and tier assignments.
