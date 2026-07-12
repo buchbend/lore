@@ -1,4 +1,4 @@
-"""Tests for `lore attachments` CLI (ls / show / rm)."""
+"""Tests for `lore attach attachments` CLI (ls / show / rm)."""
 
 from __future__ import annotations
 
@@ -7,10 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
-
 from lore_cli.__main__ import app
 from lore_core.state.attachments import Attachment, AttachmentsFile
+from typer.testing import CliRunner
 
 runner = CliRunner()
 
@@ -38,7 +37,7 @@ def _seed(lore_root: Path, path: Path, *, wiki: str = "w", scope: str = "a:b") -
 
 
 def test_ls_empty(lore_root: Path) -> None:
-    result = runner.invoke(app, ["attachments", "ls"])
+    result = runner.invoke(app, ["attach", "attachments", "ls"])
     assert result.exit_code == 0
     assert "No attachments" in result.stdout
 
@@ -48,10 +47,10 @@ def test_ls_shows_entries(lore_root: Path, tmp_path: Path) -> None:
     repo.mkdir()
     _seed(lore_root, repo, wiki="ccat", scope="ccat:ds")
 
-    result = runner.invoke(app, ["attachments", "ls"])
+    result = runner.invoke(app, ["attach", "attachments", "ls"])
     assert result.exit_code == 0
     # Rich may truncate the path; use JSON for structural checks
-    json_result = runner.invoke(app, ["attachments", "ls", "--json"])
+    json_result = runner.invoke(app, ["attach", "attachments", "ls", "--json"])
     assert json_result.exit_code == 0
     payload = json.loads(json_result.stdout)
     assert len(payload["data"]) == 1
@@ -66,7 +65,7 @@ def test_ls_json(lore_root: Path, tmp_path: Path) -> None:
     repo.mkdir()
     _seed(lore_root, repo, wiki="ccat", scope="ccat:ds")
 
-    result = runner.invoke(app, ["attachments", "ls", "--json"])
+    result = runner.invoke(app, ["attach", "attachments", "ls", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["schema"] == "lore.attachments.ls/1"
@@ -79,7 +78,7 @@ def test_show_hits(lore_root: Path, tmp_path: Path) -> None:
     (repo / "sub").mkdir(parents=True)
     _seed(lore_root, repo, wiki="w", scope="a:b")
 
-    result = runner.invoke(app, ["attachments", "show", str(repo / "sub"), "--json"])
+    result = runner.invoke(app, ["attach", "attachments", "show", str(repo / "sub"), "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["data"]["scope"] == "a:b"
@@ -89,7 +88,7 @@ def test_show_hits(lore_root: Path, tmp_path: Path) -> None:
 def test_show_miss_exits_1(lore_root: Path, tmp_path: Path) -> None:
     stranger = tmp_path / "stranger"
     stranger.mkdir()
-    result = runner.invoke(app, ["attachments", "show", str(stranger)])
+    result = runner.invoke(app, ["attach", "attachments", "show", str(stranger)])
     assert result.exit_code == 1
 
 
@@ -97,7 +96,7 @@ def test_show_json(lore_root: Path, tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _seed(lore_root, repo)
-    result = runner.invoke(app, ["attachments", "show", str(repo), "--json"])
+    result = runner.invoke(app, ["attach", "attachments", "show", str(repo), "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["data"]["wiki"] == "w"
@@ -107,7 +106,7 @@ def test_rm_removes(lore_root: Path, tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _seed(lore_root, repo)
-    result = runner.invoke(app, ["attachments", "rm", str(repo)])
+    result = runner.invoke(app, ["attach", "attachments", "rm", str(repo)])
     assert result.exit_code == 0
 
     af = AttachmentsFile(lore_root)
@@ -116,13 +115,13 @@ def test_rm_removes(lore_root: Path, tmp_path: Path) -> None:
 
 
 def test_rm_missing_exits_1(lore_root: Path, tmp_path: Path) -> None:
-    result = runner.invoke(app, ["attachments", "rm", str(tmp_path / "ghost")])
+    result = runner.invoke(app, ["attach", "attachments", "rm", str(tmp_path / "ghost")])
     assert result.exit_code == 1
 
 
 def test_ls_without_lore_root_env_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LORE_ROOT", raising=False)
-    result = runner.invoke(app, ["attachments", "ls"])
+    result = runner.invoke(app, ["attach", "attachments", "ls"])
     # Exit 2 = "incorrect usage / configuration error" (argparse convention).
     # Standardised in Phase 2 when the per-command _lore_root_or_die helpers
     # were consolidated into lore_cli._cli_helpers.lore_root_or_die.
@@ -153,7 +152,7 @@ def _seed_ledger_entry(lore_root: Path, directory: Path) -> None:
 
 
 def test_purge_unattached_empty(lore_root: Path) -> None:
-    result = runner.invoke(app, ["attachments", "purge-unattached"])
+    result = runner.invoke(app, ["attach", "attachments", "purge-unattached"])
     assert result.exit_code == 0
     assert "Nothing to purge" in result.stdout
 
@@ -163,7 +162,7 @@ def test_purge_unattached_dry_run(lore_root: Path, tmp_path: Path) -> None:
     unattached_dir.mkdir()
     _seed_ledger_entry(lore_root, unattached_dir)
 
-    result = runner.invoke(app, ["attachments", "purge-unattached", "--dry-run"])
+    result = runner.invoke(app, ["attach", "attachments", "purge-unattached", "--dry-run"])
     assert result.exit_code == 0
     assert "Dry-run" in result.stdout
     # Ledger entry still pending
@@ -176,7 +175,7 @@ def test_purge_unattached_applies(lore_root: Path, tmp_path: Path) -> None:
     unattached_dir.mkdir()
     _seed_ledger_entry(lore_root, unattached_dir)
 
-    result = runner.invoke(app, ["attachments", "purge-unattached", "--yes"])
+    result = runner.invoke(app, ["attach", "attachments", "purge-unattached", "--yes"])
     assert result.exit_code == 0
 
     from lore_core.ledger import TranscriptLedger

@@ -2,7 +2,7 @@
 
 Rewrites old session notes whose body carries a `## Open items` heading
 into the v2 shape (`## Issues touched` + `## Loose ends`) and bumps
-`schema_version` to 2. Exposed through `lore curator --migrate-open-items`.
+`schema_version` to 2. Exposed through `lore migrate open-items`.
 
 Pure rewriting logic (`extract_open_items`, `migrate_open_items`) is
 independent of any curator run loop; only `run_open_items_migration`

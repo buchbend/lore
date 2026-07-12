@@ -37,33 +37,15 @@ def curator(
     apply: bool = typer.Option(
         False, "--apply", help="Actually write changes. Without this, runs dry."
     ),
-    migrate_open_items: bool = typer.Option(
-        False,
-        "--migrate-open-items",
-        help="Interactive v1 → v2 migration for `## Open items` session sections.",
-    ),
 ) -> None:
     """Run the hygiene passes — supersession, implements, git backfill."""
     # A subcommand (e.g. `lore curator run`) handles its own flow.
     if ctx.invoked_subcommand is not None:
         return
-    if migrate_open_items:
-        from lore_curator.open_items_migration import run_open_items_migration
-
-        run_open_items_migration(wiki_filter=wiki, dry_run=not apply)
-        return
 
     from lore_curator.hygiene import run_hygiene
 
     run_hygiene(wiki_filter=wiki, dry_run=not apply)
-
-
-def _discover_wikis(lore_root: Path) -> list[str]:
-    """Return sorted list of wiki directory names under lore_root/wiki/."""
-    wiki_dir = lore_root / "wiki"
-    if not wiki_dir.exists():
-        return []
-    return sorted([d.name for d in wiki_dir.iterdir() if d.is_dir()])
 
 
 def _make_live_renderer(con: Console):
@@ -371,75 +353,6 @@ def sweep_command(
         f"deferred={report.deferred}, "
         f"alive={report.alive_skipped}, uncertain={report.uncertain_skipped}"
     )
-
-
-@app.command("backfill-slugs")
-def backfill_slugs_command(
-    wiki: str = typer.Option(
-        None, "--wiki", help="Scope to one wiki. Default: every wiki under lore_root.",
-    ),
-    apply: bool = typer.Option(
-        False,
-        "--apply/--dry-run",
-        help="Actually rename + write aliases. Default: dry-run that prints the plan.",
-    ),
-) -> None:
-    """One-shot rename of session notes whose slug is cryptic.
-
-    Walks ``wiki/<name>/sessions/`` and renames any non-stub session
-    note whose filename slug differs from ``_slug(title)``. The old
-    stem is preserved as a frontmatter ``aliases:`` entry so existing
-    ``[[old-stem]]`` references keep resolving.
-
-    Skips:
-
-    * stubs awaiting Phase 2 synthesis (``state: stub``)
-    * continuation chains (``part >= 2`` or ``continues:``)
-    * notes without a real title (placeholder or empty)
-    * notes whose filename already matches the title-derived slug
-    """
-    from lore_cli._cli_helpers import lore_root_or_die
-    from lore_curator.backfill_slugs import backfill_wiki
-
-    err_console = Console(stderr=True)
-    lore_root = lore_root_or_die(err_console)
-    wikis = [wiki] if wiki else _discover_wikis(lore_root)
-    if not wikis:
-        err_console.print("[yellow]no wikis found under lore_root[/yellow]")
-        raise typer.Exit(code=1)
-
-    grand_planned = 0
-    grand_renamed = 0
-    for w in wikis:
-        wiki_path = lore_root / "wiki" / w
-        if not wiki_path.exists():
-            err_console.print(f"[yellow]skip[/yellow] {w}: not found at {wiki_path}")
-            continue
-        report = backfill_wiki(wiki_path, apply=apply)
-        verb = "would rename" if not apply else "renamed"
-        console.print(
-            f"[bold]{w}[/bold] — scanned={report.scanned}, "
-            f"{verb}={len(report.planned) if not apply else len(report.renamed)}, "
-            f"skipped(stub={report.skipped_stub}, "
-            f"chain={report.skipped_chain}, "
-            f"no-title={report.skipped_no_title}, "
-            f"canonical={report.skipped_already_canonical})"
-        )
-        for plan in report.planned:
-            arrow = "→" if not apply else "✓"
-            console.print(
-                f"  {arrow} {plan.old_path.name} → {plan.new_path.name}"
-                f"  [dim]({plan.title})[/dim]"
-            )
-        for path, reason in report.failed:
-            console.print(f"  [red]fail[/red] {path.name}: {reason}")
-        grand_planned += len(report.planned)
-        grand_renamed += len(report.renamed)
-
-    if not apply and grand_planned:
-        console.print(
-            f"\n[dim]dry-run; pass --apply to rename {grand_planned} note(s).[/dim]"
-        )
 
 
 main = argv_main(app)

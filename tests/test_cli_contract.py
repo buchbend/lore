@@ -8,6 +8,12 @@ The shape (lifted in v0.13.0):
         - imports business logic from lower layers (lore_core /
           lore_curator / lore_mcp / lore_search) — never the reverse
 
+    A module owning sibling verbs that share one implementation exposes
+    one named app per verb instead (``toggle_cmd.on_app`` /
+    ``toggle_cmd.off_app`` back the inverse ``lore on`` / ``lore off``).
+    The rule being enforced is that the verb's wiring lives in a
+    ``*_cmd.py`` — not that a file may only carry one verb.
+
     lore_cli/__main__.py
         - mounts every subapp via ``app.add_typer(<cmd>.app, name=…)``
         - never defines inline ``@app.command`` / ``@app.callback``
@@ -33,7 +39,7 @@ CLI_DIR = LIB / "lore_cli"
 # grandfathered exception: it pairs the SessionStart-hook callbacks
 # with a small ``hook_app`` for the `lore hook` verb. Anything new
 # should follow the ``*_cmd.py`` + ``app`` convention.
-APP_DEFINITION_RE = re.compile(r"^app\s*=\s*typer\.Typer\(", re.MULTILINE)
+APP_DEFINITION_RE = re.compile(r"^(?:\w+_)?app\s*=\s*typer\.Typer\(", re.MULTILINE)
 
 # In __main__.py these are forbidden (mounting only, no inline verbs).
 INLINE_HANDLER_RE = re.compile(
@@ -55,7 +61,8 @@ def test_every_verb_module_defines_app(path: Path) -> None:
     text = path.read_text()
     assert APP_DEFINITION_RE.search(text), (
         f"{path.relative_to(REPO_ROOT)} must define a module-level "
-        "`app = typer.Typer(...)` (CLI contract — see "
+        "`app = typer.Typer(...)` — or one `<verb>_app` per verb when the "
+        "module backs sibling verbs (CLI contract — see "
         "docs/architecture/cli-contract.md)."
     )
 

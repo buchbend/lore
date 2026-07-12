@@ -463,7 +463,7 @@ def _check_ledger_buckets(cwd: str) -> Check:
     """Surface the ledger's __orphan__/__unattached__ buckets as
     actionable informational output. Never fails — these are not errors,
     they're surfaces the user may want to act on via
-    `lore attachments purge-unattached`.
+    `lore attach attachments purge-unattached`.
     """
     from lore_core.config import get_lore_root
     from lore_core.ledger import TranscriptLedger
@@ -488,7 +488,7 @@ def _check_ledger_buckets(cwd: str) -> Check:
     if orphan:
         parts.append(f"{orphan} orphan")
     if unattached:
-        parts.append(f"{unattached} unattached (run `lore attachments purge-unattached`)")
+        parts.append(f"{unattached} unattached (run `lore attach attachments purge-unattached`)")
     return True, " · ".join(parts)
 
 
