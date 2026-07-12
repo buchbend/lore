@@ -1,9 +1,10 @@
-"""Chapter flush lifecycle — compose -> gate -> append + failure semantics.
+"""Chapter flush lifecycle — segment -> extract -> gate -> render at close.
 
-Every LLM interaction is faked; no test asserts prose quality and no
-LLM-as-judge appears. The stub composer records each ``messages.create``
-kwargs and replays queued tool_use payloads (the saved-buffer replay
-harness shape). The publish gate is the real deterministic gate.
+There is one flush and it runs at the close, so every test here closes a
+session. Every LLM interaction is faked; no test asserts prose quality and no
+LLM-as-judge appears. The stub client records each ``messages.create`` kwargs
+and replays queued tool_use payloads (the saved-buffer replay harness shape).
+The publish gate is the real deterministic gate.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from lore_core.types import Turn
 from lore_core.wiki_config import WikiConfig
 from lore_curator.buffer_append import append_chunk
 from lore_curator.buffer_store import Buffer
-from lore_curator.chapter_flush import synth_and_close, synth_in_place
+from lore_curator.chapter_flush import synth_and_close
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -78,8 +79,22 @@ class _Client:
         self.messages = _Messages(payloads)
 
 
-def _chapter_payload(lead: str, body: str, anchor: int) -> dict[str, Any]:
-    return {"blocks": [{"lead": lead, "body": body, "anchor": anchor}]}
+def _fact_item(
+    kind: str,
+    text: str,
+    anchor: int,
+    thread: str = "",
+    why: str = "",
+    refs: list[dict] | None = None,
+) -> dict:
+    item: dict[str, Any] = {"kind": kind, "text": text, "anchor": anchor}
+    if thread:
+        item["thread"] = thread
+    if why:
+        item["why"] = why
+    if refs:
+        item["refs"] = refs
+    return item
 
 
 # ---------------------------------------------------------------------------
@@ -137,416 +152,9 @@ def _append(lore_root: Path, turns: list[Turn], *, tid: str = "abc") -> Buffer:
     return outcome.buffer
 
 
-# ---------------------------------------------------------------------------
-# Integration: compose -> gate -> append (in-place)
-# ---------------------------------------------------------------------------
-
-
-def test_inplace_flush_composes_one_call_and_appends_chapter(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 4)
-    buf = _append(lore_root, all_turns)
-    client = _Client([_chapter_payload("Traced the flush race", "prose.", 2)])
-
-    outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-    assert outcome.status == "composed"
-    # Exactly one compose call for the single attempt.
-    assert len(client.messages.calls) == 1
-
-    view = nd.read_note(outcome.note_path)
-    topic = [c for c in view.chapters if c.get("kind") == "topic"]
-    assert len(topic) == 1
-    assert topic[0]["from_turn"] == 0 and topic[0]["to_turn"] == 4
-    assert "Traced the flush race" in view.body
-    # In-place: the buffer keeps accumulating and is not archived.
-    assert buf.read_sidecar().state == "accumulating"
-
-
-def test_inplace_flush_writes_verbatim_quote_at_anchor_turn(tmp_path):
-    # End-to-end wiring proof: the flush passes each unflushed turn's raw
-    # text through to compose_chapter, which attaches it as the block's
-    # quote — landing in the note body verbatim, code-attached.
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 4)
-    buf = _append(lore_root, all_turns)
-    client = _Client([_chapter_payload("Traced the flush race", "prose.", 2)])
-
-    outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-    assert outcome.status == "composed"
-    view = nd.read_note(outcome.note_path)
-    assert '"line 2"' in view.body
-
-
-def test_note_so_far_carries_prior_chapter_into_next_compose(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    adapter = _Adapter(_turns(0, 5))
-
-    # Chapter 1 over turns 0-2.
-    _append(lore_root, _turns(0, 2))
-    buf = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
-    c1 = _Client([_chapter_payload("Recorded the buffer store design", "Prose about buffers.", 1)])
-    synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=c1,
-        model="m",
-        adapter_lookup=_lookup(adapter),
-        auto_commit=False,
-    )
-
-    # Chapter 2 over turns 3-5 — the composer must see chapter 1 in note-so-far.
-    _append(lore_root, _turns(3, 5))
-    c2 = _Client([_chapter_payload("Discussed the flush lifecycle", "More prose.", 4)])
-    synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=c2,
-        model="m",
-        adapter_lookup=_lookup(adapter),
-        auto_commit=False,
-    )
-
-    prompt = c2.messages.calls[0]["messages"][0]["content"]
-    assert "Recorded the buffer store design" in prompt  # note-so-far included
-    view = nd.read_note(Path(buf.read_sidecar().stub_path))
-    assert len([c for c in view.chapters if c.get("kind") == "topic"]) == 2
-
-
-def test_gate_withhold_drives_retry_then_composes(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 4)
-    buf = _append(lore_root, all_turns)
-    # Attempt 1 leaks an email (scanner withhold); attempt 2 is clean.
-    client = _Client(
-        [
-            _chapter_payload("Traced the flush race", "mail bob@example.com about it.", 2),
-            _chapter_payload("Traced the flush race", "The buffer accumulated turns.", 2),
-        ]
-    )
-    outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-    assert outcome.status == "composed"
-    assert len(client.messages.calls) == 2
-    # The retry prompt carried the gate's feedback (value-free).
-    retry_prompt = client.messages.calls[1]["messages"][0]["content"]
-    assert "contact details" in retry_prompt.lower()
-    assert "bob@example.com" not in retry_prompt
-
-
-# ---------------------------------------------------------------------------
-# Planted-secret end-to-end: withheld marker + quarantine
-# ---------------------------------------------------------------------------
-
-
-def test_planted_secret_withholds_marker_and_quarantines(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 4)
-    buf = _append(lore_root, all_turns)
-    token = _secrets.token_urlsafe(40)
-    # Both attempts leak the secret -> the real gate withholds both times.
-    leak = _chapter_payload("Reviewed the incident", f"key sk-{token} was pasted.", 2)
-    client = _Client([leak, dict(leak)])
-
-    outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-    assert outcome.status == "withheld"
-
-    view = nd.read_note(outcome.note_path)
-    markers = [c for c in view.chapters if c.get("kind") == "marker"]
-    assert len(markers) == 1 and markers[0]["marker"] == nd.MARKER_WITHHELD
-    # The unsafe text never reaches the shared note.
-    assert token not in outcome.note_path.read_text()
-    # A private quarantine entry holds the full composed text.
-    entries = quarantine.list_entries(lore_root=lore_root)
-    assert len(entries) == 1
-    assert token in entries[0].composed_text
-
-
-# ---------------------------------------------------------------------------
-# Topic-derived slug — rename the note once its first chapter composes
-# ---------------------------------------------------------------------------
-
-
-def test_first_chapter_rename_reflects_topic_lead(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 4)
-    buf = _append(lore_root, all_turns)
-    client = _Client([_chapter_payload("Traced the flush race", "prose.", 2)])
-
-    outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-    assert outcome.status == "composed"
-    assert outcome.note_path.name.endswith("-traced-the-flush-race.md")
-    assert outcome.wikilink == f"[[{outcome.note_path.stem}]]"
-
-    # Renamed in place — no orphaned file left at the old heuristic name.
-    notes = list((wiki_root / "sessions").rglob("*.md"))
-    assert notes == [outcome.note_path]
-
-    reopened = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
-    assert reopened.read_sidecar().stub_path == str(outcome.note_path)
-
-
-def test_first_chapter_sets_scope_prefixed_title(tmp_path):
-    """Note-format v2 (#222): frontmatter title becomes `scope: name` —
-    scope first, then the composed name — and the body's lead sentence
-    stays inline with its prose rather than a standalone bold line.
-    """
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 4)
-    buf = _append(lore_root, all_turns)
-    client = _Client(
-        [_chapter_payload("Traced the flush race", "Found the race in the reaper.", 2)]
-    )
-
-    outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-    assert outcome.status == "composed"
-
-    text = outcome.note_path.read_text()
-    fm = parse_frontmatter(text)
-    assert fm["title"] == "proj:x: Traced the flush race"
-    assert "**Traced the flush race** Found the race in the reaper." in text
-
-
-def test_second_chapter_does_not_rename_again(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    adapter = _Adapter(_turns(0, 5))
-
-    _append(lore_root, _turns(0, 2))
-    buf = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
-    c1 = _Client([_chapter_payload("Recorded the buffer store design", "Prose about buffers.", 1)])
-    first_outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=c1,
-        model="m",
-        adapter_lookup=_lookup(adapter),
-        auto_commit=False,
-    )
-    assert first_outcome.note_path.name.endswith("-recorded-the-buffer-store-design.md")
-
-    _append(lore_root, _turns(3, 5))
-    c2 = _Client([_chapter_payload("Discussed the flush lifecycle", "More prose.", 4)])
-    second_outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=c2,
-        model="m",
-        adapter_lookup=_lookup(adapter),
-        auto_commit=False,
-    )
-    # The filename stays pinned to the first chapter's topic.
-    assert second_outcome.note_path == first_outcome.note_path
-    notes = list((wiki_root / "sessions").rglob("*.md"))
-    assert notes == [first_outcome.note_path]
-
-
-def test_same_minute_rename_collision_gets_numeric_suffix(tmp_path, monkeypatch):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    # Force both buffers into the same minute so their rename targets collide.
-    monkeypatch.setattr(
-        "lore_curator.buffer_store._now_iso",
-        lambda: "2026-05-01T14:32:00+00:00",
-    )
-
-    turns_a = _turns(0, 2)
-    buf_a = _append(lore_root, turns_a, tid="abc")
-    client_a = _Client([_chapter_payload("Shared Topic", "prose a.", 1)])
-    outcome_a = synth_in_place(
-        buf_a.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client_a,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(turns_a)),
-        auto_commit=False,
-    )
-
-    turns_b = _turns(0, 2)
-    buf_b = _append(lore_root, turns_b, tid="def")
-    client_b = _Client([_chapter_payload("Shared Topic", "prose b.", 1)])
-    outcome_b = synth_in_place(
-        buf_b.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client_b,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(turns_b)),
-        auto_commit=False,
-    )
-
-    assert outcome_a.note_path != outcome_b.note_path
-    assert outcome_a.note_path.name.endswith("-shared-topic.md")
-    assert outcome_b.note_path.name.endswith("-shared-topic-2.md")
-    assert outcome_a.note_path.exists()
-    assert outcome_b.note_path.exists()
-
-
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------------
 # Failure semantics
-# ---------------------------------------------------------------------------
-
-
-def test_failed_midsession_flush_defers_without_marker(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 2)
-    buf = _append(lore_root, all_turns)
-    client = _Client([None, None])  # both compose attempts raise -> FAILED
-
-    outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-    assert outcome.status == "deferred"
-
-    view = nd.read_note(outcome.note_path)
-    assert view.chapters == []  # NO marker while a retry chance remains
-    sidecar = buf.read_sidecar()
-    assert sidecar.state == "accumulating"
-    assert sidecar.flush_attempts == 1  # the failed attempt is remembered
-    # No marker while a retry chance remains, but no longer silent: a queued
-    # flush record + spine event are asserted in test_flush_silent_paths.py.
-    assert sidecar.flush_requested is None  # request slot re-opened for next trigger
-
-
-def test_next_trigger_retries_with_accumulated_slice(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    adapter = _Adapter(_turns(0, 5))
-
-    _append(lore_root, _turns(0, 2))
-    buf = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
-    # First trigger fails.
-    synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=_Client([None, None]),
-        model="m",
-        adapter_lookup=_lookup(adapter),
-        auto_commit=False,
-    )
-
-    # Session continues; more turns accumulate.
-    _append(lore_root, _turns(3, 5))
-    good = _Client([_chapter_payload("Traced the whole slice", "prose.", 0)])
-    outcome = synth_in_place(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=good,
-        model="m",
-        adapter_lookup=_lookup(adapter),
-        auto_commit=False,
-    )
-    assert outcome.status == "composed"
-    # The retry composed the full accumulated slice, turns 0..5.
-    prompt = good.messages.calls[0]["messages"][0]["content"]
-    assert "[user@0]" in prompt and "[assistant@5]" in prompt
-    view = nd.read_note(outcome.note_path)
-    topic = [c for c in view.chapters if c.get("kind") == "topic"][0]
-    assert topic["from_turn"] == 0 and topic["to_turn"] == 5
-    assert buf.read_sidecar().flush_attempts == 0  # progress cleared the memory
-
-
-def test_give_up_after_max_attempts_writes_marker_and_fresh_buffer(tmp_path):
-    from lore_core.flush_store import MAX_ATTEMPTS
-
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 2)
-    buf = _append(lore_root, all_turns)
-    adapter = _Adapter(all_turns)
-
-    # Bounded retries with backoff replace the old give-up-at-2x-cap rule:
-    # each failed flush re-queues; the MAX_ATTEMPTS-th failure dead-letters.
-    outcome = None
-    for _ in range(MAX_ATTEMPTS):
-        assert buf.read_sidecar().state == "accumulating"
-        outcome = synth_in_place(
-            buf.sidecar_path,
-            lore_root=lore_root,
-            wiki_root=wiki_root,
-            llm_client=_Client([None, None]),
-            model="m",
-            adapter_lookup=_lookup(adapter),
-            auto_commit=False,
-        )
-    assert outcome.status == "gave-up"
-
-    view = nd.read_note(outcome.note_path)
-    markers = [c for c in view.chapters if c.get("kind") == "marker"]
-    assert len(markers) == 1 and markers[0]["marker"] == nd.MARKER_FAILED
-    assert markers[0]["to_turn"] == 2
-    # Fresh buffer: log truncated + counters reset, still accumulating, one note.
-    sidecar = buf.read_sidecar()
-    assert sidecar.state == "accumulating"
-    assert sidecar.flush_attempts == 0
-    assert buf.replay().turn_count == 0
+# -------------------------------------------------------------------------
 
 
 def test_session_end_failure_writes_marker_and_closes(tmp_path):
@@ -576,9 +184,9 @@ def test_session_end_failure_writes_marker_and_closes(tmp_path):
     assert not buf.sidecar_path.exists()
 
 
-# ---------------------------------------------------------------------------
-# No note is better than a noise note: trivial gate + empty compose
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# No note is better than a noise note: trivial gate + empty extraction
+# -------------------------------------------------------------------------
 
 
 def test_session_end_trivial_session_leaves_no_note(tmp_path):
@@ -589,7 +197,7 @@ def test_session_end_trivial_session_leaves_no_note(tmp_path):
     wiki_root = lore_root / "wiki" / "private"
     all_turns = _turns(0, 4)
     buf = _append(lore_root, all_turns)
-    client = _Client([_chapter_payload("must never be composed", "x", 1)])
+    client = _Client([{"boundaries": []}, {"facts": [_fact_item("done", "never read", 1)]}])
 
     outcome = synth_and_close(
         buf.sidecar_path,
@@ -608,26 +216,32 @@ def test_session_end_trivial_session_leaves_no_note(tmp_path):
     assert not buf.sidecar_path.exists()  # archived to _done/
 
 
-def test_session_end_empty_extraction_after_real_chapter_closes_note(tmp_path):
-    # A session that produced a real chapter earlier, then nothing worth
-    # recording at close: the note closes with the real chapter only.
+def test_empty_extraction_after_a_real_chapter_closes_the_note(tmp_path):
+    # A session that recorded facts, then reopened and produced nothing worth
+    # recording: the note closes with the facts it already had.
     lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"
     adapter = _Adapter(_turns(0, 20))
 
     _append(lore_root, _turns(0, 12))
     buf = Buffer.open(lore_root, transcript_id="abc", local_date="2026-05-01")
-    synth_in_place(
+    first = synth_and_close(
         buf.sidecar_path,
         lore_root=lore_root,
         wiki_root=wiki_root,
-        llm_client=_Client([_chapter_payload("Recorded the design", "prose.", 4)]),
+        llm_client=_Client(
+            [
+                {"boundaries": []},
+                {"facts": [_fact_item("done", "The lock landed.", 4, thread="lock")]},
+                {"headline": "The lock landed."},
+            ]
+        ),
         model="m",
         adapter_lookup=_lookup(adapter),
         auto_commit=False,
     )
 
-    _append(lore_root, _turns(13, 20))
+    _append(lore_root, _turns(13, 20))  # the session resumes: note reopened
     outcome = synth_and_close(
         buf.sidecar_path,
         lore_root=lore_root,
@@ -637,77 +251,72 @@ def test_session_end_empty_extraction_after_real_chapter_closes_note(tmp_path):
         adapter_lookup=_lookup(adapter),
         auto_commit=False,
     )
+
     assert outcome.status == "empty"
-    assert outcome.discarded is False
+    assert outcome.discarded is False  # the earlier facts are not thrown away
     assert outcome.closed is True
-    view = nd.read_note(outcome.note_path)
+    view = nd.read_note(first.note_path)
+    assert [c["kind"] for c in view.chapters] == ["facts"]
     assert view.closed is True
-    assert len([c for c in view.chapters if c.get("kind") == "topic"]) == 1
     assert not buf.sidecar_path.exists()
 
 
-def test_inplace_empty_compose_consumes_the_slice(tmp_path):
-    # Mid-session, the model finds nothing of substance in the slice:
-    # the span is consumed (buffer reset) so it is never recomposed, the
-    # session stays live, and no chapter or marker is appended.
+# -------------------------------------------------------------------------
+# Planted-secret end-to-end: withheld marker + quarantine
+# -------------------------------------------------------------------------
+
+
+def test_planted_secret_withholds_marker_and_quarantines(tmp_path):
     lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"
     all_turns = _turns(0, 12)
     buf = _append(lore_root, all_turns)
+    token = _secrets.token_urlsafe(40)
+    # Every attempt leaks the secret -> the real gate withholds them all.
+    leak = {"facts": [_fact_item("done", f"Pasted key sk-{token} into the config.", 2)]}
+    client = _Client([{"boundaries": []}, leak, dict(leak), {"headline": "Reviewed the incident."}])
 
-    outcome = synth_in_place(
+    outcome = synth_and_close(
         buf.sidecar_path,
         lore_root=lore_root,
         wiki_root=wiki_root,
-        llm_client=_Client([{"blocks": []}]),
+        llm_client=client,
         model="m",
         adapter_lookup=_lookup(_Adapter(all_turns)),
         auto_commit=False,
     )
-    assert outcome.status == "empty"
-    assert outcome.discarded is False
+    assert outcome.status == "withheld"
+
     view = nd.read_note(outcome.note_path)
-    assert view.chapters == []
-    sidecar = buf.read_sidecar()
-    assert sidecar.state == "accumulating"
-    assert buf.replay().turn_count == 0  # slice consumed, not re-queued
+    markers = [c for c in view.chapters if c.get("kind") == "marker"]
+    assert len(markers) == 1 and markers[0]["marker"] == nd.MARKER_WITHHELD
+    # The unsafe text never reaches the shared note.
+    assert token not in outcome.note_path.read_text()
+    # A private quarantine entry holds the full withheld text.
+    entries = quarantine.list_entries(lore_root=lore_root)
+    assert len(entries) == 1
+    assert token in entries[0].composed_text
 
 
-def test_concurrent_flush_covering_the_span_is_skipped(tmp_path):
-    """A span another flush already published is dropped, not appended twice.
+# -------------------------------------------------------------------------
+# Headline-derived slug — the note is named once its facts exist
+# -------------------------------------------------------------------------
 
-    The in-place cap-trip can race the reaper: both read the same buffer,
-    one publishes while the other is still inside its (slow) compose call.
-    The loser re-reads the note watermark before writing and must back off,
-    or the same turns land as two chapters.
-    """
+
+def test_session_end_names_the_note_from_the_headline(tmp_path):
     lore_root = _lore_root(tmp_path)
     wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 4)
+    all_turns = _turns(0, 12)
     buf = _append(lore_root, all_turns)
+    client = _Client(
+        [
+            {"boundaries": []},
+            {"facts": [_fact_item("done", "The publish gate landed.", 4, thread="gate")]},
+            {"headline": "The publish gate landed."},
+        ]
+    )
 
-    sessions = wiki_root / "sessions"
-
-    class _Racing(_Messages):
-        """Land a competing chapter on the note while this compose is in flight."""
-
-        def create(self, **kwargs: Any) -> _Resp:
-            resp = super().create(**kwargs)
-            note = next(sessions.rglob("*.md"))
-            nd.append_marker_chapter(
-                note,
-                kind=nd.MARKER_FAILED,
-                reason="published by a concurrent flush",
-                slice_from_turn=0,
-                slice_to_turn=4,
-                wiki_root=wiki_root,
-            )
-            return resp
-
-    client = _Client([_chapter_payload("Traced the flush race", "prose.", 2)])
-    client.messages = _Racing([_chapter_payload("Traced the flush race", "prose.", 2)])
-
-    outcome = synth_in_place(
+    outcome = synth_and_close(
         buf.sidecar_path,
         lore_root=lore_root,
         wiki_root=wiki_root,
@@ -717,44 +326,57 @@ def test_concurrent_flush_covering_the_span_is_skipped(tmp_path):
         auto_commit=False,
     )
 
-    assert outcome.status == "skipped"
-    assert outcome.skipped_reason == "span-already-covered"
-
-    # Only the winner's chapter is on the note — the loser appended nothing.
-    view = nd.read_note(outcome.note_path)
-    assert len(view.chapters) == 1
-    assert view.chapters[0]["marker"] == nd.MARKER_FAILED
-    assert "Traced the flush race" not in view.body
-
-    # The buffer is untouched: the session stays live and keeps accumulating.
-    assert buf.read_sidecar().state == "accumulating"
+    assert outcome.note_path.stem.endswith("the-publish-gate-landed")
+    fm = parse_frontmatter(outcome.note_path.read_text())
+    assert fm["title"] == "proj:x: The publish gate landed"
+    assert fm["headline"] == "The publish gate landed."
 
 
-# ---------------------------------------------------------------------------
+def test_same_minute_rename_collision_gets_numeric_suffix(tmp_path, monkeypatch):
+    lore_root = _lore_root(tmp_path)
+    wiki_root = lore_root / "wiki" / "private"
+    # Force both buffers into the same minute so their rename targets collide.
+    monkeypatch.setattr(
+        "lore_curator.buffer_store._now_iso",
+        lambda: "2026-05-01T14:32:00+00:00",
+    )
+
+    def _close(tid: str) -> Path:
+        turns = _turns(0, 12)
+        buf = _append(lore_root, turns, tid=tid)
+        return synth_and_close(
+            buf.sidecar_path,
+            lore_root=lore_root,
+            wiki_root=wiki_root,
+            llm_client=_Client(
+                [
+                    {"boundaries": []},
+                    {"facts": [_fact_item("done", "Shared topic.", 2)]},
+                    {"headline": "Shared Topic"},
+                ]
+            ),
+            model="m",
+            adapter_lookup=_lookup(_Adapter(turns)),
+            auto_commit=False,
+        ).note_path
+
+    note_a = _close("abc")
+    note_b = _close("def")
+
+    assert note_a != note_b
+    assert note_a.name.endswith("-shared-topic.md")
+    assert note_b.name.endswith("-shared-topic-2.md")
+    assert note_a.exists()
+    assert note_b.exists()
+
+
+# -------------------------------------------------------------------------
 # End-mode close: segment -> extract -> render (PRD 0008)
 #
 # At close no chapter is composed. The session is segmented, each chunk is
-# extracted into typed facts, the facts append to the ledger, and the note
-# body is rendered from that ledger by code alone.
-# ---------------------------------------------------------------------------
-
-
-def _fact_item(
-    kind: str,
-    text: str,
-    anchor: int,
-    thread: str = "",
-    why: str = "",
-    refs: list[dict] | None = None,
-) -> dict:
-    item: dict[str, Any] = {"kind": kind, "text": text, "anchor": anchor}
-    if thread:
-        item["thread"] = thread
-    if why:
-        item["why"] = why
-    if refs:
-        item["refs"] = refs
-    return item
+# extracted into typed facts, and the note body is rendered from the ledger
+# by code — the model never writes the note.
+# -------------------------------------------------------------------------
 
 
 def test_session_end_extracts_typed_facts_and_renders_the_note(tmp_path):
@@ -807,35 +429,6 @@ def test_session_end_extracts_typed_facts_and_renders_the_note(tmp_path):
     ]
     assert view.closed is True
     assert not buf.sidecar_path.exists()
-
-
-def test_session_end_names_the_note_from_the_headline(tmp_path):
-    lore_root = _lore_root(tmp_path)
-    wiki_root = lore_root / "wiki" / "private"
-    all_turns = _turns(0, 12)
-    buf = _append(lore_root, all_turns)
-    client = _Client(
-        [
-            {"boundaries": []},
-            {"facts": [_fact_item("done", "The publish gate landed.", 4, thread="gate")]},
-            {"headline": "The publish gate landed."},
-        ]
-    )
-
-    outcome = synth_and_close(
-        buf.sidecar_path,
-        lore_root=lore_root,
-        wiki_root=wiki_root,
-        llm_client=client,
-        model="m",
-        adapter_lookup=_lookup(_Adapter(all_turns)),
-        auto_commit=False,
-    )
-
-    assert outcome.note_path.stem.endswith("the-publish-gate-landed")
-    fm = parse_frontmatter(outcome.note_path.read_text())
-    assert fm["title"] == "proj:x: The publish gate landed"
-    assert fm["headline"] == "The publish gate landed."
 
 
 def test_a_chunk_that_cannot_be_extracted_becomes_a_coverage_gap(tmp_path):

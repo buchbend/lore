@@ -137,19 +137,11 @@ class OwnerInfo:
 
 @dataclass
 class FlushRequest:
-    trigger: str = ""              # session-end | pre-compact | cap-trip | reaper
+    # A request always means the same thing: close the session — segment,
+    # extract, render, seal. Mid-session triggers never stamp one.
+    trigger: str = ""              # session-end | reaper
     requested_at: str = ""         # ISO-Z UTC
     by_pid: int = 0
-    # Synthesis mode. ``"close"`` runs the full Phase 1 + Phase 2 path
-    # ending in ``state=closed`` and archive to ``_done/`` — used by
-    # cap-trip and the reaper. ``"in_place"`` runs Phase 1 + Phase 2
-    # against the *live* buffer, leaves the buffer in ``accumulating``,
-    # retains ``state: stub`` on the note's frontmatter, and never
-    # archives — used by session-end and pre-compact so that infra
-    # boundaries don't fragment one transcript into multiple notes.
-    # Default is ``"close"`` for back-compat with sidecars written
-    # before this field existed.
-    mode: str = "close"
 
 
 @dataclass

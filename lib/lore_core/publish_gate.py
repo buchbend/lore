@@ -44,8 +44,10 @@ __all__ = [
     "CATEGORY_PHONE",
     "CATEGORY_PII",
     "CATEGORY_ERROR",
+    "Gate",
     "GateResult",
     "PASS",
+    "PassThroughGate",
     "PublishGate",
     "Detector",
     "LlmPiiDetector",
@@ -182,6 +184,31 @@ def has_phone(text: str) -> bool:
         if sum(c.isdigit() for c in m.group()) >= _PHONE_INTL_MIN_DIGITS:
             return True
     return _PHONE_NANP_RE.search(text) is not None
+
+
+# ---------------------------------------------------------------------------
+# The gate seam consumed by the generative layers
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class Gate(Protocol):
+    """Blocking check between what a model produced and what the note keeps.
+
+    Implementations scan the exact text that would land in the note and return
+    a :class:`GateResult`. The generative layers only react to the verdict; the
+    scanners and the detection call live here. :class:`PublishGate` is the one
+    implementation that ships.
+    """
+
+    def evaluate(self, chapter_text: str) -> GateResult: ...
+
+
+class PassThroughGate:
+    """Default gate: everything passes. Lets replay tests run standalone."""
+
+    def evaluate(self, chapter_text: str) -> GateResult:  # noqa: ARG002
+        return GateResult.ok()
 
 
 # ---------------------------------------------------------------------------
