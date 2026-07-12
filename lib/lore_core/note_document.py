@@ -24,7 +24,9 @@ seams here.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -43,17 +45,25 @@ __all__ = [
     "NoteClosedError",
     "TopicBlock",
     "Chapter",
+    "Ref",
+    "Fact",
+    "FACT_KINDS",
+    "REF_TYPES",
     "SessionFacts",
     "Linkage",
     "NoteView",
     "create_note",
     "append_chapter",
+    "append_facts",
     "append_marker_chapter",
     "close_note",
     "reopen_note",
     "is_closed",
     "read_note",
+    "read_facts",
+    "parse_facts",
     "render_chapter_body",
+    "render_fact_body",
 ]
 
 
@@ -116,6 +126,48 @@ class Chapter:
     blocks: list[TopicBlock] = field(default_factory=list)
 
 
+# The fact vocabulary. `progress` is en route, `done` is a terminal state
+# (a commit, a merged PR, a verified-green run), `decision` carries a
+# mandatory ``why``, `finding` is something learned, `open` is unresolved.
+FACT_KINDS = ("progress", "done", "decision", "finding", "open")
+
+# Ref types a fact may carry. Each is verifiable by code downstream —
+# which is what lets a rendered line earn authoritative phrasing.
+REF_TYPES = ("pr", "commit", "file", "tag", "issue")
+
+
+@dataclass(frozen=True)
+class Ref:
+    """A structured pointer from a fact to something checkable."""
+
+    type: str
+    value: str
+
+
+@dataclass
+class Fact:
+    """One extracted fact — the unit of the typed ledger.
+
+    ``kind`` is one of :data:`FACT_KINDS`; ``thread`` (optional) keys facts
+    of one line of work together across chunks; ``refs`` are the checkable
+    pointers; ``why`` is mandatory for a ``decision``; ``anchor_turn`` is
+    the single transcript turn the fact came from. ``quote`` is a verbatim
+    excerpt of that turn, code-attached from the transcript and never
+    model-authored.
+
+    The fields carry no phrasing that asserts authority — rendering owns
+    that, keyed on what code could verify.
+    """
+
+    kind: str
+    text: str
+    anchor_turn: int = 0
+    thread: str = ""
+    refs: list[Ref] = field(default_factory=list)
+    why: str = ""
+    quote: str = ""
+
+
 @dataclass
 class SessionFacts:
     """Deterministic session facts stored in frontmatter only.
@@ -163,6 +215,91 @@ def _render_block(block: TopicBlock) -> str:
     if block.anchor_turn:
         parts.append(f"@{int(block.anchor_turn)}")
     return "\n\n".join(parts)
+
+
+_FACT_MARKER_RE = re.compile(r"<!--\s*lore:fact\s+(\{.*?\})\s*-->", re.DOTALL)
+
+
+def _fact_marker(fact: Fact) -> str:
+    """The machine-readable copy of a fact, as an HTML-comment marker.
+
+    Sorted keys and dropped empty fields keep the marker byte-stable for a
+    given fact, so a re-render of the same ledger produces the same file.
+    ``-->`` inside any string would close the comment early, so it is
+    written as its JSON escape — ``json.loads`` restores it verbatim.
+    """
+    payload: dict[str, Any] = {
+        "kind": fact.kind,
+        "text": fact.text,
+        "anchor": int(fact.anchor_turn),
+    }
+    if fact.thread:
+        payload["thread"] = fact.thread
+    if fact.refs:
+        payload["refs"] = [{"type": r.type, "value": r.value} for r in fact.refs]
+    if fact.why:
+        payload["why"] = fact.why
+    if fact.quote:
+        payload["quote"] = fact.quote
+    dumped = json.dumps(payload, sort_keys=True, ensure_ascii=False).replace("-->", "--\\u003e")
+    return f"<!-- lore:fact {dumped} -->"
+
+
+def _render_fact(fact: Fact) -> str:
+    marker = _fact_marker(fact)
+    line = f"**{fact.text.strip()}**"
+    if fact.why.strip():
+        line = f"{line} Why: {fact.why.strip()}"
+    parts = [marker, line]
+    quote = fact.quote.strip()
+    if quote:
+        parts.append(f'> "{quote}"')
+    parts.append(f"@{int(fact.anchor_turn)}")
+    return "\n\n".join(parts)
+
+
+def render_fact_body(facts: list[Fact]) -> str:
+    """Render facts to the ledger text that lands in the note body.
+
+    The publish gate scans exactly this string — marker included — so a
+    secret cannot hide in the machine-readable copy of a fact.
+    """
+    return "\n\n".join(_render_fact(f) for f in facts)
+
+
+def parse_facts(body: str) -> list[Fact]:
+    """Read every typed fact back out of a note body.
+
+    Marker-driven: a note written before typed facts existed carries no
+    markers and yields no facts, which is how pre-existing notes keep
+    parsing. A marker whose payload is corrupt is skipped rather than
+    raising — one bad fact never costs a reader the rest of the ledger.
+    """
+    out: list[Fact] = []
+    for match in _FACT_MARKER_RE.finditer(body):
+        try:
+            data = json.loads(match.group(1))
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        refs = [
+            Ref(str(r.get("type", "")), str(r.get("value", "")))
+            for r in data.get("refs") or []
+            if isinstance(r, dict)
+        ]
+        out.append(
+            Fact(
+                kind=str(data.get("kind", "")),
+                text=str(data.get("text", "")),
+                anchor_turn=int(data.get("anchor", 0)),
+                thread=str(data.get("thread", "")),
+                refs=refs,
+                why=str(data.get("why", "")),
+                quote=str(data.get("quote", "")),
+            )
+        )
+    return out
 
 
 def _chapter_delimiter(n: int, from_turn: int, to_turn: int, *, marker: str | None = None) -> str:
@@ -397,6 +534,51 @@ def append_chapter(
     return n
 
 
+def append_facts(
+    path: Path,
+    facts: list[Fact],
+    *,
+    slice_from_turn: int,
+    slice_to_turn: int,
+    session_facts: SessionFacts | None = None,
+    linkage: Linkage | None = None,
+    wiki_root: Path | None = None,
+) -> int:
+    """Append one chunk's typed facts to the ledger; record its turn span.
+
+    The ledger is append-only, exactly as chapters are: each call adds a
+    ``facts`` chapter carrying the extracted facts with their typed
+    markers. Returns the 1-based chapter number. Raises
+    :class:`NoteClosedError` if the note is closed.
+    """
+    fm, body = _load(path)
+    _guard_open(fm, path)
+
+    n = _next_chapter_n(fm)
+    delimiter = _chapter_delimiter(n, slice_from_turn, slice_to_turn)
+    rendered = render_fact_body(facts)
+    segment = f"{delimiter}\n\n{rendered}" if rendered else delimiter
+    new_body = f"{body.rstrip()}\n\n{segment}"
+
+    chapters = list(fm.get("chapters") or [])
+    chapters.append(
+        {
+            "n": n,
+            "kind": "facts",
+            "from_turn": int(slice_from_turn),
+            "to_turn": int(slice_to_turn),
+            "count": len(facts),
+        }
+    )
+    fm["chapters"] = chapters
+    _apply_facts(fm, session_facts)
+    _apply_linkage(fm, linkage)
+    fm["last_reviewed"] = _today()
+
+    _write(path, fm, new_body, wiki_root=wiki_root)
+    return n
+
+
 def append_marker_chapter(
     path: Path,
     *,
@@ -509,3 +691,9 @@ def read_note(path: Path) -> NoteView:
         chapters=list(fm.get("chapters") or []),
         closed=fm.get("note_status") == _CLOSED,
     )
+
+
+def read_facts(path: Path) -> list[Fact]:
+    """Every typed fact in the note's ledger, in file order."""
+    _, body = _load(path)
+    return parse_facts(body)
