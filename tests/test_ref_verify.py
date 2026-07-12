@@ -166,6 +166,35 @@ def test_a_relative_file_with_no_repo_root_is_unchecked():
     assert verify_refs([("file", "lib/thing.py")])[("file", "lib/thing.py")] == UNCHECKED
 
 
+def test_a_file_outside_the_repo_is_never_verified(repo: Path):
+    # /etc/passwd exists on every machine. Existing *somewhere* is not evidence
+    # about this repo, so a model that invents the path earns nothing for it.
+    ref = ("file", "/etc/passwd")
+
+    assert verify_refs([ref], repo_root=repo)[ref] == UNCHECKED
+
+
+def test_a_traversal_out_of_the_repo_is_never_verified(repo: Path):
+    ref = ("file", "../../../../../../etc/hosts")
+
+    assert verify_refs([ref], repo_root=repo)[ref] == UNCHECKED
+
+
+def test_a_directory_is_not_a_verified_file_ref(repo: Path):
+    ref = ("file", "lib")  # inside the repo, exists, and is not a file
+
+    assert verify_refs([ref], repo_root=repo)[ref] == UNCHECKED
+
+
+def test_an_untracked_file_in_the_repo_is_unchecked(repo: Path):
+    # A build artefact or a scratch file is not the repo's content: it exists,
+    # so it is not MISSING, but git says nothing positive about it either.
+    (repo / "scratch.py").write_text("x = 1\n")
+    ref = ("file", "scratch.py")
+
+    assert verify_refs([ref], repo_root=repo)[ref] == UNCHECKED
+
+
 # ---------------------------------------------------------------------------
 # PRs and issues — best-effort via gh, never promoted on failure
 # ---------------------------------------------------------------------------

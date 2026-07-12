@@ -33,7 +33,6 @@ from lore_core.wiki_config import WikiConfig
 from lore_curator.buffer_store import (
     Buffer,
     Counters,
-    FlushRequest,
     LastSeen,
     OwnerInfo,
     Sidecar,
@@ -424,24 +423,17 @@ def append_chunk(
                 files_touched_count=new_counters.files_touched_count,
             )
 
-        # Cap check. A cap-trip is a flush trigger, not a session
-        # boundary: the note is append-only until close, so the buffer
-        # stays ``accumulating`` and the flush is requested in-place
-        # (append a chapter, keep folding into the same buffer). One
-        # session yields one note — no splitting.
+        # Cap check. A cap-trip is bookkeeping, not a flush: it records that
+        # the buffer grew past the cap and leaves it accumulating. Composing
+        # the session's first turns here would have to guess, mid-session,
+        # which of them will matter — the reading that only the ending can
+        # give. So nothing is written and no model is called until the close
+        # path reads the whole session backward. One session, one note.
         if (
             new_counters.turn_count >= cfg.curator.synthesis_buffer_cap_turns
             or new_counters.prompt_chars >= cfg.curator.synthesis_buffer_cap_chars
         ):
             buffer.append_event({"type": "cap-tripped"})
-            sidecar_after = buffer.patch(
-                flush_requested=FlushRequest(
-                    trigger="cap-trip",
-                    requested_at=_now_iso(),
-                    by_pid=os.getpid(),
-                    mode="in_place",
-                ),
-            )
             cap_tripped = True
             if logger is not None:
                 logger.emit(

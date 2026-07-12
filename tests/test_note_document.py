@@ -835,7 +835,56 @@ def test_failed_chapter_marker_renders_as_a_one_line_coverage_gap(tmp_path: Path
     ]
 
 
+def test_a_prose_chapter_renders_as_a_coverage_gap(tmp_path: Path):
+    # A ledger the facts do not cover in full renders a partial reading. Saying
+    # so is the whole point of the gap line: a crisp Done/Decisions body over
+    # the tail of a session must never read as the whole session.
+    path = _create(tmp_path)
+    nd.append_chapter(
+        path,
+        nd.Chapter(blocks=[nd.TopicBlock(lead="Prose from before the trim.", anchor_turn=3)]),
+        slice_from_turn=0,
+        slice_to_turn=119,
+    )
+    nd.append_facts(
+        path,
+        [nd.Fact(kind="done", text="The renderer landed.", anchor_turn=130)],
+        slice_from_turn=120,
+        slice_to_turn=160,
+    )
+    nd.render_note(path)
+
+    body = nd.read_note(path).body
+    gaps = [ln for ln in body.splitlines() if ln.startswith("- Coverage gap:")]
+    assert len(gaps) == 1
+    assert "turns 0–119" in gaps[0]
+    assert "The renderer landed." in body
+
+
+def test_a_withheld_marker_renders_as_a_coverage_gap(tmp_path: Path):
+    path = _create(tmp_path)
+    nd.append_marker_chapter(
+        path,
+        kind=nd.MARKER_WITHHELD,
+        reason="secret",
+        slice_from_turn=0,
+        slice_to_turn=6,
+    )
+    nd.append_facts(
+        path,
+        [nd.Fact(kind="done", text="The gate landed.", anchor_turn=8)],
+        slice_from_turn=7,
+        slice_to_turn=12,
+    )
+    nd.render_note(path)
+
+    gaps = [ln for ln in nd.read_note(path).body.splitlines() if ln.startswith("- Coverage gap:")]
+    assert len(gaps) == 1
+    assert "turns 0–6" in gaps[0]
+
+
 def test_render_lays_out_disclaimer_then_note_then_ledger(tmp_path: Path):
+
     path = _create(tmp_path)
     nd.append_facts(
         path,
