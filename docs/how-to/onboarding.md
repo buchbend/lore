@@ -28,6 +28,10 @@ repair path for a partial install.
    runnable on `PATH` afterward — don't treat a silent-looking finish as
    success without checking the exit code.
 
+   Later on, run `lore update` to pick up a new release (checks the
+   version on `main`, then upgrades the package and refreshes the Claude
+   plugin cache in one step; `--check` reports without upgrading).
+
 2. **Run the wizard.**
 
    ```

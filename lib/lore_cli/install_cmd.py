@@ -27,10 +27,13 @@ UX contract (per the four-pass plan review):
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,9 +54,10 @@ from lore_core.install.base import (
     InstallContext,
     LegacyArtifact,
 )
-from lore_cli._argv_compat import argv_main
 from rich.console import Console
 from rich.markup import escape as rich_escape
+
+from lore_cli._argv_compat import argv_main
 
 console = Console()
 
@@ -438,6 +442,44 @@ def _run_self_upgrade(*, quiet: bool) -> int:
         return 1
 
 
+_REMOTE_PLUGIN_JSON_URL = (
+    "https://raw.githubusercontent.com/buchbend/lore/main/.claude-plugin/plugin.json"
+)
+
+
+def _fetch_remote_version() -> str | None:
+    """Latest released version, read off `plugin.json` on `main`.
+
+    `pyproject.toml` and `.claude-plugin/plugin.json` are bumped together
+    in every `chore: release X.Y.Z` commit, so this one file is enough to
+    know the latest release without cloning the repo. Returns None on any
+    network or parse failure — the caller decides how to report that.
+    """
+    try:
+        with urllib.request.urlopen(_REMOTE_PLUGIN_JSON_URL, timeout=10) as resp:
+            return json.loads(resp.read()).get("version")
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return None
+
+
+def _local_version() -> str:
+    return importlib.metadata.version("lore")
+
+
+def _version_tuple(v: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in v.strip().split("."))
+
+
+def _remote_is_newer(remote: str, local: str) -> bool:
+    """Compare dotted versions as int tuples — a plain string compare would
+    put "0.9.0" after "0.10.0"."""
+    r, loc = _version_tuple(remote), _version_tuple(local)
+    n = max(len(r), len(loc))
+    r += (0,) * (n - len(r))
+    loc += (0,) * (n - len(loc))
+    return r > loc
+
+
 def _loud_plugin_cache_failure(detail: str) -> None:
     """Plugin-cache refresh failed — never silent.
 
@@ -702,6 +744,44 @@ _UPGRADE = typer.Option(
         "the new binary is in place — single command, full roundtrip."
     ),
 )
+_CHECK = typer.Option(
+    False, "--check", help="Only report whether an update is available; never upgrades."
+)
+
+
+def update_command(check: bool = _CHECK, quiet: bool = _QUIET) -> None:
+    """Update Lore — Python package and Claude plugin — if a newer release
+    has landed on `main`.
+
+    Delegates to `_run_self_upgrade`, which runs `install.sh upgrade`: that
+    script upgrades the pipx/uv/pip package and then chains into `lore
+    install`, which refreshes the Claude plugin cache. So this one command
+    covers both halves of the install.
+    """
+    local = _local_version()
+    remote = _fetch_remote_version()
+    if remote is None:
+        console.print(
+            "[red]Could not reach GitHub to check the latest lore version.[/red]\n"
+            "  Force the upgrade path directly instead: "
+            "[cyan]lore install --upgrade[/cyan]",
+            markup=True,
+        )
+        raise typer.Exit(code=1)
+
+    if not _remote_is_newer(remote, local):
+        if not quiet:
+            console.print(f"[green]lore {local} is up to date.[/green]", markup=True)
+        return
+
+    if not quiet:
+        console.print(
+            f"[bold]Update available:[/bold] {local} → {remote}", markup=True
+        )
+    if check:
+        raise typer.Exit(code=1)
+
+    raise typer.Exit(code=_run_self_upgrade(quiet=quiet))
 
 
 def build_install_command(

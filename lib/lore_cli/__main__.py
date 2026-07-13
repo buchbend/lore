@@ -145,6 +145,12 @@ def _build_app() -> typer.Typer:
         "Top-level `lore uninstall` — same flags as `lore install uninstall`.",
     ))
 
+    app.command(
+        "update",
+        help="Update Lore (Python package + Claude plugin) if a new release is on main.",
+        rich_help_panel=_GS,
+    )(install_cmd.update_command)
+
     return app
 
 

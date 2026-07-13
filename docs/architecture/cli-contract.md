@@ -85,9 +85,10 @@ a function.
 **3. `lore_cli/__main__.py` only mounts.**
 No `@app.command(...)` or `@app.callback(...)` decorators in
 `__main__.py`. Verbs live in their own files; `__main__.py` only ties
-them together with `app.add_typer(...)`. The single grandfathered
-exception is the `cmd_uninstall_alias` function — a documented
-symmetric alias for `lore install uninstall`.
+them together with `app.add_typer(...)`. The grandfathered exceptions are
+the top-level `uninstall` and `update` aliases — documented shims for
+`lore install uninstall` and the remote-version-check-then-upgrade
+roundtrip, both implemented in `install_cmd.py`.
 
 **4. Import business logic, don't reimplement it.**
 The verb file contains only argument parsing, output formatting, and
