@@ -1,9 +1,9 @@
 """Tests for the linter's wikilink-discipline exemptions and the
 cross-folder index-detection fix.
 
-Cleanup pass driven by the historical lint report: the wikilink
-discipline (see ``lore_core/session_templates/standard.md``) forbids
-``[[file/path.py]]``, ``[[PR #N]]``, etc. in session-note bodies.
+Cleanup pass driven by the historical lint report: session-note bodies
+must not wikilink file paths, PR/issue refs, URLs, or version strings
+(e.g. ``[[file/path.py]]``, ``[[PR #N]]``) — those aren't vault notes.
 The linter mirrors that discipline by suppressing ``broken_link``
 warnings for targets it can prove are not vault-note candidates,
 exempts ``papers/*`` from the ``oversized`` split-candidate hint

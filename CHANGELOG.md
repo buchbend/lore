@@ -8,6 +8,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.63.1] - 2026-07-13
+
+### Removed
+
+- **`lore_core.session_template`** (the loader) and **`lore_core/session_templates/standard.md`**
+  (the "full norms" doc it loaded) — closes #274. Only the test suite ever imported the loader;
+  the template was never injected into any prompt, and its norms had drifted from the live
+  renderer — a different frontmatter contract (`title`/`projects`/`plans`/`curator_a_run` vs
+  the live `description`/`repos`/`implements`/`project`) and a different body shape (nested
+  `## Activity` / `### Commits` / `### Issues opened` / `### Issues closed` vs the flat
+  `## Commits / PRs` / `## Issues touched` the renderer actually emits). Session-note authority
+  now lives entirely in `lore_core.note_document.render_note` and the in-template comment in
+  `lore_core/templates/session.md`.
+
 ## [0.63.0] - 2026-07-12
 
 Typed-fact session notes (PRD 0008, epic #282). All LLM work moves to session
