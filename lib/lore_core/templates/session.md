@@ -28,8 +28,6 @@ Body shape is conditional. Two canonical layouts:
     ## Summary / ## Discussion / ## Loose ends
     Title leads with Discussed: / Explored: / Sketched: / Reviewed:
     or a noun phrase — never with a deliverable verb.
-
-See lib/lore_core/session_templates/standard.md for the full norms.
 -->
 
 ## What we worked on

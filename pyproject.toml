@@ -60,7 +60,6 @@ where = ["lib"]
 
 [tool.setuptools.package-data]
 "lore_cli" = ["integrations.d/*.toml"]
-"lore_core.session_templates" = ["*.md"]
 "lore_core.templates" = ["*.md", "integration-rules/*.md"]
 
 [tool.ruff]
