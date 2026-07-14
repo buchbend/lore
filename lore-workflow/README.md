@@ -25,6 +25,8 @@ delegation conventions shared across skills live in
 | `to-epic` | Turn a plan/PRD into a PRD file plus an epic tracker issue with a roadmap DAG. |
 | `orchestrate-epic` | Supervise parallel TDD implementation of an epic — plan, dispatch, crosscheck, land. |
 | `implement-issue` | Fast path for one well-understood GitHub issue, outside the epic chain. |
+| `brief` | Middle rung — pack-only orientation + one reflected brief, then handoff to `implement-issue` or `tdd`. |
+| `consolidate-docs` | Sweep a wild-grown docs tree — plan-approved merge/move/delete back into Diátaxis shape. |
 | `tdd` | Test-driven red-green-refactor loop. |
 | `debug` | Systematic root-cause debugging with a hard circuit breaker. |
 | `document-epic` | After an epic merges, update Diátaxis docs to match the implemented state. |

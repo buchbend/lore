@@ -69,3 +69,7 @@ On confirmation, carry the shared understanding into the grilling step — defau
 against.
 
 Chain: `/lore-workflow:orient` → `/lore-workflow:grilling` → `/lore-workflow:to-epic` → `/lore-workflow:orchestrate-epic`.
+
+Lighter rungs exist beside the chain: a single change that is clear-ish but unwritten
+takes `/lore-workflow:brief`; a written, clear issue takes `/lore-workflow:implement-issue`.
+Reserve this chain for multi-feature or unsettled work.
