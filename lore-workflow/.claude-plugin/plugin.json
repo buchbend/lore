@@ -1,7 +1,7 @@
 {
   "name": "lore-workflow",
   "description": "Deterministic epic/PRD/TDD workflow skills for AI-coding teams. Depends on lore.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Christof Buchbender"
   },

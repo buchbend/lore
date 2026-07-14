@@ -33,7 +33,9 @@ KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 # Every ported skill must carry the plugin's slash-command prefix.
 EXPECTED_SKILL_NAMES = {
+    "brief",
     "ccat-workflow-init",
+    "consolidate-docs",
     "debug",
     "document-epic",
     "domain-modeling",

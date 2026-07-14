@@ -25,7 +25,9 @@ Reach for this when the user hands you a single GitHub issue they wrote and the
 change is small and clear enough that spinning up the full epic chain would be
 pure overhead. If the work is really several features, or the shape is still
 unsettled, it belongs on the chain (`orient` → `grilling` → `to-epic`),
-not here.
+not here. If the task is clear-ish but only in the user's head — no written
+issue yet — [`/lore-workflow:brief`](../brief/SKILL.md) is the rung in
+between: it aligns in one exchange and can hand back to this skill.
 
 ## Flow
 
