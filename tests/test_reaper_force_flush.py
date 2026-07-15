@@ -1,4 +1,5 @@
 """Tests for lore_curator.reaper — liveness reaper."""
+
 from __future__ import annotations
 
 import os
@@ -31,9 +32,7 @@ def lore_root(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def patch_collectors(monkeypatch):
-    monkeypatch.setattr(
-        "lore_curator.session_activity.collect_commits_by_sha", lambda *a, **kw: []
-    )
+    monkeypatch.setattr("lore_curator.session_activity.collect_commits_by_sha", lambda *a, **kw: [])
     monkeypatch.setattr(
         "lore_curator.session_activity.collect_issues_in_window", lambda *a, **kw: ([], [])
     )
@@ -47,10 +46,16 @@ def patch_collectors(monkeypatch):
 def _seed(lore_root: Path, **append_kw) -> tuple:
     """Seed one buffer; return (buffer, sidecar)."""
     outcome = append_chunk(
-        lore_root=lore_root, chunk_turns=_make_turns(2), local_date="2026-05-01",
+        lore_root=lore_root,
+        chunk_turns=_make_turns(2),
+        local_date="2026-05-01",
         transcript_id=append_kw.pop("transcript_id", "abc"),
-        integration="claude-code", wiki="private", scope="proj:x",
-        cwd=lore_root, wiki_root=lore_root / "wiki" / "private", cfg=WikiConfig(),
+        integration="claude-code",
+        wiki="private",
+        scope="proj:x",
+        cwd=lore_root,
+        wiki_root=lore_root / "wiki" / "private",
+        cfg=WikiConfig(),
         **append_kw,
     )
     return outcome.buffer, outcome.buffer.read_sidecar()
@@ -64,13 +69,16 @@ def _seed(lore_root: Path, **append_kw) -> tuple:
 def test_owner_alive_local_pid_returns_true_or_none():
     """Real-process check on the test runner's pid -- should be True or None
     (None when /proc isn't readable, e.g. macOS)."""
-    sidecar = Sidecar(owner=OwnerInfo(
-        pid=os.getpid(),
-        host="x",
-        start_ts=0.0,
-    ))
+    sidecar = Sidecar(
+        owner=OwnerInfo(
+            pid=os.getpid(),
+            host="x",
+            start_ts=0.0,
+        )
+    )
     # Force host match.
     import socket
+
     sidecar.owner.host = socket.gethostname()
     verdict = is_owner_alive(sidecar)
     assert verdict in (True, None)  # depends on /proc availability
@@ -247,3 +255,96 @@ def test_max_per_pass_bounds_scan(lore_root, monkeypatch):
         _seed(lore_root, transcript_id=tid)
     report = reap_once(lore_root, max_per_pass=2)
     assert report.scanned == 2
+
+
+def test_capped_pass_scans_stalest_first(lore_root, monkeypatch):
+    """Regression for scan-window starvation: with more buffers than
+    max_per_pass, the stale buffer must win a scan slot even when fresh
+    buffers sort ahead of it by name -- otherwise a handful of live
+    sessions at the head of the name order starves the backlog forever."""
+    for tid in ("aaa", "abb", "acc"):
+        _seed(lore_root, transcript_id=tid)  # fresh, name-sorted first
+
+    import socket
+
+    stale_buf, _ = _seed(lore_root, transcript_id="zzz-stale")
+    stale = (datetime.now(UTC) - timedelta(hours=3)).isoformat().replace("+00:00", "Z")
+    with stale_buf.with_lock():
+        stale_buf.patch(
+            owner=OwnerInfo(pid=2**31 - 1, host=socket.gethostname(), start_ts=0.0),
+            last_heartbeat=stale,
+            last_appended_at=stale,
+        )
+    old = (datetime.now(UTC) - timedelta(hours=3)).timestamp()
+    os.utime(stale_buf.sidecar_path, (old, old))
+
+    spawned: list = []
+    monkeypatch.setattr(
+        "lore_curator.reaper.spawn_detached_flush",
+        lambda buffer_path, lore_root: spawned.append(buffer_path) or True,
+    )
+    report = reap_once(lore_root, max_per_pass=2)
+    assert report.scanned == 2
+    assert report.force_flushed == 1
+    assert spawned == [stale_buf.sidecar_path]
+
+
+def test_closed_buffer_is_archived_to_done(lore_root, monkeypatch):
+    """A closed-but-unarchived sidecar (flush died between transition and
+    archive) must not occupy scan slots forever -- the reaper moves it to
+    _done/ when it sees one."""
+    buf, _ = _seed(lore_root)
+    with buf.with_lock():
+        buf.transition("ready")
+        buf.transition("flushing")
+        buf.transition("closed")
+
+    report = reap_once(lore_root)
+    assert report.already_done == 1
+    assert not buf.sidecar_path.exists()
+    done = lore_root / ".lore" / "buffers" / "_done" / buf.sidecar_path.name
+    assert done.exists()
+
+
+def test_unarchivable_closed_buffer_does_not_clog_capped_pass(lore_root, monkeypatch):
+    """Livelock regression: a closed sidecar whose _done/ archive already
+    exists (duplicate buffer for an archived (transcript_id, local_date))
+    can't be moved -- and it sorts stalest, so if it consumed a scan slot
+    every capped pass would re-scan it and never reach the reapable
+    backlog. Closed verdicts must not consume slots."""
+    import shutil
+    import socket
+
+    closed_buf, _ = _seed(lore_root, transcript_id="dup")
+    with closed_buf.with_lock():
+        closed_buf.transition("ready")
+        closed_buf.transition("flushing")
+        closed_buf.transition("closed")
+    done = lore_root / ".lore" / "buffers" / "_done"
+    done.mkdir(exist_ok=True)
+    shutil.copy(closed_buf.sidecar_path, done / closed_buf.sidecar_path.name)  # collision
+    ancient = (datetime.now(UTC) - timedelta(days=9)).timestamp()
+    os.utime(closed_buf.sidecar_path, (ancient, ancient))
+
+    stale_buf, _ = _seed(lore_root, transcript_id="stale")
+    stale = (datetime.now(UTC) - timedelta(hours=3)).isoformat().replace("+00:00", "Z")
+    with stale_buf.with_lock():
+        stale_buf.patch(
+            owner=OwnerInfo(pid=2**31 - 1, host=socket.gethostname(), start_ts=0.0),
+            last_heartbeat=stale,
+            last_appended_at=stale,
+        )
+    old = (datetime.now(UTC) - timedelta(hours=3)).timestamp()
+    os.utime(stale_buf.sidecar_path, (old, old))
+
+    spawned: list = []
+    monkeypatch.setattr(
+        "lore_curator.reaper.spawn_detached_flush",
+        lambda buffer_path, lore_root: spawned.append(buffer_path) or True,
+    )
+    report = reap_once(lore_root, max_per_pass=1)
+    assert report.already_done == 1
+    assert report.force_flushed == 1
+    assert spawned == [stale_buf.sidecar_path]
+    # The colliding sidecar stays in place (never clobber _done history).
+    assert closed_buf.sidecar_path.exists()

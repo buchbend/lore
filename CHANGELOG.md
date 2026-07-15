@@ -8,6 +8,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.63.2] - 2026-07-15
+
+### Fixed
+
+- **Reaper scan-window starvation.** A capped `reap_once` pass scanned
+  buffers in name order, so a handful of live sessions (and
+  closed-but-unarchived sidecars) at the head of the sort permanently
+  starved the stale backlog — 76 abandoned buffers and their zero-chapter
+  stub notes piled up in the vault. Capped passes now scan stalest-first
+  (by sidecar mtime), and closed-but-unarchived sidecars no longer
+  consume scan slots: the reaper archives them to `_done/` on sight, and
+  when the archive collides (duplicate buffer for an already-archived
+  transcript/date) it logs a warning and moves on instead of letting the
+  stray clog the window on every pass.
+- **Startup sweep was a no-op on Linux.** `sweep_dead_sessions` skipped
+  every uncertain-liveness buffer, but on Linux a dead session's owner
+  pid is always a long-exited hook subprocess, so *every* dead buffer
+  judged as uncertain and the sweep never closed anything. Uncertain
+  buffers now fall back on the reaper's staleness threshold: fresh
+  heartbeat → skipped, stale → swept as dead.
+
 ## [0.63.1] - 2026-07-13
 
 ### Removed

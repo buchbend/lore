@@ -36,6 +36,7 @@ Concurrency:
 - Spawn role is ``a-flush`` (distinct from ``a``) so reaper-driven
   spawns don't stampede the regular curator-A spawn lock.
 """
+
 from __future__ import annotations
 
 import os
@@ -194,23 +195,56 @@ def reap_once(
     host = socket.gethostname()
     report = ReaperReport()
 
-    for buf in iter_all(lore_root):
+    def _sidecar_mtime(b: Buffer) -> float:
+        # Sidecar mtime tracks the last heartbeat write; a vanished file
+        # sorts first and is handled as "no-sidecar" by the judge.
+        try:
+            return b.sidecar_path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    # Stalest-first: a capped pass must reach the abandoned backlog even
+    # when live sessions would otherwise occupy every scan slot (name
+    # order starved buffers deeper in the list indefinitely).
+    for buf in sorted(iter_all(lore_root), key=_sidecar_mtime):
         if max_per_pass is not None and report.scanned >= max_per_pass:
             break
-        report.scanned += 1
         try:
             verdict, reason = _judge(
-                buf, host=host, now=now, logger=logger,
+                buf,
+                host=host,
+                now=now,
+                logger=logger,
             )
         except Exception as exc:  # noqa: BLE001 - never let one buffer abort the pass
+            report.scanned += 1
             report.skipped.append((buf.stem, f"judge-error: {type(exc).__name__}: {exc}"))
             continue
 
+        if verdict == "closed":
+            # A closed-but-unarchived sidecar (flush died between the state
+            # transition and the _done/ move) would otherwise occupy a scan
+            # slot on every pass — and it sorts stalest, so it would clog the
+            # whole window. Finish the archival here, without consuming a
+            # slot: judging it is one flock + JSON read, no spawn.
+            report.already_done += 1
+            try:
+                with buf.with_lock(blocking=False) as held:
+                    if held:
+                        buf.close()
+            except Exception as exc:  # noqa: BLE001 - e.g. a _done/ archive collision
+                if logger is not None:
+                    logger.emit(
+                        "warning",
+                        reason="done-archive-collision",
+                        stem=buf.stem,
+                        detail=str(exc),
+                    )
+            continue
+
+        report.scanned += 1
         if verdict == "alive":
             report.alive += 1
-            continue
-        if verdict == "closed":
-            report.already_done += 1
             continue
         if verdict == "skip":
             report.skipped.append((buf.stem, reason))

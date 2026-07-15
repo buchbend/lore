@@ -268,6 +268,36 @@ def test_sweep_skips_uncertain_owner(tmp_path):
     assert buf.sidecar_path.exists()
 
 
+def test_sweep_closes_uncertain_owner_with_stale_heartbeat(tmp_path):
+    """Same-host dead sessions always judge as uncertain (the owner pid is a
+    short-lived hook subprocess), so 'skip all uncertain' made the sweep a
+    no-op on Linux. Uncertain + heartbeat past the staleness threshold must
+    sweep like a dead owner."""
+    from datetime import UTC, datetime, timedelta
+
+    lore_root = _lore_root(tmp_path)
+    all_turns = _turns(0, 12)  # above the trivial-session gate
+    buf = _seed(lore_root, all_turns, tid="stale-uncertain", owner=_uncertain_owner())
+    stale = (datetime.now(UTC) - timedelta(hours=3)).isoformat().replace("+00:00", "Z")
+    with buf.with_lock():
+        buf.patch(last_heartbeat=stale, last_appended_at=stale)
+
+    report = sweep_dead_sessions(
+        lore_root,
+        llm_client=_Client(
+            [
+                {"boundaries": []},
+                {"facts": [{"kind": "done", "text": "The crash is fixed.", "anchor": 2}]},
+                {"headline": "The crash is fixed."},
+            ]
+        ),
+        adapter_lookup=_lookup(_Adapter(all_turns)),
+    )
+    assert report.uncertain_skipped == 0
+    assert report.swept == 1
+    assert not buf.sidecar_path.exists()  # archived to _done
+
+
 def test_startup_sweep_is_contended_when_global_lock_held(tmp_path):
     lore_root = _lore_root(tmp_path)
     all_turns = _turns(0, 2)

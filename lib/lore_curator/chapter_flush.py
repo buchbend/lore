@@ -940,11 +940,16 @@ def sweep_dead_sessions(
       the rest are left for the next sweep (they drain over successive
       starts) so one startup is always bounded.
 
-    Live owners are left alone; uncertain liveness (no ``/proc`` / macOS /
-    network fs) is left to the reaper's staleness path rather than swept.
+    Live owners are left alone. Uncertain liveness (no ``/proc`` / macOS /
+    network fs / same-host pid gone) falls back on the reaper's staleness
+    threshold: a fresh heartbeat is skipped, a stale one is swept as dead.
+    On Linux a dead session's owner pid is a long-exited hook subprocess,
+    so every dead buffer judges as uncertain — skipping all of them made
+    the sweep a no-op.
     """
-    from lore_curator.reaper import is_owner_alive
+    from lore_curator.reaper import _is_stale, _now_utc, _staleness_threshold, is_owner_alive
 
+    now = _now_utc()
     report = SweepReport()
     dead: list[tuple[str, Any, Any]] = []
     for buf in iter_all(lore_root):
@@ -956,7 +961,9 @@ def sweep_dead_sessions(
         if verdict is True:
             report.alive_skipped += 1
             continue
-        if verdict is None:
+        if verdict is None and not _is_stale(
+            sidecar, threshold_s=_staleness_threshold(buf, default_s=1800), now=now
+        ):
             report.uncertain_skipped += 1
             continue
         dead.append((sidecar.local_date or "", buf, sidecar))
