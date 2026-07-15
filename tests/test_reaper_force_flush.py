@@ -304,3 +304,47 @@ def test_closed_buffer_is_archived_to_done(lore_root, monkeypatch):
     assert not buf.sidecar_path.exists()
     done = lore_root / ".lore" / "buffers" / "_done" / buf.sidecar_path.name
     assert done.exists()
+
+
+def test_unarchivable_closed_buffer_does_not_clog_capped_pass(lore_root, monkeypatch):
+    """Livelock regression: a closed sidecar whose _done/ archive already
+    exists (duplicate buffer for an archived (transcript_id, local_date))
+    can't be moved -- and it sorts stalest, so if it consumed a scan slot
+    every capped pass would re-scan it and never reach the reapable
+    backlog. Closed verdicts must not consume slots."""
+    import shutil
+    import socket
+
+    closed_buf, _ = _seed(lore_root, transcript_id="dup")
+    with closed_buf.with_lock():
+        closed_buf.transition("ready")
+        closed_buf.transition("flushing")
+        closed_buf.transition("closed")
+    done = lore_root / ".lore" / "buffers" / "_done"
+    done.mkdir(exist_ok=True)
+    shutil.copy(closed_buf.sidecar_path, done / closed_buf.sidecar_path.name)  # collision
+    ancient = (datetime.now(UTC) - timedelta(days=9)).timestamp()
+    os.utime(closed_buf.sidecar_path, (ancient, ancient))
+
+    stale_buf, _ = _seed(lore_root, transcript_id="stale")
+    stale = (datetime.now(UTC) - timedelta(hours=3)).isoformat().replace("+00:00", "Z")
+    with stale_buf.with_lock():
+        stale_buf.patch(
+            owner=OwnerInfo(pid=2**31 - 1, host=socket.gethostname(), start_ts=0.0),
+            last_heartbeat=stale,
+            last_appended_at=stale,
+        )
+    old = (datetime.now(UTC) - timedelta(hours=3)).timestamp()
+    os.utime(stale_buf.sidecar_path, (old, old))
+
+    spawned: list = []
+    monkeypatch.setattr(
+        "lore_curator.reaper.spawn_detached_flush",
+        lambda buffer_path, lore_root: spawned.append(buffer_path) or True,
+    )
+    report = reap_once(lore_root, max_per_pass=1)
+    assert report.already_done == 1
+    assert report.force_flushed == 1
+    assert spawned == [stale_buf.sidecar_path]
+    # The colliding sidecar stays in place (never clobber _done history).
+    assert closed_buf.sidecar_path.exists()

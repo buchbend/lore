@@ -17,8 +17,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   closed-but-unarchived sidecars) at the head of the sort permanently
   starved the stale backlog — 76 abandoned buffers and their zero-chapter
   stub notes piled up in the vault. Capped passes now scan stalest-first
-  (by sidecar mtime), and the reaper archives closed-but-unarchived
-  sidecars to `_done/` so they stop eating scan slots.
+  (by sidecar mtime), and closed-but-unarchived sidecars no longer
+  consume scan slots: the reaper archives them to `_done/` on sight, and
+  when the archive collides (duplicate buffer for an already-archived
+  transcript/date) it logs a warning and moves on instead of letting the
+  stray clog the window on every pass.
 - **Startup sweep was a no-op on Linux.** `sweep_dead_sessions` skipped
   every uncertain-liveness buffer, but on Linux a dead session's owner
   pid is always a long-exited hook subprocess, so *every* dead buffer

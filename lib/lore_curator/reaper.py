@@ -39,7 +39,6 @@ Concurrency:
 
 from __future__ import annotations
 
-import contextlib
 import os
 import socket
 from dataclasses import dataclass, field
@@ -210,7 +209,6 @@ def reap_once(
     for buf in sorted(iter_all(lore_root), key=_sidecar_mtime):
         if max_per_pass is not None and report.scanned >= max_per_pass:
             break
-        report.scanned += 1
         try:
             verdict, reason = _judge(
                 buf,
@@ -219,20 +217,34 @@ def reap_once(
                 logger=logger,
             )
         except Exception as exc:  # noqa: BLE001 - never let one buffer abort the pass
+            report.scanned += 1
             report.skipped.append((buf.stem, f"judge-error: {type(exc).__name__}: {exc}"))
             continue
 
-        if verdict == "alive":
-            report.alive += 1
-            continue
         if verdict == "closed":
             # A closed-but-unarchived sidecar (flush died between the state
-            # transition and the _done/ move) would occupy a scan slot on
-            # every pass — finish the archival here.
+            # transition and the _done/ move) would otherwise occupy a scan
+            # slot on every pass — and it sorts stalest, so it would clog the
+            # whole window. Finish the archival here, without consuming a
+            # slot: judging it is one flock + JSON read, no spawn.
             report.already_done += 1
-            with contextlib.suppress(Exception), buf.with_lock(blocking=False) as held:
-                if held:
-                    buf.close()
+            try:
+                with buf.with_lock(blocking=False) as held:
+                    if held:
+                        buf.close()
+            except Exception as exc:  # noqa: BLE001 - e.g. a _done/ archive collision
+                if logger is not None:
+                    logger.emit(
+                        "warning",
+                        reason="done-archive-collision",
+                        stem=buf.stem,
+                        detail=str(exc),
+                    )
+            continue
+
+        report.scanned += 1
+        if verdict == "alive":
+            report.alive += 1
             continue
         if verdict == "skip":
             report.skipped.append((buf.stem, reason))
