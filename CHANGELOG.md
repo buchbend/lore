@@ -46,11 +46,17 @@ wiki.
   register instead of restating its rules (#306).
 - **The writing skills route through the funnel** (#309): `to-epic` files
   sub-issues, `seed-epic` files seeds in caller-template mode,
-  `implement-issue` writes PR bodies in PR-body mode, and `orchestrate-epic`
-  files run follow-ups through it. `to-epic`'s sub-issue template is now an
-  epic-linkage header plus the register skeleton. Machine-readable formats stay
-  exempt and unchanged: the roadmap table, the board comment, and the reviewer
-  verdict block.
+  `implement-issue` writes PR bodies in PR-body mode, `orchestrate-epic` files
+  run follow-ups through it and has its teammates write PR bodies through it,
+  and `brief` files its handoff issue through it. `to-epic`'s sub-issue
+  template is now an epic-linkage header plus the register skeleton.
+  Machine-readable formats stay exempt and unchanged: the roadmap table, the
+  board comment, and the reviewer verdict block.
+- **`docs/how-to/write-a-fast-path-issue.md`** now opens with the register
+  resolver and no longer restates its rules — one of its items contradicted the
+  register's "sections may be empty and stay in the file".
+- Guards against banned-word drift: the list in the Vale style and the one in
+  the register's paste block are both asserted against rule 3 of the register.
 - `CONTEXT.md` defines *register*, *change*, and *batch issue* (#305).
 - `lore-workflow` plugin 0.3.0 → 0.4.0.
 
