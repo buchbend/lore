@@ -1,4 +1,4 @@
-# ADR 0005: The issue register — per-wiki whole-file override, generation-time lint
+# ADR 0006: The issue register — per-wiki whole-file override, generation-time lint
 
 - Status: Accepted
 - Date: 2026-08-03

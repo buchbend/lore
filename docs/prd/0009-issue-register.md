@@ -41,13 +41,13 @@ issue-register`. The SessionStart banner carries a one-line directive:
 resolve the register before writing an issue or PR body. All lore-workflow
 filing routes through one in-context `file-issue` skill: resolve the
 register, draft in its skeleton, lint with Vale when Vale is on PATH, then
-post. ADR 0005 records the decisions.
+post. ADR 0006 records the decisions.
 
 ## Implementation decisions
 
 - The register is a prose document, not config. Resolution is whole-file
   per wiki. See
-  [ADR 0005](../adr/0005-issue-register-whole-file-override-generation-time-lint.md).
+  [ADR 0006](../adr/0006-issue-register-whole-file-override-generation-time-lint.md).
 - The default register ships as lore package data, next to the existing
   packaged templates. The CLI is the only resolver; the plugin carries no
   copy of the file.
