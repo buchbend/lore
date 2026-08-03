@@ -8,6 +8,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.65.3] - 2026-08-03
+
+### Fixed
+
+- **Concurrent issue drafts no longer collide** (#322): `file-issue` drafts to
+  `${TMPDIR:-/tmp}/lore-file-issue-<slug>.md` instead of a fixed filename. Two
+  sessions filing at the same moment under one `TMPDIR` wrote the same file, so
+  one posted text it never wrote. The path stays literal in every step — a shell
+  variable was the earlier failure.
+
+### Changed
+
+- **`document-epic` writes its standalone docs-PR body through `file-issue`**
+  (#322), in PR-body mode. It was the last place still writing a PR body inline.
+- `lore-workflow` plugin 0.4.2 → 0.4.3.
+
 ## [0.65.2] - 2026-08-03
 
 ### Changed
