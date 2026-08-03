@@ -57,11 +57,12 @@ No board comment found → fresh run; proceed to the gate.
 
 **Roadmap gate + effort band.** Run `lore workflow validate-roadmap --json` →
 `{ok, rows, repos, edges, problems}`. `ok: false` → refuse to start: report `problems` and stop, never
-dispatching against a malformed or cyclic roadmap. Otherwise pick the band from the counts, not by eye:
-**compact** iff `rows ≤ 2` and `repos == 1` and every `Type` is AFK with no HITL flags; **standard** otherwise
-(full batched loop, concurrency cap N). Record the band in your epic note. Then build the feature DAG, split
-into dependency-ordered batches (features in a batch are independent), and cut and push `epic/<issue>` from
-the up-to-date `target_branch`.
+dispatching against a malformed or cyclic roadmap. Otherwise build the feature DAG from `edges` and split it
+into dependency-ordered batches (features in a batch are independent). Pick the band from the numbers, not by
+eye: **compact** iff `repos == 1`, every `Type` is AFK, and either the DAG offers no real parallelism — every
+batch holds exactly one feature, i.e. a straight chain of any length — or `rows ≤ 3`; **standard** otherwise
+(full batched loop, concurrency cap N). Fan-out only pays when features actually run side by side. Record the
+band in your epic note, then cut and push `epic/<issue>` from the up-to-date `target_branch`.
 
 **Emit the board.** One comment on the epic issue, edited in place at a few deliberate points (batch start,
 each merge, each blocker, completion) — never a second comment. It MUST carry, verbatim, the marker and
@@ -100,13 +101,15 @@ the same feature is not respawned — mark it blocked and escalate.
 
 _Compact mode._ Skip the fan-out: one worktree, one teammate, briefed to implement every feature of the band
 sequentially — still one branch and one PR per feature, still strict TDD, still each PR crosschecked below.
-Optionally batch the review: one strong-tier reviewer over the band's PRs in a single pass.
+The crosscheck batches exactly as in standard mode: one strong-tier reviewer over the band's PRs in one pass.
 
-**Crosscheck (delegated).** When a teammate reports its PR you do **not** read the diff — delegating the read
-keeps your context free as the epic grows. Spawn one reviewer subagent per PR at the **strong-tier**
-(`lore tier resolve strong`; no delegation inherits the session model). It reads the diff and the linked
-sub-issue and returns exactly this verdict, one line per check, posting the same text as the PR comment; you
-consume only the verdict and record its outcome in your epic note:
+**Crosscheck (delegated, batched).** When teammates report their PRs you do **not** read the diffs —
+delegating the read keeps your context free as the epic grows. Spawn **one reviewer subagent per batch** at
+the **strong-tier** (`lore tier resolve strong`; no delegation inherits the session model): it reads each of
+the batch's PR diffs and linked sub-issues and returns one verdict block per PR, posting each as that PR's
+comment; you consume only the verdicts and record their outcomes in your epic note. A batch of one degenerates
+to a per-PR review; if one PR's diff is too large to share a reviewer, split that reviewer out and note the
+deviation in your epic note. Per PR the verdict is exactly:
 ```
 PR #<n>
 reviewer tier: strong
@@ -119,7 +122,7 @@ verdict: PASS | FAIL
 fixes (only on FAIL): 1. <precise fix>  2. <precise fix>  …
 ```
 Post with `gh pr comment <n> --body …`. On **PASS**, advance to Merge. On **FAIL**, `SendMessage` the teammate
-the numbered fix list and re-review once it reports back — **max 2 fix rounds**. A round that doesn't move the
+the numbered fix list and re-review (that PR alone) once it reports back — **max 2 fix rounds**. A round that doesn't move the
 verdict → send the `/lore-workflow:debug` method (reproduce, isolate root cause, heed its circuit breaker),
 not a vaguer "try again". Still FAIL after the second → mark the feature blocked and escalate. The Dispatch
 tier is advisory; a reviewer tier deviation is allowed but recorded in your epic note (full contract:
@@ -139,13 +142,22 @@ dispatching dependents. Where the repo carries migrations, verify a single migra
 heads`) — squash-merges can silently fork the migration DAG. A failed invariant blocks the batch: fix forward
 or escalate.
 
-**Land.** All features merged and epic-branch CI green → open one PR `epic/<issue> → <target_branch>` linking
-every sub-issue.
+**Document (delegated, pre-land).** Docs ship with the epic, not after it (ADR 0005). Once all features are
+merged and epic-branch CI is green, invoke `document-epic` in its **pre-land mode**: it classifies the
+cumulative diff (`<target_branch>...epic/<issue>`) into the Diátaxis four and commits the doc updates directly
+onto `epic/<issue>` — no separate docs PR. If it escalates, or its edits cannot go green after one fix pass,
+fall back: drop the docs commit, land the epic without it, and run standalone `document-epic` post-land (its
+own auto-merging docs PR) — docs never block a green epic.
+
+**Land.** Features merged, docs committed, epic-branch CI green → open one PR
+`epic/<issue> → <target_branch>` linking every sub-issue.
 
 **Whole-epic review (delegated).** Before merging that PR, spawn one strong-tier reviewer over the cumulative
-diff (`<target_branch>...epic/<issue>`). Not a per-feature re-review — scope it to cross-feature consistency
-(inconsistent naming, duplicated helpers, conflicting edits to shared files), the class that only surfaces
-once every diff lands together. Reuse the reviewer verdict shape with this cross-feature checklist; post it on
+diff (`<target_branch>...epic/<issue>`). Skip this stage entirely when the epic has ≤ 2 features — the
+crosscheck just read those same diffs; go straight to the deploy-gate check and merge. Not a per-feature
+re-review — scope it to cross-feature consistency (inconsistent naming, duplicated helpers, conflicting edits
+to shared files), the class that only surfaces once every diff lands together, plus docs-vs-behavior
+mismatches now that the diff carries the docs commit. Reuse the reviewer verdict shape with this cross-feature checklist; post it on
 the epic PR. It gates the merge like a crosscheck: **PASS** → merge; **FAIL** → route the fix list to the
 teammate(s) owning the affected files, re-review once, max 2 rounds, then mark the epic blocked and escalate
 rather than merge. The epic→target merge follows the deploy-gate policy: if `epic-policy` returned
@@ -155,16 +167,14 @@ epic issue done with the merge SHA.
 **Cleanup.** Delete every merged feature branch (local and remote) and remove its worktree. Leave nothing
 behind but the epic branch's own history.
 
-**Document.** Invoke `document-epic` as the final automatic stage: it classifies changed paths into the
-Diátaxis four, opens a docs PR, and auto-merges on green CI (never on red).
-
 **Land checklist.** Before reporting completion, emit and satisfy this — each item verified true, not merely
 intended:
 - [ ] every roadmap checkbox ticked and every sub-issue closed
 - [ ] the epic PR merged, its merge SHA recorded on the epic issue
 - [ ] the board finalized to the end state (no stale queued/running rows)
 - [ ] every merged feature's branch and worktree gone, local and remote
-- [ ] the docs PR opened, and merged once its CI is green
+- [ ] the docs commit landed with the epic PR — or, on fallback, the standalone docs PR opened and merged on
+      green
 
 Report.
 

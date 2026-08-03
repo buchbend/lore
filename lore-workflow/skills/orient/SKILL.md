@@ -51,12 +51,18 @@ Scale the fan-out to the ask: a small change may need a single Explore pass (or 
 pack already covers it); a broad feature warrants all facets.
 
 ### 3. Reflect back
-Present a tight brief in the conversation:
-- **What I understand you want** — restated in the project's domain language.
-- **Relevant landscape** — the code + docs/ADR constraints and prior art that bear on it.
+Present a tight brief in the conversation — **one screen, ~300 words, hard cap**. Order it so
+what the user must react to comes first:
 - **What we're actually deciding** — the crux, and the real choices ahead.
 - **Open questions & assumptions** — the unknowns, and the assumptions you're running on.
+- **What I understand you want** — one short paragraph, in the project's domain language.
+- **Relevant landscape** — at most five bullets, each a fact that constrains a decision (an
+  ADR that forbids an option, a module that already does half the work). Everything else you
+  learned stays in your context; close with "ask for the long version" instead of printing it.
 - **Tentative scope** — in / out, marked provisional.
+
+The cap governs the printed brief, never the homework behind it — explore fully, report
+selectively.
 
 ### 4. Loop
 Ask whether this matches. If the user corrects or adds input, re-orient with a *targeted*

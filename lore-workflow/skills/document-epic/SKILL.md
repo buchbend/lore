@@ -1,19 +1,21 @@
 ---
 name: lore-workflow:document-epic
-description: After an epic merges, update a repo's Diátaxis documentation (tutorials, how-to,
-  reference, explanation) to reflect the implemented state, then open a docs PR that
-  auto-merges on green. NEVER touches docs/prd or docs/adr. Use after an epic lands and its
-  user-facing docs need to catch up. Standalone and cross-repo aware.
+description: Update a repo's Diátaxis documentation (tutorials, how-to, reference,
+  explanation) to match an epic's implemented state. Pre-land (invoked by orchestrate-epic)
+  it commits docs onto the epic branch so they ship in the epic PR; standalone (an already
+  merged epic) it opens a docs PR that auto-merges on green. NEVER touches docs/prd or
+  docs/adr. Cross-repo aware.
 ---
 
 # Document Epic
 
-You are the **documenter**: a merged epic changed what the software does, and the
-user-facing docs must catch up. You update the **Diátaxis four** to match the implemented
-state, then open a docs PR and let it auto-merge on green — a human reviews post-hoc. You do
-not change behavior; you describe it.
+You are the **documenter**: an epic changed what the software does, and the user-facing docs
+must match. You update the **Diátaxis four** to the implemented state. You do not change
+behavior; you describe it.
 
-**Input:** a merged epic (issue number or URL), possibly spanning repos.
+**Input:** an epic (issue number or URL), possibly spanning repos — either **pre-land** (its
+`epic/<n>` branch exists, all features merged into it; this is how `orchestrate-epic` invokes
+you, per ADR 0005) or **standalone** (the epic already merged; docs catching up post-hoc).
 **Mode:** autonomous — run the loop without asking. Stop only to report completion or to
 escalate a hard blocker (see Stop conditions).
 
@@ -46,11 +48,12 @@ Every documentation edit you make belongs to exactly one quadrant
 
 ## Loop
 
-**Map the deltas.** Read the merged epic with `gh ... --json` (see the repo's own
+**Map the deltas.** Read the epic with `gh ... --json` (see the repo's own
 conventions doc, if any).
-From it gather three sources of truth: the **merged PRD** (intent), the **sub-issue PRs**
+From it gather three sources of truth: the **PRD** (intent), the **sub-issue PRs**
 (per-feature acceptance notes that reveal which behaviors are user-facing), and the
-**cumulative epic diff** (every path the epic touched, with its change kind). Build one list
+**cumulative epic diff** — pre-land that is `<target_branch>...epic/<n>`; standalone it is
+the merged range (every path the epic touched, with its change kind). Build one list
 of changed paths, each tagged with its change kind and — for source files — whether it
 touches the **public API** (a non-underscore symbol exported from the package). This list is
 the input to classification.
@@ -73,13 +76,18 @@ autosummary/toctree entries — never substitute prose for a docstring. Keep edi
 what the epic changed; do not rewrite untouched docs. Re-confirm no `docs/prd`/`docs/adr`
 path is in your diff.
 
-**Open the docs PR.** Branch off the repo's integration branch, commit the doc edits, and
-open a PR that summarizes the documented deltas and links the epic and its sub-issues. **Auto-
-merge it on green CI** — documentation lands without blocking on human review; a human reviews
-post-hoc. Never auto-merge on red.
+**Deliver.**
+- *Pre-land* (invoked from `orchestrate-epic`): commit the doc edits **directly onto the
+  epic branch** — no separate PR. The epic PR carries them, the whole-epic review sees them,
+  and the epic's own CI gates them. Report the commit SHA and the edit plan.
+- *Standalone* (epic already merged): branch off the repo's integration branch, commit, and
+  open a PR that summarizes the documented deltas and links the epic and its sub-issues.
+  **Auto-merge it on green CI** — documentation lands without blocking on human review; a
+  human reviews post-hoc. Never auto-merge on red.
 
 **Cross-repo.** An epic may span repos. Repeat the loop per affected repo, each against its
-own docs layout and its own integration branch. One docs PR per repo.
+own docs layout and its own epic/integration branch. One delivery per repo (pre-land commit
+or standalone docs PR).
 
 ## Dry-run
 
