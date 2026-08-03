@@ -127,9 +127,10 @@ Report every URL you created back to the caller.
 ## Callers
 
 [`to-epic`](../to-epic/SKILL.md), [`seed-epic`](../seed-epic/SKILL.md),
-[`orchestrate-epic`](../orchestrate-epic/SKILL.md) follow-ups, and
-[`implement-issue`](../implement-issue/SKILL.md) file through this skill instead of
-writing issue bodies inline.
+[`brief`](../brief/SKILL.md), [`implement-issue`](../implement-issue/SKILL.md), and
+[`orchestrate-epic`](../orchestrate-epic/SKILL.md) — both its follow-ups and the PR
+bodies its teammates open — file through this skill instead of writing issue or PR
+bodies inline.
 
 Machine-readable text stays exempt: roadmap tables, board comments, and reviewer
 verdicts are parsed, not read, so the register does not apply to them.

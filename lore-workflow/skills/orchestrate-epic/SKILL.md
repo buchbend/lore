@@ -198,8 +198,9 @@ Report.
 > Sibling-write hazard: parallel teammates in separate worktrees under one session can share an isolation
 > pointer, so in-place editor writes (Edit/Write) from one can clobber another. Apply file changes via shell
 > (heredoc or scripted edits) at absolute paths instead.
-> Deliver: push, open the PR linking #<n>, report the PR number, red→green evidence, and a one-paragraph
-> summary of changes and any decisions you made.
+> Deliver: push, write the PR body through `/lore-workflow:file-issue` in PR-body mode, open the PR from
+> that file linking #<n>, report the PR number, red→green evidence, and a one-paragraph summary of
+> changes and any decisions you made.
 
 ## Stop conditions (escalate, pause that branch only)
 A feature flagged HITL; a teammate failing crosscheck after 2 fix rounds; an ambiguous spec needing a

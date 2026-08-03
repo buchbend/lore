@@ -315,6 +315,11 @@ Terms used in the workflow layer and orchestration:
   a team overrides it whole-file with `<wiki>/style/issue-register.md`.
   `lore style show issue-register` resolves the two. The register fixes
   style, not terminology — terminology stays with the glossary.
+  Overriding the lint means copying `styles/vale/` whole — the ini plus
+  its `IssueRegister/` rule directory — into `<wiki>/style/vale/`. Vale
+  resolves `StylesPath` next to the ini, so an override that copies the
+  ini alone exits 2 with "style 'IssueRegister' does not exist on
+  StylesPath".
 - **Change** — the unit a register-conforming issue describes: one
   required-behaviour statement with its own acceptance criteria.
 - **Batch issue** — an issue carrying several changes under one Context
