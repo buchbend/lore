@@ -33,12 +33,18 @@ Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 
 ## 2. Draft to a file whose name ends in `.md`
 
-```bash
-draft="$(mktemp -d)/issue.md"
+Write the body to this exact path:
+
+```
+${TMPDIR:-/tmp}/lore-file-issue.md
 ```
 
-The extension is load-bearing. The Vale config scopes its rules to `[*.md]`. A draft
-saved as `.txt`, or with no extension, lints zero files and exits 0 — step 3 would
+**Repeat that path literally in steps 3 and 4. Never hold it in a shell variable** —
+each step may run as its own shell, and a variable set in step 2 is gone by step 3.
+Vale would then get an empty argument and lint nothing.
+
+The `.md` extension is load-bearing. The Vale config scopes its rules to `[*.md]`, so a
+draft saved as `.txt`, or with no extension, lints zero files and exits 0 — step 3 would
 report a clean draft without having read one line of it.
 
 Pick the mode from what the caller handed you:
@@ -77,15 +83,20 @@ whether Vale is on PATH.)
 With Vale present:
 
 ```bash
-vale --config "$(lore style vale-config)" "$draft"
+vale --config "$(lore style vale-config)" "${TMPDIR:-/tmp}/lore-file-issue.md"
 ```
 
 Read the result by exit code, not by whether anything printed:
 
-- **Non-zero exit** — at least one `error`-level finding: banned vocabulary, or a
-  sentence past the length ceiling. Rewrite those, then run again until the exit code
-  is 0.
+- **Exit 1** — at least one `error`-level finding: banned vocabulary, or a sentence past
+  the length ceiling. Rewrite those, then run again until the exit code is 0.
 - **Exit 0 with findings printed** — `warning`-level heuristics only. Advisory.
+- **Exit 2** — the invocation itself is broken, not the prose. Vale exits 2 on an empty
+  path argument and on a `--config` path it cannot resolve. **Stop and report.** Editing
+  prose here rewrites a draft that was never read.
+
+Vale reports "0 files" as success, so a lint that read nothing still looks clean. Confirm
+the output names your draft file before you trust a clean result.
 
 The heuristics over-fire by design, and the register says as much. The participle rule
 matches any capitalised `-ing` word opening a sentence, so a heading like
@@ -100,11 +111,12 @@ back.
 
 ```bash
 gh issue create --repo <owner>/<repo> --title "<imperative title, max 12 words>" \
-  --body-file "$draft"
+  --body-file "${TMPDIR:-/tmp}/lore-file-issue.md"
 ```
 
 Use `--body-file`, never a retyped `--body` string — the bytes Vale checked must be the
-bytes that get posted. For a PR body, `gh pr create --body-file "$draft"`.
+bytes that get posted. For a PR body, swap in
+`gh pr create --body-file "${TMPDIR:-/tmp}/lore-file-issue.md"`.
 
 In batch mode the caller chooses the granularity it asked for: one issue holding the
 numbered blocks, or one issue per block. Do not silently split or merge what you were
