@@ -33,15 +33,21 @@ Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 
 ## 2. Draft to a file whose name ends in `.md`
 
-Write the body to this exact path:
+Write the body to this path, with `<slug>` replaced by a short kebab-case slug of the
+title you are about to use:
 
 ```
-${TMPDIR:-/tmp}/lore-file-issue.md
+${TMPDIR:-/tmp}/lore-file-issue-<slug>.md
 ```
 
 **Repeat that path literally in steps 3 and 4. Never hold it in a shell variable** —
 each step may run as its own shell, and a variable set in step 2 is gone by step 3.
 Vale would then get an empty argument and lint nothing.
+
+The slug keeps two sessions apart. A fixed filename means a second session filing at the
+same moment under the same `TMPDIR` overwrites the first session's draft, and the first
+session then lints and posts text it never wrote. You already know the title at this
+point, so the slug costs nothing and stays the same in every step.
 
 The `.md` extension is load-bearing. The Vale config scopes its rules to `[*.md]`, so a
 draft saved as `.txt`, or with no extension, lints zero files and exits 0 — step 3 would
@@ -83,7 +89,7 @@ whether Vale is on PATH.)
 With Vale present:
 
 ```bash
-vale --config "$(lore style vale-config)" "${TMPDIR:-/tmp}/lore-file-issue.md"
+vale --config "$(lore style vale-config)" "${TMPDIR:-/tmp}/lore-file-issue-<slug>.md"
 ```
 
 Read the result by exit code, not by whether anything printed:
@@ -111,12 +117,12 @@ back.
 
 ```bash
 gh issue create --repo <owner>/<repo> --title "<imperative title, max 12 words>" \
-  --body-file "${TMPDIR:-/tmp}/lore-file-issue.md"
+  --body-file "${TMPDIR:-/tmp}/lore-file-issue-<slug>.md"
 ```
 
 Use `--body-file`, never a retyped `--body` string — the bytes Vale checked must be the
 bytes that get posted. For a PR body, swap in
-`gh pr create --body-file "${TMPDIR:-/tmp}/lore-file-issue.md"`.
+`gh pr create --body-file "${TMPDIR:-/tmp}/lore-file-issue-<slug>.md"`.
 
 In batch mode the caller chooses the granularity it asked for: one issue holding the
 numbered blocks, or one issue per block. Do not silently split or merge what you were
