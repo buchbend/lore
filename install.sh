@@ -136,8 +136,13 @@ if [ "$HAS_PLUGIN" -eq 1 ]; then
     say "Refreshing Claude plugin cache (integrations already configured)..."
     if command -v claude >/dev/null 2>&1; then
         claude plugin update lore@lore || warn "claude plugin update failed; run it manually"
+        # lore-workflow versions independently; without its own refresh the
+        # installed skills silently stay on the old version.
+        if grep -q '"lore-workflow@lore"' "$PLUGIN_INDEX"; then
+            claude plugin update lore-workflow@lore || warn "claude plugin update lore-workflow@lore failed; run it manually"
+        fi
     else
-        warn "claude CLI not found; run: claude plugin update lore@lore"
+        warn "claude CLI not found; run: claude plugin update lore@lore (and lore-workflow@lore if installed)"
     fi
     say "Done. Restart Claude Code to load the refreshed plugin."
 else
