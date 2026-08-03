@@ -31,10 +31,16 @@ def _shipped_skill_names() -> set[str]:
 
 
 def test_lore_workflow_skill_references_resolve_to_shipped_skills() -> None:
-    """Every ``lore-workflow:<name>`` cited in a doc must be a real skill dir."""
+    """Every ``lore-workflow:<name>`` cited in a doc must be a real skill dir.
+
+    ``docs/prd/`` is exempt: PRDs are plans and legitimately cite skills that
+    ship later. Drift honesty applies to docs describing the present.
+    """
     shipped = _shipped_skill_names()
     failures: list[str] = []
     for path in DOCS_FILES:
+        if path.relative_to(REPO_ROOT).parts[:2] == ("docs", "prd"):
+            continue
         text = path.read_text(encoding="utf-8")
         for name in SKILL_REF_RE.findall(text):
             if name not in shipped:
