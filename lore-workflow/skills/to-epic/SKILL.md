@@ -85,9 +85,9 @@ Order matters so every cross-reference resolves:
    carries `epic:` (filled with the epic URL once it exists — step 4 closes this loop) and
    `repos:` (every involved repo). Fill the PRD body sections with the synthesized PRD. Commit
    it to the repo on the branch the docs PR will carry.
-2. **Create sub-issues** in dependency order so refs resolve, each in its target repo using the
-   sub-issue template (optionally labeled `epic:<n>` for grouping). Each sub-issue **links back
-   to the epic**.
+2. **Create sub-issues** in dependency order so refs resolve, each in its target repo through
+   [`file-issue`](../file-issue/SKILL.md) in caller-template mode, handing it the sub-issue
+   template below (optionally labeled `epic:<n>` for grouping).
 3. **Create the epic tracker issue**, labeled `epic` (create the label if missing). The body
    **links the PRD file** and carries a one-paragraph summary + the roadmap table + a task list
    of the sub-issues — **no PRD content is duplicated in the epic body** (link only).
@@ -103,11 +103,10 @@ Order matters so every cross-reference resolves:
 `/lore-workflow:orchestrate-epic` consumes, so it must be well-formed before the epic goes live. Run the
 deterministic, dependency-free `lore workflow validate-roadmap` on the composed epic body —
 e.g. `gh issue view <epic> --json body -q .body | lore workflow validate-roadmap -`, or point
-it at the drafted body file (`lore workflow validate-roadmap <path>`). It checks
-the required columns (`# | Feature | Issue | Repo | Type | Blocked by`), fully-qualified
-`owner/repo#n` Issue refs, blocked-by edges that resolve to rows in the table, and an acyclic
-dependency DAG. **Publish only a roadmap it accepts** — fix what it reports and re-run until
-it passes.
+it at the drafted body file (`lore workflow validate-roadmap <path>`). It checks the required
+columns (`# | Feature | Issue | Repo | Type | Blocked by`), fully-qualified `owner/repo#n`
+Issue refs, blocked-by edges that resolve to rows in the table, and an acyclic DAG.
+**Publish only a roadmap it accepts** — fix what it reports and re-run until it passes.
 
 Use fully-qualified refs (`owner/repo#n`) for every cross-repo link. Do not modify unrelated
 parent issues.
@@ -159,8 +158,7 @@ What this epic deliberately does not cover.
 ## Epic body template
 
 The epic is a **tracker, not a spec**: it **links** the PRD (no PRD content duplicated here)
-and carries the roadmap DAG. The **roadmap table stays in the epic body** — it is what
-`/lore-workflow:orchestrate-epic` reads.
+and carries the roadmap DAG — the table **stays in the epic body**, where `/lore-workflow:orchestrate-epic` reads it.
 
 <epic-body-template>
 ## Summary
@@ -186,6 +184,12 @@ below keeps the literal token, which is what the roadmap validator and `/lore-wo
 
 ## Sub-issue template
 
+An epic-linkage header, then the register's own section skeleton. File it through
+[`file-issue`](../file-issue/SKILL.md) in caller-template mode — the funnel resolves the
+register and applies its writing rules inside this structure, so none of those rules are
+repeated here. Keep "Required behaviour" to the slice's end-to-end behavior — not a
+layer-by-layer implementation — and path-free (same prototype exception as above).
+
 <sub-issue-template>
 ## Epic
 owner/repo#<epic>
@@ -193,27 +197,23 @@ owner/repo#<epic>
 ## Repo
 The repo this slice is implemented in.
 
-## What to build
-End-to-end behavior of this vertical slice — not layer-by-layer implementation. No file paths
-or code snippets (same prototype exception as above).
-
-## Acceptance criteria
-- [ ] Criterion 1
-- [ ] Criterion 2
+## Type
+AFK (runs autonomously, no human input) or HITL (human-in-the-loop: needs a human decision).
 
 ## Blocked by
 owner/repo#<n>, or "None — can start immediately".
 
-## Type
-AFK (runs autonomously, no human input) or HITL (human-in-the-loop: needs a human decision).
+## Context
+## Current behaviour
+## Required behaviour
+## Acceptance criteria
+## Out of scope
+## References
 
-## Pointers (starting points, may be stale)
-Non-authoritative starting points so a teammate reuses the discovery already done
-during shaping instead of re-exploring the repo from scratch. Everything here may
-have gone stale since the epic was formed — verify before trusting, and widen from
-here rather than treat it as the whole picture. The PRD stays path-free; these
-pointers live only in this disposable sub-issue (closed on merge), where staleness
-is a non-issue.
+Pointers (starting points, may be stale):
+Non-authoritative starting points, so a teammate reuses the discovery already done during
+shaping instead of re-exploring the repo. Verify before trusting and widen from here. The
+PRD stays path-free; these pointers live only in this disposable sub-issue, closed on merge.
 - **Dev notes** — modules/files to start from and interfaces to build against.
 - **Architecture excerpts** — the conventions and shared touchpoints this slice sits within.
 - **Test criteria** — tests that are prior art for what a good test looks like here.
