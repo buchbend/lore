@@ -8,6 +8,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.64.0] - 2026-08-03
+
+Epic-cycle lightening (#304, ADR 0005) plus two previously unreleased changes
+(#300, #301) that landed after 0.63.1.
+
+### Changed
+
+- **Epic workflow cycle lightened** (`lore-workflow` 0.2.0 → 0.3.0, #304):
+  - `orient` reflects back a hard-capped brief (~300 words, one screen), crux
+    and open questions first — the homework is unchanged, only the printout
+    shrinks.
+  - `to-epic` now cuts the *fewest* slices that earn their fixed downstream
+    overhead: splits only for real parallelism, a HITL boundary, or risk
+    isolation; a strictly linear blocked-by chain collapses into one slice;
+    target 2–4 slices, checkpoint quiz defaults to merging.
+  - `orchestrate-epic` derives its compact band from the DAG instead of
+    `rows ≤ 2` (single repo, all AFK, and either a straight chain of any
+    length or ≤ 3 rows), batches the crosscheck (one strong-tier reviewer per
+    batch, one verdict block per PR), and skips the whole-epic review for
+    ≤ 2-feature epics.
+  - **Docs land with the epic (ADR 0005):** `document-epic` gains a pre-land
+    mode — invoked by `orchestrate-epic` before the epic PR opens, it commits
+    the Diátaxis updates onto the epic branch, so docs ship inside the epic
+    PR, seen by the whole-epic review and gated by epic CI. The post-land
+    auto-merged docs PR remains as fallback and as the standalone catch-up
+    path. `docs/conventions.md` and `docs/how-to/run-an-epic.md` updated to
+    match.
+
+### Added
+
+- **`lore update`** (#300) — top-level version-checked package + plugin
+  upgrade command.
+- **`brief` and `consolidate-docs` skills** (`lore-workflow` 0.1.0 → 0.2.0,
+  #301) — the middle-weight orientation rung between `implement-issue` and
+  the epic chain, and a docs-tree consolidation pass.
+
 ## [0.63.1] - 2026-07-13
 
 ### Removed
