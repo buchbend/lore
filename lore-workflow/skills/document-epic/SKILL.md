@@ -82,6 +82,8 @@ path is in your diff.
   and the epic's own CI gates them. Report the commit SHA and the edit plan.
 - *Standalone* (epic already merged): branch off the repo's integration branch, commit, and
   open a PR that summarizes the documented deltas and links the epic and its sub-issues.
+  Write the PR body through [`file-issue`](../file-issue/SKILL.md) in PR-body mode, so the
+  docs PR reads in the same register as everything else the chain files.
   **Auto-merge it on green CI** — documentation merges without blocking on human review; a
   human reviews post-hoc. Never auto-merge on red.
 

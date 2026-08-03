@@ -32,7 +32,9 @@ BRANCH_CUT = re.compile(
     re.IGNORECASE,
 )
 # A metaphor for the skill that writes and files issue text. Say what it does.
-FUNNEL = re.compile(r"\bfunnels?\b", re.IGNORECASE)
+# No word boundaries: the word also hides inside identifiers like
+# `test_..._the_funnel`, where a leading \b never matches after an underscore.
+FUNNEL = re.compile(r"funnel(?:s|ed|ing)?", re.IGNORECASE)
 MERGE_LAND = re.compile(
     r"\bpre-land\b|\bpost-land\b|\bLand\s+checklist\b|"
     r"\blands?\s+(?:the\s+)?(?:epic|work|PR|pull request)\b|"
@@ -76,3 +78,24 @@ def test_wiring_test_and_readme_describe_file_issue_plainly():
             f"{rel} calls file-issue a {sorted(set(found))!r}. Say what it does "
             f"— it writes issue text and files it (#327)."
         )
+
+
+def test_file_issue_draft_path_is_per_run():
+    """Two sessions filing at once must not write the same draft file.
+
+    The path stays literal in every step — a shell variable set in one step is
+    gone by the next — so the per-run part is a slug the writer already knows.
+    """
+    text = (REPO_ROOT / "lore-workflow" / "skills" / "file-issue" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "lore-file-issue.md" not in text, (
+        "the draft path is a fixed filename; two concurrent sessions under one "
+        "TMPDIR overwrite each other's draft (#322)"
+    )
+    assert re.search(r"lore-file-issue-<[a-z-]+>\.md", text), (
+        "expected a per-run draft path like `lore-file-issue-<slug>.md` (#322)"
+    )
+    assert "$draft" not in text and "DRAFT=" not in text, (
+        "the draft path must stay literal, not live in a shell variable (#322)"
+    )

@@ -22,7 +22,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_ROOT = REPO_ROOT / "lore-workflow" / "skills"
 
 # Every skill that writes issue or PR text. `file-issue` itself does the writing.
-FILING_SKILLS = ("to-epic", "seed-epic", "orchestrate-epic", "implement-issue", "brief")
+FILING_SKILLS = (
+    "to-epic",
+    "seed-epic",
+    "orchestrate-epic",
+    "implement-issue",
+    "brief",
+    "document-epic",
+)
 
 # Linkage fields the roadmap table's columns are built from. Losing one of
 # these from the sub-issue template leaves `to-epic` without the data the
@@ -72,7 +79,7 @@ def _render_sub_issue(values: dict[str, str]) -> str:
 
 
 @pytest.mark.parametrize("skill", FILING_SKILLS)
-def test_filing_skills_point_at_the_funnel(skill: str) -> None:
+def test_filing_skills_point_at_file_issue(skill: str) -> None:
     assert "../file-issue/SKILL.md" in _skill_text(skill), (
         f"{skill}/SKILL.md must route its filing through file-issue"
     )
