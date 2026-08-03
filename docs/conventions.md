@@ -34,7 +34,7 @@ seed-epic → orient → grilling → to-epic → orchestrate-epic → document-
 | `grilling` | A relentless, one-question-at-a-time interview that stress-tests a plan. Default mode ("grill me") checks whether `domain-modeling` is needed at the end; "grill with docs" mode runs it alongside the interview from the start, sharpening terminology and updating `CONTEXT.md`/ADRs inline. |
 | `to-epic` | The human checkpoint. Turns a shaped plan into an **epic tracker** issue (linking a PRD under `docs/prd/`) plus one sub-issue per feature, emitting the canonical roadmap DAG `orchestrate-epic` consumes. |
 | `orchestrate-epic` | Fully autonomous: fans out one test-first teammate per feature, crosschecks every pull request, integrates onto an `epic/<n>` branch in dependency order, and lands one final pull request to the detected target branch. |
-| `document-epic` | Runs as `orchestrate-epic`'s **final automatic stage** (see below), not a manual step. Updates the Diátaxis docs to match the landed epic. |
+| `document-epic` | Runs as `orchestrate-epic`'s **automatic pre-land stage** (see below), not a manual step. Commits the Diátaxis docs onto the epic branch so they ship in the epic PR; standalone it catches up an already-merged epic via a docs PR. |
 | `tdd` | The red→green→refactor loop every implementation teammate follows. |
 
 `code-review` is a **built-in** Claude Code command, not a bundled skill —
@@ -128,19 +128,23 @@ comments). The plain-text view times out on large trackers.
 
 ## `document-epic`'s auto stage
 
-`document-epic` is **not a manual step**. It runs as `orchestrate-epic`'s
-final automatic subagent stage, **after the epic PR lands**:
+`document-epic` is **not a manual step**. It runs as an `orchestrate-epic`
+subagent stage **before the epic PR lands** (ADR 0005):
 
-1. The epic's feature PRs are integrated and the epic branch lands on the
-   target branch.
-2. `orchestrate-epic` dispatches `document-epic` as its last subagent.
-3. `document-epic` generates the Diátaxis docs for the change, **opens a
-   docs PR**, and **auto-merges it on green CI**.
-4. A human **reviews post-hoc** — the docs land autonomously; review happens
-   without blocking the merge.
+1. The epic's feature PRs are integrated into `epic/<n>` and its CI is green.
+2. `orchestrate-epic` dispatches `document-epic` in **pre-land mode**: it
+   generates the Diátaxis docs for the cumulative diff and **commits them
+   onto the epic branch** — no separate docs PR.
+3. The docs ship inside the epic PR: the whole-epic review sees them and the
+   epic's CI gates them. Docs stop being an afterthought that trails the
+   merge.
+4. Fallback: if the docs stage escalates or cannot go green, the epic lands
+   without it and standalone `document-epic` runs post-land — its own docs
+   PR, auto-merged on green, human review post-hoc. Docs never block a green
+   epic.
 
-This keeps documentation in lock-step with shipped code without adding a
-manual gate to the autonomous loop.
+Standalone invocation (pointing it at an already-merged epic) remains the
+catch-up path and keeps the old behavior: docs PR, auto-merge on green.
 
 ### Diátaxis handoff
 

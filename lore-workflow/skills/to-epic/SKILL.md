@@ -24,19 +24,14 @@ Tracker: the project's GitHub issues, via `gh` (use `--json` for reads — see t
 conventions doc, if any). This set is self-contained: it defines its own epic/sub-issue
 conventions below and does not rely on an external label vocabulary.
 
-The PRD-in-docs / gh-epic-as-tracker model is implemented by this skill. The deterministic
-file mechanics — create the PRD at `docs/prd/NNNN-kebab.md` with front-matter that links the
-epic and lists the involved repos, and wire it idempotently into `docs/prd/index.md`'s toctree
-— live in `lore`'s `lore workflow create-prd` subcommand, so they are reproducible and tested
-independently of this skill:
+The deterministic file mechanics — create the PRD at `docs/prd/NNNN-kebab.md` with
+front-matter linking the epic and repos, wired idempotently into `docs/prd/index.md`'s
+toctree — live in `lore workflow create-prd` (prints the PRD path):
 
 ```
 lore workflow create-prd --slug <kebab> --title "<Title>" --epic-url <url> \
     --repo owner/repo [--repo owner/repo-b ...] [--target <repo-root>]
 ```
-
-It prints the PRD path and wires the toctree; there is no Python helper bundled with this
-skill any more.
 
 ## Process
 
@@ -60,19 +55,27 @@ isolation. This PRD is the **source of truth** and becomes the **file** at
 `docs/prd/NNNN-kebab.md`, **not** the epic body. The epic body links it and carries only the
 one-paragraph summary + roadmap (see Publish).
 
-### 4. Draft the roadmap (vertical slices)
-Break the work into **tracer-bullet** features — each a thin slice cutting end-to-end through
-all layers, sized as one teammate / one branch / one PR. Prefer many thin slices over few
-thick ones. For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
-blocked-by, and acceptance criteria as checkboxes. HITL slices need a human decision or
-design review; `/lore-workflow:orchestrate-epic` escalates rather than auto-implements them, so resolve
+### 4. Draft the roadmap (fewest slices that earn their overhead)
+Break the work into **tracer-bullet** features — each a slice cutting end-to-end through all
+layers, sized as one teammate / one branch / one PR. Every row costs fixed downstream
+overhead in `/lore-workflow:orchestrate-epic` (teammate spawn, crosscheck, merge, sibling
+rebases), so cut the fewest slices that earn a split. A split earns its cost only for
+**real parallelism** (independent files/repos genuinely running side by side), **a HITL
+boundary** (isolate the human decision so the AFK remainder runs unattended), or **risk
+isolation** (quarantine the uncertain piece from the safe work). Everything else merges —
+hard rule: **a strictly linear blocked-by chain collapses into one slice**; the orchestrator
+serializes it anyway, so extra rows buy only overhead. Conceptual separation and layer
+boundaries never justify a split. Target 2–4 slices (1 is fine; more than 6 smells like two
+epics). For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
+blocked-by, and acceptance criteria as checkboxes. HITL slices need a human decision;
+`/lore-workflow:orchestrate-epic` escalates rather than auto-implements them, so resolve
 what you can into AFK during planning.
 
 ### 5. Quiz the user (the checkpoint)
 Present the breakdown as a numbered list (Title · Repo · Type · Blocked by · criteria) **and
 the parallel batches it implies** (topological grouping of the DAG). Ask: right granularity?
-dependencies correct? repos correct? AFK/HITL correct? merge or split any slice? Iterate to
-approval — `/lore-workflow:orchestrate-epic` will not ask again.
+dependencies correct? repos correct? AFK/HITL correct? merge or split any slice? — when in
+doubt, merge. Iterate to approval — `/lore-workflow:orchestrate-epic` will not ask again.
 
 ### 6. Publish
 Order matters so every cross-reference resolves:
@@ -89,9 +92,8 @@ Order matters so every cross-reference resolves:
    **links the PRD file** and carries a one-paragraph summary + the roadmap table + a task list
    of the sub-issues — **no PRD content is duplicated in the epic body** (link only).
 4. **Close the cross-reference loop.** Set the PRD front-matter `epic:` to the epic issue URL,
-   and (if an ADR records this decision) cross-link PRD ↔ ADR. The result is **bidirectional
-   cross-references** PRD ↔ epic ↔ ADR ↔ sub-issue: a PRD links its epic (and ADR); the epic
-   links the PRD and its sub-issues; each sub-issue links back to the epic.
+   and (if an ADR records this decision) cross-link PRD ↔ ADR — **bidirectional
+   cross-references** PRD ↔ epic ↔ ADR ↔ sub-issue throughout.
 5. **Close the consumed seed.** If this epic was formed from an epic-seed issue (labeled
    `epic-seed`, produced by `/lore-workflow:seed-epic`), close that seed issue with a comment linking the
    newly formed epic (`gh issue close <seed> --comment "Formed into epic <owner/repo#epic>"`).
@@ -104,8 +106,7 @@ e.g. `gh issue view <epic> --json body -q .body | lore workflow validate-roadmap
 it at the drafted body file (`lore workflow validate-roadmap <path>`). It checks
 the required columns (`# | Feature | Issue | Repo | Type | Blocked by`), fully-qualified
 `owner/repo#n` Issue refs, blocked-by edges that resolve to rows in the table, and an acyclic
-dependency DAG. **Publish only a roadmap it accepts:** a table it rejects is malformed and
-would break the orchestrator, so fix the columns, refs, or edges it reports and re-run until
+dependency DAG. **Publish only a roadmap it accepts** — fix what it reports and re-run until
 it passes.
 
 Use fully-qualified refs (`owner/repo#n`) for every cross-repo link. Do not modify unrelated

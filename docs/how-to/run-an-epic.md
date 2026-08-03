@@ -31,12 +31,17 @@ small, clear change, use the [fast path](use-the-fast-path.md) instead.
    `/lore-workflow:orchestrate-epic`. It validates the roadmap
    (`lore workflow validate-roadmap`), creates the `epic/<issue>` integration
    branch from the detected target branch (`develop` if present, else
-   `main`), fans out one test-first teammate per feature, crosschecks every
-   pull request, integrates the features in dependency order, and opens the
-   final pull request to the target branch.
-4. **Let the docs catch up.** After the epic merges, `orchestrate-epic`
-   automatically runs `/lore-workflow:document-epic`, which opens a docs PR
-   and auto-merges it on green. You review post-hoc.
+   `main`), implements the features test-first (one teammate per feature when
+   they run in parallel; one sequential teammate when the roadmap is a
+   straight chain), crosschecks every pull request, integrates the features
+   in dependency order, and opens the final pull request to the target
+   branch.
+4. **Docs ship with the epic.** Before that final pull request,
+   `orchestrate-epic` automatically runs `/lore-workflow:document-epic`,
+   which commits the Diátaxis doc updates onto the epic branch — the docs
+   land inside the epic PR, not as a trailing afterthought. Only if the docs
+   stage fails does it fall back to the old post-merge docs PR
+   (auto-merged on green, reviewed post-hoc).
 
 ## Notes
 
@@ -55,6 +60,7 @@ small, clear change, use the [fast path](use-the-fast-path.md) instead.
 
 ## Done when
 
-- The final epic pull request is merged to the target branch.
+- The final epic pull request — docs included — is merged to the target
+  branch.
 - Every sub-issue is closed and every roadmap checkbox is ticked.
-- The docs PR has merged on green.
+- On docs fallback only: the standalone docs PR has merged on green.
