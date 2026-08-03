@@ -4,6 +4,7 @@ Resolution is whole-file per wiki: `<wiki>/style/<name>.md` wins, else the
 packaged default. Content tests pin the three edits that separate the shipped
 register from its draft.
 """
+
 from __future__ import annotations
 
 import re
@@ -100,7 +101,9 @@ def test_show_uses_the_wiki_resolved_from_cwd(lore_root: Path, monkeypatch) -> N
     monkeypatch.setattr(
         "lore_cli.style_cmd.resolve_scope",
         lambda cwd: Scope(
-            wiki="notes", scope="notes:x", backend="none",
+            wiki="notes",
+            scope="notes:x",
+            backend="none",
             claude_md_path=Path("/nowhere/CLAUDE.md"),
         ),
     )
@@ -140,9 +143,7 @@ def test_register_defines_change_and_batch_issue() -> None:
 
 
 def test_rule_14_accepts_code_flavored_provenance() -> None:
-    rule = next(
-        line for line in _default_text().splitlines() if line.startswith("14. ")
-    )
+    rule = next(line for line in _default_text().splitlines() if line.startswith("14. "))
     for form in ("file path", "command output", "test name"):
         assert form in rule, rule
 

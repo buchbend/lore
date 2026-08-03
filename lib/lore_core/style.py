@@ -24,9 +24,7 @@ class UnknownStyle(ValueError):
     """Raised for a style name Lore does not ship."""
 
     def __init__(self, name: str) -> None:
-        super().__init__(
-            f"unknown style {name!r} — known styles: {', '.join(KNOWN_STYLES)}"
-        )
+        super().__init__(f"unknown style {name!r} — known styles: {', '.join(KNOWN_STYLES)}")
         self.name = name
 
 
