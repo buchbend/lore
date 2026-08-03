@@ -4,6 +4,10 @@
 (`/lore-workflow:implement-issue`) can pick up and implement directly, with
 no back-and-forth.
 
+Run `lore style show issue-register` and follow its section skeleton and EARS
+acceptance criteria. The register is the source of truth for issue-body
+prose; the points below are what the fast path additionally needs.
+
 The fast path reads the issue and the code map, then — only if the issue is
 ambiguous — asks **at most three** clarifying questions before it starts. A
 well-written issue spends none of that budget: the skill reads it, locates
@@ -11,22 +15,15 @@ the symbols in `CODEMAP.md`, and goes straight to test-first implementation.
 A vague one either burns the three questions or, worse, ships the wrong
 thing.
 
-## What a good fast-path issue contains
+## What the fast path adds to the register
 
 - **One change, clearly scoped.** The fast path is one issue, one branch,
   one pull request. If the issue describes several features, it belongs on
   the [epic chain](run-an-epic.md), not here. Split it.
-- **Unambiguous intent.** State what should change and why in plain
-  sentences. The reader should not have to guess the goal.
-- **Concrete acceptance criteria.** List what "done" means as checkable
-  statements — the behaviour a test could assert. These become the
-  test-first targets; without them the skill has to invent them.
-- **Pointers into the code.** Name the command, module, or symbol the
-  change touches. You do not need file-and-line precision — the code map
-  resolves symbols — but naming the entry point removes a whole class of
-  ambiguity.
-- **Out-of-scope notes where they help.** If there is an obvious adjacent
-  change you do *not* want, say so. It keeps the single pull request tight.
+- **Pointers into the code.** Under "References", name the command, module,
+  or symbol the change touches. You do not need file-and-line precision —
+  the code map resolves symbols — but naming the entry point removes a whole
+  class of ambiguity.
 
 ## What to leave out
 
@@ -37,11 +34,10 @@ thing.
 
 ## Checklist
 
+- [ ] The register's sections filled, acceptance criteria in EARS.
 - [ ] One change, small and clear.
-- [ ] Intent stated plainly.
-- [ ] Acceptance criteria a test could check.
-- [ ] The touched command / module / symbol named.
-- [ ] Anything deliberately out of scope called out.
+- [ ] The touched command / module / symbol named under "References".
+- [ ] Nothing in it that belongs on the epic chain.
 
 ## Done when
 

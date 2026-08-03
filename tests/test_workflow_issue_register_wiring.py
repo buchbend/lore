@@ -3,7 +3,7 @@
 PRD 0009 says to test external behaviour, not skill wording, so nothing here
 asserts prose. What is asserted is the machine-consumed part:
 
-- the four filing skills point at the funnel instead of prescribing filing,
+- the filing skills point at the funnel instead of prescribing filing,
 - `to-epic`'s sub-issue template carries the register's own section skeleton,
 - and an epic body composed from that template's linkage fields still passes
   the roadmap validator, which is what `orchestrate-epic` reads.
@@ -22,7 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_ROOT = REPO_ROOT / "lore-workflow" / "skills"
 
 # Every skill that writes issue or PR text. `file-issue` itself is the funnel.
-FILING_SKILLS = ("to-epic", "seed-epic", "orchestrate-epic", "implement-issue")
+FILING_SKILLS = ("to-epic", "seed-epic", "orchestrate-epic", "implement-issue", "brief")
 
 # Linkage fields the roadmap table's columns are built from. Losing one of
 # these from the sub-issue template leaves `to-epic` without the data the

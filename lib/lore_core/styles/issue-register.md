@@ -203,7 +203,8 @@ Paste this into the agent instruction file so that generated issues arrive in th
 ## Issue writing
 
 When you write or edit an issue, a PR description, or an ADR context section,
-follow lore/style/issue-register.md. In short:
+follow the issue register (`lore style show issue-register`, or the copy your team
+pasted below). In short:
 
 - Use the required section structure. Keep empty sections.
 - One term, one meaning. Take terms from the glossary. Do not invent domain

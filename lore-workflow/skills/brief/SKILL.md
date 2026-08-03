@@ -66,8 +66,8 @@ Reuse the existing gates verbatim — no new document types:
 
 On confirmation, pick one:
 
-- **(a) File an issue and run the fast track** — `gh issue create` capturing the agreed
-  brief (intent + acceptance criteria), then invoke
+- **(a) File an issue and run the fast track** — file the agreed brief (intent +
+  acceptance criteria) through [`file-issue`](../file-issue/SKILL.md), then invoke
   [`/lore-workflow:implement-issue`](../implement-issue/SKILL.md) on it. Default for
   anything that benefits from a durable tracker entry.
 - **(b) Implement directly with [`/lore-workflow:tdd`](../tdd/SKILL.md)** — when even an
