@@ -1,0 +1,10 @@
+# Rule 12 heuristic: flags "This/That/It" at a sentence's start followed
+# directly by a verb — the shape where the pronoun stands in for a whole
+# preceding clause rather than a repeated noun ("This file ..." is fine;
+# "This is a problem ..." is not).
+extends: existence
+message: "Rule 12 (clause back-reference): 'This/That/It' here refers to a whole clause; repeat the noun."
+level: warning
+scope: sentence
+raw:
+  - '^(This|That|It)\s+(is|was|are|were|means|meant|shows|showed|matters|mattered|works|worked|allows|allowed|creates|created|makes|made|becomes|became|remains|remained|seems|seemed|requires|required|helps|helped)\b'

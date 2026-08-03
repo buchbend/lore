@@ -309,3 +309,20 @@ Terms used in the workflow layer and orchestration:
   session handover: the epic seed is filed in the issue tracker and is
   one-time context for a shaped body of work, not a carry-forward between
   sessions.
+- **Register** — the prose style an agent writes issue text, PR bodies and
+  ADR context sections in: sentence and vocabulary rules, EARS acceptance
+  criteria, and the required section skeleton. Lore ships one default;
+  a team overrides it whole-file with `<wiki>/style/issue-register.md`.
+  `lore style show issue-register` resolves the two. The register fixes
+  style, not terminology — terminology stays with the glossary.
+  Overriding the lint means copying `styles/vale/` whole — the ini plus
+  its `IssueRegister/` rule directory — into `<wiki>/style/vale/`. Vale
+  resolves `StylesPath` next to the ini, so an override that copies the
+  ini alone exits 2 with "style 'IssueRegister' does not exist on
+  StylesPath".
+- **Change** — the unit a register-conforming issue describes: one
+  required-behaviour statement with its own acceptance criteria.
+- **Batch issue** — an issue carrying several changes under one Context
+  section, landing as one PR, with no ordering dependency between the
+  changes. A change that needs its own context, or that must land before
+  another, leaves the batch.

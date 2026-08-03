@@ -49,8 +49,10 @@ Draft each body with the template below. Lead with intent; make the **findings**
 that is the handover value. Pointers are starting points, not gospel (they may go stale).
 
 ### 4. Publish
-Create each seed as a GitHub issue (`gh`), labeled `epic-seed` (create the label if missing).
-Link the originating epic and merged PRs. Do not modify the finished epic.
+File each seed through [`file-issue`](../file-issue/SKILL.md) in caller-template mode, handing
+it the seed template below — the funnel keeps that structure exactly and applies the register's
+writing rules inside it. Label each seed `epic-seed` (create the label if missing), link the
+originating epic and merged PRs, and do not modify the finished epic.
 
 Finish by printing each seed reference and the command for the fresh session:
 `/lore-workflow:orient <owner/repo#seed>`.

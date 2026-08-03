@@ -8,6 +8,58 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.65.0] - 2026-08-03
+
+The issue register (#310, PRD 0009, ADR 0006): a default prose style for
+agent-written issue and PR text, overridable per team with one file in the
+wiki.
+
+### Added
+
+- **`lore style` command group** (#305, #307). `lore style show issue-register`
+  prints the resolved register; `lore style vale-config` prints the resolved
+  Vale config path. Resolution is whole-file per wiki —
+  `<wiki>/style/issue-register.md` (or `<wiki>/style/vale/vale.ini`) wins, else
+  the packaged default. No merge, no per-repo layer. An unknown style name
+  exits non-zero and names the known styles.
+- **Default issue register** shipped as package data at
+  `lore_core/styles/issue-register.md`: ASD-STE100-derived prose rules, EARS
+  acceptance-criteria patterns, a fixed section skeleton, and a "Batch issues"
+  section defining *change* and *batch issue* with the split rule.
+- **Default Vale style** shipped as package data (#307), covering banned words
+  and sentence length as errors, plus participial-opener and clause-back-
+  reference heuristics as warnings. Vale is PATH-detected and never bundled;
+  its absence degrades to instruction-only enforcement and never blocks.
+- **`lore doctor` reports Vale** presence on PATH without failing the run (#307).
+- **`lore-workflow:file-issue` skill** (#308) — the one funnel for writing and
+  filing issue text. Four modes (single change, batch, caller template, PR
+  body), a Vale lint loop when Vale is installed, and posting via
+  `gh --body-file` so the bytes linted are the bytes posted. Runs in-context and
+  never spawns a subagent.
+
+### Changed
+
+- **SessionStart banner** carries one register directive: resolve
+  `lore style show issue-register` before writing or editing an issue or PR body
+  (#306). Unattached repos are unaffected.
+- **`docs/conventions.md`** house-style section is now a pointer to the
+  register instead of restating its rules (#306).
+- **The writing skills route through the funnel** (#309): `to-epic` files
+  sub-issues, `seed-epic` files seeds in caller-template mode,
+  `implement-issue` writes PR bodies in PR-body mode, `orchestrate-epic` files
+  run follow-ups through it and has its teammates write PR bodies through it,
+  and `brief` files its handoff issue through it. `to-epic`'s sub-issue
+  template is now an epic-linkage header plus the register skeleton.
+  Machine-readable formats stay exempt and unchanged: the roadmap table, the
+  board comment, and the reviewer verdict block.
+- **`docs/how-to/write-a-fast-path-issue.md`** now opens with the register
+  resolver and no longer restates its rules — one of its items contradicted the
+  register's "sections may be empty and stay in the file".
+- Guards against banned-word drift: the list in the Vale style and the one in
+  the register's paste block are both asserted against rule 3 of the register.
+- `CONTEXT.md` defines *register*, *change*, and *batch issue* (#305).
+- `lore-workflow` plugin 0.3.0 → 0.4.0.
+
 ## [0.64.0] - 2026-08-03
 
 Epic-cycle lightening (#304, ADR 0005) plus two previously unreleased changes

@@ -31,3 +31,4 @@ delegation conventions shared across skills live in
 | `debug` | Systematic root-cause debugging with a hard circuit breaker. |
 | `document-epic` | After an epic merges, update Diátaxis docs to match the implemented state. |
 | `seed-epic` | End a session by turning follow-up context into an epic-seed tracker issue. |
+| `file-issue` | The filing funnel — resolve the issue register, draft, Vale-lint, then post the issue or PR body. |
