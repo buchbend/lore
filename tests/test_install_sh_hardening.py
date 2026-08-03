@@ -29,3 +29,12 @@ def test_install_sh_fails_when_lore_not_on_path():
 
 def test_install_sh_first_install_chains_into_lore_init():
     assert "exec lore init" in INSTALL_SH.read_text()
+
+
+def test_install_sh_upgrade_refreshes_both_plugin_caches():
+    text = INSTALL_SH.read_text()
+    assert "claude plugin update lore@lore" in text
+    assert "claude plugin update lore-workflow@lore" in text, (
+        "the upgrade path must refresh lore-workflow@lore too — otherwise its "
+        "skills cache silently stays on the old version (#311)"
+    )
