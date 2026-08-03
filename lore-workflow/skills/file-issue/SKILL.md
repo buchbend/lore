@@ -1,6 +1,6 @@
 ---
 name: lore-workflow:file-issue
-description: The one funnel for writing and filing issue text — resolve the team's issue
+description: Writes issue text and files it — resolve the team's issue
   register, draft in its skeleton (single change, batch, a caller's template, or a PR
   body), lint with Vale when Vale is installed, then post with gh. Use whenever you are
   about to write or edit a GitHub issue, a sub-issue, or a PR description. Triggers on
@@ -9,8 +9,8 @@ description: The one funnel for writing and filing issue text — resolve the te
 
 # File Issue
 
-The single funnel for writing and filing issue text. Every workflow skill that files an
-issue or a PR body routes through here, and the user can invoke it directly.
+Writes issue text and files it. Every workflow skill that writes an issue or a PR body
+comes here to do it, and the user can invoke it directly.
 
 **The caller decides *what* to capture. This skill owns *how* to write and file it.**
 Never re-litigate the caller's judgement about whether something deserves an issue.
@@ -18,7 +18,7 @@ Never re-litigate the caller's judgement about whether something deserves an iss
 ## Hard rule: run in-context
 
 Do every step in the calling session. **Never spawn a subagent** — not to draft, not to
-lint, not to post. One subagent per issue is the cost this funnel exists to avoid.
+lint, not to post. One subagent per issue is the cost this skill exists to avoid.
 
 ## 1. Resolve the register
 

@@ -80,7 +80,7 @@ It does not fix terminology. One term with one meaning is a glossary problem,
 and the glossary is a separate artifact.
 
 It does not decide what is worth filing. The `file-issue` skill owns how to
-write and file; the caller decides what to capture. A funnel that second-
+write and file; the caller decides what to capture. A skill that second-
 guessed the caller's judgement would turn every capture into a negotiation.
 
 ## Related
