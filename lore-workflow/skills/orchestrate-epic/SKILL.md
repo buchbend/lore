@@ -1,7 +1,7 @@
 ---
 name: lore-workflow:orchestrate-epic
 description: Supervise parallel TDD implementation of an epic tracker issue across one or
-  more repos — plans, dispatches teammates, crosschecks every PR, and lands the epic
+  more repos — plans, dispatches teammates, crosschecks every PR, and merges the epic
   autonomously. Use when the user points at an epic/tracker issue and wants orchestrated,
   batched, autonomous implementation.
 ---
@@ -18,7 +18,7 @@ a hard blocker (see Stop conditions).
 ## Invariants
 - **Repo facts come from `lore workflow`, never re-derived in prose.** Resolve target branch and deploy gate
   once at Map time with `lore workflow epic-policy <repo_root>` → `{target_branch, deploy_gate}`.
-  `epic/<issue>` is cut from `target_branch` and lands back on it via one final PR; feature PRs target the
+  `epic/<issue>` is created from `target_branch` and merges back into it via one final PR; feature PRs target the
   epic branch.
 - **Merges are pre-authorized** — you merge on a passing crosscheck, never asking. Sole exception: when
   `epic-policy` returns `deploy_gate: true`, the final epic→target merge (only that one) requires one human
@@ -43,12 +43,12 @@ target repo(s). If it came from `/lore-workflow:to-epic`, its **Roadmap** table 
 Type | Blocked by) is the canonical DAG, and HITL-flagged features are escalation points, not
 auto-implemented. Resolve `lore workflow epic-policy` once per repo.
 
-**Resume.** The entry point — reached before the gate, before cutting the epic branch. Two reads recover a
+**Resume.** The entry point — reached before the gate, before creating the epic branch. Two reads recover a
 prior run:
 1. **Board** — fetch the epic issue's board comment and pipe it to `lore workflow parse-board` → rows
    `{feature, issue, tier, batch, state, pr}`. Never scrape it with the model. Reconcile against the epic
    branch's real state: a `merged` row is done (skip, never redispatch); a `queued`/`blocked` row is
-   redispatched; an existing epic branch is reused, never re-cut. Edit that same comment in place for every
+   redispatched; an existing epic branch is reused, never re-created. Edit that same comment in place for every
    later update; never open a second.
 2. **Working context** — `lore_resume` / `lore_context_pack` (epic-linked) surface prior orchestrator epic
    notes: why a feature blocked, the tier rationale, the in-flight decisions the board omits.
@@ -62,7 +62,7 @@ into dependency-ordered batches (features in a batch are independent). Pick the 
 eye: **compact** iff `repos == 1`, every `Type` is AFK, and either the DAG offers no real parallelism — every
 batch holds exactly one feature, i.e. a straight chain of any length — or `rows ≤ 3`; **standard** otherwise
 (full batched loop, concurrency cap N). Fan-out only pays when features actually run side by side. Record the
-band in your epic note, then cut and push `epic/<issue>` from the up-to-date `target_branch`.
+band in your epic note, then create and push `epic/<issue>` from the up-to-date `target_branch`.
 
 **Emit the board.** One comment on the epic issue, edited in place at a few deliberate points (batch start,
 each merge, each blocker, completion) — never a second comment. It MUST carry, verbatim, the marker and
@@ -88,7 +88,7 @@ excerpts** — never the whole map. Shape it as the four-part subagent brief eve
 - **Task boundaries** — the scope fence and shared-file touchpoints to stay clear of.
 
 **Dispatch.** Per feature in the batch: worktree off `epic/<issue>`, spawn a background teammate pinned to it
-(cap N, default 4) **with `LORE_SUPPRESS_CAPTURE=1` in its environment**, so it lands its work in your epic
+(cap N, default 4) **with `LORE_SUPPRESS_CAPTURE=1` in its environment**, so it records its work in your epic
 note rather than scattering a standalone fragment. Choose the model tier from the feature's assessed
 complexity (cheaper for well-scoped work, strongest for cross-cutting) and pass the resolved model in the
 spawn call (`lore tier resolve <tier>`, see [TIER-DELEGATION.md](../../TIER-DELEGATION.md)); no delegation
@@ -142,21 +142,21 @@ dispatching dependents. Where the repo carries migrations, verify a single migra
 heads`) — squash-merges can silently fork the migration DAG. A failed invariant blocks the batch: fix forward
 or escalate.
 
-**Document (delegated, pre-land).** Docs ship with the epic, not after it (ADR 0005). Once all features are
-merged and epic-branch CI is green, invoke `document-epic` in its **pre-land mode**: it classifies the
+**Document (delegated, pre-merge).** Docs ship with the epic, not after it (ADR 0005). Once all features are
+merged and epic-branch CI is green, invoke `document-epic` in its **pre-merge mode**: it classifies the
 cumulative diff (`<target_branch>...epic/<issue>`) into the Diátaxis four and commits the doc updates directly
 onto `epic/<issue>` — no separate docs PR. If it escalates, or its edits cannot go green after one fix pass,
-fall back: drop the docs commit, land the epic without it, and run standalone `document-epic` post-land (its
+fall back: drop the docs commit, merge the epic without it, and run standalone `document-epic` afterwards (its
 own auto-merging docs PR) — docs never block a green epic.
 
-**Land.** Features merged, docs committed, epic-branch CI green → open one PR
+**Merge the epic.** Features merged, docs committed, epic-branch CI green → open one PR
 `epic/<issue> → <target_branch>` linking every sub-issue.
 
 **Whole-epic review (delegated).** Before merging that PR, spawn one strong-tier reviewer over the cumulative
 diff (`<target_branch>...epic/<issue>`). Skip this stage entirely when the epic has ≤ 2 features — the
 crosscheck just read those same diffs; go straight to the deploy-gate check and merge. Not a per-feature
 re-review — scope it to cross-feature consistency (inconsistent naming, duplicated helpers, conflicting edits
-to shared files), the class that only surfaces once every diff lands together, plus docs-vs-behavior
+to shared files), the class that only surfaces once every diff is merged together, plus docs-vs-behavior
 mismatches now that the diff carries the docs commit. Reuse the reviewer verdict shape with this cross-feature checklist; post it on
 the epic PR. It gates the merge like a crosscheck: **PASS** → merge; **FAIL** → route the fix list to the
 teammate(s) owning the affected files, re-review once, max 2 rounds, then mark the epic blocked and escalate
@@ -167,13 +167,13 @@ epic issue done with the merge SHA.
 **Cleanup.** Delete every merged feature branch (local and remote) and remove its worktree. Leave nothing
 behind but the epic branch's own history.
 
-**Land checklist.** Before reporting completion, emit and satisfy this — each item verified true, not merely
+**Final checklist.** Before reporting completion, emit and satisfy this — each item verified true, not merely
 intended:
 - [ ] every roadmap checkbox ticked and every sub-issue closed
 - [ ] the epic PR merged, its merge SHA recorded on the epic issue
 - [ ] the board finalized to the end state (no stale queued/running rows)
 - [ ] every merged feature's branch and worktree gone, local and remote
-- [ ] the docs commit landed with the epic PR — or, on fallback, the standalone docs PR opened and merged on
+- [ ] the docs commit merged with the epic PR — or, on fallback, the standalone docs PR opened and merged on
       green
 
 **Follow-ups.** Work that surfaces during the run and does not belong to this epic — a deferred fix, the

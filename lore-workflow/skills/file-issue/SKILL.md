@@ -52,12 +52,12 @@ Pick the mode from what the caller handed you:
 | Mode | Use when | Shape |
 |---|---|---|
 | **Single change** | there is one change to capture | The register's full section skeleton. One statement under "Required behaviour", with its own EARS criteria. |
-| **Batch** | several changes share one Context, land in one PR, and have no ordering between them | Keep the skeleton. Give each change its own numbered subheading under "Required behaviour", then repeat the same numbered subheadings under "Acceptance criteria". **Every numbered change carries its own criteria** — never one pooled list. |
+| **Batch** | several changes share one Context, go into one PR, and have no ordering between them | Keep the skeleton. Give each change its own numbered subheading under "Required behaviour", then repeat the same numbered subheadings under "Acceptance criteria". **Every numbered change carries its own criteria** — never one pooled list. |
 | **Caller template** | the caller supplied a structure (a sub-issue header, an epic-seed shape) | Keep the caller's structure exactly. Add no section, drop no section, reorder nothing. Apply the prose rules and EARS *inside* the supplied structure. |
 | **PR body** | writing the body for `gh pr create` | Prose rules only. No register skeleton. |
 
 Before drafting a batch, check the register's "Batch issues" section for the split rule.
-A change that needs its own Context, or that must land before another change, is a
+A change that needs its own Context, or that must merge before another change, is a
 separate issue rather than a numbered block.
 
 ### When a fact is missing
