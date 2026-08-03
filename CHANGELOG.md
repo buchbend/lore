@@ -8,6 +8,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.65.2] - 2026-08-03
+
+### Changed
+
+- **`file-issue` is described by what it does** (#327): the skill's frontmatter
+  `description`, its opening, `lore-workflow/README.md`, `to-epic`, `seed-epic`
+  and the explanation doc no longer call it a "funnel" — a metaphor a reader has
+  to decode first. The `description` field drives skill selection, so it carried
+  the most weight. `tests/test_workflow_plain_verbs.py` guards the word.
+- `lore-workflow` plugin 0.4.1 → 0.4.2.
+
 ## [0.65.1] - 2026-08-03
 
 ### Changed
