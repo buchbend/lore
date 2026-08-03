@@ -8,6 +8,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.65.1] - 2026-08-03
+
+### Changed
+
+- **Plain verbs in the workflow prose** (#324): the skills and how-to pages say
+  "create" for opening a branch and "merge" for merging one. `orchestrate-epic`'s
+  final stage is `Merge the epic` and its checklist is `Final checklist`;
+  `document-epic`'s `pre-land` mode is now `pre-merge`. Both glossary entries in
+  `docs/conventions.md` are removed — the plain verbs need no definition.
+  `tests/test_workflow_plain_verbs.py` guards the prose. ADR 0005 keeps its
+  ratified `pre-land` wording; the divergence is accepted, not superseded.
+- `lore-workflow` plugin 0.4.0 → 0.4.1.
+
 ## [0.65.0] - 2026-08-03
 
 The issue register (#310, PRD 0009, ADR 0006): a default prose style for
