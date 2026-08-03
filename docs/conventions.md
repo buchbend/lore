@@ -34,7 +34,7 @@ seed-epic → orient → grilling → to-epic → orchestrate-epic → document-
 | `grilling` | A relentless, one-question-at-a-time interview that stress-tests a plan. Default mode ("grill me") checks whether `domain-modeling` is needed at the end; "grill with docs" mode runs it alongside the interview from the start, sharpening terminology and updating `CONTEXT.md`/ADRs inline. |
 | `to-epic` | The human checkpoint. Turns a shaped plan into an **epic tracker** issue (linking a PRD under `docs/prd/`) plus one sub-issue per feature, emitting the canonical roadmap DAG `orchestrate-epic` consumes. |
 | `orchestrate-epic` | Fully autonomous: fans out one test-first teammate per feature, crosschecks every pull request, integrates onto an `epic/<n>` branch in dependency order, and lands one final pull request to the detected target branch. |
-| `document-epic` | Runs as `orchestrate-epic`'s **automatic pre-land stage** (see below), not a manual step. Commits the Diátaxis docs onto the epic branch so they ship in the epic PR; standalone it catches up an already-merged epic via a docs PR. |
+| `document-epic` | Runs as `orchestrate-epic`'s **automatic pre-merge stage** (see below), not a manual step. Commits the Diátaxis docs onto the epic branch so they ship in the epic PR; standalone it catches up an already-merged epic via a docs PR. |
 | `tdd` | The red→green→refactor loop every implementation teammate follows. |
 
 `code-review` is a **built-in** Claude Code command, not a bundled skill —
@@ -132,14 +132,14 @@ comments). The plain-text view times out on large trackers.
 subagent stage **before the epic PR lands** (ADR 0005):
 
 1. The epic's feature PRs are integrated into `epic/<n>` and its CI is green.
-2. `orchestrate-epic` dispatches `document-epic` in **pre-land mode**: it
+2. `orchestrate-epic` dispatches `document-epic` in **pre-merge mode**: it
    generates the Diátaxis docs for the cumulative diff and **commits them
    onto the epic branch** — no separate docs PR.
 3. The docs ship inside the epic PR: the whole-epic review sees them and the
    epic's CI gates them. Docs stop being an afterthought that trails the
    merge.
 4. Fallback: if the docs stage escalates or cannot go green, the epic lands
-   without it and standalone `document-epic` runs post-land — its own docs
+   without it and standalone `document-epic` runs afterwards — its own docs
    PR, auto-merged on green, human review post-hoc. Docs never block a green
    epic.
 
@@ -241,8 +241,6 @@ first time.
   design review.
 - **crosscheck** — the strong-tier review a delegated reviewer performs on a
   teammate's PR before merge.
-- **land** — merge a pull request into its target branch.
-- **cut** (a branch) — create a new branch.
 - **fan out** — dispatch multiple teammate agents to work in parallel, one
   per feature.
 - **green / red** — a test suite that passes / fails; shorthand for the

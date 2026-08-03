@@ -34,7 +34,7 @@ comment — precisely so a second run heals rather than duplicates.
    - a feature still queued or blocked is **redispatched** from where it
      left off;
    - the `epic/<issue>` branch, if it already exists, is **reused, never
-     re-cut**, so the resumed run never collides with half-merged state.
+     re-created**, so the resumed run never collides with half-merged state.
 4. **It continues in the same status comment.** It edits that one existing
    comment in place for every further update; a resumed run never opens a
    second status comment.

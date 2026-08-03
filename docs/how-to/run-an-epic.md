@@ -39,7 +39,7 @@ small, clear change, use the [fast path](use-the-fast-path.md) instead.
 4. **Docs ship with the epic.** Before that final pull request,
    `orchestrate-epic` automatically runs `/lore-workflow:document-epic`,
    which commits the Diátaxis doc updates onto the epic branch — the docs
-   land inside the epic PR, not as a trailing afterthought. Only if the docs
+   merge inside the epic PR, not as a trailing afterthought. Only if the docs
    stage fails does it fall back to the old post-merge docs PR
    (auto-merged on green, reviewed post-hoc).
 

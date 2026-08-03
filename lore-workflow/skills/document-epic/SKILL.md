@@ -1,7 +1,7 @@
 ---
 name: lore-workflow:document-epic
 description: Update a repo's Diátaxis documentation (tutorials, how-to, reference,
-  explanation) to match an epic's implemented state. Pre-land (invoked by orchestrate-epic)
+  explanation) to match an epic's implemented state. Pre-merge (invoked by orchestrate-epic)
   it commits docs onto the epic branch so they ship in the epic PR; standalone (an already
   merged epic) it opens a docs PR that auto-merges on green. NEVER touches docs/prd or
   docs/adr. Cross-repo aware.
@@ -13,7 +13,7 @@ You are the **documenter**: an epic changed what the software does, and the user
 must match. You update the **Diátaxis four** to the implemented state. You do not change
 behavior; you describe it.
 
-**Input:** an epic (issue number or URL), possibly spanning repos — either **pre-land** (its
+**Input:** an epic (issue number or URL), possibly spanning repos — either **pre-merge** (its
 `epic/<n>` branch exists, all features merged into it; this is how `orchestrate-epic` invokes
 you, per ADR 0005) or **standalone** (the epic already merged; docs catching up post-hoc).
 **Mode:** autonomous — run the loop without asking. Stop only to report completion or to
@@ -52,7 +52,7 @@ Every documentation edit you make belongs to exactly one quadrant
 conventions doc, if any).
 From it gather three sources of truth: the **PRD** (intent), the **sub-issue PRs**
 (per-feature acceptance notes that reveal which behaviors are user-facing), and the
-**cumulative epic diff** — pre-land that is `<target_branch>...epic/<n>`; standalone it is
+**cumulative epic diff** — pre-merge that is `<target_branch>...epic/<n>`; standalone it is
 the merged range (every path the epic touched, with its change kind). Build one list
 of changed paths, each tagged with its change kind and — for source files — whether it
 touches the **public API** (a non-underscore symbol exported from the package). This list is
@@ -77,16 +77,16 @@ what the epic changed; do not rewrite untouched docs. Re-confirm no `docs/prd`/`
 path is in your diff.
 
 **Deliver.**
-- *Pre-land* (invoked from `orchestrate-epic`): commit the doc edits **directly onto the
+- *Pre-merge* (invoked from `orchestrate-epic`): commit the doc edits **directly onto the
   epic branch** — no separate PR. The epic PR carries them, the whole-epic review sees them,
   and the epic's own CI gates them. Report the commit SHA and the edit plan.
 - *Standalone* (epic already merged): branch off the repo's integration branch, commit, and
   open a PR that summarizes the documented deltas and links the epic and its sub-issues.
-  **Auto-merge it on green CI** — documentation lands without blocking on human review; a
+  **Auto-merge it on green CI** — documentation merges without blocking on human review; a
   human reviews post-hoc. Never auto-merge on red.
 
 **Cross-repo.** An epic may span repos. Repeat the loop per affected repo, each against its
-own docs layout and its own epic/integration branch. One delivery per repo (pre-land commit
+own docs layout and its own epic/integration branch. One delivery per repo (pre-merge commit
 or standalone docs PR).
 
 ## Dry-run

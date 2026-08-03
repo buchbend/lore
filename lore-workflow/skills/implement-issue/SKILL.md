@@ -57,7 +57,7 @@ Create one branch, `feat/<issue>-slug`, off the **detected target branch** —
 `develop` if that branch exists on the remote, else the repo default (`main`);
 never assume it. Implement the change with [`/lore-workflow:tdd`](../tdd/SKILL.md): the strict
 red → green → refactor loop, one behavior at a time, tests before code. Everything
-lands in **one PR** on that branch.
+goes into **one PR** on that branch.
 
 ### 4. ADR gate
 
