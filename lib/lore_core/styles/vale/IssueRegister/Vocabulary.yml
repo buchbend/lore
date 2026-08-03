@@ -1,0 +1,23 @@
+# Rule 3: use the shorter common word. List mirrors the "Banned:" list in
+# ../../issue-register.md — keep the two in sync by hand when either changes.
+extends: existence
+message: "Rule 3 (banned vocabulary): use a shorter common word instead of '%s'."
+ignorecase: true
+level: error
+tokens:
+  - leverage
+  - utilise
+  - robust
+  - seamless
+  - holistic
+  - comprehensive
+  - streamline
+  - delve
+  - underscore
+  - intricate
+  - crucial
+  - pivotal
+  - landscape
+  - journey
+  - unlock
+  - elevate
