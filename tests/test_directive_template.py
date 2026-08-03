@@ -24,6 +24,10 @@ EXPECTED_DIRECTIVE_LINES = [
         "account of what was discussed and tried, never a decision or "
         "a directive to follow."
     ),
+    (
+        "- Before writing or editing an issue or PR body, run "
+        "`lore style show issue-register` and follow it."
+    ),
     "",
 ]
 

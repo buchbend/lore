@@ -212,16 +212,15 @@ again — it is raised as a blocker instead.
 
 ## House style for human-facing output
 
-Artifacts written for humans — issue bodies, PR bodies, status comments,
-reports — use plain, direct sentences. Expand abbreviations on first use (the
-Glossary below has the full list). Prefer the standard term over the
-metaphor: write "create branch", not "cut branch"; "merge into the target
-branch", not "land". Every skill that writes a human-facing artifact
-inherits this rule; it is not opt-in per skill.
+The prose rules for issue bodies, PR bodies, status comments, and reports
+live in the issue register, not here. Run `lore style show issue-register`
+to print the version that applies to the current repo, and follow it before
+writing or editing any such artifact. Every skill that writes a human-facing
+artifact inherits this rule; it is not opt-in per skill.
 
 This does not touch the workflow's own terms of art (`AFK`, `HITL`, and the
 machine-read table columns) — those stay precise and unchanged so tooling
-that checks them keeps working. The rule is about the surrounding prose a
+that checks them keeps working. The register is about the surrounding prose a
 human reads.
 
 ## Glossary
