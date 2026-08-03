@@ -39,6 +39,7 @@ EXPECTED_SKILL_NAMES = {
     "debug",
     "document-epic",
     "domain-modeling",
+    "file-issue",
     "grilling",
     "implement-issue",
     "orchestrate-epic",
