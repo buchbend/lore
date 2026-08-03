@@ -176,6 +176,11 @@ intended:
 - [ ] the docs commit landed with the epic PR — or, on fallback, the standalone docs PR opened and merged on
       green
 
+**Follow-ups.** Work that surfaces during the run and does not belong to this epic — a deferred fix, the
+remainder of a blocked feature — is filed through [`file-issue`](../file-issue/SKILL.md), never written
+inline. The machine-read text above stays exempt from it: the roadmap table, the board comment, and the
+verdict block are parsed, not read.
+
 Report.
 
 ## Teammate brief (fill, pass to each agent)
