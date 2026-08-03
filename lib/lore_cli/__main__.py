@@ -80,6 +80,7 @@ def _build_app() -> typer.Typer:
         search_cmd,
         session_cmd,
         status_cmd,
+        style_cmd,
         tier_cmd,
         toggle_cmd,
         trace_cmd,
@@ -115,6 +116,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
     app.add_typer(resume_cmd.app, name="resume", rich_help_panel=_KN)
     app.add_typer(lint_cmd.app, name="lint", rich_help_panel=_KN)
+    app.add_typer(style_cmd.app, name="style", rich_help_panel=_KN)
     app.add_typer(curator_cmd.app, name="curator", rich_help_panel=_KN)
     app.add_typer(toggle_cmd.on_app, name="on", rich_help_panel=_KN)
     app.add_typer(toggle_cmd.off_app, name="off", rich_help_panel=_KN)
