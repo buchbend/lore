@@ -14,4 +14,5 @@ PRDs are the source of truth for decisions. Each PRD lives at
 0006-workflow-lightening-deepening
 0007-substrate-trim
 0008-typed-fact-session-notes
+0009-issue-register
 ```
