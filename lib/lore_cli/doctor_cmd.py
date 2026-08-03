@@ -13,6 +13,8 @@ Checks:
   5. MCP server module imports (`lore mcp` would start it)
   6. lore_search index responds (FtsBackend.stats() succeeds)
   7. Current cwd's `## Lore` block parses (if attached; else skipped)
+  8. Vale is on PATH (advisory — absence degrades the issue register lint
+     to instruction-only, per ADR 0006, and never fails this run)
 
 `--fix` additionally repairs: rebuilds scopes.json from attachments.json,
 re-stamps drifted offer fingerprints, and migrates attachment path
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -365,6 +368,15 @@ def _check_search_backend(cwd: str) -> Check:
     except Exception as e:
         return False, f"FTS backend failed: {e}"
     return True, f"FTS index: {stats.get('total_notes', '?')} notes"
+
+
+def _check_vale(cwd: str) -> Check:
+    """Vale is PATH-detected, not bundled — absence degrades the issue
+    register lint to instruction-only and never blocks (ADR 0006)."""
+    path = shutil.which("vale")
+    if path is None:
+        return False, "vale not on PATH — issue register lint is instruction-only until installed"
+    return True, f"vale found at {path}"
 
 
 def _check_attach(cwd: str) -> Check:
@@ -913,6 +925,7 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     ("cursor mcp", _check_cursor_mcp_command_resolves, False),
     ("cursor hooks", _check_cursor_hooks_config, False),
     ("attach", _check_attach, False),
+    ("vale", _check_vale, False),
 ]
 
 

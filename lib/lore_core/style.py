@@ -9,6 +9,10 @@ the wiki and editing it. There is no per-repo layer.
 The defaults live outside `templates/` on purpose: `lore init` copies the whole
 templates tree into the vault, and a copy of the register sitting at
 `<lore_root>/templates/` would look editable while the resolver ignores it.
+
+The Vale config that lints the issue register resolves the same way, one
+directory over: `<wiki>/style/vale/vale.ini` wins, else the packaged
+`styles/vale/vale.ini`. See `default_vale_config_path`/`resolve_vale_config_path`.
 """
 
 from __future__ import annotations
@@ -49,3 +53,31 @@ def resolve_style_path(name: str, wiki_dir: Path | None = None) -> Path:
         if override.is_file():
             return override
     return default_style_path(name)
+
+
+def default_vale_config_path() -> Path:
+    """Return the packaged default Vale config (``styles/vale/vale.ini``).
+
+    Raises FileNotFoundError if packaging broke, same contract as
+    ``default_style_path``.
+    """
+    path = Path(__file__).resolve().parent / "styles" / "vale" / "vale.ini"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Could not locate the packaged Vale config at {path}. Reinstall Lore."
+        )
+    return path
+
+
+def resolve_vale_config_path(wiki_dir: Path | None = None) -> Path:
+    """Return the Vale config that wins for ``wiki_dir``: the wiki's own
+    ``style/vale/vale.ini`` if present, else the packaged default.
+
+    Same whole-file resolution as ``resolve_style_path`` — a Vale config and
+    its ``StylesPath`` rule directory are one unit, not merged.
+    """
+    if wiki_dir is not None:
+        override = wiki_dir / "style" / "vale" / "vale.ini"
+        if override.is_file():
+            return override
+    return default_vale_config_path()

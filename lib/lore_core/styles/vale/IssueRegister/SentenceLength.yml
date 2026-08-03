@@ -1,0 +1,9 @@
+# Rule 6: max 20 words for an instruction, 25 for a description. Vale scores
+# per sentence, not per line, and cannot tell instruction from description,
+# so this flags any sentence past the more lenient 25-word ceiling.
+extends: existence
+message: "Rule 6 (sentence length): split this sentence, it runs past 25 words."
+level: error
+scope: sentence
+raw:
+  - '(?:\S+\s+){25,}\S+'

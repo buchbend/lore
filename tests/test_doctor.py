@@ -274,3 +274,23 @@ def test_check_spine_writable_reports_degrade_marker(tmp_path, monkeypatch):
     ok, msg = doctor_cmd._check_spine_writable(str(tmp_path))
     assert ok is False
     assert "spine write failed" in msg.lower()
+
+
+def test_check_vale_reports_absence_without_failing(monkeypatch):
+    """AC: `lore doctor` reports Vale's absence but never fails the run —
+    the check is registered advisory (fails_run=False)."""
+    monkeypatch.setattr(doctor_cmd.shutil, "which", lambda name: None)
+    ok, msg = doctor_cmd._check_vale(".")
+    assert ok is False
+    assert "vale" in msg.lower()
+    assert "not on path" in msg.lower()
+
+    entry = next(c for c in doctor_cmd._CHECKS if c[0] == "vale")
+    assert entry[2] is False, "vale check must not fail the overall doctor run"
+
+
+def test_check_vale_reports_presence(monkeypatch):
+    monkeypatch.setattr(doctor_cmd.shutil, "which", lambda name: "/usr/local/bin/vale")
+    ok, msg = doctor_cmd._check_vale(".")
+    assert ok is True
+    assert "/usr/local/bin/vale" in msg
