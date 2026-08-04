@@ -1,7 +1,7 @@
 ---
 title: "Join the writing rules to the glossary"
 status: draft
-epic: "TODO: not yet opened — confirm before filing"
+epic: https://github.com/buchbend/lore/issues/336
 repos:
   - buchbend/lore
 ---
@@ -153,7 +153,7 @@ reads as plainly as the text that cites it.
 - **`grilling` ends with a recap.** The skill lists every term it wrote or
   changed, so the user sees the glossary diff without opening the file.
 
-- **Vale gets a second gate, and the gate is optional.** Vale's `spelling`
+- **Vale gets a second gate, and the gate never blocks.** Vale's `spelling`
   check flags any word absent from the dictionaries it is given
   (<https://docs.vale.sh/checks/spelling>). Common English is the base
   dictionary. The glossary terms are the ignore list. A word in neither is
