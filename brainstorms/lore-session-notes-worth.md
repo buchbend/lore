@@ -1,7 +1,7 @@
 # Are session notes still worth it — divergent brief
-state: exploring → converging on architecture
-updated: 2026-08-04 (steer 3: three layers — team artifacts / personal
-transcripts+ledger / flags as the crossing; medium principle)
+state: converging:flag (retirement confirmed; shaping the flag primitive)
+updated: 2026-08-04 (retirement settled with losses L1–L4 accepted; flag
+slice converging)
 
 Predecessor: `lore-session-note-shape.md` (2026-07-03, settled the *shape*;
 superseded by typed facts, PRD 0008 / ADR 0003). This brief asks the prior
@@ -79,22 +79,7 @@ transcripts. The session note as a vault file was a medium mismatch.
   transcripts remain, notes could be regenerated later from archives if a
   reliable extractor ever exists.
 
-- Q12 [flag] (open): **The deliberate-capture alternative: an occasional flag
-  when something is worth keeping.** Groundwork exists: journals
-  (`journals/ai.md` + `human.md`, non-derived, no pipeline) +
-  `lore_journal_write`; the flag variant would route into the wiki graph with
-  scope and wikilinks instead of a flat file. Design axes held open: *who
-  flags* — human command; agent-initiated (secretary pattern: the agent
-  notices "worth keeping" mid-session); end-of-session single question; *what
-  a flag captures* — the fact, why it's worth keeping, an anchor into the
-  archived transcript; *where it lands* — wiki note vs journal vs project
-  folder. What counts as flag-worthy inherits the old gem definition:
-  environment traps, dead ends with reasons, unwritten reasoning, gap-facts.
-  **The central tension (A5):** auto-capture was ratified precisely because
-  humans forget to write notes; a flag-only model reintroduces
-  amnesia-by-default. Middle grounds: Q10b breadcrumbs auto-captured +
-  flags for gems; agent-initiated flags make remembering the agent's job,
-  not the human's.
+- Q12 [flag] → converging; see **Flag shape** section below.
 
 - Q1b [horizon] (settling — accepted as observation): every measured organic
   read is short-horizon continuity (ages 1 min – 7 days; archival reader
@@ -151,13 +136,12 @@ context for the work" functionally requires.
 
 **Stress points (named, not resolved):**
 
-- S1 *continuity gap.* The hybrid kills the one artifact with measured
-  organic use: the ≤7-day "what did the last session on this thread do" read
-  (~17/month). Raw-transcript drill is too expensive to replace it (C7).
-  Mitigations on the table: the deliberate `/lore:handover` (already
-  spec'd — but deliberate, so same A5 amnesia risk); a deterministic
-  breadcrumb recap in the banner ("yesterday: repo X, PR #n, files …");
-  accept harness-native continuity for the common case.
+- S1 *continuity gap — answer-elect chosen with retirement:* the
+  deterministic breadcrumb recap in the banner ("yesterday: repo X, PR #n,
+  files …") rendered from the ledger, zero LLM, plus the deliberate
+  `/lore:handover` for rich mid-thread handoffs, plus harness-native
+  continuity for the common case. Detail shaping open (recap depth, cross-day
+  window).
 - S2 *under-flagging amnesia — now with a team cost.* "Did we already try
   X?" — negative-result recall is the classic labbook value, and exactly what
   agents will under-flag (bias toward traps and successes over abandoned
@@ -182,6 +166,79 @@ context for the work" functionally requires.
 quo, with three real stress points (S1–S3) that each have candidate
 mitigations, one structural caveat (S4), and one unresolved hole (Q13).
 Not adopted — held open.
+
+## Flag shape (converging slice, 2026-08-04)
+
+The flag: a deliberate, single-fact crossing from private reasoning to the
+team surface. Shaped along four axes — each with a lean and its reasoning;
+items marked *open* are not settled.
+
+**1. Who initiates — lean: agent-primary, human-always.**
+- Agent-initiated in the moment (secretary pattern): the session's own agent
+  recognizes a gem — trap, dead end + reason, unwritten reasoning, gap-fact —
+  and files the flag *while the context is hot*. This answers A5: remembering
+  is the agent's job, no human burden (C9), no human interruption
+  (Never-Ask survives for the human).
+- Plus the deterministic primitive, always available: a human command
+  (CLI + slash), per the ratified progressive-disclosure stance — magical
+  path *and* deterministic path.
+- Plus one boundary check: at session end the *agent* self-checks "anything
+  flag-worthy left unflagged?" — deliberateness at the boundary, mirroring
+  the ratified boundary-drain principle, still zero human interruption.
+- The directive must also resolve the memory competition: for team-relevant
+  gems, the flag beats the agent's private memory (observed double-capture:
+  the same trap filed to both). Private memory keeps only what is truly
+  personal-workflow.
+- *Open:* the directive wording and the flagging threshold — must be tuned
+  against measured flag rate (S2 is an experiment, not a setting).
+
+**2. What a flag carries — lean: one fact, standing alone, stamped.**
+- One fact per flag. A lead sentence + a short body: the claim, and why it
+  is worth keeping (what a future reader gains).
+- Origin block, deterministic: author handle, date, transcript id + `@N`
+  anchor, plus repo/PR/issue/commit refs where applicable.
+- Refs are code-verified at write (the PRD 0008 verification machinery
+  surviving in miniature): a checkable ref renders plain with its ✓; an
+  uncheckable claim renders in stamped session-talk phrasing (ADR 0004
+  discipline). Deterministic gate: no origin, no flag (S4).
+- The flag must stand alone for the team — the anchor is a bonus for the
+  owner's private drill, never load-bearing (Q13 anchor asymmetry).
+- No mandatory kind taxonomy (July brief ruling: insider taxonomies don't
+  fit users); optional tags allowed. *Open:* the exact block template.
+
+**3. Where it lands — lean: append to the owning topic/project note.**
+- Route-before-write: search first (funnel proposes the target); append to
+  the existing topic/project note as an **attributed, append-only block**;
+  create a new topic note only when no home exists. This is the organic
+  growth the vision asks for (notes strengthen with use) and the S3 defense
+  (no sibling sprawl, no gardener needed).
+- Wiki + scope routing rides the existing `.lore.yml` mechanism unchanged
+  (use case #5).
+- Edit-policy extension (the #23 rule): agent flags are append-only,
+  attributed, and never edit existing content; humans own the body and may
+  refactor flags freely afterward.
+- Self-correcting quality loop for free: flags land where humans actually
+  look (C11), so bad flags are *seen* and pruned — the feedback session
+  notes never had.
+- *Open:* whether high-churn topics eventually want a per-topic flags
+  subsection or file — decide on evidence of real churn, not upfront.
+
+**4. Machinery — lean: thin primitives, reusing what exists.**
+- An MCP tool + CLI verb mirroring the journal pattern (deterministic write,
+  no pipeline, no buffers/flushes); a spine event per flag (write-side
+  telemetry from day one — the observability gap Q1 exposed must not recur).
+- Capture needs no lore-owned LLM: the flagging text is written by the
+  session's own agent; verification is code. Lore's backend stays optional.
+- *Open:* naming — "flag" is the working term; the user-facing verb
+  (`lore flag` / `/lore:keep` / other) is a product-voice decision.
+- *Open:* whether the journal side-channels stay as-is beside flags
+  (different genre: freeform vs fact) — lean yes, they're orthogonal.
+
+**Measurement before trust (S2, mandatory):** instrument flag rate from day
+one and run a known-gem baseline (e.g. replay sessions with known gems —
+did the agent flag them?). Under-flagging is the architecture's main
+failure mode and is only detectable by measuring; the flip-probe
+methodology applies (test the directive under reversed framing too).
 
 ## Use-case cross-check (2026-08-04, against [[use-cases]] — 27 items, 2026-05-07)
 
@@ -354,13 +411,13 @@ needs a revision pass once this brief settles (hygiene).
   cross-harness bridge demoted to "could" (Q8).
 - (settled via Q1 evidence + user) Readers: short-horizon continuity, plus a
   human recap reader *worth earning back* — not an archival audience.
-- (settling 2026-08-04, steer 3) **Session notes as vault files are retired
-  as a form.** The breadcrumb job moves to a machine-format ledger; the
-  human-worthy residue moves to flags/topic notes; the recap function is
-  served by a deterministic banner recap from the ledger, not by note files.
-  The "reader worth earning back" is earned by *removing* machine notes from
-  the human surface, not by writing better ones. Pending explicit user
-  confirmation before state flips to settled.
+- (settled 2026-08-04, user — losses L1–L4 explicitly confirmed) **Session
+  notes as vault files are retired as a form.** The breadcrumb job moves to
+  a machine-format ledger; the human-worthy residue moves to flags/topic
+  notes; the recap function is served by a deterministic banner recap from
+  the ledger. Accepted prices: the wedge weakens to privacy-first phrasing
+  (L1), passive teammate browsing removed by design (L2), briefings need a
+  new source or parking (L3), onboarding rides on flag quality (L4).
 - (hygiene, needs filing) Stale doctrine: the vault's lore orientation note
   (SessionStart-injected) and agent memory still describe the Curator A/B/C
   triad and daily B abstraction — misinformation fed to every session.
