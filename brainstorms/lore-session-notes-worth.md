@@ -183,6 +183,52 @@ quo, with three real stress points (S1–S3) that each have candidate
 mitigations, one structural caveat (S4), and one unresolved hole (Q13).
 Not adopted — held open.
 
+## Use-case cross-check (2026-08-04, against [[use-cases]] — 27 items, 2026-05-07)
+
+**Verdict: no veto.** Nothing in the ratified list hard-requires session notes
+as vault files — but the check surfaces four honest losses needing explicit
+user confirmation, one identity rewrite, and several sharpenings.
+
+**The list already contains the steer-3 identity.** Use case #16
+(implementation-arc narrative): "Artifacts stay in their canonical homes …;
+Lore is the threading layer that makes the arc walkable across time, harness,
+and teammate." That *is* the funnel + ledger, in ratified language. #26's
+"Lore is the WHY" overstates under steer 3 and wants rewriting to "Lore knows
+where the why lives and threads it".
+
+**Losses to confirm (the price of retirement):**
+
+- L1 — #1 (the wedge, "capture the why via auto-extracted session notes"):
+  the promise weakens from "the why is captured automatically" to "the why is
+  recorded raw (private transcript) and crosses to the team only via
+  artifacts and deliberate flags". This is A5 at the product-promise level.
+- L2 — #14 (teammate handoff): passive "browse what a colleague's sessions
+  did last week" is *removed by design* (privacy boundary). Handoff becomes
+  deliberate (`/lore:handover`) + artifacts + flags. No evidence it was ever
+  used passively (all measured reads were same-user).
+- L3 — #6 (briefings/active distribution): loses its source (session notes)
+  on top of its dead engine (Curator B). Needs a new source (flag/topic-note
+  digest?) or parking.
+- L4 — #15 (onboarding): was "falls out of #3 cross-handle synthesis" —
+  #3 is dead (C8). Onboarding now rides on project orientation + topic-note
+  quality, i.e. on flags working (S2).
+
+**Sharpened by the architecture:** #7 sensitivity gate (only small deliberate
+flags ever cross — the gate's job shrinks structurally); #16, #17 (banner
+recap gets cheaper and deterministic), #19/#20 (capture needs *no lore-owned
+LLM at all* — flags are written by the session's own agent; lore's backend
+becomes optional, briefings-only), #22 (knowledge = markdown+git stays;
+ledger = derived, rebuildable index; transcripts = private raw), #27
+(journals — "potential to grow into a pillar" reads prescient).
+
+**Needs a rule:** #23 edit discipline — flags append to topic-note bodies,
+which the vault edit policy reserved for humans. Proposed shape: flags are
+append-only blocks, attributed, never editing existing content. Open.
+
+**Already stale independent of this brainstorm:** #3, #10, #11 (curator
+triad, surfaces — superseded by earlier epics); the use-cases note itself
+needs a revision pass once this brief settles (hygiene).
+
 ## Absorbed questions (from earlier passes)
 
 - Q2 (residual inversion) and Q6 (promotion) → folded into Q12: the
@@ -285,8 +331,9 @@ Not adopted — held open.
   attempts and their ratified mechanics; the recurrence of the complaint
   across both is itself evidence (the problem may be the mission, not the
   mechanism).
-- [[use-cases]] (vault): ratified problem list — any kill/trim must be
-  checked against it. Still TODO for this brief.
+- [[use-cases]] (vault, 2026-05-07): ratified problem list — cross-checked
+  2026-08-04, see the cross-check section: no veto, four losses (L1–L4) to
+  confirm.
 - [Transcript archive audit 2026-08-04]: `wiki/*/.transcripts/` gitignored;
   556 files / 216 MB on one machine; retention janitor covers only ops logs
   (spine/flushes/runs), transcripts unbounded and unmanaged → Q13.
