@@ -84,6 +84,13 @@ def test_vale_config_cli_falls_back_when_wiki_has_no_override(lore_root: Path) -
     assert result.output.strip() == str(default_vale_config_path())
 
 
+def test_packaged_vale_style_directory_is_the_writing_rules() -> None:
+    """The ini and its rule directory are one unit — renaming one renames both."""
+    config = default_vale_config_path()
+    assert (config.parent / "WritingRules").is_dir()
+    assert "BasedOnStyles = WritingRules" in config.read_text(encoding="utf-8")
+
+
 # --- banned-word list stays single-sourced --------------------------------
 
 

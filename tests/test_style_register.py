@@ -175,5 +175,48 @@ def test_register_keeps_the_ears_patterns_and_section_skeleton() -> None:
 
 def test_context_md_defines_the_new_terms() -> None:
     text = (REPO_ROOT / "CONTEXT.md").read_text()
-    for term in ("**Register**", "**Change**", "**Batch issue**"):
+    for term in ("**Writing rules**", "**Change**", "**Batch issue**"):
         assert term in text, term
+    assert "**Register**" not in text, "the old term must be gone from the glossary"
+
+
+# --- the writing rules and the deprecated alias --------------------------
+
+
+def test_known_styles_lists_the_writing_rules() -> None:
+    assert "writing-rules" in KNOWN_STYLES
+
+
+def test_writing_rules_resolve_to_the_packaged_file(tmp_path: Path) -> None:
+    path = resolve_style_path("writing-rules", wiki_dir=tmp_path)
+    assert path.name == "writing-rules.md"
+    assert path.read_text().startswith("# Writing Rules")
+
+
+def test_wiki_override_of_the_writing_rules_wins(tmp_path: Path) -> None:
+    override = tmp_path / "style" / "writing-rules.md"
+    override.parent.mkdir(parents=True)
+    override.write_text("# Our own rules\n")
+    assert resolve_style_path("writing-rules", wiki_dir=tmp_path) == override
+
+
+def test_show_prints_the_writing_rules(lore_root: Path) -> None:
+    result = runner.invoke(app, ["style", "show", "writing-rules"])
+    assert result.exit_code == 0, result.output
+    assert "# Writing Rules" in result.stdout
+
+
+def test_deprecated_alias_prints_the_same_document(lore_root: Path) -> None:
+    """Instruction files in other repos still carry the old name."""
+    alias = runner.invoke(app, ["style", "show", "issue-register"])
+    current = runner.invoke(app, ["style", "show", "writing-rules"])
+    assert alias.exit_code == 0, alias.output
+    assert alias.stdout == current.stdout
+
+
+def test_deprecated_alias_writes_one_stderr_line_naming_the_new_name(lore_root: Path) -> None:
+    """The document itself goes to stdout, so the notice must not pollute it."""
+    result = runner.invoke(app, ["style", "show", "issue-register"])
+    lines = result.stderr.strip().splitlines()
+    assert len(lines) == 1, result.stderr
+    assert "writing-rules" in lines[0]
