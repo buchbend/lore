@@ -65,9 +65,10 @@ once the glossary is structured."
 
 Two further observations, both in this repo:
 
-- The register's worked example uses `L0` at lines 129 and 149 of
-  `lib/lore_core/styles/issue-register.md`. No glossary defines `L0`. The
-  example that agents copy breaks the rule the register is about to add.
+- The register carried a worked example that used `L0` twice, and no glossary
+  defines `L0`. The example that agents copy broke the rule the register is
+  about to add. Commit `9fcd172` removed that example while compacting the
+  register from 245 lines to 139.
 - Lore's own `CONTEXT.md` runs 29 of its 126 sentences past the 25-word
   ceiling. `ccatobs/system-integration/CONTEXT.md` runs 3 of 24 past it. A
   definition nobody can read fixes nothing.
@@ -155,9 +156,9 @@ reads as plainly as the text that cites it.
   (<https://www.humanlayer.dev/blog/writing-a-good-claude-md>). Every
   addition here removes or rewrites an existing paragraph.
 
-- **The worked example gains one reference line.** `L0` stays, because `L0`
-  names a data level and is a real term. The example's References section
-  shows the glossary lookup, so the example demonstrates the rule.
+- **The register shows the contrast inside a rule, not in an example.** Rules
+  8 and 9 already pair a wrong sentence with a right one, at one line each.
+  A new rule that needs a contrast follows the same shape.
 
 - **Existing terms enter through one grilling session per repo.** `L0`,
   `L1b` and `LTA` are real and undefined. A person seeds them. The work is
@@ -172,8 +173,8 @@ Test the CLI and the file contents, not skill prose. Prior art: the existing
 - Assert `CONTEXT-FORMAT.md` carries the sentence ceiling.
 - Assert the SessionStart directive still renders one line, and that the
   line names the glossary.
-- Assert the register's worked example passes the register's own Vale style.
-  The check fails today.
+- Assert the whole register passes the register's own Vale style. The check
+  passes as of commit `9fcd172` and must keep passing as rules are added.
 - Run the Vale spelling check against a fixture holding one glossary term
   and one invented short name. Skip when Vale is absent, as
   `tests/test_vale_style.py` already does.
