@@ -1,7 +1,7 @@
 # Why the writing rules are a document, not config
 
 The **writing rules** fix the prose style for issue text, PR descriptions,
-and ADR context sections. Lore ships one default. A team replaces them with one
+PR review comments, ADR context sections and design documents. Lore ships one default. A team replaces them with one
 file in its wiki. This page explains three choices. Why the rules are a prose
 document rather than a settings block. Why a team's copy wins whole rather than
 merging. Why the lint runs when the text is written, not when it is committed.

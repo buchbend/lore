@@ -146,6 +146,6 @@ below). In short:
 
 - The glossary's own contents. Separate artifact, separate problem.
 - Code comments, chat, session notes and commit messages, which already have a
-  convention. Rule 21 is the one exception.
+  convention. Rule 21 still covers a commit message.
 - Machine-read text: roadmap tables, board comments, reviewer verdict blocks.
 - Vocabulary size in "Context", where domain precision beats simplicity.
