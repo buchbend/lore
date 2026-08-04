@@ -8,8 +8,7 @@ repos:
 
 # PRD 0010: Join the writing rules to the glossary
 
-> Source of truth for this epic. Research notes:
-> `RESEARCH-register-glossary.md`.
+> Source of truth for this epic.
 
 ## Problem
 
