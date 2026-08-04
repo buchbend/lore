@@ -1,6 +1,6 @@
 # Are session notes still worth it — divergent brief
 state: exploring
-updated: 2026-08-04 (Q1 evidence pass)
+updated: 2026-08-04 (Q1 evidence pass; user rulings: abstraction layer dead, functions = handover/recap + reporting)
 
 Predecessor: `lore-session-note-shape.md` (2026-07-03, settled the *shape*; its
 shape was since replaced by typed facts, PRD 0008 / ADR 0003). This brief asks
@@ -46,8 +46,12 @@ Nothing is settled.
   cannot see: (i) the SessionStart banner deterministically consumes note
   titles/summaries every session — by volume the *dominant* consumer; (ii)
   human reads in Obsidian leave no trace — only the user can answer that;
-  (iii) curator feedstock reads happen outside these transcripts. Remaining
-  open sliver: which of (i)–(iii) carries real value.
+  (iii) curator feedstock reads happen outside these transcripts. **Settled
+  2026-08-04 (user):** (ii) is near-zero *because notes aren't useful* — an
+  aspirational reader, not an absent one; (iii) is void — abstraction layer
+  dead (C8). The readers to design for: short-horizon continuity
+  (agent/human), the reporting pipeline, and a human recap reader worth
+  earning back.
 
 - Q1b [reframe] (open, spawned by Q1 evidence): **Is the session note a
   handover artifact with a ~one-week half-life, not an archive?** Every
@@ -56,12 +60,18 @@ Nothing is settled.
   schema cleanup). That is the resume/handover job, not the labbook-archive
   job. If accepted, it reframes hard: depth and ledger should optimize for a
   reader *days* away with partial context, not months away with none;
-  long-tail value would then live in *promotion* (Q6) and curator abstraction,
-  not in the note body; retention of full bodies past the horizon becomes
-  questionable (C4 poisoning surface with no measured reader). Tension: a
-  30-day observation window cannot rule out rare high-value archaeology
-  ("what broke in March?") — absence of evidence over one month is weak
-  evidence of absence over a year.
+  long-tail value would then live in *promotion* (Q6) — with abstraction dead
+  (see settled), promotion is the *only* long-tail path; retention of full
+  bodies past the horizon becomes questionable (C4 poisoning surface with no
+  measured reader). User input 2026-08-04 strengthens this from both sides:
+  the two wanted functions — handover/recap (cross-harness, cross-human) and
+  **reporting what has been worked on** — are both short-horizon by nature
+  (reporting cadence is daily/weekly). The user also confirmed they rarely
+  open old notes in Obsidian, *because they are not useful* — a symptom to
+  fix, not a reader to design away. Tension remains: a 30-day observation
+  window cannot rule out rare high-value archaeology ("what broke in
+  March?") — absence of evidence over one month is weak evidence of absence
+  over a year.
 
 - Q2 [residual] (open): **Should the note keep only what is recorded nowhere
   else?** The verification machinery already computes this per line: `✓` means
@@ -110,13 +120,14 @@ Nothing is settled.
   end-of-session filing pass may not violate that. Contested — needs the
   user's read.
 
-- Q7 [existence] (open): **The honest kill option.** Retire the note as a
-  product: keep transcript archive + anchors + frontmatter (deterministic,
-  trusted), let retrieval work over transcripts/ledgers directly, let Curator B
-  read ledgers instead of notes. What actually breaks? Known dependents:
-  SessionStart banner ("Last: [[note]]"), Curator B feedstock, briefings,
-  `lore_resume`, the vault graph. Cost of keeping notes isn't only tokens —
-  every LLM-written line is a context-poisoning surface (C4).
+- Q7 [existence] (narrowed 2026-08-04): **The honest kill option — now only
+  for the archive function.** Full kill is off the table: the user names two
+  wanted functions (handover/recap, reporting). What remains open is killing
+  the *archival* role: does anything past the ~week horizon deserve to exist
+  as a note body, or only as promoted artifacts (Q6) + transcript archive?
+  Known dependents rechecked: SessionStart banner, `lore_resume` (never
+  called — dead weight or undiscovered?), the vault graph. Curator B
+  feedstock struck as a dependent — B is dead.
 
 - Q8 [cross-cutting] (open): **Is the cross-harness / cross-team / human-AI
   promise still load-bearing?** The user's own hunch: mostly solved by
@@ -163,6 +174,12 @@ Nothing is settled.
   resolving per-wiki.
 - C7 (inherited): raw transcript is the dominant processing cost; each turn
   seen once, cheapest tier that works.
+- C8 (ratified 2026-08-04): **no LLM abstraction pass is available as a rescue
+  move.** Curator B/C-style distillation over LLM-written notes proved
+  unreliable — wrong claims entered context (poison), too many
+  inconsistencies. Whatever the note itself doesn't carry well, no downstream
+  layer fixes. Extends predecessor C1 (no LLM-verifies-LLM): also no
+  LLM-distills-LLM.
 
 ## Glossary
 
@@ -171,6 +188,10 @@ Nothing is settled.
 - gem := a residual fact with plausible future value (trap, dead end, unwritten
   reasoning). [candidate]
 - labbook signal := contested — currently defined only negatively (Q4). [contested]
+- handover/recap := carrying a working thread across a session boundary —
+  next session, other harness, or other human. [candidate]
+- reporting := periodic human-facing account of what has been worked on,
+  sourced from notes (daily/weekly cadence). [candidate]
 
 ## Sources
 
@@ -200,5 +221,19 @@ Nothing is settled.
 
 - (settled, ratified elsewhere) Notes are never authoritative — not reopened
   here.
-- (parked) Curator B/C redesign — only in scope where a note change breaks
-  their input contract.
+- (settled 2026-08-04, user) **The abstraction layer is dead.** Curator B/C
+  and the concepts/decisions/threads extraction are retired — could not be
+  made reliable; wrong claims poisoned context. Verified in the running
+  system: B last spawned 2026-06-15, zero B/C runs in the spine window, zero
+  abstraction writes since, no B/C code paths in hooks/spawn — no regression.
+  61 legacy concept notes remain as read-only stock (2 were organically read;
+  keep, don't grow).
+- (settled 2026-08-04, user) Wanted note functions: handover/recap
+  (cross-harness, cross-human) and reporting. Replaces the open-ended
+  reader list of Q1.
+- (hygiene, needs filing) Stale doctrine: the vault's lore orientation note
+  (SessionStart-injected) still describes the Curator A/B/C triad and daily
+  B abstraction; agent memory likewise. Should be corrected to match the
+  ratified state — outside this brief's questions.
+- (parked) Fate of `lore_resume` (never called) and of the 61 legacy concept
+  notes — revisit after the note redesign settles.
