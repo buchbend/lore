@@ -74,6 +74,26 @@ default does. There is no merge and no per-repo layer.
    `[*.md]`, so a `.txt` or extensionless file reports `0 files` and exits 0
    without checking anything.
 
+5. **Expect the short-name check to fire, and read it as advice.**
+
+   The packaged config carries `WritingRules.UnknownShortName = NO`, so the
+   short-name check is off until a glossary switches it on. `lore style
+   vale-config` looks for a `CONTEXT.md` in the current repo. Where the
+   command finds one, it copies the whole config directory to the host cache
+   under `$LORE_CACHE/vale/`, writes the glossary terms to `glossary.txt`
+   beside the rules, and flips the switch line to `YES`. The printed path is
+   the cached copy. Nothing lands in your repo.
+
+   Rule 20 fires often on a first run. Lore's own `CONTEXT.md` yields 85
+   terms, and linting issue 339's body against them reported 8 warnings and 0
+   errors, exit code 0. Seven were rule 20: `ADR`, `PRD`, `AFK`, `Repo`,
+   `Dev` and `checkability`. Several findings per issue body is the normal
+   result, not a broken setup.
+
+   Read the findings and fix the text, or leave the word and move on. The
+   check never blocks: every finding is a warning, and `file-issue` reads
+   Vale by exit code.
+
 ## Notes
 
 - The banned-word list lives in the rules text and in the Vale style. A
