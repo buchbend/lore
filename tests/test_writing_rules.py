@@ -160,7 +160,13 @@ def test_rules_keep_the_ears_patterns_and_section_skeleton() -> None:
 
 def test_context_md_defines_the_new_terms() -> None:
     text = (REPO_ROOT / "CONTEXT.md").read_text()
-    for term in ("**Writing rules**", "**Change**", "**Batch issue**"):
+    for term in (
+        "**Writing rules**",
+        "**Change**",
+        "**Batch issue**",
+        "**Short name**",
+        "**Piece of work**",
+    ):
         assert term in text, term
     assert "**Register**" not in text, "the old term must be gone from the glossary"
 
