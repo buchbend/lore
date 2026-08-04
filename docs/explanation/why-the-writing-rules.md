@@ -1,10 +1,11 @@
-# Why the issue register is a document, not config
+# Why the writing rules are a document, not config
 
-The **issue register** fixes the prose style for issue text, PR descriptions,
-and ADR context sections. Lore ships one default. A team replaces it with one
-file in its wiki. This page explains three choices. Why the register is a prose
-document rather than a settings block. Why a team's copy wins whole rather than
-merging. Why the lint runs when the text is written, not when it is committed.
+The **writing rules** fix the prose style for issue text, PR descriptions,
+PR review comments, ADR context sections and design documents. Lore ships
+one default. A team replaces them with one file in its wiki. This page
+explains three choices. Why the rules are a prose document rather than a
+settings block. Why a team's copy wins whole rather than merging. Why the
+lint runs when the text is written, not when it is committed.
 
 The decisions here are recorded in
 [ADR 0006](../adr/0006-issue-register-whole-file-override-generation-time-lint.md).
@@ -32,9 +33,10 @@ observation came from" and "do not fill a gap with a plausible guess" are
 judgement, not flags. A settings block would capture the banned-word list and
 the sentence cap, which are the least valuable rules, and drop the rest.
 
-Shipping a document also means the register can carry a worked example. The
-default register shows one issue before and after. An example teaches a style
-faster than a rule list does.
+A shipped document can show as well as tell. Rules 8 and 9 each contrast a
+wrong sentence with a right one, in one line. The document carried a full
+before-and-after issue until that example grew to 42% of the file. The rules
+already said what the example showed.
 
 ## Why whole-file override
 
@@ -43,15 +45,15 @@ A team's copy replaces the default entirely. Nothing merges.
 Merging a rules essay is ill-defined. Two documents that both describe how to
 open a sentence do not combine into one coherent instruction. They combine into
 a contradiction the reader has to resolve. Whole-file resolution also leaves no
-cascade to debug — one lookup answers "which register applies here", and the
+cascade to debug — one lookup answers "which rules apply here", and the
 answer is a path you can open.
 
 The cost is that customizing means copying the default and editing it, and a
 team that does so stops inheriting later improvements to the default. That
-trade is deliberate: a register that silently changes under a team is worse
-than one they own.
+trade is deliberate: rules that silently change under a team are worse
+than rules the team owns.
 
-There is no per-repo layer for the same reason. The register belongs to a
+There is no per-repo layer for the same reason. The rules belong to a
 team, and a team's wiki is where its shared conventions already live.
 
 ## Why lint at generation time
@@ -71,19 +73,19 @@ the heuristics as warnings and exits 0, so an over-fire never blocks a correct
 sentence, and the fix loop cannot spin on one.
 
 Vale is not bundled. It is a single binary, detected on `PATH`. When it is
-absent the register still applies as instructions and nothing blocks. Lore
+absent the rules still apply as instructions and nothing blocks. Lore
 degrades to the weaker enforcement rather than failing.
 
-## What the register does not do
+## What the writing rules do not do
 
-It does not fix terminology. One term with one meaning is a glossary problem,
+They do not fix terminology. One term with one meaning is a glossary problem,
 and the glossary is a separate artifact.
 
-It does not decide what is worth filing. The `file-issue` skill owns how to
+They do not decide what is worth filing. The `file-issue` skill owns how to
 write and file; the caller decides what to capture. A skill that second-
 guessed the caller's judgement would turn every capture into a negotiation.
 
 ## Related
 
-- [Customize the issue register](../how-to/customize-the-issue-register.md)
+- [Customize the writing rules](../how-to/customize-the-writing-rules.md)
 - [Why the PRD lives in the repo](why-prd-in-repo.md)

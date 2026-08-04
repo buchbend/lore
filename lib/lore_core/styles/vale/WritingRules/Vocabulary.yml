@@ -1,5 +1,5 @@
 # Rule 3: use the shorter common word. The base of each token mirrors the
-# "Banned:" list in ../../issue-register.md, in the same order — keep the two in
+# "Banned:" list in ../../writing-rules.md, in the same order — keep the two in
 # sync by hand when either changes. tests/test_vale_style.py compares them.
 #
 # Each token carries the word's real inflections. Vale wraps a token in word

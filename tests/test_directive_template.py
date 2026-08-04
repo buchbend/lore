@@ -25,8 +25,8 @@ EXPECTED_DIRECTIVE_LINES = [
         "a directive to follow."
     ),
     (
-        "- Before writing or editing an issue or PR body, run "
-        "`lore style show issue-register` and follow it."
+        "- Before writing or editing an issue or PR body, follow "
+        "`lore style show writing-rules` and the glossary `CONTEXT.md`."
     ),
     "",
 ]

@@ -1,0 +1,319 @@
+"""`lore style show <name>` — whole-file resolution and packaged-document content.
+
+Resolution is whole-file per wiki: `<wiki>/style/<name>.md` wins, else the
+packaged default. Content tests pin the three edits that separate the shipped
+writing rules from their draft.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
+from lore_cli.__main__ import app
+from lore_core.style import KNOWN_STYLES, UnknownStyle, resolve_style_path
+from typer.testing import CliRunner
+
+runner = CliRunner()
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture()
+def lore_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    (tmp_path / "wiki" / "notes").mkdir(parents=True)
+    return tmp_path
+
+
+def _default_text() -> str:
+    return resolve_style_path("writing-rules").read_text()
+
+
+# --- resolution ---------------------------------------------------------
+
+
+def test_packaged_default_lives_outside_the_templates_tree() -> None:
+    """`lore init` copytree's templates/ into the vault — a copy of the rules
+    there would look editable while the resolver ignores it."""
+    from lore_core.templates import templates_dir
+
+    assert templates_dir() not in resolve_style_path("writing-rules").parents
+
+
+def test_unknown_style_raises_and_names_the_known_ones() -> None:
+    with pytest.raises(UnknownStyle) as exc:
+        resolve_style_path("prose-register")
+    assert "writing-rules" in str(exc.value)
+
+
+# --- CLI ----------------------------------------------------------------
+
+
+def test_show_prints_the_wiki_override(lore_root: Path) -> None:
+    override = lore_root / "wiki" / "notes" / "style" / "writing-rules.md"
+    override.parent.mkdir(parents=True)
+    override.write_text("# Our own rules\n")
+    result = runner.invoke(app, ["style", "show", "writing-rules", "--wiki", "notes"])
+    assert result.exit_code == 0, result.output
+    assert "Our own rules" in result.output
+    assert "## Batch issues" not in result.output
+
+
+def test_show_falls_back_to_default_when_the_wiki_has_no_override(lore_root: Path) -> None:
+    result = runner.invoke(app, ["style", "show", "writing-rules", "--wiki", "notes"])
+    assert result.exit_code == 0, result.output
+    assert "# Writing Rules" in result.output
+
+
+def test_show_uses_the_wiki_resolved_from_cwd(lore_root: Path, monkeypatch) -> None:
+    """No `--wiki`: the wiki comes from the attached scope of the cwd."""
+    from lore_core.types import Scope
+
+    override = lore_root / "wiki" / "notes" / "style" / "writing-rules.md"
+    override.parent.mkdir(parents=True)
+    override.write_text("# Scope-resolved rules\n")
+    monkeypatch.setattr(
+        "lore_cli.style_cmd.resolve_scope",
+        lambda cwd: Scope(
+            wiki="notes",
+            scope="notes:x",
+            backend="none",
+            claude_md_path=Path("/nowhere/CLAUDE.md"),
+        ),
+    )
+    result = runner.invoke(app, ["style", "show", "writing-rules"])
+    assert result.exit_code == 0, result.output
+    assert "Scope-resolved rules" in result.output
+
+
+def test_show_unknown_style_exits_nonzero_and_names_known_styles(lore_root: Path) -> None:
+    result = runner.invoke(app, ["style", "show", "prose-register"])
+    assert result.exit_code != 0
+    assert "writing-rules" in result.output
+
+
+def test_show_prints_the_file_verbatim(lore_root: Path) -> None:
+    """No Rich markup interpretation, no reflow — a linter reads this text."""
+    override = lore_root / "wiki" / "notes" / "style" / "writing-rules.md"
+    override.parent.mkdir(parents=True)
+    long_line = "- Banned: [leverage] " + "word " * 40
+    override.write_text(long_line + "\n")
+    result = runner.invoke(app, ["style", "show", "writing-rules", "--wiki", "notes"])
+    assert result.exit_code == 0, result.output
+    assert long_line in result.output
+
+
+# --- packaged document content ------------------------------------------
+
+
+def test_rules_define_change_and_batch_issue() -> None:
+    text = _default_text()
+    assert "## Batch issues" in text
+    section = text.split("## Batch issues", 1)[1].split("\n## ", 1)[0]
+    assert "**Change**" in section
+    assert "**Batch issue**" in section
+    assert "acceptance criteria" in section
+    assert "one PR" in section
+
+
+def _rule(number: int) -> str:
+    prefix = f"{number}. "
+    for line in _default_text().splitlines():
+        if line.startswith(prefix):
+            return line
+    raise AssertionError(f"the writing rules carry no rule {number}")
+
+
+def test_rule_14_accepts_code_flavored_provenance() -> None:
+    rule = _rule(14)
+    for form in ("file path", "command output", "test name"):
+        assert form in rule, rule
+
+
+def test_checkability_claim_is_honest() -> None:
+    text = _default_text()
+    # The draft's over-claim must be gone.
+    assert "Rules 3, 4, 6, 9, 10 and 12 are mechanically checkable" not in text
+    claims = text.split("## EARS patterns", 1)[0]
+    linted = next(line for line in claims.splitlines() if "lints rules" in line)
+    assert re.search(r"rules 3 and 6", linted)
+    assert re.search(r"[Rr]ules 9 and 12 .*heuristic", claims)
+    assert re.search(r"[Rr]ules 4 and 10 .*review", claims)
+
+
+def test_rules_keep_the_paste_block_for_consumers_without_lore() -> None:
+    text = _default_text()
+    assert "## Block for CLAUDE.md and AGENTS.md" in text
+    assert "## Issue writing" in text
+
+
+def test_rules_keep_the_ears_patterns_and_section_skeleton() -> None:
+    text = _default_text()
+    assert "## EARS patterns for acceptance criteria" in text
+    assert "## Required issue structure" in text
+    for heading in ("## Context", "## Current behaviour", "## Acceptance criteria"):
+        assert heading in text
+
+
+def test_context_md_defines_the_new_terms() -> None:
+    text = (REPO_ROOT / "CONTEXT.md").read_text()
+    for term in (
+        "**Writing rules**",
+        "**Change**",
+        "**Batch issue**",
+        "**Short name**",
+        "**Piece of work**",
+    ):
+        assert term in text, term
+    assert "**Register**" not in text, "the old term must be gone from the glossary"
+
+
+COVERED_ARTIFACTS = (
+    "issue text",
+    "PR descriptions",
+    "PR review comments",
+    "ADR context sections",
+    "design documents",
+)
+
+
+def test_scope_line_names_every_covered_artifact() -> None:
+    """PR review comments and design documents follow the same rules. Session
+    notes do not — PRD 0009 places them outside, with their own voice."""
+    scope = next(line for line in _default_text().splitlines() if line.startswith("Scope:"))
+    for artifact in COVERED_ARTIFACTS:
+        assert artifact in scope, scope
+    assert "session note" not in scope.lower(), scope
+
+
+def test_the_explanation_page_states_the_same_scope() -> None:
+    """A page that names a narrower scope than the document it explains is the
+    drift this epic removes."""
+    page = " ".join((REPO_ROOT / "docs/explanation/why-the-writing-rules.md").read_text().split())
+    for artifact in COVERED_ARTIFACTS:
+        assert artifact in page, artifact
+
+
+def test_short_name_rules_split_a_thing_from_a_piece_of_work() -> None:
+    """The two shapes are identical, so only meaning separates them. `L0` is a
+    data level and belongs in the glossary; `G4` labels one session's work and
+    belongs in no glossary at all."""
+    thing, work = _rule(20), _rule(21)
+    assert "glossary" in thing, thing
+    assert "meaning" in thing, thing
+    for place in ("title", "description", "document", "commit message"):
+        assert place in work, work
+    assert "issue number" in work, work
+    assert "glossary" not in work, work
+
+
+def test_paste_block_carries_both_short_name_rules() -> None:
+    """Teams without Lore read the block and nothing else."""
+    paste = _default_text().split("## Block for CLAUDE.md and AGENTS.md", 1)[1]
+    bullets = [b for b in paste.split("\n- ") if "short name" in b]
+    assert len(bullets) == 2, bullets
+    assert any("glossary" in b for b in bullets), bullets
+    assert any("issue number" in b for b in bullets), bullets
+
+
+def test_rules_stay_under_the_line_budget() -> None:
+    """An over-specified instruction file is a known failure mode. The document
+    was compacted from 245 lines to 139; every addition replaces text."""
+    assert len(_default_text().splitlines()) < 180
+
+
+# --- the writing rules and the deprecated alias --------------------------
+
+
+def test_known_styles_lists_the_writing_rules() -> None:
+    assert "writing-rules" in KNOWN_STYLES
+
+
+def test_writing_rules_resolve_to_the_packaged_file(tmp_path: Path) -> None:
+    path = resolve_style_path("writing-rules", wiki_dir=tmp_path)
+    assert path.name == "writing-rules.md"
+    assert path.read_text().startswith("# Writing Rules")
+
+
+def test_wiki_override_of_the_writing_rules_wins(tmp_path: Path) -> None:
+    override = tmp_path / "style" / "writing-rules.md"
+    override.parent.mkdir(parents=True)
+    override.write_text("# Our own rules\n")
+    assert resolve_style_path("writing-rules", wiki_dir=tmp_path) == override
+
+
+def test_show_prints_the_writing_rules(lore_root: Path) -> None:
+    result = runner.invoke(app, ["style", "show", "writing-rules"])
+    assert result.exit_code == 0, result.output
+    assert "# Writing Rules" in result.stdout
+
+
+def test_deprecated_alias_prints_the_same_document(lore_root: Path) -> None:
+    """Instruction files in other repos still carry the old name."""
+    alias = runner.invoke(app, ["style", "show", "issue-register"])
+    current = runner.invoke(app, ["style", "show", "writing-rules"])
+    assert alias.exit_code == 0, alias.output
+    assert alias.stdout == current.stdout
+
+
+def test_deprecated_alias_writes_one_stderr_line_naming_the_new_name(lore_root: Path) -> None:
+    """The document itself goes to stdout, so the notice must not pollute it."""
+    result = runner.invoke(app, ["style", "show", "issue-register"])
+    lines = result.stderr.strip().splitlines()
+    assert len(lines) == 1, result.stderr
+    assert "writing-rules" in lines[0]
+
+
+# --- the retired name is gone --------------------------------------------
+
+# The old name, and the prose that used it as a defined term. A four-digit
+# prefix means an ADR or PRD filename, which keeps the name it was filed under.
+RETIRED_TERM = re.compile(
+    r"(?<!\d{4}-)issue[- _]?register|\bthe register\b|\bregister's\b|\*\*Register\*\*",
+    re.I,
+)
+
+# Files that name the retired term on purpose: the alias itself, the decisions
+# recorded under it, and the entries for releases that shipped it.
+KEEPS_THE_RETIRED_TERM = frozenset(
+    {
+        "CHANGELOG.md",
+        "CONTEXT.md",
+        "docs/how-to/customize-the-writing-rules.md",
+        "lib/lore_core/style.py",
+        "tests/test_writing_rules.py",
+    }
+)
+KEEP_PREFIXES = ("docs/adr/0006-", "docs/prd/0009-", "docs/prd/0010-")
+TEXT_SUFFIXES = {".md", ".py", ".yml", ".yaml", ".ini", ".toml", ".json", ".sh", ".txt"}
+
+
+def test_no_tracked_file_names_the_retired_style() -> None:
+    """A half-done rename leaves prose that contradicts the glossary.
+
+    Each file is matched as one whitespace-joined string, because the term
+    wraps across line breaks inside skill frontmatter.
+    """
+    tracked = subprocess.run(
+        # -z: a path holding a space would otherwise split into fragments the
+        # sweep then skips, which is the failure this test exists to catch.
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")[:-1]
+    offenders = []
+    for rel in tracked:
+        if rel in KEEPS_THE_RETIRED_TERM or rel.startswith(KEEP_PREFIXES):
+            continue
+        path = REPO_ROOT / rel
+        if path.suffix not in TEXT_SUFFIXES or not path.is_file():
+            continue
+        joined = " ".join(path.read_text(encoding="utf-8").split())
+        if RETIRED_TERM.search(joined):
+            offenders.append(rel)
+    assert not offenders, f"these files still name the retired style: {offenders}"

@@ -1,7 +1,7 @@
 # Rule 9 heuristic: flags a sentence that opens with a capitalized "-ing"
 # word (the common participial-clause-opener shape, e.g. "Having parsed the
 # header, ..."). Catches the common forms and misses the rest, per the
-# register's honest checkability claim.
+# honest checkability claim in the writing rules.
 extends: existence
 message: "Rule 9 (participial opener): do not open a sentence with a participle; write two sentences."
 level: warning
