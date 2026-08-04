@@ -1,10 +1,15 @@
 """Tests for the packaged Vale style: resolution, `lore style vale-config`,
-and the real-binary integration.
+the single source of the banned-word list, and the real-binary integration.
 
-Vale is PATH-detected and not bundled with Lore (ADR 0006). The integration
-tests below run the actual binary against a fixture with one banned word and
-one 30-word sentence, and skip when Vale is absent — see PRD 0009's testing
-decisions.
+Vale is PATH-detected and not bundled with Lore (ADR 0006), so every test
+that runs the binary skips when Vale is absent. Those tests cover a banned
+word and its inflections, a sentence over the ceiling, the packaged document
+measured against its own style, and the unknown-short-name check: the repo
+glossary switches the check on and supplies its ignore list, and the check
+stays quiet over a path, a repo slug, an English compound, a possessive and
+a fragment left by a code span. The remaining tests cover the generated
+config's cache and the copy recipe the how-to gives. PRD 0009 and PRD 0010
+record the testing decisions.
 """
 
 from __future__ import annotations
@@ -222,6 +227,27 @@ def test_vale_flags_a_sentence_over_25_words(tmp_path: Path) -> None:
     )
     assert "sentence" in result.stdout.lower()
     assert result.returncode != 0
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_the_document_passes_its_own_style_apart_from_the_banned_word_line() -> None:
+    """Rule 3 names every banned word, so Vale flags that one line once per
+    word and the document can never exit 0. Every other line stays clean."""
+    document = default_style_path("writing-rules")
+    banned_line = next(
+        number
+        for number, line in enumerate(document.read_text(encoding="utf-8").splitlines(), 1)
+        if "Banned:" in line
+    )
+    result = subprocess.run(
+        ["vale", "--output=JSON", "--config", str(default_vale_config_path()), str(document)],
+        capture_output=True,
+        text=True,
+    )
+    findings = [f for hits in json.loads(result.stdout or "{}").values() for f in hits]
+    assert findings, f"vale reported nothing, so the run itself broke:\n{result.stderr}"
+    offenders = [f"{f['Line']}: {f['Message']}" for f in findings if f["Line"] != banned_line]
+    assert not offenders, offenders
 
 
 # --- unknown short names: the glossary is the ignore list -----------------
