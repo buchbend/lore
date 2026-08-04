@@ -15,5 +15,5 @@ PRDs are the source of truth for decisions. Each PRD lives at
 0007-substrate-trim
 0008-typed-fact-session-notes
 0009-issue-register
-0010-join-the-register-to-the-glossary
+0010-join-the-writing-rules-to-the-glossary
 ```
