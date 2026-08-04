@@ -1,6 +1,7 @@
 # Are session notes still worth it — divergent brief
-state: exploring
-updated: 2026-08-04 (pressure-test: hybrid vs organic brain)
+state: exploring → converging on architecture
+updated: 2026-08-04 (steer 3: three layers — team artifacts / personal
+transcripts+ledger / flags as the crossing; medium principle)
 
 Predecessor: `lore-session-note-shape.md` (2026-07-03, settled the *shape*;
 superseded by typed facts, PRD 0008 / ADR 0003). This brief asks the prior
@@ -31,20 +32,40 @@ quality in four months, plus the standing context-poisoning surface (C4).
 The open field: what, if anything, do session notes contribute to the brain
 that justifies machinery — or does a deliberate, occasional **flag to the
 vault** (plus deterministic breadcrumbs) replace them at a fraction of the
-price? Nothing is settled.
+price?
+
+**Steer 3 (user, 2026-08-04) — the emerging architecture, three layers:**
+
+1. **Team layer (shared brain):** the artifacts — ADR, PRD, issues/PRs,
+   docs, code — plus only *human-worthy* wiki notes (flags, topic notes,
+   orientation). "Don't we have all with ADR, PRD, github, docs plus the
+   code?" — for the team: yes. Lore is the funnel over it.
+2. **Personal layer (private, local *by design*):** each dev's own
+   transcripts plus a **machine-format breadcrumb ledger** connecting
+   transcripts ↔ artifacts. The individual drills their *own* decisions they
+   own. The privacy boundary sits here: nobody traverses into a colleague's
+   reasoning. (`transcript-ledger.json` already exists as infrastructure.)
+3. **The crossing:** flags/promotion — the only channel by which
+   reasoning-level value becomes team-visible. Deliberate, small, anchored.
+
+**Medium principle (settling):** machine data must not masquerade as human
+notes. The breadcrumb ledger is routing data no human reads — as Obsidian
+files it costs mental load (graph clutter, search hits, disclaimer headers
+telling humans not to trust what's in front of them) while serving only
+machine drill-down. Each layer in its native medium: machine index →
+structured store (`.lore/`), human knowledge → wiki notes, raw record →
+transcripts. The session note as a vault file was a medium mismatch.
 
 ## Open questions
 
-- Q10 [identity] (open): **What does the funnel need to know about sessions,
-  if anything?** The funnel routes "where does context about X live". Options:
-  (a) nothing session-specific — artifacts + vault notes + codemap suffice;
-  (b) a deterministic **distribution map**: per-session linkage frontmatter
-  (repo, branch, PRs, issues, files touched → transcript pointer) already
-  captured zero-LLM today — "X was worked in session S, its context landed in
-  PR #n" as pure breadcrumbs; (c) LLM-written note bodies (status quo).
-  Note: (b) is zero-LLM, zero-poison, and survives C8. Tension: can a
-  breadcrumb with no prose ever answer "why did we abandon that approach?" —
-  or is that exactly what flags (Q12) are for?
+- Q10 [identity] (settling — steer 3): **What does the funnel need to know
+  about sessions?** Answer converging on (b), *in machine form*: a
+  deterministic distribution map (repo, branch, PRs, issues, commits, files →
+  transcript pointer), held as a structured store extending
+  `transcript-ledger.json` — **not as vault notes** (medium principle).
+  (c) LLM note bodies is out; "why did we abandon X?" is the flags' job
+  (Q12) or stays in the owner's private transcript drill. Residual detail:
+  exact store shape and how `lore_search`/drill expose it.
 
 - Q11 [price] (open): **Is the Curator A machinery worth its cost?** Cost:
   quantified above; plus ops fragility (60 NoteClosedError in 8 days) and
@@ -88,16 +109,17 @@ price? Nothing is settled.
   actually need — normalized transcript archive + linkage, or prose notes?
   If the former, the bridge survives the Q11 trim untouched.
 
-- Q13 [durability] (open, opened by pressure-test): **What is the transcript
-  archive's durability and privacy contract?** Measured today: `.transcripts/`
-  is **gitignored** — 556 files / 216 MB, one machine, no retention policy,
-  not portable, not team-shared. The hybrid's "nothing is irreversible,
-  transcripts remain" holds only for this laptop. Options: accept locality
-  (the brain's grounding layer is per-machine; flags must carry enough to
-  stand alone); commit transcripts (collides head-on with privacy/redaction —
-  presumably why they are ignored); a separate shared archive with its own
-  access control; redact-then-commit. Durability vs privacy is a genuine
-  fork, and every anchor (`@N`) in the vault silently assumes an answer.
+- Q13 [durability] (reframed by steer 3): **locality is the design, not the
+  hole.** Transcripts hold reasoning; reasoning is private; therefore the
+  archive being machine-local is *correct* — the privacy boundary made
+  structural. What remains open shrinks to: (i) personal durability — backup
+  of one's own archive (a dev's own concern, maybe a doctor-check nudge, not
+  a lore feature per C10); (ii) same-person multi-machine fragmentation
+  (laptop + desktop = two half-brains); (iii) **anchor asymmetry**: a flag
+  shared in the wiki may carry an `@N` anchor into a transcript only its
+  author holds — drillable for the owner, dead weight for colleagues. Flags
+  must therefore stand alone; the anchor is a bonus for the author, never
+  load-bearing for the team.
 
 ## Pressure-test: hybrid vs organic brain (2026-08-04)
 
@@ -136,11 +158,14 @@ context for the work" functionally requires.
   spec'd — but deliberate, so same A5 amnesia risk); a deterministic
   breadcrumb recap in the banner ("yesterday: repo X, PR #n, files …");
   accept harness-native continuity for the common case.
-- S2 *under-flagging amnesia.* "Did we already try X?" — negative-result
-  recall is the classic labbook value, and exactly what agents will
-  under-flag (bias toward traps and successes over abandoned paths). This is
-  measurable (instrument flag rate against a known-gem baseline) and must be
-  measured, never assumed.
+- S2 *under-flagging amnesia — now with a team cost.* "Did we already try
+  X?" — negative-result recall is the classic labbook value, and exactly what
+  agents will under-flag (bias toward traps and successes over abandoned
+  paths). Under steer 3 the stakes rise: flags are the *only* channel across
+  the privacy boundary, so an unflagged gem is not just personally
+  forgotten — it is structurally invisible to the team forever (the owner's
+  transcript being private). Measurable (flag rate against a known-gem
+  baseline); must be measured, never assumed.
 - S3 *topology without a gardener.* C8 forbids a defrag/merge rescue layer,
   so flag routing must be right at write time: route-before-write (search
   first, append to the existing topic note). Otherwise the sibling-note
@@ -210,6 +235,10 @@ Not adopted — held open.
 - C10 (ratified 2026-08-04): lore stays **general**. Domain aggregations
   (pmo timelines, CCAT reporting) live in project artifacts, never as lore
   features.
+- C11 (settling, steer 3): **the vault is a human surface.** Only content a
+  human might want to read lives as wiki notes; machine state lives in
+  machine stores under `.lore/`. Machine-written files in the Obsidian graph
+  cost mental load and are a medium mismatch.
 
 ## Glossary
 
@@ -224,6 +253,14 @@ Not adopted — held open.
   [candidate]
 - gem / flag-worthy := residual fact with future value: trap, dead end with
   reason, unwritten reasoning, gap-fact. [candidate]
+- ledger := **redefined by steer 3**: the machine-format store connecting
+  transcripts ↔ artifacts (extends `transcript-ledger.json`). The old
+  meaning — the in-note typed-fact ledger of PRD 0008 — is historical.
+  [candidate — rename pending, "session ledger" vs "distribution map"]
+- privacy boundary := reasoning (transcripts) is private to its owner; only
+  artifacts and flags cross to the team. A colleague's "why" is reachable
+  only by asking them — the owner drills their own archive and answers.
+  [candidate]
 - handover/recap := carrying a working thread across a session boundary —
   next session, other harness, other human. [candidate]
 - reporting := struck 2026-08-04 — CCAT-style reports are a different
@@ -270,6 +307,13 @@ Not adopted — held open.
   cross-harness bridge demoted to "could" (Q8).
 - (settled via Q1 evidence + user) Readers: short-horizon continuity, plus a
   human recap reader *worth earning back* — not an archival audience.
+- (settling 2026-08-04, steer 3) **Session notes as vault files are retired
+  as a form.** The breadcrumb job moves to a machine-format ledger; the
+  human-worthy residue moves to flags/topic notes; the recap function is
+  served by a deterministic banner recap from the ledger, not by note files.
+  The "reader worth earning back" is earned by *removing* machine notes from
+  the human surface, not by writing better ones. Pending explicit user
+  confirmation before state flips to settled.
 - (hygiene, needs filing) Stale doctrine: the vault's lore orientation note
   (SessionStart-injected) and agent memory still describe the Curator A/B/C
   triad and daily B abstraction — misinformation fed to every session.
