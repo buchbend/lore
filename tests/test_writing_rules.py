@@ -119,8 +119,16 @@ def test_rules_define_change_and_batch_issue() -> None:
     assert "one PR" in section
 
 
+def _rule(number: int) -> str:
+    prefix = f"{number}. "
+    for line in _default_text().splitlines():
+        if line.startswith(prefix):
+            return line
+    raise AssertionError(f"the writing rules carry no rule {number}")
+
+
 def test_rule_14_accepts_code_flavored_provenance() -> None:
-    rule = next(line for line in _default_text().splitlines() if line.startswith("14. "))
+    rule = _rule(14)
     for form in ("file path", "command output", "test name"):
         assert form in rule, rule
 
@@ -155,6 +163,60 @@ def test_context_md_defines_the_new_terms() -> None:
     for term in ("**Writing rules**", "**Change**", "**Batch issue**"):
         assert term in text, term
     assert "**Register**" not in text, "the old term must be gone from the glossary"
+
+
+COVERED_ARTIFACTS = (
+    "issue text",
+    "PR descriptions",
+    "PR review comments",
+    "ADR context sections",
+    "design documents",
+)
+
+
+def test_scope_line_names_every_covered_artifact() -> None:
+    """PR review comments and design documents follow the same rules. Session
+    notes do not — PRD 0009 places them outside, with their own voice."""
+    scope = next(line for line in _default_text().splitlines() if line.startswith("Scope:"))
+    for artifact in COVERED_ARTIFACTS:
+        assert artifact in scope, scope
+    assert "session note" not in scope.lower(), scope
+
+
+def test_the_explanation_page_states_the_same_scope() -> None:
+    """A page that names a narrower scope than the document it explains is the
+    drift this epic removes."""
+    page = " ".join((REPO_ROOT / "docs/explanation/why-the-writing-rules.md").read_text().split())
+    for artifact in COVERED_ARTIFACTS:
+        assert artifact in page, artifact
+
+
+def test_short_name_rules_split_a_thing_from_a_piece_of_work() -> None:
+    """The two shapes are identical, so only meaning separates them. `L0` is a
+    data level and belongs in the glossary; `G4` labels one session's work and
+    belongs in no glossary at all."""
+    thing, work = _rule(20), _rule(21)
+    assert "glossary" in thing, thing
+    assert "meaning" in thing, thing
+    for place in ("title", "description", "document", "commit message"):
+        assert place in work, work
+    assert "issue number" in work, work
+    assert "glossary" not in work, work
+
+
+def test_paste_block_carries_both_short_name_rules() -> None:
+    """Teams without Lore read the block and nothing else."""
+    paste = _default_text().split("## Block for CLAUDE.md and AGENTS.md", 1)[1]
+    bullets = [b for b in paste.split("\n- ") if "short name" in b]
+    assert len(bullets) == 2, bullets
+    assert any("glossary" in b for b in bullets), bullets
+    assert any("issue number" in b for b in bullets), bullets
+
+
+def test_rules_stay_under_the_line_budget() -> None:
+    """An over-specified instruction file is a known failure mode. The document
+    was compacted from 245 lines to 139; every addition replaces text."""
+    assert len(_default_text().splitlines()) < 180
 
 
 # --- the writing rules and the deprecated alias --------------------------
