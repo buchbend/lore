@@ -1,6 +1,6 @@
 # Are session notes still worth it — divergent brief
-state: seeding
-updated: 2026-08-04
+state: exploring
+updated: 2026-08-04 (Q1 evidence pass)
 
 Predecessor: `lore-session-note-shape.md` (2026-07-03, settled the *shape*; its
 shape was since replaced by typed facts, PRD 0008 / ADR 0003). This brief asks
@@ -30,16 +30,38 @@ Nothing is settled.
 
 ## Open questions
 
-- Q1 [reader] (open): **Who actually reads a session note, and when?**
-  Candidate readers: (a) future agent session pulling context via
-  `lore_search`/`lore_drill`; (b) the human following up days later ("what did
-  that background job actually try?"); (c) Curator B as feedstock for
-  concept/decision extraction; (d) team briefings. Tension: these want
-  *different* documents — (a) wants dense facts, (b) wants narrative of
-  reasoning and dead ends, (c) wants raw material, (d) wants headlines. If
-  (c)/(d) are the only real consumers, the note is an intermediate format, not
-  a product, and "human-readable labbook" is the wrong design target entirely.
-  Empirical handle exists: actual drill/search hit logs could say who reads.
+- Q1 [reader] (settling — evidence in, 2026-08-04): **Who actually reads a
+  session note, and when?** Measured over every Claude Code transcript on the
+  machine (307 sessions, 2026-07-05 → 2026-08-04; older transcripts rotated
+  out): **17 MCP retrieval calls total** — `lore_read` 11, `lore_search` 4,
+  `lore_drill` 2, `lore_resume` **0**. Of the reads, 9 targeted session notes,
+  2–3 concept/strategy notes. Direct filesystem `Read` of session notes: 10,
+  *all* lore-quality meta-work (PRD 0002 pilot, this brainstorm), none
+  organic. What the organic reads share: **all in ccat work, and all within a
+  short horizon — ages 1 min, ~2.5 h ×2, 1 d, 3 d ×2, 7 d. No session note
+  older than 7 days has ever been retrieved.** The "colleague months later"
+  reader — PRD 0002's explicit design target — has never appeared. Session
+  notes were retrieved *more* than Curator B's concept notes (~9:3), so the
+  abstraction layer is read even less than the raw layer. Blind spots the log
+  cannot see: (i) the SessionStart banner deterministically consumes note
+  titles/summaries every session — by volume the *dominant* consumer; (ii)
+  human reads in Obsidian leave no trace — only the user can answer that;
+  (iii) curator feedstock reads happen outside these transcripts. Remaining
+  open sliver: which of (i)–(iii) carries real value.
+
+- Q1b [reframe] (open, spawned by Q1 evidence): **Is the session note a
+  handover artifact with a ~one-week half-life, not an archive?** Every
+  observed organic read is thread-continuity: "what did the last session on
+  this do" (docs strategy, queue discovery, report flow, deploy-role fix,
+  schema cleanup). That is the resume/handover job, not the labbook-archive
+  job. If accepted, it reframes hard: depth and ledger should optimize for a
+  reader *days* away with partial context, not months away with none;
+  long-tail value would then live in *promotion* (Q6) and curator abstraction,
+  not in the note body; retention of full bodies past the horizon becomes
+  questionable (C4 poisoning surface with no measured reader). Tension: a
+  30-day observation window cannot rule out rare high-value archaeology
+  ("what broke in March?") — absence of evidence over one month is weak
+  evidence of absence over a year.
 
 - Q2 [residual] (open): **Should the note keep only what is recorded nowhere
   else?** The verification machinery already computes this per line: `✓` means
@@ -106,9 +128,12 @@ Nothing is settled.
 
 ## Assumptions
 
-- A1 (shaky): *someone* reads session notes after the day they were written.
-  No evidence either way in hand — the drill/search logs could break or
-  confirm this. If broken, Q1 collapses toward machine-only readers.
+- A1 (broken → reframed Q1b): we assumed *someone* reads session notes after
+  the day they were written, on an archival horizon. Measured: reads exist but
+  are rare (~17 in a month, ≲5% of sessions pull anything) and confined to a
+  ≤7-day continuity window; the archival reader never appeared in the
+  observable record. Unmeasured remainder: Obsidian (human) reads, banner
+  consumption, curator feedstock.
 - A2 (live): the archived transcript persists and is drillable, so a note
   never needs to restate — only to index and point.
 - A3 (live): workflow artifacts adequately capture the why at ratification
@@ -163,6 +188,13 @@ Nothing is settled.
   2026-07-03; superseded within a month — same evidence → Q7.
 - [[use-cases]] (vault): ratified list of problems Lore solves — any kill or
   shrink must be checked against it. Not yet re-read for this brief: TODO.
+- [Transcript sweep 2026-08-04]: all `~/.claude/projects` transcripts (307
+  sessions, Jul 5–Aug 4) grepped for lore MCP calls and direct vault reads;
+  method: tool_use extraction, both plugin prefixes → settles most of Q1,
+  breaks A1, spawns Q1b. Caveats: 30-day retention window; banner, Obsidian,
+  and curator reads invisible. Lore's own read path emits no telemetry
+  (spine.jsonl is write-side only) — measuring this permanently would need a
+  read-side spine event.
 
 ## Parked / settled
 
