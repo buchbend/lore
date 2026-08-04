@@ -129,6 +129,19 @@ Nothing is settled.
   called — dead weight or undiscovered?), the vault graph. Curator B
   feedstock struck as a dependent — B is dead.
 
+- Q9 [audiences] (open, spawned by the 2026-08-04 rulings): **Handover and
+  reporting want different documents — one artifact or two renders?** Handover
+  wants dense, thread-scoped context for a reader resuming work; reporting
+  wants human-readable prose about what was worked on, aggregated across
+  sessions on a cadence. ADR 0003 already provides the mechanism: the note
+  body is a deterministic render of a fact store — nothing forbids *two*
+  renders (or a render + an aggregator) of the same store. Options: one note
+  serving both badly (status quo); note = handover render, reporting =
+  cross-note aggregation (deterministic, from headlines/frontmatter); separate
+  artifacts with separate extraction. Constraint check: C8 means whatever
+  feeds reporting must be right at extraction time — no distillation pass
+  will clean it later; C2 caps what the banner can carry.
+
 - Q8 [cross-cutting] (open): **Is the cross-harness / cross-team / human-AI
   promise still load-bearing?** The user's own hunch: mostly solved by
   workflows. But workflows assume GitHub-repo work. Science sessions (data
