@@ -15,7 +15,7 @@ the symbols in `CODEMAP.md`, and goes straight to test-first implementation.
 A vague one either burns the three questions or, worse, ships the wrong
 thing.
 
-## What the fast path adds to the register
+## What the fast path adds to the writing rules
 
 - **One change, clearly scoped.** The fast path is one issue, one branch,
   one pull request. If the issue describes several features, it belongs on
@@ -34,7 +34,7 @@ thing.
 
 ## Checklist
 
-- [ ] The register's sections filled, acceptance criteria in EARS.
+- [ ] The sections the writing rules require filled, acceptance criteria in EARS.
 - [ ] One change, small and clear.
 - [ ] The touched command / module / symbol named under "References".
 - [ ] Nothing in it that belongs on the epic chain.

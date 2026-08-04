@@ -90,8 +90,8 @@ Run **one review pass** with `code-review` at the **mid tier** by default — th
 the small track, so the review is lighter than the epic chain's strong-tier
 crosscheck; escalate a genuinely architectural change to a stronger tier by
 judgement. Address the findings and keep the PR green. Write the PR body through
-[`file-issue`](../file-issue/SKILL.md) in PR-body mode — the register's prose
-rules, no issue skeleton — then open the PR from that file, linking the issue it
+[`file-issue`](../file-issue/SKILL.md) in PR-body mode — the prose rules only,
+no issue skeleton — then open the PR from that file, linking the issue it
 closes, and report back.
 
 **Merging stays with the user.** They are present on this track, so the skill opens

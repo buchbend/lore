@@ -184,10 +184,10 @@ below keeps the literal token, which is what the roadmap validator and `/lore-wo
 
 ## Sub-issue template
 
-An epic-linkage header, then the register's own section skeleton. File it through
-[`file-issue`](../file-issue/SKILL.md) in caller-template mode — that skill resolves the
-register and applies its writing rules inside this structure, so none of those rules are
-repeated here. Keep "Required behaviour" to the slice's end-to-end behavior — not a
+An epic-linkage header, then the section skeleton the writing rules require. File it
+through [`file-issue`](../file-issue/SKILL.md) in caller-template mode — that skill
+resolves the writing rules and applies them inside this structure, so none of those
+rules are repeated here. Keep "Required behaviour" to the slice's end-to-end behavior — not a
 layer-by-layer implementation — and path-free (same prototype exception as above).
 
 <sub-issue-template>

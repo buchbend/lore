@@ -50,7 +50,7 @@ that is the handover value. Pointers are starting points, not gospel (they may g
 
 ### 4. Publish
 File each seed through [`file-issue`](../file-issue/SKILL.md) in caller-template mode, handing
-it the seed template below — that skill keeps the structure exactly and applies the register's
+it the seed template below — that skill keeps the structure exactly and applies the
 writing rules inside it. Label each seed `epic-seed` (create the label if missing), link the
 originating epic and merged PRs, and do not modify the finished epic.
 

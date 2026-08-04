@@ -2,7 +2,7 @@
 
 "Cut" (a branch) and "land" (a pull request) are insider verbs that need a
 glossary entry before a reader can resolve them. "Funnel" is a metaphor a reader
-has to map onto the thing before the sentence means anything. Issue-register
+has to map onto the thing before the sentence means anything. Writing-rules
 rule 3 asks for the shorter common word, so the prose says "create", "merge",
 and plainly what `file-issue` does, and the glossary carries no entry for the
 two verbs.
