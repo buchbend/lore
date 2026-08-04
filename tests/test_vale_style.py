@@ -9,6 +9,7 @@ decisions.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -20,7 +21,9 @@ from lore_cli.__main__ import app
 from lore_core.style import (
     default_style_path,
     default_vale_config_path,
+    glossary_terms,
     resolve_vale_config_path,
+    vale_config_for,
 )
 from typer.testing import CliRunner
 
@@ -29,10 +32,20 @@ runner = CliRunner()
 VALE_MISSING = shutil.which("vale") is None
 
 
+@pytest.fixture(autouse=True)
+def _cache_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every generated Vale config out of the developer's real cache dir."""
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
+
+
 @pytest.fixture()
 def lore_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     (tmp_path / "wiki" / "notes").mkdir(parents=True)
+    # `vale-config` reads the cwd's repo for a glossary. The checkout this
+    # suite runs from holds one, so the CLI cases start from a directory that
+    # does not — otherwise they compare against a generated copy.
+    monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
@@ -207,3 +220,139 @@ def test_vale_flags_a_sentence_over_25_words(tmp_path: Path) -> None:
     )
     assert "sentence" in result.stdout.lower()
     assert result.returncode != 0
+
+
+# --- unknown short names: the glossary is the ignore list -----------------
+
+
+def _repo_with_glossary(parent: Path, *terms: str) -> Path:
+    """A repo directory whose CONTEXT.md defines ``terms`` in bold."""
+    repo = parent / "repo"
+    repo.mkdir(exist_ok=True)
+    entries = "\n".join(f"- **{term}** — a defined thing." for term in terms)
+    (repo / "CONTEXT.md").write_text(f"# Context\n\n## Language\n\n{entries}\n")
+    return repo
+
+
+def _vale(config: Path, fixture: Path) -> tuple[int, list[dict]]:
+    """Run the real binary and return its exit code plus a flat alert list.
+
+    JSON output rather than the console format: a long message wraps across
+    console lines, so a substring assertion on the flagged word is unreliable.
+    """
+    result = subprocess.run(
+        ["vale", "--output=JSON", "--config", str(config), str(fixture)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 2, f"vale could not run:\n{result.stdout}{result.stderr}"
+    by_file = json.loads(result.stdout or "{}")
+    return result.returncode, [alert for alerts in by_file.values() for alert in alerts]
+
+
+def test_packaged_ini_ships_the_short_name_check_switched_off() -> None:
+    """The packaged config lints repos that have no glossary, so the check
+    stays off until one switches it on. `vale_config_for` rewrites this exact
+    line, so a config that drops it silently loses the check."""
+    ini = default_vale_config_path().read_text(encoding="utf-8")
+    assert "WritingRules.UnknownShortName = NO" in ini
+
+
+def test_glossary_terms_takes_the_bold_terms(tmp_path: Path) -> None:
+    repo = _repo_with_glossary(tmp_path, "L0", "Topic block", "C-ext")
+    assert glossary_terms(repo) == ["L0", "Topic", "block", "C-ext"]
+
+
+def test_glossary_terms_is_empty_without_a_context_md(tmp_path: Path) -> None:
+    assert glossary_terms(tmp_path) == []
+
+
+def test_config_for_a_repo_without_a_glossary_is_the_packaged_default(tmp_path: Path) -> None:
+    assert vale_config_for(tmp_path) == default_vale_config_path()
+
+
+def test_config_for_a_repo_with_a_glossary_switches_the_check_on(tmp_path: Path) -> None:
+    repo = _repo_with_glossary(tmp_path, "L0")
+    config = vale_config_for(repo)
+    assert config != default_vale_config_path()
+    assert "WritingRules.UnknownShortName = YES" in config.read_text(encoding="utf-8")
+    assert (config.parent / "glossary.txt").read_text(encoding="utf-8").split() == ["L0"]
+    # The whole rule directory travels, or the other rules stop firing.
+    assert (config.parent / "WritingRules" / "Vocabulary.yml").is_file()
+
+
+def test_the_generated_config_stays_out_of_the_repo(tmp_path: Path) -> None:
+    """ADR 0006 keeps Lore from writing into a checkout it does not own."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    config = vale_config_for(repo)
+    assert repo not in config.parents
+
+
+def test_vale_config_cli_switches_the_check_on_inside_a_glossary_repo(
+    lore_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo_with_glossary(lore_root, "L0")
+    monkeypatch.chdir(repo)
+    result = runner.invoke(app, ["style", "vale-config"])
+    assert result.exit_code == 0, result.output
+    printed = Path(result.output.strip())
+    assert "WritingRules.UnknownShortName = YES" in printed.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+@pytest.mark.parametrize("name", ["G4", "LTA", "C-ext", "camelCase"])
+def test_vale_flags_an_invented_short_name(tmp_path: Path, name: str) -> None:
+    """Digit-bearing, uppercase, hyphenated and mixed-case tokens are the
+    shapes Vale's default spelling filters skip. `custom: true` drops those
+    filters, so all four reach the dictionary."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(f"# Title\n\nThe {name} loader reads the file.\n")
+    code, alerts = _vale(vale_config_for(repo), fixture)
+    assert name in [alert["Match"] for alert in alerts]
+    assert code == 0, "an advisory finding must not read as a blocking one"
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_vale_leaves_a_glossary_short_name_alone(tmp_path: Path) -> None:
+    repo = _repo_with_glossary(tmp_path, "L0")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text("# Title\n\nThe L0 stage feeds the G4 loader.\n")
+    _, alerts = _vale(vale_config_for(repo), fixture)
+    matches = [alert["Match"] for alert in alerts]
+    assert "G4" in matches, "the check did not run, so the L0 result proves nothing"
+    assert "L0" not in matches
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_the_short_name_check_reports_at_warning(tmp_path: Path) -> None:
+    repo = _repo_with_glossary(tmp_path, "L0")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text("# Title\n\nThe G4 loader reads the file.\n")
+    _, alerts = _vale(vale_config_for(repo), fixture)
+    assert [alert["Severity"] for alert in alerts] == ["warning"]
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_a_banned_word_still_exits_1_beside_the_new_check(tmp_path: Path) -> None:
+    """`file-issue` reads Vale by exit code: 1 is a blocking finding. The new
+    warning must neither create one nor hide one."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text("# Title\n\nWe should leverage the G4 loader.\n")
+    code, alerts = _vale(vale_config_for(repo), fixture)
+    assert code == 1
+    assert {alert["Check"] for alert in alerts} == {
+        "WritingRules.Vocabulary",
+        "WritingRules.UnknownShortName",
+    }
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_a_repo_without_a_glossary_runs_no_short_name_check(tmp_path: Path) -> None:
+    """With no glossary the check would flag every domain word, so it is off."""
+    fixture = tmp_path / "issue.md"
+    fixture.write_text("# Title\n\nThe G4 loader reads the file.\n")
+    code, alerts = _vale(vale_config_for(tmp_path), fixture)
+    assert alerts == []
+    assert code == 0
