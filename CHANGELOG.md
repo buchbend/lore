@@ -8,6 +8,61 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.66.0] - 2026-08-04
+
+Joins the writing rules to the per-repo glossary (#336, PRD 0010). Agents wrote
+short names that no glossary defined, and the rules pointed at a glossary that
+no skill read.
+
+### Changed
+
+- **The style document is now `writing-rules`** (#337). Both halves of the old
+  name misdescribed it: the scope covers PR descriptions and ADR context, and
+  "register" reads as a CPU register in a software repo. `lore style show
+  issue-register` still resolves the same document and names the current style
+  on stderr, so instruction files in other repos keep working. The Vale rule
+  directory is now `WritingRules/`.
+- **A glossary definition follows the sentence rules** (#340). `CONTEXT-FORMAT.md`
+  points at the writing rules rather than restating them. This repo's own
+  `CONTEXT.md` went from 27 sentences past the 25-word ceiling to none.
+- **`brief` and `file-issue` never write to `CONTEXT.md`** (#338, #341). Both
+  route a term worth adding to `grilling`, which stays the only door into the
+  glossary. `domain-modeling` no longer invites another skill to maintain the
+  domain model and states that a person approves every entry.
+
+### Added
+
+- **Two rules for short names** (#339). Rule 20 covers a short name that means a
+  thing: the glossary must hold it, and a writer without an entry writes out the
+  meaning. Rule 21 covers a short name that means a piece of work — a phase, a
+  group, a priority code — which never enters a title, a description, a document
+  or a commit message; a writer cites the issue number instead. `L0` is a data
+  level and `G4` is a label from one session, and no pattern separates them, so
+  one rule could not carry both.
+- **`file-issue` reads the repo glossary while drafting** (#341). The read
+  happens in the same step that resolves the writing rules. A missing
+  `CONTEXT.md` never blocks filing. The SessionStart directive stays one line.
+- **Vale flags a short name held by neither the glossary nor common English**
+  (#342), at warning severity. A banned-word list only catches terms someone
+  listed beforehand; a dictionary check catches a name an agent invents. The
+  check needs `custom: true`, because Vale's default filters skip uppercase,
+  mixed-case and digit-bearing tokens — exactly the shapes in question. It ships
+  off: a repo with no `CONTEXT.md` would see every domain word flagged. `lore
+  style vale-config` copies the config to the host cache, writes the glossary
+  beside it and switches the check on where it finds one, so nothing is written
+  into a user's checkout.
+- **`lore style vale-config --packaged`** (#342) returns the packaged config for
+  seeding a wiki override, so the documented copy recipe cannot carry one team's
+  glossary into another's wiki.
+
+### Notes
+
+- The short-name check reports 4 to 7 distinct findings on a typical issue body
+  and never blocks: Vale keys its exit code off error-level alerts alone, and
+  this check is a warning. Some findings are the check working — `ADR`, `PRD`
+  and `AFK` are real short names this repo's glossary does not define, and only
+  a person may add an entry.
+
 ## [0.65.4] - 2026-08-04
 
 ### Fixed
