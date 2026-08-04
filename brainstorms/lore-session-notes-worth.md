@@ -1,6 +1,6 @@
 # Are session notes still worth it — divergent brief
 state: exploring
-updated: 2026-08-04 (steer 2: funnel identity, machinery price, flag model)
+updated: 2026-08-04 (pressure-test: hybrid vs organic brain)
 
 Predecessor: `lore-session-note-shape.md` (2026-07-03, settled the *shape*;
 superseded by typed facts, PRD 0008 / ADR 0003). This brief asks the prior
@@ -88,6 +88,76 @@ price? Nothing is settled.
   actually need — normalized transcript archive + linkage, or prose notes?
   If the former, the bridge survives the Q11 trim untouched.
 
+- Q13 [durability] (open, opened by pressure-test): **What is the transcript
+  archive's durability and privacy contract?** Measured today: `.transcripts/`
+  is **gitignored** — 556 files / 216 MB, one machine, no retention policy,
+  not portable, not team-shared. The hybrid's "nothing is irreversible,
+  transcripts remain" holds only for this laptop. Options: accept locality
+  (the brain's grounding layer is per-machine; flags must carry enough to
+  stand alone); commit transcripts (collides head-on with privacy/redaction —
+  presumably why they are ignored); a separate shared archive with its own
+  access control; redact-then-commit. Durability vs privacy is a genuine
+  fork, and every anchor (`@N`) in the vault silently assumes an answer.
+
+## Pressure-test: hybrid vs organic brain (2026-08-04)
+
+Hybrid under test: auto-captured deterministic breadcrumbs (linkage
+frontmatter → transcript pointer) + transcript archive + **agent-initiated,
+topic-routed flags**. Tested against what "an organic brain that grows a
+context for the work" functionally requires.
+
+**Where it holds:**
+
+- *Topology (the strongest resonance).* A brain files by topic and
+  strengthens with use, not by date. Flags appending to living topic/project
+  notes grow the vault the way the vision describes; date-sharded session
+  sediment stops pretending to be memory. The date layer that remains
+  (breadcrumbs) is logistics, and honest about it.
+- *Lab-notebook culture (domain resonance).* Real labbooks are deliberate:
+  instruments auto-log raw data, the scientist chooses what to write down.
+  Transcripts = instrument logs; flags = notebook entries; breadcrumbs = the
+  run index. The auto-note was trying to make the instrument write the
+  notebook. The already-ratified deliberate `/lore:handover` spec shows the
+  ecosystem was drifting this way on its own.
+- *Lightweight (C9).* Capture needs no LLM backend at all — a team can adopt
+  breadcrumbs + archive with no API key, no curator config, none of the
+  pipeline's failure classes (60 NoteClosedErrors/8 days all die). The
+  machinery deletion is large and reversible (code in git, transcripts
+  regenerable-from … see G1/Q13).
+- *Forgetting + trust surface.* Fewer, better lines; positive-evidence
+  staleness applies to a reviewable volume; C4 surface shrinks drastically.
+
+**Stress points (named, not resolved):**
+
+- S1 *continuity gap.* The hybrid kills the one artifact with measured
+  organic use: the ≤7-day "what did the last session on this thread do" read
+  (~17/month). Raw-transcript drill is too expensive to replace it (C7).
+  Mitigations on the table: the deliberate `/lore:handover` (already
+  spec'd — but deliberate, so same A5 amnesia risk); a deterministic
+  breadcrumb recap in the banner ("yesterday: repo X, PR #n, files …");
+  accept harness-native continuity for the common case.
+- S2 *under-flagging amnesia.* "Did we already try X?" — negative-result
+  recall is the classic labbook value, and exactly what agents will
+  under-flag (bias toward traps and successes over abandoned paths). This is
+  measurable (instrument flag rate against a known-gem baseline) and must be
+  measured, never assumed.
+- S3 *topology without a gardener.* C8 forbids a defrag/merge rescue layer,
+  so flag routing must be right at write time: route-before-write (search
+  first, append to the existing topic note). Otherwise the sibling-note
+  problem returns at topic level. Candidate assist: the funnel itself
+  proposes the target note — the funnel serving capture, not just retrieval.
+- S4 *flags are still LLM writes.* C4 shrinks but does not vanish — and a
+  flag carries an implicit "worth keeping" endorsement, so per-line trust
+  demand *rises*. The typed-fact gates survive in miniature: no anchor, no
+  flag; stamped phrasing for anything unverifiable.
+- G1 *the safety-net hole* → promoted to Q13 (transcript durability).
+
+**Verdict of the test:** the hybrid survives the vision's core demands
+(topic-shaped growth, lightweight, deliberate culture) better than the status
+quo, with three real stress points (S1–S3) that each have candidate
+mitigations, one structural caveat (S4), and one unresolved hole (Q13).
+Not adopted — held open.
+
 ## Absorbed questions (from earlier passes)
 
 - Q2 (residual inversion) and Q6 (promotion) → folded into Q12: the
@@ -145,6 +215,8 @@ price? Nothing is settled.
 
 - funnel := the layer that knows how context is distributed across artifacts
   (ADRs, PRDs, docs, issues, code, vault) and pulls it in on demand. [agreed]
+- hybrid := auto deterministic breadcrumbs + transcript archive +
+  agent-initiated topic-routed flags; the capture model under test. [candidate]
 - flag := a deliberate, occasional capture of one keep-worthy item to the
   vault, with an anchor to its origin. [candidate]
 - distribution map := zero-LLM per-session linkage (repo, branch, PRs,
@@ -178,6 +250,12 @@ price? Nothing is settled.
   mechanism).
 - [[use-cases]] (vault): ratified problem list — any kill/trim must be
   checked against it. Still TODO for this brief.
+- [Transcript archive audit 2026-08-04]: `wiki/*/.transcripts/` gitignored;
+  556 files / 216 MB on one machine; retention janitor covers only ops logs
+  (spine/flushes/runs), transcripts unbounded and unmanaged → Q13.
+- [Handover spec (proposed 2026-05-11)]: `/lore:handover` deliberate +
+  explicit, user-invoked — prior art for deliberate capture inside lore's own
+  design history → S1, Q12.
 
 ## Parked / settled
 
