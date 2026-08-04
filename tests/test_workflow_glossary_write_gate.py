@@ -51,3 +51,13 @@ def test_implement_issue_and_brief_still_reference_domain_modeling() -> None:
             encoding="utf-8"
         )
         assert "domain-modeling" in text
+
+
+def test_brief_never_writes_to_the_glossary() -> None:
+    body = (
+        (REPO_ROOT / "lore-workflow" / "skills" / "brief" / "SKILL.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    assert "never write to `context.md`" in body
+    assert "grilling" in body

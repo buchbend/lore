@@ -57,7 +57,7 @@ Reuse the existing gates verbatim — no new document types:
   context / a real trade-off) to the decision the brief lands on. All three hold → draft the
   ADR at `docs/adr/NNNN-kebab.md` as part of the downstream work. Any one missing → skip
   silently, no placeholder. (See [`domain-modeling`](../domain-modeling/SKILL.md).)
-- **Glossary / CONTEXT.md** — touch only if the brief actually coined a *new* domain term.
+- **Never write to `CONTEXT.md`** — a term worth adding belongs to `grilling`, not this skill.
 - **No PRD, no epic tracker.** Those belong to the chain.
 - **No brief file.** Lore's auto session capture already records the exchange; a persisted
   brief would duplicate what session notes do.
