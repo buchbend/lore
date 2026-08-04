@@ -56,8 +56,7 @@ def test_implement_issue_and_brief_still_reference_domain_modeling() -> None:
 # The one sentence every drafting skill carries. Pinning it whole stops the
 # destination and the wording drifting apart across skills.
 GLOSSARY_GATE = (
-    "**never write to `context.md`** — a term worth adding belongs to "
-    "`grilling`, not this skill."
+    "**never write to `context.md`** — a term worth adding belongs to `grilling`, not this skill."
 )
 
 

@@ -34,8 +34,8 @@ Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 Read `CONTEXT.md` at the repo root too, if present. It defines each domain term with
 one tight meaning — draft with those terms instead of a synonym. When the repo holds no
 `CONTEXT.md`, draft without one and name the absence in one line when you report back.
-**Never write to `CONTEXT.md`** — a term worth adding belongs to `domain-modeling`, not
-this skill.
+**Never write to `CONTEXT.md`** — a term worth adding belongs to `grilling`, not this
+skill.
 
 ## 2. Draft to a file whose name ends in `.md`
 
