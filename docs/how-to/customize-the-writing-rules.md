@@ -41,19 +41,24 @@ default does. There is no merge and no per-repo layer.
    The Vale config resolves the same way:
 
    ```
-   lore style vale-config
+   lore style vale-config --packaged
    ```
 
    Copy the whole packaged `styles/vale/` directory, not the `vale.ini` alone:
 
    ```
-   cp -r "$(dirname "$(lore style vale-config)")" "$LORE_ROOT/wiki/<name>/style/vale"
+   cp -r "$(dirname "$(lore style vale-config --packaged)")" "$LORE_ROOT/wiki/<name>/style/vale"
    ```
 
    The ini sets `StylesPath = .`, so Vale looks for the rule directory next to
    the ini it loaded. An ini copied without its `WritingRules/` directory
    fails with exit code 2 and `style 'WritingRules' does not exist on
    StylesPath`.
+
+   `--packaged` is what makes the copy safe. Without it the command prints a
+   generated copy carrying the current repository's glossary. Every repository
+   attached to your wiki would then lint against that one glossary. Step 4
+   drops the option, because linting is where you want the glossary.
 
 4. **Check the rules fire.**
 
@@ -78,6 +83,9 @@ default does. There is no merge and no per-repo layer.
   file unless you intend to drop those.
 - Wikis are portable. The override travels with the wiki repo, so a team that
   takes its wiki elsewhere keeps its rules.
+- The short-name check reads each repository's own `CONTEXT.md`. Your override
+  sets the rules. The repository you lint from sets the terms. A repository
+  without a `CONTEXT.md` runs no short-name check at all.
 - `lore style show issue-register` still resolves the same document and names
   the retired term on stderr. A wiki that overrode `style/issue-register.md`
   renames that file to `style/writing-rules.md`.

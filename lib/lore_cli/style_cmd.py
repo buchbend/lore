@@ -80,6 +80,11 @@ def vale_config(
     wiki: str = typer.Option(
         None, "--wiki", "-w", help="Wiki whose override wins (default: from cwd)."
     ),
+    packaged: bool = typer.Option(
+        False,
+        "--packaged",
+        help="Print the config to copy, without this repo's glossary folded in.",
+    ),
 ) -> None:
     """Print the Vale config path to lint against.
 
@@ -88,9 +93,14 @@ def vale_config(
     config carrying the glossary, which switches the short-name check on.
     Meant for command substitution:
     `vale --config $(lore style vale-config) <file>`.
+
+    `--packaged` prints the resolved config itself. Use it to seed a wiki
+    override: a copy taken from the generated path would carry one repo's
+    glossary into every repo attached to that wiki.
     """
     cwd = Path.cwd()
-    path = vale_config_for(git_repo_root(cwd) or cwd, wiki_dir=_wiki_dir(wiki))
+    repo_dir = None if packaged else (git_repo_root(cwd) or cwd)
+    path = vale_config_for(repo_dir, wiki_dir=_wiki_dir(wiki))
     # Plain write, not console.print: a path can contain `[...]`-shaped
     # segments and Rich's markup parser would eat them (same hazard as
     # `show`'s plain stdout write).

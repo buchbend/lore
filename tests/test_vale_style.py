@@ -19,6 +19,8 @@ import pytest
 import yaml
 from lore_cli.__main__ import app
 from lore_core.style import (
+    _CHECK_OFF,
+    GLOSSARY_IGNORE_FILE,
     default_style_path,
     default_vale_config_path,
     glossary_terms,
@@ -417,3 +419,72 @@ def test_the_check_passes_over_a_fragment_left_by_a_code_span(tmp_path: Path) ->
     fixture.write_text("# Title\n\nVale reports an `error`-level alert here.\n")
     _, alerts = _vale(vale_config_for(repo), fixture)
     assert [alert["Match"] for alert in alerts] == []
+
+
+# --- the copy recipe the how-to gives ------------------------------------
+
+
+def test_packaged_flag_prints_a_config_carrying_no_glossary(lore_root: Path) -> None:
+    """`docs/how-to/customize-the-writing-rules.md` copies this directory into a
+    wiki override. A generated copy would carry one repo's glossary into every
+    repo attached to that wiki."""
+    repo = _repo_with_glossary(lore_root, "L0")
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.chdir(repo)
+    try:
+        result = runner.invoke(app, ["style", "vale-config", "--packaged"])
+    finally:
+        monkeypatch.undo()
+    assert result.exit_code == 0, result.output
+    printed = Path(result.output.strip())
+    assert printed == default_vale_config_path()
+    assert not (printed.parent / GLOSSARY_IGNORE_FILE).exists()
+    assert _CHECK_OFF in printed.read_text(encoding="utf-8")
+
+
+def test_the_how_to_copies_the_packaged_directory() -> None:
+    """The bare command prints a generated copy from any repo holding a
+    glossary, so the copy step names `--packaged` or it clones that glossary."""
+    how_to = Path(__file__).resolve().parents[1] / "docs" / "how-to"
+    text = (how_to / "customize-the-writing-rules.md").read_text(encoding="utf-8")
+    copy_step = next(line for line in text.splitlines() if line.lstrip().startswith("cp -r"))
+    assert "lore style vale-config --packaged" in copy_step
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_a_wiki_override_copied_packaged_runs_no_check(tmp_path: Path) -> None:
+    """A second repo attached to that wiki, holding no glossary of its own,
+    must not lint against the first repo's word list."""
+    wiki = tmp_path / "wiki"
+    (wiki / "style").mkdir(parents=True)
+    shutil.copytree(default_vale_config_path().parent, wiki / "style" / "vale")
+    repo_b = tmp_path / "b"
+    repo_b.mkdir()
+    fixture = repo_b / "issue.md"
+    fixture.write_text("# Title\n\nThe G4 loader reads the file.\n")
+    code, alerts = _vale(vale_config_for(repo_b, wiki_dir=wiki), fixture)
+    assert alerts == []
+    assert code == 0
+
+
+def test_a_captured_config_path_survives_a_rebuild(tmp_path: Path) -> None:
+    """`file-issue` captures the path in `$(...)` and runs Vale with it a step
+    later. A rebuild in between must not unlink what it captured, or Vale exits
+    2 and the skill reads a broken invocation."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    captured = vale_config_for(repo)
+    (repo / "CONTEXT.md").write_text("# Context\n\n- **G4** — another thing.\n")
+    rebuilt = vale_config_for(repo)
+    assert rebuilt != captured
+    assert captured.is_file()
+    assert "L0" in (captured.parent / GLOSSARY_IGNORE_FILE).read_text(encoding="utf-8")
+
+
+def test_an_unchanged_glossary_reuses_the_tree(tmp_path: Path) -> None:
+    """The content key means a second call finds its own tree and writes
+    nothing, so there is no window for a reader to fall into."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    first = vale_config_for(repo)
+    stamp = first.stat().st_mtime_ns
+    assert vale_config_for(repo) == first
+    assert first.stat().st_mtime_ns == stamp

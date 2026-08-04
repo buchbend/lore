@@ -157,6 +157,10 @@ def vale_config_for(repo_dir: Path | None, wiki_dir: Path | None = None) -> Path
     and out of the installed package. Vale resolves a rule's ``ignore`` path
     against ``StylesPath``, so the list has to sit next to the rules, and the
     packaged directory is shared by every repo on the host.
+
+    Pass ``repo_dir=None`` for the resolved config itself. That is the copy to
+    seed a wiki override from: an override taken from a generated copy carries
+    one repo's glossary into every repo attached to that wiki.
     """
     base = resolve_vale_config_path(wiki_dir)
     if repo_dir is None:
@@ -164,25 +168,56 @@ def vale_config_for(repo_dir: Path | None, wiki_dir: Path | None = None) -> Path
     terms = glossary_terms(repo_dir)
     if not terms:
         return base
-    key = hashlib.sha256(f"{repo_dir}\n{base}".encode()).hexdigest()[:12]
-    out = _cache_dir() / "vale" / f"{repo_dir.name}-{key}"
+    out = _cache_dir() / "vale" / f"{repo_dir.name}-{_content_key(base, terms)}"
+    if (out / base.name).is_file():
+        return out / base.name
     try:
-        # ponytail: rebuilt from scratch every call rather than cached against
-        # the glossary's mtime. The tree is a handful of small files, and a rule
-        # left behind by an older Lore would otherwise keep firing.
-        shutil.rmtree(out, ignore_errors=True)
-        shutil.copytree(base.parent, out)
-        (out / GLOSSARY_IGNORE_FILE).write_text("\n".join(terms) + "\n", encoding="utf-8")
-        ini = out / base.name
-        # A config that never carried the switch is a hand-rolled wiki override.
-        # Leave it as its author wrote it rather than inject a rule they did not
-        # ask for; `replace` is a no-op there.
+        # The tree is built under a private name and moved into place, so a
+        # path another process already captured stays readable while this one
+        # builds. `os.replace` needs a free destination, which the content key
+        # gives it: a different glossary or rule set is a different directory.
+        # ponytail: superseded directories are left behind rather than swept.
+        # They are a few kilobytes each and only a glossary edit makes one.
+        staging = out.with_name(f"{out.name}.{os.getpid()}")
+        shutil.rmtree(staging, ignore_errors=True)
+        shutil.copytree(base.parent, staging)
+        (staging / GLOSSARY_IGNORE_FILE).write_text("\n".join(terms) + "\n", encoding="utf-8")
+        ini = staging / base.name
+        # The switch line is what the packaged config carries to keep the check
+        # off. A hand-rolled wiki override may not carry it, and there `replace`
+        # does nothing — Vale runs every rule under `BasedOnStyles` by default,
+        # so that override runs the check against the glossary copied here.
         ini.write_text(
             ini.read_text(encoding="utf-8").replace(_CHECK_OFF, _CHECK_ON), encoding="utf-8"
         )
+        try:
+            os.replace(staging, out)
+        except OSError:
+            # Another process built the same key first. Both trees hold the
+            # same bytes, so theirs serves and this one goes.
+            shutil.rmtree(staging, ignore_errors=True)
+            if not (out / base.name).is_file():
+                raise
     except OSError:
         # A cache Lore cannot write costs the short-name check, never the lint.
         # The caller runs the resolved config, whose rule is off (ADR 0006 —
         # Vale never blocks the flow).
         return base
-    return ini
+    return out / base.name
+
+
+def _content_key(base: Path, terms: list[str]) -> str:
+    """Digest of everything the generated tree is built from.
+
+    Keying the directory by content rather than by repository path means a
+    rebuild only ever writes a directory that does not exist yet. A Lore
+    upgrade that ships a changed rule lands on a new key rather than reusing a
+    stale tree.
+    """
+    digest = hashlib.sha256(str(base).encode())
+    for path in sorted(base.parent.rglob("*")):
+        if path.is_file():
+            digest.update(path.relative_to(base.parent).as_posix().encode())
+            digest.update(path.read_bytes())
+    digest.update("\n".join(terms).encode())
+    return digest.hexdigest()[:16]
