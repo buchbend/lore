@@ -1,12 +1,12 @@
 ---
-title: "Join the register to the glossary"
+title: "Join the writing rules to the glossary"
 status: draft
 epic: "TODO: not yet opened — confirm before filing"
 repos:
   - buchbend/lore
 ---
 
-# PRD 0010: Join the register to the glossary
+# PRD 0010: Join the writing rules to the glossary
 
 > Source of truth for this epic. Research notes:
 > `RESEARCH-register-glossary.md`.
@@ -54,21 +54,21 @@ Four separate failures appear in the table:
 Failure 4 needs a different answer from failure 3. A glossary entry for `P6`
 would be wrong.
 
-The register already answers failures 1 to 3, and the answers do not run.
+The writing rules already answer failures 1 to 3, and the answers do not run.
 Rule 1 tells the writer to take the term from the glossary. Rule 2 forbids a
 new domain term inside an issue. Rule 4 requires an expansion for every
 abbreviation outside the glossary. All three point at a glossary. No skill
 reads one.
 
-The register states the gap in its own text: "Rules 1 and 2 become checkable
+The document states the gap in its own text: "Rules 1 and 2 become checkable
 once the glossary is structured."
 
 Two further observations, both in this repo:
 
-- The register carried a worked example that used `L0` twice, and no glossary
-  defines `L0`. The example that agents copy broke the rule the register is
+- The document carried a worked example that used `L0` twice, and no glossary
+  defines `L0`. The example that agents copy broke the rule the document is
   about to add. Commit `9fcd172` removed that example while compacting the
-  register from 245 lines to 139.
+  document from 245 lines to 139.
 - Lore's own `CONTEXT.md` runs 29 of its 126 sentences past the 25-word
   ceiling. `ccatobs/system-integration/CONTEXT.md` runs 3 of 24 past it. A
   definition nobody can read fixes nothing.
@@ -82,19 +82,38 @@ The team keeps one glossary per repo, in `CONTEXT.md`, in the format
 `lore-workflow/skills/domain-modeling/CONTEXT-FORMAT.md` already specifies.
 Nothing about the file format changes.
 
-The register gains two rules. One rule covers a short name for a thing. One
+The writing rules gain two entries. One rule covers a short name for a thing. One
 rule covers a short name for a piece of work. The `file-issue` skill reads
-the repo's `CONTEXT.md` when it drafts, next to the register it already
+the repo's `CONTEXT.md` when it drafts, next to the document it already
 resolves.
 
 The `grilling` skill stays the only door into the glossary. A person
 approves every entry. At the end of an interview, `grilling` lists the terms
 it wrote.
 
-`CONTEXT-FORMAT.md` adopts the register's sentence rules, so a definition
+`CONTEXT-FORMAT.md` adopts the sentence rules, so a definition
 reads as plainly as the text that cites it.
 
 ## Implementation decisions
+
+- **The document is renamed from "issue register" to "writing rules".** Both
+  halves of the old name were wrong. The scope covers PR descriptions and ADR
+  context, so "issue" understates it. "Register" is a linguistics term, and
+  our readers do not work in that field. In a software repo the word first
+  reads as a CPU register or a list of records. "Writing rules" states what
+  the file holds before a reader opens it.
+
+- **The rename is whole, and a dated alias covers the paste block.** Every
+  document, skill and test uses the new name. `KNOWN_STYLES` keeps
+  `issue-register` as a deprecated alias that resolves to the new file and
+  prints one line to stderr naming the new command. Instruction files in
+  other repos already carry `lore style show issue-register`, and a blank
+  error would strand them. The alias is removed once those files are
+  repasted. ADR 0006 and PRD 0009 keep the old name, because both record a
+  decision that was made under it.
+
+- **The rename lands before every other change.** No later slice writes the
+  old name, so no later slice needs rewriting.
 
 - **The glossary read happens at drafting time, not only at session start.**
   Gloaguen and colleagues find that context files do not generally improve
@@ -106,10 +125,10 @@ reads as plainly as the text that cites it.
   stays one line and does not grow.
 
 - **`CONTEXT.md` is a plain file in the repo. No new command resolves it.**
-  The register resolves per wiki. The glossary resolves per repo. A skill
+  The writing rules resolve per wiki. The glossary resolves per repo. A skill
   reads the file from the working directory, or from the repo it targets.
 
-- **The register carries two rules, not one.** A short name for a thing must
+- **The document carries two rules, not one.** A short name for a thing must
   be in the glossary; a writer who lacks the entry writes out the meaning
   instead. A short name for a piece of work never enters a title, a
   description, a document or a commit message. A writer who must point at
@@ -118,7 +137,7 @@ reads as plainly as the text that cites it.
 - **The second rule already exists in a private file.** The user's global
   agent instructions forbid phase names in code comments and summaries, and
   name the issue number as the escape hatch. The rule reaches one person.
-  The register gives the same rule to the team.
+  The shared document gives the same rule to the team.
 
 - **A person approves every glossary entry.** No skill writes a term an
   agent invented without approval. The surveyed record contains no team that
@@ -150,13 +169,13 @@ reads as plainly as the text that cites it.
   and the team judged the result not actionable
   (<https://engineering.contentsquare.com/2023/using-vale-to-help-engineers-become-better-writers/>).
 
-- **The register replaces text rather than growing.** The register runs 245
+- **The document replaces text rather than growing.** The document ran 245
   lines. Anthropic names the over-specified instruction file as a standard
   failure mode. Practitioners cap such files near 300 lines
   (<https://www.humanlayer.dev/blog/writing-a-good-claude-md>). Every
   addition here removes or rewrites an existing paragraph.
 
-- **The register shows the contrast inside a rule, not in an example.** Rules
+- **The document shows the contrast inside a rule, not in an example.** Rules
   8 and 9 already pair a wrong sentence with a right one, at one line each.
   A new rule that needs a contrast follows the same shape.
 
@@ -169,11 +188,11 @@ reads as plainly as the text that cites it.
 Test the CLI and the file contents, not skill prose. Prior art: the existing
 `tests/test_style_register.py` and `tests/test_directive_template.py`.
 
-- Assert the register carries both new rules.
+- Assert the document carries both new rules.
 - Assert `CONTEXT-FORMAT.md` carries the sentence ceiling.
 - Assert the SessionStart directive still renders one line, and that the
   line names the glossary.
-- Assert the whole register passes the register's own Vale style. The check
+- Assert the whole document passes its own Vale style. The check
   passes as of commit `9fcd172` and must keep passing as rules are added.
 - Run the Vale spelling check against a fixture holding one glossary term
   and one invented short name. Skip when Vale is absent, as
@@ -190,7 +209,7 @@ Test the CLI and the file contents, not skill prose. Prior art: the existing
 - The PR-body skeleton, the review-comment shape and the `review-pr` skill.
   Those depend on a shared vocabulary and follow in a later epic.
 - Session notes, commit messages and code comments, which PRD 0009 already
-  places outside the register.
+  places outside these rules.
 
 ## Open questions
 
