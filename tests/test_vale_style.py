@@ -104,12 +104,39 @@ def _vocabulary_tokens() -> list[str]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))["tokens"]
 
 
+def _vocabulary_bases() -> list[str]:
+    """The plain word each token is built around.
+
+    A token carries the word's inflections, so the base is the leading run of
+    letters: `leverage(?:s|d|ly)?|leveraging` is built around `leverage`.
+    """
+    bases = []
+    for token in _vocabulary_tokens():
+        match = re.match(r"[a-z]+", token)
+        assert match, f"token {token!r} does not start with a plain word"
+        bases.append(match.group(0))
+    return bases
+
+
 def test_vocabulary_rule_matches_the_register_banned_list() -> None:
     """Rule 3's words, the Vale tokens that enforce them, and the paste block's
     copy are three hand-synced lists — drift between them means the linter and
     the register disagree about what is banned."""
     banned = _listed_after("Banned:", _register_text())
-    assert _vocabulary_tokens() == banned
+    assert _vocabulary_bases() == banned
+
+
+def test_vocabulary_tokens_carry_inflections() -> None:
+    """A token that is only the base word lets the inflected forms through.
+
+    Vale wraps each token in word boundaries, so a bare `leverage` matches that
+    spelling alone and "leverages" passes the lint.
+    """
+    bare = [t for t in _vocabulary_tokens() if re.fullmatch(r"[a-z]+", t)]
+    assert not bare, (
+        f"these tokens match the base form only, so their plurals and "
+        f"participles pass the lint: {bare!r}"
+    )
 
 
 def test_paste_block_repeats_the_register_banned_list() -> None:
@@ -131,6 +158,34 @@ def test_vale_flags_a_banned_word(tmp_path: Path) -> None:
         text=True,
     )
     assert "leverage" in result.stdout.lower()
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+@pytest.mark.parametrize("word", ["leverages", "leveraging", "streamlining", "underscored"])
+def test_vale_flags_an_inflected_banned_word(tmp_path: Path, word: str) -> None:
+    """The plural and participle forms are the ones writers reach for."""
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(f"# Title\n\nThe service {word} the existing path.\n")
+    result = subprocess.run(
+        ["vale", "--config", str(default_vale_config_path()), str(fixture)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1, f"{word!r} passed the lint:\n{result.stdout}"
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+@pytest.mark.parametrize("word", ["elevator", "elevation"])
+def test_vale_leaves_unrelated_words_alone(tmp_path: Path, word: str) -> None:
+    """A stem match would flag these; rule 3 bans "elevate", not its cousins."""
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(f"# Title\n\nThe {word} is out of scope here.\n")
+    result = subprocess.run(
+        ["vale", "--config", str(default_vale_config_path()), str(fixture)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"{word!r} was flagged:\n{result.stdout}"
 
 
 @pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")

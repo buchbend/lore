@@ -1,23 +1,34 @@
-# Rule 3: use the shorter common word. List mirrors the "Banned:" list in
-# ../../issue-register.md — keep the two in sync by hand when either changes.
+# Rule 3: use the shorter common word. The base of each token mirrors the
+# "Banned:" list in ../../issue-register.md, in the same order — keep the two in
+# sync by hand when either changes. tests/test_vale_style.py compares them.
+#
+# Each token carries the word's real inflections. Vale wraps a token in word
+# boundaries, so a bare base word matches that spelling alone: "leverage" would
+# be flagged while "leverages" and "leveraging" passed.
+#
+# The branches are written out per word rather than a stem plus \w*. A stem
+# match on "elevate" also catches "elevator" and "elevation", and rule 3 is
+# error-level — a false positive there blocks a correct sentence rather than
+# leaving an advisory warning.
 extends: existence
 message: "Rule 3 (banned vocabulary): use a shorter common word instead of '%s'."
 ignorecase: true
 level: error
 tokens:
-  - leverage
-  - utilise
-  - robust
-  - seamless
-  - holistic
-  - comprehensive
-  - streamline
-  - delve
-  - underscore
-  - intricate
-  - crucial
-  - pivotal
-  - landscape
-  - journey
-  - unlock
-  - elevate
+  # Verbs ending in "e" drop it before "-ing", so that form needs its own branch.
+  - leverage(?:s|d)?|leveraging
+  - utilise(?:s|d)?|utilising
+  - robust(?:ly|ness)?
+  - seamless(?:ly)?
+  - holistic(?:ally)?
+  - comprehensive(?:ly|ness)?
+  - streamline(?:s|d)?|streamlining
+  - delve(?:s|d)?|delving
+  - underscore(?:s|d)?|underscoring
+  - intricate(?:ly)?
+  - crucial(?:ly)?
+  - pivotal(?:ly)?
+  - landscape(?:s)?
+  - journey(?:s)?
+  - unlock(?:s|ed|ing)?
+  - elevate(?:s|d)?|elevating
