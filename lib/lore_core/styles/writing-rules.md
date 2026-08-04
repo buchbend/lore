@@ -1,7 +1,7 @@
 # Writing Rules
 
 Status: draft
-Scope: issue text, PR descriptions, ADR context sections
+Scope: issue text, PR descriptions, PR review comments, ADR context sections and design documents
 
 ## Why this exists
 
@@ -51,10 +51,15 @@ Rule 19 carries more weight than the rest. Most text that is hard to decode
 holds no banned word. It holds a confident sentence written over a missing
 fact.
 
+### Short names
+
+20. A short name for a thing belongs in the glossary. Where the glossary holds no entry, write the meaning out. `L0` means a data level.
+21. A short name for a piece of work never enters a title, a description, a document or a commit message. A phase, a group and a priority code are such names. Cite the issue number instead. Not "the G4 group" but "issue 412".
+
 Enforcement differs per rule. Vale lints rules 3 and 6, the banned words and
 the sentence length. Rules 9 and 12 run as regex heuristics that catch the
 common forms and miss the rest. Rules 4 and 10 need a human reviewer, because
-Vale does not tag parts of speech. Rules 1 and 2 need the glossary.
+Vale does not tag parts of speech. Rules 1, 2 and 20 need the glossary.
 
 ## EARS patterns for acceptance criteria
 
@@ -109,13 +114,19 @@ the writing rules.
 ```markdown
 ## Issue writing
 
-When you write or edit an issue, a PR description, or an ADR context section,
-follow the writing rules (`lore style show writing-rules`, or the copy your
-team pasted below). In short:
+These rules cover issue text, PR descriptions, PR review comments, ADR
+context sections and design documents. When you write or edit one, follow the
+writing rules (`lore style show writing-rules`, or the copy your team pasted
+below). In short:
 
 - Use the required section structure. Keep empty sections.
 - One term, one meaning. Take terms from the glossary. Do not invent domain
   terms; ask instead.
+- A short name for a thing belongs in the glossary. Where no entry exists,
+  write the meaning out.
+- A short name for a piece of work never enters a title, a description, a
+  document or a commit message. A phase, a group and a priority code are such
+  names. Cite the issue number.
 - Maximum 20 words per instruction, 25 per description. One instruction per
   sentence.
 - Active voice with a named actor. No participial clause openers. No noun
@@ -134,6 +145,7 @@ team pasted below). In short:
 ## Not constrained
 
 - The glossary's own contents. Separate artifact, separate problem.
-- Code comments, chat, and commit messages, which already have a convention.
+- Code comments, chat, session notes and commit messages, which already have a
+  convention. Rule 21 is the one exception.
 - Machine-read text: roadmap tables, board comments, reviewer verdict blocks.
 - Vocabulary size in "Context", where domain precision beats simplicity.
