@@ -393,3 +393,27 @@ def test_an_unwritable_cache_falls_back_to_the_plain_config(
     blocker.write_text("not a directory")
     monkeypatch.setenv("LORE_CACHE", str(blocker))
     assert vale_config_for(repo) == default_vale_config_path()
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+@pytest.mark.parametrize("token", ["another's", "repo's", "cwd's"])
+def test_the_check_passes_over_a_possessive(tmp_path: Path, token: str) -> None:
+    """Only the trailing `'s` makes `another's` unknown. Vale filters
+    possessives by default, and `custom: true` drops that filter with the
+    rest, so the rule restores it."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(f"# Title\n\nThe check reads {token} first line.\n")
+    _, alerts = _vale(vale_config_for(repo), fixture)
+    assert [alert["Match"] for alert in alerts] == []
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_the_check_passes_over_a_fragment_left_by_a_code_span(tmp_path: Path) -> None:
+    """Vale strips the code span from ``an `error`-level alert`` and leaves
+    `-level` behind. A token opening with a hyphen is that leftover."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text("# Title\n\nVale reports an `error`-level alert here.\n")
+    _, alerts = _vale(vale_config_for(repo), fixture)
+    assert [alert["Match"] for alert in alerts] == []

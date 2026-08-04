@@ -11,13 +11,19 @@
 # everything. Vale's markdown scoping already excludes code spans, fenced
 # blocks and URLs, so bare prose is all this reads.
 #
-# The two filters below replace the defaults. Each drops a class that is
-# structurally not a short name, measured against real issue bodies:
+# The filters below replace the defaults. Each drops a class that is
+# structurally not a short name, measured against the bodies of real issues:
 #
-#   - A token carrying a slash is a path, a repo name or an issue reference.
+#   - A token carrying a slash is a path, a repository name or an issue
+#     reference.
 #   - A hyphenated token whose every segment is an English word of three
 #     letters or more is a compound adjective, not a name. The length floor is
 #     what keeps `C-ext` visible: its first segment is one letter.
+#   - A possessive is unknown only because of the trailing `'s`, so `another's`
+#     would be flagged while `another` passes. Vale filters possessives by
+#     default and `custom: true` drops that filter with the rest.
+#   - A token opening with a hyphen is what a stripped code span leaves behind:
+#     an `error`-level alert reaches the check as `-level`.
 #
 # `glossary.txt` sits beside this file in the copy `lore_core.style`'s
 # `vale_config_for` writes from a repo's CONTEXT.md. Vale resolves `ignore`
@@ -35,5 +41,7 @@ custom: true
 filters:
   - '\S*/\S*'
   - '^[A-Za-z]{3,}(?:-[A-Za-z]{3,})+$'
+  - '^\w+[''’]s$'
+  - '^-'
 ignore:
   - glossary.txt
