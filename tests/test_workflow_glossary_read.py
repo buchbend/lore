@@ -54,9 +54,7 @@ def test_skill_never_writes_to_the_glossary() -> None:
 
 def test_directive_names_the_glossary_in_one_line() -> None:
     lines = [
-        line
-        for line in DIRECTIVE_TEMPLATE.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        line for line in DIRECTIVE_TEMPLATE.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
     glossary_lines = [line for line in lines if "CONTEXT.md" in line]
     assert len(glossary_lines) == 1, glossary_lines
