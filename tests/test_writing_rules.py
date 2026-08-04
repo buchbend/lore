@@ -8,6 +8,7 @@ writing rules from their draft.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -196,3 +197,53 @@ def test_deprecated_alias_writes_one_stderr_line_naming_the_new_name(lore_root: 
     lines = result.stderr.strip().splitlines()
     assert len(lines) == 1, result.stderr
     assert "writing-rules" in lines[0]
+
+
+# --- the retired name is gone --------------------------------------------
+
+# The old name, and the prose that used it as a defined term. A four-digit
+# prefix means an ADR or PRD filename, which keeps the name it was filed under.
+RETIRED_TERM = re.compile(
+    r"(?<!\d{4}-)issue[- _]?register|\bthe register\b|\bregister's\b|\*\*Register\*\*",
+    re.I,
+)
+
+# Files that name the retired term on purpose: the alias itself, the decisions
+# recorded under it, and the entries for releases that shipped it.
+KEEPS_THE_RETIRED_TERM = frozenset(
+    {
+        "CHANGELOG.md",
+        "CONTEXT.md",
+        "docs/how-to/customize-the-writing-rules.md",
+        "lib/lore_core/style.py",
+        "tests/test_writing_rules.py",
+    }
+)
+KEEP_PREFIXES = ("docs/adr/0006-", "docs/prd/0009-", "docs/prd/0010-")
+TEXT_SUFFIXES = {".md", ".py", ".yml", ".yaml", ".ini", ".toml", ".json"}
+
+
+def test_no_tracked_file_names_the_retired_style() -> None:
+    """A half-done rename leaves prose that contradicts the glossary.
+
+    Each file is matched as one whitespace-joined string, because the term
+    wraps across line breaks inside skill frontmatter.
+    """
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    offenders = []
+    for rel in tracked:
+        if rel in KEEPS_THE_RETIRED_TERM or rel.startswith(KEEP_PREFIXES):
+            continue
+        path = REPO_ROOT / rel
+        if path.suffix not in TEXT_SUFFIXES or not path.is_file():
+            continue
+        joined = " ".join(path.read_text(encoding="utf-8").split())
+        if RETIRED_TERM.search(joined):
+            offenders.append(rel)
+    assert not offenders, f"these files still name the retired style: {offenders}"
