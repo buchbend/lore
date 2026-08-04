@@ -8,6 +8,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.65.4] - 2026-08-04
+
+### Fixed
+
+- **Rule 3 flags inflected banned words** (#332). The Vale style matched base
+  forms only, so "the service leverages the cache" passed a lint that the base
+  form would have failed — and the same held for all sixteen words. Each token
+  now carries the word's real inflections: verbs ending in "e" get their own
+  participle branch (`leverage(?:s|d)?|leveraging`), adjectives get the adverb,
+  nouns get the plural. The branches are explicit rather than a stem plus `\w*`,
+  which would flag "elevator" and "elevation" at error level. The drift guard
+  now compares the base each token is built around, so a word added to the
+  register and not to the style still fails.
+
 ## [0.65.3] - 2026-08-03
 
 ### Fixed
