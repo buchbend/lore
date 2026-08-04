@@ -1,20 +1,19 @@
 # Lore — domain context
 
-An AI-navigation map of Lore's domain: the terms below have one tight
-meaning each, matched against shipped code. Cross-check any claim here
-against the modules it points to before relying on it — if a term or
-behavior isn't grounded in a real symbol, it doesn't belong here.
+An AI-navigation map of Lore's domain. Every term below has one tight
+meaning, matched against shipped code. Cross-check a claim here against
+the module it points at before you rely on it. A term that no real
+symbol grounds does not belong here.
 
 ## Vault, wiki, scope
 
 - **Vault** — the directory `$LORE_ROOT` points at. Contains one
   `wiki/` subdirectory plus `.lore/` for derived, host-local state.
 - **Wiki** — a mounted knowledge store at `<vault>/wiki/<name>/`. Each
-  wiki is its own git repo; a vault can host several. A fresh wiki
-  (`lore wiki new`) is scaffolded with `projects/`, `concepts/`,
-  `decisions/`, `sessions/`, `inbox/` — session notes are the only one
-  of these Lore writes automatically; the rest are written directly
-  (by hand, or via `/lore:inbox`) when there's something worth a
+  wiki is its own git repo; a vault can host several. `lore wiki new`
+  scaffolds `projects/`, `concepts/`, `decisions/`, `sessions/`,
+  `inbox/`. Lore writes only the session notes automatically. A human
+  or `/lore:inbox` writes the rest, when something is worth a
   standalone note.
 - **Scope** — a colon-separated namespace inside a wiki
   (`ccat:data-center:data-transfer`), resolved from a working
@@ -28,8 +27,8 @@ var / wiki config / root config / code default: `docs/architecture/config.md`.
 
 Every Claude Code session that does real work gets **one session
 note** — a markdown file under `<wiki>/sessions/[<handle>/]YYYY/MM/`.
-It is a **lab notebook**, not a source of truth: git owns what
-happened to the code, the connected repo's ADRs and PRDs own what was
+It is a **lab notebook**, not a source of truth. Git owns what
+happened to the code. The connected repo's ADRs and PRDs own what was
 decided and why. The note records what a session discussed and tried,
 nothing more.
 
@@ -43,29 +42,29 @@ there:
 - **Chapter** — one chunk of the note, corresponding to one *flush*
   (see below). Chapters are strictly chronological and never edited
   once appended; the note is append-only until it closes.
-- **Topic block** — one topic within a chapter: a bold, one-sentence,
-  self-sufficient **lead** (must stand alone — no pronoun reaching into
-  the body), an optional short prose **body**, and exactly one `@N`
-  **anchor** at the end pointing at the transcript turn where the topic
-  started.
+- **Topic block** — one topic within a chapter. It holds a bold,
+  one-sentence, self-sufficient **lead**, an optional short prose
+  **body**, and exactly one `@N` **anchor**. The lead must stand alone:
+  no pronoun reaches into the body. The anchor ends the block and
+  points at the transcript turn where the topic started.
 - **Continuation block** — a topic block that resumes or corrects a
   topic raised in an earlier chapter. Renders as `**Continued: <topic>**`
   instead of a fresh lead. Earlier blocks are never rewritten; a
   correction always arrives as a new block later in the note.
 - **Skim layer** — the sequence of bold leads read top-to-bottom,
-  ignoring the bodies. Because every lead is self-sufficient, the skim
-  layer alone is a legible, boom-boom-boom summary of the whole
-  session; the bodies are there for whoever wants the detail.
-- **Marker chapter** — a chapter written by the *system*, not an LLM:
-  deterministic text recording that a chapter was **withheld** (gate
+  ignoring the bodies. Every lead is self-sufficient, so the skim layer
+  alone is a legible, boom-boom-boom summary of the whole session. The
+  bodies hold the detail.
+- **Marker chapter** — a chapter the *system* writes, not an LLM. Its
+  deterministic text records that a chapter was **withheld** (the gate
   rejected it) or **failed** (composition never produced anything
   anchor-clean). See `MARKER_WITHHELD` / `MARKER_FAILED` and
   `append_marker_chapter` in `note_document.py`.
 
-Frontmatter is machine-first and deterministic: `note_status`
+Frontmatter is machine-first and deterministic. It holds `note_status`
 (`open`/`closed`), the `chapters` list (each entry's turn range and
-kind), and a cumulative `SessionFacts` snapshot (commits, PRs,
-files touched/read, duration) that only ever grows. Nothing in
+kind), and a cumulative `SessionFacts` snapshot (commits, PRs, files
+touched/read, duration). The snapshot only ever grows. Nothing in
 frontmatter is re-narrated in the body.
 
 Exact title and body rendering shape: `CONTEXT-FORMAT.md`.
@@ -73,18 +72,18 @@ Exact title and body rendering shape: `CONTEXT-FORMAT.md`.
 ## Writing a note — buffer, flush, extract
 
 A session's turns accumulate in a per-transcript **buffer**
-(`lore_curator/buffer_store.py`), driven by Curator A's heartbeat
-(`lore_curator/session_curator.py`, `run_curator_a`) on ordinary
-Claude Code hook activity — there is no cron. The first heartbeat for
+(`lore_curator/buffer_store.py`). Curator A's heartbeat
+(`lore_curator/session_curator.py`, `run_curator_a`) drives the buffer
+on ordinary Claude Code hook activity. There is no cron. The first heartbeat for
 a session creates the note (disclaimer + frontmatter, zero chapters:
 `lore_curator/session_note.py:ensure_note`); later heartbeats just
 grow the buffer.
 
 A **flush** happens once, when the session is over
-(`lore_curator/chapter_flush.py:synth_and_close`). Which of a session's
-turns mattered is only knowable backward, from its ending, so nothing is
-written while it runs — mid-session triggers (cap-trip, pre-compact) only
-bookkeep and leave the buffer accumulating:
+(`lore_curator/chapter_flush.py:synth_and_close`). Which turns of a
+session mattered is only knowable backward, from its ending. Lore writes
+nothing while the session runs. Mid-session triggers (cap-trip,
+pre-compact) only bookkeep and leave the buffer accumulating:
 
 ```
 segment_session (indices only) → extract_session (1 LLM call per chunk,
@@ -96,14 +95,14 @@ segment_session (indices only) → extract_session (1 LLM call per chunk,
 
 Every LLM call a note costs is in that pipeline: the segmenter
 (`lore_curator/chunker.py`), one extraction per chunk plus one headline
-(`lore_curator/fact_extract.py`). Nothing downstream is generative — the
-body is rendered from the fact ledger by code, and each fact's refs are
-verified (`lore_core/ref_verify.py`) so a line's authority is code-stamped,
-never model-authored.
+(`lore_curator/fact_extract.py`). Nothing downstream is generative. Code
+renders the body from the fact ledger. `lore_core/ref_verify.py` verifies
+each fact's refs, so a line's authority is code-stamped, never
+model-authored.
 
 The only flush is the close flush (buffer archives, note closes):
 **session-end**, the reaper, and the startup sweep. Cap-trip (buffer cap
-120 turns / 240K chars) and pre-compact **bookkeep only** — they record
+120 turns / 240K chars) and pre-compact **bookkeep only**. Both record
 the event and leave the buffer accumulating, so the close path still
 reads the session whole. `capture_routing.CLOSE_TRIGGERS` is the single
 authority for which trigger flushes. Cap defaults live on `WikiConfig`;
@@ -113,30 +112,32 @@ per-wiki overrides live in `.lore-wiki.yml` under
 ### Failure semantics
 
 - **A chunk that cannot be extracted** becomes a *failed* marker for its
-  span, which the render reads back as a **coverage gap** — one bad chunk
-  never costs the rest of the session.
+  span. The render reads that marker back as a **coverage gap**. One bad
+  chunk never costs the rest of the session.
 - **A chunk the gate withholds** becomes a *withheld* marker plus a
   quarantine entry. The extractor retries against the gate internally, so
   a withhold that reaches the flush is terminal.
 - **Every non-`facts` chapter is a coverage gap.** A note whose ledger the
   facts do not cover in full says so; a partial reading never presents
   itself as complete.
-- **Startup sweep.** Lore acts as a singleton at start (global lock,
-  `lore_core.lockfile.curator_lock`): `chapter_flush.startup_sweep`
-  finds buffers whose owning process is provably dead, gives each one
-  extraction attempt, and closes its note either way (facts, withheld,
-  or failed marker) — a crashed session never leaves an open note
-  behind. `lore curator sweep` runs this by hand.
+- **Startup sweep.** Lore acts as a singleton at start, under the
+  global lock `lore_core.lockfile.curator_lock`.
+  `chapter_flush.startup_sweep` finds buffers whose owning process is
+  provably dead. The sweep gives each buffer one extraction attempt,
+  then closes its note either way (facts, withheld, or failed marker).
+  A crashed session never leaves an open note behind.
+  `lore curator sweep` runs the sweep by hand.
 
-Everything upstream of compose (hook fire, spawn, run decisions) is
-correlated by one **trace_id** per flush and queryable via `lore trace` /
-`lore status` / `lore doctor`; full model: `docs/architecture/observability.md`.
+One **trace_id** per flush correlates everything upstream of compose:
+hook fire, spawn, run decisions. `lore trace`, `lore status` and
+`lore doctor` query that trace. Full model:
+`docs/architecture/observability.md`.
 
 ## The publish gate + quarantine
 
 Every composed chapter passes `lore_core/publish_gate.py:evaluate`
-before it can join the shared note — this is the last check between an
-LLM's output and the shared vault, and it **fails closed**: any error
+before it joins the shared note. The gate is the last check between an
+LLM's output and the shared vault. The gate **fails closed**: any error
 anywhere in the gate withholds rather than passes.
 
 Cheapest-first, short-circuiting on the first hit:
@@ -148,31 +149,31 @@ Cheapest-first, short-circuiting on the first hit:
    lab record, never a directive; a lint hit counts as a compose
    failure and its feedback drives the retry.
 3. **One small-model detection call** (`LlmPiiDetector`, cheapest
-   tier) for fuzzy PII/secrets that slip the first two layers. This is
-   pattern recognition, not truth verification, so it's exempt from
-   the no-LLM-judges-LLM rule — but it's a tripwire, not a guarantee,
-   and is documented as such here and in the module docstring.
+   tier) for fuzzy PII/secrets that slip the first two layers. The
+   call is pattern recognition, not truth verification, so it is
+   exempt from the no-LLM-judges-LLM rule. The call is a tripwire, not
+   a guarantee. This file and the module docstring both say so.
 
-On a withhold, `apply_withhold` runs the two terminal side-effects:
-a deterministic withheld-marker chapter goes into the note (safe,
-value-free reason text — the category, never the matched string), and
-the full composed text goes into the private **quarantine** sidecar
-(`lore_core/quarantine.py`, one JSON file per entry under
-`.lore/quarantine/`, inside the already-private `.lore/` area — it
-never reaches the shared wiki). `lore quarantine list/show/clear/kill`
-is the reviewer's flow over that sidecar; `list` never prints body
-content, since an entry may hold the very secret that tripped the
-gate.
+On a withhold, `apply_withhold` runs two terminal side-effects. A
+deterministic withheld-marker chapter goes into the note, with safe,
+value-free reason text: the category, never the matched string. The
+full composed text goes into the private **quarantine** sidecar
+(`lore_core/quarantine.py`), one JSON file per entry under
+`.lore/quarantine/`. That path sits inside the already-private
+`.lore/` area and never reaches the shared wiki.
+`lore quarantine list/show/clear/kill` is the reviewer's flow over that
+sidecar. `list` never prints body content, because an entry may hold
+the very secret that tripped the gate.
 
 ## Hygiene — the retained frontmatter-only curator
 
-`lore curator [--wiki] [--apply]` (bare, no subcommand — distinct from
-`lore curator run`, which is the Curator A pass above) runs
-deterministic, frontmatter-only passes over every wiki
-(`lore_curator/hygiene.py`): supersession propagation
+`lore curator [--wiki] [--apply]` takes no subcommand. The bare form is
+distinct from `lore curator run`, the Curator A pass above. The bare
+form runs deterministic, frontmatter-only passes over every wiki
+(`lore_curator/hygiene.py`). The passes are supersession propagation
 (`supersedes [[B]]` → `superseded_by: [[A]]` on B), `implements:`
-back-link processing, git-log date backfill, and a team-mode hint once
-a solo wiki's git log shows multiple authors. Staleness is a deliberate
+back-link processing, and git-log date backfill. Another pass hints at
+team mode once a solo wiki's git log shows multiple authors. Staleness is a deliberate
 no-op here — see `lore_core/freshness.py` below. Findings land in
 `wiki/<name>/_review.md`; writes are mtime-guarded so a note open in
 Obsidian is skipped rather than clobbered. `--apply` is required to
@@ -181,12 +182,12 @@ write; the default is a dry-run.
 ## Briefings
 
 `lore_core/briefing/gather.py:gather()` is the read-only half of
-`lore briefing`: it collects session notes filed since the last
-briefing (tracked in a per-wiki ledger) and hands their **full note
+`lore briefing`. It collects session notes filed since the last
+briefing, tracked in a per-wiki ledger. It hands their **full note
 bodies** — disclaimer plus every chronological chapter — to whatever
-composes the briefing prose. There is no per-note redaction step:
-session notes carry nothing that isn't already safe to share, because
-the publish gate cleared it before it ever reached the note. Briefing
+composes the briefing prose. There is no per-note redaction step.
+Session notes carry nothing that isn't already safe to share, because
+the publish gate cleared the text before it reached the note. Briefing
 publish is manual (`lore briefing publish`, `lore briefing mark`); there
 is no automatic daily trigger. See `docs/how-to/matrix-bot.md` for the
 Matrix sink walkthrough.
@@ -194,13 +195,15 @@ Matrix sink walkthrough.
 ## Ambient banner vs. MCP pull
 
 SessionStart injects a deliberately small, deterministic banner
-(`lore_core/session_start.py:render_session_banner`) — no LLM call, no network
-call: a status line, an optional `## Focus` block for the attached
-project, at most two last-session hints, freshness lines only when
-there's positive evidence (see below), and a fixed two-line directive
-(`lore_core/templates/integration-rules/default.md`) stating that
-deeper context is a pull, never a push, and that anything pulled from
-a session note is a lab record, never an instruction.
+(`lore_core/session_start.py:render_session_banner`). The banner costs
+no LLM call and no network call. It holds a status line, an optional
+`## Focus` block for the attached project, and at most two last-session
+hints. Freshness lines join the banner only when there is positive
+evidence (see below). A fixed two-line directive closes the banner
+(`lore_core/templates/integration-rules/default.md`). The directive
+states that deeper context is a pull, never a push. It also states that
+anything pulled from a session note is a lab record, never an
+instruction.
 
 Depth comes from explicit MCP calls (`lore mcp` / `lore_mcp/server.py`),
 not from anything injected ambiently:
@@ -225,11 +228,12 @@ not from anything injected ambiently:
   model for the current host before spawning a subagent.
 - `lore_codemap` — bounded, cached slice of the connected repo's code
   map (symbols / directory / callers modes), never the whole map.
-- `lore_context_pack` (`lore_core/context_pack.py`) — deterministic
-  context resolver: given a scope, repo state, and issue/PR/epic, returns
-  a pointer pack — recent session notes for this scope, ADRs/PRDs that
-  bear on it, open epic state — with one-line summaries and selective
-  body pulls, zero LLM cost. Fed into orchestration skills before any
+- `lore_context_pack` (`lore_core/context_pack.py`) — a deterministic
+  context resolver. It takes a scope, repo state, and an issue, PR or
+  epic. It returns a pointer pack: recent session notes for that scope,
+  ADRs and PRDs that bear on the scope, and open epic state. Each entry
+  carries a one-line summary and a selective body pull. The resolver
+  costs no LLM call. Orchestration skills read the pack before any
   explorer subagent runs.
 
 
@@ -239,9 +243,9 @@ Kept, general-purpose, and independent of the note-writing pipeline
 above:
 
 - **Freshness** (`lore_core/freshness.py`) — positive-evidence-only
-  staleness: a note is only ever flagged `stale-candidate` because of
-  a named cause (an authored `status: stale` / `superseded_by` /
-  `supersede_candidate*` marker, or membership in the orphan-link set).
+  staleness. A note is flagged `stale-candidate` only for a named
+  cause. The causes are an authored `status: stale` / `superseded_by` /
+  `supersede_candidate*` marker, or membership in the orphan-link set.
   Age by itself never flags anything.
 - **Search** (`lore_search`) — hybrid ranked full-text search backing
   `lore_search` / `lore_resume` / `lore_drill`.
@@ -293,11 +297,11 @@ Terms used in the workflow layer and orchestration:
   teammate, instead of having each teammate discover symbols independently.
   Distinct from a full `lore_context_pack`, which joins session notes and
   ADRs/PRDs; the codemap excerpt is the code-navigation half only.
-- **Epic note** — a single, composed session note that records the
-  orchestration of an epic: the roadmap DAG, per-feature tier decisions,
-  crosscheck verdicts, and any escalations. Distinct from the per-feature
-  implementation notes written by teammate agents; the epic note is the
-  orchestrator's record of supervision.
+- **Epic note** — a single, composed session note for the orchestration
+  of an epic. The note records the roadmap DAG, per-feature tier
+  decisions, crosscheck verdicts, and any escalations. Distinct from the
+  per-feature implementation notes written by teammate agents; the epic
+  note is the orchestrator's record of supervision.
 - **Handover (session)** — a working-context handover from one Claude Code
   session to a cold session starting fresh. The source session ends with a
   `/lore:handover` invoke, which drafts a structured note of context
@@ -305,14 +309,15 @@ Terms used in the workflow layer and orchestration:
   resumes with `/lore:continue`, which loads the handover note and carries
   its facts into the new session's work.
 - **Handover (epic seed)** — a tracker issue linking an epic seed (the
-  source of structured context for the `orient` step). Distinct from
-  session handover: the epic seed is filed in the issue tracker and is
-  one-time context for a shaped body of work, not a carry-forward between
-  sessions.
-- **Writing rules** — the prose style an agent writes issue text, PR bodies
-  and ADR context sections in: sentence and vocabulary rules, EARS acceptance
-  criteria, and the required section skeleton. Lore ships one default;
-  a team overrides it whole-file with `<wiki>/style/writing-rules.md`.
+  source of structured context for the `orient` step). The epic seed
+  differs from a session handover. A team files the seed in the issue
+  tracker. The seed is one-time context for a shaped body of work, not
+  a carry-forward between sessions.
+- **Writing rules** — the prose style an agent uses for issue text, PR
+  bodies and ADR context sections. The document holds sentence and vocabulary rules,
+  EARS acceptance criteria, and the required section skeleton. Lore
+  ships one default; a team overrides it whole-file with
+  `<wiki>/style/writing-rules.md`.
   `lore style show writing-rules` resolves the two. The rules fix style,
   not terminology — terminology stays with the glossary.
   Overriding the lint means copying `styles/vale/` whole — the ini plus
