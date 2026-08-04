@@ -49,7 +49,7 @@ def test_missing_glossary_drafts_anyway_and_names_the_absence() -> None:
 def test_skill_never_writes_to_the_glossary() -> None:
     step = _step_one()
     assert "never write to `context.md`" in step.lower()
-    assert "domain-modeling" in step
+    assert "grilling" in step
 
 
 def test_directive_names_the_glossary_in_one_line() -> None:
