@@ -32,9 +32,10 @@ observation came from" and "do not fill a gap with a plausible guess" are
 judgement, not flags. A settings block would capture the banned-word list and
 the sentence cap, which are the least valuable rules, and drop the rest.
 
-Shipping a document also means the register can carry a worked example. The
-default register shows one issue before and after. An example teaches a style
-faster than a rule list does.
+A shipped document can show as well as tell. Rules 8 and 9 each contrast a
+wrong sentence with a right one, in one line. The register carried a full
+before-and-after issue until that example grew to 42% of the file. The rules
+already said what the example showed.
 
 ## Why whole-file override
 
