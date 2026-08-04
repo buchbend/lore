@@ -1,0 +1,39 @@
+# Rule 20: a short name for a thing belongs in the glossary. A banned-word list
+# only catches terms someone listed beforehand, and it never holds a name an
+# agent invents during the session that writes the text. This check runs the
+# other way round — the dictionaries decide, and a word held by neither the
+# base English dictionary nor the repo's glossary is flagged.
+#
+# `custom: true` drops Vale's default spelling filters. Those filters skip
+# uppercase tokens, tokens carrying digits, hyphenated tokens and mixed case,
+# which are exactly the shapes a short name takes: with the defaults in place
+# `LTA`, `G4`, `C-ext` and `camelCase` are invisible and the check passes
+# everything. Vale's markdown scoping already excludes code spans, fenced
+# blocks and URLs, so bare prose is all this reads.
+#
+# The two filters below replace the defaults. Each drops a class that is
+# structurally not a short name, measured against real issue bodies:
+#
+#   - A token carrying a slash is a path, a repo name or an issue reference.
+#   - A hyphenated token whose every segment is an English word of three
+#     letters or more is a compound adjective, not a name. The length floor is
+#     what keeps `C-ext` visible: its first segment is one letter.
+#
+# `glossary.txt` sits beside this file in the copy `lore_core.style`'s
+# `vale_config_for` writes from a repo's CONTEXT.md. Vale resolves `ignore`
+# against StylesPath, and a missing file is not an error, so the packaged
+# config keeps the rule off instead: with no glossary every domain word is
+# unknown.
+#
+# warning, not error: `file-issue` reads Vale by exit code and only an
+# error-level finding exits 1. A heuristic over a hand-written glossary advises
+# and never blocks (docs/adr/0006-...).
+extends: spelling
+message: "Rule 20 (short name): '%s' is in neither the glossary nor common English."
+level: warning
+custom: true
+filters:
+  - '\S*/\S*'
+  - '^[A-Za-z]{3,}(?:-[A-Za-z]{3,})+$'
+ignore:
+  - glossary.txt

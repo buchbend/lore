@@ -19,12 +19,13 @@ from pathlib import Path
 
 import typer
 from lore_core.config import get_wiki_root
+from lore_core.git import git_repo_root
 from lore_core.scope_resolver import resolve_scope
 from lore_core.style import (
     DEPRECATED_ALIASES,
     UnknownStyle,
     resolve_style_path,
-    resolve_vale_config_path,
+    vale_config_for,
 )
 from rich.console import Console
 
@@ -80,12 +81,16 @@ def vale_config(
         None, "--wiki", "-w", help="Wiki whose override wins (default: from cwd)."
     ),
 ) -> None:
-    """Print the resolved Vale config path.
+    """Print the Vale config path to lint against.
 
-    `<wiki>/style/vale/vale.ini` wins, else the packaged default. Meant for
-    command substitution: `vale --config $(lore style vale-config) <file>`.
+    `<wiki>/style/vale/vale.ini` wins, else the packaged default. Where the
+    cwd's repo holds a `CONTEXT.md`, the printed path is a cached copy of that
+    config carrying the glossary, which switches the short-name check on.
+    Meant for command substitution:
+    `vale --config $(lore style vale-config) <file>`.
     """
-    path = resolve_vale_config_path(wiki_dir=_wiki_dir(wiki))
+    cwd = Path.cwd()
+    path = vale_config_for(git_repo_root(cwd) or cwd, wiki_dir=_wiki_dir(wiki))
     # Plain write, not console.print: a path can contain `[...]`-shaped
     # segments and Rich's markup parser would eat them (same hazard as
     # `show`'s plain stdout write).

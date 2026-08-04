@@ -356,3 +356,40 @@ def test_a_repo_without_a_glossary_runs_no_short_name_check(tmp_path: Path) -> N
     code, alerts = _vale(vale_config_for(tmp_path), fixture)
     assert alerts == []
     assert code == 0
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+@pytest.mark.parametrize("token", ["buchbend/lore#336", "buchbend/lore", "lore_core/style.py"])
+def test_the_check_passes_over_a_path_or_a_repo_slug(tmp_path: Path, token: str) -> None:
+    """A token carrying a slash is a path, a repo name or an issue reference.
+    Issue bodies are full of them and none is a short name for a thing."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(f"# Title\n\nThe change lands in {token} today.\n")
+    _, alerts = _vale(vale_config_for(repo), fixture)
+    assert alerts == []
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+@pytest.mark.parametrize("token", ["banned-word", "mixed-case", "generation-time", "paste-block"])
+def test_the_check_passes_over_an_english_compound(tmp_path: Path, token: str) -> None:
+    """Vale reads a hyphenated compound as one token, and no dictionary holds
+    the compound. Every segment being an English word of three letters or more
+    marks the compound as prose rather than a name."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(f"# Title\n\nThe {token} rule reads the file.\n")
+    _, alerts = _vale(vale_config_for(repo), fixture)
+    assert alerts == []
+
+
+def test_an_unwritable_cache_falls_back_to_the_plain_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0006 keeps the lint from blocking the flow. A cache Lore cannot
+    write costs the short-name check, not the whole `vale --config` call."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory")
+    monkeypatch.setenv("LORE_CACHE", str(blocker))
+    assert vale_config_for(repo) == default_vale_config_path()
