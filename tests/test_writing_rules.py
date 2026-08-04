@@ -1,8 +1,8 @@
-"""`lore style show <name>` — whole-file resolution and default-register content.
+"""`lore style show <name>` — whole-file resolution and packaged-document content.
 
 Resolution is whole-file per wiki: `<wiki>/style/<name>.md` wins, else the
 packaged default. Content tests pin the three edits that separate the shipped
-register from its draft.
+writing rules from their draft.
 """
 
 from __future__ import annotations
@@ -28,76 +28,52 @@ def lore_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _default_text() -> str:
-    return resolve_style_path("issue-register").read_text()
+    return resolve_style_path("writing-rules").read_text()
 
 
 # --- resolution ---------------------------------------------------------
 
 
-def test_known_styles_lists_the_issue_register() -> None:
-    assert "issue-register" in KNOWN_STYLES
-
-
-def test_default_resolves_to_packaged_file(tmp_path: Path) -> None:
-    path = resolve_style_path("issue-register", wiki_dir=tmp_path)
-    assert path.is_file()
-    assert path.read_text().startswith("# Issue Register")
-
-
-def test_wiki_override_wins(tmp_path: Path) -> None:
-    override = tmp_path / "style" / "issue-register.md"
-    override.parent.mkdir(parents=True)
-    override.write_text("# Our register\n")
-    assert resolve_style_path("issue-register", wiki_dir=tmp_path) == override
-
-
 def test_packaged_default_lives_outside_the_templates_tree() -> None:
-    """`lore init` copytree's templates/ into the vault — a copy of the register
+    """`lore init` copytree's templates/ into the vault — a copy of the rules
     there would look editable while the resolver ignores it."""
     from lore_core.templates import templates_dir
 
-    assert templates_dir() not in resolve_style_path("issue-register").parents
+    assert templates_dir() not in resolve_style_path("writing-rules").parents
 
 
 def test_unknown_style_raises_and_names_the_known_ones() -> None:
     with pytest.raises(UnknownStyle) as exc:
         resolve_style_path("prose-register")
-    assert "issue-register" in str(exc.value)
+    assert "writing-rules" in str(exc.value)
 
 
 # --- CLI ----------------------------------------------------------------
 
 
-def test_show_prints_the_packaged_default(lore_root: Path) -> None:
-    result = runner.invoke(app, ["style", "show", "issue-register"])
-    assert result.exit_code == 0, result.output
-    assert "# Issue Register" in result.output
-    assert "## Batch issues" in result.output
-
-
 def test_show_prints_the_wiki_override(lore_root: Path) -> None:
-    override = lore_root / "wiki" / "notes" / "style" / "issue-register.md"
+    override = lore_root / "wiki" / "notes" / "style" / "writing-rules.md"
     override.parent.mkdir(parents=True)
-    override.write_text("# Our own register\n")
-    result = runner.invoke(app, ["style", "show", "issue-register", "--wiki", "notes"])
+    override.write_text("# Our own rules\n")
+    result = runner.invoke(app, ["style", "show", "writing-rules", "--wiki", "notes"])
     assert result.exit_code == 0, result.output
-    assert "Our own register" in result.output
+    assert "Our own rules" in result.output
     assert "## Batch issues" not in result.output
 
 
 def test_show_falls_back_to_default_when_the_wiki_has_no_override(lore_root: Path) -> None:
-    result = runner.invoke(app, ["style", "show", "issue-register", "--wiki", "notes"])
+    result = runner.invoke(app, ["style", "show", "writing-rules", "--wiki", "notes"])
     assert result.exit_code == 0, result.output
-    assert "# Issue Register" in result.output
+    assert "# Writing Rules" in result.output
 
 
 def test_show_uses_the_wiki_resolved_from_cwd(lore_root: Path, monkeypatch) -> None:
     """No `--wiki`: the wiki comes from the attached scope of the cwd."""
     from lore_core.types import Scope
 
-    override = lore_root / "wiki" / "notes" / "style" / "issue-register.md"
+    override = lore_root / "wiki" / "notes" / "style" / "writing-rules.md"
     override.parent.mkdir(parents=True)
-    override.write_text("# Scope-resolved register\n")
+    override.write_text("# Scope-resolved rules\n")
     monkeypatch.setattr(
         "lore_cli.style_cmd.resolve_scope",
         lambda cwd: Scope(
@@ -107,32 +83,32 @@ def test_show_uses_the_wiki_resolved_from_cwd(lore_root: Path, monkeypatch) -> N
             claude_md_path=Path("/nowhere/CLAUDE.md"),
         ),
     )
-    result = runner.invoke(app, ["style", "show", "issue-register"])
+    result = runner.invoke(app, ["style", "show", "writing-rules"])
     assert result.exit_code == 0, result.output
-    assert "Scope-resolved register" in result.output
+    assert "Scope-resolved rules" in result.output
 
 
 def test_show_unknown_style_exits_nonzero_and_names_known_styles(lore_root: Path) -> None:
     result = runner.invoke(app, ["style", "show", "prose-register"])
     assert result.exit_code != 0
-    assert "issue-register" in result.output
+    assert "writing-rules" in result.output
 
 
 def test_show_prints_the_file_verbatim(lore_root: Path) -> None:
     """No Rich markup interpretation, no reflow — a linter reads this text."""
-    override = lore_root / "wiki" / "notes" / "style" / "issue-register.md"
+    override = lore_root / "wiki" / "notes" / "style" / "writing-rules.md"
     override.parent.mkdir(parents=True)
     long_line = "- Banned: [leverage] " + "word " * 40
     override.write_text(long_line + "\n")
-    result = runner.invoke(app, ["style", "show", "issue-register", "--wiki", "notes"])
+    result = runner.invoke(app, ["style", "show", "writing-rules", "--wiki", "notes"])
     assert result.exit_code == 0, result.output
     assert long_line in result.output
 
 
-# --- default register content -------------------------------------------
+# --- packaged document content ------------------------------------------
 
 
-def test_register_defines_change_and_batch_issue() -> None:
+def test_rules_define_change_and_batch_issue() -> None:
     text = _default_text()
     assert "## Batch issues" in text
     section = text.split("## Batch issues", 1)[1].split("\n## ", 1)[0]
@@ -159,13 +135,13 @@ def test_checkability_claim_is_honest() -> None:
     assert re.search(r"[Rr]ules 4 and 10 .*review", claims)
 
 
-def test_register_keeps_the_paste_block_for_consumers_without_lore() -> None:
+def test_rules_keep_the_paste_block_for_consumers_without_lore() -> None:
     text = _default_text()
     assert "## Block for CLAUDE.md and AGENTS.md" in text
     assert "## Issue writing" in text
 
 
-def test_register_keeps_the_ears_patterns_and_section_skeleton() -> None:
+def test_rules_keep_the_ears_patterns_and_section_skeleton() -> None:
     text = _default_text()
     assert "## EARS patterns for acceptance criteria" in text
     assert "## Required issue structure" in text

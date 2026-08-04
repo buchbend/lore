@@ -1,7 +1,7 @@
 """`lore style` — resolve the prose style documents agents write against.
 
-    lore style show issue-register
-    lore style show issue-register --wiki ccat
+    lore style show writing-rules
+    lore style show writing-rules --wiki ccat
     lore style vale-config
     lore style vale-config --wiki ccat
 
@@ -21,6 +21,7 @@ import typer
 from lore_core.config import get_wiki_root
 from lore_core.scope_resolver import resolve_scope
 from lore_core.style import (
+    DEPRECATED_ALIASES,
     UnknownStyle,
     resolve_style_path,
     resolve_vale_config_path,
@@ -51,12 +52,18 @@ def _wiki_dir(wiki: str | None) -> Path | None:
 
 @app.command("show")
 def show(
-    name: str = typer.Argument(..., help="Style name, e.g. issue-register."),
+    name: str = typer.Argument(..., help="Style name, e.g. writing-rules."),
     wiki: str = typer.Option(
         None, "--wiki", "-w", help="Wiki whose override wins (default: from cwd)."
     ),
 ) -> None:
     """Print the resolved style document on stdout."""
+    if name in DEPRECATED_ALIASES:
+        # stderr, one line: stdout carries the document a linter reads back.
+        err_console.print(
+            f"note: style {name!r} is deprecated — use {DEPRECATED_ALIASES[name]!r}",
+            highlight=False,
+        )
     try:
         path = resolve_style_path(name, wiki_dir=_wiki_dir(wiki))
     except UnknownStyle as e:

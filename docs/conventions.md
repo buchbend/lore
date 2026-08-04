@@ -213,7 +213,7 @@ again — it is raised as a blocker instead.
 ## House style for human-facing output
 
 The prose rules for issue bodies, PR bodies, status comments, and reports
-live in the issue register, not here. Run `lore style show issue-register`
+live in the writing rules, not here. Run `lore style show writing-rules`
 to print the version that applies to the current repo, and follow it before
 writing or editing any such artifact. Every skill that writes a human-facing
 artifact inherits this rule; it is not opt-in per skill.

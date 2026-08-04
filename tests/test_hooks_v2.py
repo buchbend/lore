@@ -327,9 +327,9 @@ def test_session_start_no_lore_config_emits_attach_hint(fake_vault, tmp_path, mo
     assert "no `## Lore` attach block" in out
     assert "lore install" in out
     # AC2 regression guard: an unattached repo's banner must not gain
-    # the register directive — only attached repos get it.
+    # the writing-rules directive — only attached repos get it.
     assert "## Directive" not in out
-    assert "issue-register" not in out
+    assert "writing-rules" not in out
 
 
 def test_session_start_no_vault_emits_no_vault_hint(tmp_path, monkeypatch):
@@ -342,7 +342,7 @@ def test_session_start_no_vault_emits_no_vault_hint(tmp_path, monkeypatch):
     out = hooks._session_start(str(repo_dir))
     assert out.startswith("lore: no vault at")
     assert "## Directive" not in out
-    assert "issue-register" not in out
+    assert "writing-rules" not in out
 
 
 def test_session_start_from_lore_missing_wiki_emits_attach_hint(
@@ -361,4 +361,4 @@ def test_session_start_from_lore_missing_wiki_emits_attach_hint(
     out = hooks._session_start(str(repo_dir))
     assert "no `## Lore` attach block" in out
     assert "## Directive" not in out
-    assert "issue-register" not in out
+    assert "writing-rules" not in out

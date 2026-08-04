@@ -13,7 +13,7 @@ Checks:
   5. MCP server module imports (`lore mcp` would start it)
   6. lore_search index responds (FtsBackend.stats() succeeds)
   7. Current cwd's `## Lore` block parses (if attached; else skipped)
-  8. Vale is on PATH (advisory — absence degrades the issue register lint
+  8. Vale is on PATH (advisory — absence degrades the writing-rules lint
      to instruction-only, per ADR 0006, and never fails this run)
 
 `--fix` additionally repairs: rebuilds scopes.json from attachments.json,
@@ -371,11 +371,11 @@ def _check_search_backend(cwd: str) -> Check:
 
 
 def _check_vale(cwd: str) -> Check:
-    """Vale is PATH-detected, not bundled — absence degrades the issue
-    register lint to instruction-only and never blocks (ADR 0006)."""
+    """Vale is PATH-detected, not bundled — absence degrades the
+    writing-rules lint to instruction-only and never blocks (ADR 0006)."""
     path = shutil.which("vale")
     if path is None:
-        return False, "vale not on PATH — issue register lint is instruction-only until installed"
+        return False, "vale not on PATH — writing-rules lint is instruction-only until installed"
     return True, f"vale found at {path}"
 
 

@@ -4,7 +4,7 @@ PRD 0009 says to test external behaviour, not skill wording, so nothing here
 asserts prose. What is asserted is the machine-consumed part:
 
 - the filing skills point at that skill instead of prescribing filing,
-- `to-epic`'s sub-issue template carries the register's own section skeleton,
+- `to-epic`'s sub-issue template carries the writing rules' own section skeleton,
 - and an epic body composed from that template's linkage fields still passes
   the roadmap validator, which is what `orchestrate-epic` reads.
 """
@@ -53,12 +53,12 @@ def _sections(text: str) -> list[str]:
     return _SECTION.findall(text)
 
 
-def _register_skeleton() -> list[str]:
-    """The section list the resolved register requires, read from the register
-    itself rather than restated here — an override changes both together."""
-    register = default_style_path("issue-register").read_text(encoding="utf-8")
-    match = re.search(r"## Required issue structure\n+```\n(.*?)```", register, re.DOTALL)
-    assert match, "the register lost its 'Required issue structure' block"
+def _required_sections() -> list[str]:
+    """The section list the resolved writing rules require, read from the
+    document itself rather than restated here — an override changes both."""
+    rules = default_style_path("writing-rules").read_text(encoding="utf-8")
+    match = re.search(r"## Required issue structure\n+```\n(.*?)```", rules, re.DOTALL)
+    assert match, "the writing rules lost the 'Required issue structure' block"
     return _sections(match.group(1))
 
 
@@ -85,11 +85,11 @@ def test_filing_skills_point_at_file_issue(skill: str) -> None:
     )
 
 
-def test_sub_issue_template_carries_the_register_skeleton() -> None:
+def test_sub_issue_template_carries_the_writing_rules_skeleton() -> None:
     template = _block(_skill_text("to-epic"), "sub-issue-template")
     present = _sections(template)
-    missing = [s for s in _register_skeleton() if s not in present]
-    assert not missing, f"sub-issue template is missing register sections: {missing}"
+    missing = [s for s in _required_sections() if s not in present]
+    assert not missing, f"sub-issue template is missing required sections: {missing}"
 
 
 def test_sub_issue_template_keeps_the_epic_linkage_header() -> None:

@@ -4,8 +4,8 @@
 (`/lore-workflow:implement-issue`) can pick up and implement directly, with
 no back-and-forth.
 
-Run `lore style show issue-register` and follow its section skeleton and EARS
-acceptance criteria. The register is the source of truth for issue-body
+Run `lore style show writing-rules` and follow its section skeleton and EARS
+acceptance criteria. The rules are the source of truth for issue-body
 prose; the points below are what the fast path additionally needs.
 
 The fast path reads the issue and the code map, then — only if the issue is

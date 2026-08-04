@@ -1,10 +1,10 @@
-# Customize the issue register
+# Customize the writing rules
 
-**Goal:** replace the issue register, the prose style agents write issue and PR
+**Goal:** replace the writing rules, the prose style agents write issue and PR
 text against, with your team's own — and, if you lint, replace the Vale rules
-that check it.
+that check them.
 
-Lore ships a default register as package data. A wiki overrides it with one
+Lore ships a default document as package data. A wiki overrides it with one
 file. Resolution is whole-file: your file wins entirely, or the packaged
 default does. There is no merge and no per-repo layer.
 
@@ -12,15 +12,15 @@ default does. There is no merge and no per-repo layer.
 
 - `lore` installed and the repo `lore attach`ed to a wiki.
 - Vale on `PATH`, only if you want the lint step. `lore doctor` reports whether
-  Vale is present. Its absence never blocks; the register still applies as
+  Vale is present. Its absence never blocks; the rules still apply as
   instructions.
 
 ## Steps
 
-1. **Read the register that applies today.**
+1. **Read the rules that apply today.**
 
    ```
-   lore style show issue-register
+   lore style show writing-rules
    ```
 
    Without an override the command prints the packaged default. The command
@@ -29,11 +29,11 @@ default does. There is no merge and no per-repo layer.
 2. **Copy it into your wiki and edit it.**
 
    ```
-   lore style show issue-register > "$LORE_ROOT/wiki/<name>/style/issue-register.md"
+   lore style show writing-rules > "$LORE_ROOT/wiki/<name>/style/writing-rules.md"
    ```
 
    Create the `style/` directory first if it does not exist. Edit the copy.
-   Re-run `lore style show issue-register` from a repo attached to that wiki
+   Re-run `lore style show writing-rules` from a repo attached to that wiki
    and confirm your text comes back.
 
 3. **Override the Vale rules, if you lint.**
@@ -51,8 +51,8 @@ default does. There is no merge and no per-repo layer.
    ```
 
    The ini sets `StylesPath = .`, so Vale looks for the rule directory next to
-   the ini it loaded. An ini copied without its `IssueRegister/` directory
-   fails with exit code 2 and `style 'IssueRegister' does not exist on
+   the ini it loaded. An ini copied without its `WritingRules/` directory
+   fails with exit code 2 and `style 'WritingRules' does not exist on
    StylesPath`.
 
 4. **Check the rules fire.**
@@ -71,15 +71,18 @@ default does. There is no merge and no per-repo layer.
 
 ## Notes
 
-- The banned-word list lives in the register text and in the Vale style. A
+- The banned-word list lives in the rules text and in the Vale style. A
   test asserts the two agree, so edit both together.
-- Overriding the register replaces the whole document, including its section
+- Overriding the rules replaces the whole document, including its section
   skeleton and EARS patterns. Start from the packaged copy rather than a blank
   file unless you intend to drop those.
 - Wikis are portable. The override travels with the wiki repo, so a team that
-  takes its wiki elsewhere keeps its register.
+  takes its wiki elsewhere keeps its rules.
+- `lore style show issue-register` still resolves the same document and names
+  the retired term on stderr. A wiki that overrode `style/issue-register.md`
+  renames that file to `style/writing-rules.md`.
 
 ## Related
 
 - [Write a good fast-path issue](write-a-fast-path-issue.md)
-- [Why the issue register is a document, not config](../explanation/why-the-issue-register.md)
+- [Why the writing rules are a document, not config](../explanation/why-the-writing-rules.md)

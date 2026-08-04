@@ -7,7 +7,7 @@ rule 3 asks for the shorter common word, so the prose says "create", "merge",
 and plainly what `file-issue` does, and the glossary carries no entry for the
 two verbs.
 
-Machine-read formats are exempt from the register and are not checked here.
+Machine-read formats are exempt from the writing rules and are not checked here.
 Idiomatic non-git uses ("the decision the brief lands on") are also out of
 scope: they name neither action.
 """
@@ -71,7 +71,7 @@ def test_conventions_glossary_does_not_define_cut_or_land():
 
 def test_wiring_test_and_readme_describe_file_issue_plainly():
     """The skill table and the wiring test carry the same plain wording."""
-    for rel in ("lore-workflow/README.md", "tests/test_workflow_issue_register_wiring.py"):
+    for rel in ("lore-workflow/README.md", "tests/test_workflow_writing_rules_wiring.py"):
         text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         found = FUNNEL.findall(text)
         assert not found, (

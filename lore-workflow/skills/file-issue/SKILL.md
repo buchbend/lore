@@ -20,15 +20,15 @@ Never re-litigate the caller's judgement about whether something deserves an iss
 Do every step in the calling session. **Never spawn a subagent** — not to draft, not to
 lint, not to post. One subagent per issue is the cost this skill exists to avoid.
 
-## 1. Resolve the register
+## 1. Resolve the writing rules
 
 ```bash
-lore style show issue-register
+lore style show writing-rules
 ```
 
 Read the output. It carries the required section skeleton, the EARS patterns for
 acceptance criteria, and the prose rules. **Never write from memory of the rules** — a
-team overrides the register inside its wiki, so the resolved text is the only authority.
+team overrides the rules inside its wiki, so the resolved text is the only authority.
 Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 
 ## 2. Draft to a file whose name ends in `.md`
