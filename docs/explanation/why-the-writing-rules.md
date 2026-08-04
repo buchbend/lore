@@ -3,9 +3,10 @@
 The **writing rules** fix the prose style for issue text, PR descriptions,
 PR review comments, ADR context sections and design documents. Lore ships
 one default. A team replaces them with one file in its wiki. This page
-explains three choices. Why the rules are a prose document rather than a
-settings block. Why a team's copy wins whole rather than merging. Why the
-lint runs when the text is written, not when it is committed.
+explains the choices behind them. Why the rules are a prose document rather
+than a settings block. Why a team's copy wins whole rather than merging. Why
+the lint runs when the text is written, not when it is committed. Why the
+rules cite a glossary they do not own.
 
 The decisions here are recorded in
 [ADR 0006](../adr/0006-issue-register-whole-file-override-generation-time-lint.md).
@@ -76,10 +77,77 @@ Vale is not bundled. It is a single binary, detected on `PATH`. When it is
 absent the rules still apply as instructions and nothing blocks. Lore
 degrades to the weaker enforcement rather than failing.
 
+## Why the rules reach into the glossary
+
+The rules once stopped at prose and left terminology alone. A review of four
+issue titles in `ccatobs/system-integration` showed the cost. Six of the eight
+short names in those titles had no glossary entry, or had an entry the writer
+spelled differently. A reader outside the session cannot decode `LTA` or `P6`.
+The writer cannot decode either name a month later.
+
+Rules 1, 2 and 4 already pointed at a glossary. No skill read one, so the rules
+named an authority nobody consulted. Rules 20 and 21 close the gap, and the
+`file-issue` skill reads the repo's `CONTEXT.md` when it drafts.
+
+Lore reads the glossary at drafting time rather than only at session start.
+Gloaguen and colleagues report that context files do not generally improve task
+success, and add over 20% to inference cost
+(<https://arxiv.org/abs/2602.11988>). McMillan finds no adherence effect from
+file size or position across 1,650+ sessions, and finds compliance decaying
+inside a single session (<https://arxiv.org/abs/2605.10039>). A glossary loaded
+at session start fades before the agent writes the issue. So `file-issue` reads
+the file at step 1, beside the rules it already resolves, and the SessionStart
+directive stays one line.
+
+## A thing and a piece of work take different answers
+
+Rule 20 covers a short name for a thing. Rule 21 covers a short name for a
+piece of work. The split matters because a glossary entry for `P6` would be
+wrong.
+
+A **thing** persists. `L0`, `C-ext` and `LTA` name a data level, a credential
+class and an archive. Each name still means something after the work that
+introduced it ships. A thing earns a glossary entry, and rule 20 sends the
+writer there. Where the glossary holds no entry yet, the writer spells the
+meaning out and asks `grilling` for the entry.
+
+A **piece of work** expires. `P6`, "the G4 group" and "phase 2" each name a
+slice of a plan. Each name dies with the plan that carried it. A glossary entry
+would preserve a label for work that is already finished. Rule 21 sends the
+writer to the issue number, which stays resolvable for as long as the tracker
+lives.
+
+One question separates the two. Ask whether the name still means anything once
+the work is finished. A name that survives belongs in the glossary. A name that
+dies gets an issue number.
+
+## Why the glossary check only advises
+
+Vale flags a short name held by neither the repo's glossary nor common English.
+The check ships at warning severity, so a draft never fails on one.
+
+Severity follows GitLab's model, where an error blocks and a warning shows
+(<https://docs.gitlab.com/development/documentation/testing/vale/>). The check
+is a spelling rule aimed at a hand-written word list. The rule fires on real
+gaps and on ordinary words nobody thought to list. Contentsquare's first Vale
+run produced 673 errors and 12,910 warnings, and the team judged the output not
+actionable
+(<https://engineering.contentsquare.com/2023/using-vale-to-help-engineers-become-better-writers/>).
+A warning a writer reads and dismisses beats an error that stops the draft.
+
+A person approves every glossary entry for the same reason. `grilling` is the
+only door into `CONTEXT.md`, and `domain-modeling` proposes each wording and
+waits for the user's yes. An agent that appends its own terms defeats the check
+that would have caught them. The `nix.dev` Vale adoption shows the failure
+(<https://github.com/NixOS/nix.dev/pull/798>).
+
 ## What the writing rules do not do
 
-They do not fix terminology. One term with one meaning is a glossary problem,
-and the glossary is a separate artifact.
+They do not own the glossary. The rules cite `CONTEXT.md` and lint against it.
+The `grilling` skill fills it, and a person approves every entry.
+
+They do not check that a writer uses a term with the meaning the glossary
+gives it. No surveyed tool does. The check stays human.
 
 They do not decide what is worth filing. The `file-issue` skill owns how to
 write and file; the caller decides what to capture. A skill that second-
