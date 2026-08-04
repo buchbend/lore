@@ -66,11 +66,12 @@ Two further observations, both in this repo:
 
 - The document carried a worked example that used `L0` twice, and no glossary
   defines `L0`. The example that agents copy broke the rule the document is
-  about to add. Commit `9fcd172` removed that example while compacting the
+  about to add. Commit `e17807a` removed that example while compacting the
   document from 245 lines to 139.
-- Lore's own `CONTEXT.md` runs 29 of its 126 sentences past the 25-word
-  ceiling. `ccatobs/system-integration/CONTEXT.md` runs 3 of 24 past it. A
-  definition nobody can read fixes nothing.
+- The segmenter in `tests/test_context_sentences.py` counts 27 of the 114
+  sentences in Lore's `CONTEXT.md` past the 25-word ceiling, measured on
+  `main` before this epic. `ccatobs/system-integration/CONTEXT.md` runs 3 of
+  24 past it. A definition nobody can read fixes nothing.
 
 ## Solution
 
@@ -191,8 +192,11 @@ Test the CLI and the file contents, not skill prose. Prior art: the existing
 - Assert `CONTEXT-FORMAT.md` carries the sentence ceiling.
 - Assert the SessionStart directive still renders one line, and that the
   line names the glossary.
-- Assert the whole document passes its own Vale style. The check
-  passes as of commit `9fcd172` and must keep passing as rules are added.
+- Assert the document passes its own Vale style on every line except rule
+  3's banned-word list. That line names all 16 banned words, so Vale flags
+  each one and the file can never exit 0. Vale reports 16 errors at commit
+  `e17807a`, all on that line. The check must keep passing as rules are
+  added.
 - Run the Vale spelling check against a fixture holding one glossary term
   and one invented short name. Skip when Vale is absent, as
   `tests/test_vale_style.py` already does.
