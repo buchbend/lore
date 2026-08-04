@@ -1,7 +1,7 @@
 # Are session notes still worth it — divergent brief
-state: converging:flag (retirement confirmed; shaping the flag primitive)
+state: converging:flag (slice exported → lore-session-notes-worth.design.md)
 updated: 2026-08-04 (retirement settled with losses L1–L4 accepted; flag
-slice converging)
+slice shaped and exported; brief stays open for parked questions)
 
 Predecessor: `lore-session-note-shape.md` (2026-07-03, settled the *shape*;
 superseded by typed facts, PRD 0008 / ADR 0003). This brief asks the prior
