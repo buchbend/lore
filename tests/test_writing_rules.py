@@ -220,7 +220,7 @@ KEEPS_THE_RETIRED_TERM = frozenset(
     }
 )
 KEEP_PREFIXES = ("docs/adr/0006-", "docs/prd/0009-", "docs/prd/0010-")
-TEXT_SUFFIXES = {".md", ".py", ".yml", ".yaml", ".ini", ".toml", ".json"}
+TEXT_SUFFIXES = {".md", ".py", ".yml", ".yaml", ".ini", ".toml", ".json", ".sh", ".txt"}
 
 
 def test_no_tracked_file_names_the_retired_style() -> None:
@@ -230,12 +230,14 @@ def test_no_tracked_file_names_the_retired_style() -> None:
     wraps across line breaks inside skill frontmatter.
     """
     tracked = subprocess.run(
-        ["git", "ls-files"],
+        # -z: a path holding a space would otherwise split into fragments the
+        # sweep then skips, which is the failure this test exists to catch.
+        ["git", "ls-files", "-z"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=True,
-    ).stdout.split()
+    ).stdout.split("\0")[:-1]
     offenders = []
     for rel in tracked:
         if rel in KEEPS_THE_RETIRED_TERM or rel.startswith(KEEP_PREFIXES):
