@@ -335,3 +335,10 @@ Terms used in the workflow layer and orchestration:
   section, landing as one PR, with no ordering dependency between the
   changes. A change that needs its own context, or that must land before
   another, leaves the batch.
+- **Short name** — an abbreviation, acronym or code a team writes in place
+  of a longer term. `L0` and `LTA` name things; a phase number or a priority
+  code names a piece of work. The writing rules cover the two kinds
+  separately.
+- **Piece of work** — a body of work a team plans and tracks. An issue, a
+  pull request, an epic and a batch of issues are pieces of work. A team
+  points at one by its issue number, never by a coined short name.
