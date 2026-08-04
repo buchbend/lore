@@ -7,10 +7,10 @@ lookup leaves no cascade to debug. Customizing means copying the default into
 the wiki and editing it. There is no per-repo layer.
 
 The defaults live outside `templates/` on purpose: `lore init` copies the whole
-templates tree into the vault, and a copy of the register sitting at
+templates tree into the vault, and a copy of the rules sitting at
 `<lore_root>/templates/` would look editable while the resolver ignores it.
 
-The Vale config that lints the issue register resolves the same way, one
+The Vale config that lints the writing rules resolves the same way, one
 directory over: `<wiki>/style/vale/vale.ini` wins, else the packaged
 `styles/vale/vale.ini`. See `default_vale_config_path`/`resolve_vale_config_path`.
 """
@@ -21,7 +21,12 @@ from pathlib import Path
 
 # Style names Lore ships a default for. The per-wiki override uses the same
 # file name under `<wiki>/style/`.
-KNOWN_STYLES: tuple[str, ...] = ("issue-register",)
+KNOWN_STYLES: tuple[str, ...] = ("writing-rules",)
+
+# Retired style names and the style each one resolves to. Instruction files in
+# other repos already carry `lore style show issue-register`, so the old name
+# keeps working; the CLI writes a notice naming the current one.
+DEPRECATED_ALIASES: dict[str, str] = {"issue-register": "writing-rules"}
 
 
 class UnknownStyle(ValueError):
@@ -45,7 +50,13 @@ def default_style_path(name: str) -> Path:
 
 
 def resolve_style_path(name: str, wiki_dir: Path | None = None) -> Path:
-    """Return the path of the style document that wins for ``wiki_dir``."""
+    """Return the path of the style document that wins for ``wiki_dir``.
+
+    A deprecated alias resolves to the style it was renamed to. The override
+    lookup uses the current file name, so a wiki that overrode the document
+    under its old name renames that file too.
+    """
+    name = DEPRECATED_ALIASES.get(name, name)
     if name not in KNOWN_STYLES:
         raise UnknownStyle(name)
     if wiki_dir is not None:

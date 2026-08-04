@@ -1,7 +1,7 @@
 ---
 name: lore-workflow:file-issue
-description: Writes issue text and files it — resolve the team's issue
-  register, draft in its skeleton (single change, batch, a caller's template, or a PR
+description: Writes issue text and files it — resolve the team's writing
+  rules, draft in their skeleton (single change, batch, a caller's template, or a PR
   body), lint with Vale when Vale is installed, then post with gh. Use whenever you are
   about to write or edit a GitHub issue, a sub-issue, or a PR description. Triggers on
   "file an issue", "file these as issues", or "/lore-workflow:file-issue".
@@ -20,15 +20,15 @@ Never re-litigate the caller's judgement about whether something deserves an iss
 Do every step in the calling session. **Never spawn a subagent** — not to draft, not to
 lint, not to post. One subagent per issue is the cost this skill exists to avoid.
 
-## 1. Resolve the register
+## 1. Resolve the writing rules
 
 ```bash
-lore style show issue-register
+lore style show writing-rules
 ```
 
 Read the output. It carries the required section skeleton, the EARS patterns for
 acceptance criteria, and the prose rules. **Never write from memory of the rules** — a
-team overrides the register inside its wiki, so the resolved text is the only authority.
+team overrides the rules inside its wiki, so the resolved text is the only authority.
 Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 
 ## 2. Draft to a file whose name ends in `.md`
@@ -57,12 +57,12 @@ Pick the mode from what the caller handed you:
 
 | Mode | Use when | Shape |
 |---|---|---|
-| **Single change** | there is one change to capture | The register's full section skeleton. One statement under "Required behaviour", with its own EARS criteria. |
+| **Single change** | there is one change to capture | The writing rules' full section skeleton. One statement under "Required behaviour", with its own EARS criteria. |
 | **Batch** | several changes share one Context, go into one PR, and have no ordering between them | Keep the skeleton. Give each change its own numbered subheading under "Required behaviour", then repeat the same numbered subheadings under "Acceptance criteria". **Every numbered change carries its own criteria** — never one pooled list. |
 | **Caller template** | the caller supplied a structure (a sub-issue header, an epic-seed shape) | Keep the caller's structure exactly. Add no section, drop no section, reorder nothing. Apply the prose rules and EARS *inside* the supplied structure. |
-| **PR body** | writing the body for `gh pr create` | Prose rules only. No register skeleton. |
+| **PR body** | writing the body for `gh pr create` | Prose rules only. No issue skeleton. |
 
-Before drafting a batch, check the register's "Batch issues" section for the split rule.
+Before drafting a batch, check the "Batch issues" section for the split rule.
 A change that needs its own Context, or that must merge before another change, is a
 separate issue rather than a numbered block.
 
@@ -70,7 +70,7 @@ separate issue rather than a numbered block.
 
 Write the section heading and `TODO:` followed by the specific question. **Never fill
 the gap with a plausible guess.** A confident sentence written over a missing fact is
-the failure the register exists to stop, and it survives review far too easily.
+the failure the writing rules exist to stop, and it survives review far too easily.
 
 ## 3. Lint — only when Vale is installed
 
@@ -104,7 +104,7 @@ Read the result by exit code, not by whether anything printed:
 Vale reports "0 files" as success, so a lint that read nothing still looks clean. Confirm
 the output names your draft file before you trust a clean result.
 
-The heuristics over-fire by design, and the register says as much. The participle rule
+The heuristics over-fire by design, and the writing rules say as much. The participle rule
 matches any capitalised `-ing` word opening a sentence, so a heading like
 `## Testing decisions`, or a sentence opening with `Nothing`, trips it. **Do not mangle
 correct prose to silence a warning.** Leave the sentence and move on.
@@ -139,4 +139,4 @@ bodies its teammates open — file through this skill instead of writing issue o
 bodies inline.
 
 Machine-readable text stays exempt: roadmap tables, board comments, and reviewer
-verdicts are parsed, not read, so the register does not apply to them.
+verdicts are parsed, not read, so the writing rules do not apply to them.

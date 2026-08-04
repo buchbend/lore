@@ -26,7 +26,7 @@ EXPECTED_DIRECTIVE_LINES = [
     ),
     (
         "- Before writing or editing an issue or PR body, run "
-        "`lore style show issue-register` and follow it."
+        "`lore style show writing-rules` and follow it."
     ),
     "",
 ]

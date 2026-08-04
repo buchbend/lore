@@ -1,4 +1,4 @@
-# Issue Register
+# Writing Rules
 
 Status: draft
 Scope: issue text, PR descriptions, ADR context sections
@@ -91,7 +91,7 @@ or two lines under each.
 
 An issue carries one change or several changes.
 
-- **Change** — one required-behaviour statement with its own acceptance criteria. The smallest unit the register describes.
+- **Change** — one required-behaviour statement with its own acceptance criteria. The smallest unit the writing rules describe.
 - **Batch issue** — several changes under one Context section, one PR, and no ordering dependency between the changes.
 
 In a batch, give each change one subheading under "Required behaviour", and
@@ -104,13 +104,13 @@ one change must land before another change.
 ## Block for CLAUDE.md and AGENTS.md
 
 Paste this into the agent instruction file so that generated text arrives in
-the register.
+the writing rules.
 
 ```markdown
 ## Issue writing
 
 When you write or edit an issue, a PR description, or an ADR context section,
-follow the issue register (`lore style show issue-register`, or the copy your
+follow the writing rules (`lore style show writing-rules`, or the copy your
 team pasted below). In short:
 
 - Use the required section structure. Keep empty sections.

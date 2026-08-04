@@ -84,6 +84,13 @@ def test_vale_config_cli_falls_back_when_wiki_has_no_override(lore_root: Path) -
     assert result.output.strip() == str(default_vale_config_path())
 
 
+def test_packaged_vale_style_directory_is_the_writing_rules() -> None:
+    """The ini and its rule directory are one unit — renaming one renames both."""
+    config = default_vale_config_path()
+    assert (config.parent / "WritingRules").is_dir()
+    assert "BasedOnStyles = WritingRules" in config.read_text(encoding="utf-8")
+
+
 # --- banned-word list stays single-sourced --------------------------------
 
 
@@ -91,16 +98,16 @@ def _listed_after(marker: str, text: str) -> list[str]:
     """The comma-separated words a `<marker>: a, b, c.` run names, unwrapped
     across line breaks."""
     match = re.search(rf"{re.escape(marker)}(.*?)\.", text, re.DOTALL)
-    assert match, f"the register lost its '{marker}' list"
+    assert match, f"the writing rules lost the '{marker}' list"
     return [w.strip() for w in match.group(1).split(",")]
 
 
-def _register_text() -> str:
-    return default_style_path("issue-register").read_text(encoding="utf-8")
+def _writing_rules_text() -> str:
+    return default_style_path("writing-rules").read_text(encoding="utf-8")
 
 
 def _vocabulary_tokens() -> list[str]:
-    path = default_vale_config_path().parent / "IssueRegister" / "Vocabulary.yml"
+    path = default_vale_config_path().parent / "WritingRules" / "Vocabulary.yml"
     return yaml.safe_load(path.read_text(encoding="utf-8"))["tokens"]
 
 
@@ -118,11 +125,11 @@ def _vocabulary_bases() -> list[str]:
     return bases
 
 
-def test_vocabulary_rule_matches_the_register_banned_list() -> None:
+def test_vocabulary_rule_matches_the_banned_list() -> None:
     """Rule 3's words, the Vale tokens that enforce them, and the paste block's
     copy are three hand-synced lists — drift between them means the linter and
-    the register disagree about what is banned."""
-    banned = _listed_after("Banned:", _register_text())
+    the writing rules disagree about what is banned."""
+    banned = _listed_after("Banned:", _writing_rules_text())
     assert _vocabulary_bases() == banned
 
 
@@ -139,8 +146,8 @@ def test_vocabulary_tokens_carry_inflections() -> None:
     )
 
 
-def test_paste_block_repeats_the_register_banned_list() -> None:
-    text = _register_text()
+def test_paste_block_repeats_the_banned_list() -> None:
+    text = _writing_rules_text()
     paste = text.split("## Block for CLAUDE.md and AGENTS.md", 1)[1]
     assert _listed_after("Do not use:", paste) == _listed_after("Banned:", text)
 
