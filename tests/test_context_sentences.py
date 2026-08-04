@@ -18,10 +18,13 @@ from lore_core.style import default_vale_config_path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# A period that ends a sentence, not one inside `e.g.` or a file name. The
-# lookbehind rejects a single letter standing after a space or a period; the
+# A period that ends a sentence, not one inside an abbreviation or a file name.
+# The first lookbehind rejects a single letter standing after a space or a
+# period, which covers an initial; ABBREVIATIONS covers the longer forms. The
 # trailing class lets a sentence end inside markup, as in `**Startup sweep.**`.
-SENTENCE_END = re.compile(r"(?<![\s.][A-Za-z])[.!?][*_`\"\')\]]*(?=\s|$)")
+ABBREVIATIONS = ("etc", "vs", "cf", "approx", "resp")
+_NOT_ABBREVIATION = "".join(rf"(?<!{re.escape(word)})" for word in ABBREVIATIONS)
+SENTENCE_END = re.compile(rf"(?<![\s.][A-Za-z]){_NOT_ABBREVIATION}[.!?][*_`\"\')\]]*(?=\s|$)")
 LIST_ITEM = re.compile(r"\s*([-*+]|\d+\.)\s")
 
 
@@ -83,3 +86,14 @@ def test_the_sentence_check_catches_a_long_sentence() -> None:
     over_long, ceiling = _sentence_length_rule()
     sentence = " ".join(["word"] * (ceiling + 1)) + "."
     assert [s for s in _sentences(f"# Title\n\n{sentence}\n") if over_long.search(s)]
+
+
+def test_an_abbreviation_does_not_split_a_long_sentence() -> None:
+    """A period inside an abbreviation is not a sentence end. Treating it as
+    one hides an over-long sentence behind two short halves."""
+    over_long, ceiling = _sentence_length_rule()
+    for abbreviation in ABBREVIATIONS:
+        head = "word " * 7
+        tail = "word " * (ceiling - 6)
+        sentence = f"{head}{abbreviation}. {tail}".strip() + "."
+        assert [s for s in _sentences(sentence) if over_long.search(s)], abbreviation

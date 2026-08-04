@@ -2,8 +2,8 @@
 
 An AI-navigation map of Lore's domain. Every term below has one tight
 meaning, matched against shipped code. Cross-check a claim here against
-the module it points at before you rely on it. A term that no real
-symbol grounds does not belong here.
+the module it points at before you rely on it. A term or a behavior
+that no real symbol grounds does not belong here.
 
 ## Vault, wiki, scope
 
@@ -74,8 +74,9 @@ Exact title and body rendering shape: `CONTEXT-FORMAT.md`.
 A session's turns accumulate in a per-transcript **buffer**
 (`lore_curator/buffer_store.py`). Curator A's heartbeat
 (`lore_curator/session_curator.py`, `run_curator_a`) drives the buffer
-on ordinary Claude Code hook activity. There is no cron. The first heartbeat for
-a session creates the note (disclaimer + frontmatter, zero chapters:
+on ordinary Claude Code hook activity. There is no cron. The first
+heartbeat for a session creates the note (disclaimer + frontmatter, zero
+chapters:
 `lore_curator/session_note.py:ensure_note`); later heartbeats just
 grow the buffer.
 
@@ -173,8 +174,9 @@ form runs deterministic, frontmatter-only passes over every wiki
 (`lore_curator/hygiene.py`). The passes are supersession propagation
 (`supersedes [[B]]` → `superseded_by: [[A]]` on B), `implements:`
 back-link processing, and git-log date backfill. Another pass hints at
-team mode once a solo wiki's git log shows multiple authors. Staleness is a deliberate
-no-op here — see `lore_core/freshness.py` below. Findings land in
+team mode once a solo wiki's git log shows multiple authors. Staleness
+is a deliberate no-op here — see `lore_core/freshness.py` below.
+Findings land in
 `wiki/<name>/_review.md`; writes are mtime-guarded so a note open in
 Obsidian is skipped rather than clobbered. `--apply` is required to
 write; the default is a dry-run.
@@ -314,9 +316,10 @@ Terms used in the workflow layer and orchestration:
   tracker. The seed is one-time context for a shaped body of work, not
   a carry-forward between sessions.
 - **Writing rules** — the prose style an agent uses for issue text, PR
-  bodies and ADR context sections. The document holds sentence and vocabulary rules,
-  EARS acceptance criteria, and the required section skeleton. Lore
-  ships one default; a team overrides it whole-file with
+  descriptions, PR review comments, ADR context sections and design
+  documents. Session notes stay out. The document holds sentence and
+  vocabulary rules, EARS acceptance criteria, and the required section
+  skeleton. Lore ships one default; a team overrides it whole-file with
   `<wiki>/style/writing-rules.md`.
   `lore style show writing-rules` resolves the two. The rules fix style,
   not terminology — terminology stays with the glossary.
