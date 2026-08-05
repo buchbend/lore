@@ -1,9 +1,12 @@
 """Golden test for ``render_session_banner``.
 
-Pins the ambient-minimum shape settled in the trim-to-safe-core PRD: one
-status line (no issue/PR counts), an optional Focus block, at most two
-last-session hints, freshness lines only on positive evidence, and a
+Pins the ambient-minimum shape: one status line (nothing fetched from
+gh), an optional Focus block, the last-active-day recap read off the
+transcript ledger, freshness lines only on positive evidence, and a
 single collapsed directive. No other section is emitted.
+
+The recap replaced the last-session note hints when session notes were
+retired — same three-line budget, a source that costs no LLM call.
 """
 
 from __future__ import annotations
@@ -29,6 +32,11 @@ SESSION_HINTS = (
     ("12-1530-fix-thing", "fixed the thing"),
     ("12-0900-prep", "prep for sprint"),
 )
+RECAP = (
+    "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer",
+    "Branches: feat/12-fix-thing",
+    "Refs: #12",
+)
 
 
 V1_FACTS = SessionFacts(
@@ -39,16 +47,18 @@ V1_FACTS = SessionFacts(
     session_hints=SESSION_HINTS,
     freshness_audit_lines=(),
     pending_chip=None,
+    recap=RECAP,
 )
 
 V1_EXPECTED = (
-    "lore 9.9.9: active · [[data-transfer]] · last: fixed the thing\n"
+    "lore 9.9.9: active · [[data-transfer]] · last active 2026-08-04\n"
     "\n"
     "## Focus: [[data-transfer]]\n"
     "Long-haul data pipeline\n"
     "\n"
-    "Last: [[12-1530-fix-thing]] — fixed the thing\n"
-    "Last: [[12-0900-prep]] — prep for sprint\n"
+    "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer\n"
+    "Branches: feat/12-fix-thing\n"
+    "Refs: #12\n"
     "\n"
     "## Directive\n"
     "- pull, not push"
@@ -63,16 +73,18 @@ V2_FACTS = SessionFacts(
     session_hints=SESSION_HINTS,
     freshness_audit_lines=(),
     pending_chip=None,
+    recap=RECAP,
 )
 
 V2_EXPECTED = (
-    "lore 9.9.9: active · ccat:data-center:data-transfer · last: fixed the thing\n"
+    "lore 9.9.9: active · ccat:data-center:data-transfer · last active 2026-08-04\n"
     "\n"
     "## Focus: [[data-transfer]]\n"
     "Long-haul data pipeline\n"
     "\n"
-    "Last: [[12-1530-fix-thing]] — fixed the thing\n"
-    "Last: [[12-0900-prep]] — prep for sprint\n"
+    "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer\n"
+    "Branches: feat/12-fix-thing\n"
+    "Refs: #12\n"
     "\n"
     "## Directive\n"
     "- pull, not push"
@@ -108,8 +120,8 @@ def test_render_session_banner_includes_pending_chip_and_no_project_note() -> No
 
 
 def test_render_session_banner_has_exactly_the_agreed_elements() -> None:
-    """The ambient-minimum contract: status line, Focus block, ≤2 session
-    hints, freshness lines, and a single directive — nothing else. Feed
+    """The ambient-minimum contract: status line, Focus block, ≤3 recap
+    lines, freshness lines, and a single directive — nothing else. Feed
     every optional slot so a stray extra section would show up."""
     facts = SessionFacts(
         wiki_name="ccat",
@@ -119,18 +131,20 @@ def test_render_session_banner_has_exactly_the_agreed_elements() -> None:
         session_hints=SESSION_HINTS,
         freshness_audit_lines=("### Filtered for staleness", "- 1 excluded"),
         pending_chip="1 pending verdict",
+        recap=RECAP,
     )
     out = render_session_banner(facts)
 
     expected = (
         "lore 9.9.9: active · ccat:data-center:data-transfer · "
-        "last: fixed the thing · 1 pending verdict\n"
+        "last active 2026-08-04 · 1 pending verdict\n"
         "\n"
         "## Focus: [[data-transfer]]\n"
         "Long-haul data pipeline\n"
         "\n"
-        "Last: [[12-1530-fix-thing]] — fixed the thing\n"
-        "Last: [[12-0900-prep]] — prep for sprint\n"
+        "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer\n"
+        "Branches: feat/12-fix-thing\n"
+        "Refs: #12\n"
         "\n"
         "### Filtered for staleness\n"
         "- 1 excluded\n"
@@ -140,10 +154,9 @@ def test_render_session_banner_has_exactly_the_agreed_elements() -> None:
     )
     assert out == expected
 
-    # No count-shaped bits ("N issues" / "N PRs") anywhere — the banner
-    # never fetches gh for counts.
-    assert "issue" not in out.lower()
-    assert "PR" not in out
+    # The recap's refs come from the ledger's linkage block, which capture
+    # wrote from git. The banner still fetches nothing from gh — see
+    # ``test_session_facts_has_no_issue_or_pr_fields``.
 
     # Exactly one directive heading — the three former blocks (vault-first
     # + freshness nudges, citation suppression, journal invitation) are

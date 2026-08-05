@@ -8,7 +8,8 @@ Exposed tools:
     lore_read               — read one note by wiki/path
     lore_drill              — composite multi-stage retrieval (search→read→
                               expand→read_expanded) in one envelope with a
-                              structured trace
+                              structured trace, plus transcript pointers for
+                              queries naming an issue, a PR, or a file
     lore_inbox_classify     — read-only inbox walk (file list with type +
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
@@ -33,7 +34,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from lore_core.config import get_wiki_root
+from lore_core.config import get_lore_root, get_wiki_root
 from lore_core.errors import mcp_error as _mcp_error
 from lore_core.freshness import (
     compute_freshness,
@@ -43,6 +44,7 @@ from lore_core.freshness import (
     signal_to_dict,
 )
 from lore_core.freshness_filter import apply_search_filter
+from lore_core.ledger import find_sessions
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
@@ -514,6 +516,25 @@ def handle_drill(
     trace: list[dict[str, Any]] = []
     notes: list[dict[str, Any]] = []
 
+    # Ledger routing. "Which sessions touched PR/issue/file X" is answered
+    # from the transcript ledger, not the note index — owner-local, and
+    # unaffected by what the vault does or doesn't hold. Resolved once per
+    # drill so the read-side spine event stays one-per-query; its trace
+    # step is appended last so the note stages keep their fixed positions.
+    t0 = _time.monotonic()
+    sessions = find_sessions(get_lore_root(), query)
+    ledger_step = {
+        "stage": "ledger",
+        "sessions": len(sessions),
+        "elapsed_ms": int((_time.monotonic() - t0) * 1000),
+    }
+
+    def _envelope() -> dict[str, Any]:
+        return {
+            "trace": [*trace, ledger_step],
+            "result": {"notes": notes, "sessions": sessions},
+        }
+
     # Stage 1: search
     t0 = _time.monotonic()
     hits = handle_search(query=query, wiki=wiki, k=k)
@@ -529,7 +550,7 @@ def handle_drill(
         # uniform — easier for clients to parse than missing entries.
         for stage in ("read", "expand", "read_expanded"):
             trace.append({"stage": stage, "skipped": "search_returned_zero", "elapsed_ms": 0})
-        return {"trace": trace, "result": {"notes": notes}}
+        return _envelope()
 
     # Stage 2: read top hits
     # Drill is the user-invoked deep-dive surface (PRD #92 retrieval
@@ -566,7 +587,7 @@ def handle_drill(
     if not expanded_slugs:
         trace.append({"stage": "expand", "skipped": "no_wikilinks", "elapsed_ms": int((_time.monotonic() - t0) * 1000)})
         trace.append({"stage": "read_expanded", "skipped": "no_wikilinks", "elapsed_ms": 0})
-        return {"trace": trace, "result": {"notes": notes}}
+        return _envelope()
     expand_step: dict[str, Any] = {
         "stage": "expand",
         "wikilinks": expanded_slugs,
@@ -584,7 +605,7 @@ def handle_drill(
     if not expanded_slugs:
         # `expand_only` filtered everything out — record skipped + return.
         trace.append({"stage": "read_expanded", "skipped": "expand_only_empty", "elapsed_ms": 0})
-        return {"trace": trace, "result": {"notes": notes}}
+        return _envelope()
 
     # Stage 4: read expanded (cap at expand_limit, skip unresolvable slugs).
     # `truncated` only applies when we actually hit the cap — an unresolvable
@@ -625,7 +646,7 @@ def handle_drill(
         trace_step["read_failed"] = read_failed_expanded
     trace.append(trace_step)
 
-    return {"trace": trace, "result": {"notes": notes}}
+    return _envelope()
 
 
 def handle_verdict(
@@ -1050,7 +1071,14 @@ def _tool_schema() -> list[dict]:
                 "exactly those without recomputing search. `expand_only` is "
                 "intersection-only (it cannot add slugs that weren't in the "
                 "discovered set; only narrow). "
-                "Prefer `lore_drill` for cold-start exploration of a topic. "
+                "A query naming an issue (`#358`), a PR (`PR 364`) or a file "
+                "path also returns `result.sessions` — pointers to the local "
+                "transcripts of the sessions that touched it, read from the "
+                "transcript ledger. Those pointers are machine-local: they name "
+                "files on this machine only, so never quote them to anyone but "
+                "their owner. "
+                "Prefer `lore_drill` for cold-start exploration of a topic, and "
+                "for \"which sessions touched X?\". "
                 "Prefer `lore_search` (then `lore_read`) when you already know "
                 "the rough path/slug or want to steer between stages."
             ),

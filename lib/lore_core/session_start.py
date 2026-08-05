@@ -290,6 +290,46 @@ def last_session_hint(wiki: Path, max_notes: int = 2) -> list[tuple[str, str]]:
     return results
 
 
+def last_active_day_recap(lore_root: Path) -> tuple[str, ...]:
+    """Recap the most recent day the transcript ledger saw work.
+
+    Three lines at most — where (repo + session count), what branches,
+    which refs — rendered straight off the ledger's linkage blocks. No
+    LLM call, no gh call, no note read: this is what continuity looks
+    like once session notes are gone.
+
+    Empty when the ledger is empty or carries no dated entry. Orphaned
+    entries are retired sessions and never define the last active day.
+    """
+    from lore_core.ledger import TranscriptLedger
+
+    try:
+        entries = [e for e in TranscriptLedger(lore_root).all_entries() if not e.orphan]
+    except Exception:  # noqa: BLE001 - the banner degrades, it never fails
+        return ()
+    if not entries:
+        return ()
+
+    last_day = max(e.last_mtime.date() for e in entries)
+    day = [e for e in entries if e.last_mtime.date() == last_day]
+
+    repos = sorted({(e.linkage.get("repo") or "") for e in day} - {""})
+    branches = sorted({(e.linkage.get("branch") or "") for e in day} - {""})
+    refs = sorted(
+        {int(n) for e in day for n in (e.linkage.get("issues") or [])}
+        | {int(n) for e in day for n in (e.linkage.get("prs") or [])}
+    )
+
+    noun = "session" if len(day) == 1 else "sessions"
+    where = f" in {', '.join(repos)}" if repos else ""
+    lines = [f"Last active {last_day.isoformat()} — {len(day)} {noun}{where}"]
+    if branches:
+        lines.append(f"Branches: {', '.join(branches)}")
+    if refs:
+        lines.append("Refs: " + ", ".join(f"#{n}" for n in refs))
+    return tuple(lines)
+
+
 def cross_scope_breadcrumbs(lore_root: Path, current_wiki: str) -> list[str]:
     """One-liner per other-wiki with activity in the last 24h."""
     from collections import Counter
@@ -355,9 +395,13 @@ class SessionFacts:
     repo: str | None
     scope: str = ""
     project_entry: dict | None = None
+    #: Collected for the freshness audit only — the banner stopped
+    #: rendering note hints when the recap replaced them.
     session_hints: tuple[tuple[str, str], ...] = ()
     freshness_audit_lines: tuple[str, ...] = ()
     pending_chip: str | None = None
+    #: Last-active-day recap off the transcript ledger (≤3 lines).
+    recap: tuple[str, ...] = ()
 
 
 def collect_session_facts(
@@ -377,6 +421,9 @@ def collect_session_facts(
         session_hints_full, max_notes=2
     )
     pending_chip = pending_verdict_chip(wiki) or None
+    # ``<lore_root>/wiki/<name>`` is the fixed vault layout, so the ledger
+    # is reachable without threading lore_root through every caller.
+    recap = last_active_day_recap(wiki.parent.parent)
     return SessionFacts(
         wiki_name=wiki.name,
         repo=repo,
@@ -385,26 +432,32 @@ def collect_session_facts(
         session_hints=tuple(session_hints),
         freshness_audit_lines=tuple(freshness_audit_lines),
         pending_chip=pending_chip,
+        recap=recap,
     )
 
 
 def render_session_banner(facts: SessionFacts) -> str:
     """Format a SessionStart banner from collected facts.
 
-    Ambient-minimum shape: status line (no issue/PR counts), optional
-    Focus block, at most two last-session hints, freshness lines only
-    on positive evidence, and the single collapsed directive as a
-    postscript — so users see what Lore did *first* and the rule
-    re-assertion second.
+    Ambient-minimum shape: status line (no gh fetch), optional Focus
+    block, the last-active-day recap read off the transcript ledger,
+    freshness lines only on positive evidence, and the single collapsed
+    directive as a postscript — so users see what Lore did *first* and
+    the rule re-assertion second.
+
+    The recap replaced the last-session note hints: notes are retired,
+    and continuity now comes from a store that costs no LLM call to
+    write and survives the note files being deleted.
     """
     injected_bits: list[str] = []
     if facts.scope:
         injected_bits.append(facts.scope)
     elif facts.project_entry is not None:
         injected_bits.append(f"[[{facts.project_entry['name']}]]")
-    if facts.session_hints:
-        _, first_summary = facts.session_hints[0]
-        injected_bits.append(f"last: {first_summary}")
+    if facts.recap:
+        # Chip form of the recap's first line — the block below carries
+        # the detail; the chip only has to say "there is a last day".
+        injected_bits.append(facts.recap[0].split(" — ")[0].lower())
     if facts.pending_chip:
         injected_bits.append(facts.pending_chip)
     status_line = f"lore {lore_version()}: active" + (
@@ -425,9 +478,8 @@ def render_session_banner(facts: SessionFacts) -> str:
         )
         parts.append("")
 
-    if facts.session_hints:
-        for slug, desc in facts.session_hints[:2]:
-            parts.append(f"Last: [[{slug}]] — {desc}")
+    if facts.recap:
+        parts.extend(facts.recap)
         parts.append("")
 
     if facts.freshness_audit_lines:

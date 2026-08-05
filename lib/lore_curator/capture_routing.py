@@ -48,6 +48,7 @@ def register_pending_transcripts(
     *,
     adapter: Any,
     transcript: Path | None = None,
+    deep: bool = False,
 ) -> None:
     """List transcripts for ``cwd`` and upsert into the ledger.
 
@@ -66,6 +67,10 @@ def register_pending_transcripts(
 
     Bulk-upserted in one ledger serialisation regardless of how many
     handles change — keeps the call well within the hook budget.
+
+    ``deep`` promotes the linkage stamp from git state alone to a full
+    transcript read (edited files, commit SHAs). Only a session boundary
+    passes it; a per-prompt heartbeat must not pay that parse.
     """
     from lore_core.state.attachments import AttachmentsFile
 
@@ -109,7 +114,65 @@ def register_pending_transcripts(
             entry.last_mtime = h.mtime
             to_write.append(entry)
     if to_write:
+        _stamp_linkage(to_write, cwd, adapter=adapter, deep=deep)
         tledger.bulk_upsert(to_write)
+
+
+def _stamp_linkage(
+    entries: list[TranscriptLedgerEntry],
+    cwd: Path,
+    *,
+    adapter: Any,
+    deep: bool,
+) -> None:
+    """Merge a freshly-derived linkage block into each entry, in place.
+
+    Merged, not replaced: a shallow pass carries no ``commits``/``files``
+    key, so the last deep pass's results survive it.
+
+    Every entry in one call shares the same ``cwd``, so the git-derived
+    half is derived once. The deep half is per-transcript and reads the
+    file, which is why it only runs at a session boundary.
+    """
+    from lore_curator.ledger_linkage import build_linkage
+
+    shallow = build_linkage(cwd)
+    for entry in entries:
+        block = dict(shallow)
+        if deep:
+            block.update(_deep_linkage(cwd, entry, adapter=adapter))
+        entry.linkage = {**entry.linkage, **block}
+
+
+def _deep_linkage(
+    cwd: Path,
+    entry: TranscriptLedgerEntry,
+    *,
+    adapter: Any,
+) -> dict[str, Any]:
+    """Linkage read out of one transcript, or ``{}`` if it cannot be read.
+
+    ponytail: parses the whole transcript. Median cost is ~15 ms and the
+    tail is ~300 ms on a 25 MB session, paid once per session boundary
+    rather than per prompt. Read incrementally from the digested
+    watermark if that tail ever shows up in hook telemetry.
+    """
+    from lore_core.types import TranscriptHandle
+
+    from lore_curator.ledger_linkage import build_linkage
+
+    try:
+        handle = TranscriptHandle(
+            integration=entry.integration,
+            id=entry.transcript_id,
+            path=entry.path,
+            cwd=entry.directory,
+            mtime=entry.last_mtime,
+        )
+        turns = list(adapter.read_slice(handle, 0))
+    except Exception:  # noqa: BLE001 - linkage is derived; capture must not fail on it
+        return {}
+    return build_linkage(cwd, turns=turns)
 
 
 def poll_buffer_handover(
@@ -353,7 +416,13 @@ def route_capture(
         progress = {}
 
     tledger = TranscriptLedger(lore_root)
-    register_pending_transcripts(lore_root, cwd, adapter=adapter, transcript=transcript)
+    # The boundary events are the only ones that promote capture to the
+    # deep linkage pass: the transcript is complete there, and one full
+    # parse per session is affordable where one per prompt is not.
+    register_pending_transcripts(
+        lore_root, cwd, adapter=adapter, transcript=transcript,
+        deep=event in ("session-end", "pre-compact"),
+    )
 
     # Buffer-and-flush: at session-end, stamp ``flush_requested`` on this
     # session's live buffers so the detached curator-A spawn (or a manual

@@ -28,10 +28,12 @@ One MCP call, one envelope, structured trace alongside the result:
     {"stage": "search", "query": "...", "hits": 7, "elapsed_ms": 12},
     {"stage": "read",   "paths": ["wiki/foo.md", "wiki/bar.md"], "elapsed_ms": 23},
     {"stage": "expand", "wikilinks": ["[[baz]]", "[[qux]]"], "elapsed_ms": 18},
-    {"stage": "read_expanded", "paths": ["wiki/baz.md"], "elapsed_ms": 9}
+    {"stage": "read_expanded", "paths": ["wiki/baz.md"], "elapsed_ms": 9},
+    {"stage": "ledger", "sessions": 2, "elapsed_ms": 3}
   ],
   "result": {
-    "notes": [ /* { path, frontmatter, body } per note */ ]
+    "notes": [ /* { path, frontmatter, body } per note */ ],
+    "sessions": [ /* transcript pointers; see "Ledger routing" */ ]
   }
 }
 ```
@@ -87,6 +89,34 @@ trace as a tree (rich) and the result as a paginated note list. No
 special-casing — the trace ships in the response either way; the CLI
 just chooses to format it visibly.
 
+## Ledger routing
+
+A query that names an issue (`#358`), a PR (`PR 364`) or a file path
+also routes to the transcript ledger, which answers "which sessions
+touched this?" from the linkage block capture writes on every entry.
+The matches come back under `result.sessions` as transcript pointers:
+
+```json
+{"transcript_id": "…", "integration": "claude-code", "path": "/…/x.jsonl",
+ "directory": "/…/proj", "last_active": "2026-08-04T09:00:00+00:00",
+ "repo": "buchbend/lore", "branch": "feat/358-ledger",
+ "issues": [358], "prs": [364]}
+```
+
+Properties:
+
+* **Owner-local.** The pointers name transcript files on one machine
+  (ADR 0009). They are never quoted to anyone but their owner, and
+  nothing about them crosses into a wiki.
+* **One event per query.** The lookup emits a single `ledger-query`
+  record on the event spine (`source: "mcp"`), so read-side use of the
+  archive is countable next to every other counter.
+* **Resolved first, recorded last.** The lookup runs before the search
+  stage but its trace step is appended after `read_expanded`, so the
+  note stages keep the fixed trace positions clients already index by.
+* A query with no ref and no path-like token is not a ledger query: it
+  returns `sessions: []` and emits nothing.
+
 ## Trace contract for clients
 
 The trace shape is part of the MCP response and is now public. Clients
@@ -104,6 +134,8 @@ should:
   keys) surface paths whose ``handle_read`` returned an error. The
   presence of a path here means it's listed under ``paths`` but its
   body is **not** in ``result.notes``.
+* ``ledger.sessions`` is a count; the pointers themselves live under
+  ``result.sessions``.
 * ``read_expanded.truncated`` / ``kept`` only appear when the
   ``expand_limit`` cap actually stopped the loop. A smaller resolved
   set than ``expand_limit`` (because slugs were unresolvable, not

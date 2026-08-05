@@ -67,14 +67,19 @@ def extract_linkage(
     commit_texts: list[str] | None = None,
     wiki_root: Path | None = None,
     handle: str = "",
+    branch: str | None = None,
 ) -> Linkage:
     """Derive linkage from git state, branch name, and commit text.
 
     `commit_texts` is one string per commit (subject + body); the caller
     resolves it (e.g. via `collect_commits_by_sha`) since fetching commit
     text is a curator-layer concern, not this module's.
+
+    `branch` overrides the checkout's current branch. A migration reading
+    an archived session must use the branch that session was on, not the
+    one the working copy happens to be on today.
     """
-    branch = current_branch(cwd) or ""
+    branch = branch if branch is not None else (current_branch(cwd) or "")
     repo = current_repo(cwd) or ""
 
     issues: set[int] = set()

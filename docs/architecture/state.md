@@ -168,7 +168,12 @@ credential**, not scrubbing history.
 **Transcripts and buffers never leave local state.** They live under
 `<lore_root>/.lore/` (`transcript-ledger.json`, `buffers/`), a sibling
 of `wiki/` — never a descendant — so a `git push` of a wiki directory
-structurally cannot ship them. Only composed, gate-passed notes
+structurally cannot ship them. Each ledger entry carries a `linkage`
+block — `repo`, `branch`, `prs`, `issues`, `commits`, `files` — written
+by capture with no LLM call. It is what `lore_drill` reads to answer
+"which sessions touched X" and what the SessionStart recap renders from.
+The block is derived and rebuildable, and stays machine-local with the
+rest of the ledger. Only composed, gate-passed notes
 written into `wiki/<name>/sessions/` are ever pushed.
 
 ---
