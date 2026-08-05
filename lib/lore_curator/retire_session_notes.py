@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -97,16 +98,19 @@ def apply_retirement(lore_root: Path, plan: RetirementPlan) -> RetirementReport:
 
     deleted: list[Path] = []
     failed: list[tuple[Path, str]] = []
-    roots = {p for p in (_sessions_root_of(lore_root, d) for d in plan.deletions) if p}
+    # Every wiki's roots, not just the planned wiki's: the guard needs
+    # the legitimate universe, and a scoped plan only holds its own paths.
+    allowed = _sessions_roots(lore_root)
+    prune_roots = {p for p in (_sessions_root_of(lore_root, d) for d in plan.deletions) if p}
     for path in plan.deletions:
         try:
-            _assert_deletable(lore_root, path)
+            _assert_deletable(allowed, path)
             path.unlink()
             deleted.append(path)
         except (OSError, ValueError) as exc:
             failed.append((path, str(exc)))
 
-    for root in roots:
+    for root in prune_roots:
         _prune_empty_dirs(root)
 
     return RetirementReport(
@@ -198,57 +202,107 @@ def _wiki_dirs(lore_root: Path, wiki: str | None) -> list[Path]:
     return sorted(d for d in root.iterdir() if d.is_dir())
 
 
-def _iter_session_notes(lore_root: Path, wiki: str | None):
+def _iter_sessions_dirs(lore_root: Path, wiki: str | None):
+    """Yield each wiki's ``sessions/`` directory as the vault names it.
+
+    Unresolved on purpose: the plan should print the path the owner
+    knows. :func:`_contained` resolves each candidate before it is
+    allowed into the plan.
+    """
     for wiki_dir in _wiki_dirs(lore_root, wiki):
         sessions = wiki_dir / "sessions"
-        if not sessions.is_dir():
-            continue
+        if sessions.is_dir() and not sessions.is_symlink():
+            yield sessions
+
+
+def _iter_session_notes(lore_root: Path, wiki: str | None):
+    roots = _sessions_roots(lore_root, wiki)
+    for sessions in _iter_sessions_dirs(lore_root, wiki):
         for path in sessions.rglob("*.md"):
-            if path.is_file() and not path.is_symlink():
+            if path.is_file() and not path.is_symlink() and _contained(roots, path):
                 yield path
 
 
 def _iter_non_notes(lore_root: Path, wiki: str | None):
-    for wiki_dir in _wiki_dirs(lore_root, wiki):
-        sessions = wiki_dir / "sessions"
-        if not sessions.is_dir():
-            continue
+    roots = _sessions_roots(lore_root, wiki)
+    for sessions in _iter_sessions_dirs(lore_root, wiki):
         for path in sessions.rglob("*"):
-            if path.is_file() and path.suffix != ".md":
+            if path.is_file() and path.suffix != ".md" and _contained(roots, path):
                 yield path
 
 
 def _sessions_root_of(lore_root: Path, path: Path) -> Path | None:
+    """The in-vault ``sessions/`` directory above ``path``, lexically.
+
+    Used only to pick which directory to tidy after a delete —
+    containment is :func:`_contained`'s job, on resolved paths.
+    """
     for parent in path.parents:
         if parent.name == "sessions" and parent.parent.parent == lore_root / "wiki":
             return parent
     return None
 
 
-def _assert_deletable(lore_root: Path, path: Path) -> None:
-    """Refuse anything that is not a plain ``.md`` file inside a
-    ``<lore_root>/wiki/<name>/sessions/`` tree.
+def _sessions_roots(lore_root: Path, wiki: str | None = None) -> list[Path]:
+    """Every wiki's real ``sessions/`` directory, resolved.
 
-    The plan is computed from the same walk, so this can only fire if the
-    tree changed under us or a caller hand-built a plan — which is
-    exactly when a delete loop must stop rather than guess.
+    Containment is measured against the resolved *wiki's* sessions tree,
+    not against the vault root. A wiki is routinely a symlink into its
+    own git repo — wikis are portable units — so resolving against the
+    root instead drops every symlinked wiki from the plan without a
+    word.
+
+    A ``sessions`` entry that is itself a symlink is skipped. That one
+    points the tree out of its own wiki, which is the escape rather than
+    the layout: it let a plan list a link target's files under
+    in-vault-looking paths, and ``--apply`` delete them.
+    """
+    roots: list[Path] = []
+    for wiki_dir in _wiki_dirs(lore_root, wiki):
+        sessions = wiki_dir / "sessions"
+        if sessions.is_dir() and not sessions.is_symlink():
+            roots.append(sessions.resolve())
+    return roots
+
+
+def _contained(roots: list[Path], path: Path) -> bool:
+    """True when ``path`` resolves inside one of ``roots``.
+
+    Resolving the candidate is the whole guard: ``sessions/../../../x``
+    and a symlinked shard below ``sessions/`` both land outside every
+    root and are refused. Comparing an unresolved path — or falling back
+    to a lexical check when the resolved one misses — re-admits exactly
+    those two.
+    """
+    target = path.resolve()
+    return any(target.is_relative_to(root) for root in roots)
+
+
+def _assert_deletable(roots: list[Path], path: Path) -> None:
+    """Refuse anything that is not a plain ``.md`` file inside ``roots``.
+
+    The plan is computed from the same roots and the same predicate, so
+    this can only fire if the tree changed under us or a caller
+    hand-built a plan — which is exactly when a delete loop must stop
+    rather than guess.
     """
     if path.suffix != ".md":
         raise ValueError(f"not a session note: {path}")
     if path.is_symlink() or not path.is_file():
         raise ValueError(f"not a regular file: {path}")
-    inside = _sessions_root_of(lore_root, path.resolve()) or _sessions_root_of(lore_root, path)
-    if inside is None:
+    if not _contained(roots, path):
         raise ValueError(f"outside any wiki sessions tree: {path}")
 
 
 def _prune_empty_dirs(root: Path) -> None:
-    """Remove directories left empty under ``root``, deepest first."""
-    if not root.is_dir():
+    """Remove directories left empty under ``root``, deepest first.
+
+    ``os.walk(followlinks=False)`` rather than ``rglob``: rglob descends
+    through a directory symlink, which would let the prune rmdir empty
+    directories outside the vault.
+    """
+    if not root.is_dir() or root.is_symlink():
         return
-    for directory in sorted(root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
-        if directory.is_dir():
-            with contextlib.suppress(OSError):
-                directory.rmdir()
-    with contextlib.suppress(OSError):
-        root.rmdir()
+    for dirpath, _dirnames, _filenames in os.walk(root, topdown=False, followlinks=False):
+        with contextlib.suppress(OSError):
+            Path(dirpath).rmdir()

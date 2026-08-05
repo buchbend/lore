@@ -4,6 +4,7 @@ The ledger is the personal layer's linkage store: every entry carries
 where the session worked (repo, branch), what it referenced (PRs,
 issues), and what it produced (commits, files).
 """
+
 from __future__ import annotations
 
 import json
@@ -220,9 +221,7 @@ def test_deep_capture_reads_files_and_commits_out_of_the_transcript(tmp_path: Pa
     )
     turns = [_edit_turn(0, str(repo / "lib" / "a.py")), *_commit_turns(1, "abc1234")]
 
-    register_pending_transcripts(
-        lore_root, repo, adapter=_FakeAdapter([handle], turns), deep=True
-    )
+    register_pending_transcripts(lore_root, repo, adapter=_FakeAdapter([handle], turns), deep=True)
 
     linkage = TranscriptLedger(lore_root).get("fake", "t1").linkage
     assert linkage["files"] == ["lib/a.py"]
@@ -239,19 +238,23 @@ def test_a_later_shallow_capture_keeps_the_deep_results(tmp_path: Path) -> None:
     _init_repo(repo, branch="feat/358-x", remote_url="git@github.com:buchbend/lore.git")
     lore_root = tmp_path / "vault"
     handle = TranscriptHandle(
-        integration="fake", id="t1", path=repo / "t1.jsonl", cwd=repo,
+        integration="fake",
+        id="t1",
+        path=repo / "t1.jsonl",
+        cwd=repo,
         mtime=datetime(2026, 8, 1, 10, 0, tzinfo=UTC),
     )
     adapter = _FakeAdapter([handle], [_edit_turn(0, str(repo / "lib" / "a.py"))])
     register_pending_transcripts(lore_root, repo, adapter=adapter, deep=True)
 
     grown = TranscriptHandle(
-        integration="fake", id="t1", path=repo / "t1.jsonl", cwd=repo,
+        integration="fake",
+        id="t1",
+        path=repo / "t1.jsonl",
+        cwd=repo,
         mtime=datetime(2026, 8, 1, 11, 0, tzinfo=UTC),
     )
-    register_pending_transcripts(
-        lore_root, repo, adapter=_FakeAdapter([grown]), deep=False
-    )
+    register_pending_transcripts(lore_root, repo, adapter=_FakeAdapter([grown]), deep=False)
 
     assert TranscriptLedger(lore_root).get("fake", "t1").linkage["files"] == ["lib/a.py"]
 

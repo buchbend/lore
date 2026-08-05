@@ -4,6 +4,7 @@ The transcript ledger answers from its linkage blocks and returns
 transcript pointers. Machine-local by design (ADR 0009) — nothing here
 crosses to the team layer.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -31,12 +32,28 @@ def _seed(lore_root: Path) -> None:
             linkage=linkage,
         )
 
-    TranscriptLedger(lore_root).bulk_upsert([
-        entry("t-ledger", 4, repo="buchbend/lore", branch="feat/358-ledger",
-              issues=[358], prs=[364], files=["lib/lore_core/ledger.py"]),
-        entry("t-flag", 3, repo="buchbend/lore", branch="feat/357-flag",
-              issues=[357], prs=[], files=["lib/lore_core/publish_gate.py"]),
-    ])
+    TranscriptLedger(lore_root).bulk_upsert(
+        [
+            entry(
+                "t-ledger",
+                4,
+                repo="buchbend/lore",
+                branch="feat/358-ledger",
+                issues=[358],
+                prs=[364],
+                files=["lib/lore_core/ledger.py"],
+            ),
+            entry(
+                "t-flag",
+                3,
+                repo="buchbend/lore",
+                branch="feat/357-flag",
+                issues=[357],
+                prs=[],
+                files=["lib/lore_core/publish_gate.py"],
+            ),
+        ]
+    )
 
 
 def test_query_naming_an_issue_returns_that_session_pointer(tmp_path: Path) -> None:
@@ -139,7 +156,7 @@ def test_drill_cli_prints_the_transcript_pointers(
 
 
 def test_prose_abbreviations_do_not_route_to_the_ledger(tmp_path: Path) -> None:
-    """"e.g." is not a filename. A single-letter suffix must not cost a
+    """ "e.g." is not a filename. A single-letter suffix must not cost a
     ledger parse and a spine event on an ordinary topical query."""
     _seed(tmp_path)
 

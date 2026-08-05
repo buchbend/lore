@@ -7,10 +7,17 @@ it, and the SessionStart recap renders from it.
 
 Two depths, because the two sources cost very different amounts:
 
-* **shallow** (``turns=None``) — git state and the branch name only. Two
-  ``git`` invocations; cheap enough for every capture hook. Returns
-  ``repo``/``branch``/``prs``/``issues`` and nothing else, so a caller
-  merging it over a stored block never clobbers a deep pass's results.
+* **shallow** (``turns=None``) — git state and the branch name only.
+  Four ``git`` invocations (``rev-parse --abbrev-ref``, ``rev-parse
+  --show-toplevel``, ``remote get-url upstream``, ``remote get-url
+  origin``), and it runs on every capture hook including each
+  ``UserPromptSubmit``. Returns ``repo``/``branch``/``prs``/``issues``
+  and nothing else, so a caller merging it over a stored block never
+  clobbers a deep pass's results.
+  ponytail: not memoised. The hook is a fresh process per invocation, so
+  an in-process cache would save nothing; a cross-process one would have
+  to invalidate on every branch switch. Give it a stamped cache in
+  ``.lore/`` only if the ~15 ms shows up in hook telemetry.
 * **deep** (``turns`` supplied) — adds ``commits`` and ``files`` read out
   of the transcript itself, and widens the ref set with the commit
   subjects. Costs a full transcript parse, so callers run it at a session
@@ -26,6 +33,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lore_core.git import git_repo_root
 from lore_core.linkage import extract_linkage
 
 if TYPE_CHECKING:
@@ -70,9 +78,12 @@ def build_linkage(
         )
 
         commits = _commit_shas_from_bash_results(turns)[:MAX_COMMITS]
+        # Resolve the repo root once, not once per file: this ran a
+        # `git rev-parse --show-toplevel` per edited file, so a 50-file
+        # session spawned 50 subprocesses on every session boundary.
+        repo_root = git_repo_root(Path(cwd)) if cwd else None
         files = [
-            _repo_relative(p, cwd)
-            for p in _files_modified_from_turns(turns)[:MAX_FILES]
+            _repo_relative(p, repo_root) for p in _files_modified_from_turns(turns)[:MAX_FILES]
         ]
         commit_texts = [_all_turn_text(turns)]
 
@@ -94,20 +105,16 @@ def build_linkage(
     return block
 
 
-def _repo_relative(path: str, cwd: Path | str | None) -> str:
+def _repo_relative(path: str, repo_root: Path | None) -> str:
     """Strip the checkout prefix so the same file matches across worktrees.
 
     Falls back to the path as written when it lies outside the repo (or
     when there is no repo) — a wrong-looking absolute path is still a
     usable pointer; a silently dropped one is not.
     """
-    from lore_core.git import git_repo_root
-
-    root = git_repo_root(Path(cwd)) if cwd else None
-    if root is None:
+    if repo_root is None:
         return path
     try:
-        return str(Path(path).relative_to(root))
+        return str(Path(path).relative_to(repo_root))
     except ValueError:
         return path
-

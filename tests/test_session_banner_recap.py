@@ -3,6 +3,7 @@
 Replaces the last-session note hints: deterministic, zero LLM calls, and
 alive after the session-note files are gone.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -33,20 +34,37 @@ def test_recap_summarises_the_last_active_day(tmp_path: Path) -> None:
     """AC5: repo, branch, PRs, issues and the session count for the most
     recent day that has entries — at most three lines."""
     ledger = TranscriptLedger(tmp_path)
-    ledger.bulk_upsert([
-        _entry(
-            tmp_path, "old", datetime(2026, 7, 30, 9, 0, tzinfo=UTC),
-            repo="buchbend/lore", branch="main", prs=[], issues=[1],
-        ),
-        _entry(
-            tmp_path, "a", datetime(2026, 8, 4, 9, 0, tzinfo=UTC),
-            repo="buchbend/lore", branch="feat/358-ledger", prs=[364], issues=[358],
-        ),
-        _entry(
-            tmp_path, "b", datetime(2026, 8, 4, 17, 0, tzinfo=UTC),
-            repo="buchbend/lore", branch="feat/357-flag", prs=[], issues=[357],
-        ),
-    ])
+    ledger.bulk_upsert(
+        [
+            _entry(
+                tmp_path,
+                "old",
+                datetime(2026, 7, 30, 9, 0, tzinfo=UTC),
+                repo="buchbend/lore",
+                branch="main",
+                prs=[],
+                issues=[1],
+            ),
+            _entry(
+                tmp_path,
+                "a",
+                datetime(2026, 8, 4, 9, 0, tzinfo=UTC),
+                repo="buchbend/lore",
+                branch="feat/358-ledger",
+                prs=[364],
+                issues=[358],
+            ),
+            _entry(
+                tmp_path,
+                "b",
+                datetime(2026, 8, 4, 17, 0, tzinfo=UTC),
+                repo="buchbend/lore",
+                branch="feat/357-flag",
+                prs=[],
+                issues=[357],
+            ),
+        ]
+    )
 
     lines = last_active_day_recap(tmp_path)
 
@@ -81,8 +99,11 @@ def test_collect_session_facts_carries_the_recap(tmp_path: Path) -> None:
     wiki.mkdir(parents=True)
     TranscriptLedger(lore_root).upsert(
         _entry(
-            lore_root, "a", datetime(2026, 8, 4, 9, 0, tzinfo=UTC),
-            repo="buchbend/lore", branch="main",
+            lore_root,
+            "a",
+            datetime(2026, 8, 4, 9, 0, tzinfo=UTC),
+            repo="buchbend/lore",
+            branch="main",
         )
     )
 

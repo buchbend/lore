@@ -4,6 +4,7 @@ The command deletes files, so the plan is the contract: what a dry run
 prints is exactly what `--apply` does. Every test runs against a fixture
 vault built under tmp_path.
 """
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,11 @@ from pathlib import Path
 
 import pytest
 from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
-from lore_curator.retire_session_notes import apply_retirement, plan_retirement
+from lore_curator.retire_session_notes import (
+    RetirementPlan,
+    apply_retirement,
+    plan_retirement,
+)
 from typer.testing import CliRunner
 
 
@@ -126,7 +131,9 @@ def test_plan_lists_every_session_note_and_leaves_the_vault_untouched(vault: Pat
     plan = plan_retirement(vault)
 
     assert [p.name for p in plan.deletions] == [
-        "01-0900-thing.md", "02-1000-other.md", "_recent.md",
+        "01-0900-thing.md",
+        "02-1000-other.md",
+        "_recent.md",
     ]
     assert sorted(vault.rglob("*.md")) == before
     assert TranscriptLedger(vault).get("claude-code", "t1").linkage == {}
@@ -205,3 +212,70 @@ def test_cli_with_apply_deletes(vault: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert result.exit_code == 0
     assert not (vault / "wiki" / "demo" / "sessions" / "2026" / "08" / "01-0900-thing.md").exists()
     assert TranscriptLedger(vault).get("claude-code", "t1").linkage["issues"] == [358]
+
+
+# ---------------------------------------------------------------------------
+# Containment — the delete path must never leave the vault
+# ---------------------------------------------------------------------------
+
+
+def test_a_symlinked_sessions_tree_is_never_walked_or_deleted(vault: Path, tmp_path: Path) -> None:
+    """A `sessions/` symlink pointed outside the vault made the plan print
+    the target's files under in-vault-looking paths, and `--apply` deleted
+    them."""
+    outside = tmp_path / "OUTSIDE"
+    (outside / "deep").mkdir(parents=True)
+    victim = outside / "victim.md"
+    victim.write_text("mine")
+    nested = outside / "deep" / "nested.md"
+    nested.write_text("also mine")
+
+    linked = vault / "wiki" / "beta"
+    linked.mkdir(parents=True)
+    (linked / "sessions").symlink_to(outside, target_is_directory=True)
+
+    plan = plan_retirement(vault)
+    assert victim not in plan.deletions
+    assert not any("OUTSIDE" in str(p.resolve()) for p in plan.deletions)
+
+    apply_retirement(vault, plan)
+
+    assert victim.exists()
+    assert nested.exists()
+    assert (outside / "deep").is_dir()
+
+
+def test_apply_refuses_a_traversal_out_of_the_sessions_tree(vault: Path) -> None:
+    """`sessions/../../../x.md` resolves outside the vault. Refuse it and
+    record the refusal — never delete it silently."""
+    precious = vault.parent / "PRECIOUS.md"
+    precious.write_text("keep")
+    escape = vault / "wiki" / "demo" / "sessions" / ".." / ".." / ".." / ".." / "PRECIOUS.md"
+
+    report = apply_retirement(vault, RetirementPlan(deletions=[escape]))
+
+    assert precious.exists()
+    assert report.deleted == 0
+    assert [p for p, _ in report.failed] == [escape]
+
+
+def test_a_wiki_symlinked_to_its_own_repo_is_still_planned_and_deleted(
+    vault: Path, tmp_path: Path
+) -> None:
+    """Wikis are portable units — a wiki is routinely a symlink into its
+    own git repo. Containment is measured against that wiki's resolved
+    sessions tree, not against the vault root, which would drop every
+    symlinked wiki without a word."""
+    elsewhere = tmp_path / "orgs" / "ccat-knowledge"
+    note = elsewhere / "sessions" / "2026" / "08" / "04-1200-real.md"
+    _note(note, "real")
+    (vault / "wiki" / "gamma").symlink_to(elsewhere, target_is_directory=True)
+
+    plan = plan_retirement(vault)
+    assert (
+        vault / "wiki" / "gamma" / "sessions" / "2026" / "08" / "04-1200-real.md" in plan.deletions
+    )
+
+    apply_retirement(vault, plan)
+
+    assert not note.exists()
