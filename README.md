@@ -57,7 +57,9 @@ issue, and `tdd` as the discipline every implementation teammate follows.
 See [`docs/conventions.md`](docs/conventions.md) for the full chain, the
 artifact-home contract (PRD/ADR/`AGENTS.md` placement), and the tier
 vocabulary; [`docs/how-to/`](docs/how-to/) for task recipes
-(run an epic, use the fast path, resume a broken epic, onboard a repo); and
+(run an epic, use the fast path, resume a broken epic, onboard a repo, file
+and review flags); [`docs/explanation/`](docs/explanation/) for the
+reasoning behind the design; and
 [`lore-workflow/README.md`](lore-workflow/README.md) for the skill roster.
 
 Install both from this one marketplace:
@@ -258,10 +260,11 @@ Once attached with a wiki present:
   attempt and closes, under a global singleton lock. All detached —
   SessionStart never blocks.
 - **Banner at SessionStart** is deliberately minimal: a status line, an
-  optional Focus block, at most two last-session hints, freshness
-  lines only on positive evidence, and a fixed directive pointing at
-  MCP pull for anything deeper. `lore!:` prefix flags actionable
-  errors.
+  optional Focus block, a last-active-day recap read off the transcript
+  ledger (day, session count, repos, branches, refs — no LLM call), a
+  count of pending flags, freshness lines only on positive evidence, and
+  a fixed directive pointing at MCP pull for anything deeper. `lore!:`
+  prefix flags actionable errors.
 
 ### Manual escape hatches
 
@@ -282,6 +285,14 @@ Once attached with a wiki present:
   list configured wikis and validate them. (For looking up the
   attachment covering a specific path, use `lore attach attachments show
   <path>`.)
+- `lore flag write "<lead>" --ref pr:123` — file one team-relevant fact
+  into its owning topic note. `lore flag list` shows what is pending;
+  `lore flag review` walks it (accept / retarget / decline / skip). See
+  [`docs/how-to/file-and-review-flags.md`](docs/how-to/file-and-review-flags.md).
+- `lore migrate retire-session-notes [--apply]` — backfill the transcript
+  ledger from the archived transcripts, then delete the session-note
+  stock. Dry-run by default; `--apply` deletes files. See
+  [`docs/how-to/retire-session-notes.md`](docs/how-to/retire-session-notes.md).
 
 ### Per-wiki configuration
 

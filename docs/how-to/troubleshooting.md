@@ -111,6 +111,48 @@ laptop would rewrite history. Rendering never fails on this; it only hedges. See
 run and came back empty. That ref does not exist, and its line is demoted to
 "Claimed in session, ref not found: …".
 
+## "My flag never appeared in the wiki"
+
+Three refusals, each with its own message on stderr.
+
+**`a flag needs an origin: pass a transcript pointer or at least one ref`** —
+the write carried neither. Inside a Claude Code session
+`$CLAUDE_SESSION_ID` supplies the transcript automatically; a plain shell has
+no session id, so pass at least one `--ref pr:123` / `--ref commit:3f9a2c1`.
+Exit code 1, nothing written.
+
+**`no wiki resolved — pass --wiki, or run inside an attached repo`** — the
+working directory maps to no attachment. Run `lore attach attachments show
+$PWD` to see what covers the path, or name the wiki with `--wiki`. Exit code
+2.
+
+**`withheld (<category>) — text held in quarantine <id>`** — the publish gate
+found a secret, an email address, a phone number or other personal data in
+the flag text — or failed while checking — and withheld it before anything
+touched the wiki. The gate fails closed, so a `gate-error` category means
+the check itself broke, not that your text was bad. Read the
+held text with `lore quarantine show <id>`, rewrite the fact without the
+material that tripped the gate, and file it again. Exit code 1.
+
+A flag that landed somewhere unexpected was routed, not lost: without
+`--target`, Lore appends to the top-ranked existing note for the lead
+sentence. `lore flag list` prints every pending flag with its note, and
+`lore flag review` moves one with the retarget verdict.
+
+## "The banner says N pending flags and I can't see them"
+
+By design — the banner carries a count and never flag content, so a
+teammate's unreviewed text cannot reach your context window through the
+banner alone. Run `lore flag list` for the leads, or `lore flag review` to
+walk them. The chip disappears at zero.
+
+If the count looks wrong, remember it is a live scan of the wiki's notes for
+the `unreviewed` marker, not a stored queue. Editing a marker out of a note
+by hand accepts that flag as far as the count is concerned, and records no
+`flag-review` event — which is why `lore status`'s pending count and its
+accept/decline counters are not expected to sum. See
+[measure flag quality](measure-flag-quality.md).
+
 ## "A flush looks stuck"
 
 `lore status`'s `flushes` line shows `queued` / `running` / `dead-lettered`

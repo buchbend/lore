@@ -352,3 +352,38 @@ Terms used in the workflow layer and orchestration:
 - **Piece of work** — a body of work a team plans and tracks. An issue, a
   pull request, an epic and a batch of issues are pieces of work. A team
   points at one by its issue number, never by a coined short name.
+
+### Flag architecture
+
+The flag primitive, the transcript ledger's linkage block and the
+measurement surfaces ship today. The teardown that retires the
+session-note compose pipeline does not. Capture still writes a session
+note at every session boundary. The session-note sections above still
+describe running code. Decisions in ADR 0007–0009, spec in PRD 0011.
+
+- **Flag** — one team-relevant fact an agent files during a session: a
+  lead sentence, a short body, and an origin line. The only LLM-authored
+  content a session writes into a wiki. Say "flag", not "gem" or
+  "prospect".
+- **Crossing** — the path a fact takes from a working session to the team
+  wiki. The flag is the deliberate crossing, and becomes the only one when
+  the teardown lands.
+- **Origin line** — the deterministic attribution line closing a flag
+  block: author, date, code-verified refs, transcript pointer. A write
+  carrying no transcript pointer and no ref is refused.
+- **Unreviewed marker** — the token ending an agent-filed flag's origin
+  line until a human accepts it. Accept is the only verdict that removes
+  it. A human-filed flag lands without it.
+- **Review walk** — the pull-based pass over unreviewed flags
+  (`lore flag review`): accept, retarget, decline, or skip. The banner
+  shows a count of pending flags and never their content.
+- **Transcript ledger** — the machine-local store mapping each session to
+  its transcript (`.lore/transcript-ledger.json`). Derived and
+  rebuildable. Say "transcript ledger", not "breadcrumb ledger".
+- **Linkage block** — the ledger entry's `repo`, `branch`, `prs`,
+  `issues`, `commits` and `files` keys, written by capture with no LLM
+  call. It is what `lore_drill` reads to answer "which sessions touched
+  X" and what the SessionStart recap renders from.
+- **Context finder** — Lore's retrieval role: the tools that find where
+  context lives and pull it in (`lore_search`, `lore_drill`, context
+  pack, codemap, repo docs). Say "context finder", not "funnel".

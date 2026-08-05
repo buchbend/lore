@@ -102,3 +102,10 @@ least one flip-probe result (procedure 2) for the current directive
 wording. Neither procedure has a fixed passing threshold — the point is
 a repeatable measurement to compare across directive changes, not a
 one-time gate.
+
+## See also
+
+- [File a flag, and review the flags agents filed](file-and-review-flags.md)
+  — the commands that produce the events measured here.
+- [Why one flag, and not a session note](../explanation/why-the-flag-is-the-crossing.md)
+  — why under-flagging and review latency are the two failures that hide.

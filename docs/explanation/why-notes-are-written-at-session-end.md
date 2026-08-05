@@ -9,6 +9,16 @@ Both come from one decision: **the model never writes the words that carry
 authority, and it writes nothing at all until the session is over.** This page
 explains what that buys and what it costs.
 
+> **Status.** This pipeline still runs, and still writes a session note at
+> every session boundary. Its retirement is decided but not yet executed:
+> the team has ratified replacing the note with the flag — one stamped fact
+> filed into its owning topic note
+> ([ADR 0007](../adr/0007-session-notes-retired-flags-are-the-crossing.md)) —
+> and the flag primitive shipped beside this pipeline rather than in place of
+> it. See
+> [why one flag, and not a session note](why-the-flag-is-the-crossing.md).
+> Everything below describes code that runs today.
+
 ---
 
 ## Composing forward recorded the working, not the work
@@ -142,3 +152,5 @@ session should not ingest as settled.
   the mechanics: buffer, close, segment, extract, render, verify, publish gate.
 - [PRD 0008](../prd/0008-typed-fact-session-notes.md) — the full problem
   statement and the per-decision rationale.
+- [Why one flag, and not a session note](why-the-flag-is-the-crossing.md) —
+  why the per-session write-up is being retired, and what replaces it.
