@@ -89,45 +89,6 @@ def _snapshot_dir(path: Path) -> dict[str, tuple[int, bytes]]:
 # ---------------------------------------------------------------------------
 # Hook-level: --probe suppresses spawns
 # ---------------------------------------------------------------------------
-
-
-def test_session_start_probe_suppresses_curator_a_spawn(tmp_path: Path) -> None:
-    """--probe also suppresses Curator A (defense in depth for future spawn paths).
-
-    Curator A is SessionEnd-triggered today, so SessionStart doesn't call
-    _spawn_detached_curator_a. But the --probe contract is "suppress all
-    spawn paths," and this test guards against accidentally adding a
-    SessionStart-triggered A spawn that would leak side-effects into doctor.
-    """
-    project = _make_attached_project(tmp_path)
-    lore_root = project
-
-    wledger = WikiLedger(lore_root, "testwiki")
-    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_a=_yesterday()))
-
-    a_calls: list = []
-
-    def mock_spawn_a(*args, **kw):
-        a_calls.append((args, kw))
-        return True
-
-    with patch("lore_cli.hooks._spawn_detached_curator_a", side_effect=mock_spawn_a):
-        result = runner.invoke(
-            hook_app,
-            ["session-start", "--cwd", str(project), "--plain", "--probe"],
-            env={"LORE_ROOT": str(lore_root)},
-            catch_exceptions=False,
-        )
-
-    assert result.exit_code == 0, result.output
-    assert len(a_calls) == 0, f"--probe must suppress Curator A spawn too: {a_calls}"
-
-
-# ---------------------------------------------------------------------------
-# Integration: `lore doctor` end-to-end produces no side-effects
-# ---------------------------------------------------------------------------
-
-
 def test_doctor_probe_writes_no_state_files(tmp_path, monkeypatch) -> None:
     """`lore doctor` must not write any files under $LORE_ROOT/.lore/.
 

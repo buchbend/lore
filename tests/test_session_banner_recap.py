@@ -117,7 +117,7 @@ def test_collect_session_facts_carries_the_recap(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_banner_renders_the_recap_instead_of_session_note_hints() -> None:
+def test_banner_renders_the_recap() -> None:
     import pytest
     from lore_core import session_start
     from lore_core.session_start import SessionFacts, render_session_banner
@@ -131,7 +131,6 @@ def test_banner_renders_the_recap_instead_of_session_note_hints() -> None:
             repo="o/r",
             scope="ccat:data-center",
             project_entry=None,
-            session_hints=(("12-1530-fix", "fixed the thing"),),
             recap=(
                 "Last active 2026-08-04 — 2 sessions in buchbend/lore",
                 "Branches: feat/358-ledger",

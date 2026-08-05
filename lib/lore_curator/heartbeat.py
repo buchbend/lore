@@ -19,13 +19,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lore_core.drain_banner import format_drain_summary, tally_drain
-from lore_core.ledger import TranscriptLedger
-from lore_core.wiki_config import load_wiki_config
-
-from lore_curator.capture_routing import now_utc, wiki_should_spawn
 
 if TYPE_CHECKING:
-    from lore_core.types import Scope
     from lore_core.wiki_config import WikiConfig
 
 
@@ -129,58 +124,3 @@ def heartbeat(
 
     write_stamp(stamp)
     return sys_msg, ctx
-
-
-def spawn_curator_a_if_due(
-    lore_root: Path,
-    scope: Scope,
-    *,
-    cooldown_s: int = 120,
-    stamp_within_cooldown: Callable[[Path, int], bool],
-    write_stamp: Callable[[Path], None],
-    spawn_curator_a: Callable[..., bool],
-) -> str | None:
-    """Evaluate the spawn-gate for the current scope's wiki; spawn if it crosses.
-
-    Called from the UserPromptSubmit hook after the drain heartbeat. This is
-    the mid-session snappy lever: long active sessions hit this every prompt,
-    so accumulated turn count or stale pending-age can trigger Curator A
-    without waiting for the next session-start/end boundary.
-
-    Independent 120s cooldown stamp (``curator-heartbeat-spawn.stamp``) so
-    this never thrashes regardless of prompt cadence. The actual spawn also
-    runs through its own 60s lock+stamp, so two layers of rate-limiting
-    prevent storms.
-
-    Returns a reason string for telemetry, or None when no spawn was made.
-    """
-    stamp = lore_root / ".lore" / "curator-heartbeat-spawn.stamp"
-    stamp.parent.mkdir(parents=True, exist_ok=True)
-    if stamp_within_cooldown(stamp, cooldown_s):
-        return None
-
-    try:
-        tledger = TranscriptLedger(lore_root)
-        buckets = tledger.pending_by_wiki()
-    except Exception:
-        return None
-
-    entries = buckets.get(scope.wiki, [])
-    if not entries:
-        write_stamp(stamp)
-        return None
-
-    try:
-        wiki_cfg = load_wiki_config(lore_root / "wiki" / scope.wiki)
-    except Exception:
-        return None
-
-    should, reason = wiki_should_spawn(entries, wiki_cfg, now=now_utc())
-    write_stamp(stamp)
-    if not should:
-        return None
-
-    spawned = spawn_curator_a(
-        lore_root, cooldown_s=wiki_cfg.curator.curator_a_cooldown_s
-    )
-    return reason if spawned else None

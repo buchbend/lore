@@ -1,9 +1,9 @@
-"""Blocking publish gate — the last check before a chapter joins the note.
+"""Blocking publish gate — the last check before a flag joins the wiki.
 
-Every composed chapter passes through :func:`evaluate` before it is
-appended to the shared session note. The gate is **safety-only** — voice
-and style are the compose prompt's job and never withhold a chapter. It
-runs cheapest-first and short-circuits on the first hit:
+Every flag passes through :func:`evaluate` before it is appended to its
+owning topic note. The gate is **safety-only** — voice and style are the
+author's business and never withhold a flag. It runs cheapest-first and
+short-circuits on the first hit:
 
 1. **Deterministic scanners** — high-entropy secrets (reusing the secret
    patterns in :mod:`lore_core.redaction`), email addresses, phone
@@ -14,16 +14,13 @@ runs cheapest-first and short-circuits on the first hit:
    a **tripwire, not a guarantee**, and is documented as such.
 
 The gate **fails closed**: any scanner error, and any error from the
-detection call, withholds the chapter rather than letting it through. A
-false withhold only costs a marker and a quarantine entry; a false pass
-could leak a secret into the shared vault.
+detection call, withholds the text rather than letting it through. A
+false withhold only costs a quarantine entry; a false pass could leak a
+secret into the shared vault.
 
-On a withheld verdict the caller runs :func:`apply_withhold`, which owns
-the two terminal side-effects: a deterministic withheld-marker chapter is
-appended to the note, and the composed text is stored in the private
-quarantine sidecar (:mod:`lore_core.quarantine`) for review. The retry
-loop that sits between the first hit and the terminal give-up lives in
-its own layer and calls this module.
+On a withheld verdict the caller runs :func:`apply_withhold`, which
+stores the text in the private quarantine sidecar
+(:mod:`lore_core.quarantine`) for review.
 """
 
 from __future__ import annotations
@@ -44,11 +41,8 @@ __all__ = [
     "CATEGORY_PHONE",
     "CATEGORY_PII",
     "CATEGORY_ERROR",
-    "Gate",
     "GateResult",
     "PASS",
-    "PassThroughGate",
-    "PublishGate",
     "Detector",
     "LlmPiiDetector",
     "WithholdOutcome",
@@ -187,30 +181,6 @@ def has_phone(text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# The gate seam consumed by the generative layers
-# ---------------------------------------------------------------------------
-
-
-@runtime_checkable
-class Gate(Protocol):
-    """Blocking check between what a model produced and what the note keeps.
-
-    Implementations scan the exact text that would land in the note and return
-    a :class:`GateResult`. The generative layers only react to the verdict; the
-    scanners and the detection call live here. :class:`PublishGate` is the one
-    implementation that ships.
-    """
-
-    def evaluate(self, chapter_text: str) -> GateResult: ...
-
-
-class PassThroughGate:
-    """Default gate: everything passes. Lets replay tests run standalone."""
-
-    def evaluate(self, chapter_text: str) -> GateResult:  # noqa: ARG002
-        return GateResult.ok()
-
-
 # ---------------------------------------------------------------------------
 # Detection seam (the one small-model call)
 # ---------------------------------------------------------------------------
@@ -339,8 +309,8 @@ def _run_scanners(text: str) -> str | None:
     return None
 
 
-def evaluate(chapter_text: str, *, detector: Detector | None = None) -> GateResult:
-    """Evaluate one composed chapter. Returns PASS or a withheld verdict.
+def evaluate(text: str, *, detector: Detector | None = None) -> GateResult:
+    """Evaluate one flag's text. Returns PASS or a withheld verdict.
 
     Cheapest-first, short-circuiting on the first hit: deterministic
     scanners, then — only if they pass and a detector is supplied — one
@@ -348,13 +318,13 @@ def evaluate(chapter_text: str, *, detector: Detector | None = None) -> GateResu
     than passes. Style/voice is deliberately not judged here.
     """
     try:
-        category = _run_scanners(chapter_text)
+        category = _run_scanners(text)
         if category is not None:
             return _withheld(category)
 
         if detector is not None:
             try:
-                hit = detector.detect(chapter_text)
+                hit = detector.detect(text)
             except Exception:  # noqa: BLE001 — detection error must fail closed
                 return _withheld(CATEGORY_ERROR)
             if hit:
@@ -366,24 +336,6 @@ def evaluate(chapter_text: str, *, detector: Detector | None = None) -> GateResu
         return PASS
     except Exception:  # noqa: BLE001 — any gate failure withholds, never passes
         return _withheld(CATEGORY_ERROR)
-
-
-class PublishGate:
-    """The real gate as a ``Gate`` object the chapter composer can inject.
-
-    The composer consumes a ``gate.evaluate(chapter_text) -> GateResult``
-    seam; this binds an optional :class:`Detector` once and forwards each
-    call to the module-level :func:`evaluate`. Constructing it with no
-    detector runs the deterministic scanners only (the fuzzy-PII
-    detection call is skipped), which is the safe default when no
-    small-model backend is configured.
-    """
-
-    def __init__(self, *, detector: Detector | None = None) -> None:
-        self._detector = detector
-
-    def evaluate(self, chapter_text: str) -> GateResult:
-        return evaluate(chapter_text, detector=self._detector)
 
 
 # ---------------------------------------------------------------------------

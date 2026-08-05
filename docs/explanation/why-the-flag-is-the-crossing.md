@@ -137,27 +137,29 @@ slower and cannot drift. `lore status` is honest about the seam this leaves:
 the pending count comes from the scan while the accept and decline counts
 replay spine events, so the two are not expected to sum.
 
-## What has not happened yet
+## What the teardown removed
 
-The compose pipeline still runs. Capture still writes a session note at every
-session boundary, and the sensitivity gate still covers note text as well as
-flag text. The flag shipped *beside* the old pipeline, not in place of it.
+The compose pipeline is gone. Capture writes no session note, spawns no
+subprocess and makes no LLM call at a session boundary, and the sensitivity
+gate covers flag text only. The per-wiki `curator.*` block that tuned the
+pipeline retired with it; a config still carrying it warns once and loads.
 
-That is deliberate. The rollout is additive-first, and the teardown is gated
-on evidence: a flag rate measured against known gems, a review latency, an
-accept rate. Under-flagging is the failure mode that leaves no trace — a fact
-the agent should have flagged and didn't produces no error, no alert, and no
-gap anyone would notice. Retiring the pipeline before that is measured would
-trade a surface nobody reads for one nobody can check.
+The rollout was additive-first on purpose. The flag primitive, the transcript
+ledger's linkage block and the measurement surfaces shipped first, beside the
+old pipeline, so the crossing existed before the thing it replaced was
+removed.
 
-So the honest statement of today's system is: the flag is the deliberate
-crossing, and the note pipeline is the one still running underneath it. The
-flag becomes the *only* crossing when the teardown lands.
+The measurement still matters, and matters more now. Under-flagging is the
+failure mode that leaves no trace: a fact the agent should have flagged and
+didn't produces no error, no alert, and no gap anyone would notice. The
+counters in `lore status` and the two procedures in
+[measure flag quality](../how-to/measure-flag-quality.md) are how you check
+that the crossing is actually carrying what the note used to.
 
 ## See also
 
 - [ADR 0007](../adr/0007-session-notes-retired-flags-are-the-crossing.md) —
-  the three layers, and what the teardown retires.
+  the three layers, and what the teardown retired.
 - [ADR 0008](../adr/0008-flag-lands-marked-unreviewed.md) — the landing
   decision, the rejected queue, and the marker.
 - [ADR 0009](../adr/0009-privacy-boundary-is-locality.md) — why transcripts
@@ -166,5 +168,5 @@ flag becomes the *only* crossing when the teardown lands.
   full problem statement and the per-decision rationale.
 - [File a flag, and review the flags agents filed](../how-to/file-and-review-flags.md)
   — the commands.
-- [Why a session note is written only at the end](why-notes-are-written-at-session-end.md)
-  — the pipeline that is still running, and the reasoning it was built on.
+- [Measure flag quality](../how-to/measure-flag-quality.md) — the known-gem
+  baseline and the directive flip-probe.

@@ -19,10 +19,9 @@ The plan is the contract. :func:`plan_retirement` reads and computes but
 writes nothing; :func:`apply_retirement` executes exactly the plan it is
 handed, so a dry run and a real run can be compared file by file.
 
-The deletion is not final while the compose pipeline still runs: capture
-writes a new session note at every session boundary, so the stock refills
-until that pipeline is retired. Running this verb again clears whatever
-accumulated since the last run.
+The deletion is final. Capture writes no session note, so nothing refills
+the stock; this verb clears what earlier releases left behind and is a
+one-shot for anyone upgrading past the teardown.
 """
 
 from __future__ import annotations

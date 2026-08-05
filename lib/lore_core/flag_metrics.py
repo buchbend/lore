@@ -3,7 +3,7 @@
 Under-flagging is the flag architecture's main failure mode (PRD 0011)
 and is invisible without measurement: the flag is the crossing from a
 private session to the team wiki, and the only one left once the
-teardown retires the compose pipeline, so a fact an agent should have
+only crossing left, so a fact an agent should have
 flagged and didn't leaves no trace anywhere a human would look. This
 module reads what `flag.py` already emits — nothing here writes, and
 nothing here duplicates the pending scan (`flag.count_pending` stays the

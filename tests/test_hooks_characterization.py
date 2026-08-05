@@ -7,103 +7,16 @@ Kept as the standing contract for the extracted modules.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 # --- under test -------------------------------------------------------------
 from lore_core.drain_banner import format_drain_summary, tally_drain, wiki_suffix
-from lore_core.ledger import TranscriptLedgerEntry
 from lore_core.session_start import collect_session_facts, maybe_auto_pull_for_scope
-from lore_core.wiki_config import WikiConfig
-from lore_curator.capture_routing import wiki_should_spawn
 
 NOW = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
-
-
-def _entry(*, turns: int, digested: int | None, age_s: int) -> TranscriptLedgerEntry:
-    return TranscriptLedgerEntry(
-        integration="claude-code",
-        transcript_id=f"t{turns}-{age_s}",
-        path=Path("/tmp/t.jsonl"),
-        directory=Path("/tmp"),
-        digested_hash=None,
-        digested_index_hint=digested,
-        synthesised_hash=None,
-        last_mtime=NOW - timedelta(seconds=age_s),
-        curator_a_run=None,
-        noteworthy=None,
-        session_note=None,
-        total_turns=turns,
-    )
-
-
-def _cfg(*, threshold: int = 30, max_age_s: int = 600) -> WikiConfig:
-    cfg = WikiConfig()
-    cfg.curator.threshold_pending_turns = threshold
-    cfg.curator.max_pending_age_s = max_age_s
-    return cfg
-
-
-# ---------------------------------------------------------------------------
-# spawn gate — the OR-gate every curator-A spawn routes through
-# ---------------------------------------------------------------------------
-
-
-def test_spawn_gate_empty_bucket_never_spawns() -> None:
-    assert wiki_should_spawn([], _cfg(), now=NOW) == (False, "empty")
-
-
-def test_spawn_gate_turns_threshold_crossed() -> None:
-    entries = [_entry(turns=40, digested=5, age_s=10)]  # 35 new turns
-    should, reason = wiki_should_spawn(entries, _cfg(threshold=30), now=NOW)
-    assert should is True
-    assert reason == "turns:35>=30"
-
-
-def test_spawn_gate_turns_sum_across_entries() -> None:
-    entries = [
-        _entry(turns=20, digested=None, age_s=10),
-        _entry(turns=15, digested=5, age_s=11),
-    ]  # 20 + 10 = 30
-    should, reason = wiki_should_spawn(entries, _cfg(threshold=30), now=NOW)
-    assert should is True
-    assert reason == "turns:30>=30"
-
-
-def test_spawn_gate_digested_hint_beyond_total_turns_clamps_at_zero() -> None:
-    """A digest hint ahead of total_turns must not subtract from siblings."""
-    entries = [
-        _entry(turns=5, digested=99, age_s=10),   # would be -94 unclamped
-        _entry(turns=29, digested=None, age_s=10),
-    ]
-    should, reason = wiki_should_spawn(entries, _cfg(threshold=30), now=NOW)
-    assert should is False
-    assert reason == "under(turns=29,age=10s)"
-
-
-def test_spawn_gate_age_fallback_fires_below_turns_threshold() -> None:
-    entries = [_entry(turns=1, digested=None, age_s=700)]
-    should, reason = wiki_should_spawn(entries, _cfg(max_age_s=600), now=NOW)
-    assert should is True
-    assert reason == "age:700s>=600s"
-
-
-def test_spawn_gate_age_uses_oldest_entry() -> None:
-    entries = [
-        _entry(turns=1, digested=None, age_s=5),
-        _entry(turns=1, digested=None, age_s=900),
-    ]
-    should, _ = wiki_should_spawn(entries, _cfg(max_age_s=600), now=NOW)
-    assert should is True
-
-
-def test_spawn_gate_under_both_reports_both_inputs() -> None:
-    entries = [_entry(turns=3, digested=None, age_s=42)]
-    should, reason = wiki_should_spawn(entries, _cfg(), now=NOW)
-    assert should is False
-    assert reason == "under(turns=3,age=42s)"
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +99,6 @@ def test_collect_session_facts_picks_up_scope_and_latest_session(tmp_path: Path)
     assert facts.repo is None
     assert facts.scope == "demo:proj"
     assert facts.project_entry is None
-    assert facts.session_hints == (("01-0900-a", "did a thing"),)
 
 
 def test_collect_session_facts_resolves_project_note_by_repo(tmp_path: Path) -> None:
@@ -198,26 +110,10 @@ def test_collect_session_facts_resolves_project_note_by_repo(tmp_path: Path) -> 
     facts = collect_session_facts(wiki, "org/repo")
     assert facts.project_entry is not None
     assert facts.project_entry["name"] == "proj"
-
-
-def test_collect_session_facts_caps_hints_at_two(tmp_path: Path) -> None:
-    wiki = _wiki_with_session(tmp_path, title="t")
-    sess = wiki / "sessions" / "2026" / "05"
-    for i in range(2, 6):
-        (sess / f"0{i}-0900-s{i}.md").write_text(
-            f"---\ntype: session\ntitle: t{i}\n---\n\nb\n"
-        )
-    facts = collect_session_facts(wiki, None)
-    assert len(facts.session_hints) == 2
-    # newest first
-    assert facts.session_hints[0][0] == "05-0900-s5"
-
-
 def test_collect_session_facts_on_empty_wiki(tmp_path: Path) -> None:
     wiki = tmp_path / "wiki" / "demo"
     wiki.mkdir(parents=True)
     facts = collect_session_facts(wiki, None)
-    assert facts.session_hints == ()
     assert facts.project_entry is None
     assert facts.pending_chip is None
 

@@ -412,7 +412,8 @@ def _check_attachments(cwd: str) -> Check:
     attachment path.
     """
     from lore_core.config import get_lore_root, get_wiki_root
-    from lore_core.offer import offer_fingerprint, parse_lore_yml, FILENAME as LORE_YML
+    from lore_core.offer import FILENAME as LORE_YML
+    from lore_core.offer import offer_fingerprint, parse_lore_yml
     from lore_core.state.attachments import AttachmentsFile
     from lore_core.state.scopes import ScopesFile
 
@@ -521,16 +522,15 @@ def _check_ledger_buckets(cwd: str) -> Check:
 
 
 def _check_pending(cwd: str) -> Check:
-    """Summarise the spawn-gate state across all attached wikis.
+    """Report registered transcripts per attached wiki.
 
-    Answers "why isn't curator A firing?" without having to grep the
-    ledger. For each attached wiki: pending entry count, sum of new
-    turns since last scan, oldest pending age, and whether the gate
-    would currently fire. Never fails the install — purely informational.
+    A pending entry is a transcript lore has recorded and stamped with
+    linkage. Nothing consumes the pending set — there is no gate to be
+    waiting on and no backlog to drain — so this reports a count, not a
+    verdict. Never fails the install.
     """
     from lore_core.config import get_lore_root
     from lore_core.ledger import TranscriptLedger
-    from lore_core.wiki_config import load_wiki_config
 
     lore_root = get_lore_root()
     ledger_path = lore_root / ".lore" / "transcript-ledger.json"
@@ -542,40 +542,11 @@ def _check_pending(cwd: str) -> Check:
     except Exception as e:
         return False, f"ledger read failed: {e}"
 
-    from datetime import UTC, datetime
-    now = datetime.now(UTC)
-
-    parts: list[str] = []
-    any_would_spawn = False
-    for wiki_name, entries in sorted(buckets.items()):
-        if wiki_name.startswith("__") or not entries:
-            continue
-        new_turns = sum(
-            max(0, e.total_turns - (e.digested_index_hint or 0))
-            for e in entries
-        )
-        oldest_age_s = int(
-            (now - min(e.last_mtime for e in entries)).total_seconds()
-        )
-        wiki_dir = lore_root / "wiki" / wiki_name
-        try:
-            wiki_cfg = load_wiki_config(wiki_dir)
-        except Exception:
-            continue
-        turns_threshold = wiki_cfg.curator.threshold_pending_turns
-        age_threshold = wiki_cfg.curator.max_pending_age_s
-        would_spawn = (
-            new_turns >= turns_threshold or oldest_age_s >= age_threshold
-        )
-        if would_spawn:
-            any_would_spawn = True
-        flag = "spawn" if would_spawn else "wait"
-        parts.append(
-            f"{wiki_name}: {len(entries)} pending, "
-            f"{new_turns}/{turns_threshold}t, "
-            f"oldest {oldest_age_s}s/{age_threshold}s [{flag}]"
-        )
-
+    parts = [
+        f"{wiki_name}: {len(entries)} registered"
+        for wiki_name, entries in sorted(buckets.items())
+        if not wiki_name.startswith("__") and entries
+    ]
     if not parts:
         return True, "no attached-wiki pending"
     return True, " · ".join(parts)
@@ -800,6 +771,7 @@ def _check_cursor_plugin_dir(cwd: str) -> Check:
         return True, "skipped: ~/.cursor not present"
 
     from importlib.metadata import PackageNotFoundError, version
+
     from lore_core.install._helpers import cursor_plugin_dir
     from lore_core.managed_files import PLUGIN_SENTINEL
 

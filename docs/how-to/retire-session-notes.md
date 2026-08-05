@@ -13,11 +13,9 @@ its recap without reading a single note.
 
 - **`--apply` deletes files.** Without it the command computes a plan,
   prints it, and writes nothing.
-- **Deletion is not final while the compose pipeline runs.** Capture still
-  writes a new session note at every session boundary, so the `sessions/`
-  tree starts refilling the moment the command finishes. It stops refilling
-  when the teardown retires that pipeline, which has not happened yet. Run
-  the command again to clear whatever accumulated since the last run.
+- **Deletion is final.** Capture writes no session note, so nothing refills
+  the `sessions/` tree. Run this once, after upgrading past the teardown, to
+  clear what earlier releases left behind.
 - **Nothing distils the old notes.** The backfill reads the transcript and
   git, never the note prose. What a note said and no artifact records is
   lost when the file goes. Read anything you want to keep before you apply,

@@ -45,7 +45,6 @@ from lore_core.session_start import pre_compact_text as _pre_compact
 from lore_core.session_start import render_capture_state_block as _render_capture_state_block
 from lore_core.session_start import render_project_orientation as _render_project_orientation
 from lore_core.session_start import session_start_text as _session_start
-from lore_curator.capture_routing import poll_buffer_handover as _poll_buffer_handover
 from lore_curator.capture_routing import (
     register_pending_transcripts as _register_pending_transcripts,
 )
@@ -339,13 +338,11 @@ from lore_cli._argv_compat import argv_main  # noqa: E402
 # external test that patches ``lore_cli.hooks.<name>`` keep working without
 # tracking the move to ``lore_cli.spawn``.
 from lore_cli.spawn import (  # noqa: E402, F401
-    _migrate_legacy_spawn_stamp,
     _open_proc_log,
     _prior_spawn_runaway,
     _process_is_ours,
     _rotate_meta_sidecar,
     _spawn_detached,
-    _spawn_detached_curator_a,
     _spawn_detached_transcript_sync,
     _stamp_within_cooldown,
     _write_stamp,
@@ -596,22 +593,6 @@ def cmd_session_start(
         except Exception:  # noqa: BLE001 - janitor must never crash SessionStart
             pass
 
-    # Buffer-and-flush handover-poll: when a sibling session ended
-    # mid-flush, wait briefly for ``state=closed`` so the resulting
-    # wikilink lands in this SessionStart's context rather than only in
-    # the next heartbeat. Phase 1 of flush is sub-1s by construction; a
-    # 5s budget covers worst-case I/O. Phase 2 (LLM rewrite) happens
-    # transparently after the handover unblocks.
-    if scope is not None and lore_root is not None and not probe:
-        try:
-            handover_lines = _poll_buffer_handover(
-                lore_root, cwd_resolved, timeout_s=5.0,
-            )
-            if handover_lines:
-                out = out + "\n\n" + "\n".join(handover_lines)
-        except Exception:  # noqa: BLE001 - handover must never crash SessionStart
-            pass
-
     # Capture-state breadcrumb + drain + cross-scope lines.
     if scope is not None and lore_root is not None:
         try:
@@ -630,15 +611,6 @@ def cmd_session_start(
         # destination, own spawn lock.
         try:
             _spawn_detached_transcript_sync(lore_root)
-        except Exception:
-            pass
-
-        # Singleton startup sweep: closes the note of any session that
-        # died mid-flush. Spawned detached so SessionStart stays fast; the
-        # command holds the global curator lock, so concurrent starts race
-        # safely and the losers exit without touching anything.
-        try:
-            spawn("sweep", lore_root)
         except Exception:
             pass
 
@@ -761,27 +733,6 @@ def _heartbeat(
     )
 
 
-def _heartbeat_spawn_curator_a(
-    lore_root: Path,
-    scope,
-    *,
-    cooldown_s: int = 120,
-) -> str | None:
-    """Spawn Curator A if this scope's wiki has crossed the spawn gate."""
-    from lore_curator.heartbeat import spawn_curator_a_if_due
-
-    return spawn_curator_a_if_due(
-        lore_root,
-        scope,
-        cooldown_s=cooldown_s,
-        stamp_within_cooldown=_stamp_within_cooldown,
-        write_stamp=_write_stamp,
-        spawn_curator_a=_spawn_detached_curator_a,
-    )
-
-
-@hook_app.command("user-prompt-submit")
-@_shield_hook("UserPromptSubmit")
 def cmd_user_prompt_submit(
     cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
     plain: bool = typer.Option(
@@ -816,14 +767,6 @@ def cmd_user_prompt_submit(
         pass  # never break the prompt path on a registration hiccup
 
     sys_msg, ctx = _heartbeat(lore_root, cwd_resolved, wiki_cfg)
-
-    # Mid-session snappy spawn — evaluate the turn-aware gate every prompt
-    # so long sessions don't sit on accumulated work waiting for session-end.
-    # Independently rate-limited (120s heartbeat cooldown + 60s spawn lock).
-    try:
-        _heartbeat_spawn_curator_a(lore_root, scope)
-    except Exception:
-        pass  # never break the prompt path on a spawn-gate hiccup
 
     # Citations toggle takes effect mid-session: re-assert the suppression
     # directive on every prompt while `/lore:off citations` is active so the
@@ -1046,7 +989,6 @@ def capture(
             event=event,
             adapter=adapter,
             transcript=transcript,
-            spawn_curator_a=_spawn_detached_curator_a,
             progress=progress,
         )
     except typer.Exit:
@@ -1065,19 +1007,6 @@ def capture(
             ppid_cmd=_capture_ppid_cmd,
         )
         raise
-
-    if routed.flush_error is not None:
-        exc = routed.flush_error
-        _emit_hook(
-            event=event, integration=integration, scope=scope_payload,
-            duration_ms=_elapsed_ms(),
-            outcome="warning",
-            error_code=ErrorCode.FLUSH_REQUEST_FAILED,
-            error={"type": type(exc).__name__, "message": str(exc)},
-            cwd=str(cwd),
-            pid=_capture_pid,
-            ppid_cmd=_capture_ppid_cmd,
-        )
 
     _emit_hook(
         event=event, integration=integration, scope=scope_payload,
@@ -1100,11 +1029,9 @@ def capture(
                 write_pending_breadcrumb,
             )
 
-            cfg = _load_wiki_cfg_from_scope(scope, lore_root)
             crumb = render_session_end_breadcrumb(
                 outcome=routed.outcome,
                 pending_after=routed.pending_after,
-                threshold=cfg.curator.threshold_pending_turns,
             )
             if crumb is not None:
                 write_pending_breadcrumb(lore_root, crumb)
