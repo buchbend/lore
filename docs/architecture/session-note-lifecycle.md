@@ -13,6 +13,15 @@ explains the **lifecycle** that vocabulary moves through — `create → close �
 segment → extract → render → seal` — and the guarantee it exists to keep:
 **one session produces exactly one note.**
 
+> **Status.** This lifecycle runs today. Its retirement is decided but not
+> yet executed
+> ([ADR 0007](../adr/0007-session-notes-retired-flags-are-the-crossing.md)):
+> the flag primitive and the transcript ledger's linkage block shipped
+> beside this pipeline, not in place of it. `lore migrate
+> retire-session-notes` deletes the note stock, and capture refills it at
+> the next session boundary until the compose pipeline itself goes. See
+> [why one flag, and not a session note](../explanation/why-the-flag-is-the-crossing.md).
+
 ---
 
 ## One flush, and it is the ending
