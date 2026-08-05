@@ -93,7 +93,7 @@ status) stays on the GitHub epic issue comment, made machine-readable and parsed
 the board parser. The orchestrator's working context (tiers chosen, teammates
 dispatched, crosscheck verdicts, in-flight marker) rides on the orchestrator's own
 session note, keyed by linkage `epics: [<n>]`, read back on resume via
-`lore_context_pack` / `lore_resume`. Only same-session writes occur — the
+`lore_context_pack`. Only same-session writes occur — the
 orchestrator never writes another session's note — which keeps the mechanism
 compatible with the session-note reopen ADR. Teammate notes are read-only inputs.
 

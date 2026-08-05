@@ -210,7 +210,7 @@ instruction.
 Depth comes from explicit MCP calls (`lore mcp` / `lore_mcp/server.py`),
 not from anything injected ambiently:
 
-- `lore_search`, `lore_read`, `lore_resume` — retrieval primitives.
+- `lore_search`, `lore_read` — retrieval primitives.
 - `lore_drill` — one composite `search → read → expand wikilinks →
   read_expanded` call with a structured trace
   (`docs/architecture/lore-drill.md`).
@@ -250,7 +250,7 @@ above:
   `supersede_candidate*` marker, or membership in the orphan-link set.
   Age by itself never flags anything.
 - **Search** (`lore_search`) — hybrid ranked full-text search backing
-  `lore_search` / `lore_resume` / `lore_drill`.
+  `lore_search` / `lore_drill`.
 - **Wikilinks** (`lore_core/wikilinks.py`, `schema.py`) — `[[slug]]`
   parsing/resolution, per-wiki only (a wikilink never resolves across
   wiki boundaries — wikis are portable units).

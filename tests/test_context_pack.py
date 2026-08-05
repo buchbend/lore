@@ -96,6 +96,28 @@ def test_gather_joins_session_notes_by_repo(
     assert not any("unrelated" in p for p in paths)
 
 
+def test_gather_finds_sharded_session_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sessions in the canonical sharded layout (sessions/YYYY/MM/DD-slug.md,
+    what auto-capture writes) must join same as flat-layout ones. A prior bug
+    parsed only the stem's first 10 chars, which for a sharded filename is
+    "DD-slug" — not a date — and silently dropped every sharded session."""
+    repo = tmp_path / "repo"
+    _init_repo(repo, remote_url="git@github.com:acme/widget.git")
+
+    vault = tmp_path / "vault"
+    wiki = vault / "wiki" / "w"
+    today = date.today()
+    shard = wiki / "sessions" / f"{today.year}" / f"{today.month:02d}"
+    _write(shard / f"{today.day:02d}-sharded.md", _session_note(repo="acme/widget"))
+    monkeypatch.setenv("LORE_ROOT", str(vault))
+
+    result = gather(cwd=repo, repo_path=str(repo))
+    paths = {s["path"] for s in result["sessions"]}
+    assert any("sharded" in p for p in paths)
+
+
 # ---------------------------------------------------------------------------
 # epic / issue join
 # ---------------------------------------------------------------------------

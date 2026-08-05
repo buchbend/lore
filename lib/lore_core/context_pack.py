@@ -13,6 +13,7 @@ are pulled selectively afterward via `lore_read` / `lore_repo_docs_fetch`
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,6 @@ from lore_core.gh import gh_issue_view
 from lore_core.git import git_repo_root
 from lore_core.linkage import Linkage, classify_refs, extract_linkage
 from lore_core.repo_docs import list_docs
-from lore_core.resume import _iter_session_notes, _list_wikis
 from lore_core.schema import parse_frontmatter
 from lore_core.scope_resolver import resolve_scope
 
@@ -63,6 +63,56 @@ def _session_matches(fm: dict[str, Any], *, repo: str, scope: str, focus: set[in
         return True
     refs = set(linkage.get("issues") or []) | set(linkage.get("epics") or [])
     return bool(focus) and bool(refs & focus)
+
+
+def _list_wikis(wiki_root: Path) -> list[Path]:
+    return [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
+
+
+def _session_date_from_path(md: Path, sessions_dir: Path) -> date | None:
+    """Extract the session date from either layout.
+
+    Canonical sharded form (what auto-capture writes):
+        sessions[/handle]/YYYY/MM/DD-slug.md  → date from path parts.
+    Legacy flat form (older notes, test fixtures):
+        sessions/YYYY-MM-DD-slug.md           → date from stem[:10].
+
+    Returns None when neither parse succeeds (file is not a session note).
+    """
+    try:
+        rel_parts = md.relative_to(sessions_dir).parts
+    except ValueError:
+        return None
+    # Sharded layout: trailing parts are .../YYYY/MM/DD-slug.md
+    if len(rel_parts) >= 3:
+        year_s, month_s = rel_parts[-3], rel_parts[-2]
+        day_s = md.stem[:2]
+        if year_s.isdigit() and month_s.isdigit() and day_s.isdigit():
+            try:
+                return date(int(year_s), int(month_s), int(day_s))
+            except ValueError:
+                pass
+    # Flat layout fallback
+    try:
+        return date.fromisoformat(md.stem[:10])
+    except (ValueError, IndexError):
+        return None
+
+
+def _iter_session_notes(wiki_path: Path, days: int) -> list[tuple[date, Path]]:
+    """Return (date, path) for session notes newer than cutoff (sharded-aware)."""
+    sessions_dir = wiki_path / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+    cutoff = date.today() - timedelta(days=days)
+    out: list[tuple[date, Path]] = []
+    for md in sessions_dir.rglob("*.md"):
+        d = _session_date_from_path(md, sessions_dir)
+        if d is None or d < cutoff:
+            continue
+        out.append((d, md))
+    out.sort(reverse=True, key=lambda t: t[0])
+    return out
 
 
 def _matching_sessions(

@@ -6,7 +6,6 @@ Windsurf, Zed, etc.) can register this and query the vault.
 Exposed tools:
     lore_search             — hybrid ranked search, top-k paths
     lore_read               — read one note by wiki/path
-    lore_resume             — unified context gather (recent/wiki/keyword/scope)
     lore_drill              — composite multi-stage retrieval (search→read→
                               expand→read_expanded) in one envelope with a
                               structured trace
@@ -443,28 +442,6 @@ def _extract_section(text: str, query: str) -> tuple[str | None, list[str]]:
     start = headings[match_idx][0]
     end = headings[match_idx + 1][0] if match_idx + 1 < len(headings) else len(lines)
     return "\n".join(lines[start:end]), all_heading_strs
-
-
-def handle_resume(
-    wiki: str | None = None,
-    days: int = 3,
-    keyword: str | None = None,
-    scope: str | None = None,
-    k: int = 5,
-) -> dict[str, Any]:
-    """Unified resume gather. Delegates to lore_core.resume.gather().
-
-    Modes (priority): scope > keyword > recent (wiki-scoped or all wikis).
-    """
-    from lore_core.resume import gather
-
-    return gather(
-        scope=scope,
-        wiki=wiki,
-        keyword=keyword,
-        days=days,
-        k=k,
-    )
 
 
 def handle_inbox_classify() -> dict[str, Any]:
@@ -1060,43 +1037,6 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
-            "name": "lore_resume",
-            "description": (
-                "Load working context from the vault. Modes (priority "
-                "order): scope > keyword > recent. Returns a structured "
-                "dict with `mode` discriminator. Use at session start or "
-                "any time the agent needs broader context without "
-                "iterating through Glob/Read."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "scope": {
-                        "type": "string",
-                        "description": "Scope prefix to aggregate gh issues + PRs + sessions for (e.g. ccat:data-center)",
-                    },
-                    "keyword": {
-                        "type": "string",
-                        "description": "FTS5 ranked search across the vault",
-                    },
-                    "wiki": {
-                        "type": "string",
-                        "description": "Restrict to one wiki (default: all wikis for recent mode)",
-                    },
-                    "days": {
-                        "type": "integer",
-                        "default": 3,
-                        "description": "Recency window for sessions (recent mode only)",
-                    },
-                    "k": {
-                        "type": "integer",
-                        "default": 5,
-                        "description": "Top-k results for keyword search",
-                    },
-                },
-            },
-        },
-        {
             "name": "lore_drill",
             "description": (
                 "Composite multi-stage retrieval: search → read top hits → expand "
@@ -1422,8 +1362,6 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_search(**args)
         case "lore_read":
             return handle_read(**args)
-        case "lore_resume":
-            return handle_resume(**args)
         case "lore_drill":
             return handle_drill(**args)
         case "lore_inbox_classify":
