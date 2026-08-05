@@ -53,6 +53,7 @@ appended to `$LORE_ROOT/.lore/spine.jsonl` through one writer,
 | `drain` | `lore_core/drain.py` | Session-scoped "what Lore did" events (`note-filed`, `note-appended`, `surface-proposed`, `transcript-synced`) — read by `lore status`'s news section |
 | `janitor` | `lore_core/janitor.py`, `lore_core/run_retention.py`, `lore_cli/_crash_log.py` | Retention deletions/downgrades and their failures |
 | `install` | *(reserved, no producer yet)* | Onboarding-wizard events (PRD 0005 pillar C); not wired as of this writing — `lore init` doesn't emit to the spine today |
+| `flag` | `lore_core/flag.py` | `flag-write` (outcome `written`/`withheld`) and `flag-review` (verdict `accept`/`decline`/`retarget`), each carrying `flag_id` — read by `lore status`'s flags section and `lore trace flag` (`lore_core/flag_metrics.py`) |
 
 **Schema-version policy:** `SCHEMA_VERSION` (currently `1`) bumps on any
 change to the envelope *shape* — a field added, removed, renamed, or a
@@ -178,10 +179,14 @@ so a reader never has to guess where to look next.
 healthy right now?" dashboard — capture liveness (last note, last run,
 last flush, last hook fire, lock state), flush queue counts (queued /
 running / dead-lettered), per-wiki connection health (dirty / ahead /
-behind / reachable), retention usage, an absorbed **news** section
-(session + background drain events — the old `lore news`), and an
-alerts section where every warning names its exact drill-down command.
-Reads only; exit code is 0 when healthy, nonzero when any alert fires.
+behind / reachable), a **flags** section (per-wiki flags written,
+withheld, pending, accepted, declined, retargeted — `lore_core.flag_metrics`
+aggregating the `source="flag"` spine events `flag.py` emits, plus
+`flag.count_pending` for the pending count itself), retention usage, an
+absorbed **news** section (session + background drain events — the old
+`lore news`), and an alerts section where every warning names its exact
+drill-down command. Reads only; exit code is 0 when healthy, nonzero when
+any alert fires.
 
 ### `lore trace <selector>`
 
@@ -192,8 +197,12 @@ flush — every spine record sharing a trace_id, as a Rich tree (or `
 of the old `lore log` / `lore runs` / `lore proc`. The selector accepts a
 trace_id, a session_id (resolves every trace_id that session touched,
 newest first), `last`, `dead` (lists dead-lettered flushes instead of one
-tree), or a note path / `[[wikilink]]` (reverse-resolved through the
-note's own `linkage.trace_id`).
+tree), `flag` (lists every flag-write/flag-review spine event as a flat,
+chronological table instead of a flush tree — a flag carries no
+trace_id, it is a standing-alone fact, not a flush; pairing one flag's
+write and verdict lines by `flag_id` gives its review latency), or a
+note path / `[[wikilink]]` (reverse-resolved through the note's own
+`linkage.trace_id`).
 
 ### `lore doctor [--fix]`
 
@@ -243,4 +252,7 @@ janitor pass.
 - [`cli-contract.md`](cli-contract.md) — the shape every `lore <verb>`
   command follows, including these three and the deprecated aliases.
 - How-to: [`../how-to/onboarding.md`](../how-to/onboarding.md),
-  [`../how-to/troubleshooting.md`](../how-to/troubleshooting.md).
+  [`../how-to/troubleshooting.md`](../how-to/troubleshooting.md),
+  [`../how-to/measure-flag-quality.md`](../how-to/measure-flag-quality.md)
+  — the known-gem baseline and directive flip-probe that use the flags
+  section and `lore trace flag`.
