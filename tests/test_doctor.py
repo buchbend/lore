@@ -294,3 +294,33 @@ def test_check_vale_reports_presence(monkeypatch):
     ok, msg = doctor_cmd._check_vale(".")
     assert ok is True
     assert "/usr/local/bin/vale" in msg
+
+
+def test_check_mcp_imports_rejects_an_mcp_release_without_the_decorators(monkeypatch):
+    """A schema that builds says nothing about whether the server can start.
+
+    `start_server` binds its handlers with `@server.list_tools()` and
+    `@server.call_tool()`. mcp 2.0 removed both, so the server raises
+    AttributeError at startup while the schema still generates fine — doctor
+    reported "ready" for an install whose every tool was dead.
+    """
+    import mcp.server
+
+    class _ServerWithoutDecorators:
+        """Stands in for the 2.x Server, which registers via add_request_handler."""
+
+        def add_request_handler(self, *args, **kwargs):  # pragma: no cover - shape only
+            raise NotImplementedError
+
+    monkeypatch.setattr(mcp.server, "Server", _ServerWithoutDecorators)
+
+    ok, msg = doctor_cmd._check_mcp_imports(".")
+    assert ok is False
+    assert "list_tools" in msg
+    assert "mcp" in msg.lower()
+
+
+def test_check_mcp_imports_passes_against_the_supported_line():
+    ok, msg = doctor_cmd._check_mcp_imports(".")
+    assert ok is True
+    assert "tools" in msg
