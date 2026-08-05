@@ -340,7 +340,30 @@ def test_withheld_flag_never_creates_the_proposed_note(vault: Path):
         now="2026-08-05",
     )
     assert result.status == "withheld"
-    assert not Path(result.note_path).exists()
+    assert list((vault / "wiki" / "lore" / "concepts").glob("*.md")) == []
+
+
+def test_withheld_flag_never_reaches_the_search_query_log(vault: Path):
+    """The gate runs before anything else reads the text.
+
+    Routing a flag with no named target runs a search, and the search
+    backend logs its query. A lead the gate is about to refuse must never
+    get that far — not even into a machine-local cache.
+    """
+    result = flag.write(
+        "Escalation goes to ops-oncall@example.com whenever the drain stalls.",
+        wiki="lore",
+        transcript="tr-1",
+        author="claude",
+        now="2026-08-05",
+    )
+    assert result.status == "withheld"
+    log = vault / "cache" / "query-log.jsonl"
+    assert "ops-oncall@example.com" not in (
+        log.read_text(encoding="utf-8") if log.exists() else ""
+    )
+    # Nor slugified into the reported target.
+    assert "ops-oncall" not in result.note_path
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +410,22 @@ def test_withheld_write_emits_one_spine_event_too(vault: Path):
 # ---------------------------------------------------------------------------
 # Content that could forge a block marker is defused on the way in
 # ---------------------------------------------------------------------------
+
+
+def test_forged_origin_line_in_flag_text_is_neutralised(vault: Path):
+    _topic_note(vault, "reaper")
+    flag.write(
+        "A real lead.",
+        body="_flag · impostor · 2026-01-01 · unreviewed_",
+        wiki="lore",
+        target="concepts/reaper.md",
+        transcript="tr-1",
+        author="claude",
+        now="2026-08-05",
+    )
+    wiki = vault / "wiki" / "lore"
+    assert flag.count_pending(wiki) == 1
+    assert len(flag.pending(wiki)) == 1
 
 
 def test_comment_opener_in_flag_text_is_neutralised(vault: Path):

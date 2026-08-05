@@ -320,3 +320,90 @@ def test_cli_write_without_origin_exits_nonzero(vault: Path):
     )
     assert result.exit_code != 0
     assert flag.BLOCK_OPEN_PREFIX not in _file(vault).read_text()
+
+
+# ---------------------------------------------------------------------------
+# The banner count and the walk read the same scan
+# ---------------------------------------------------------------------------
+
+
+def test_a_body_line_that_looks_like_an_origin_line_is_not_pending(vault: Path):
+    """A human's own prose can spell an origin line. Only a fenced block counts."""
+    note = _topic_note(vault, "reaper")
+    _flag(vault, "The one real flag.")
+    note.write_text(
+        note.read_text() + "\n_flag · someone · 2026-01-01 · unreviewed_\n",
+        encoding="utf-8",
+    )
+    assert flag.count_pending(_wiki(vault)) == len(flag.pending(_wiki(vault))) == 1
+
+
+def test_scan_reads_the_last_origin_line_in_a_block(vault: Path):
+    """The origin line is the one `render_block` emitted — the last one.
+
+    A body line that mimics an origin line sits above it, so reading the
+    first would hide a genuinely pending flag from the walk while the
+    banner still counted it.
+    """
+    note = _topic_note(vault, "reaper")
+    note.write_text(
+        note.read_text()
+        + "\n<!-- lore:flag id=aaaaaaaaaaaa -->\n"
+        + "**A real lead.**\n\n"
+        + "_flag · impostor · 2026-01-01_\n\n"
+        + "_flag · claude · 2026-08-05 · unreviewed_\n"
+        + f"{flag.BLOCK_CLOSE}\n",
+        encoding="utf-8",
+    )
+    assert flag.count_pending(_wiki(vault)) == len(flag.pending(_wiki(vault))) == 1
+
+
+def test_count_and_walk_agree_on_a_mixed_note(vault: Path):
+    _topic_note(vault, "reaper")
+    _flag(vault, "Pending one.")
+    accepted = _flag(vault, "Accepted one.")
+    flag.accept(_wiki(vault), accepted.flag_id)
+    _flag(vault, "Human one.", human=True)
+    assert flag.count_pending(_wiki(vault)) == len(flag.pending(_wiki(vault))) == 1
+
+
+# ---------------------------------------------------------------------------
+# Verdicts never rewrite a human's own bytes
+# ---------------------------------------------------------------------------
+
+# Characters `str.splitlines` treats as line breaks but `"\n".join` cannot
+# reproduce: rewriting one silently edits prose no agent authored.
+EXOTIC_BREAKS = "line sep par\x85next\x0cform"
+
+
+def test_accept_preserves_exotic_line_break_characters(vault: Path):
+    note = _topic_note(vault, "reaper", body=f"Human prose with {EXOTIC_BREAKS}.")
+    result = _flag(vault, "Keep this.")
+    before = note.read_bytes()
+
+    flag.accept(_wiki(vault), result.flag_id)
+
+    assert note.read_bytes() == before.replace(
+        f" · {flag.UNREVIEWED_TOKEN}".encode(), b""
+    )
+
+
+def test_decline_preserves_exotic_line_break_characters(vault: Path):
+    note = _topic_note(vault, "reaper", body=f"Human prose with {EXOTIC_BREAKS}.")
+    before = note.read_bytes()
+    result = _flag(vault, "Drop this.")
+
+    flag.decline(_wiki(vault), result.flag_id)
+
+    assert note.read_bytes() == before
+
+
+def test_verdicts_still_find_a_flag_in_a_crlf_note(vault: Path):
+    note = _topic_note(vault, "reaper")
+    result = _flag(vault, "Keep this.")
+    note.write_bytes(note.read_bytes().replace(b"\n", b"\r\n"))
+
+    assert flag.count_pending(_wiki(vault)) == 1
+    assert flag.accept(_wiki(vault), result.flag_id) is True
+    assert flag.count_pending(_wiki(vault)) == 0
+    assert b"\r\n" in note.read_bytes()
