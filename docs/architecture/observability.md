@@ -34,8 +34,9 @@ appended to `$LORE_ROOT/.lore/spine.jsonl` through one writer,
 ```
 
 - **`source`** — the producer, one of the closed `SOURCES` set:
-  `hook`, `curator`, `drain`, `janitor`, `install`. A source outside this
-  set is a bug, not data — `validate_envelope()` rejects it.
+  `hook`, `curator`, `drain`, `janitor`, `install`, `mcp`, `flag`. A
+  source outside this set is a bug, not data — `validate_envelope()`
+  rejects it.
 - **`level`** — `info` / `warn` / `error`.
 - **`error_code`** — `None`, or a value from the closed `ErrorCode`
   `StrEnum`. Free-form detail (exception type, message, offending path)
@@ -53,6 +54,7 @@ appended to `$LORE_ROOT/.lore/spine.jsonl` through one writer,
 | `drain` | `lore_core/drain.py` | Session-scoped "what Lore did" events (`note-filed`, `note-appended`, `surface-proposed`, `transcript-synced`) — read by `lore status`'s news section |
 | `janitor` | `lore_core/janitor.py`, `lore_core/run_retention.py`, `lore_cli/_crash_log.py` | Retention deletions/downgrades and their failures |
 | `install` | *(reserved, no producer yet)* | Onboarding-wizard events (PRD 0005 pillar C); not wired as of this writing — `lore init` doesn't emit to the spine today |
+| `mcp` | `lore_core/ledger.py` | `ledger-query` — one per `lore_drill` call whose query names an issue, a PR, an epic or a file path; a query that names none of those returns without emitting |
 | `flag` | `lore_core/flag.py` | `flag-write` (outcome `written`/`withheld`) and `flag-review` (verdict `accept`/`decline`/`retarget`), each carrying `flag_id` — read by `lore status`'s flags section and `lore trace flag` (`lore_core/flag_metrics.py`) |
 
 **Schema-version policy:** `SCHEMA_VERSION` (currently `1`) bumps on any

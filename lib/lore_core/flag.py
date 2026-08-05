@@ -1,9 +1,11 @@
 """The flag — one stamped, standing-alone fact crossing into the wiki.
 
-A flag is the only path from a working session to the team surface: an
-agent files one team-relevant fact the moment it appears, and Lore
-appends it to the owning topic note straight away, marked unreviewed
-(``docs/adr/0008``). Nothing here composes, summarises or judges — the
+A flag is the deliberate path from a working session to the team
+surface: an agent files one team-relevant fact the moment it appears,
+and Lore appends it to the owning topic note straight away, marked
+unreviewed (``docs/adr/0008``). It becomes the only path once the
+teardown retires the session-note compose pipeline, which still writes
+into the wiki today. Nothing here composes, summarises or judges — the
 caller supplies a lead sentence and a short body, and every word around
 them is written by code.
 
@@ -161,8 +163,7 @@ def _neutralize(text: str) -> str:
     """
     text = text.replace("<!--", "&lt;!--")
     return "\n".join(
-        "\\" + line if line.startswith(ORIGIN_PREFIX) else line
-        for line in text.split("\n")
+        "\\" + line if line.startswith(ORIGIN_PREFIX) else line for line in text.split("\n")
     )
 
 
@@ -208,9 +209,7 @@ def _weakest(refs: Sequence[tuple[str, str]], verdicts: dict[tuple[str, str], st
     return VERIFIED
 
 
-def _ref_clause(
-    refs: Sequence[tuple[str, str]], verdicts: dict[tuple[str, str], str]
-) -> str:
+def _ref_clause(refs: Sequence[tuple[str, str]], verdicts: dict[tuple[str, str], str]) -> str:
     parts = []
     for ref_type, value in refs:
         stamp = _STAMPS[verdicts.get((ref_type, value), UNCHECKED)]
@@ -345,9 +344,7 @@ def _wiki_path(wiki: str | None, cwd: Path | None) -> Path:
 
     scope = resolve_scope(cwd or Path.cwd())
     if scope is None:
-        raise ValueError(
-            "no wiki resolved — pass a wiki name or run inside an attached repo"
-        )
+        raise ValueError("no wiki resolved — pass a wiki name or run inside an attached repo")
     return root / scope.wiki
 
 
@@ -389,9 +386,7 @@ def _append_block(path: Path, block: str, *, description: str, day: str) -> bool
     }
     dumped = yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip()
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(
-        path, f"---\n{dumped}\n---\n\n# {_titleize(slug)}\n\n{block}\n"
-    )
+    atomic_write_text(path, f"---\n{dumped}\n---\n\n# {_titleize(slug)}\n\n{block}\n")
     return True
 
 
@@ -447,9 +442,7 @@ def write(
     refs = [(str(t).strip(), str(v).strip()) for t, v in refs if str(v).strip()]
     transcript = (transcript or os.environ.get("CLAUDE_SESSION_ID") or "").strip()
     if not transcript and not refs:
-        raise OriginMissing(
-            "a flag needs an origin: pass a transcript pointer or at least one ref"
-        )
+        raise OriginMissing("a flag needs an origin: pass a transcript pointer or at least one ref")
 
     day = now or date.today().isoformat()
     if author is None:
@@ -610,10 +603,7 @@ def flags_in(path: Path) -> list[PendingFlag]:
         lines = _read(path)
     except (OSError, UnicodeDecodeError):
         return []
-    return [
-        _block_to_flag(path, fid, lines[start : end + 1])
-        for fid, start, end in _spans(lines)
-    ]
+    return [_block_to_flag(path, fid, lines[start : end + 1]) for fid, start, end in _spans(lines)]
 
 
 def pending(wiki_path: Path) -> list[PendingFlag]:

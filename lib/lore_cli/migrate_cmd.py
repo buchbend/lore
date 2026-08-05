@@ -125,6 +125,10 @@ def cmd_retire_session_notes(
     ledger — it is one machine-local store, not a per-wiki one, and
     stamping a linkage block is additive.
 
+    Capture still writes new session notes into ``sessions/`` at every
+    session boundary; the stock this deletes starts refilling until the
+    compose pipeline is retired.
+
     Prints the plan and changes nothing unless ``--apply`` is passed.
     Notes are markdown in git — recover a mistaken run from the wiki's
     history.
@@ -160,6 +164,11 @@ def cmd_retire_session_notes(
     if not apply:
         console.print(
             "\n[dim]dry-run; nothing changed. Pass --apply to backfill and delete.[/dim]"
+        )
+        console.print(
+            "[dim]Capture still writes new session notes until the compose "
+            "pipeline is retired.[/dim]",
+            soft_wrap=True,
         )
         return
 

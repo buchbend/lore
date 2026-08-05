@@ -466,9 +466,10 @@ def render_session_banner(facts: SessionFacts) -> str:
     directive as a postscript — so users see what Lore did *first* and
     the rule re-assertion second.
 
-    The recap replaced the last-session note hints: notes are retired,
-    and continuity now comes from a store that costs no LLM call to
-    write and survives the note files being deleted.
+    The recap replaced the last-session note hints. Continuity now comes
+    from a store that costs no LLM call to write and survives the note
+    files being deleted. Capture still writes session notes until the
+    teardown retires that pipeline; the banner no longer reads them.
     """
     injected_bits: list[str] = []
     if facts.scope:

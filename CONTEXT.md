@@ -199,9 +199,14 @@ Matrix sink walkthrough.
 SessionStart injects a deliberately small, deterministic banner
 (`lore_core/session_start.py:render_session_banner`). The banner costs
 no LLM call and no network call. It holds a status line, an optional
-`## Focus` block for the attached project, and at most two last-session
-hints. Freshness lines join the banner only when there is positive
-evidence (see below). A fixed two-line directive closes the banner
+`## Focus` block for the attached project, and a last-active-day recap
+(`lore_core/session_start.py:last_active_day_recap`). The recap renders
+off the transcript ledger in at most three lines. Line one names the
+last day the ledger saw work, its session count and its repos. Line two
+names the branches those sessions ran on. Line three names the issue and
+PR numbers they touched. The recap replaced the last-session note hints.
+Freshness lines join the banner only when there is positive evidence
+(see below). A fixed directive closes the banner
 (`lore_core/templates/integration-rules/default.md`). The directive
 states that deeper context is a pull, never a push. It also states that
 anything pulled from a session note is a lab record, never an
@@ -217,8 +222,10 @@ not from anything injected ambiently:
 - `lore_inbox_classify` — read-only gather that a skill turns into
   prose, then commits via a CLI verb.
 - `lore_flag` — file one team-relevant fact into its owning topic note,
-  marked unreviewed (`lore_core/flag.py`). The only write an agent makes
-  to a wiki, and the only crossing from a session to the team surface.
+  marked unreviewed (`lore_core/flag.py`). The only wiki write an agent
+  makes from a session. Curator A's compose pipeline still writes session
+  notes into the wiki. The flag becomes the sole crossing from a session
+  to the team surface once the teardown retires that pipeline.
 - `lore_journal_write` — the AI/human scratch journal
   (`lore_core/journal.py`); freeform, no LLM abstraction, no
   propagation, never a source for ambient context.
