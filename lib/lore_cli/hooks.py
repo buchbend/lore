@@ -1029,11 +1029,9 @@ def capture(
                 write_pending_breadcrumb,
             )
 
-            cfg = _load_wiki_cfg_from_scope(scope, lore_root)
             crumb = render_session_end_breadcrumb(
                 outcome=routed.outcome,
                 pending_after=routed.pending_after,
-                threshold=cfg.curator.threshold_pending_turns,
             )
             if crumb is not None:
                 write_pending_breadcrumb(lore_root, crumb)

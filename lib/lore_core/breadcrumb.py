@@ -22,16 +22,17 @@ _EV_CONSUMED = "pending-breadcrumb-consumed"
 def render_session_end_breadcrumb(
     outcome: str,
     pending_after: int,
-    threshold: int = 3,
     error_message: str | None = None,
 ) -> str | None:
     """Return a one-line breadcrumb for a SessionEnd/PreCompact capture result.
 
     Pure function — no I/O. Returns None for silent outcomes (e.g. no-new-turns).
 
+    Only an error is worth a line. Capture is silent on success: the
+    transcript is registered and nothing further is pending on the user.
+
     outcome values:
-      spawned-curator    → "lore: capture queued · curator spawned (pending N)"
-      below-threshold    → "lore: capture queued · below threshold (pending N/T)"
+      captured           → None  (silent)
       no-new-turns       → None  (silent)
       error              → "lore!: capture error — <message>"
       unattached         → None  (already silent — unattached path is a no-op)

@@ -400,18 +400,13 @@ def test_banner_hook_error_trailing_segment(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_session_end_breadcrumb_spawned_curator_is_silent() -> None:
-    result = render_session_end_breadcrumb("spawned-curator", pending_after=3, threshold=3)
-    assert result is None
-
-
-def test_session_end_breadcrumb_below_threshold_is_silent() -> None:
-    result = render_session_end_breadcrumb("below-threshold", pending_after=2, threshold=3)
+def test_session_end_breadcrumb_captured_is_silent() -> None:
+    result = render_session_end_breadcrumb("captured", pending_after=3)
     assert result is None
 
 
 def test_session_end_breadcrumb_no_new_turns_is_none() -> None:
-    result = render_session_end_breadcrumb("no-new-turns", pending_after=0, threshold=3)
+    result = render_session_end_breadcrumb("no-new-turns", pending_after=0)
     assert result is None
 
 
