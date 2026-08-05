@@ -49,7 +49,7 @@ conflate them.
    session note with `epics: [<issue>]`; that note *is* the epic note. The orchestrator does
    not write it through an API — it narrates its tier decisions, dispatch choices, crosscheck
    verdicts, and escalations in-session, and capture composes them into the note. On resume,
-   `lore_context_pack` / `lore_resume` surface the epic-linked notes and carry that narrative
+   `lore_context_pack` surfaces the epic-linked notes and carries that narrative
    into the new session.
 
 3. **Same-session writes only.** The orchestrator writes only its *own* epic note. ADR 0001

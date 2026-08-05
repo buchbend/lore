@@ -124,7 +124,6 @@ Implemented in `lore_curator/llm_client.py:_resolve_openai_settings`.
 | `LORE_LOG_NOW`, `LORE_STATUS_NOW` | Inject a fake "now" timestamp for log/status formatting tests |
 | `LORE_ASCII` | `1` forces ASCII icon set in `run_render.py` (override TTY autodetect) |
 | `NO_COLOR` | Standard convention; `run_render.should_use_color()` honours it |
-| `LORE_INTEGRATIONS_DIR` | Override the per-integration install templates dir (default: `lib/lore_cli/integrations.d/`) |
 | `LORE_CACHE` | Override the search-index cache dir (default: `~/.cache/lore/`) |
 
 #### Sinks (briefing publishing)
@@ -231,13 +230,7 @@ Claude Code plugin manifest. Hook command registration, MCP server
 declaration, plugin version. Edited only as part of the release
 process (see version triple above).
 
-### 7. `lib/lore_cli/integrations.d/*.toml` — install templates
-
-Per-integration install scaffolding (Claude Code, Cursor, etc.). Read by
-`lore install` to know what files to write into each integration's config
-location. Override the dir via `LORE_INTEGRATIONS_DIR` for testing.
-
-### 8. Note frontmatter
+### 7. Note frontmatter
 
 Per-note metadata (`type:`, `description:`, `status:`, `supersedes:`,
 …). Documented in `lore_core/schema.py`. Not "config" in the global
