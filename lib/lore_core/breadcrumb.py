@@ -62,7 +62,9 @@ def consume_pending_breadcrumb(lore_root: Path) -> str | None:
     a ``pending-breadcrumb-consumed`` event so the line is shown at most
     once.
     """
-    from datetime import UTC, datetime as _dt
+    from datetime import UTC
+    from datetime import datetime as _dt
+
     from lore_core.spine import emit_hook_event, read_spine
 
     last_written: dict | None = None
