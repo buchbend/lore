@@ -208,6 +208,24 @@ def pending_verdict_chip(wiki: Path) -> str:
     return f"{rendered} pending {label}"
 
 
+def pending_flag_chip(wiki: Path) -> str:
+    """`· N pending flag(s)` chip text, or empty.
+
+    Count only — ADR 0008 forbids the banner from carrying flag content,
+    so a teammate's unreviewed text can never be pulled into a context
+    window by the banner alone. Zero-state suppressed entirely.
+    """
+    try:
+        from lore_core.flag import count_pending
+
+        count = count_pending(wiki)
+    except Exception:
+        return ""
+    if count <= 0:
+        return ""
+    return f"{count} pending flag" + ("" if count == 1 else "s")
+
+
 def filter_session_hints(
     candidates: list[tuple[str, str, dict]], *, max_notes: int = 2
 ) -> tuple[list[tuple[str, str]], list[str]]:
@@ -400,6 +418,7 @@ class SessionFacts:
     session_hints: tuple[tuple[str, str], ...] = ()
     freshness_audit_lines: tuple[str, ...] = ()
     pending_chip: str | None = None
+    flag_chip: str | None = None
     #: Last-active-day recap off the transcript ledger (≤3 lines).
     recap: tuple[str, ...] = ()
 
@@ -421,6 +440,7 @@ def collect_session_facts(
         session_hints_full, max_notes=2
     )
     pending_chip = pending_verdict_chip(wiki) or None
+    flag_chip = pending_flag_chip(wiki) or None
     # ``<lore_root>/wiki/<name>`` is the fixed vault layout, so the ledger
     # is reachable without threading lore_root through every caller.
     recap = last_active_day_recap(wiki.parent.parent)
@@ -432,6 +452,7 @@ def collect_session_facts(
         session_hints=tuple(session_hints),
         freshness_audit_lines=tuple(freshness_audit_lines),
         pending_chip=pending_chip,
+        flag_chip=flag_chip,
         recap=recap,
     )
 
@@ -460,6 +481,8 @@ def render_session_banner(facts: SessionFacts) -> str:
         injected_bits.append(facts.recap[0].split(" — ")[0].lower())
     if facts.pending_chip:
         injected_bits.append(facts.pending_chip)
+    if facts.flag_chip:
+        injected_bits.append(facts.flag_chip)
     status_line = f"lore {lore_version()}: active" + (
         " · " + " · ".join(injected_bits) if injected_bits else ""
     )

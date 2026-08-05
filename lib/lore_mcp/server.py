@@ -14,6 +14,8 @@ Exposed tools:
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
     lore_journal_write      — append a freeform entry to the AI or human journal
+    lore_flag               — file one team-relevant fact into its owning topic
+                              note, marked unreviewed
     lore_pending_verdicts   — enumerate wiki-wide pending freshness verdicts
     lore_verdict            — record a freshness verdict (confirm/stale/clear-stale)
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
@@ -478,6 +480,63 @@ def handle_journal_write(
     except ValueError as e:
         return _mcp_error("invalid_entry", str(e))
     return {"schema": "lore.journal.write/1", "data": result}
+
+
+def handle_flag(
+    lead: str,
+    body: str = "",
+    wiki: str | None = None,
+    target: str | None = None,
+    refs: list[dict] | None = None,
+    transcript: str | None = None,
+    cwd: str | None = None,
+) -> dict[str, Any]:
+    """File one flag into its owning topic note, marked unreviewed.
+
+    Agent-authored by definition, so the write is stamped: refs are
+    verified against ``cwd``'s repo and the phrasing follows from what
+    they establish (docs/adr/0004). A withheld write is a normal result,
+    not an error — the caller learns the gate held the text back and
+    where to review it.
+    """
+    from pathlib import Path as _Path
+
+    from lore_core import flag as _flag
+    from lore_core.git import current_repo, git_repo_root
+
+    if not (lead or "").strip():
+        return _mcp_error(
+            "empty_flag",
+            "a flag needs a lead sentence",
+            next_="Pass a one-sentence `lead`.",
+        )
+    pairs = [
+        (str(r.get("type", "")), str(r.get("value", "")))
+        for r in (refs or [])
+        if isinstance(r, dict)
+    ]
+    here = _Path(cwd) if cwd else _Path.cwd()
+    try:
+        result = _flag.write(
+            lead,
+            body or "",
+            wiki=wiki,
+            target=target,
+            refs=pairs,
+            transcript=transcript,
+            cwd=here,
+            repo_root=git_repo_root(here),
+            repo=current_repo(here) or "",
+        )
+    except _flag.OriginMissing as e:
+        return _mcp_error(
+            "missing_origin",
+            str(e),
+            next_="Pass `transcript` (the session id) or at least one ref.",
+        )
+    except ValueError as e:
+        return _mcp_error("invalid_flag", str(e))
+    return {"schema": "lore.flag.write/1", "data": result.__dict__}
 
 
 def handle_drill(
@@ -1149,6 +1208,71 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
+            "name": "lore_flag",
+            "description": (
+                "File ONE team-relevant fact into the wiki. Use it the "
+                "moment a fact appears that no artifact records — a "
+                "trap, a dead end and why it was abandoned, reasoning "
+                "nobody wrote down, a gap between the docs and the "
+                "code. Lore appends it to the owning topic note and "
+                "marks it unreviewed for the owner to accept. One fact "
+                "per call; a lead sentence plus a short body saying why "
+                "it is worth keeping. Give the refs behind it — a flag "
+                "with no ref and no transcript pointer is refused, and "
+                "refs that check out are what let the line read "
+                "plainly. Do not ask the user first, and do not flag "
+                "what a PR, issue or ADR already says."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "lead": {
+                        "type": "string",
+                        "description": "The fact, one sentence.",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Why it is worth keeping. Two or three sentences.",
+                    },
+                    "wiki": {
+                        "type": "string",
+                        "description": "Wiki name. Omit to resolve from cwd.",
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": (
+                            "Owning note (wiki-relative path or slug). Omit "
+                            "to let lore propose one by search ranking."
+                        ),
+                    },
+                    "refs": {
+                        "type": "array",
+                        "description": (
+                            "Evidence: {type, value} — type is one of "
+                            "pr/issue/commit/file/tag."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {"type": "string"},
+                                "value": {"type": "string"},
+                            },
+                            "required": ["type", "value"],
+                        },
+                    },
+                    "transcript": {
+                        "type": "string",
+                        "description": "Transcript/session id. Defaults to $CLAUDE_SESSION_ID.",
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Working directory used for wiki routing and ref checks.",
+                    },
+                },
+                "required": ["lead"],
+            },
+        },
+        {
             "name": "lore_pending_verdicts",
             "description": (
                 "Enumerate wiki-wide pending freshness verdicts as "
@@ -1396,6 +1520,8 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_inbox_classify(**args)
         case "lore_journal_write":
             return handle_journal_write(**args)
+        case "lore_flag":
+            return handle_flag(**args)
         case "lore_verdict":
             return handle_verdict(**args)
         case "lore_pending_verdicts":

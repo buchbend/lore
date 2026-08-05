@@ -216,6 +216,9 @@ not from anything injected ambiently:
   (`docs/architecture/lore-drill.md`).
 - `lore_inbox_classify` — read-only gather that a skill turns into
   prose, then commits via a CLI verb.
+- `lore_flag` — file one team-relevant fact into its owning topic note,
+  marked unreviewed (`lore_core/flag.py`). The only write an agent makes
+  to a wiki, and the only crossing from a session to the team surface.
 - `lore_journal_write` — the AI/human scratch journal
   (`lore_core/journal.py`); freeform, no LLM abstraction, no
   propagation, never a source for ambient context.

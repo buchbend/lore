@@ -26,9 +26,9 @@ REMOVED_TOOLS = {
 }
 
 
-def test_tool_schema_has_exactly_twelve_tools() -> None:
+def test_tool_schema_has_exactly_thirteen_tools() -> None:
     names = [t["name"] for t in _tool_schema()]
-    assert len(names) == 12, names
+    assert len(names) == 13, names
 
 
 def test_tool_schema_excludes_removed_tools() -> None:

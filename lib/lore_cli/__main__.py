@@ -64,6 +64,7 @@ def _build_app() -> typer.Typer:
         curator_cmd,
         doctor_cmd,
         drill_cmd,
+        flag_cmd,
         hooks,
         inbox_cmd,
         ingest_cmd,
@@ -108,6 +109,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(doctor_cmd.app, name="doctor", rich_help_panel=_GS)
     app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
 
+    app.add_typer(flag_cmd.app, name="flag", rich_help_panel=_KN)
     app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
     app.add_typer(drill_cmd.app, name="drill", rich_help_panel=_KN)
     app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
