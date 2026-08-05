@@ -1,6 +1,6 @@
 # ADR 0003: The session-note body is a deterministic render of the ledger
 
-- Status: Accepted
+- Status: Superseded by ADR 0007
 - Date: 2026-07-12
 - Context: epic [#282](https://github.com/buchbend/lore/issues/282),
   PRD [0008](../prd/0008-typed-fact-session-notes.md), sub-issue

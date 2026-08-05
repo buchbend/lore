@@ -1,6 +1,6 @@
 # ADR 0001: Session-note reopen relaxes close-immutability (one file per session)
 
-- Status: Accepted
+- Status: Superseded by ADR 0007
 - Date: 2026-07-06
 - Context: epic [#151](https://github.com/buchbend/lore/issues/151),
   PRD [0002](../prd/0002-useful-session-notes.md), sub-issue
