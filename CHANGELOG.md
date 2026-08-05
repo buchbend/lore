@@ -8,6 +8,67 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.67.0] - 2026-08-05
+
+Retires the session-note pipeline's readers and adds the flag, the one crossing
+from a private session to the team wiki (#362, PRD 0011). The pipeline wrote
+LLM-composed notes almost nobody read: 17 pulls per month across 307 sessions.
+This release lands the additive half. The compose pipeline still runs; the
+teardown (#361) waits on the measurement this release makes possible.
+
+### Added
+
+- **`lore flag` and the `lore_flag` MCP tool** (#357). An agent files one
+  team-relevant fact during a session. Lore appends it to the owning topic note
+  at write time, marked unreviewed (ADR 0008). The origin line carries author,
+  date, refs and the transcript pointer, and code stamps the ref verdicts rather
+  than a model phrasing them (ADR 0004). The publish gate evaluates flag text
+  before anything else touches it and fails closed into quarantine.
+- **`lore flag review`** (#357). The pull-based review walk over pending flags,
+  with accept, retarget, decline and skip. Pending state is derived by scanning
+  notes for the unreviewed marker — there is no queue store (ADR 0008).
+- **A pending-flag count in the SessionStart banner** (#357). The banner shows
+  the count and never the flag content (ADR 0009).
+- **A linkage block on transcript-ledger entries** (#358). Repo, branch, PRs,
+  issues, commits and files, populated at hook time with no LLM call. Entries
+  written before this release load unchanged.
+- **`lore migrate retire-session-notes`** (#358). Backfills linkage for every
+  archived transcript, then deletes the session-note files. Without `--apply` it
+  prints the plan and changes nothing. Capture keeps writing new session notes
+  until the teardown lands.
+- **A last-active-day recap in the banner** (#358), read from the ledger with no
+  LLM call.
+- **Ledger-routed drill queries** (#358). `lore_drill` and `lore_search` answer
+  which sessions touched a PR, an issue or a file, and return transcript
+  pointers.
+- **Flag measurement** (#360). Per-wiki counters in `lore status` (written,
+  withheld, pending, accepted, declined, retargeted), a `flag` selector in
+  `lore trace`, and computable review latency. `docs/how-to/measure-flag-quality.md`
+  documents the known-gem baseline replay and the directive flip-probe.
+- **ADR 0007, 0008 and 0009, and PRD 0011** — the decision records this release
+  implements.
+
+### Changed
+
+- **The banner's last-session note hints became the ledger recap** (#358). The
+  recap names the day, its session count and repos, the branches, and the issue
+  and PR numbers touched.
+- **`spine.read_spine` takes a keyword-only `path`** (#360), so flag metrics can
+  read the rotated spine through the same malformed-line-tolerant parser. The
+  default is unchanged for every existing caller.
+
+### Removed
+
+- **`lore resume` and the `lore_resume` MCP tool** (#359). Telemetry over 307
+  sessions recorded zero calls. `lore_context_pack` keeps its behaviour; the
+  gather helpers it imported are inlined next to it. `docs/architecture/cli-contract.md`
+  aliases a retired verb when a replacement exists — this verb has none, so it is
+  removed outright and a test guards the removal.
+- **`skills/resume/`** (#359), the slash command for the retired verb.
+- **The `--launch <integration>` machinery** (#359): `lore_cli/launcher.py`,
+  `lore_cli/integrations.d/` and the `LORE_INTEGRATIONS_DIR` override. Its only
+  caller was `lore resume --launch`.
+
 ## [0.66.0] - 2026-08-04
 
 Joins the writing rules to the per-repo glossary (#336, PRD 0010). Agents wrote
