@@ -1,11 +1,13 @@
 # Measure flag quality: known-gem baseline and directive flip-probe
 
 **Goal:** catch under-flagging before it erodes trust in the flag
-architecture. The flag is the only crossing from a private session to
-the team wiki — a fact an agent should have flagged and didn't leaves no
-trace anywhere a human would look. Under-flagging is measurable only by
-deliberately checking for it; it does not show up as an error, a
-dead-lettered flush, or any other alert `lore status` already earns.
+architecture. The flag is the crossing from a private session to the
+team wiki, and the only one left once the teardown retires the
+session-note compose pipeline — a fact an agent should have flagged and
+didn't leaves no trace anywhere a human would look. Under-flagging is
+measurable only by deliberately checking for it; it does not show up as
+an error, a dead-lettered flush, or any other alert `lore status`
+already earns.
 
 Background: the flag shape and the "measurement before trust" rule are
 recorded in [`brainstorms/lore-session-notes-worth.md`](../../brainstorms/lore-session-notes-worth.md)

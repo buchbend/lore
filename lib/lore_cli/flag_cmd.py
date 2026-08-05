@@ -1,7 +1,9 @@
 """``lore flag`` — file one team-relevant fact, and review the ones filed.
 
-A flag is the only crossing from a working session to the wiki: one
+A flag is a deliberate crossing from a working session to the wiki: one
 stamped fact, appended to the owning topic note the moment it appears.
+It becomes the only crossing once the teardown retires the session-note
+compose pipeline, which still writes into the wiki today.
 
   lore flag write "lead sentence" --body "why it matters" --ref pr:357
   lore flag review                     walk the unreviewed flags
@@ -140,9 +142,7 @@ def cmd_list(
         _emit_json(
             {
                 "schema": "lore.flag.list/1",
-                "data": [
-                    {"id": f.id, "note": f.note_path, "lead": f.lead} for f in items
-                ],
+                "data": [{"id": f.id, "note": f.note_path, "lead": f.lead} for f in items],
             }
         )
         return
