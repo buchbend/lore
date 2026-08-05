@@ -57,7 +57,9 @@ from typing import Any
 SCHEMA_VERSION = 1
 
 # Closed producer set. A source outside this set is a bug, not data.
-SOURCES: frozenset[str] = frozenset({"hook", "curator", "drain", "janitor", "install", "mcp"})
+SOURCES: frozenset[str] = frozenset(
+    {"hook", "curator", "drain", "janitor", "install", "mcp", "flag"}
+)
 
 LEVELS: frozenset[str] = frozenset({"info", "warn", "error"})
 
