@@ -25,10 +25,32 @@ the raw event timeline to check your judgment against.
 - **`lore trace flag`** — every flag-write and flag-review spine event,
   chronologically, each carrying a timestamp and a `flag_id`. Use it to
   find a specific flag's write event and pair it with its verdict.
-  `lore trace flag --json` gives the raw records for scripting a report.
+  `lore trace flag --json` gives the raw records for scripting a report;
+  pipe that through `jq`/Python and filter by `wiki` or `ts` yourself —
+  the selector itself takes no time-window or wiki filter.
 - **Review latency** for one flag is the gap between its `flag-write`
   and `flag-review` timestamps in that output — both events carry the
-  same `flag_id`, so pairing them is a lookup, not a derivation.
+  same `flag_id`, so pairing them is a lookup, not a derivation. A
+  retarget verdict does not count as the review: the flag stays pending
+  after a retarget, so the latency that matters is write-to-accept (or
+  write-to-decline), skipping over any retargets in between.
+- **`pending` and the write/verdict counters come from two different
+  sources and are not expected to sum.** `pending` is a live scan of the
+  wiki's notes for the unreviewed marker; the other counters replay
+  spine events. Hand-accepting a flag by editing the note directly gives
+  `written 2 · pending 1 · accepted 0` (the marker scan sees the edit,
+  no `flag-review` event exists for it); deleting a flagged note outside
+  Lore gives `written 2 · pending 0 · accepted 0 · declined 0` (both
+  flags vanish from the scan with no event recording why). Neither
+  output is wrong — they are honest about what each source can see.
+- **The counters are a rotation-bounded window, not an unbounded total.**
+  They read the live spine plus its most recent rotated sibling
+  (`retention.cold_days`, default 30 days) — older events are gone once
+  the janitor deletes that cold file. A baseline campaign running longer
+  than that window will undercount its earlier sessions with no error.
+  `accepted` (or `declined`) exceeding `written` is the signature that
+  some of a flag's write events have rotated out from under its verdict
+  — read it as "older than the window", not as a bug.
 
 ## Procedure 1: known-gem baseline replay
 
@@ -43,8 +65,9 @@ worth keeping.
 2. **Run or replay the session** under the current flagging directive.
 3. **Check whether the gem became a flag.** Read the session's
    transcript or its private notes, then check the wiki for a matching
-   flag block, or run `lore trace flag` scoped to the session's time
-   window and look for a write event whose lead matches the gem.
+   flag block, or run `lore trace flag --json` and filter the output
+   yourself (by `wiki`, or by eyeballing timestamps near the session)
+   for a write event whose lead matches the gem.
 4. **Record a hit or a miss per gem**, not per session — one session can
    contain several gems, and a session that flags one gem and misses
    another is a partial result, not a pass.

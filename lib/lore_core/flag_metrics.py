@@ -15,7 +15,7 @@ filter.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,11 +38,25 @@ class FlagCounts:
 def flag_events(lore_root: Path, *, wiki: str | None = None) -> list[dict[str, Any]]:
     """Every flag-write/flag-review spine record, chronological.
 
+    Reads both the live spine and its rotated cold sibling
+    (``spine.jsonl.1``), unlike a plain ``read_spine`` call. A known-gem
+    baseline campaign or a flag's review can outlive one rotation
+    (``retention.hot_days``, default 7) — the janitor rotates the hot
+    spine opportunistically from the hook path, so this is live
+    behaviour, not a hypothetical. Reading the cold file too widens the
+    counted window to ``retention.cold_days`` (default 30) instead of
+    silently resetting mid-campaign. Still bounded: the janitor deletes
+    cold records past that, so a campaign or an outstanding review
+    longer than that window is not covered — see
+    ``docs/how-to/measure-flag-quality.md``.
+
     Sorted by ``ts`` — the spine is append-only but not guaranteed
     strictly time-ordered (rotation, clock skew), the same caveat every
     other spine reader carries.
     """
-    records = read_spine(lore_root, source=SPINE_SOURCE)
+    cold_path = lore_root / ".lore" / "spine.jsonl.1"
+    records = read_spine(lore_root, source=SPINE_SOURCE, path=cold_path)
+    records += read_spine(lore_root, source=SPINE_SOURCE)
     if wiki is not None:
         records = [r for r in records if r.get("wiki") == wiki]
     return sorted(records, key=lambda r: r.get("ts", ""))
@@ -95,28 +109,48 @@ def flag_counts(lore_root: Path, wiki: str) -> FlagCounts:
 
 
 def _parse_ts(raw: str) -> datetime | None:
+    """Parse an ISO timestamp, normalizing a naive one to UTC.
+
+    A naive and an aware ``datetime`` can't be subtracted, so a caller
+    diffing two parsed timestamps would crash on a naive one even though
+    every value this module produces is well-formed — a hand-edited or
+    otherwise malformed record must degrade this function's contract
+    (``None``), not raise past it. Same idiom as
+    ``spine._oldest_record_age_days`` / ``status_cmd._resolve_now``.
+    """
     try:
-        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
     except (ValueError, TypeError):
         return None
+    return ts if ts.tzinfo else ts.replace(tzinfo=UTC)
 
 
 def review_latency_seconds(events: list[dict[str, Any]], flag_id: str) -> float | None:
-    """Seconds between one flag's write and its review verdict.
+    """Seconds between one flag's write and its first RESOLVING verdict.
 
-    ``None`` when the flag has no write event, no verdict yet (still
-    pending), or either timestamp fails to parse. Takes ``events`` — the
-    same list `flag_events` returns — rather than reading the spine
-    itself, so a caller filtering to one wiki or one time window gets a
+    ``None`` when the flag has no write event, no resolving verdict yet
+    (still pending, possibly after one or more retargets), or a
+    timestamp fails to parse. A retarget does not resolve review —
+    ``flag.retarget`` keeps the block's unreviewed marker and leaves it
+    in the walk — so a retarget verdict is skipped when picking the
+    review timestamp; only the first accept/decline counts. This mirrors
+    ``flag_counts``'s own treatment of ``retargeted`` as distinct from an
+    accept/decline outcome: write 10:00 -> retarget 10:01 -> accept
+    12:00 must report the write-to-accept gap, not write-to-retarget.
+
+    Takes ``events`` — the same list `flag_events` returns — rather than
+    reading the spine itself, so a caller filtering to one wiki gets a
     latency computed over exactly what it already read.
     """
     write_ts = review_ts = None
     for rec in events:
-        if (rec.get("data") or {}).get("flag_id") != flag_id:
+        data = rec.get("data") or {}
+        if data.get("flag_id") != flag_id:
             continue
-        if rec.get("event") == EV_WRITE and write_ts is None:
+        event = rec.get("event")
+        if event == EV_WRITE and write_ts is None:
             write_ts = rec.get("ts")
-        elif rec.get("event") == EV_REVIEW and review_ts is None:
+        elif event == EV_REVIEW and review_ts is None and data.get("verdict") != "retarget":
             review_ts = rec.get("ts")
     if write_ts is None or review_ts is None:
         return None

@@ -189,3 +189,111 @@ def test_review_latency_none_for_unknown_flag_id(tmp_path: Path):
 
     events = flag_events(root)
     assert review_latency_seconds(events, "no-such-id") is None
+
+
+def test_review_latency_skips_retarget_pairs_with_first_resolving_verdict(tmp_path: Path):
+    """write 10:00 -> retarget 10:01 -> accept 12:00 must report the
+    write-to-accept gap (7200s), not write-to-retarget (60s). A retarget
+    does not resolve review (flag.retarget's own docstring: the block
+    keeps its unreviewed marker and stays in the walk), so it must not be
+    picked as the review timestamp — mirrors flag_counts's own treatment
+    of retarget as distinct from a review outcome.
+    """
+    root = _vault(tmp_path)
+    _emit(root, event=flag.EV_WRITE, wiki="private", outcome="written", flag_id="a")
+    _emit(root, event=flag.EV_REVIEW, wiki="private", verdict="retarget", flag_id="a", note="x.md")
+    _emit(root, event=flag.EV_REVIEW, wiki="private", verdict="accept", flag_id="a")
+    _rewrite_ts(
+        root,
+        ["2026-08-05T10:00:00Z", "2026-08-05T10:01:00Z", "2026-08-05T12:00:00Z"],
+    )
+
+    events = flag_events(root)
+    assert review_latency_seconds(events, "a") == 7200.0
+
+
+def test_review_latency_no_resolving_verdict_yet_is_none(tmp_path: Path):
+    root = _vault(tmp_path)
+    _emit(root, event=flag.EV_WRITE, wiki="private", outcome="written", flag_id="a")
+    _emit(root, event=flag.EV_REVIEW, wiki="private", verdict="retarget", flag_id="a", note="x.md")
+
+    events = flag_events(root)
+    assert review_latency_seconds(events, "a") is None
+
+
+def test_review_latency_handles_naive_timestamp_without_crashing(tmp_path: Path):
+    root = _vault(tmp_path)
+    _emit(root, event=flag.EV_WRITE, wiki="private", outcome="written", flag_id="a")
+    _emit(root, event=flag.EV_REVIEW, wiki="private", verdict="accept", flag_id="a")
+    # Naive (no offset) timestamps — a malformed or hand-edited record must
+    # not crash a function contracted to return None, it must return a
+    # value (mixing naive-as-UTC with aware is well-defined once normalized).
+    _rewrite_ts(root, ["2026-08-05T10:00:00", "2026-08-05T10:00:30Z"])
+
+    events = flag_events(root)
+    assert review_latency_seconds(events, "a") == 30.0
+
+
+# ---------------------------------------------------------------------------
+# Rotation window — flag_events/flag_counts must not silently reset when
+# the hot spine rotates to spine.jsonl.1 (janitor, #190).
+# ---------------------------------------------------------------------------
+
+
+def test_flag_counts_reads_across_hot_and_cold_rotation(tmp_path: Path):
+    root = _vault(tmp_path)
+    # Cold sibling holds an older write; hot spine holds its later verdict —
+    # exactly the shape a mid-campaign rotation produces.
+    cold = root / ".lore" / "spine.jsonl.1"
+    line = _spine_line(
+        event=flag.EV_WRITE,
+        wiki="private",
+        ts="2026-07-01T00:00:00Z",
+        outcome="written",
+        flag_id="old",
+    )
+    cold.write_text(line + "\n")
+    _emit(root, event=flag.EV_REVIEW, wiki="private", verdict="accept", flag_id="old")
+
+    counts = flag_counts(root, "private")
+    assert counts.written == 1
+    assert counts.accepted == 1
+
+
+def test_flag_events_merges_hot_and_cold_chronologically(tmp_path: Path):
+    root = _vault(tmp_path)
+    cold = root / ".lore" / "spine.jsonl.1"
+    line = _spine_line(
+        event=flag.EV_WRITE,
+        wiki="private",
+        ts="2026-07-01T00:00:00Z",
+        outcome="written",
+        flag_id="old",
+    )
+    cold.write_text(line + "\n")
+    _emit(root, event=flag.EV_WRITE, wiki="private", outcome="written", flag_id="new")
+    _rewrite_ts(root, ["2026-08-01T00:00:00Z"])
+
+    events = flag_events(root)
+    assert [e["data"]["flag_id"] for e in events] == ["old", "new"]
+
+
+def _spine_line(*, event: str, wiki: str, ts: str, **data) -> str:
+    import json
+
+    return json.dumps(
+        {
+            "ts": ts,
+            "v": 1,
+            "source": flag.SPINE_SOURCE,
+            "event": event,
+            "level": "info",
+            "trace_id": None,
+            "session_id": None,
+            "run_id": None,
+            "wiki": wiki,
+            "scope": None,
+            "error_code": None,
+            "data": data,
+        }
+    )
