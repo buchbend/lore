@@ -6,14 +6,16 @@ Windsurf, Zed, etc.) can register this and query the vault.
 Exposed tools:
     lore_search             — hybrid ranked search, top-k paths
     lore_read               — read one note by wiki/path
-    lore_resume             — unified context gather (recent/wiki/keyword/scope)
     lore_drill              — composite multi-stage retrieval (search→read→
                               expand→read_expanded) in one envelope with a
-                              structured trace
+                              structured trace, plus transcript pointers for
+                              queries naming an issue, a PR, or a file
     lore_inbox_classify     — read-only inbox walk (file list with type +
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
     lore_journal_write      — append a freeform entry to the AI or human journal
+    lore_flag               — file one team-relevant fact into its owning topic
+                              note, marked unreviewed
     lore_pending_verdicts   — enumerate wiki-wide pending freshness verdicts
     lore_verdict            — record a freshness verdict (confirm/stale/clear-stale)
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
@@ -34,7 +36,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from lore_core.config import get_wiki_root
+from lore_core.config import get_lore_root, get_wiki_root
 from lore_core.errors import mcp_error as _mcp_error
 from lore_core.freshness import (
     compute_freshness,
@@ -44,6 +46,7 @@ from lore_core.freshness import (
     signal_to_dict,
 )
 from lore_core.freshness_filter import apply_search_filter
+from lore_core.ledger import find_sessions
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_search.fts import FtsBackend
 
@@ -445,28 +448,6 @@ def _extract_section(text: str, query: str) -> tuple[str | None, list[str]]:
     return "\n".join(lines[start:end]), all_heading_strs
 
 
-def handle_resume(
-    wiki: str | None = None,
-    days: int = 3,
-    keyword: str | None = None,
-    scope: str | None = None,
-    k: int = 5,
-) -> dict[str, Any]:
-    """Unified resume gather. Delegates to lore_core.resume.gather().
-
-    Modes (priority): scope > keyword > recent (wiki-scoped or all wikis).
-    """
-    from lore_core.resume import gather
-
-    return gather(
-        scope=scope,
-        wiki=wiki,
-        keyword=keyword,
-        days=days,
-        k=k,
-    )
-
-
 def handle_inbox_classify() -> dict[str, Any]:
     """Read-only inbox classifier. Delegates to lore_core.inbox.classify()."""
     from lore_core.inbox import classify
@@ -499,6 +480,63 @@ def handle_journal_write(
     except ValueError as e:
         return _mcp_error("invalid_entry", str(e))
     return {"schema": "lore.journal.write/1", "data": result}
+
+
+def handle_flag(
+    lead: str,
+    body: str = "",
+    wiki: str | None = None,
+    target: str | None = None,
+    refs: list[dict] | None = None,
+    transcript: str | None = None,
+    cwd: str | None = None,
+) -> dict[str, Any]:
+    """File one flag into its owning topic note, marked unreviewed.
+
+    Agent-authored by definition, so the write is stamped: refs are
+    verified against ``cwd``'s repo and the phrasing follows from what
+    they establish (docs/adr/0004). A withheld write is a normal result,
+    not an error — the caller learns the gate held the text back and
+    where to review it.
+    """
+    from pathlib import Path as _Path
+
+    from lore_core import flag as _flag
+    from lore_core.git import current_repo, git_repo_root
+
+    if not (lead or "").strip():
+        return _mcp_error(
+            "empty_flag",
+            "a flag needs a lead sentence",
+            next_="Pass a one-sentence `lead`.",
+        )
+    pairs = [
+        (str(r.get("type", "")), str(r.get("value", "")))
+        for r in (refs or [])
+        if isinstance(r, dict)
+    ]
+    here = _Path(cwd) if cwd else _Path.cwd()
+    try:
+        result = _flag.write(
+            lead,
+            body or "",
+            wiki=wiki,
+            target=target,
+            refs=pairs,
+            transcript=transcript,
+            cwd=here,
+            repo_root=git_repo_root(here),
+            repo=current_repo(here) or "",
+        )
+    except _flag.OriginMissing as e:
+        return _mcp_error(
+            "missing_origin",
+            str(e),
+            next_="Pass `transcript` (the session id) or at least one ref.",
+        )
+    except ValueError as e:
+        return _mcp_error("invalid_flag", str(e))
+    return {"schema": "lore.flag.write/1", "data": result.__dict__}
 
 
 def handle_drill(
@@ -537,6 +575,25 @@ def handle_drill(
     trace: list[dict[str, Any]] = []
     notes: list[dict[str, Any]] = []
 
+    # Ledger routing. "Which sessions touched PR/issue/file X" is answered
+    # from the transcript ledger, not the note index — owner-local, and
+    # unaffected by what the vault does or doesn't hold. Resolved once per
+    # drill so the read-side spine event stays one-per-query; its trace
+    # step is appended last so the note stages keep their fixed positions.
+    t0 = _time.monotonic()
+    sessions = find_sessions(get_lore_root(), query)
+    ledger_step = {
+        "stage": "ledger",
+        "sessions": len(sessions),
+        "elapsed_ms": int((_time.monotonic() - t0) * 1000),
+    }
+
+    def _envelope() -> dict[str, Any]:
+        return {
+            "trace": [*trace, ledger_step],
+            "result": {"notes": notes, "sessions": sessions},
+        }
+
     # Stage 1: search
     t0 = _time.monotonic()
     hits = handle_search(query=query, wiki=wiki, k=k)
@@ -552,7 +609,7 @@ def handle_drill(
         # uniform — easier for clients to parse than missing entries.
         for stage in ("read", "expand", "read_expanded"):
             trace.append({"stage": stage, "skipped": "search_returned_zero", "elapsed_ms": 0})
-        return {"trace": trace, "result": {"notes": notes}}
+        return _envelope()
 
     # Stage 2: read top hits
     # Drill is the user-invoked deep-dive surface (PRD #92 retrieval
@@ -589,7 +646,7 @@ def handle_drill(
     if not expanded_slugs:
         trace.append({"stage": "expand", "skipped": "no_wikilinks", "elapsed_ms": int((_time.monotonic() - t0) * 1000)})
         trace.append({"stage": "read_expanded", "skipped": "no_wikilinks", "elapsed_ms": 0})
-        return {"trace": trace, "result": {"notes": notes}}
+        return _envelope()
     expand_step: dict[str, Any] = {
         "stage": "expand",
         "wikilinks": expanded_slugs,
@@ -607,7 +664,7 @@ def handle_drill(
     if not expanded_slugs:
         # `expand_only` filtered everything out — record skipped + return.
         trace.append({"stage": "read_expanded", "skipped": "expand_only_empty", "elapsed_ms": 0})
-        return {"trace": trace, "result": {"notes": notes}}
+        return _envelope()
 
     # Stage 4: read expanded (cap at expand_limit, skip unresolvable slugs).
     # `truncated` only applies when we actually hit the cap — an unresolvable
@@ -648,7 +705,7 @@ def handle_drill(
         trace_step["read_failed"] = read_failed_expanded
     trace.append(trace_step)
 
-    return {"trace": trace, "result": {"notes": notes}}
+    return _envelope()
 
 
 def handle_verdict(
@@ -1060,43 +1117,6 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
-            "name": "lore_resume",
-            "description": (
-                "Load working context from the vault. Modes (priority "
-                "order): scope > keyword > recent. Returns a structured "
-                "dict with `mode` discriminator. Use at session start or "
-                "any time the agent needs broader context without "
-                "iterating through Glob/Read."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "scope": {
-                        "type": "string",
-                        "description": "Scope prefix to aggregate gh issues + PRs + sessions for (e.g. ccat:data-center)",
-                    },
-                    "keyword": {
-                        "type": "string",
-                        "description": "FTS5 ranked search across the vault",
-                    },
-                    "wiki": {
-                        "type": "string",
-                        "description": "Restrict to one wiki (default: all wikis for recent mode)",
-                    },
-                    "days": {
-                        "type": "integer",
-                        "default": 3,
-                        "description": "Recency window for sessions (recent mode only)",
-                    },
-                    "k": {
-                        "type": "integer",
-                        "default": 5,
-                        "description": "Top-k results for keyword search",
-                    },
-                },
-            },
-        },
-        {
             "name": "lore_drill",
             "description": (
                 "Composite multi-stage retrieval: search → read top hits → expand "
@@ -1110,7 +1130,14 @@ def _tool_schema() -> list[dict]:
                 "exactly those without recomputing search. `expand_only` is "
                 "intersection-only (it cannot add slugs that weren't in the "
                 "discovered set; only narrow). "
-                "Prefer `lore_drill` for cold-start exploration of a topic. "
+                "A query naming an issue (`#358`), a PR (`PR 364`) or a file "
+                "path also returns `result.sessions` — pointers to the local "
+                "transcripts of the sessions that touched it, read from the "
+                "transcript ledger. Those pointers are machine-local: they name "
+                "files on this machine only, so never quote them to anyone but "
+                "their owner. "
+                "Prefer `lore_drill` for cold-start exploration of a topic, and "
+                "for \"which sessions touched X?\". "
                 "Prefer `lore_search` (then `lore_read`) when you already know "
                 "the rough path/slug or want to steer between stages."
             ),
@@ -1178,6 +1205,71 @@ def _tool_schema() -> list[dict]:
                     },
                 },
                 "required": ["kind", "text"],
+            },
+        },
+        {
+            "name": "lore_flag",
+            "description": (
+                "File ONE team-relevant fact into the wiki. Use it the "
+                "moment a fact appears that no artifact records — a "
+                "trap, a dead end and why it was abandoned, reasoning "
+                "nobody wrote down, a gap between the docs and the "
+                "code. Lore appends it to the owning topic note and "
+                "marks it unreviewed for the owner to accept. One fact "
+                "per call; a lead sentence plus a short body saying why "
+                "it is worth keeping. Give the refs behind it — a flag "
+                "with no ref and no transcript pointer is refused, and "
+                "refs that check out are what let the line read "
+                "plainly. Do not ask the user first, and do not flag "
+                "what a PR, issue or ADR already says."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "lead": {
+                        "type": "string",
+                        "description": "The fact, one sentence.",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Why it is worth keeping. Two or three sentences.",
+                    },
+                    "wiki": {
+                        "type": "string",
+                        "description": "Wiki name. Omit to resolve from cwd.",
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": (
+                            "Owning note (wiki-relative path or slug). Omit "
+                            "to let lore propose one by search ranking."
+                        ),
+                    },
+                    "refs": {
+                        "type": "array",
+                        "description": (
+                            "Evidence: {type, value} — type is one of "
+                            "pr/issue/commit/file/tag."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {"type": "string"},
+                                "value": {"type": "string"},
+                            },
+                            "required": ["type", "value"],
+                        },
+                    },
+                    "transcript": {
+                        "type": "string",
+                        "description": "Transcript/session id. Defaults to $CLAUDE_SESSION_ID.",
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Working directory used for wiki routing and ref checks.",
+                    },
+                },
+                "required": ["lead"],
             },
         },
         {
@@ -1422,14 +1514,14 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_search(**args)
         case "lore_read":
             return handle_read(**args)
-        case "lore_resume":
-            return handle_resume(**args)
         case "lore_drill":
             return handle_drill(**args)
         case "lore_inbox_classify":
             return handle_inbox_classify(**args)
         case "lore_journal_write":
             return handle_journal_write(**args)
+        case "lore_flag":
+            return handle_flag(**args)
         case "lore_verdict":
             return handle_verdict(**args)
         case "lore_pending_verdicts":

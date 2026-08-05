@@ -1,4 +1,4 @@
-"""MCP surface trim — five no-caller tools removed from exposure.
+"""MCP surface trim — six no-caller tools removed from exposure.
 
 `lore_index`, `lore_catalog`, `lore_wikilinks`, `lore_journal_read`, and
 `lore_briefing_gather` have no caller (no skill, template, integration-rules
@@ -6,6 +6,10 @@ file, or hook instructs a model to call them). The underlying core they
 wrapped stays reachable through other paths: `lore_core/wikilinks.py` backs
 `lore_drill`'s expand stage, `lore briefing gather` is a CLI command, and
 `lore_core.journal` is still written via `lore_journal_write`.
+
+`lore_resume` joins the removed set on its own count: telemetry over 307
+sessions recorded zero calls (ADR 0007, issue #359). Its gather logic that
+`lore_context_pack` still depends on moved into `lore_core.context_pack`.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ REMOVED_TOOLS = {
     "lore_wikilinks",
     "lore_journal_read",
     "lore_briefing_gather",
+    "lore_resume",
 }
 
 
@@ -46,5 +51,6 @@ def test_removed_handlers_no_longer_defined() -> None:
         "handle_wikilinks",
         "handle_journal_read",
         "handle_briefing_gather",
+        "handle_resume",
     ):
         assert not hasattr(server, handler), handler

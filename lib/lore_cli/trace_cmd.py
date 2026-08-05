@@ -124,13 +124,48 @@ def _print_dead(*, records, json_out: bool) -> None:
         console.print(f"[red]{line}[/red]", highlight=False)
 
 
+def _flag_detail(data: dict) -> str:
+    """``outcome=...`` for a write, ``verdict=...`` for a review verdict."""
+    if "outcome" in data:
+        detail = f"outcome={data['outcome']}"
+        if data.get("category"):
+            detail += f" category={data['category']}"
+        return detail
+    return f"verdict={data.get('verdict', '?')}"
+
+
+def _print_flags(*, records: list[dict], json_out: bool) -> None:
+    """Flat, chronological listing of flag-write/flag-review spine events.
+
+    Not one correlated flush tree (flag events carry no trace_id — a flag
+    is a standing-alone fact, not a flush) — a flat table, same shape as
+    ``_print_dead``. Review latency for one flag is exactly the gap
+    between its ``flag-write`` and ``flag-review`` lines here, both
+    keyed by the same ``flag_id``.
+    """
+    if json_out:
+        for rec in records:
+            sys.stdout.write(json.dumps(rec) + "\n")
+        return
+    if not records:
+        console.print("[dim]No flag events.[/dim]")
+        return
+    for rec in records:
+        data = rec.get("data") or {}
+        line = (
+            f"{rec.get('ts', '?')}  {rec.get('event', '?')}  {rec.get('wiki') or '-'}  "
+            f"flag_id={data.get('flag_id', '?')}  {_flag_detail(data)}"
+        )
+        console.print(line, highlight=False)
+
+
 @app.callback(invoke_without_command=True)
 def trace(
     # Argument default is None (not `...`) so this callback-only Typer app
     # collapses to a single command instead of a click Group requiring a
     # subcommand after the argument — same workaround as drill_cmd/search_cmd.
     selector: str = typer.Argument(
-        None, help="trace-id | session-id | last | dead | note path or [[wikilink]]"
+        None, help="trace-id | session-id | last | dead | flag | note path or [[wikilink]]"
     ),
     plain: bool = typer.Option(False, "--plain", help="Aligned text, no tree glyphs/color."),
     json_out: bool = typer.Option(False, "--json", help="Raw spine event list (JSONL)."),
@@ -147,6 +182,12 @@ def trace(
     except Exception as exc:
         console.print("[red]LORE_ROOT not set.[/red]")
         raise typer.Exit(1) from exc
+
+    if selector == "flag":
+        from lore_core.flag_metrics import flag_events
+
+        _print_flags(records=flag_events(lore_root), json_out=json_out)
+        return
 
     try:
         resolved = resolve_selector(lore_root, selector)

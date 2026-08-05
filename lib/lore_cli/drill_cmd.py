@@ -6,8 +6,10 @@
 
 Calls the same handler as the `lore_drill` MCP tool: search → read top
 hits → expand wikilinks → read expanded set, all in one round-trip.
-The trace shows what happened at each stage so retrieval failures stay
-debuggable.
+A query naming an issue, a PR, or a file also returns the transcript
+pointers for the sessions that touched it, read from the transcript
+ledger. The trace shows what happened at each stage so retrieval
+failures stay debuggable.
 
 See `docs/architecture/lore-drill.md`.
 """
@@ -46,7 +48,9 @@ def _render_trace(trace: list[dict]) -> Tree:
             tree.add(f"[dim]{stage}[/dim] — skipped ({step['skipped']})")
             continue
         node = tree.add(f"[cyan]{stage}[/cyan] [dim]({elapsed} ms)[/dim]")
-        if stage == "search":
+        if stage == "ledger":
+            node.add(f"{step.get('sessions', 0)} session pointers")
+        elif stage == "search":
             node.add(f"query: {step.get('query', '')!r}  hits: {step.get('hits', 0)}")
         elif stage == "read":
             for path in step.get("paths", []):
@@ -96,9 +100,23 @@ def drill(
 
     console.print(_render_trace(out["trace"]))
     console.print()
+    sessions = out["result"].get("sessions") or []
+    if sessions:
+        console.print(f"[bold]{len(sessions)} sessions:[/bold]")
+        for s in sessions:
+            day = s["last_active"][:10]
+            # highlight=False: rich's number highlighter otherwise splits
+            # "feat/358-ledger" and the date across colour spans.
+            console.print(
+                f"  • [magenta]{s['transcript_id']}[/magenta] [dim]{day}"
+                f"  {s['repo']} {s['branch']}[/dim]",
+                highlight=False,
+            )
+        console.print()
     notes = out["result"]["notes"]
     if not notes:
-        console.print("[yellow]No notes returned.[/yellow]")
+        if not sessions:
+            console.print("[yellow]No notes returned.[/yellow]")
         return
     console.print(f"[bold]{len(notes)} notes:[/bold]")
     for note in notes:

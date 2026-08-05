@@ -165,6 +165,70 @@ def test_unknown_selector_errors_without_crashing(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# "flag" selector — lists flag-write/flag-review spine events (#360)
+# ---------------------------------------------------------------------------
+
+
+def _emit_flag(lore_root: Path, *, event: str, wiki: str = "private", **data) -> None:
+    from lore_core.flag import SPINE_SOURCE
+
+    SpineWriter(lore_root).emit(source=SPINE_SOURCE, event=event, wiki=wiki, data=data)
+
+
+def test_flag_selector_lists_write_and_review_events_with_timestamps(tmp_path, monkeypatch):
+    from lore_core.flag import EV_REVIEW, EV_WRITE
+
+    lore_root = _lore_root(tmp_path)
+    _emit_flag(lore_root, event=EV_WRITE, outcome="written", flag_id="abc123")
+    _emit_flag(lore_root, event=EV_REVIEW, verdict="accept", flag_id="abc123")
+
+    result = _invoke(lore_root, "flag", "--plain", monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    assert "flag-write" in result.output
+    assert "flag-review" in result.output
+    assert "abc123" in result.output
+    # A timestamp (spine-stamped ISO string) renders on each line.
+    assert result.output.count("T") >= 2
+
+
+def test_flag_selector_orders_chronologically(tmp_path, monkeypatch):
+    from lore_core.flag import EV_REVIEW, EV_WRITE
+
+    lore_root = _lore_root(tmp_path)
+    _emit_flag(lore_root, event=EV_REVIEW, verdict="accept", flag_id="a")
+    _emit_flag(lore_root, event=EV_WRITE, outcome="written", flag_id="a")
+    _rewrite_timestamps(
+        lore_root,
+        {0: "2026-08-05T10:05:00Z", 1: "2026-08-05T10:00:00Z"},
+    )
+
+    result = _invoke(lore_root, "flag", "--plain", monkeypatch=monkeypatch)
+    write_pos = result.output.index("flag-write")
+    review_pos = result.output.index("flag-review")
+    assert write_pos < review_pos, "earlier write event must render first"
+
+
+def test_flag_selector_json_emits_raw_records(tmp_path, monkeypatch):
+    from lore_core.flag import EV_WRITE
+
+    lore_root = _lore_root(tmp_path)
+    _emit_flag(lore_root, event=EV_WRITE, outcome="written", flag_id="a")
+
+    result = _invoke(lore_root, "flag", "--json", monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    records = [json.loads(ln) for ln in result.output.splitlines() if ln.strip()]
+    assert len(records) == 1
+    assert records[0]["event"] == EV_WRITE
+    assert records[0]["data"]["flag_id"] == "a"
+
+
+def test_flag_selector_empty_does_not_crash(tmp_path, monkeypatch):
+    lore_root = _lore_root(tmp_path)
+    result = _invoke(lore_root, "flag", "--plain", monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
 # AC2 — header is the current flush status; steps carry model/tokens, note path
 # ---------------------------------------------------------------------------
 
@@ -330,6 +394,7 @@ def test_trace_never_writes_to_lore_root(tmp_path, monkeypatch):
         ["trace-readonly", "--json"],
         ["last"],
         ["dead"],
+        ["flag"],
         [str(note_dir / "n.md")],
     ):
         _invoke(lore_root, *args, monkeypatch=monkeypatch)

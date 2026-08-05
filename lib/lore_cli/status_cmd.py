@@ -1,7 +1,7 @@
 """``lore status`` v2 — unified health dashboard (issue #193).
 
 The single glanceable "is Lore healthy right now?" surface. One line per
-concern across six sections, every alert paired with the exact drill-down
+concern across seven sections, every alert paired with the exact drill-down
 command (PRD 0005, "Dashboard grammar"):
 
     lore: active · private/proj:test · attached at ~/project
@@ -21,6 +21,9 @@ command (PRD 0005, "Dashboard grammar"):
     wikis
       · private      clean · ahead 0 · behind 0 · reachable
 
+    flags
+      · private      written 3 · pending 1 · accepted 2 · declined 0
+
     retention
       · hot 0.0/10 MB · janitor 5m ago
 
@@ -31,10 +34,11 @@ command (PRD 0005, "Dashboard grammar"):
       · none
 
 Reads only — the event spine (#185), flush store (#189), retention janitor
-status (#190), and per-wiki git state. Absorbs ``lore news`` (drain events
-for the current session, cursor advance preserved). Rendered as plain text
-(no ANSI) so it degrades cleanly for non-TTY / ``--plain`` and scripting.
-Exit code is 0 when healthy and nonzero when any alert is earned.
+status (#190), the flag spine (#360, ``lore_core.flag_metrics``), and
+per-wiki git state. Absorbs ``lore news`` (drain events for the current
+session, cursor advance preserved). Rendered as plain text (no ANSI) so it
+degrades cleanly for non-TTY / ``--plain`` and scripting. Exit code is 0
+when healthy and nonzero when any alert is earned.
 """
 
 from __future__ import annotations
@@ -270,6 +274,37 @@ def _wikis_lines(lore_root: Path, offline: bool) -> list[str]:
     if not dirs:
         return [_line(_HEALTHY, "no wikis")]
     return [_render_wiki_line(d.name, offline, lore_root) for d in dirs]
+
+
+# ---------------------------------------------------------------------------
+# flags section — per-wiki counters from the flag spine (#360)
+#
+# The flag is the crossing from a private session to the team wiki, and the
+# only one left once the teardown retires the compose pipeline (PRD 0011);
+# under-flagging is invisible without this. Reads only —
+# lore_core.flag_metrics aggregates flag.py's own spine events plus
+# flag.count_pending (never reconstructed, ADR 0008).
+# ---------------------------------------------------------------------------
+
+
+def _render_flags_line(lore_root: Path, wiki_name: str) -> str:
+    from lore_core.flag_metrics import flag_counts
+
+    c = flag_counts(lore_root, wiki_name)
+    withheld = f" ({c.withheld} withheld)" if c.withheld else ""
+    retargeted = f" · retargeted {c.retargeted}" if c.retargeted else ""
+    msg = (
+        f"{wiki_name:12s} written {c.written}{withheld} · pending {c.pending} "
+        f"· accepted {c.accepted} · declined {c.declined}{retargeted}"
+    )
+    return _line(_HEALTHY, msg)
+
+
+def _flags_lines(lore_root: Path) -> list[str]:
+    dirs = _wiki_dirs(lore_root)
+    if not dirs:
+        return [_line(_HEALTHY, "no wikis")]
+    return [_render_flags_line(lore_root, d.name) for d in dirs]
 
 
 # ---------------------------------------------------------------------------
@@ -544,6 +579,9 @@ def _json_payload(state: CaptureState, lore_root: Path, now: datetime, offline: 
             }
         )
     data["wikis"] = wikis
+    from lore_core.flag_metrics import flag_counts
+
+    data["flags"] = {d.name: asdict(flag_counts(lore_root, d.name)) for d in _wiki_dirs(lore_root)}
     data["alerts"] = _compute_alerts(state, now, lore_root)
     return data
 
@@ -600,6 +638,9 @@ def status(
         "",
         "wikis" + ("  (offline)" if offline else ""),
         *_wikis_lines(lore_root, offline),
+        "",
+        "flags",
+        *_flags_lines(lore_root),
         "",
         "retention",
         *_retention_lines(lore_root, now),

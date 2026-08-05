@@ -57,7 +57,9 @@ from typing import Any
 SCHEMA_VERSION = 1
 
 # Closed producer set. A source outside this set is a bug, not data.
-SOURCES: frozenset[str] = frozenset({"hook", "curator", "drain", "janitor", "install"})
+SOURCES: frozenset[str] = frozenset(
+    {"hook", "curator", "drain", "janitor", "install", "mcp", "flag"}
+)
 
 LEVELS: frozenset[str] = frozenset({"info", "warn", "error"})
 
@@ -308,14 +310,21 @@ def validate_envelope(rec: dict[str, Any]) -> None:
         raise ValueError("data must be a dict")
 
 
-def read_spine(lore_root: Path, *, source: str | None = None) -> list[dict[str, Any]]:
+def read_spine(
+    lore_root: Path, *, source: str | None = None, path: Path | None = None
+) -> list[dict[str, Any]]:
     """Return spine records (live file only), optionally filtered by ``source``.
 
     Malformed lines are skipped (an interrupted final write can only be a
-    single unparseable line). Reads ``spine.jsonl`` only — parity with the
-    prior hook-events readers, which never walked the rotated sibling.
+    single unparseable line). Reads ``spine.jsonl`` only by default —
+    parity with the prior hook-events readers, which never walked the
+    rotated sibling. Pass ``path`` to point this same malformed-line-
+    tolerant parse at a different file — e.g. the rotated cold sibling
+    (``spine.jsonl.1``), which is how a reader widens its window past one
+    hot-spine rotation (``lore_core.flag_metrics``) without duplicating
+    this parsing logic.
     """
-    path = lore_root / ".lore" / "spine.jsonl"
+    path = path or lore_root / ".lore" / "spine.jsonl"
     if not path.exists():
         return []
     out: list[dict[str, Any]] = []

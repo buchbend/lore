@@ -50,7 +50,7 @@ prior run:
    branch's real state: a `merged` row is done (skip, never redispatch); a `queued`/`blocked` row is
    redispatched; an existing epic branch is reused, never re-created. Edit that same comment in place for every
    later update; never open a second.
-2. **Working context** — `lore_resume` / `lore_context_pack` (epic-linked) surface prior orchestrator epic
+2. **Working context** — `lore_context_pack` (epic-linked) surfaces prior orchestrator epic
    notes: why a feature blocked, the tier rationale, the in-flight decisions the board omits.
 
 No board comment found → fresh run; proceed to the gate.

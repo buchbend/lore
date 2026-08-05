@@ -60,7 +60,9 @@ def test_drill_full_chain_records_each_stage():
     assert "result" in out
 
     stages = [step["stage"] for step in out["trace"]]
-    assert stages == ["search", "read", "expand", "read_expanded"]
+    # ``ledger`` runs first but is recorded last so the note stages keep
+    # their fixed trace positions.
+    assert stages == ["search", "read", "expand", "read_expanded", "ledger"]
 
     # search recorded query + hit count
     assert out["trace"][0]["hits"] == 2
@@ -90,7 +92,9 @@ def test_drill_short_circuits_when_search_returns_zero():
 
     stages = [step["stage"] for step in out["trace"]]
     # search runs; the rest are recorded as skipped without doing work.
-    assert stages == ["search", "read", "expand", "read_expanded"]
+    # ``ledger`` runs first but is recorded last so the note stages keep
+    # their fixed trace positions.
+    assert stages == ["search", "read", "expand", "read_expanded", "ledger"]
     assert out["trace"][0]["hits"] == 0
     assert out["trace"][1].get("skipped") == "search_returned_zero"
     assert out["trace"][2].get("skipped") == "search_returned_zero"
