@@ -8,9 +8,7 @@ line. Lore appends it to the owning topic note the moment it is filed. An
 agent files flags through the `lore_flag` MCP tool; you file your own with
 `lore flag write`.
 
-The compose pipeline still writes session notes at every session boundary.
-The flag runs beside it. It becomes the only crossing from a session to the
-team wiki once the teardown retires that pipeline —
+The flag is the only crossing from a session to the team wiki —
 [why the flag is the crossing](../explanation/why-the-flag-is-the-crossing.md)
 explains the target state and what is still outstanding.
 

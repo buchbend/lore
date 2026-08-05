@@ -16,20 +16,19 @@ threads live in a chat window that disappears. PRs capture the diff;
 nothing captures *why*. Lore closes the loop:
 
 ```
-Session with AI  →  transcript captured into a per-session buffer
-                 →  (at SessionEnd, once) the whole session is segmented,
-                    extracted into typed facts, gated for PII/secrets/
-                    directive phrasing, and rendered by code
-                 →  one lab-notebook session note per session,
-                    readable via MCP pull at next SessionStart
+Session with AI  →  transcript captured and archived, ledger entry
+                    stamped with repo/branch/PRs/issues/commits/files
+                 →  an agent files a flag the moment one team-relevant
+                    fact appears — one stamped sentence, gated for
+                    PII/secrets, appended to its topic note unreviewed
+                 →  a human accepts, retargets or declines it
 ```
 
-The flagship is the **session-note pipeline**: capture is automatic —
-no explicit capture command needed. See the "Bootstrap" section below.
-Everything else (search, MCP, hygiene curator) serves the same
-pipeline. Ratified decisions live in the connected repo's ADRs/PRDs,
-pulled on demand via MCP — Lore does not extract decisions from
-transcripts.
+The crossing is the **flag**: one deliberate, reviewable fact per
+occasion. Capture itself is automatic and costs no model call — see the
+"Bootstrap" section below. Lore writes nothing into a wiki on its own.
+Ratified decisions live in the connected repo's ADRs/PRDs, pulled on
+demand via MCP — Lore does not extract decisions from transcripts.
 
 ## Two plugins: `lore` + `lore-workflow`
 
@@ -270,14 +269,9 @@ Once attached with a wiki present:
 
 - `lore ingest --from <file.jsonl> --integration cursor --directory <cwd>` —
   ingest a transcript from any integration lore doesn't auto-capture.
-- `lore curator run` — run the buffer/flush heartbeat now (files
-  session notes from pending transcripts).
-- `lore curator flush <buffer-sidecar>` — run the flush worker for one
-  buffer directly.
-- `lore curator sweep` — close every dead session's note now, under
-  the singleton lock.
-- `lore curator reap` — force-flush buffers whose owning session
-  crashed.
+- `lore flag write "<lead>" --body "<why>" --ref pr:357` — file a flag
+  from a shell.
+- `lore flag review` — walk the unreviewed flags and resolve them.
 - `lore curator [--wiki <name>] [--apply]` — the frontmatter-only
   hygiene pass (supersession, `implements:` back-links, git-date
   backfill, team-mode hint); dry-run by default.
@@ -330,7 +324,7 @@ and add knobs only as you need them. Briefings publish manually
 
 ## Observability
 
-Every background producer (hooks, curator runs, drain events, the
+Every background producer (hooks, transcript sync, drain events, the
 retention janitor) writes one envelope onto one append-only event log,
 the **spine**, correlated end-to-end by a `trace_id` minted at hook fire.
 Three commands cover the common scenarios:
@@ -338,9 +332,9 @@ Three commands cover the common scenarios:
 | Scenario | Command |
 |---|---|
 | **"Is Lore healthy right now?"** | **`lore status`** |
-| "I had a session and no note appeared" | `lore trace last` (or `lore trace dead` for stuck flushes) |
+| "I had a session and nothing was captured" | `lore trace last` (or `lore trace dead` for stuck flushes) |
 | "Hook plumbing feels off" | `lore doctor` (`--fix` repairs what it can) |
-| "I'm tuning noteworthy/merge config" | `lore curator run --dry-run --trace-llm` |
+| "Did my flag land, and when was it reviewed?" | `lore trace flag` |
 
 `lore status` is the first thing to run when you're wondering whether Lore is
 alive: capture liveness, flush queue (queued/running/dead-lettered), per-wiki
@@ -348,7 +342,7 @@ connection health, retention usage, and an alerts section where every warning
 names its own drill-down command.
 
 `lore trace <selector>` renders the chronological, correlated story of one
-flush — hook fire, spawn, LLM calls, gate outcome, note append — for a
+unit of work — hook fire, gate outcome, write — for a
 trace_id, session_id, `last`, `dead` (lists dead-lettered flushes), or a note
 path / `[[wikilink]]`.
 
@@ -475,12 +469,9 @@ shell — same precedence):
 | `LORE_OPENAI_MODEL_SIMPLE` / `_MIDDLE` / `_HIGH` | per-tier model override |
 | `ANTHROPIC_API_KEY` | for the `api` backend |
 
-Verify the wiring with `lore doctor` (which checks selectability) or run
-a one-shot: `lore curator run --backend openai --dry-run --trace-llm` —
-the trace file under `$LORE_ROOT/.lore/runs/<id>.trace.jsonl` shows the
-exact prompt/response pair for inspection.
+Verify the wiring with `lore doctor`, which checks selectability.
 
-### Recommended openai-backend setup (Curator A narration)
+### Recommended openai-backend setup (briefing narration)
 
 The narrator used to default to Mistral-119B, which has a known structural
 failure on retraction-heavy transcripts — it asserts decisions and outcomes
@@ -496,14 +487,10 @@ curator:
     base_url: https://chat.kiconnect.nrw/api/v1
     model_high: "Openai GPT OSS 120B"
     reasoning_effort_high: high
-# Per-wiki, in <wiki>/.lore-wiki.yml — route Curator A to the high tier:
-# curator:
-#   synthesis_model_tier: high
 ```
 
 - **Latency**: GPT-OSS-120B at `reasoning_effort=high` takes 80–100s per
-  Curator A call vs ~10s for Mistral. The session-note pipeline is async,
-  so this is acceptable but worth knowing.
+  call vs ~10s for Mistral.
 - **Cost**: both Mistral-119B and GPT-OSS-120B are free on the
   kiconnect.nrw endpoint Lore points at by default.
 - **Backwards compatibility**: existing Mistral-only configs keep working
