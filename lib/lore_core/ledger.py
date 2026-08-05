@@ -8,13 +8,15 @@ see a partial file.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lore_core.io import atomic_write_text
+from lore_core.spine import SpineWriter
 
 if TYPE_CHECKING:
     from lore_core.types import Scope
@@ -37,6 +39,13 @@ class TranscriptLedgerEntry:
     session_note: str | None  # wikilink, e.g. "[[2026-04-19-slug]]"
     orphan: bool = False  # cwd permanently gone; excluded from pending()
     total_turns: int = 0  # turns observed at last sync; gate metric for spawn
+    #: Where this session worked and what it produced — the personal
+    #: layer's linkage store. Keys: ``repo``, ``branch`` (str), ``prs``,
+    #: ``issues`` (list[int]), ``commits``, ``files`` (list[str]).
+    #: Derived and rebuildable; written by capture with no LLM call.
+    #: Kept a plain dict rather than a dataclass so an entry written by a
+    #: future Lore with extra keys still round-trips through an older one.
+    linkage: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -123,6 +132,7 @@ class TranscriptLedger:
             "session_note": e.session_note,
             "orphan": e.orphan,
             "total_turns": e.total_turns,
+            "linkage": e.linkage,
         }
 
     @staticmethod
@@ -148,6 +158,7 @@ class TranscriptLedger:
             session_note=raw.get("session_note"),
             orphan=raw.get("orphan", False),
             total_turns=raw.get("total_turns", 0),
+            linkage=raw.get("linkage") or {},
         )
 
     def all_entries(self) -> list[TranscriptLedgerEntry]:
@@ -361,6 +372,92 @@ class TranscriptLedger:
             entry.curator_a_run = curator_a_run
         raw[key] = self._entry_to_raw(entry)
         self._write_raw(raw)
+
+
+#: A query token routes to the ledger when it looks like a path — it
+#: carries a directory separator or a file extension. Numeric refs are
+#: classified separately by ``lore_core.linkage.classify_refs``.
+_PATHISH_RE = re.compile(r"[\w./~-]*(?:/[\w.-]+|\.[A-Za-z]{1,5})\b")
+
+
+def find_sessions(
+    lore_root: Path,
+    query: str,
+    *,
+    limit: int = 5,
+) -> list[dict]:
+    """Return transcript pointers for the sessions that touched ``query``.
+
+    Routes on what the query names: an issue or PR number, or a file
+    path. Anything else is not a ledger query and returns ``[]`` without
+    touching the ledger — the caller's own search still answers it.
+
+    Newest first, capped at ``limit``. Emits one read-side spine event
+    per routed query so "who is actually drilling the archive?" is
+    answerable from the same file as every other counter.
+
+    Owner-local by contract (ADR 0009): the pointers are paths on this
+    machine and never leave it.
+    """
+    from lore_core.linkage import classify_refs
+
+    issues, prs, epics = classify_refs(query)
+    refs = issues | prs | epics
+    paths = {m.group(0) for m in _PATHISH_RE.finditer(query) if m.group(0)}
+    if not refs and not paths:
+        return []
+
+    matched = [
+        e
+        for e in TranscriptLedger(lore_root).all_entries()
+        if _entry_matches(e, refs, paths)
+    ]
+    matched.sort(key=lambda e: e.last_mtime, reverse=True)
+    hits = [
+        {
+            "transcript_id": e.transcript_id,
+            "integration": e.integration,
+            "path": str(e.path),
+            "directory": str(e.directory),
+            "last_active": e.last_mtime.isoformat(),
+            "repo": e.linkage.get("repo", ""),
+            "branch": e.linkage.get("branch", ""),
+            "issues": e.linkage.get("issues", []),
+            "prs": e.linkage.get("prs", []),
+        }
+        for e in matched[:limit]
+    ]
+
+    SpineWriter(lore_root).emit(
+        source="mcp",
+        event="ledger-query",
+        data={
+            "refs": sorted(refs),
+            "paths": sorted(paths),
+            "hits": len(hits),
+            "matched": len(matched),
+        },
+    )
+    return hits
+
+
+def _entry_matches(entry: TranscriptLedgerEntry, refs: set[int], paths: set[str]) -> bool:
+    """True when the entry's linkage names any queried ref or file.
+
+    File comparison is suffix-symmetric so a bare ``ledger.py`` finds a
+    stored ``lib/lore_core/ledger.py``, and a caller pasting an absolute
+    path finds the repo-relative one capture stored.
+    """
+    linkage = entry.linkage
+    if refs and refs & {
+        int(n) for n in (linkage.get("issues") or []) + (linkage.get("prs") or [])
+    }:
+        return True
+    for stored in linkage.get("files") or []:
+        for token in paths:
+            if stored.endswith(token) or token.endswith(stored):
+                return True
+    return False
 
 
 class WikiLedger:
