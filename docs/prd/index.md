@@ -15,4 +15,5 @@ PRDs are the source of truth for decisions. Each PRD lives at
 0007-substrate-trim
 0008-typed-fact-session-notes
 0009-issue-register
+0010-session-note-retirement-flag-architecture
 ```
