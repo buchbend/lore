@@ -2,8 +2,8 @@
 
 A flag is a deliberate crossing from a working session to the wiki: one
 stamped fact, appended to the owning topic note the moment it appears.
-It becomes the only crossing once the teardown retires the session-note
-compose pipeline, which still writes into the wiki today.
+It is the only crossing: lore writes nothing else into a wiki from a
+session.
 
   lore flag write "lead sentence" --body "why it matters" --ref pr:357
   lore flag review                     walk the unreviewed flags

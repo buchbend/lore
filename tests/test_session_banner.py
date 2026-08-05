@@ -28,10 +28,6 @@ def _deterministic_directive(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 PROJECT_ENTRY = {"name": "data-transfer", "description": "Long-haul data pipeline"}
-SESSION_HINTS = (
-    ("12-1530-fix-thing", "fixed the thing"),
-    ("12-0900-prep", "prep for sprint"),
-)
 RECAP = (
     "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer",
     "Branches: feat/12-fix-thing",
@@ -44,8 +40,6 @@ V1_FACTS = SessionFacts(
     repo="ccatobs/data-transfer",
     scope="",
     project_entry=PROJECT_ENTRY,
-    session_hints=SESSION_HINTS,
-    freshness_audit_lines=(),
     pending_chip=None,
     recap=RECAP,
 )
@@ -70,8 +64,6 @@ V2_FACTS = SessionFacts(
     repo="ccatobs/data-transfer",
     scope="ccat:data-center:data-transfer",
     project_entry=PROJECT_ENTRY,
-    session_hints=SESSION_HINTS,
-    freshness_audit_lines=(),
     pending_chip=None,
     recap=RECAP,
 )
@@ -110,8 +102,6 @@ def test_render_session_banner_includes_pending_chip_and_no_project_note() -> No
         repo="ccatobs/data-transfer",
         scope="",
         project_entry=None,
-        session_hints=(),
-        freshness_audit_lines=(),
         pending_chip="1 pending verdict",
     )
     out = render_session_banner(facts)
@@ -128,8 +118,6 @@ def test_render_session_banner_has_exactly_the_agreed_elements() -> None:
         repo="ccatobs/data-transfer",
         scope="ccat:data-center:data-transfer",
         project_entry=PROJECT_ENTRY,
-        session_hints=SESSION_HINTS,
-        freshness_audit_lines=("### Filtered for staleness", "- 1 excluded"),
         pending_chip="1 pending verdict",
         recap=RECAP,
     )
@@ -145,9 +133,6 @@ def test_render_session_banner_has_exactly_the_agreed_elements() -> None:
         "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer\n"
         "Branches: feat/12-fix-thing\n"
         "Refs: #12\n"
-        "\n"
-        "### Filtered for staleness\n"
-        "- 1 excluded\n"
         "\n"
         "## Directive\n"
         "- pull, not push"

@@ -21,7 +21,9 @@ dependencies = [
     "typer>=0.12",
     "rich>=13",
     "pyyaml>=6",
-    "mcp>=1.0",
+    # Capped below 2.0: that release dropped the @server.list_tools() and
+    # @server.call_tool() decorators lore_mcp.server registers through.
+    "mcp>=1.0,<2",
 ]
 
 [project.optional-dependencies]

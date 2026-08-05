@@ -2,8 +2,7 @@
 
 **Goal:** catch under-flagging before it erodes trust in the flag
 architecture. The flag is the crossing from a private session to the
-team wiki, and the only one left once the teardown retires the
-session-note compose pipeline — a fact an agent should have flagged and
+team wiki, and the only one — a fact an agent should have flagged and
 didn't leaves no trace anywhere a human would look. Under-flagging is
 measurable only by deliberately checking for it; it does not show up as
 an error, a dead-lettered flush, or any other alert `lore status`

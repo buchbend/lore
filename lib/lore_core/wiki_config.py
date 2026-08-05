@@ -25,32 +25,6 @@ class GitConfig:
 
 
 @dataclass
-class CuratorConfig:
-    # Spawn gate — Curator A fires when EITHER condition is true per wiki:
-    #   new_turns ≥ threshold_pending_turns   (sum across pending entries)
-    #   oldest_pending_age ≥ max_pending_age_s
-    # Replaces the v0.24-and-earlier ``threshold_pending`` (transcript count)
-    # and ``threshold_tokens`` (declared but never wired). Old keys land in
-    # _merge's unknown-key path and emit a deprecation warning.
-    threshold_pending_turns: int = 30
-    max_pending_age_s: int = 600
-    a_noteworthy_tier: str = "middle"  # middle | simple
-    curator_a_cooldown_s: int = 60
-    # Buffer-and-flush curator (per the very-good-thats-the-mossy-lobster plan).
-    # All knobs land here so a wiki using a low-capacity local LLM can shrink
-    # the cap without touching the global flag (which lives in root_config).
-    # Defaults are tuned for a middle-tier cloud LLM; local-LLM users override
-    # synthesis_buffer_cap_turns / _chars downward in .lore-wiki.yml.
-    synthesis_buffer_cap_turns: int = 120
-    synthesis_buffer_cap_chars: int = 240_000
-    synthesis_flush_timeout_s: int = 25
-    synthesis_model_tier: str = "middle"  # resolves via models.<tier>
-    reaper_max_per_pass: int = 5
-    buffer_done_retention_days: int = 14
-    liveness_stale_threshold_s: int = 1800  # 30 min
-
-
-@dataclass
 class ModelsConfig:
     simple: str = "claude-haiku-4-5"
     middle: str = "claude-sonnet-4-6"
@@ -80,11 +54,16 @@ class BreadcrumbConfig:
 @dataclass
 class WikiConfig:
     git: GitConfig = field(default_factory=GitConfig)
-    curator: CuratorConfig = field(default_factory=CuratorConfig)
     models: ModelsConfig = field(default_factory=ModelsConfig)
     briefing: BriefingConfig = field(default_factory=BriefingConfig)
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     breadcrumb: BreadcrumbConfig = field(default_factory=BreadcrumbConfig)
+
+
+#: Config blocks lore used to honour and no longer does. Named explicitly so
+#: a stale file gets a warning that says what happened, rather than the
+#: generic unknown-key notice.
+RETIRED_BLOCKS = frozenset({"curator"})
 
 
 def load_wiki_config(wiki_dir: Path) -> WikiConfig:
@@ -120,6 +99,16 @@ def _merge(default_obj, overrides: dict[str, Any], source: Path):
         return overrides  # trivial override at scalar/list level
     dc_fields = {f.name: f for f in fields(default_obj)}
     for key, val in overrides.items():
+        if key in RETIRED_BLOCKS:
+            # One warning for the block, not one per knob inside it: a config
+            # written before the teardown carries the whole block, and a
+            # warning per key buries the single fact the reader needs.
+            warnings.warn(
+                f"wiki_config: '{key}' retired with the compose pipeline "
+                f"and is ignored; remove it from {source}",
+                stacklevel=3,
+            )
+            continue
         if key not in dc_fields:
             warnings.warn(
                 f"wiki_config: unknown key '{key}' in {source}; ignoring",

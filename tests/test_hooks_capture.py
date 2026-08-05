@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
-from typer.testing import CliRunner
-
 from lore_adapters import register
 from lore_adapters.registry import _REGISTRY
-from lore_cli.hooks import hook_app, _spawn_detached_curator_a
+from lore_cli.hooks import hook_app
 from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
 from lore_core.types import TranscriptHandle
-
+from typer.testing import CliRunner
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -63,7 +60,7 @@ def _make_attached_project(root: Path) -> Path:
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def _make_handle(
@@ -155,7 +152,6 @@ def test_user_prompt_submit_registers_missed_transcript(tmp_path: Path, fake_ada
     # rather than the real claude-code adapter (which would scan ~/.claude).
     monkeypatch.setattr("lore_cli.hooks.get_adapter", lambda _i: adapter)
     # Stop the spawn-gate from forking a curator subprocess in the test.
-    monkeypatch.setattr("lore_cli.hooks._heartbeat_spawn_curator_a", lambda *a, **kw: None)
 
     from lore_cli.hooks import cmd_user_prompt_submit
     cmd_user_prompt_submit(cwd=str(project), plain=True)
@@ -242,7 +238,6 @@ def test_capture_under_100ms(tmp_path: Path, fake_adapter_factory, monkeypatch) 
     fake_adapter_factory([handle])
 
     # Prevent actual subprocess spawn
-    monkeypatch.setattr("lore_cli.hooks._spawn_detached_curator_a", lambda *a, **kw: True)
 
     start = time.monotonic()
     result = runner.invoke(
@@ -294,7 +289,6 @@ def test_capture_hook_under_500ms_with_50_transcripts(
     fake_adapter_factory([handle])
 
     # Block subprocess spawn so we time the hook, not curator bootstrap.
-    monkeypatch.setattr("lore_cli.hooks._spawn_detached_curator_a", lambda *a, **kw: True)
 
     start = time.monotonic()
     result = runner.invoke(
@@ -343,54 +337,6 @@ def test_capture_issues_single_ledger_write_for_many_new_transcripts(
     # File was written exactly once (mtime advanced from zero/stale to a single new value).
     post_mtime = ledger_path.stat().st_mtime
     assert post_mtime != pre_mtime
-
-
-def test_capture_spawns_when_threshold_exceeded(
-    tmp_path: Path, fake_adapter_factory, monkeypatch
-) -> None:
-    """capture calls _spawn_detached_curator_a when pending >= threshold."""
-    project = _make_attached_project(tmp_path)
-
-    # Default threshold is 10. Pre-seed ledger with 9 pending entries.
-    ledger = TranscriptLedger(project)
-    for i in range(9):
-        ledger.upsert(
-            TranscriptLedgerEntry(
-                integration="fake",
-                transcript_id=f"pre{i}",
-                path=project / f"pre{i}.jsonl",
-                directory=project,
-                digested_hash=None,
-                digested_index_hint=None,
-                synthesised_hash=None,
-                last_mtime=_now(),
-                curator_a_run=None,
-                noteworthy=None,
-                session_note=None,
-            )
-        )
-
-    # Adapter returns one more new transcript (total pending will be 3).
-    handle = _make_handle(project, transcript_id="new1")
-    fake_adapter_factory([handle])
-
-    spawn_calls: list[Path] = []
-    monkeypatch.setattr(
-        "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
-    )
-
-    result = runner.invoke(
-        hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
-        env={"LORE_ROOT": str(project)},
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0, result.output
-    assert len(spawn_calls) == 1, "Expected _spawn_detached_curator_a to be called once"
-    assert spawn_calls[0] == project
-
-
 def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_factory) -> None:
     """capture emits spine record with pid, cwd, schema_version=2."""
     project = _make_attached_project(tmp_path)
@@ -423,40 +369,6 @@ def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_
     assert record["data"]["cwd"] == str(project)
     # ppid_cmd is present (may be None on some systems)
     assert "ppid_cmd" in record["data"]
-
-
-def test_capture_does_not_spawn_when_under_threshold(
-    tmp_path: Path, fake_adapter_factory, monkeypatch
-) -> None:
-    """capture does NOT spawn when below the gate (turns + age both under).
-
-    Uses event=session-start so we exercise the gate rather than the
-    session-end force_eos path (which spawns regardless of the gate as
-    a handover guarantee).
-    """
-    project = _make_attached_project(tmp_path)
-
-    # Only 1 pending transcript with no turn data — below default
-    # threshold_pending_turns=30 and within max_pending_age_s=600.
-    handle = _make_handle(project)
-    fake_adapter_factory([handle])
-
-    spawn_calls: list[Path] = []
-    monkeypatch.setattr(
-        "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
-    )
-
-    result = runner.invoke(
-        hook_app,
-        ["capture", "--event", "session-start", "--cwd", str(project), "--integration", "fake"],
-        env={"LORE_ROOT": str(project)},
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0, result.output
-    assert len(spawn_calls) == 0, "Expected no spawn call below threshold"
-
-
 def test_capture_session_start_same_behaviour(tmp_path: Path, fake_adapter_factory) -> None:
     """event=session-start produces the same ledger update as session-end."""
     project = _make_attached_project(tmp_path)
@@ -512,8 +424,8 @@ def test_capture_existing_entry_updates_mtime_when_changed(
 ) -> None:
     """If ledger already has an entry and mtime changed, it's updated."""
     project = _make_attached_project(tmp_path)
-    old_mtime = datetime(2024, 1, 1, tzinfo=timezone.utc)
-    new_mtime = datetime(2025, 6, 1, tzinfo=timezone.utc)
+    old_mtime = datetime(2024, 1, 1, tzinfo=UTC)
+    new_mtime = datetime(2025, 6, 1, tzinfo=UTC)
 
     # Pre-seed ledger with old mtime.
     ledger = TranscriptLedger(project)
@@ -613,6 +525,7 @@ def test_capture_handles_unknown_host_gracefully(tmp_path: Path) -> None:
 def test_capture_emits_hook_event_happy_path(tmp_path: Path, fake_adapter_factory, monkeypatch) -> None:
     """capture() writes one line to the spine with expected outcome."""
     import json
+
     from lore_cli.hooks import capture
 
     project = _make_attached_project(tmp_path)
@@ -636,6 +549,7 @@ def test_capture_emits_hook_event_happy_path(tmp_path: Path, fake_adapter_factor
 def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_factory, monkeypatch) -> None:
     """An adapter that raises during discovery should write outcome=error and re-raise."""
     import json
+
     from lore_cli import hooks
 
     project = _make_attached_project(tmp_path)
@@ -662,62 +576,15 @@ def test_capture_error_path_logs_and_reraises(tmp_path: Path, fake_adapter_facto
 # ---------------------------------------------------------------------------
 # Breadcrumb wiring tests
 # ---------------------------------------------------------------------------
-
-
-def test_capture_session_end_no_breadcrumb_when_below_threshold(
-    tmp_path: Path, fake_adapter_factory, monkeypatch
-) -> None:
-    """below-threshold is internal pipeline state — no breadcrumb written."""
-    from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
-
-    project = _make_attached_project(tmp_path)
-
-    ledger = TranscriptLedger(project)
-    for i in range(2):
-        ledger.upsert(
-            TranscriptLedgerEntry(
-                integration="fake",
-                transcript_id=f"pre{i}",
-                path=project / f"pre{i}.jsonl",
-                directory=project,
-                digested_hash=None,
-                digested_index_hint=None,
-                synthesised_hash=None,
-                last_mtime=_now(),
-                curator_a_run=None,
-                noteworthy=None,
-                session_note=None,
-            )
-        )
-
-    handle = _make_handle(project, integration="fake")
-    fake_adapter_factory([handle])
-
-    result = runner.invoke(
-        hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
-        env={"LORE_ROOT": str(project)},
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0, result.output
-
-    import json as _json
-    events_path = project / ".lore" / "spine.jsonl"
-    if events_path.exists():
-        events = [_json.loads(l) for l in events_path.read_text().splitlines() if l.strip()]
-        written = [e for e in events if e.get("event") == "pending-breadcrumb-written"]
-        assert not written, "below-threshold should not write a breadcrumb"
-
-
 def test_capture_session_end_no_breadcrumb_when_no_new_turns(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:
     """When outcome=no-new-turns (all pending=0), no breadcrumb file is written."""
-    from datetime import timezone
+
     from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
 
     project = _make_attached_project(tmp_path)
-    old_mtime = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    old_mtime = datetime(2024, 1, 1, tzinfo=UTC)
 
     # Pre-seed ledger with a digested entry (same mtime as handle → no-new-turns).
     ledger = TranscriptLedger(project)
@@ -816,7 +683,6 @@ def no_subprocess(monkeypatch):
 
 
 CURATOR_PARAMS = [
-    pytest.param("a", id="curator-a"),
     pytest.param("transcripts", id="transcripts"),
 ]
 
@@ -828,12 +694,8 @@ def _stamp_path(lore_root: Path, role: str) -> Path:
 
 
 def _invoke_spawn(role: str, lore_root: Path, cooldown_s: int) -> bool:
-    from lore_cli.hooks import (
-        _spawn_detached_curator_a,
-        _spawn_detached_transcript_sync,
-    )
-    if role == "a":
-        return _spawn_detached_curator_a(lore_root, cooldown_s=cooldown_s)
+    from lore_cli.hooks import _spawn_detached_transcript_sync
+
     return _spawn_detached_transcript_sync(lore_root, cooldown_s=cooldown_s)
 
 
@@ -921,6 +783,7 @@ def test_capture_does_not_write_to_real_lore_root(tmp_path, monkeypatch) -> None
     import json
     import os
     from pathlib import Path
+
     from lore_cli.hooks import capture
 
     real_lore_root = os.environ.get("LORE_ROOT", "")
@@ -1032,214 +895,6 @@ def _make_two_wiki_lore_root(
     af.save()
 
     return lore_root, proj_a, proj_b
-
-
-def test_capture_spawns_when_any_wiki_crosses_threshold(
-    tmp_path: Path, fake_adapter_factory, monkeypatch
-) -> None:
-    """One wiki (alpha, threshold=2 turns) has 2 turns pending; other (beta, threshold=10) has 0.
-    The capture hook runs in proj_b's cwd but must still spawn because alpha crosses.
-
-    Uses event=session-start so the test exercises the threshold-gate path
-    rather than the session-end force_eos path (which spawns regardless).
-    """
-    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
-        tmp_path, alpha_threshold=2, beta_threshold=10
-    )
-
-    ledger = TranscriptLedger(lore_root)
-    # Two pending entries for alpha — each with 1 turn so the wiki sums to 2.
-    for i in range(2):
-        ledger.upsert(
-            TranscriptLedgerEntry(
-                integration="fake",
-                transcript_id=f"a{i}",
-                path=proj_a / f"a{i}.jsonl",
-                directory=proj_a,
-                digested_hash=None,
-                digested_index_hint=None,
-                synthesised_hash=None,
-                last_mtime=_now(),
-                curator_a_run=None,
-                noteworthy=None,
-                session_note=None,
-                total_turns=1,
-            )
-        )
-
-    # Capture fires in proj_b — its own wiki (beta) is below its threshold.
-    handle = _make_handle(proj_b, transcript_id="b1")
-    fake_adapter_factory([handle])
-
-    spawn_calls: list[Path] = []
-    monkeypatch.setattr(
-        "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
-    )
-
-    result = runner.invoke(
-        hook_app,
-        ["capture", "--event", "session-start", "--cwd", str(proj_b), "--integration", "fake"],
-        env={"LORE_ROOT": str(lore_root)},
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0, result.output
-    assert len(spawn_calls) == 1, (
-        "Expected spawn because alpha crossed its threshold, even though the "
-        "hook's cwd was proj_b."
-    )
-
-
-def test_capture_no_spawn_when_no_wiki_crosses_its_threshold(
-    tmp_path: Path, fake_adapter_factory, monkeypatch
-) -> None:
-    """Neither wiki crosses its per-wiki turns threshold → no spawn, even
-    with multiple pending entries globally.
-
-    Uses event=session-start so we exercise the gate rather than the
-    session-end force_eos path. Each seeded entry has total_turns=1 and
-    fresh mtime, keeping the age fallback well below default 600s.
-    """
-    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
-        tmp_path, alpha_threshold=5, beta_threshold=5
-    )
-
-    ledger = TranscriptLedger(lore_root)
-    for i in range(3):
-        ledger.upsert(
-            TranscriptLedgerEntry(
-                integration="fake",
-                transcript_id=f"a{i}",
-                path=proj_a / f"a{i}.jsonl",
-                directory=proj_a,
-                digested_hash=None,
-                digested_index_hint=None,
-                synthesised_hash=None,
-                last_mtime=_now(),
-                curator_a_run=None,
-                noteworthy=None,
-                session_note=None,
-                total_turns=1,
-            )
-        )
-    # Add 3 to beta — 3 turns each side, neither crosses 5.
-    for i in range(3):
-        ledger.upsert(
-            TranscriptLedgerEntry(
-                integration="fake",
-                transcript_id=f"b{i}",
-                path=proj_b / f"b{i}.jsonl",
-                directory=proj_b,
-                digested_hash=None,
-                digested_index_hint=None,
-                synthesised_hash=None,
-                last_mtime=_now(),
-                curator_a_run=None,
-                noteworthy=None,
-                session_note=None,
-                total_turns=1,
-            )
-        )
-
-    handle = _make_handle(proj_a, transcript_id="new1")
-    fake_adapter_factory([handle])
-
-    spawn_calls: list[Path] = []
-    monkeypatch.setattr(
-        "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
-    )
-
-    result = runner.invoke(
-        hook_app,
-        ["capture", "--event", "session-start", "--cwd", str(proj_a), "--integration", "fake"],
-        env={"LORE_ROOT": str(lore_root)},
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0, result.output
-    assert len(spawn_calls) == 0, (
-        "No single wiki crossed its threshold — global pending (6) must "
-        "not trigger a spawn."
-    )
-
-
-def test_capture_threshold_zero_empty_wiki_does_not_spawn(
-    tmp_path: Path, fake_adapter_factory, monkeypatch
-) -> None:
-    """Guard the edge case: threshold_pending_turns=0 AND wiki empty → no spawn.
-    Without the empty-bucket guard, ``0 >= 0`` would incorrectly trip."""
-    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
-        tmp_path, alpha_threshold=0, beta_threshold=10
-    )
-
-    # No pending entries anywhere. Adapter returns nothing either (empty list).
-    fake_adapter_factory([])
-
-    spawn_calls: list[Path] = []
-    monkeypatch.setattr(
-        "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
-    )
-
-    result = runner.invoke(
-        hook_app,
-        ["capture", "--event", "session-start", "--cwd", str(proj_a), "--integration", "fake"],
-        env={"LORE_ROOT": str(lore_root)},
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0, result.output
-    assert len(spawn_calls) == 0, "Empty wiki with threshold=0 must not spawn."
-
-
-def test_capture_session_end_force_spawns_below_threshold(
-    tmp_path: Path, fake_adapter_factory, monkeypatch
-) -> None:
-    """Handover guarantee: session-end with pending > 0 must spawn even when
-    no wiki crosses the gate. Otherwise short sessions leave work stranded
-    waiting for the next session-start to cross threshold."""
-    lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
-        tmp_path, alpha_threshold=100, beta_threshold=100
-    )
-
-    ledger = TranscriptLedger(lore_root)
-    ledger.upsert(
-        TranscriptLedgerEntry(
-            integration="fake",
-            transcript_id="a0",
-            path=proj_a / "a0.jsonl",
-            directory=proj_a,
-            digested_hash=None,
-            digested_index_hint=None,
-            synthesised_hash=None,
-            last_mtime=_now(),
-            curator_a_run=None,
-            noteworthy=None,
-            session_note=None,
-            total_turns=1,  # well below threshold of 100
-        )
-    )
-
-    handle = _make_handle(proj_a, transcript_id="new1")
-    fake_adapter_factory([handle])
-
-    spawn_calls: list[Path] = []
-    monkeypatch.setattr(
-        "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
-    )
-
-    result = runner.invoke(
-        hook_app,
-        ["capture", "--event", "session-end", "--cwd", str(proj_a), "--integration", "fake"],
-        env={"LORE_ROOT": str(lore_root)},
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0, result.output
-    assert len(spawn_calls) == 1, (
-        "session-end with any pending must force-spawn regardless of gate."
-    )
-
-
 def test_capture_emits_pending_by_wiki_in_hook_event(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:
@@ -1271,10 +926,6 @@ def test_capture_emits_pending_by_wiki_in_hook_event(
 
     handle = _make_handle(proj_b, transcript_id="b1")
     fake_adapter_factory([handle])
-    monkeypatch.setattr(
-        "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root, **kw: True,
-    )
 
     result = runner.invoke(
         hook_app,
@@ -1310,10 +961,6 @@ def test_capture_suppressed_by_env_flag_is_full_noop(
     fake_adapter_factory([handle])
 
     spawn_calls: list[Path] = []
-    monkeypatch.setattr(
-        "lore_cli.hooks._spawn_detached_curator_a",
-        lambda lore_root, **kw: (spawn_calls.append(lore_root), True)[-1],
-    )
 
     result = runner.invoke(
         hook_app,

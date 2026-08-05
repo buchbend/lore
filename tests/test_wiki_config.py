@@ -14,9 +14,6 @@ class TestWikiConfigDefaults:
         assert cfg.git.auto_commit is False
         assert cfg.git.auto_push is False
         assert cfg.git.auto_pull is True
-        assert cfg.curator.threshold_pending_turns == 30
-        assert cfg.curator.max_pending_age_s == 600
-        assert cfg.curator.a_noteworthy_tier == "middle"
         assert cfg.models.simple == "claude-haiku-4-5"
         assert cfg.models.middle == "claude-sonnet-4-6"
         assert cfg.models.high == "claude-opus-4-7"
@@ -25,34 +22,6 @@ class TestWikiConfigDefaults:
         assert cfg.briefing.sinks == []
         assert cfg.breadcrumb.mode == "normal"
         assert cfg.breadcrumb.scope_filter is True
-        # Buffer-and-flush curator defaults (plan: very-good-thats-the-mossy-lobster).
-        assert cfg.curator.synthesis_buffer_cap_turns == 120
-        assert cfg.curator.synthesis_buffer_cap_chars == 240_000
-        assert cfg.curator.synthesis_flush_timeout_s == 25
-        assert cfg.curator.synthesis_model_tier == "middle"
-        assert cfg.curator.reaper_max_per_pass == 5
-        assert cfg.curator.buffer_done_retention_days == 14
-        assert cfg.curator.liveness_stale_threshold_s == 1800
-
-
-class TestBufferFlushOverrides:
-    """Local-LLM users will shrink the cap downward; verify the override path."""
-
-    def test_local_llm_cap_override(self, tmp_path: Path):
-        config_file = tmp_path / ".lore-wiki.yml"
-        config_file.write_text(
-            "curator:\n"
-            "  synthesis_buffer_cap_turns: 40\n"
-            "  synthesis_buffer_cap_chars: 80000\n"
-            "  synthesis_model_tier: simple\n"
-        )
-        cfg = load_wiki_config(tmp_path)
-        assert cfg.curator.synthesis_buffer_cap_turns == 40
-        assert cfg.curator.synthesis_buffer_cap_chars == 80_000
-        assert cfg.curator.synthesis_model_tier == "simple"
-        # Other curator defaults preserved.
-        assert cfg.curator.threshold_pending_turns == 30
-        assert cfg.curator.reaper_max_per_pass == 5
 
 
 class TestWikiConfigPartialMerge:
@@ -65,7 +34,6 @@ class TestWikiConfigPartialMerge:
         assert cfg.git.auto_commit is False  # default preserved
         assert cfg.git.auto_pull is True
         # All other sections fully default
-        assert cfg.curator.threshold_pending_turns == 30
         assert cfg.models.simple == "claude-haiku-4-5"
 
 
@@ -160,8 +128,8 @@ class TestWikiConfigWriteBack:
         from lore_core.wiki_config import get_field
 
         wiki = _fresh_wiki(tmp_path, "")
-        fi = get_field(wiki, "curator.threshold_pending_turns")
-        assert fi.value == 30
+        fi = get_field(wiki, "heartbeat.cooldown_s")
+        assert fi.value == 120
         assert fi.source == "default"
         assert fi.type_name == "int"
 
@@ -205,25 +173,25 @@ class TestWikiConfigWriteBack:
         from lore_core.wiki_config import get_field, set_field, unset_field
 
         wiki = _fresh_wiki(tmp_path, "")
-        set_field(wiki, "curator.threshold_pending_turns", "5")
-        assert get_field(wiki, "curator.threshold_pending_turns").value == 5
-        fi = unset_field(wiki, "curator.threshold_pending_turns")
-        assert fi.value == 30
-        assert get_field(wiki, "curator.threshold_pending_turns").value == 30
+        set_field(wiki, "heartbeat.cooldown_s", "5")
+        assert get_field(wiki, "heartbeat.cooldown_s").value == 5
+        fi = unset_field(wiki, "heartbeat.cooldown_s")
+        assert fi.value == 120
+        assert get_field(wiki, "heartbeat.cooldown_s").value == 120
 
     def test_unset_field_noop_when_not_set(self, tmp_path: Path) -> None:
         from lore_core.wiki_config import unset_field
 
         wiki = _fresh_wiki(tmp_path, "")
-        fi = unset_field(wiki, "curator.threshold_pending_turns")
-        assert fi.value == 30
+        fi = unset_field(wiki, "heartbeat.cooldown_s")
+        assert fi.value == 120
 
     def test_schema_tree_covers_all_leaves(self) -> None:
         from lore_core.wiki_config import schema_tree
 
         paths = {p for p, _, _, _ in schema_tree()}
         assert "git.auto_commit" in paths
-        assert "curator.threshold_pending_turns" in paths
+        assert "heartbeat.cooldown_s" in paths
         assert "models.simple" in paths
         assert "briefing.audience" in paths
         assert "heartbeat.enabled" in paths

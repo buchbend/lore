@@ -98,16 +98,16 @@ def test_attach_remove_is_noop_without_section(tmp_path: Path) -> None:
 
 # ---- `lore migrate` one-shot upgrade verbs ----
 
-@pytest.mark.parametrize("verb", ["frontmatter", "slugs", "open-items"])
+@pytest.mark.parametrize("verb", ["frontmatter", "open-items"])
 def test_migrate_exposes_upgrade_verb(verb: str) -> None:
     migrate = _root().commands["migrate"]
     assert verb in migrate.commands
 
 
-def test_curator_backfill_slugs_entry_point_gone() -> None:
-    """The one-shot slug rename moved to `lore migrate slugs`."""
-    curator = _root().commands["curator"]
-    assert "backfill-slugs" not in curator.commands
+def test_migrate_slugs_verb_is_gone() -> None:
+    """The slug rename only ever renamed session notes, which no longer exist."""
+    migrate = _root().commands["migrate"]
+    assert "slugs" not in migrate.commands
 
 
 def test_curator_migrate_open_items_flag_gone() -> None:

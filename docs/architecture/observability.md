@@ -245,9 +245,6 @@ janitor pass.
 
 - [PRD 0005](../prd/0005-onboarding-config-observability.md) — the full
   problem statement and every implementation decision.
-- [`session-note-lifecycle.md`](session-note-lifecycle.md) — "How
-  failures surface" ties the state machine above to what a reader
-  actually sees when a note doesn't appear.
 - [`state.md`](state.md) — concurrency guarantees shared with the spine,
   and the three state files this doc doesn't cover (`_scopes.yml`,
   `scopes.json`, `attachments.json`).

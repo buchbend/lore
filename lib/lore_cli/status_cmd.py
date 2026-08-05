@@ -280,8 +280,7 @@ def _wikis_lines(lore_root: Path, offline: bool) -> list[str]:
 # flags section — per-wiki counters from the flag spine (#360)
 #
 # The flag is the crossing from a private session to the team wiki, and the
-# only one left once the teardown retires the compose pipeline (PRD 0011);
-# under-flagging is invisible without this. Reads only —
+# only one (PRD 0011); under-flagging is invisible without this. Reads only —
 # lore_core.flag_metrics aggregates flag.py's own spine events plus
 # flag.count_pending (never reconstructed, ADR 0008).
 # ---------------------------------------------------------------------------

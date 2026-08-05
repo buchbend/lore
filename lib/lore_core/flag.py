@@ -3,9 +3,8 @@
 A flag is the deliberate path from a working session to the team
 surface: an agent files one team-relevant fact the moment it appears,
 and Lore appends it to the owning topic note straight away, marked
-unreviewed (``docs/adr/0008``). It becomes the only path once the
-teardown retires the session-note compose pipeline, which still writes
-into the wiki today. Nothing here composes, summarises or judges — the
+unreviewed (``docs/adr/0008``). It is the only path: lore writes nothing
+else into a wiki from a session. Nothing here composes, summarises or judges — the
 caller supplies a lead sentence and a short body, and every word around
 them is written by code.
 

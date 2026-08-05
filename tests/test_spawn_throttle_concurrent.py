@@ -48,10 +48,10 @@ def _worker_spawn_attempt(lore_root_str: str, barrier_id: int, results_q, barrie
             popen_call_count[0] += 1
 
     with patch("subprocess.Popen", FakePopen):
-        from lore_cli.hooks import _spawn_detached_curator_a
+        from lore_cli.hooks import _spawn_detached_transcript_sync
 
         barrier.wait(timeout=10)  # sync all children to the gate
-        spawned = _spawn_detached_curator_a(Path(lore_root_str), cooldown_s=60)
+        spawned = _spawn_detached_transcript_sync(Path(lore_root_str), cooldown_s=60)
 
     results_q.put((barrier_id, spawned, popen_call_count[0]))
 
@@ -65,7 +65,7 @@ def _worker_acquire_and_crash(lore_root_str: str, ready_file_str: str) -> None:
     """
     from lore_core.lockfile import try_acquire_spawn_lock
 
-    cm = try_acquire_spawn_lock(Path(lore_root_str), "a")
+    cm = try_acquire_spawn_lock(Path(lore_root_str), "transcripts")
     held, _stamp = cm.__enter__()
     # Synchronous file write (fsync for paranoia) so the parent sees the signal
     # even though os._exit skips Python cleanup.
@@ -162,7 +162,7 @@ def test_stale_lock_reclaimed_after_spawner_crash(tmp_path: Path) -> None:
 
     from lore_core.lockfile import try_acquire_spawn_lock
 
-    with try_acquire_spawn_lock(lore_root, "a") as (held, _stamp):
+    with try_acquire_spawn_lock(lore_root, "transcripts") as (held, _stamp):
         assert held, "parent should immediately acquire the lock after child's crash"
 
 
@@ -171,13 +171,13 @@ def test_cooldown_blocks_second_call_within_window(tmp_path: Path, monkeypatch) 
     lore_root = _make_lore_root(tmp_path)
 
     from unittest.mock import patch
-    from lore_cli.hooks import _spawn_detached_curator_a
+    from lore_cli.hooks import _spawn_detached_transcript_sync
 
     with patch("subprocess.Popen"):
-        first = _spawn_detached_curator_a(lore_root, cooldown_s=60)
+        first = _spawn_detached_transcript_sync(lore_root, cooldown_s=60)
         assert first is True, "first call should spawn"
 
-        second = _spawn_detached_curator_a(lore_root, cooldown_s=60)
+        second = _spawn_detached_transcript_sync(lore_root, cooldown_s=60)
         assert second is False, "second call within cooldown must NOT spawn"
 
 
@@ -190,10 +190,10 @@ def test_cooldown_expired_allows_spawn(tmp_path: Path) -> None:
     stamp.write_text(f"{time.time() - 7200:.6f}")
 
     from unittest.mock import patch
-    from lore_cli.hooks import _spawn_detached_curator_a
+    from lore_cli.hooks import _spawn_detached_transcript_sync
 
     with patch("subprocess.Popen") as popen:
-        result = _spawn_detached_curator_a(lore_root, cooldown_s=60)
+        result = _spawn_detached_transcript_sync(lore_root, cooldown_s=60)
         assert result is True, "expired cooldown must allow spawn"
         assert popen.call_count == 1
 
@@ -208,45 +208,13 @@ def test_spawn_failure_releases_lock(tmp_path: Path) -> None:
     lore_root = _make_lore_root(tmp_path)
 
     from unittest.mock import patch
-    from lore_cli.hooks import _spawn_detached_curator_a
+    from lore_cli.hooks import _spawn_detached_transcript_sync
 
     with patch("subprocess.Popen", side_effect=OSError("fake spawn failure")):
-        result = _spawn_detached_curator_a(lore_root, cooldown_s=60)
+        result = _spawn_detached_transcript_sync(lore_root, cooldown_s=60)
         assert result is False
 
     # Lock must be released — we can acquire it now.
     from lore_core.lockfile import try_acquire_spawn_lock
-    with try_acquire_spawn_lock(lore_root, "a") as (held, _stamp):
+    with try_acquire_spawn_lock(lore_root, "transcripts") as (held, _stamp):
         assert held, "lock should be released after spawn failure"
-
-
-def test_legacy_stamp_migration_unlinks_old_files(tmp_path: Path) -> None:
-    """Pre-existing last-curator-a-spawn file gets unlinked on first spawn."""
-    lore_root = _make_lore_root(tmp_path)
-    legacy = lore_root / ".lore" / "last-curator-a-spawn"
-    legacy.write_text(f"{time.time():.6f}")
-    assert legacy.exists()
-
-    from unittest.mock import patch
-    from lore_cli.hooks import _spawn_detached_curator_a
-
-    with patch("subprocess.Popen"):
-        _spawn_detached_curator_a(lore_root, cooldown_s=60)
-
-    assert not legacy.exists(), "legacy stamp must be unlinked after first new-throttle spawn"
-
-
-def test_per_role_locks_are_independent(tmp_path: Path) -> None:
-    """Curator A lock does not block a transcript-sync spawn, and vice versa."""
-    lore_root = _make_lore_root(tmp_path)
-
-    from unittest.mock import patch
-    from lore_cli.hooks import _spawn_detached_curator_a, _spawn_detached_transcript_sync
-
-    with patch("subprocess.Popen") as popen:
-        a_result = _spawn_detached_curator_a(lore_root, cooldown_s=60)
-        transcripts_result = _spawn_detached_transcript_sync(lore_root, cooldown_s=60)
-
-    assert a_result is True
-    assert transcripts_result is True
-    assert popen.call_count == 2, "both roles should have independently spawned"

@@ -3,6 +3,14 @@
 **Audience:** contributors extending `gather()`, `render_briefing()`, or
 `compose_briefing_prose()` in `lore_core/briefing/`.
 
+> **Status: parked.** The chain below has session notes as its middle
+> stage, and the compose pipeline that wrote them retired in `#361`.
+> `gather()` still reads `<wiki>/sessions/`, so it now sees only what a
+> human files there. What a briefing should read instead — the transcript
+> ledger, accepted flags, or something else — is an open decision, not
+> something this page should guess. PRD 0011 parks briefings pending it.
+> Everything below describes the code as it stands.
+
 ## The drill-down chain
 
 A briefing is not a standalone artifact — it's the entry point of a
@@ -25,7 +33,8 @@ enough to know "what's Alice been doing on epic #162."
 The chain only holds together if each stage carries pointers to the
 next one. Session notes already carry `linkage` frontmatter (`author`,
 `repo`, `branch`, `issues`, `prs`, `epics` — see
-[[session-note-lifecycle]] and `lore_core/linkage.py`). `gather()`
+`lore_core/linkage.py`). The transcript ledger carries an equivalent
+block, stamped by capture with no LLM call. `gather()`
 (`lore_core/briefing/gather.py`) passes that `linkage` dict through
 verbatim on every entry, plus an optional `epic` filter so a caller can
 scope gather to one epic's sessions directly.
