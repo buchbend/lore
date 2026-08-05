@@ -356,6 +356,22 @@ def _check_mcp_imports(cwd: str) -> Check:
         schema = lore_mcp.server._tool_schema()  # noqa: SLF001
     except Exception as e:
         return False, f"MCP server import/schema failed: {e}"
+
+    # A schema that builds does not mean the server can start. `start_server`
+    # registers its handlers through decorators that exist on the mcp 1.x
+    # Server only; 2.0 replaced them with add_request_handler. Without this
+    # check the panel reports "ready" for an install where every tool is dead.
+    try:
+        from mcp.server import Server
+    except Exception as e:
+        return False, f"mcp.server import failed: {e}"
+    missing = [n for n in ("list_tools", "call_tool") if not hasattr(Server, n)]
+    if missing:
+        return False, (
+            f"incompatible mcp release: Server has no {', '.join(missing)} — "
+            f"the server raises AttributeError at startup. Needs mcp<2."
+        )
+
     return True, f"MCP server ready ({len(schema)} tools)"
 
 
