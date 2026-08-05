@@ -326,3 +326,28 @@ Terms used in the workflow layer and orchestration:
   section, landing as one PR, with no ordering dependency between the
   changes. A change that needs its own context, or that must land before
   another, leaves the batch.
+
+### Flag architecture
+
+Ratified 2026-08-05 (ADR 0007–0009, PRD 0010); implementation pending.
+Until the teardown lands, the session-note sections above still describe
+the shipped code.
+
+- **Flag** — one team-relevant fact an agent files during a session: a
+  lead sentence, a short body, and an origin line. The only LLM-authored
+  content that enters a wiki. Say "flag", not "gem" or "prospect".
+- **Origin line** — the deterministic attribution line on a flag block:
+  author, date, code-verified refs, transcript pointer. A flag without an
+  origin line is invalid.
+- **Unreviewed marker** — the token that ends an origin line until a
+  human reviews the flag. The review walk removes the token on accept.
+- **Review walk** — the pull-based pass over unreviewed flags
+  (`lore flag review`): accept, retarget, decline, or skip. The banner
+  shows only a count of pending flags.
+- **Transcript ledger** — the machine-format store that maps each session
+  to repo, branch, PRs, issues, commits, files, and transcript id
+  (`.lore/transcript-ledger.json`). Derived and rebuildable. Say
+  "transcript ledger", not "breadcrumb ledger".
+- **Context finder** — Lore's retrieval role: the tools that find where
+  context lives and pull it in (`lore_search`, `lore_drill`, context
+  pack, codemap, repo docs). Say "context finder", not "funnel".
