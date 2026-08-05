@@ -206,7 +206,7 @@ last day the ledger saw work, its session count and its repos. Line two
 names the branches those sessions ran on. Line three names the issue and
 PR numbers they touched. The recap replaced the last-session note hints.
 Freshness lines join the banner only when there is positive evidence
-(see below). A fixed two-line directive closes the banner
+(see below). A fixed directive closes the banner
 (`lore_core/templates/integration-rules/default.md`). The directive
 states that deeper context is a pull, never a push. It also states that
 anything pulled from a session note is a lab record, never an
