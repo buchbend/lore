@@ -8,6 +8,84 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.68.0] - 2026-08-05
+
+Retires the session-note compose pipeline (#361), completing epic #362 and
+PRD 0011. The flag is now the only crossing from a private session to the
+team wiki. A session leaves a transcript-ledger entry and whatever flags an
+agent deliberately filed — nothing else, and no model call at the boundary.
+
+Also fixes an MCP server that could not start on any fresh install.
+
+### Removed
+
+- **The compose pipeline.** The Curator A driver, typed-fact extraction,
+  session segmentation, chapter flush, note render and filing, the buffer
+  store and its append path, the reaper, the startup sweep, the slug-backfill
+  migration, and the auto-commit hook the compose path alone used. Session
+  end now registers the transcript and stops: no note, no subprocess, no LLM
+  call.
+- **`lore curator run`, `flush`, `reap` and `sweep`.** Bare `lore curator`
+  keeps the deterministic frontmatter-only hygiene pass. `lore migrate slugs`
+  goes too — it only ever renamed session-note files.
+- **The per-wiki `curator:` config block.** Every knob in it tuned the
+  pipeline: `threshold_pending_turns`, `max_pending_age_s`,
+  `a_noteworthy_tier`, `curator_a_cooldown_s`, `synthesis_buffer_cap_turns`,
+  `synthesis_buffer_cap_chars`, `synthesis_flush_timeout_s`,
+  `synthesis_model_tier`, `reaper_max_per_pass`,
+  `buffer_done_retention_days`, `liveness_stale_threshold_s`. **A
+  `.lore-wiki.yml` still carrying the block is not an error**: lore warns
+  once for the block and loads the rest of the file unchanged. Remove the
+  block at your convenience. `curator.backend` is a root-config setting and
+  is untouched.
+- **The publish gate's injection seam.** `Gate`, `PassThroughGate` and
+  `PublishGate` existed so the chapter composer could be handed a gate.
+  `lore_core.flag` is the only caller left and calls `evaluate` directly.
+  The gate's scanners and its fail-closed contract are unchanged.
+- **`SessionFacts.session_hints`** and the session-note freshness audit
+  beside it. Both scanned a directory capture no longer fills. The
+  last-active-day recap already replaced what they showed.
+
+### Fixed
+
+- **The MCP server could not start on a fresh install.** `pyproject.toml`
+  declared `mcp>=1.0` with no ceiling. mcp 2.0 removed the
+  `@server.list_tools()` and `@server.call_tool()` decorators
+  `lore_mcp.server` registers through, so a fresh resolve produced a server
+  that raised `AttributeError` at startup and took all 13 tools with it,
+  `lore_flag` included. Existing environments kept a working 1.x, so CI
+  never saw it. Now capped at `mcp>=1.0,<2`.
+- **`lore doctor` reported "MCP server ready" for a dead server.** The check
+  imported the module and built the tool schema without ever touching the
+  `Server` class. It now verifies the decorators the module binds to and
+  names an incompatible release.
+
+### Changed
+
+- **`lore doctor`'s pending check** reports a count of registered
+  transcripts per wiki instead of a spawn verdict. Nothing consumes the
+  pending set now, so there is no gate to be waiting on.
+- **Capture is silent on success.** The session-end breadcrumb had a
+  "below threshold (pending N/T)" form; there is no threshold.
+- **Docs to the shipped state.** CONTEXT.md's behaviour sections rewritten,
+  including the same-person multi-machine limit (ADR 0009): a flag and its
+  pending state travel with the wiki repo, the transcript behind it does
+  not, so the pointer resolves only on the machine that captured the
+  session. `explanation/why-notes-are-written-at-session-end.md` and
+  `architecture/session-note-lifecycle.md` are deleted; ADR 0007 and
+  "why one flag, and not a session note" carry the reasoning.
+  `architecture/briefing-compression-channel.md` is marked **parked** — its
+  drill-down chain has session notes as its middle stage, and what a
+  briefing should read instead is an open decision.
+
+### Upgrading
+
+`lore migrate retire-session-notes --apply` deletes the session notes
+earlier releases wrote, after backfilling each transcript's linkage block.
+The deletion is now final — nothing refills `sessions/`. Read anything you
+want to keep first: the backfill reads git and the transcript, never the
+note prose.
+
 ## [0.67.0] - 2026-08-05
 
 Retires the session-note pipeline's readers and adds the flag, the one crossing
