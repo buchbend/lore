@@ -375,9 +375,11 @@ class TranscriptLedger:
 
 
 #: A query token routes to the ledger when it looks like a path — it
-#: carries a directory separator or a file extension. Numeric refs are
-#: classified separately by ``lore_core.linkage.classify_refs``.
-_PATHISH_RE = re.compile(r"[\w./~-]*(?:/[\w.-]+|\.[A-Za-z]{1,5})\b")
+#: carries a directory separator, or an extension of two-plus letters.
+#: Two-plus keeps prose abbreviations ("e.g.", "i.e.") from costing a
+#: ledger parse and a spine event on an ordinary topical query. Numeric
+#: refs are classified separately by ``lore_core.linkage.classify_refs``.
+_PATHISH_RE = re.compile(r"[\w./~-]*(?:/[\w.-]+|\.[A-Za-z]{2,5})\b")
 
 
 def find_sessions(

@@ -136,3 +136,12 @@ def test_drill_cli_prints_the_transcript_pointers(
     assert "t-ledger" in out
     assert "feat/358-ledger" in out
     assert "2026-08-04" in out
+
+
+def test_prose_abbreviations_do_not_route_to_the_ledger(tmp_path: Path) -> None:
+    """"e.g." is not a filename. A single-letter suffix must not cost a
+    ledger parse and a spine event on an ordinary topical query."""
+    _seed(tmp_path)
+
+    assert find_sessions(tmp_path, "the retry policy, e.g. the backoff") == []
+    assert [r for r in read_spine(tmp_path) if r["event"] == "ledger-query"] == []
