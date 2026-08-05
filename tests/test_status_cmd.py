@@ -169,14 +169,14 @@ def _invoke(lore_root: Path, cwd: Path | None, *extra: str, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_dashboard_renders_six_sections(tmp_path: Path, monkeypatch) -> None:
+def test_dashboard_renders_seven_sections(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
     _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
 
     result = _invoke(lore_root, project, "--plain", monkeypatch=monkeypatch)
     out = result.output
 
-    for header in ("capture", "flushes", "wikis", "retention", "news", "alerts"):
+    for header in ("capture", "flushes", "wikis", "flags", "retention", "news", "alerts"):
         assert f"\n{header}\n" in out or out.startswith(header + "\n") or f"\n{header} " in out, (
             f"missing section header {header!r} in:\n{out}"
         )
@@ -185,6 +185,8 @@ def test_dashboard_renders_six_sections(tmp_path: Path, monkeypatch) -> None:
         assert label in out, f"missing capture line {label!r} in:\n{out}"
     # Flushes counts line.
     assert "queued 0 · running 0 · dead-lettered 0" in out
+    # Flags counts line — empty vault, nothing written yet.
+    assert "written 0 · pending 0 · accepted 0 · declined 0" in out
     # No ANSI escapes leaked.
     assert "\x1b[" not in out
 
@@ -228,6 +230,75 @@ def test_flush_counts_reflect_store(tmp_path: Path, monkeypatch) -> None:
     # Last flush line reflects the most-recently-updated record (published, 10m).
     assert "Last flush" in out
     assert "published" in out
+
+
+# ---------------------------------------------------------------------------
+# Flags section (#360) — per-wiki flag counters
+# ---------------------------------------------------------------------------
+
+
+def _emit_flag(lore_root: Path, *, event: str, wiki: str = "private", **data) -> None:
+    from lore_core import flag
+    from lore_core.spine import SpineWriter
+
+    SpineWriter(lore_root).emit(source=flag.SPINE_SOURCE, event=event, wiki=wiki, data=data)
+
+
+def test_flags_section_shows_written_accepted_declined(tmp_path: Path, monkeypatch) -> None:
+    from lore_core import flag
+
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _emit_flag(lore_root, event=flag.EV_WRITE, outcome="written", flag_id="a")
+    _emit_flag(lore_root, event=flag.EV_WRITE, outcome="written", flag_id="b")
+    _emit_flag(lore_root, event=flag.EV_REVIEW, verdict="accept", flag_id="a")
+    _emit_flag(lore_root, event=flag.EV_REVIEW, verdict="decline", flag_id="b")
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
+    assert "flags" in out
+    assert "written 2 · pending 0 · accepted 1 · declined 1" in out
+
+
+def test_flags_section_shows_withheld_apart_from_written(tmp_path: Path, monkeypatch) -> None:
+    from lore_core import flag
+
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _emit_flag(lore_root, event=flag.EV_WRITE, outcome="written", flag_id="a")
+    _emit_flag(lore_root, event=flag.EV_WRITE, outcome="withheld", flag_id="b", category="email")
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
+    assert "written 1" in out
+    assert "1 withheld" in out
+
+
+def test_flags_pending_reflects_note_scan(tmp_path: Path, monkeypatch) -> None:
+    from lore_core import flag
+
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    (lore_root / "wiki" / "private" / "concepts").mkdir(parents=True)
+    written = flag.write(
+        "One fact.",
+        wiki="private",
+        target="concepts/topic.md",
+        transcript="tr-1",
+        author="claude",
+        now="2026-08-05",
+    )
+    flag.write(
+        "Another fact.",
+        wiki="private",
+        target="concepts/topic.md",
+        transcript="tr-2",
+        author="claude",
+        now="2026-08-05",
+    )
+    flag.accept(lore_root / "wiki" / "private", written.flag_id)
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
+    assert "pending 1" in out
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +495,8 @@ def test_json_mode(tmp_path: Path, monkeypatch) -> None:
     # v2 sections present.
     assert "flushes" in data
     assert "retention" in data
+    assert "flags" in data
+    assert data["flags"]["private"]["written"] == 0
 
 
 def test_help_mentions_status() -> None:
