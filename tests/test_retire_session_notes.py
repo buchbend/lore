@@ -212,43 +212,6 @@ def test_cli_with_apply_deletes(vault: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert result.exit_code == 0
     assert not (vault / "wiki" / "demo" / "sessions" / "2026" / "08" / "01-0900-thing.md").exists()
     assert TranscriptLedger(vault).get("claude-code", "t1").linkage["issues"] == [358]
-
-
-def test_help_says_capture_still_writes_new_notes() -> None:
-    """The verb deletes a stock that capture immediately starts refilling.
-
-    The compose pipeline keeps writing into `sessions/` at every session
-    boundary until the teardown lands, so a reader who does not know that
-    reads the deletion as final.
-    """
-    from lore_cli import migrate_cmd
-
-    result = CliRunner().invoke(migrate_cmd.app, ["retire-session-notes", "--help"])
-
-    assert result.exit_code == 0
-    flat = " ".join(result.output.split())
-    assert "Capture still writes new session notes" in flat
-
-
-def test_dry_run_footer_says_capture_still_writes_new_notes(
-    vault: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Same fact at the point of decision, not only in `--help`."""
-    from lore_cli import migrate_cmd
-
-    monkeypatch.setenv("LORE_ROOT", str(vault))
-    result = CliRunner().invoke(migrate_cmd.app, ["retire-session-notes"])
-
-    assert result.exit_code == 0
-    flat = " ".join(result.output.split())
-    assert "Capture still writes new session notes" in flat
-
-
-# ---------------------------------------------------------------------------
-# Containment — the delete path must never leave the vault
-# ---------------------------------------------------------------------------
-
-
 def test_a_symlinked_sessions_tree_is_never_walked_or_deleted(vault: Path, tmp_path: Path) -> None:
     """A `sessions/` symlink pointed outside the vault made the plan print
     the target's files under in-vault-looking paths, and `--apply` deleted

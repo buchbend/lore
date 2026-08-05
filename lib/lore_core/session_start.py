@@ -1,11 +1,11 @@
 """SessionStart context assembly — what Lore injects when a session opens.
 
-Gathers the facts (project note, recent session hints, pending verdicts) and
-renders the banner. Deliberately cheap: reads cached files the linter
-regenerates (``_index.txt``, ``_catalog.json``), no LLM, no network. The
-banner is ambient-minimal — status line, optional Focus block, a couple of
-session hints, freshness lines only on positive evidence, one directive.
-Depth is a pull (MCP), not a push.
+Gathers the facts (project note, last-active-day recap, pending verdicts and
+flags) and renders the banner. Deliberately cheap: reads cached files the
+linter regenerates (``_index.txt``, ``_catalog.json``) and the transcript
+ledger, no LLM, no network. The banner is ambient-minimal — status line,
+optional Focus block, the recap, one directive. Depth is a pull (MCP), not
+a push.
 
 Also holds the two SessionStart-adjacent decisions that read the world before
 the banner is built: the pending-``.lore.yml``-offer notice and the wiki
@@ -331,10 +331,8 @@ def render_session_banner(facts: SessionFacts) -> str:
     directive as a postscript — so users see what Lore did *first* and
     the rule re-assertion second.
 
-    The recap replaced the last-session note hints. Continuity now comes
-    from a store that costs no LLM call to write and survives the note
-    files being deleted. Capture still writes session notes until the
-    teardown retires that pipeline; the banner no longer reads them.
+    The recap replaced the last-session note hints. Continuity comes from
+    the transcript ledger, which costs no LLM call to write.
     """
     injected_bits: list[str] = []
     if facts.scope:
