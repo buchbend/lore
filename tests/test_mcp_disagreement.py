@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from textwrap import dedent
 
-from lore_core.session_start import filter_session_hints as _filter_session_hints
 from lore_core.verdicts_sidecar import set_confirmed
 from lore_mcp.server import handle_read, handle_search
 
@@ -52,59 +51,6 @@ def test_no_disagreement_field_when_no_conflict(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch, body)
     result = handle_read("concepts/n.md", wiki="demo")
     assert "disagreement" not in result["freshness"]
-
-
-def test_disagreement_excluded_from_inject_filter(tmp_path):
-    """Slice 3 + 9: a hit with disagreement is hard-excluded from inject."""
-    candidates = [
-        (
-            "stale-then-confirmed",
-            "title",
-            {
-                "status": "stale-candidate",
-                "cause": "authored_marker",
-                "reason": "marked stale",
-                "confirmed_at": "2026-05-05",
-                "disagreement": {
-                    "stale_by": "alice",
-                    "stale_at": "2026-05-01",
-                    "stale_reason": "X",
-                    "self_confirmed_at": "2026-05-05",
-                },
-            },
-        ),
-    ]
-    kept, audit_lines = _filter_session_hints(candidates, max_notes=2)
-    assert kept == []
-    assert any("excluded" in line for line in audit_lines)
-
-
-def test_disagreement_excluded_even_when_status_confirmed(tmp_path):
-    """When personal confirm suppresses to confirmed but disagreement
-    is set (because slice-9 detector saw the conflict), inject still
-    excludes — defer to team-stale until user resolves."""
-    candidates = [
-        (
-            "x",
-            "t",
-            {
-                "status": "confirmed",
-                "cause": "none",
-                "reason": None,
-                "confirmed_at": "2026-05-05",
-                "disagreement": {
-                    "stale_by": "alice",
-                    "stale_at": "2026-05-01",
-                    "stale_reason": "X",
-                    "self_confirmed_at": "2026-05-05",
-                },
-            },
-        ),
-    ]
-    kept, _ = _filter_session_hints(candidates, max_notes=2)
-    assert kept == []
-
-
 def test_handle_search_disagreement_surfaces_with_downrank(tmp_path, monkeypatch):
     body_dis = dedent("""\
         ---

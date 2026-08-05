@@ -140,49 +140,6 @@ def wiki_catalog(wiki_path: Path) -> dict | None:
         return None
 
 
-def last_session_hint_with_freshness(
-    wiki: Path, max_notes: int = 2
-) -> list[tuple[str, str, dict]]:
-    """Like :func:`last_session_hint` but also returns the freshness
-    block for each hit.
-
-    Used by the inject filter. The freshness block is computed via
-    :func:`lore_core.freshness.compute_freshness` against the parsed
-    frontmatter; the orphan-set is empty here and personal sidecars are out
-    of scope.
-    """
-    from lore_core.freshness import compute_freshness, signal_to_dict
-    from lore_core.schema import parse_frontmatter
-    from lore_core.session_writer import session_path_sort_key
-
-    sessions_dir = wiki / "sessions"
-    if not sessions_dir.is_dir():
-        return []
-
-    candidates = sorted(
-        (p for p in sessions_dir.rglob("*.md") if p.is_file() and not p.name.startswith("_")),
-        key=session_path_sort_key,
-        reverse=True,
-    )
-    results: list[tuple[str, str, dict]] = []
-    for path in candidates:
-        if len(results) >= max_notes:
-            break
-        try:
-            text = path.read_text(errors="replace")
-        except OSError:
-            continue
-        fm = parse_frontmatter(text)
-        if fm.get("type") != "session":
-            continue
-        hint = fm.get("title") or fm.get("description") or fm.get("summary")
-        if not hint:
-            continue
-        signal = compute_freshness(fm, path, wiki, None, set())
-        results.append((path.stem, hint, signal_to_dict(signal)))
-    return results
-
-
 def pending_verdict_chip(wiki: Path) -> str:
     """`· N pending verdict` chip text, or empty.
 
@@ -224,88 +181,6 @@ def pending_flag_chip(wiki: Path) -> str:
     if count <= 0:
         return ""
     return f"{count} pending flag" + ("" if count == 1 else "s")
-
-
-def filter_session_hints(
-    candidates: list[tuple[str, str, dict]], *, max_notes: int = 2
-) -> tuple[list[tuple[str, str]], list[str]]:
-    """Apply the freshness inject filter to session-hint candidates.
-
-    Hard-stale notes are excluded entirely; soft stale-candidates are
-    downranked (kept after confirmed peers). Returns the trimmed
-    ``(slug, hint)`` list and the audit-log lines for /lore:context.
-    """
-    from lore_core.freshness_filter import apply_inject_filter
-
-    result = apply_inject_filter(
-        candidates,
-        freshness_of=lambda c: c[2],
-        path_of=lambda c: c[0],
-        wiki_of=lambda _c: None,
-    )
-    kept = [(slug, hint) for slug, hint, _fr in result.kept[:max_notes]]
-    return kept, result.audit.render_lines()
-
-
-def last_session_hint(wiki: Path, max_notes: int = 2) -> list[tuple[str, str]]:
-    """Return (slug, status-line text) pairs for the most recent session notes.
-
-    The session layout is sharded ``sessions/<YYYY>/<MM>/<DD>-<slug>.md``
-    (and optionally team-mode-handle-shard
-    ``sessions/<handle>/<YYYY>/<MM>/<DD>-<slug>.md``), so we walk the
-    whole subtree with ``rglob`` and filter to date-prefixed filenames.
-
-    Status-line preference:
-
-    1. ``title`` — content-named, short. The session-note revision adds
-       this explicitly for SessionStart's status-line consumption.
-    2. ``description`` — short paragraph (revision form).
-    3. ``summary`` — back-compat for legacy notes that pre-date the
-       revision (where ``summary`` was the paragraph and ``description``
-       was the short headline).
-
-    Does not filter by user — any user's sessions are shown for
-    cross-user awareness.
-
-    Each candidate is read in full rather than capped at a byte prefix: on
-    real notes the ``source_transcripts`` block (with full SHA-256 hashes)
-    plus a long ``summary`` paragraph blows past any small cap, and the
-    status line silently goes empty. ``parse_frontmatter`` stops at the
-    closing ``---`` anyway.
-    """
-    from lore_core.schema import parse_frontmatter
-    from lore_core.session_writer import session_path_sort_key
-
-    sessions_dir = wiki / "sessions"
-    if not sessions_dir.is_dir():
-        return []
-
-    # Sort newest-first using the layout-aware sort key — handles both
-    # the new ``DD-HHMM-slug.md`` shape and legacy ``DD-slug.md`` (the
-    # latter sinks to the bottom of its day; see helper docstring).
-    candidates = sorted(
-        (p for p in sessions_dir.rglob("*.md") if p.is_file() and not p.name.startswith("_")),
-        key=session_path_sort_key,
-        reverse=True,
-    )
-    results: list[tuple[str, str]] = []
-    for path in candidates:
-        if len(results) >= max_notes:
-            break
-        try:
-            text = path.read_text(errors="replace")
-        except OSError:
-            continue
-        fm = parse_frontmatter(text)
-        if fm.get("type") != "session":
-            continue
-        # title (revision) → description (revision short form) → summary
-        # (legacy paragraph) — all three are valid status-line content.
-        hint = fm.get("title") or fm.get("description") or fm.get("summary")
-        if not hint:
-            continue
-        results.append((path.stem, hint))
-    return results
 
 
 def last_active_day_recap(lore_root: Path) -> tuple[str, ...]:
@@ -413,10 +288,6 @@ class SessionFacts:
     repo: str | None
     scope: str = ""
     project_entry: dict | None = None
-    #: Collected for the freshness audit only — the banner stopped
-    #: rendering note hints when the recap replaced them.
-    session_hints: tuple[tuple[str, str], ...] = ()
-    freshness_audit_lines: tuple[str, ...] = ()
     pending_chip: str | None = None
     flag_chip: str | None = None
     #: Last-active-day recap off the transcript ledger (≤3 lines).
@@ -435,10 +306,6 @@ def collect_session_facts(
     banner (agents fetch via gh, or a future MCP pull tool, on demand).
     """
     project_entry = project_note_for_repo(wiki, repo) if repo else None
-    session_hints_full = last_session_hint_with_freshness(wiki, max_notes=4)
-    session_hints, freshness_audit_lines = filter_session_hints(
-        session_hints_full, max_notes=2
-    )
     pending_chip = pending_verdict_chip(wiki) or None
     flag_chip = pending_flag_chip(wiki) or None
     # ``<lore_root>/wiki/<name>`` is the fixed vault layout, so the ledger
@@ -449,8 +316,6 @@ def collect_session_facts(
         repo=repo,
         scope=scope,
         project_entry=project_entry,
-        session_hints=tuple(session_hints),
-        freshness_audit_lines=tuple(freshness_audit_lines),
         pending_chip=pending_chip,
         flag_chip=flag_chip,
         recap=recap,
@@ -504,10 +369,6 @@ def render_session_banner(facts: SessionFacts) -> str:
 
     if facts.recap:
         parts.extend(facts.recap)
-        parts.append("")
-
-    if facts.freshness_audit_lines:
-        parts.extend(facts.freshness_audit_lines)
         parts.append("")
 
     parts.extend(load_directive_lines())

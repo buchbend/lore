@@ -99,7 +99,6 @@ def test_collect_session_facts_picks_up_scope_and_latest_session(tmp_path: Path)
     assert facts.repo is None
     assert facts.scope == "demo:proj"
     assert facts.project_entry is None
-    assert facts.session_hints == (("01-0900-a", "did a thing"),)
 
 
 def test_collect_session_facts_resolves_project_note_by_repo(tmp_path: Path) -> None:
@@ -111,26 +110,10 @@ def test_collect_session_facts_resolves_project_note_by_repo(tmp_path: Path) -> 
     facts = collect_session_facts(wiki, "org/repo")
     assert facts.project_entry is not None
     assert facts.project_entry["name"] == "proj"
-
-
-def test_collect_session_facts_caps_hints_at_two(tmp_path: Path) -> None:
-    wiki = _wiki_with_session(tmp_path, title="t")
-    sess = wiki / "sessions" / "2026" / "05"
-    for i in range(2, 6):
-        (sess / f"0{i}-0900-s{i}.md").write_text(
-            f"---\ntype: session\ntitle: t{i}\n---\n\nb\n"
-        )
-    facts = collect_session_facts(wiki, None)
-    assert len(facts.session_hints) == 2
-    # newest first
-    assert facts.session_hints[0][0] == "05-0900-s5"
-
-
 def test_collect_session_facts_on_empty_wiki(tmp_path: Path) -> None:
     wiki = tmp_path / "wiki" / "demo"
     wiki.mkdir(parents=True)
     facts = collect_session_facts(wiki, None)
-    assert facts.session_hints == ()
     assert facts.project_entry is None
     assert facts.pending_chip is None
 
