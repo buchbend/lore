@@ -294,5 +294,4 @@ def _run_route(tmp_path: Path, capture_routing, *, event: str) -> None:
         event=event,
         adapter=_FakeAdapter([]),
         transcript=None,
-        spawn_curator_a=lambda *a, **kw: False,
     )

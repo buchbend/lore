@@ -29,7 +29,6 @@ from pathlib import Path
 
 from lore_core.spine import ErrorCode, emit_hook_event
 
-
 # ---------------------------------------------------------------------------
 # Stamp primitives — used by spawn cooldowns AND the heartbeat throttles in
 # ``hooks.py`` (re-imported there).
@@ -60,30 +59,6 @@ def _write_stamp(stamp: Path) -> None:
 # ---------------------------------------------------------------------------
 # Process / log / sidecar machinery
 # ---------------------------------------------------------------------------
-
-
-def _migrate_legacy_spawn_stamp(lore_root: Path, role: str) -> None:
-    """Unlink the pre-flock stamp file if present; log to the spine on failure."""
-    old = lore_root / ".lore" / f"last-curator-{role}-spawn"
-    try:
-        old.unlink()
-    except FileNotFoundError:
-        return
-    except OSError as exc:
-        try:
-            emit_hook_event(
-                lore_root,
-                event="spawn-throttle",
-                outcome="warning",
-                error_code=ErrorCode.SPAWN_STAMP_MIGRATION_FAILED,
-                error={
-                    "type": "LegacyStampMigrationFailed",
-                    "message": str(exc),
-                    "role": role,
-                },
-            )
-        except Exception:
-            pass
 
 
 def _open_proc_log(lore_root: Path, role: str, *, keep: int = 3) -> int | None:
@@ -199,7 +174,6 @@ def _spawn_detached(
     cmd: list[str],
     *,
     cooldown_s: int,
-    migrate_stamp: bool = False,
     runaway_age_s: int | None = None,
 ) -> bool:
     """Fire-and-forget a subprocess under a spawn lock + cooldown stamp.
@@ -218,6 +192,7 @@ def _spawn_detached(
     """
     import contextlib
     import subprocess
+
     from lore_core.lockfile import try_acquire_spawn_lock
 
     effective_runaway = runaway_age_s if runaway_age_s is not None else cooldown_s * 5
@@ -250,8 +225,6 @@ def _spawn_detached(
                 with contextlib.suppress(OSError):
                     _write_stamp(warn_stamp)
             return False
-        if migrate_stamp:
-            _migrate_legacy_spawn_stamp(lore_root, role)
         env = os.environ.copy()
         # Re-inject as LORE_ROOT so child processes resolve identically
         # without re-reading ~/.config/lore/config.yml. The child's
@@ -312,22 +285,9 @@ class SpawnRole:
     name: str
     argv_builder: Callable[..., list[str]] = field(repr=False)
     default_cooldown_s: int
-    migrate_stamp: bool = False
 
 
 SPAWN_ROLES: dict[str, SpawnRole] = {
-    "a": SpawnRole(
-        name="a",
-        argv_builder=lambda: [
-            sys.executable,
-            "-m",
-            "lore_cli",
-            "curator",
-            "run",
-        ],
-        default_cooldown_s=60,
-        migrate_stamp=True,
-    ),
     "transcripts": SpawnRole(
         name="transcripts",
         argv_builder=lambda: [
@@ -338,21 +298,6 @@ SPAWN_ROLES: dict[str, SpawnRole] = {
             "sync",
         ],
         default_cooldown_s=300,
-    ),
-    # Startup singleton sweep: closes dead sessions' notes. The real
-    # singleton guard is the global curator lock inside the command; the
-    # spawn lock + cooldown here are just a politeness budget so a burst
-    # of session starts doesn't fork one sweep process per start.
-    "sweep": SpawnRole(
-        name="sweep",
-        argv_builder=lambda: [
-            sys.executable,
-            "-m",
-            "lore_cli",
-            "curator",
-            "sweep",
-        ],
-        default_cooldown_s=60,
     ),
 }
 
@@ -372,7 +317,6 @@ def spawn(role: str, lore_root: Path, *, cooldown_s: int | None = None, **extra)
         role_def.name,
         role_def.argv_builder(**extra),
         cooldown_s=(cooldown_s if cooldown_s is not None else role_def.default_cooldown_s),
-        migrate_stamp=role_def.migrate_stamp,
     )
 
 
@@ -381,11 +325,6 @@ def spawn(role: str, lore_root: Path, *, cooldown_s: int | None = None, **extra)
 # existing call sites and `patch("lore_cli.hooks._spawn_detached_curator_*")`
 # in the test suite keep working unchanged.
 # ---------------------------------------------------------------------------
-
-
-def _spawn_detached_curator_a(lore_root: Path, *, cooldown_s: int = 60) -> bool:
-    """Fire-and-forget `lore curator run` subprocess."""
-    return spawn("a", lore_root, cooldown_s=cooldown_s)
 
 
 def _spawn_detached_transcript_sync(lore_root: Path, *, cooldown_s: int = 300) -> bool:

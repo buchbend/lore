@@ -697,39 +697,3 @@ def test_resolve_backend_defaults_to_none(tmp_path: Path, monkeypatch):
 
     monkeypatch.delenv("LORE_LLM_BACKEND", raising=False)
     assert _resolve_backend(None, tmp_path) is None
-
-
-def test_curator_run_cli_backend_flag_openai(tmp_path: Path, monkeypatch, fake_openai):
-    """`lore curator run --backend openai --dry-run` announces OpenAI backend."""
-    from typer.testing import CliRunner
-
-    from lore_cli.__main__ import app
-
-    lore_root = tmp_path / "lore_root"
-    lore_root.mkdir()
-    monkeypatch.setenv("LORE_ROOT", str(lore_root))
-    monkeypatch.delenv("LORE_LLM_BACKEND", raising=False)
-    monkeypatch.setenv("LORE_OPENAI_BASE_URL", "https://example.local/v1")
-    monkeypatch.setenv("LORE_OPENAI_API_KEY", "sk-test")
-
-    # Stub Curator A so we don't need a real pipeline.
-    from dataclasses import dataclass, field
-
-    @dataclass
-    class _FakeResult:
-        transcripts_considered: int = 0
-        noteworthy_count: int = 0
-        new_notes: list = field(default_factory=list)
-        merged_notes: list = field(default_factory=list)
-        skipped_reasons: dict = field(default_factory=dict)
-        duration_seconds: float = 0.0
-
-    monkeypatch.setattr(
-        "lore_curator.session_curator.run_curator_a",
-        lambda **kwargs: _FakeResult(),
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(app, ["curator", "run", "--dry-run", "--backend", "openai"])
-    assert result.exit_code == 0, result.output + (result.stderr or "")
-    assert "OpenAI-compatible endpoint" in result.output
