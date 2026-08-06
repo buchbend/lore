@@ -8,6 +8,77 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.69.0] - 2026-08-06
+
+Retires every read surface whose producer releases 0.67.0 and 0.68.0 deleted
+(#375, PRD 0012), and restores the transport that carries a flag to a
+teammate. `lore status` no longer prints a row that no code writes, and no
+alert fires on a healthy system.
+
+The epic also uncovered a defect the same pattern hid: `lore_core/flag.py`
+wrote a flag and committed nothing, because the auto-commit hook went with the
+compose pipeline. No flag had reached a teammate since 0.68.0.
+
+### Added
+
+- **A flag now reaches a teammate.** `lore_core/flag.py` commits each flag
+  through `commit_note`, and the `SessionEnd` hook pushes the wiki.
+  `git.auto_push` defaults to true where a wiki carries a git remote; an
+  explicit `.lore-wiki.yml` value still wins, and a wiki with no remote pushes
+  nothing. No caller passes an LLM client, so a note conflict ends in
+  `MERGE_BLOCKED` and lore aborts the merge to leave the tree clean. The
+  LLM-merge path stays in the tree, marked parked.
+- **A guard test for the producer rule.**
+  `tests/test_producerless_surfaces_gone.py` asserts that every drain event
+  kind carries an emitter, every spine error code is reachable from a caller,
+  and every status row carries a writer.
+- **ADR 0010.** Records two decisions: a read surface without a live producer
+  is a defect, and the board carries the orchestrator's supervision narrative.
+  Supersedes ADR 0002.
+
+### Removed
+
+- **The drain's producerless kinds.** Lore accepts one kind,
+  `transcript-synced`. The drain banner module is gone, and the
+  UserPromptSubmit hook runs no drain read — it had opened two stores, read up
+  to 400 events, advanced two cursors and returned nothing on every prompt.
+- **The flush store's write half.** `begin`, `transition` and `record_failure`
+  lost their producers in #361. The flushes panel, the `lore trace` flush
+  selectors and the seven dead-letter reason codes go with them. The event
+  spine carries `SCHEMA_VERSION = 2`, because removing a closed enum member
+  changes the schema.
+- **Five `lore status` rows** — `Last note`, `Last run`, `Last flush`, `Lock`
+  and `Pending` — and the two alerts that read them. One fired "last 2 runs
+  filed 0 notes" on every pair of ordinary runs; the other named a pending
+  count that never cleared.
+- **`lore backfill`.** The command reset ledger fields and then told the user
+  to run `lore curator run`, which #361 removed.
+- **Unreferenced modules and symbols.** `run_render.py`, `lockfile.py`'s
+  `read_lock_holder` and `curator_lock`, `session_activity._collect_activity`,
+  `ledger.update_last_curator`, `CuratorStatus.overdue` and
+  `CaptureState.last_briefing_ts`.
+- **The transcript ledger's compose fields.** `advance`, `digested_hash`,
+  `digested_index_hint`, `synthesised_hash`, `noteworthy`, `session_note`,
+  `WikiLedger`, and the pending count that marked every entry pending forever.
+  The ledger keeps `integration`, `transcript_id`, `path`, `directory`,
+  `last_mtime`, `orphan` and `linkage`.
+
+### Changed
+
+- **`ConflictKind.SURFACE` is now `ConflictKind.NOTE`**, `_surface_dirs` is
+  `_note_dirs`, and the `surface_dirs` keyword is `note_dirs`. Epic #131
+  retired a different feature named surfaces, so one word named a live concept
+  and a retired one.
+- **One timestamp parser and one wiki enumerator.** Four copies parsed a
+  timestamp and two enumerated the wikis. `lore_core/timefmt.parse_ts` and
+  `lore_core/config.list_wikis` are the survivors.
+- **The orchestrator's supervision narrative lives on the board.** No code
+  writes a session note, so the epic note ADR 0002 described does not exist.
+  The board comment carries a notes section below its table, and
+  `lore workflow parse-board` ignores it.
+- **Seventeen documentation pages** now describe the behaviour lore ships.
+  `docs/architecture/sync.md` marks the LLM-merge path parked.
+
 ## [0.68.0] - 2026-08-05
 
 Retires the session-note compose pipeline (#361), completing epic #362 and
