@@ -106,13 +106,7 @@ def vault(tmp_path: Path) -> Path:
             transcript_id="t1",
             path=project / "t1.jsonl",
             directory=project,
-            digested_hash=None,
-            digested_index_hint=None,
-            synthesised_hash=None,
             last_mtime=datetime(2026, 8, 1, 9, 0, tzinfo=UTC),
-            curator_a_run=None,
-            noteworthy=True,
-            session_note="[[01-0900-thing]]",
         )
     )
 

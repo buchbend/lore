@@ -107,9 +107,9 @@ tree, sub-verbs included. Flipping it off silently removes completion for
 users with no error anywhere — do not copy the sub-app template's value onto
 the root.
 
-## The seam helpers
+## The seam helper
 
-Two small helpers smooth the boundary between typer and the test
+One small helper smooths the boundary between typer and the test
 harness:
 
 - **`lore_cli._argv_compat.argv_main(app)`** — wraps a `typer.Typer`
@@ -117,12 +117,10 @@ harness:
   tests expect. Translates `typer.Exit` / `SystemExit` /
   `click.exceptions.*` back to integer exit codes.
 
-- **`lore_core.run_render`** — pure renderers (no I/O) for run-log
-  records. Used by `curator_cmd` for the live trail during a curator
-  run.
-
-Both are import-time-cheap; they exist so individual verbs don't have
-to repeat plumbing.
+Import-time-cheap; it exists so individual verbs don't have to repeat
+plumbing. `lore_core.run_render` — the pure renderers `curator_cmd` used
+for a curator run's live trail — was deleted with the compose pipeline
+it rendered, leaving this the sole seam helper.
 
 ## Deprecating a verb
 

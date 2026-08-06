@@ -1,5 +1,6 @@
 """Tests for per-wiki config loader."""
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -197,3 +198,28 @@ class TestWikiConfigWriteBack:
         assert "heartbeat.enabled" in paths
         assert "breadcrumb.mode" in paths
         assert "git" not in paths  # groups excluded, leaves only
+
+
+class TestAutoPushDefault:
+    """A wiki with a remote is shared, so lore pushes it unless told not to."""
+
+    def _repo(self, tmp_path: Path, *, remote: bool) -> Path:
+        wiki = tmp_path / "wiki"
+        wiki.mkdir()
+        subprocess.run(["git", "init", "--initial-branch=main"], cwd=wiki, check=True,
+                       capture_output=True)
+        if remote:
+            subprocess.run(["git", "remote", "add", "origin", str(tmp_path / "origin.git")],
+                           cwd=wiki, check=True, capture_output=True)
+        return wiki
+
+    def test_auto_push_defaults_true_for_a_wiki_with_a_remote(self, tmp_path: Path):
+        assert load_wiki_config(self._repo(tmp_path, remote=True)).git.auto_push is True
+
+    def test_auto_push_defaults_false_for_a_wiki_without_a_remote(self, tmp_path: Path):
+        assert load_wiki_config(self._repo(tmp_path, remote=False)).git.auto_push is False
+
+    def test_an_explicit_false_wins_over_the_remote_default(self, tmp_path: Path):
+        wiki = self._repo(tmp_path, remote=True)
+        (wiki / ".lore-wiki.yml").write_text("git:\n  auto_push: false\n")
+        assert load_wiki_config(wiki).git.auto_push is False

@@ -78,6 +78,10 @@ def commit_note(
 
     Returns ``(success, sha-or-error)``. Idempotent for already-committed
     state (``"nothing to commit"`` returns ``True`` with empty sha).
+
+    The commit carries a pathspec, so only ``note_path`` lands in it. A
+    flag write calls this on every write, and a wiki is a directory a
+    human also edits — whatever else they staged stays staged.
     """
     rel = note_path.resolve().relative_to(wiki_path.resolve())
     add = subprocess.run(
@@ -93,7 +97,7 @@ def commit_note(
         slug = note_path.stem
         message = f"lore: session {slug}"
     commit = subprocess.run(
-        ["git", "commit", "-m", message],
+        ["git", "commit", "-m", message, "--", str(rel)],
         cwd=str(wiki_path),
         capture_output=True,
         text=True,

@@ -31,8 +31,10 @@ subagent:
 - **Docs & decisions** — the pack's `adr` / `prd` entries (already linked to the focus
   issue/epic), CONTEXT.md / glossary read directly, `lore_repo_docs_list` for anything the
   pack's focus filter missed.
-- **Prior art** — the pack's `sessions` (recent related session notes) and `epic_state`
-  (linked issue/epic status) as the trace of related work.
+- **Prior art** — the pack's `epic_state` (linked issue/epic status) as the trace of related
+  work. The pack's `sessions` field reads `wiki/<name>/sessions/`; nothing writes a new session
+  note since the compose pipeline retired, so treat it as empty and lean on `epic_state` plus a
+  targeted `lore_search`/`lore_drill` call instead.
 
 Spawn a facet's `Explore` subagent only when the pack came back thin or empty for it (no
 matching ADR/PRD, no matching sessions) — it then searches beyond what the deterministic join

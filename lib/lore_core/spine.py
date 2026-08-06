@@ -53,8 +53,11 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-# Bump on any envelope-shape change (see module docstring).
-SCHEMA_VERSION = 1
+# Bump on any envelope-shape change (see module docstring). Version 2
+# drops the error codes whose only raiser was the flush lifecycle state
+# machine: removing a member of the closed ``ErrorCode`` enum narrows the
+# set a reader may see, which is a schema change.
+SCHEMA_VERSION = 2
 
 # Closed producer set. A source outside this set is a bug, not data.
 SOURCES: frozenset[str] = frozenset(
@@ -83,7 +86,10 @@ ENVELOPE_FIELDS: tuple[str, ...] = (
 class ErrorCode(StrEnum):
     """Closed enum of structured error codes.
 
-    Adding a value is additive (no version bump). Free-form detail —
+    Adding a value is additive (no version bump). Removing one narrows
+    what a reader may see and does bump :data:`SCHEMA_VERSION`. Every
+    member here must have a caller that raises it — a code no producer
+    raises is a reader surface with no writer. Free-form detail —
     exception type, message, offending path — belongs in ``data``, not
     here. str-subclass so ``json.dumps`` serialises the value directly.
     """
@@ -91,20 +97,7 @@ class ErrorCode(StrEnum):
     # Hook producer (issue #185).
     CAPTURE_FAILED = "capture-failed"
     UNKNOWN_INTEGRATION = "unknown-integration"
-    FLUSH_REQUEST_FAILED = "flush-request-failed"
-    FLUSH_HANDOVER_TIMEOUT = "flush-handover-timeout"
     SPAWN_RUNAWAY = "spawn-runaway"
-    SPAWN_STAMP_MIGRATION_FAILED = "spawn-stamp-migration-failed"
-    LEDGER_WRITE_FAILED = "ledger-write-failed"
-    # The spine failing to write itself — surfaced via the degrade marker,
-    # never emitted onto the (unwritable) spine.
-    SPINE_WRITE_FAILED = "spine-write-failed"
-    # Flush lifecycle state machine (issue #189). Dead-letter reasons —
-    # the flush pipeline's formerly-silent failure paths, now structured.
-    COMPOSE_FAILED = "compose-failed"
-    SPAWN_FAILED = "spawn-failed"
-    SIDECAR_READ_FAILED = "sidecar-read-failed"
-    CHAPTER_APPEND_FAILED = "chapter-append-failed"
 
 
 _ERROR_CODE_VALUES: frozenset[str] = frozenset(c.value for c in ErrorCode)

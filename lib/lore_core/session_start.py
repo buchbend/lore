@@ -27,6 +27,7 @@ from lore_core.git import current_repo
 from lore_core.spine import emit_hook_event
 
 if TYPE_CHECKING:
+    from lore_core.git_sync import SyncResult
     from lore_core.types import Scope
 
 
@@ -605,6 +606,31 @@ def maybe_auto_pull_for_scope(scope: Scope, lore_root: Path) -> str | None:
     return None
 
 
+def maybe_auto_push_for_scope(scope: Scope, lore_root: Path) -> SyncResult | None:
+    """Push this scope's wiki repo at the session boundary if config opts in.
+
+    Returns the sync result, or ``None`` when the wiki directory is
+    missing or the config opts out. Unlike :func:`maybe_auto_pull_for_scope`
+    this hands back the result instead of a banner line: no banner renders
+    at a session boundary, and the next SessionStart already tells the user
+    about a diverged wiki through the pull.
+
+    No LLM client is passed. A note both machines changed therefore ends
+    in ``MERGE_BLOCKED`` with the working tree handed back clean, and the
+    user resolves it with git.
+    """
+    from lore_core.git_sync import auto_push
+    from lore_core.wiki_config import load_wiki_config
+
+    wiki_dir = lore_root / "wiki" / scope.wiki
+    if not wiki_dir.exists():
+        return None
+    cfg = load_wiki_config(wiki_dir)
+    if not cfg.git.auto_push:
+        return None
+    return auto_push(wiki_dir)
+
+
 def render_capture_state_block(
     lore_root: Path,
     scope: Scope,
@@ -615,14 +641,9 @@ def render_capture_state_block(
     """Render the capture-state breadcrumb plus the drain and cross-scope lines.
 
     Returns the block to append to the banner, or "" when nothing is worth
-    saying. Presentation only from the caller's point of view — but note the
-    drain lines are NOT side-effect free: rendering them advances the drain
-    cursors, which is what stops the same events resurfacing at the next
-    SessionStart. ``probe`` skips them for that reason, so ``lore doctor``
-    leaves no on-disk footprint.
+    saying. Presentation only — no cursor advances, no writes.
     """
     from lore_core.breadcrumb import BannerContext, render_banner
-    from lore_core.drain_banner import render_drain_lines
     from lore_core.wiki_config import load_wiki_config
 
     wiki_root = get_wiki_root()
@@ -655,14 +676,6 @@ def render_capture_state_block(
     )
     if banner is not None:
         out += "\n\n" + banner
-
-    if not probe:
-        try:
-            drain_lines = render_drain_lines(lore_root, cwd)
-            if drain_lines:
-                out += "\n" + "\n".join(drain_lines)
-        except (OSError, json.JSONDecodeError):
-            pass
 
     try:
         cross = cross_scope_breadcrumbs(lore_root, scope.wiki)

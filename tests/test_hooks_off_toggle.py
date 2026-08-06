@@ -98,15 +98,12 @@ def test_user_prompt_submit_noop_when_off(monkeypatch: pytest.MonkeyPatch) -> No
     _stdin_with_session(monkeypatch, sid)
     toggles.set_off("all", sid)
 
-    # If short-circuit fails, `_heartbeat` would be called with a real Path.
-    mock_hb = MagicMock(return_value=("", ""))
+    # If the short-circuit fails, scope resolution runs on a real Path.
     mock_resolve = MagicMock(return_value=None)
-    with patch("lore_cli.hooks._heartbeat", mock_hb), \
-         patch("lore_cli.hooks.resolve_scope", mock_resolve):
+    with patch("lore_cli.hooks.resolve_scope", mock_resolve):
         from lore_cli.hooks import cmd_user_prompt_submit
         cmd_user_prompt_submit(cwd="/tmp", plain=True)
 
-    mock_hb.assert_not_called()
     mock_resolve.assert_not_called()
 
 

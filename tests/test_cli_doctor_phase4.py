@@ -120,10 +120,11 @@ def test_doctor_scope_tree_no_resolved_wiki(lore_root: Path, tmp_path: Path) -> 
     assert "no resolved wiki" in checks["scope tree"]["message"]
 
 
-def test_doctor_ledger_buckets_informational(lore_root: Path, tmp_path: Path) -> None:
+def test_doctor_reports_no_ledger_check(lore_root: Path, tmp_path: Path) -> None:
+    """Both ledger checks counted a pending set no code produces."""
     _seed_healthy(lore_root, tmp_path)
     result = runner.invoke(app, ["doctor", "--json"])
     payload = json.loads(result.stdout)
-    checks = {c["check"]: c for c in payload["data"]["checks"]}
-    # Ledger bucket check always OK (informational), message describes counts
-    assert checks["ledger buckets"]["ok"] is True
+    checks = {c["check"] for c in payload["data"]["checks"]}
+    assert "ledger buckets" not in checks
+    assert "pending" not in checks

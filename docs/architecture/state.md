@@ -144,7 +144,7 @@ wiki+scope am I working in?"
 A wiki with no git remote is **private by default** — nothing it holds
 ever leaves the machine. A wiki with a git remote is a **shared
 vault**: every teammate with read access to that remote can see every
-composed session note committed there.
+flag committed there.
 
 Attaching a scope to a shared vault is the moment sharing starts, so
 it's the moment consent is asked. `lore attach accept` / `lore attach
@@ -165,16 +165,16 @@ If a secret ends up in a composed note, git history retains it even
 after the note is edited or deleted — the remedy is **rotating the
 credential**, not scrubbing history.
 
-**Transcripts and buffers never leave local state.** They live under
-`<lore_root>/.lore/` (`transcript-ledger.json`, `buffers/`), a sibling
-of `wiki/` — never a descendant — so a `git push` of a wiki directory
-structurally cannot ship them. Each ledger entry carries a `linkage`
+**The transcript ledger never leaves local state.** It lives at
+`<lore_root>/.lore/transcript-ledger.json`, a sibling of `wiki/` —
+never a descendant — so a `git push` of a wiki directory structurally
+cannot ship it. Each ledger entry carries a `linkage`
 block — `repo`, `branch`, `prs`, `issues`, `commits`, `files` — written
 by capture with no LLM call. It is what `lore_drill` reads to answer
 "which sessions touched X" and what the SessionStart recap renders from.
 The block is derived and rebuildable, and stays machine-local with the
-rest of the ledger. Only composed, gate-passed notes
-written into `wiki/<name>/sessions/` are ever pushed.
+rest of the ledger. Only a flag — a fact that already passed the
+publish gate and landed in its owning topic note — is ever pushed.
 
 ---
 
@@ -249,10 +249,13 @@ hot paths and need to survive multiple concurrent Claude sessions:
   ``fcntl.LOCK_EX`` here; losers skip and retry on the next emit.
 
 The same pattern (``LOCK_EX | LOCK_NB`` on a sibling lock file) is
-used by ``lore_core.lockfile.try_acquire_spawn_lock`` to serialise
-detached curator launches. See those modules for the implementation
-details — it's the canonical lockfile pattern used across the
-codebase.
+used by ``lore_core.lockfile.try_acquire_spawn_lock`` to serialise a
+detached background-process launch — transcript sync at SessionStart
+today. The curator's own turn-threshold auto-spawn read this same lock
+before the heartbeat that decided when to take it retired with the
+compose pipeline; `lore curator` now runs only on demand, taking no
+lock itself. See those modules for the implementation details — it's
+the canonical lockfile pattern used across the codebase.
 
 ## Failure modes
 

@@ -1,22 +1,14 @@
-"""``lore status`` v2 — unified health dashboard (issue #193).
+"""``lore status`` — unified health dashboard (issue #193).
 
 The single glanceable "is Lore healthy right now?" surface. One line per
-concern across seven sections, every alert paired with the exact drill-down
+concern across six sections, every alert paired with the exact drill-down
 command (PRD 0005, "Dashboard grammar"):
 
     lore: active · private/proj:test · attached at ~/project
 
     capture
-      · Last note    [[...]] · 2h ago
-      · Last run     2h ago · 1 note
-      · Last flush   published · 30m ago
-      · Hook         12m ago · session-start · spawned-curator
-      · Pending      no transcripts
+      · Hook         12m ago · session-start · captured
       · Session      not loaded in this shell
-      · Lock         free
-
-    flushes
-      · queued 0 · running 0 · dead-lettered 0
 
     wikis
       · private      clean · ahead 0 · behind 0 · reachable
@@ -33,12 +25,16 @@ command (PRD 0005, "Dashboard grammar"):
     alerts
       · none
 
-Reads only — the event spine (#185), flush store (#189), retention janitor
-status (#190), the flag spine (#360, ``lore_core.flag_metrics``), and
-per-wiki git state. Absorbs ``lore news`` (drain events for the current
-session, cursor advance preserved). Rendered as plain text (no ANSI) so it
-degrades cleanly for non-TTY / ``--plain`` and scripting. Exit code is 0
-when healthy and nonzero when any alert is earned.
+Every row here reflects a state some code writes. A row whose producer is
+gone is a defect, not a blank: issue #377 removed the four capture rows
+and the flushes panel the compose pipeline used to feed.
+
+Reads only — the event spine (#185), retention janitor status (#190), the
+flag spine (#360, ``lore_core.flag_metrics``), and per-wiki git state.
+Absorbs ``lore news`` (drain events for the current session, cursor
+advance preserved). Rendered as plain text (no ANSI) so it degrades
+cleanly for non-TTY / ``--plain`` and scripting. Exit code is 0 when
+healthy and nonzero when any alert is earned.
 """
 
 from __future__ import annotations
@@ -51,7 +47,7 @@ from pathlib import Path
 
 import typer
 from lore_core.capture_state import CaptureState, query_capture_state
-from lore_core.config import get_lore_root
+from lore_core.config import get_lore_root, list_wikis
 from lore_core.timefmt import relative_time
 from rich.console import Console
 
@@ -59,7 +55,7 @@ console = Console()
 
 app = typer.Typer(
     add_completion=False,
-    help="Lore health dashboard — capture, flushes, wikis, retention, news, alerts.",
+    help="Lore health dashboard — capture, wikis, flags, retention, news, alerts.",
     no_args_is_help=False,
     rich_markup_mode="rich",
 )
@@ -135,42 +131,6 @@ def _session_loaded_ts(now: datetime) -> datetime | None:
 # ---------------------------------------------------------------------------
 
 
-def _render_last_note(state: CaptureState, now: datetime) -> tuple[str, str]:
-    if state.last_note_filed is None:
-        return (_HEALTHY, "Last note    —")
-    ts, wikilink = state.last_note_filed
-    age = now - ts
-    glyph = _HEALTHY
-    if age > timedelta(days=3):
-        glyph = _ERROR
-    elif age > timedelta(hours=24):
-        glyph = _WARN
-    return (glyph, f"Last note    {wikilink} · {relative_time(ts, now=now)}")
-
-
-def _render_last_run(state: CaptureState, now: datetime) -> tuple[str, str]:
-    a = next(c for c in state.curators if c.role == "a")
-    if a.last_run_ts is None:
-        return (_HEALTHY, "Last run     —")
-    when = relative_time(a.last_run_ts, now=now)
-    notes = a.last_run_notes_new if a.last_run_notes_new is not None else 0
-    notes_label = "note" if notes == 1 else "notes"
-    return (_HEALTHY, f"Last run     {when} · {notes} {notes_label}")
-
-
-def _render_last_flush(lore_root: Path, now: datetime) -> tuple[str, str]:
-    """Most-recently-updated flush record's state + age (per the #189 machine)."""
-    from lore_core.flush_store import FlushStore
-
-    records = FlushStore(lore_root).list()  # newest-updated first
-    if not records:
-        return (_HEALTHY, "Last flush   —")
-    rec = records[0]
-    when = relative_time(rec.updated_at, now=now)
-    glyph = _ERROR if rec.state == "dead-lettered" else _HEALTHY
-    return (glyph, f"Last flush   {rec.state} · {when}")
-
-
 def _render_hook(state: CaptureState, now: datetime) -> tuple[str, str]:
     ts = state.last_hook_event_ts
     if ts is None:
@@ -181,14 +141,6 @@ def _render_hook(state: CaptureState, now: datetime) -> tuple[str, str]:
     return (_HEALTHY, f"Hook         {when} · {kind} · {outcome}")
 
 
-def _render_pending(state: CaptureState) -> tuple[str, str]:
-    n = state.pending_transcripts
-    if n == 0:
-        return (_HEALTHY, "Pending      no transcripts")
-    label = "transcript" if n == 1 else "transcripts"
-    return (_HEALTHY, f"Pending      {n} {label}")
-
-
 def _render_session(now: datetime) -> tuple[str, str]:
     ts = _session_loaded_ts(now)
     if ts is None:
@@ -196,59 +148,17 @@ def _render_session(now: datetime) -> tuple[str, str]:
     return (_HEALTHY, f"Session      loaded {relative_time(ts, now=now)} · /lore:context")
 
 
-def _render_lock(state: CaptureState) -> tuple[str, str]:
-    if any(c.work_lock_held for c in state.curators):
-        return (_WARN, "Lock         curator running (work lock held)")
-    return (_HEALTHY, "Lock         free")
-
-
-def _capture_lines(state: CaptureState, lore_root: Path, now: datetime) -> list[str]:
+def _capture_lines(state: CaptureState, now: datetime) -> list[str]:
     rows = [
-        _render_last_note(state, now),
-        _render_last_run(state, now),
-        _render_last_flush(lore_root, now),
         _render_hook(state, now),
-        _render_pending(state),
         _render_session(now),
-        _render_lock(state),
     ]
     return [_line(g, m) for g, m in rows]
 
 
 # ---------------------------------------------------------------------------
-# flushes section
-# ---------------------------------------------------------------------------
-
-
-def _flush_counts(lore_root: Path) -> tuple[int, int, int]:
-    """(queued, running, dead-lettered) from the flush store."""
-    from collections import Counter
-
-    from lore_core.flush_store import FlushStore
-
-    counts = Counter(r.state for r in FlushStore(lore_root).list())
-    return (counts.get("queued", 0), counts.get("running", 0), counts.get("dead-lettered", 0))
-
-
-def _flushes_lines(lore_root: Path) -> list[str]:
-    queued, running, dead = _flush_counts(lore_root)
-    msg = f"queued {queued} · running {running} · dead-lettered {dead}"
-    if dead > 0:
-        # Loud: dead letters need a human; name the drill-down (#192).
-        return [_line(_ERROR, f"{msg} — lore trace dead")]
-    return [_line(_HEALTHY, msg)]
-
-
-# ---------------------------------------------------------------------------
 # wikis section — per-wiki connection health (FAST local-first, #193)
 # ---------------------------------------------------------------------------
-
-
-def _wiki_dirs(lore_root: Path) -> list[Path]:
-    wiki_root = lore_root / "wiki"
-    if not wiki_root.is_dir():
-        return []
-    return [d for d in sorted(wiki_root.iterdir()) if d.is_dir()]
 
 
 def _render_wiki_line(name: str, offline: bool, lore_root: Path) -> str:
@@ -270,7 +180,7 @@ def _render_wiki_line(name: str, offline: bool, lore_root: Path) -> str:
 
 
 def _wikis_lines(lore_root: Path, offline: bool) -> list[str]:
-    dirs = _wiki_dirs(lore_root)
+    dirs = list_wikis(lore_root)
     if not dirs:
         return [_line(_HEALTHY, "no wikis")]
     return [_render_wiki_line(d.name, offline, lore_root) for d in dirs]
@@ -300,7 +210,7 @@ def _render_flags_line(lore_root: Path, wiki_name: str) -> str:
 
 
 def _flags_lines(lore_root: Path) -> list[str]:
-    dirs = _wiki_dirs(lore_root)
+    dirs = list_wikis(lore_root)
     if not dirs:
         return [_line(_HEALTHY, "no wikis")]
     return [_render_flags_line(lore_root, d.name) for d in dirs]
@@ -401,26 +311,11 @@ def _news_lines(lore_root: Path, cwd: Path) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _last_two_zero_note_runs(lore_root: Path) -> list[str] | None:
-    from lore_core.run_reader import read_run_by_id, run_ids
-
-    short_ids: list[str] = []
-    for run_id in run_ids(lore_root, limit=2):
-        records = read_run_by_id(lore_root, run_id)
-        end = next((r for r in reversed(records) if r.get("type") == "run-end"), None)
-        if end is None:
-            return None
-        if end.get("notes_new", 0) != 0 or end.get("notes_merged", 0) != 0:
-            return None
-        short_ids.append(run_id.split("-")[-1])
-    return short_ids if len(short_ids) == 2 else None
-
-
 def _diverged_wikis(lore_root: Path) -> list[str]:
     from lore_core.git_sync import is_diverged
 
     diverged: list[str] = []
-    for wiki_dir in _wiki_dirs(lore_root):
+    for wiki_dir in list_wikis(lore_root):
         try:
             if is_diverged(wiki_dir):
                 diverged.append(wiki_dir.name)
@@ -431,23 +326,9 @@ def _diverged_wikis(lore_root: Path) -> list[str]:
 
 def _compute_alerts(state: CaptureState, now: datetime, lore_root: Path) -> list[str]:
     """Return earned alert lines (already glyph-prefixed), each naming a fix."""
-    from lore_core.flush_store import FlushState, FlushStore
     from lore_core.janitor import read_janitor_status
 
     alerts: list[str] = []
-
-    # Dead-lettered flushes — loud, name the trace drill-down (#192).
-    dead = FlushStore(lore_root).list(state=FlushState.DEAD_LETTERED)
-    if dead:
-        n = len(dead)
-        alerts.append(f"{_ERROR} {n} flush{'es' if n > 1 else ''} dead-lettered — lore trace dead")
-
-    zero_runs = _last_two_zero_note_runs(lore_root)
-    if zero_runs:
-        alerts.append(
-            f"{_WARN} last 2 runs ({zero_runs[0]}, {zero_runs[1]}) filed 0 notes "
-            "— lore trace last"
-        )
 
     if (
         state.spine_write_failed_marker_age_s is not None
@@ -463,16 +344,8 @@ def _compute_alerts(state: CaptureState, now: datetime, lore_root: Path) -> list
     if state.simple_tier_fallback_active:
         alerts.append(f"{_WARN} simple-tier fallback active — high tier unavailable (lore doctor)")
 
-    # Work is waiting but the capture hook isn't leaving traces.
-    if state.pending_transcripts > 0:
-        ts = state.last_hook_event_ts
-        if ts is None or (now - ts) > timedelta(hours=24):
-            alerts.append(
-                f"{_WARN} no hook events in 24h while {state.pending_transcripts} "
-                f"transcript(s) pending — capture hook may not be firing (lore doctor)"
-            )
-
-    # Subprocess role logs with error tails.
+    # Subprocess role logs with error tails. The drill-down is the log
+    # itself: `lore trace` correlates a flush, and no flush produced this.
     proc_dir = lore_root / ".lore" / "proc"
     if proc_dir.is_dir():
         for role_log in sorted(proc_dir.glob("*.log")):
@@ -484,7 +357,9 @@ def _compute_alerts(state: CaptureState, now: datetime, lore_root: Path) -> list
                 text = role_log.read_bytes()[-2048:].decode("utf-8", errors="replace")
                 if any(m in text for m in ("Traceback", "Error:", "FATAL")):
                     role = role_log.stem
-                    alerts.append(f"{_ERROR} subprocess {role} has errors — lore trace last")
+                    alerts.append(
+                        f"{_ERROR} subprocess {role} has errors — see {role_log}"
+                    )
             except OSError:
                 pass
 
@@ -524,10 +399,8 @@ def _render_unattached(lore_root: Path, cwd: Path) -> str:
     vault_names: list[str] = []
     try:
         wiki_root = get_wiki_root()
-        if wiki_root.exists():
-            for d in sorted(wiki_root.iterdir()):
-                if d.is_dir():
-                    vault_names.append(f"{d.name}/lore at {_format_scope_root(d.parent.parent)}")
+        for d in list_wikis(wiki_root.parent):
+            vault_names.append(f"{d.name}/lore at {_format_scope_root(d.parent.parent)}")
     except Exception:  # noqa: BLE001
         pass
 
@@ -560,11 +433,9 @@ def _json_payload(state: CaptureState, lore_root: Path, now: datetime, offline: 
     from lore_core.janitor import read_janitor_status
 
     data = _state_to_json(state)
-    queued, running, dead = _flush_counts(lore_root)
-    data["flushes"] = {"queued": queued, "running": running, "dead_lettered": dead}
     data["retention"] = read_janitor_status(lore_root)
     wikis: list[dict] = []
-    for d in _wiki_dirs(lore_root):
+    for d in list_wikis(lore_root):
         h = wiki_health(d, offline=offline)
         wikis.append(
             {
@@ -580,7 +451,7 @@ def _json_payload(state: CaptureState, lore_root: Path, now: datetime, offline: 
     data["wikis"] = wikis
     from lore_core.flag_metrics import flag_counts
 
-    data["flags"] = {d.name: asdict(flag_counts(lore_root, d.name)) for d in _wiki_dirs(lore_root)}
+    data["flags"] = {d.name: asdict(flag_counts(lore_root, d.name)) for d in list_wikis(lore_root)}
     data["alerts"] = _compute_alerts(state, now, lore_root)
     return data
 
@@ -630,10 +501,7 @@ def status(
         f"lore: active · {state.scope_name} · attached at {_format_scope_root(state.scope_root)}",
         "",
         "capture",
-        *_capture_lines(state, lore_root, now),
-        "",
-        "flushes",
-        *_flushes_lines(lore_root),
+        *_capture_lines(state, now),
         "",
         "wikis" + ("  (offline)" if offline else ""),
         *_wikis_lines(lore_root, offline),

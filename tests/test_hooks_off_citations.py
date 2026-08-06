@@ -93,11 +93,8 @@ def test_user_prompt_submit_emits_directive_mid_session(
     captured = StringIO()
     monkeypatch.setattr(_sys, "stdout", captured)
 
-    # Heartbeat returns nothing — a quiet turn. The directive must still fire.
-    with patch.object(hooks, "_heartbeat", return_value=("", "")), \
-         patch.object(hooks, "resolve_scope", return_value=type("S", (), {"claude_md_path": tmp_path / "CLAUDE.md"})()), \
-         patch.object(hooks, "_infer_lore_root", return_value=tmp_path), \
-         patch.object(hooks, "_load_wiki_cfg_from_scope", return_value={}):
+    with patch.object(hooks, "resolve_scope", return_value=type("S", (), {"claude_md_path": tmp_path / "CLAUDE.md"})()), \
+         patch.object(hooks, "_infer_lore_root", return_value=tmp_path):
         hooks.cmd_user_prompt_submit(cwd=str(tmp_path), plain=False)
 
     out = captured.getvalue()

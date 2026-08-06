@@ -488,70 +488,6 @@ def _check_scope_tree(cwd: str) -> Check:
     return _issue_summary(f"{len(ids)} scope(s)", issues, f"{len(ids)} scope(s), tree healthy")
 
 
-def _check_ledger_buckets(cwd: str) -> Check:
-    """Surface the ledger's __orphan__/__unattached__ buckets as
-    actionable informational output. Never fails — these are not errors,
-    they're surfaces the user may want to act on via
-    `lore attach attachments purge-unattached`.
-    """
-    from lore_core.config import get_lore_root
-    from lore_core.ledger import TranscriptLedger
-
-    lore_root = get_lore_root()
-    ledger_path = lore_root / ".lore" / "transcript-ledger.json"
-    if not ledger_path.exists():
-        return True, "no transcript ledger (capture hasn't fired yet)"
-
-    try:
-        buckets = TranscriptLedger(lore_root).pending_by_wiki()
-    except Exception as e:
-        return False, f"ledger read failed: {e}"
-
-    orphan = len(buckets.get("__orphan__", []))
-    unattached = len(buckets.get("__unattached__", []))
-    attached_total = sum(
-        len(v) for k, v in buckets.items() if not k.startswith("__")
-    )
-
-    parts = [f"{attached_total} attached"]
-    if orphan:
-        parts.append(f"{orphan} orphan")
-    if unattached:
-        parts.append(f"{unattached} unattached (run `lore attach attachments purge-unattached`)")
-    return True, " · ".join(parts)
-
-
-def _check_pending(cwd: str) -> Check:
-    """Report registered transcripts per attached wiki.
-
-    A pending entry is a transcript lore has recorded and stamped with
-    linkage. Nothing consumes the pending set — there is no gate to be
-    waiting on and no backlog to drain — so this reports a count, not a
-    verdict. Never fails the install.
-    """
-    from lore_core.config import get_lore_root
-    from lore_core.ledger import TranscriptLedger
-
-    lore_root = get_lore_root()
-    ledger_path = lore_root / ".lore" / "transcript-ledger.json"
-    if not ledger_path.exists():
-        return True, "no pending — capture hasn't fired yet"
-
-    try:
-        buckets = TranscriptLedger(lore_root).pending_by_wiki()
-    except Exception as e:
-        return False, f"ledger read failed: {e}"
-
-    parts = [
-        f"{wiki_name}: {len(entries)} registered"
-        for wiki_name, entries in sorted(buckets.items())
-        if not wiki_name.startswith("__") and entries
-    ]
-    if not parts:
-        return True, "no attached-wiki pending"
-    return True, " · ".join(parts)
-
-
 # ---------------------------------------------------------------------------
 # `--fix` repairs.
 #
@@ -883,10 +819,6 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     ("FTS backend", _check_search_backend, True),
     ("attachments", _check_attachments, True),
     ("scope tree", _check_scope_tree, True),
-    ("ledger buckets", _check_ledger_buckets, True),
-    # Surfaces curator A spawn-gate state per wiki. Tells the user
-    # "why isn't curator A firing?" at a glance.
-    ("pending", _check_pending, False),
     ("SessionStart hook", _check_hook_runnable, True),
     # Advisory: surfaces a past event-spine write failure via its degrade
     # marker so a telemetry blackout is not itself silent.

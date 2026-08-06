@@ -36,14 +36,14 @@ seeds. Trivially small, well-understood follow-ups don't need the chain — note
 filing instead. Confirm the grouping with the user before publishing.
 
 ### 3. Write the seed(s)
-First try to lift **Origin** and **Findings** from this session's note (deterministic, no
-freehand reconstruction needed): `lore workflow seed-lift <path-to-this-session's-note>
---wiki-root <wiki-root>`. On success (exit 0), use its `origin` and `findings` JSON fields
-verbatim for those two sections, and add its `source_note` under **Pointers** as an explicit
-reference — so a cold `/lore-workflow:orient` on the seed can pull the note back via
-`lore_read`/`lore_context_pack`. On failure (exit 1: no note, or too thin), fall back to
-freehand — reconstruct Origin (the finished epic, merged PRs/commits) and Findings (hard-won
-context from this session) as before.
+Nothing writes a session note since the compose pipeline retired, so freehand reconstruction is
+the normal path: reconstruct Origin (the finished epic, merged PRs/commits) and Findings
+(hard-won context from this session) yourself. If this session's own note happens to exist —
+hand-authored, or from a wiki that predates the retirement — try
+`lore workflow seed-lift <path-to-that-note> --wiki-root <wiki-root>` first: on success (exit 0)
+use its `origin` and `findings` JSON fields verbatim for those two sections, and add its
+`source_note` under **Pointers** as an explicit reference, so a cold `/lore-workflow:orient` on
+the seed can pull the note back via `lore_read`/`lore_context_pack`.
 
 Draft each body with the template below. Lead with intent; make the **findings** section rich —
 that is the handover value. Pointers are starting points, not gospel (they may go stale).

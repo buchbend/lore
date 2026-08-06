@@ -140,13 +140,7 @@ def _seed_ledger_entry(lore_root: Path, directory: Path) -> None:
         transcript_id=f"test-{directory.name}",
         path=directory / "transcript.jsonl",
         directory=directory,
-        digested_hash=None,
-        digested_index_hint=None,
-        synthesised_hash=None,
         last_mtime=datetime(2026, 4, 22, 9, 0, tzinfo=UTC),
-        curator_a_run=None,
-        noteworthy=None,
-        session_note=None,
     )
     ledger.upsert(entry)
 
@@ -165,9 +159,9 @@ def test_purge_unattached_dry_run(lore_root: Path, tmp_path: Path) -> None:
     result = runner.invoke(app, ["attach", "attachments", "purge-unattached", "--dry-run"])
     assert result.exit_code == 0
     assert "Dry-run" in result.stdout
-    # Ledger entry still pending
+    # Ledger entry still carries no orphan mark
     from lore_core.ledger import TranscriptLedger
-    assert len(TranscriptLedger(lore_root).pending()) == 1
+    assert [e.orphan for e in TranscriptLedger(lore_root).all_entries()] == [False]
 
 
 def test_purge_unattached_applies(lore_root: Path, tmp_path: Path) -> None:
@@ -179,5 +173,5 @@ def test_purge_unattached_applies(lore_root: Path, tmp_path: Path) -> None:
     assert result.exit_code == 0
 
     from lore_core.ledger import TranscriptLedger
-    # After purge, pending is empty (orphan=True excludes from pending)
-    assert TranscriptLedger(lore_root).pending() == []
+    # After purge, every candidate carries the orphan mark.
+    assert [e.orphan for e in TranscriptLedger(lore_root).all_entries()] == [True]

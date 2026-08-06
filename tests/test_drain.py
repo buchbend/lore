@@ -28,18 +28,18 @@ def test_drain_store_creates_parent_dir_on_init(tmp_path):
     store = DrainStore(tmp_path, "sess-1")
     assert (tmp_path / ".lore" / "drain").exists()
     # emit should work even before any other drain activity
-    store.emit("note-filed", wiki="w", path="/x")
+    store.emit("transcript-synced", wiki="w", path="/x")
     assert len(store.read()) == 1
 
 
 def test_drain_store_emit_lands_on_spine_with_source_drain(tmp_path):
     store = DrainStore(tmp_path, "s1")
-    store.emit("note-filed", wiki="ccat", trace_id="tr-1", wikilink="[[2026-04-22-foo]]")
+    store.emit("transcript-synced", wiki="ccat", trace_id="tr-1", wikilink="[[2026-04-22-foo]]")
     recs = read_spine(tmp_path, source="drain")
     assert len(recs) == 1
     rec = recs[0]
     assert rec["source"] == "drain"
-    assert rec["event"] == "note-filed"
+    assert rec["event"] == "transcript-synced"
     assert rec["wiki"] == "ccat"
     assert rec["session_id"] == "s1"
     assert rec["trace_id"] == "tr-1"
@@ -60,7 +60,7 @@ def test_drain_store_emit_survives_unwritable_dir(tmp_path, monkeypatch):
     def boom(*a, **kw):
         raise OSError("disk full")
     monkeypatch.setattr(os, "open", boom)
-    store.emit("note-filed", wiki="w")  # must not raise
+    store.emit("transcript-synced", wiki="w")  # must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -70,9 +70,9 @@ def test_drain_store_emit_survives_unwritable_dir(tmp_path, monkeypatch):
 
 def test_drain_read_returns_chronological_events(tmp_path):
     store = DrainStore(tmp_path, "s1")
-    store.emit("note-filed", wiki="a", n=1)
-    store.emit("note-appended", wiki="a", n=2)
-    store.emit("note-filed", wiki="b", n=3)
+    store.emit("transcript-synced", wiki="a", n=1)
+    store.emit("transcript-synced", wiki="a", n=2)
+    store.emit("transcript-synced", wiki="b", n=3)
 
     events = store.read()
     assert [e.data["n"] for e in events] == [1, 2, 3]
@@ -81,13 +81,13 @@ def test_drain_read_returns_chronological_events(tmp_path):
 
 def test_drain_read_since_filter(tmp_path):
     store = DrainStore(tmp_path, "s1")
-    store.emit("note-filed", wiki="a", n=1)
+    store.emit("transcript-synced", wiki="a", n=1)
     # Read the first ts, then emit more after it
     first_ts = store.read()[0].ts
     # Tiny sleep so subsequent events have strictly-later timestamps.
     time.sleep(0.02)
-    store.emit("note-filed", wiki="a", n=2)
-    store.emit("note-filed", wiki="a", n=3)
+    store.emit("transcript-synced", wiki="a", n=2)
+    store.emit("transcript-synced", wiki="a", n=3)
 
     later = store.read(since=first_ts + timedelta(microseconds=1))
     assert [e.data["n"] for e in later] == [2, 3]
@@ -96,19 +96,19 @@ def test_drain_read_since_filter(tmp_path):
 def test_drain_read_limit_tails(tmp_path):
     store = DrainStore(tmp_path, "s1")
     for i in range(5):
-        store.emit("note-filed", wiki="w", n=i)
+        store.emit("transcript-synced", wiki="w", n=i)
     got = store.read(limit=2)
     assert [e.data["n"] for e in got] == [3, 4]
 
 
 def test_drain_read_skips_malformed_lines(tmp_path):
     store = DrainStore(tmp_path, "s1")
-    store.emit("note-filed", wiki="w", n=1)
+    store.emit("transcript-synced", wiki="w", n=1)
     # Tack a garbage line onto the spine, then a second good event.
     spine = tmp_path / ".lore" / "spine.jsonl"
     with spine.open("a") as fp:
         fp.write("NOT JSON\n")
-    store.emit("note-filed", wiki="w", n=2)
+    store.emit("transcript-synced", wiki="w", n=2)
     got = store.read()
     assert [e.data["n"] for e in got] == [1, 2]
 
@@ -125,8 +125,8 @@ def test_drain_session_isolation(tmp_path):
     """Two sessions write to disjoint files."""
     a = DrainStore(tmp_path, "sess-a")
     b = DrainStore(tmp_path, "sess-b")
-    a.emit("note-filed", wiki="x", marker="A")
-    b.emit("note-appended", wiki="x", marker="B")
+    a.emit("transcript-synced", wiki="x", marker="A")
+    b.emit("transcript-synced", wiki="x", marker="B")
 
     # A sees only its own event
     a_events = a.read()
@@ -148,13 +148,12 @@ def test_drain_system_session_reads_back_from_spine(tmp_path):
     assert events[0].event == "transcript-synced"
 
 
-def test_drain_system_session_rejects_non_transcript_synced(tmp_path):
-    """`_system` is shared across sessions — only transcript-synced is legitimate."""
+def test_drain_rejects_every_kind_without_a_producer(tmp_path):
+    """The vocabulary holds one kind; the retired ones must not come back."""
     store = DrainStore(tmp_path, SYSTEM_SESSION)
-    for bad in ("note-filed", "note-appended", "surface-proposed"):
-        with pytest.raises(ValueError, match="system drain accepts only"):
-            store.emit(bad, wiki="w", wikilink="[[x]]")
-    # transcript-synced still works
+    for retired in ("note-filed", "note-appended", "surface-proposed"):
+        with pytest.raises(ValueError, match="unknown drain event"):
+            store.emit(retired, wiki="w", wikilink="[[x]]")
     store.emit("transcript-synced", wiki="w", transcript_id="t1")
 
 

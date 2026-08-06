@@ -11,6 +11,7 @@ from lore_adapters import register
 from lore_adapters.registry import _REGISTRY
 from lore_cli.hooks import hook_app
 from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
+from lore_core.spine import SCHEMA_VERSION
 from lore_core.types import TranscriptHandle
 from typer.testing import CliRunner
 
@@ -188,7 +189,7 @@ def test_capture_session_end_creates_ledger_entry(tmp_path: Path, fake_adapter_f
     assert entry.transcript_id == "t1"
     assert entry.path == handle.path
     assert entry.directory == project
-    assert entry.digested_hash is None
+    assert entry.orphan is False
 
 
 def test_capture_unattached_cwd_returns_without_ledger_write(tmp_path: Path) -> None:
@@ -273,13 +274,7 @@ def test_capture_hook_under_500ms_with_50_transcripts(
             transcript_id=f"seed{i}",
             path=project / f"seed{i}.jsonl",
             directory=project,
-            digested_hash=None,
-            digested_index_hint=None,
-            synthesised_hash=None,
             last_mtime=_now(),
-            curator_a_run=_now(),  # not pending → keeps spawn decision clean
-            noteworthy=None,
-            session_note=None,
         )
         for i in range(50)
     ]
@@ -338,7 +333,7 @@ def test_capture_issues_single_ledger_write_for_many_new_transcripts(
     post_mtime = ledger_path.stat().st_mtime
     assert post_mtime != pre_mtime
 def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_factory) -> None:
-    """capture emits spine record with pid, cwd, schema_version=2."""
+    """capture emits a spine record with pid, cwd and the envelope version."""
     project = _make_attached_project(tmp_path)
     handle = _make_handle(project)
     fake_adapter_factory([handle])
@@ -364,7 +359,7 @@ def test_capture_hook_events_has_provenance_fields(tmp_path: Path, fake_adapter_
     capture_records = [r for r in records if r.get("event") == "session-end"]
     assert capture_records, f"expected a session-end capture record; got {records}"
     record = capture_records[-1]
-    assert record["v"] == 1
+    assert record["v"] == SCHEMA_VERSION
     assert record["data"]["pid"] == os.getpid()
     assert record["data"]["cwd"] == str(project)
     # ppid_cmd is present (may be None on some systems)
@@ -435,13 +430,7 @@ def test_capture_existing_entry_updates_mtime_when_changed(
             transcript_id="t1",
             path=project / "t1.jsonl",
             directory=project,
-            digested_hash=None,
-            digested_index_hint=None,
-            synthesised_hash=None,
             last_mtime=old_mtime,
-            curator_a_run=None,
-            noteworthy=None,
-            session_note=None,
         )
     )
 
@@ -594,13 +583,7 @@ def test_capture_session_end_no_breadcrumb_when_no_new_turns(
             transcript_id="t1",
             path=project / "t1.jsonl",
             directory=project,
-            digested_hash="abc",  # already digested
-            digested_index_hint=None,
-            synthesised_hash=None,
             last_mtime=old_mtime,
-            curator_a_run=None,
-            noteworthy=None,
-            session_note=None,
         )
     )
 
@@ -637,13 +620,7 @@ def test_capture_session_start_no_breadcrumb(
                 transcript_id=f"pre{i}",
                 path=project / f"pre{i}.jsonl",
                 directory=project,
-                digested_hash=None,
-                digested_index_hint=None,
-                synthesised_hash=None,
                 last_mtime=_now(),
-                curator_a_run=None,
-                noteworthy=None,
-                session_note=None,
             )
         )
 
@@ -895,11 +872,10 @@ def _make_two_wiki_lore_root(
     af.save()
 
     return lore_root, proj_a, proj_b
-def test_capture_emits_pending_by_wiki_in_hook_event(
+def test_capture_emits_the_registered_count_in_the_hook_event(
     tmp_path: Path, fake_adapter_factory, monkeypatch
 ) -> None:
-    """The hook-event record gains a `pending_by_wiki` counts-dict alongside
-    the existing `pending_after` scalar (back-compat)."""
+    """The hook-event record carries how many entries capture wrote."""
     import json
 
     lore_root, proj_a, proj_b = _make_two_wiki_lore_root(
@@ -914,13 +890,7 @@ def test_capture_emits_pending_by_wiki_in_hook_event(
                 transcript_id=f"a{i}",
                 path=proj_a / f"a{i}.jsonl",
                 directory=proj_a,
-                digested_hash=None,
-                digested_index_hint=None,
-                synthesised_hash=None,
                 last_mtime=_now(),
-                curator_a_run=None,
-                noteworthy=None,
-                session_note=None,
             )
         )
 
@@ -940,9 +910,7 @@ def test_capture_emits_pending_by_wiki_in_hook_event(
     capture_records = [r for r in records if r.get("event") == "session-end"]
     assert capture_records
     rec = capture_records[-1]
-    assert "pending_after" in rec["data"]
-    assert "pending_by_wiki" in rec["data"]
-    # Counts dict, not the full entry list.
+    assert rec["data"]["registered"] == 1
 
 
 # ---------------------------------------------------------------------------

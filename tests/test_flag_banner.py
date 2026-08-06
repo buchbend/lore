@@ -196,13 +196,7 @@ def test_chip_and_recap_coexist(vault: Path):
             transcript_id="tr-1",
             path=vault / "tr-1.jsonl",
             directory=vault / "proj",
-            digested_hash=None,
-            digested_index_hint=None,
-            synthesised_hash=None,
             last_mtime=datetime(2026, 8, 4, 9, 0, tzinfo=UTC),
-            curator_a_run=None,
-            noteworthy=None,
-            session_note=None,
             linkage={"repo": "buchbend/lore", "branch": "feat/357-flag", "prs": [365]},
         )
     )

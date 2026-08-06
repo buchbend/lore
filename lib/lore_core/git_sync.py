@@ -45,8 +45,8 @@ class SyncResult:
 
 
 class ConflictKind(str, Enum):
-    SURFACE = "surface"  # LLM-merge
-    SESSION = "session"  # LLM-merge (rare — pre-pull eliminates)
+    NOTE = "note"  # LLM-merge (parked)
+    SESSION = "session"  # LLM-merge (parked; rare — pre-pull eliminates)
     REGENERABLE = "regenerable"  # ours wins; lint reconciles
     UNKNOWN = "unknown"  # bail to user
 
@@ -231,14 +231,19 @@ def auto_push(
     wiki_dir: Path,
     *,
     llm_client: Any = None,
-    surface_dirs: list[str] | None = None,
+    note_dirs: list[str] | None = None,
 ) -> SyncResult:
     """Push local commits, resolving conflicts via LLM merge if needed.
 
-    ``surface_dirs`` is the list of subdirectory names whose conflicts are
+    ``note_dirs`` is the list of subdirectory names whose conflicts are
     eligible for LLM merge (e.g. ``["concepts", "decisions", "results"]``).
     If not given, a permissive default set is used. Used to classify a
     conflict path as LLM-mergeable vs other (bail).
+
+    ``llm_client`` is parked: no caller passes one, so a note conflict
+    always ends in MERGE_BLOCKED with the working tree handed back
+    clean. The path stays in the tree because the merge itself works —
+    what is on hold is the decision to run a model at the boundary.
 
     Returns:
       OK                — push succeeded outright
@@ -318,19 +323,19 @@ def auto_push(
         _git(wiki_dir, "merge", "--abort")
         return SyncResult(status=SyncStatus.MERGE_BLOCKED, message="merge failed without conflicts")
 
-    surface_names = surface_dirs if surface_dirs is not None else _surface_dirs(wiki_dir)
+    note_names = note_dirs if note_dirs is not None else _note_dirs(wiki_dir)
 
     merged: list[str] = []
     blocked: list[str] = []
     for path in conflicts:
-        kind = _classify_conflict_path(path, surface_names)
+        kind = _classify_conflict_path(path, note_names)
         if kind is ConflictKind.REGENERABLE:
             # Take ours; lint will truth it after the merge.
             _git(wiki_dir, "checkout", "--ours", path)
             _git(wiki_dir, "add", path)
             merged.append(path)
             continue
-        if kind in (ConflictKind.SURFACE, ConflictKind.SESSION):
+        if kind in (ConflictKind.NOTE, ConflictKind.SESSION):
             if llm_client is None:
                 blocked.append(path)
                 continue
@@ -353,7 +358,7 @@ def auto_push(
         wiki_dir,
         "commit",
         "-m",
-        f"merge(auto-llm): {len(merged)} surface(s)" if merged else "merge",
+        f"merge(auto-llm): {len(merged)} note(s)" if merged else "merge",
     )
     if commit.returncode != 0:
         _git(wiki_dir, "merge", "--abort")
@@ -388,7 +393,7 @@ def _list_conflicts(wiki_dir: Path) -> list[str]:
     return [line for line in r.stdout.splitlines() if line.strip()]
 
 
-def _surface_dirs(wiki_dir: Path) -> list[str]:
+def _note_dirs(wiki_dir: Path) -> list[str]:
     """Return the subdirectory names classified as LLM-mergeable notes.
 
     A permissive default set — better to LLM-merge a note that turned out
@@ -398,17 +403,17 @@ def _surface_dirs(wiki_dir: Path) -> list[str]:
     return ["concepts", "decisions", "results", "people", "places", "questions"]
 
 
-def _classify_conflict_path(path: str, surface_dirs: list[str]) -> ConflictKind:
+def _classify_conflict_path(path: str, note_dirs: list[str]) -> ConflictKind:
     """Classify a conflict path into one of the four resolution buckets."""
     parts = path.split("/")
     name = parts[-1]
     if name in _REGENERABLE_FILENAMES:
         return ConflictKind.REGENERABLE
 
-    # wiki/<wiki>/<surface_dir>/*.md  OR  <surface_dir>/*.md (when path
+    # wiki/<wiki>/<note_dir>/*.md  OR  <note_dir>/*.md (when path
     # is already wiki-root-relative)
-    if any(seg in surface_dirs for seg in parts):
-        return ConflictKind.SURFACE
+    if any(seg in note_dirs for seg in parts):
+        return ConflictKind.NOTE
 
     if "sessions" in parts:
         return ConflictKind.SESSION
@@ -433,7 +438,11 @@ def _resolve_via_llm(
     *,
     llm_client: Any,
 ) -> bool:
-    """LLM-merge a single conflicted file. Returns True on success."""
+    """LLM-merge a single conflicted file. Returns True on success.
+
+    Parked — reachable only when a caller passes an ``llm_client``, and
+    none does.
+    """
     ours = _read_version(wiki_dir, "HEAD", path)
     theirs = _read_version(wiki_dir, "MERGE_HEAD", path)
     base_ref = _merge_base_ref(wiki_dir)
@@ -472,17 +481,19 @@ def _llm_merge_text(
 ) -> str | None:
     """Call the LLM to produce a merged version. Returns None on failure.
 
-    The merge prompt is deliberately minimal — surfaces have a free-form
+    The merge prompt is deliberately minimal — a note has a free-form
     body and structured frontmatter. We trust the LLM to preserve both,
-    then validate the result re-parses as a valid surface (frontmatter
+    then validate the result re-parses as a valid note (frontmatter
     extractable, body present).
+
+    Parked with the rest of the LLM-merge path.
     """
     fm_ours = parse_frontmatter(ours)
-    surface_type = fm_ours.get("type", "note")
+    note_type = fm_ours.get("type", "note")
 
     prompt = _MERGE_PROMPT.format(
         path=path,
-        type=surface_type,
+        type=note_type,
         ours=ours,
         theirs=theirs,
         base=base if base else "(no common ancestor)",
@@ -497,7 +508,7 @@ def _llm_merge_text(
     # Sanity check: result must still parse as markdown with frontmatter,
     # the frontmatter must yaml-parse to a dict, and (per the prompt
     # contract) carry a ``type`` key. Reject malformed responses rather
-    # than letting them clobber a real surface.
+    # than letting them clobber a real note.
     if split_frontmatter(merged) is None:
         return None
     fm = parse_frontmatter(merged)

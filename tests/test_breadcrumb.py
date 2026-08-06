@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,7 +14,7 @@ from lore_core.breadcrumb import (
     render_session_end_breadcrumb,
     write_pending_breadcrumb,
 )
-from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry, WikiLedger, WikiLedgerEntry
+from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
 from lore_core.types import Scope
 from lore_core.wiki_config import BreadcrumbConfig, WikiConfig
 
@@ -59,7 +59,6 @@ def scope(tmp_path: Path) -> Scope:
 def _make_transcript_entry(
     lore_root: Path,
     transcript_id: str = "t1",
-    digested_hash: str | None = None,
 ) -> TranscriptLedgerEntry:
     """Create a transcript ledger entry."""
     return TranscriptLedgerEntry(
@@ -67,13 +66,7 @@ def _make_transcript_entry(
         transcript_id=transcript_id,
         path=lore_root / "transcripts" / f"{transcript_id}.json",
         directory=lore_root / "transcripts",
-        digested_hash=digested_hash,
-        digested_index_hint=None,
-        synthesised_hash=None,
         last_mtime=datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC),
-        curator_a_run=None,
-        noteworthy=None,
-        session_note=None,
     )
 
 
@@ -111,8 +104,7 @@ def test_banner_pending_is_silent(
     tledger = TranscriptLedger(lore_root)
 
     for i in range(3):
-        entry = _make_transcript_entry(lore_root, transcript_id=f"t{i+1}", digested_hash=None)
-        tledger.upsert(entry)
+        tledger.upsert(_make_transcript_entry(lore_root, transcript_id=f"t{i+1}"))
 
     ctx = BannerContext(
         lore_root=lore_root,
@@ -219,20 +211,14 @@ def test_banner_lore_bang_prefix_on_errors(
 # ---------------------------------------------------------------------------
 
 
-def test_banner_pending_with_curator_history_is_silent(
+def test_banner_registered_transcripts_are_silent(
     lore_root: Path, wiki_config_normal: WikiConfig, scope: Scope
 ) -> None:
-    """Pending entries with curator history → None (pipeline state is internal)."""
+    """A registered transcript is not news — the banner says nothing."""
     now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
-    curator_time = now - timedelta(minutes=5)
 
     tledger = TranscriptLedger(lore_root)
-    entry = _make_transcript_entry(lore_root, transcript_id="t1", digested_hash=None)
-    tledger.upsert(entry)
-
-    wledger = WikiLedger(lore_root, "private")
-    wiki_entry = WikiLedgerEntry(wiki="private", last_curator_a=curator_time)
-    wledger.write(wiki_entry)
+    tledger.upsert(_make_transcript_entry(lore_root, transcript_id="t1"))
 
     ctx = BannerContext(
         lore_root=lore_root,
@@ -352,7 +338,7 @@ def test_banner_last_run_error_prefix(tmp_path: Path) -> None:
     assert banner is not None
     assert banner.startswith("lore!:")
     assert "2 errors" in banner
-    assert "lore trace last" in banner
+    assert "lore doctor" in banner
 
 
 # ---------------------------------------------------------------------------
@@ -401,31 +387,31 @@ def test_banner_hook_error_trailing_segment(tmp_path: Path) -> None:
 
 
 def test_session_end_breadcrumb_captured_is_silent() -> None:
-    result = render_session_end_breadcrumb("captured", pending_after=3)
+    result = render_session_end_breadcrumb("captured")
     assert result is None
 
 
 def test_session_end_breadcrumb_no_new_turns_is_none() -> None:
-    result = render_session_end_breadcrumb("no-new-turns", pending_after=0)
+    result = render_session_end_breadcrumb("no-new-turns")
     assert result is None
 
 
 def test_session_end_breadcrumb_error() -> None:
-    result = render_session_end_breadcrumb("error", pending_after=0, error_message="disk full")
+    result = render_session_end_breadcrumb("error", error_message="disk full")
     assert result is not None
     assert result.startswith("lore!:")
     assert "disk full" in result
 
 
 def test_session_end_breadcrumb_error_default_message() -> None:
-    result = render_session_end_breadcrumb("error", pending_after=0)
+    result = render_session_end_breadcrumb("error")
     assert result is not None
     assert result.startswith("lore!:")
     assert "unknown error" in result
 
 
 def test_session_end_breadcrumb_unattached_is_none() -> None:
-    result = render_session_end_breadcrumb("unattached", pending_after=0)
+    result = render_session_end_breadcrumb("unattached")
     assert result is None
 
 

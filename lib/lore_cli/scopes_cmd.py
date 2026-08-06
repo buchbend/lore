@@ -34,6 +34,7 @@ from rich.table import Table
 from lore_cli._argv_compat import argv_main
 from lore_core.state.attachments import AttachmentsFile
 from lore_core.state.scopes import ScopesFile
+from lore_core.config import list_wikis
 
 console = Console()
 err_console = Console(stderr=True)
@@ -307,13 +308,6 @@ def cmd_rm(
 
 # ---- wiki-dir discovery + validation ----
 
-def _wiki_dirs(lore_root: Path) -> list[Path]:
-    wiki_root = lore_root / "wiki"
-    if not wiki_root.exists():
-        return []
-    return sorted(p for p in wiki_root.iterdir() if p.is_dir())
-
-
 @app.command("wikis")
 def cmd_wikis(
     format_: str = typer.Option("table", "--format", help="Output format: json or table."),
@@ -322,7 +316,7 @@ def cmd_wikis(
     lore_root = _lore_root_or_die()
 
     records = []
-    for wiki_dir in _wiki_dirs(lore_root):
+    for wiki_dir in list_wikis(lore_root):
         scopes_yml = wiki_dir / "_scopes.yml"
         wiki_cfg = wiki_dir / ".lore-wiki.yml"
         records.append({
@@ -349,7 +343,7 @@ def cmd_doctor() -> None:
     """Validate wiki dirs for basic health. Exit 1 if issues found."""
     lore_root = _lore_root_or_die()
 
-    dirs = _wiki_dirs(lore_root)
+    dirs = list_wikis(lore_root)
     if not dirs:
         console.print("[yellow]Warning:[/yellow] No wiki directories found under LORE_ROOT/wiki/")
         raise typer.Exit(1)

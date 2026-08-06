@@ -20,15 +20,11 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from lore_core.gh import gh_issues
 from lore_core.git import current_branch, current_repo
 from lore_core.types import Turn
-
-if TYPE_CHECKING:
-    from lore_core.run_log import RunLogger
-
 
 # ---------------------------------------------------------------------------
 # Commits
@@ -570,70 +566,3 @@ def _files_touched_from_turns(turns: list[Turn]) -> list[str]:
     return out
 
 
-def _collect_activity(
-    *,
-    cwd: Path,
-    wiki_root: Path,
-    turns: list[Turn],
-    files_touched: list[str],
-    logger: "RunLogger | None" = None,
-) -> dict[str, Any]:
-    """Run all Phase-3 collectors for a chunk and return the inputs the
-    body renderer + frontmatter need.
-
-    Returns a dict with keys ``commits``, ``issues_opened``,
-    ``issues_closed`` (rendered bullet lines), ``projects``
-    (ref strings), and ``commit_shas`` (the raw SHAs Curator-A's buffer
-    needs to fold into its accumulator across heartbeats).
-
-    Commit attribution is SHA-bound: extracts SHAs from this chunk's own
-    Bash ``git commit`` tool_results and resolves them against the cwd's
-    repo. No time-window fallback — under-attribution beats wrong
-    attribution. See ``_commit_shas_from_bash_results`` and
-    ``collect_commits_by_sha`` for the rationale.
-    """
-    from lore_core.git import git_repo_root
-
-    repo_root = git_repo_root(cwd)
-    repo = current_repo(cwd) or ""
-
-    shas = _commit_shas_from_bash_results(turns)
-    raw_commits = collect_commits_by_sha(repo_root, shas)
-
-    if logger is not None:
-        logger.emit(
-            "commit-shas-captured",
-            captured=len(raw_commits),
-            dropped=max(0, len(shas) - len(raw_commits)),
-            shas_seen=len(shas),
-        )
-
-    # Issue-reference extraction: union turn text + commit subjects + bodies
-    # so `closes #29` lands whether the LLM wrote it in chat, in the commit
-    # subject, or in the commit body trailer.
-    commit_text = "\n".join(
-        c.subject + ("\n" + c.body if c.body else "")
-        for c in raw_commits
-    )
-    turn_text = _all_turn_text(turns)
-    opened_refs, closed_refs = extract_issue_refs(turn_text + "\n" + commit_text)
-
-    issues_opened, issues_closed = collect_issues_in_window(
-        repo,
-        referenced_opened=opened_refs,
-        referenced_closed=closed_refs,
-    )
-
-    projects = collect_projects_for_session(
-        cwd=cwd,
-        files_touched=files_touched,
-        wiki_root=wiki_root,
-    )
-
-    return {
-        "commits": render_commits_section(raw_commits),
-        "issues_opened": render_issue_section(issues_opened, repo=repo),
-        "issues_closed": render_issue_section(issues_closed, repo=repo),
-        "projects": projects,
-        "commit_shas": shas,
-    }
