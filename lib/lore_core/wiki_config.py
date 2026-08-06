@@ -71,20 +71,41 @@ def load_wiki_config(wiki_dir: Path) -> WikiConfig:
 
     Missing file → all defaults. Unknown keys → `warnings.warn` but
     config loads. Malformed YAML → defaults + warning (no crash).
+
+    ``git.auto_push`` is the one field whose default reads the wiki
+    itself: see :func:`_default_auto_push`.
     """
     path = wiki_dir / ".lore-wiki.yml"
     if not path.exists():
-        return WikiConfig()
+        return _with_auto_push_default(WikiConfig(), wiki_dir, set_by_file=False)
     try:
         raw = yaml.safe_load(path.read_text()) or {}
     except yaml.YAMLError as e:
         warnings.warn(f"wiki_config: malformed YAML at {path}: {e}", stacklevel=2)
-        return WikiConfig()
+        return _with_auto_push_default(WikiConfig(), wiki_dir, set_by_file=False)
     if not isinstance(raw, dict):
         warnings.warn(f"wiki_config: top-level must be a mapping at {path}", stacklevel=2)
-        return WikiConfig()
+        return _with_auto_push_default(WikiConfig(), wiki_dir, set_by_file=False)
 
-    return _merge(WikiConfig(), raw, path)
+    cfg = _merge(WikiConfig(), raw, path)
+    git_block = raw.get("git")
+    set_by_file = isinstance(git_block, dict) and "auto_push" in git_block
+    return _with_auto_push_default(cfg, wiki_dir, set_by_file=set_by_file)
+
+
+def _with_auto_push_default(cfg: WikiConfig, wiki_dir: Path, *, set_by_file: bool) -> WikiConfig:
+    """Default ``git.auto_push`` to whether the wiki has a git remote.
+
+    A wiki with a remote is a shared vault, and a flag reaches a
+    teammate only after a push. A solo wiki has nowhere to push, so the
+    same default reads false there. A value written in the file always
+    wins over both.
+    """
+    if not set_by_file:
+        from lore_core.git_sync import has_remote
+
+        cfg.git.auto_push = has_remote(wiki_dir)
+    return cfg
 
 
 def _merge(default_obj, overrides: dict[str, Any], source: Path):
