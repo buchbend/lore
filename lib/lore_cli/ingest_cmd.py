@@ -80,13 +80,7 @@ def ingest(
         transcript_id=tid,
         path=source_path,
         directory=cwd,
-        digested_hash=None,
-        digested_index_hint=None,
-        synthesised_hash=None,
         last_mtime=now,
-        curator_a_run=None,
-        noteworthy=None,
-        session_note=None,
     )
     ledger.upsert(entry)
 

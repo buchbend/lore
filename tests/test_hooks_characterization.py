@@ -13,68 +13,9 @@ from pathlib import Path
 import pytest
 
 # --- under test -------------------------------------------------------------
-from lore_core.drain_banner import format_drain_summary, tally_drain, wiki_suffix
 from lore_core.session_start import collect_session_facts, maybe_auto_pull_for_scope
 
 NOW = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
-
-
-# ---------------------------------------------------------------------------
-# drain tally / summary rendering
-# ---------------------------------------------------------------------------
-
-
-class _Ev:
-    def __init__(self, event: str, wiki: str | None = None, wikilink: str | None = None):
-        self.event = event
-        self.wiki = wiki
-        self.data = {"wikilink": wikilink} if wikilink else {}
-
-
-def test_tally_drain_counts_by_event_name() -> None:
-    events = [_Ev("note-filed"), _Ev("note-filed"), _Ev("note-appended")]
-    assert tally_drain(events) == {"note-filed": 2, "note-appended": 1}
-
-
-def test_summary_single_note_uses_its_wikilink() -> None:
-    events = [_Ev("note-filed", wiki="w", wikilink="[[a]]")]
-    assert format_drain_summary(tally_drain(events), events) == "new note [[a]]"
-
-
-def test_summary_plural_notes_use_wiki_suffix() -> None:
-    events = [_Ev("note-filed", wiki="w"), _Ev("note-filed", wiki="w")]
-    assert format_drain_summary(tally_drain(events), events) == "2 new notes in w"
-
-
-def test_summary_joins_filed_appended_and_surface_with_middots() -> None:
-    events = [
-        _Ev("note-filed", wiki="w", wikilink="[[a]]"),
-        _Ev("note-appended", wiki="w", wikilink="[[b]]"),
-        _Ev("surface-proposed", wiki="w"),
-    ]
-    assert format_drain_summary(tally_drain(events), events) == (
-        "new note [[a]] · added to [[b]] · 1 surface proposed in w"
-    )
-
-
-def test_summary_ignores_unknown_event_kinds() -> None:
-    events = [_Ev("transcript-synced", wiki="w")]
-    assert format_drain_summary(tally_drain(events), events) == ""
-
-
-def test_wiki_suffix_multi_wiki_orders_by_count_then_name() -> None:
-    events = [
-        _Ev("note-filed", wiki="b"),
-        _Ev("note-filed", wiki="a"),
-        _Ev("note-filed", wiki="a"),
-    ]
-    assert wiki_suffix(events, "note-filed") == " (2 in a, 1 in b)"
-
-
-def test_wiki_suffix_empty_when_any_event_lacks_a_wiki_tag() -> None:
-    """Legacy/migration rows without a wiki must not produce a partial breakdown."""
-    events = [_Ev("note-filed", wiki="a"), _Ev("note-filed", wiki=None)]
-    assert wiki_suffix(events, "note-filed") == ""
 
 
 # ---------------------------------------------------------------------------

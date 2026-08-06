@@ -16,12 +16,12 @@ filter.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from lore_core.flag import EV_REVIEW, EV_WRITE, SPINE_SOURCE, count_pending
 from lore_core.spine import read_spine
+from lore_core.timefmt import parse_ts
 
 
 @dataclass(frozen=True)
@@ -109,23 +109,6 @@ def flag_counts(lore_root: Path, wiki: str) -> FlagCounts:
     )
 
 
-def _parse_ts(raw: str) -> datetime | None:
-    """Parse an ISO timestamp, normalizing a naive one to UTC.
-
-    A naive and an aware ``datetime`` can't be subtracted, so a caller
-    diffing two parsed timestamps would crash on a naive one even though
-    every value this module produces is well-formed — a hand-edited or
-    otherwise malformed record must degrade this function's contract
-    (``None``), not raise past it. Same idiom as
-    ``spine._oldest_record_age_days`` / ``status_cmd._resolve_now``.
-    """
-    try:
-        ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return None
-    return ts if ts.tzinfo else ts.replace(tzinfo=UTC)
-
-
 def review_latency_seconds(events: list[dict[str, Any]], flag_id: str) -> float | None:
     """Seconds between one flag's write and its first RESOLVING verdict.
 
@@ -155,7 +138,7 @@ def review_latency_seconds(events: list[dict[str, Any]], flag_id: str) -> float 
             review_ts = rec.get("ts")
     if write_ts is None or review_ts is None:
         return None
-    a, b = _parse_ts(write_ts), _parse_ts(review_ts)
+    a, b = parse_ts(write_ts), parse_ts(review_ts)
     if a is None or b is None:
         return None
     return (b - a).total_seconds()

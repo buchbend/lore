@@ -21,6 +21,24 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 
+def parse_ts(ts: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp into a UTC-aware ``datetime``.
+
+    The package's one timestamp parser. Accepts the ``Z`` suffix every
+    Lore writer emits, and stamps UTC on a naive value so two parsed
+    timestamps are always subtractable. Returns ``None`` for empty or
+    malformed input — a hand-edited record degrades the contract, it
+    never raises past this call.
+    """
+    if not ts:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
 def _parse(ts: datetime | str | None) -> datetime | str | None:
     """Coerce str → datetime (UTC-aware). Returns original input if unparseable.
 
@@ -34,11 +52,7 @@ def _parse(ts: datetime | str | None) -> datetime | str | None:
         return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
     if not ts:
         return None
-    try:
-        parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return ts  # return the original string
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return parse_ts(ts) or ts
 
 
 def relative_time(

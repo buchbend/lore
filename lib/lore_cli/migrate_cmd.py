@@ -9,7 +9,7 @@ Three verbs, all idempotent and all dry-run by default:
   linkage blocks, then delete the session-note stock
 
 These are upgrades you run once when a vault falls behind the current
-schema. `lore backfill` is unrelated — that imports historical
+schema. It is unrelated to the retired `lore backfill`, which imported historical
 transcripts.
 """
 

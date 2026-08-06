@@ -20,13 +20,7 @@ def _entry(lore_root: Path, **kw) -> TranscriptLedgerEntry:
         "transcript_id": "t1",
         "path": lore_root / "t1.jsonl",
         "directory": lore_root / "proj",
-        "digested_hash": None,
-        "digested_index_hint": None,
-        "synthesised_hash": None,
         "last_mtime": datetime(2026, 8, 1, 10, 0, tzinfo=UTC),
-        "curator_a_run": None,
-        "noteworthy": None,
-        "session_note": None,
     }
     defaults.update(kw)
     return TranscriptLedgerEntry(**defaults)
@@ -267,7 +261,7 @@ def test_session_end_capture_takes_the_deep_pass(tmp_path: Path, monkeypatch) ->
     monkeypatch.setattr(
         capture_routing,
         "register_pending_transcripts",
-        lambda *a, **kw: seen.append(kw.get("deep", False)),
+        lambda *a, **kw: (seen.append(kw.get("deep", False)), 0)[1],
     )
     monkeypatch.setattr(capture_routing, "load_wiki_config", None, raising=False)
     _run_route(tmp_path, capture_routing, event="session-start")

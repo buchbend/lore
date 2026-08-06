@@ -147,20 +147,23 @@ def cmd_purge_unattached(
     dry_run: bool = typer.Option(False, "--dry-run", help="Report only; do not mutate."),
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompt."),
 ) -> None:
-    """Retire ledger entries in the ``__unattached__`` bucket.
+    """Retire ledger entries whose cwd resolves to no attachment.
 
-    For every pending transcript whose cwd doesn't resolve to any
-    attachment, stamp ``orphan=True`` and ``curator_a_run=now`` so the
-    entry never resurfaces. Idempotent; safe to run repeatedly.
+    Candidates are the entries that carry no orphan mark and whose
+    directory still exists but is covered by no attachment. Each one is
+    stamped ``orphan=True`` so sync and the recap skip it for good.
+    Idempotent; safe to run repeatedly.
     """
-    from datetime import UTC, datetime
-
     from lore_core.ledger import TranscriptLedger
+    from lore_core.scope_resolver import resolve_scope
 
     lore_root = _lore_root_or_die()
     ledger = TranscriptLedger(lore_root)
-    buckets = ledger.pending_by_wiki()
-    unattached = buckets.get("__unattached__", [])
+    unattached = [
+        e
+        for e in ledger.all_entries()
+        if not e.orphan and e.directory.exists() and resolve_scope(e.directory) is None
+    ]
 
     if not unattached:
         console.print("[green]Nothing to purge — no unattached entries.[/green]")
@@ -178,16 +181,10 @@ def cmd_purge_unattached(
         console.print("[yellow]Cancelled.[/yellow]")
         raise typer.Exit(0)
 
-    now = datetime.now(UTC)
     retired = 0
     for entry in unattached:
         try:
-            ledger.stamp_scan(
-                integration=entry.integration,
-                transcript_id=entry.transcript_id,
-                curator_a_run=now,
-                orphan=True,
-            )
+            ledger.mark_orphan(entry.integration, entry.transcript_id)
             retired += 1
         except KeyError:
             # Entry vanished between snapshot and stamp — skip.

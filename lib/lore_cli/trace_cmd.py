@@ -1,22 +1,21 @@
-"""`lore trace` — correlated drill-down of one flush.
+"""`lore trace` — correlated drill-down of one trace_id.
 
-Reads the event spine + flush record only (see ``lore_core.trace``); never
-writes. Consolidates the debugging role of `lore log` / `lore runs` /
-`lore proc` into one story keyed by trace_id.
+Reads the event spine only (see ``lore_core.trace``); never writes.
+Consolidates the debugging role of `lore log` / `lore runs` / `lore proc`
+into one story keyed by trace_id.
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime
 
 import typer
+from lore_core.timefmt import parse_ts
 from lore_core.trace import (
     FlushTrace,
     TraceNotFound,
     TraceStep,
-    dead_flushes,
     flush_by_trace_id,
     resolve_selector,
 )
@@ -38,18 +37,11 @@ app = typer.Typer(
 )
 
 
-def _parse_ts(raw: str) -> datetime | None:
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return None
-
-
 def _duration_label(steps: list[TraceStep], i: int) -> str:
     """Gap to the *next* step — the trace has no other notion of "how long"."""
     if i + 1 >= len(steps):
         return ""
-    a, b = _parse_ts(steps[i].ts), _parse_ts(steps[i + 1].ts)
+    a, b = parse_ts(steps[i].ts), parse_ts(steps[i + 1].ts)
     if a is None or b is None:
         return ""
     delta = (b - a).total_seconds()
@@ -84,7 +76,7 @@ def _step_line(steps: list[TraceStep], i: int) -> str:
 
 
 def _render_tree(trace: FlushTrace) -> Tree:
-    tree = Tree(f"trace {trace.trace_id} — [bold]{trace.status}[/bold]")
+    tree = Tree(f"trace {trace.trace_id}")
     for i, step in enumerate(trace.steps):
         line = _step_line(trace.steps, i)
         if step.level == "error":
@@ -96,32 +88,13 @@ def _render_tree(trace: FlushTrace) -> Tree:
 
 
 def _render_plain(trace: FlushTrace) -> str:
-    lines = [f"trace {trace.trace_id} -- {trace.status}"]
+    lines = [f"trace {trace.trace_id}"]
     for i, step in enumerate(trace.steps):
         marker = "!" if step.level == "error" else ("~" if step.level == "warn" else " ")
         lines.append(f"  {marker} {_step_line(trace.steps, i)}")
     if not trace.steps:
         lines.append("  (no spine events for this trace_id)")
     return "\n".join(lines)
-
-
-def _print_dead(*, records, json_out: bool) -> None:
-    if json_out:
-        for rec in records:
-            sys.stdout.write(json.dumps(rec.to_dict()) + "\n")
-        return
-    if not records:
-        console.print("[dim]No dead-lettered flushes.[/dim]")
-        return
-    # ponytail: dead-letter listing is a flat table, not a per-flush tree —
-    # --plain has nothing extra to strip, so one aligned rendering serves
-    # both the default and --plain paths.
-    for rec in records:
-        line = (
-            f"{rec.trace_id or rec.flush_id}  {rec.wiki or '-'}  "
-            f"{rec.reason or '-'}  {rec.updated_at}"
-        )
-        console.print(f"[red]{line}[/red]", highlight=False)
 
 
 def _flag_detail(data: dict) -> str:
@@ -137,11 +110,10 @@ def _flag_detail(data: dict) -> str:
 def _print_flags(*, records: list[dict], json_out: bool) -> None:
     """Flat, chronological listing of flag-write/flag-review spine events.
 
-    Not one correlated flush tree (flag events carry no trace_id — a flag
-    is a standing-alone fact, not a flush) — a flat table, same shape as
-    ``_print_dead``. Review latency for one flag is exactly the gap
-    between its ``flag-write`` and ``flag-review`` lines here, both
-    keyed by the same ``flag_id``.
+    Not one correlated tree (flag events carry no trace_id — a flag is a
+    standing-alone fact) — a flat table. Review latency for one flag is
+    exactly the gap between its ``flag-write`` and ``flag-review`` lines
+    here, both keyed by the same ``flag_id``.
     """
     if json_out:
         for rec in records:
@@ -165,12 +137,12 @@ def trace(
     # collapses to a single command instead of a click Group requiring a
     # subcommand after the argument — same workaround as drill_cmd/search_cmd.
     selector: str = typer.Argument(
-        None, help="trace-id | session-id | last | dead | flag | note path or [[wikilink]]"
+        None, help="trace-id | session-id | flag | note path or [[wikilink]]"
     ),
     plain: bool = typer.Option(False, "--plain", help="Aligned text, no tree glyphs/color."),
     json_out: bool = typer.Option(False, "--json", help="Raw spine event list (JSONL)."),
 ) -> None:
-    """Chronological drill-down of one flush, correlated by trace_id."""
+    """Chronological drill-down of one story, correlated by trace_id."""
     from lore_core.config import get_lore_root
 
     if not selector:
@@ -195,10 +167,6 @@ def trace(
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1) from e
 
-    if resolved == "dead":
-        _print_dead(records=dead_flushes(lore_root), json_out=json_out)
-        return
-
     traces = [flush_by_trace_id(lore_root, tid) for tid in resolved]
 
     if json_out:
@@ -210,7 +178,7 @@ def trace(
     for t in traces:
         if plain:
             # No markup, no auto-highlight — plain text is meant to be
-            # exactly what it says: e.g. literal `(compose-failed)`, no
+            # exactly what it says: e.g. a literal `(capture-failed)`, no
             # ANSI codes injected around numbers inside trace_ids/models.
             console.print(_render_plain(t), markup=False, highlight=False)
         else:

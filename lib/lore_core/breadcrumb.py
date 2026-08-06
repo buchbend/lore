@@ -21,7 +21,6 @@ _EV_CONSUMED = "pending-breadcrumb-consumed"
 
 def render_session_end_breadcrumb(
     outcome: str,
-    pending_after: int,
     error_message: str | None = None,
 ) -> str | None:
     """Return a one-line breadcrumb for a SessionEnd/PreCompact capture result.
@@ -140,14 +139,13 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
         return banner
 
     state = query_capture_state(ctx.lore_root, now=ctx.now)
-    a = next((c for c in state.curators if c.role == "a"), None)
 
     # Last-run error prefix — preempts everything else (banner's error mode).
-    if a and a.last_run_errors and a.last_run_errors > 0 and a.last_run_ts and a.last_run_short_id:
+    if state.last_run_errors and state.last_run_ts and state.last_run_short_id:
         banner = (
-            f"lore!: last run had {a.last_run_errors} errors "
-            f"({relative_time(a.last_run_ts, now=ctx.now)}) "
-            "· lore trace last"
+            f"lore!: last run had {state.last_run_errors} errors "
+            f"({relative_time(state.last_run_ts, now=ctx.now)}) "
+            "· lore doctor"
         )
         return _prepend(session_end_line, banner)
 

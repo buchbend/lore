@@ -172,6 +172,19 @@ def get_wiki_root() -> Path:
     return get_lore_root() / "wiki"
 
 
+def list_wikis(lore_root: Path) -> list[Path]:
+    """Return every wiki directory under ``lore_root``, sorted by name.
+
+    The package's one wiki enumerator. Returns ``[]`` for a vault with no
+    ``wiki/`` directory. Symlinks are followed, so a wiki mounted from
+    elsewhere in the filesystem still counts as a directory.
+    """
+    wiki_root = lore_root / "wiki"
+    if not wiki_root.is_dir():
+        return []
+    return [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
+
+
 def require_lore_root() -> Path:
     """Strict resolver — raises if unconfigured or path missing.
 

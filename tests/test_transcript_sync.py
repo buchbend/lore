@@ -51,13 +51,7 @@ def _seed_ledger_entry(
             transcript_id=transcript_id,
             path=src_path,
             directory=directory,
-            digested_hash=None,
-            digested_index_hint=None,
-            synthesised_hash=None,
             last_mtime=datetime.now(UTC),
-            curator_a_run=None,
-            noteworthy=None,
-            session_note=None,
             orphan=orphan,
         )
     )

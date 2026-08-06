@@ -1,12 +1,15 @@
-"""Business logic for `lore trace` — correlated drill-down of one flush.
+"""Business logic for `lore trace` — correlated drill-down of one trace_id.
 
-Reconstructs a flush's story purely by reading two existing stores — the
-event spine (:mod:`lore_core.spine`, #185/#188) and the flush lifecycle
-record (:mod:`lore_core.flush_store`, #189) — never writes. A flush's
-steps are simply every spine record sharing its ``trace_id``, ordered by
-timestamp; there is no new storage or correlation mechanism here, only a
-selector that maps the five ways a user names a flush onto that
-``trace_id``.
+Reconstructs a story purely by reading the event spine
+(:mod:`lore_core.spine`, #185/#188) — never writes. The steps are simply
+every spine record sharing a ``trace_id``, ordered by timestamp; there is
+no new storage or correlation mechanism here, only a selector that maps
+the three ways a user names a trace onto that ``trace_id``.
+
+The ``dead`` and ``last`` selectors are gone with the flush lifecycle
+record they resolved through (issue #377). A caller that passes one now
+gets :class:`TraceNotFound`, the same answer any other unknown selector
+earns.
 """
 
 from __future__ import annotations
@@ -15,13 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lore_core.flush_store import FlushRecord, FlushState, FlushStore
 from lore_core.note_document import read_note
 from lore_core.spine import read_spine
 
 
 class TraceNotFound(ValueError):
-    """No flush, session, or note matches the given selector."""
+    """No trace, session, or note matches the given selector."""
 
 
 @dataclass(frozen=True)
@@ -40,25 +42,14 @@ class TraceStep:
 @dataclass(frozen=True)
 class FlushTrace:
     trace_id: str
-    record: FlushRecord | None
     steps: list[TraceStep]
-
-    @property
-    def status(self) -> str:
-        """Current state-machine status — 'unknown' when no record exists
-
-        (a flush whose spine events outlived its record, or a synthetic
-        trace_id with only stray events).
-        """
-        return self.record.state if self.record is not None else "unknown"
 
 
 def flush_by_trace_id(lore_root: Path, trace_id: str) -> FlushTrace:
-    """Every spine record for ``trace_id``, chronological, plus its flush record.
+    """Every spine record for ``trace_id``, chronological.
 
-    A dead-lettered or otherwise partial flush simply has fewer steps —
-    there is nothing to truncate, the tree ends wherever the last emitted
-    event does.
+    A partial story simply has fewer steps — there is nothing to
+    truncate, the tree ends wherever the last emitted event does.
     """
     steps = [
         TraceStep(
@@ -74,8 +65,7 @@ def flush_by_trace_id(lore_root: Path, trace_id: str) -> FlushTrace:
         if r.get("trace_id") == trace_id
     ]
     steps.sort(key=lambda s: s.ts)
-    record = next((rec for rec in FlushStore(lore_root).list() if rec.trace_id == trace_id), None)
-    return FlushTrace(trace_id=trace_id, record=record, steps=steps)
+    return FlushTrace(trace_id=trace_id, steps=steps)
 
 
 def trace_ids_for_session(lore_root: Path, session_id: str) -> list[str]:
@@ -91,19 +81,6 @@ def trace_ids_for_session(lore_root: Path, session_id: str) -> list[str]:
         if ts > latest_ts.get(tid, ""):
             latest_ts[tid] = ts
     return sorted(latest_ts, key=lambda t: latest_ts[t], reverse=True)
-
-
-def last_trace_id(lore_root: Path) -> str | None:
-    """The most-recently-updated flush's trace_id, or None if no flush has one."""
-    for rec in FlushStore(lore_root).list():  # already newest-updated-first
-        if rec.trace_id:
-            return rec.trace_id
-    return None
-
-
-def dead_flushes(lore_root: Path) -> list[FlushRecord]:
-    """Dead-lettered flush records, newest-updated first."""
-    return FlushStore(lore_root).list(state=FlushState.DEAD_LETTERED)
 
 
 def _resolve_note_path(lore_root: Path, note_ref: str) -> Path | None:
@@ -146,33 +123,21 @@ def trace_id_for_note(lore_root: Path, note_ref: str) -> str | None:
     return tid if isinstance(tid, str) else None
 
 
-def resolve_selector(lore_root: Path, selector: str) -> str | list[str]:
-    """Map a `lore trace` argument onto trace_id(s).
+def resolve_selector(lore_root: Path, selector: str) -> list[str]:
+    """Map a `lore trace` argument onto trace_id(s), newest first.
 
-    Returns the literal ``"dead"`` for the dead-letter listing (a
-    different output shape from a flush tree — a list, not one story);
-    otherwise a list of one or more trace_ids, newest first.
+    Accepts a trace_id, a session id, or a note path / ``[[wikilink]]``.
+    Anything else raises :class:`TraceNotFound`.
     """
-    if selector == "dead":
-        return "dead"
-    if selector == "last":
-        tid = last_trace_id(lore_root)
-        if tid is None:
-            raise TraceNotFound("no flush records yet")
-        return [tid]
-
     note_tid = trace_id_for_note(lore_root, selector)
     if note_tid is not None:
         return [note_tid]
 
-    known_trace_ids = {rec.trace_id for rec in FlushStore(lore_root).list() if rec.trace_id}
-    if selector in known_trace_ids or any(
-        r.get("trace_id") == selector for r in read_spine(lore_root)
-    ):
+    if any(r.get("trace_id") == selector for r in read_spine(lore_root)):
         return [selector]
 
     session_tids = trace_ids_for_session(lore_root, selector)
     if session_tids:
         return session_tids
 
-    raise TraceNotFound(f"no flush, session, or note matches {selector!r}")
+    raise TraceNotFound(f"no trace, session, or note matches {selector!r}")

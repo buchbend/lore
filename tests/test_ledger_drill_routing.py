@@ -22,13 +22,7 @@ def _seed(lore_root: Path) -> None:
             transcript_id=tid,
             path=lore_root / f"{tid}.jsonl",
             directory=lore_root / "proj",
-            digested_hash=None,
-            digested_index_hint=None,
-            synthesised_hash=None,
             last_mtime=datetime(2026, 8, day, 9, 0, tzinfo=UTC),
-            curator_a_run=None,
-            noteworthy=None,
-            session_note=None,
             linkage=linkage,
         )
 

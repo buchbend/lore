@@ -16,26 +16,11 @@ a single render).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-
-@dataclass(frozen=True)
-class CuratorStatus:
-    """Per-curator slice of state. role is always 'a' — Curator A is the
-    only curator; the run-log is emitted by Curator A itself.
-    """
-
-    role: str
-    last_run_ts: datetime | None
-    last_run_notes_new: int | None
-    last_run_notes_merged: int | None
-    last_run_skipped: int | None
-    last_run_errors: int | None
-    last_run_short_id: str | None   # gates the last-run-errors banner line
-    work_lock_held: bool
-    overdue: bool                   # >24h since last run
+from lore_core.timefmt import parse_ts
 
 
 @dataclass(frozen=True)
@@ -44,10 +29,12 @@ class CaptureState:
     scope_attached: bool
     scope_name: str | None                        # e.g. "private/lore"
     scope_root: Path | None                       # parent of the CLAUDE.md
-    curators: list[CuratorStatus] = field(default_factory=list)
-    last_note_filed: tuple[datetime, str] | None = None  # (ts, wikilink)
-    last_briefing_ts: datetime | None = None  # newest across all WikiLedgers
-    pending_transcripts: int = 0
+    # Newest curator run on the spine. Hygiene is the only producer, so
+    # the fields carry no role: they answer "did the last run fail?", the
+    # one question the banner asks of them.
+    last_run_ts: datetime | None = None
+    last_run_errors: int | None = None
+    last_run_short_id: str | None = None          # gates the last-run-errors banner line
     hook_errors_24h: int = 0
     spine_write_failed_marker_age_s: int | None = None
     simple_tier_fallback_active: bool = False
@@ -57,32 +44,6 @@ class CaptureState:
     last_hook_event_ts: datetime | None = None
     last_hook_event_outcome: str | None = None    # e.g. "spawned-curator" | "no-scope"
     last_hook_event_kind: str | None = None       # e.g. "session-start"
-
-
-_A_OVERDUE = timedelta(hours=24)
-
-
-def _parse_iso(ts: str | None) -> datetime | None:
-    if not ts:
-        return None
-    try:
-        out = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return None
-    return out if out.tzinfo is not None else out.replace(tzinfo=UTC)
-
-
-def _is_overdue(role: str, last_run_ts: datetime | None, now: datetime) -> bool:
-    """True if the next run is due.
-
-    - A never-run curator is overdue by definition (it has work to do the
-      first time it's asked).
-    """
-    if last_run_ts is None:
-        return True
-    if role == "a":
-        return (now - last_run_ts) > _A_OVERDUE
-    return False
 
 
 def _resolve_scope(cwd: Path | None) -> tuple[bool, str | None, Path | None]:
@@ -103,58 +64,30 @@ def _resolve_scope(cwd: Path | None) -> tuple[bool, str | None, Path | None]:
 @dataclass(frozen=True)
 class _RunSummary:
     ts: datetime | None
-    notes_new: int | None
-    notes_merged: int | None
-    skipped: int | None
     errors: int | None
     short_id: str | None
 
 
-def _last_run_summary(
-    lore_root: Path,
-) -> tuple[_RunSummary, tuple[datetime, str] | None]:
-    """Return (most-recent-run summary, last_note_filed).
-
-    "Last note filed" walks newest→oldest runs for the first session-note
-    record with action=filed.
-    """
+def _last_run_summary(lore_root: Path) -> _RunSummary:
+    """Return the newest curator run's end record, or an empty summary."""
     from lore_core.run_reader import read_curator_runs
 
-    summary = _RunSummary(None, None, None, None, None, None)
-    last_note: tuple[datetime, str] | None = None
-
     grouped = read_curator_runs(lore_root)
-    # run_id is timestamp-prefixed, so reverse-sorted keys are newest-first.
-    for i, run_id in enumerate(sorted(grouped.keys(), reverse=True)):
-        records = grouped[run_id]
+    if not grouped:
+        return _RunSummary(None, None, None)
 
-        run_end: dict | None = None
-        for rec in reversed(records):
-            t = rec.get("type")
-            if run_end is None and t == "run-end":
-                run_end = rec
-            if last_note is None and t == "session-note" and rec.get("action") == "filed":
-                note_ts = _parse_iso(rec.get("ts"))
-                wikilink = rec.get("wikilink")
-                if note_ts and wikilink:
-                    last_note = (note_ts, wikilink)
-            if run_end is not None and last_note is not None:
-                break
-
-        if i == 0 and run_end is not None:
-            summary = _RunSummary(
-                ts=_parse_iso(run_end.get("ts")),
-                notes_new=run_end.get("notes_new"),
-                notes_merged=run_end.get("notes_merged"),
-                skipped=run_end.get("skipped"),
-                errors=run_end.get("errors"),
-                short_id=run_id.split("-")[-1],
-            )
-
-        if last_note is not None and i > 0:
-            break
-
-    return (summary, last_note)
+    # run_id is timestamp-prefixed, so the max key is the newest run.
+    run_id = max(grouped)
+    run_end = next(
+        (rec for rec in reversed(grouped[run_id]) if rec.get("type") == "run-end"), None
+    )
+    if run_end is None:
+        return _RunSummary(None, None, None)
+    return _RunSummary(
+        ts=parse_ts(run_end.get("ts")),
+        errors=run_end.get("errors"),
+        short_id=run_id.split("-")[-1],
+    )
 
 
 def _count_hook_errors_24h(lore_root: Path, now: datetime) -> int:
@@ -165,7 +98,7 @@ def _count_hook_errors_24h(lore_root: Path, now: datetime) -> int:
     for rec in read_spine(lore_root, source="hook"):
         if rec.get("level") != "error":
             continue
-        ts = _parse_iso(rec.get("ts"))
+        ts = parse_ts(rec.get("ts"))
         if ts is not None and ts >= threshold:
             count += 1
     return count
@@ -188,7 +121,7 @@ def _newest_hook_event(
     newest_outcome: str | None = None
     newest_kind: str | None = None
     for rec in read_spine(lore_root, source="hook"):
-        ts = _parse_iso(rec.get("ts"))
+        ts = parse_ts(rec.get("ts"))
         if ts is None:
             continue
         if newest_ts is None or ts > newest_ts:
@@ -209,57 +142,8 @@ def _marker_age_s(lore_root: Path, now: datetime) -> int | None:
     return max(0, int((now - mtime).total_seconds()))
 
 
-def _pending_transcripts(lore_root: Path) -> int:
-    from lore_core.ledger import TranscriptLedger
-    try:
-        return len(TranscriptLedger(lore_root).pending())
-    except Exception:
-        return 0
-
-
 def _simple_tier_fallback_active(lore_root: Path) -> bool:
     return (lore_root / ".lore" / "warnings.log").exists()
-
-
-def _work_lock_held(lore_root: Path) -> bool:
-    return (lore_root / ".lore" / "curator.lock").exists()
-
-
-def _newest_across_wikis(lore_root: Path, field_name: str) -> datetime | None:
-    """Return the newest ``field_name`` across all WikiLedgers in the vault.
-
-    Iterates WikiLedger JSON files directly (``.lore/wiki-<name>-ledger.json``)
-    rather than the wiki/ directory — this is robust to vaults where the
-    ledger exists but the wiki directory doesn't (e.g. test fixtures).
-    """
-    from lore_core.ledger import WikiLedger
-    lore_dir = lore_root / ".lore"
-    if not lore_dir.exists():
-        return None
-    newest: datetime | None = None
-    for ledger_file in lore_dir.glob("wiki-*-ledger.json"):
-        # Extract the wiki name: "wiki-{name}-ledger.json"
-        stem = ledger_file.stem
-        if not (stem.startswith("wiki-") and stem.endswith("-ledger")):
-            continue
-        wiki_name = stem[len("wiki-"):-len("-ledger")]
-        try:
-            entry = WikiLedger(lore_root, wiki_name).read()
-        except Exception:
-            continue
-        ts = getattr(entry, field_name, None)
-        if ts is None:
-            continue
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=UTC)
-        if newest is None or ts > newest:
-            newest = ts
-    return newest
-
-
-def _per_role_last_run(lore_root: Path, role: str) -> datetime | None:
-    """Newest last_curator_{role} across all WikiLedgers in the vault."""
-    return _newest_across_wikis(lore_root, f"last_curator_{role}")
 
 
 def query_capture_state(
@@ -281,25 +165,7 @@ def query_capture_state(
 
     attached, scope_name, scope_root = _resolve_scope(cwd)
 
-    summary, last_note = _last_run_summary(lore_root)
-    work_lock = _work_lock_held(lore_root)
-
-    per_role_ts = _per_role_last_run(lore_root, "a")
-    effective_ts = per_role_ts if per_role_ts is not None else summary.ts
-    curators: list[CuratorStatus] = [
-        CuratorStatus(
-            role="a",
-            last_run_ts=effective_ts,
-            last_run_notes_new=summary.notes_new,
-            last_run_notes_merged=summary.notes_merged,
-            last_run_skipped=summary.skipped,
-            last_run_errors=summary.errors,
-            last_run_short_id=summary.short_id,
-            work_lock_held=work_lock,
-            overdue=_is_overdue("a", effective_ts, now),
-        )
-    ]
-
+    summary = _last_run_summary(lore_root)
     last_hook_ts, last_hook_outcome, last_hook_kind = _newest_hook_event(lore_root)
 
     return CaptureState(
@@ -307,10 +173,9 @@ def query_capture_state(
         scope_attached=attached,
         scope_name=scope_name,
         scope_root=scope_root,
-        curators=curators,
-        last_note_filed=last_note,
-        last_briefing_ts=_newest_across_wikis(lore_root, "last_briefing"),
-        pending_transcripts=_pending_transcripts(lore_root),
+        last_run_ts=summary.ts,
+        last_run_errors=summary.errors,
+        last_run_short_id=summary.short_id,
         hook_errors_24h=_count_hook_errors_24h(lore_root, now),
         spine_write_failed_marker_age_s=_marker_age_s(lore_root, now),
         simple_tier_fallback_active=_simple_tier_fallback_active(lore_root),
