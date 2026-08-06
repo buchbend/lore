@@ -98,6 +98,10 @@ default does. There is no merge and no per-repo layer.
 
 - The banned-word list lives in the rules text and in the Vale style. A
   test asserts the two agree, so edit both together.
+- `RetiredHeading.yml` names the headings Lore's templates dropped. A draft
+  written from a stale template passes every prose rule, so the heading is the
+  only evidence the template moved. Retire a heading, add it to that rule in
+  the same change.
 - Overriding the rules replaces the whole document, including its section
   skeleton and EARS patterns. Start from the packaged copy rather than a blank
   file unless you intend to drop those.

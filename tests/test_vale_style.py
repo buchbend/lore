@@ -216,6 +216,37 @@ def test_vale_leaves_unrelated_words_alone(tmp_path: Path, word: str) -> None:
 
 
 @pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+@pytest.mark.parametrize("heading", ["What to build", "Epic", "Repo", "Type", "Blocked by"])
+def test_vale_flags_a_retired_heading(tmp_path: Path, heading: str) -> None:
+    """A draft written from a stale template passes every prose rule, so the
+    heading itself is the only evidence the template moved."""
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(f"# Title\n\n## {heading}\n\nThe loader reads the file.\n")
+    result = subprocess.run(
+        ["vale", "--config", str(default_vale_config_path()), str(fixture)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1, f"'## {heading}' passed the lint:\n{result.stdout}"
+    assert "retired heading" in result.stdout.lower()
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+@pytest.mark.parametrize("heading", ["Epic merge policy", "Epic body template", "Type checking"])
+def test_vale_leaves_a_longer_heading_alone(tmp_path: Path, heading: str) -> None:
+    """The check anchors to a whole heading; a retired word inside a longer
+    heading names something else."""
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(f"# Title\n\n## {heading}\n\nThe loader reads the file.\n")
+    result = subprocess.run(
+        ["vale", "--config", str(default_vale_config_path()), str(fixture)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"'## {heading}' was flagged:\n{result.stdout}"
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
 def test_vale_flags_a_sentence_over_25_words(tmp_path: Path) -> None:
     fixture = tmp_path / "issue.md"
     long_sentence = " ".join(["word"] * 30) + ".\n"
