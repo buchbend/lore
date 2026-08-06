@@ -1,8 +1,9 @@
-"""`lore status` v2 — unified health dashboard (issue #193).
+"""`lore status` — unified health dashboard (issue #193).
 
-Six sections render from live state (capture, flushes, wikis, retention,
+Six sections render from live state (capture, wikis, flags, retention,
 news, alerts). Golden --plain section tests + exit-code-mirrors-alerts +
---offline note + dead-letter-loud are the heart of the suite.
+--offline note are the heart of the suite. Every row the panel prints
+has a writer; issue #377 removed the ones that lost theirs.
 
 Output is plain text (built line-by-line and printed) — no ANSI — so
 these golden asserts are robust to the CI color environment (no TTY under
@@ -58,54 +59,14 @@ def _seed_vault(tmp_path: Path) -> tuple[Path, Path]:
     return lore_root, project
 
 
-def _seed_happy_run(lore_root: Path, *, ago: timedelta, notes_new: int) -> str:
-    from lore_core.ledger import WikiLedger
+def _seed_hook_event(lore_root: Path, *, ago: timedelta, outcome: str = "captured") -> None:
+    from lore_core.spine import SpineWriter
 
-    run_ts = _NOW - ago
-    WikiLedger(lore_root, "private").update_last_curator("a", at=run_ts)
-
-    runs_dir = lore_root / ".lore" / "runs"
-    runs_dir.mkdir(parents=True, exist_ok=True)
-    stem = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + "-abc123"
-    records = [{"type": "run-start", "ts": _iso(run_ts), "schema_version": 1}]
-    if notes_new > 0:
-        records.append(
-            {
-                "type": "session-note",
-                "ts": _iso(run_ts),
-                "action": "filed",
-                "wikilink": "[[2026-04-21-my-note]]",
-            }
-        )
-    records.append({"type": "run-end", "ts": _iso(run_ts), "notes_new": notes_new, "errors": 0})
-    (runs_dir / f"{stem}.jsonl").write_text("\n".join(json.dumps(r) for r in records) + "\n")
-    return "abc123"
-
-
-def _seed_flush(
-    lore_root: Path,
-    flush_id: str,
-    state: str,
-    *,
-    reason: str | None = None,
-    updated_ago: timedelta = timedelta(minutes=30),
-) -> None:
-    d = lore_root / ".lore" / "flushes"
-    d.mkdir(parents=True, exist_ok=True)
-    rec = {
-        "flush_id": flush_id,
-        "buffer_stem": flush_id,
-        "state": state,
-        "attempts": 3 if state == "dead-lettered" else 0,
-        "next_retry_at": None,
-        "reason": reason,
-        "wiki": "private",
-        "trace_id": "trace-xyz",
-        "created_at": _iso(_NOW - timedelta(hours=1)),
-        "updated_at": _iso(_NOW - updated_ago),
-        "schema_version": 1,
-    }
-    (d / f"{flush_id}.json").write_text(json.dumps(rec))
+    SpineWriter(lore_root).emit(
+        source="hook",
+        event="session-end",
+        data={"outcome": outcome, "ts": _iso(_NOW - ago)},
+    )
 
 
 def _seed_janitor(lore_root: Path, *, ago: timedelta, failed: int = 0) -> None:
@@ -169,22 +130,20 @@ def _invoke(lore_root: Path, cwd: Path | None, *extra: str, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_dashboard_renders_seven_sections(tmp_path: Path, monkeypatch) -> None:
+def test_dashboard_renders_six_sections(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
 
     result = _invoke(lore_root, project, "--plain", monkeypatch=monkeypatch)
     out = result.output
 
-    for header in ("capture", "flushes", "wikis", "flags", "retention", "news", "alerts"):
+    for header in ("capture", "wikis", "flags", "retention", "news", "alerts"):
         assert f"\n{header}\n" in out or out.startswith(header + "\n") or f"\n{header} " in out, (
             f"missing section header {header!r} in:\n{out}"
         )
-    # Capture liveness lines.
-    for label in ("Last note", "Last run", "Last flush", "Hook", "Pending", "Session", "Lock"):
+    # Capture liveness lines — every row here has a writer.
+    for label in ("Hook", "Session"):
         assert label in out, f"missing capture line {label!r} in:\n{out}"
-    # Flushes counts line.
-    assert "queued 0 · running 0 · dead-lettered 0" in out
     # Flags counts line — empty vault, nothing written yet.
     assert "written 0 · pending 0 · accepted 0 · declined 0" in out
     # No ANSI escapes leaked.
@@ -193,43 +152,11 @@ def test_dashboard_renders_seven_sections(tmp_path: Path, monkeypatch) -> None:
 
 def test_dashboard_healthy_exits_zero(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
 
     result = _invoke(lore_root, project, monkeypatch=monkeypatch)
     assert result.exit_code == 0
     assert "alerts" in result.output
-
-
-# ---------------------------------------------------------------------------
-# Flushes section + dead-letter loudness (AC3)
-# ---------------------------------------------------------------------------
-
-
-def test_dead_letter_surfaces_loudly_and_names_trace(tmp_path: Path, monkeypatch) -> None:
-    lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
-    _seed_flush(lore_root, "buf-1", "dead-lettered", reason="compose-failed")
-
-    result = _invoke(lore_root, project, monkeypatch=monkeypatch)
-    out = result.output
-    assert "dead-lettered 1" in out
-    assert "lore trace dead" in out, f"dead-letter must name the drill-down cmd:\n{out}"
-    # Earns an alert → nonzero exit for scriptability.
-    assert result.exit_code != 0
-
-
-def test_flush_counts_reflect_store(tmp_path: Path, monkeypatch) -> None:
-    lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
-    _seed_flush(lore_root, "b1", "queued")
-    _seed_flush(lore_root, "b2", "running")
-    _seed_flush(lore_root, "b3", "published", updated_ago=timedelta(minutes=10))
-
-    out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
-    assert "queued 1 · running 1 · dead-lettered 0" in out
-    # Last flush line reflects the most-recently-updated record (published, 10m).
-    assert "Last flush" in out
-    assert "published" in out
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +175,7 @@ def test_flags_section_shows_written_accepted_declined(tmp_path: Path, monkeypat
     from lore_core import flag
 
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     _emit_flag(lore_root, event=flag.EV_WRITE, outcome="written", flag_id="a")
     _emit_flag(lore_root, event=flag.EV_WRITE, outcome="written", flag_id="b")
     _emit_flag(lore_root, event=flag.EV_REVIEW, verdict="accept", flag_id="a")
@@ -263,7 +190,7 @@ def test_flags_section_shows_withheld_apart_from_written(tmp_path: Path, monkeyp
     from lore_core import flag
 
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     _emit_flag(lore_root, event=flag.EV_WRITE, outcome="written", flag_id="a")
     _emit_flag(lore_root, event=flag.EV_WRITE, outcome="withheld", flag_id="b", category="email")
 
@@ -276,7 +203,7 @@ def test_flags_pending_reflects_note_scan(tmp_path: Path, monkeypatch) -> None:
     from lore_core import flag
 
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
     (lore_root / "wiki" / "private" / "concepts").mkdir(parents=True)
     written = flag.write(
@@ -308,7 +235,7 @@ def test_flags_pending_reflects_note_scan(tmp_path: Path, monkeypatch) -> None:
 
 def test_exit_nonzero_when_alerts_exist(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=1), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=1))
     (lore_root / ".lore" / "spine-failed.marker").touch()
 
     result = _invoke(lore_root, project, monkeypatch=monkeypatch)
@@ -323,7 +250,7 @@ def test_exit_nonzero_when_alerts_exist(tmp_path: Path, monkeypatch) -> None:
 
 def test_wiki_health_clean_dirty_remote(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     # Replace the plain "private" dir with a healthy git wiki + a broken one.
     _make_git_wiki(lore_root, "team", remote=True, dirty=False)
     _make_git_wiki(lore_root, "solo", remote=False, dirty=True)
@@ -341,7 +268,7 @@ def test_wiki_health_clean_dirty_remote(tmp_path: Path, monkeypatch) -> None:
 
 def test_wiki_health_offline_note(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     _make_git_wiki(lore_root, "team", remote=True, dirty=False)
 
     out = _invoke(lore_root, project, "--offline", monkeypatch=monkeypatch).output
@@ -353,7 +280,7 @@ def test_wiki_health_offline_note(tmp_path: Path, monkeypatch) -> None:
 
 def test_wiki_health_ahead_count(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     _make_git_wiki(lore_root, "team", remote=True, dirty=False, ahead=2)
 
     out = _invoke(lore_root, project, "--offline", monkeypatch=monkeypatch).output
@@ -367,7 +294,7 @@ def test_wiki_health_ahead_count(tmp_path: Path, monkeypatch) -> None:
 
 def test_retention_shows_usage_and_last_run(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     _seed_janitor(lore_root, ago=timedelta(minutes=5))
 
     out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
@@ -378,7 +305,7 @@ def test_retention_shows_usage_and_last_run(tmp_path: Path, monkeypatch) -> None
 
 def test_retention_janitor_never_run(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
 
     out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
     assert "never run" in out
@@ -386,7 +313,7 @@ def test_retention_janitor_never_run(tmp_path: Path, monkeypatch) -> None:
 
 def test_retention_failed_deletions_alert(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     _seed_janitor(lore_root, ago=timedelta(minutes=5), failed=2)
 
     result = _invoke(lore_root, project, monkeypatch=monkeypatch)
@@ -403,13 +330,13 @@ def test_news_section_shows_event_and_advances_cursor(tmp_path: Path, monkeypatc
     from lore_core.drain import DrainStore
 
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     monkeypatch.setenv("CLAUDE_SESSION_ID", "sess-1")
-    DrainStore(lore_root, "sess-1").emit("note-filed", wiki="private", wikilink="[[hello]]")
+    DrainStore(lore_root, "sess-1").emit("transcript-synced", wiki="private", wikilink="[[hello]]")
 
     out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
     assert "news" in out
-    assert "[[hello]]" in out
+    assert "transcript synced" in out
     # Cursor advanced so the event is surfaced once (news semantics).
     cur = DrainStore(lore_root, "sess-1").read_cursor()
     assert cur is not None
@@ -417,7 +344,7 @@ def test_news_section_shows_event_and_advances_cursor(tmp_path: Path, monkeypatc
 
 def test_news_nothing_new(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
     monkeypatch.setenv("CLAUDE_SESSION_ID", "sess-empty")
 
     out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
@@ -429,32 +356,9 @@ def test_news_nothing_new(tmp_path: Path, monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_zero_notes_alert(tmp_path: Path, monkeypatch) -> None:
-    lore_root, project = _seed_vault(tmp_path)
-    from lore_core.ledger import WikiLedger
-    from lore_core.spine import SpineWriter
-
-    w = SpineWriter(lore_root)
-    for i, suffix in enumerate(["aaa111", "bbb222"]):
-        run_ts = _NOW - timedelta(hours=3 - i)
-        run_id = run_ts.strftime("%Y-%m-%dT%H-%M-%S") + f"-{suffix}"
-        w.emit(source="curator", event="run-start", run_id=run_id, data={"ts": _iso(run_ts)})
-        w.emit(
-            source="curator",
-            event="run-end",
-            run_id=run_id,
-            data={"notes_new": 0, "notes_merged": 0, "errors": 0},
-        )
-    WikiLedger(lore_root, "private").update_last_curator("a", at=_NOW - timedelta(hours=2))
-
-    result = _invoke(lore_root, project, monkeypatch=monkeypatch)
-    assert "0 notes" in result.output
-    assert result.exit_code != 0
-
-
 def test_simple_tier_fallback_alert(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=1), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=1))
     (lore_root / ".lore" / "warnings.log").write_text("simple-tier-fallback\n")
 
     out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
@@ -486,14 +390,13 @@ def test_unattached_cwd(tmp_path: Path, monkeypatch) -> None:
 
 def test_json_mode(tmp_path: Path, monkeypatch) -> None:
     lore_root, project = _seed_vault(tmp_path)
-    _seed_happy_run(lore_root, ago=timedelta(hours=2), notes_new=1)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
 
     out = _invoke(lore_root, project, "--json", monkeypatch=monkeypatch).output
     data = json.loads(out)
     assert data["scope_name"] == "private/proj:test"
-    assert [c["role"] for c in data["curators"]] == ["a"]
-    # v2 sections present.
-    assert "flushes" in data
+    assert "curators" not in data
+    assert "flushes" not in data
     assert "retention" in data
     assert "flags" in data
     assert data["flags"]["private"]["written"] == 0

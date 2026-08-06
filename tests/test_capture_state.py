@@ -15,11 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from lore_core.capture_state import (
-    CaptureState,
-    CuratorStatus,
-    query_capture_state,
-)
+from lore_core.capture_state import query_capture_state
 
 
 _NOW = datetime(2026, 4, 21, 12, 0, 0, tzinfo=UTC)
@@ -102,20 +98,12 @@ def test_capture_state_empty_vault(tmp_path: Path) -> None:
     state = query_capture_state(lore_root, now=_NOW)
 
     assert state.lore_root == lore_root
-    assert state.pending_transcripts == 0
     assert state.hook_errors_24h == 0
-    assert state.last_note_filed is None
     assert state.spine_write_failed_marker_age_s is None
     assert state.simple_tier_fallback_active is False
-    assert len(state.curators) == 1
-    assert [c.role for c in state.curators] == ["a"]
-    for c in state.curators:
-        assert c.last_run_ts is None
-        assert c.last_run_notes_new is None
-        assert c.last_run_errors is None
-        assert c.last_run_short_id is None
-        assert c.work_lock_held is False
-        assert c.overdue is True  # never-run = overdue by definition
+    assert state.last_run_ts is None
+    assert state.last_run_errors is None
+    assert state.last_run_short_id is None
 
 
 # ---------------------------------------------------------------------------
@@ -153,34 +141,6 @@ def test_capture_state_scope_resolution(tmp_path: Path, monkeypatch: pytest.Monk
     assert state.scope_attached is True
     assert state.scope_name == "private/proj:test"
     assert state.scope_root == project
-
-
-# ---------------------------------------------------------------------------
-# Per-role curator status + overdue calculation
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "role,last_run_ago,expected_overdue",
-    [
-        ("a", timedelta(hours=1), False),
-        ("a", timedelta(hours=25), True),
-    ],
-)
-def test_capture_state_overdue_calculation_per_role(
-    tmp_path: Path, role: str, last_run_ago: timedelta, expected_overdue: bool
-) -> None:
-    from lore_core.ledger import WikiLedger
-
-    lore_root = _seed_lore_root(tmp_path)
-    wledger = WikiLedger(lore_root, "private")
-    wledger.update_last_curator(role, at=_NOW - last_run_ago)
-
-    state = query_capture_state(lore_root, now=_NOW)
-    statuses = {c.role: c for c in state.curators}
-    assert statuses[role].overdue is expected_overdue, (
-        f"role={role} ago={last_run_ago} expected overdue={expected_overdue}"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -248,15 +208,10 @@ def test_capture_state_hook_liveness_skips_malformed_lines(tmp_path: Path) -> No
 
 
 def test_capture_state_populated_vault(tmp_path: Path) -> None:
-    from lore_core.ledger import WikiLedger
-
     lore_root = _seed_lore_root(tmp_path)
 
-    wledger = WikiLedger(lore_root, "private")
-    wledger.update_last_curator("a", at=_NOW - timedelta(hours=2))
-
-    # Seed 3 runs, last one recent with 2 new notes and 0 errors.
-    paths = _write_runs(
+    # Seed 2 runs; the newest one ended 2h ago with 0 errors.
+    _write_runs(
         lore_root,
         [
             [
@@ -291,65 +246,10 @@ def test_capture_state_populated_vault(tmp_path: Path) -> None:
 
     state = query_capture_state(lore_root, now=_NOW)
 
-    (a,) = state.curators
-    assert a.last_run_ts == _NOW - timedelta(hours=2)
-    assert a.last_run_notes_new == 2
-    assert a.last_run_errors == 0
-    assert a.last_run_short_id is not None
-    assert a.overdue is False
-
-    assert state.last_note_filed is not None
-    note_ts, wikilink = state.last_note_filed
-    assert wikilink == "[[2026-04-21-test-note]]"
-
+    assert state.last_run_ts == _NOW - timedelta(hours=2)
+    assert state.last_run_errors == 0
+    assert state.last_run_short_id is not None
     assert state.hook_errors_24h == 1
-
-
-# ---------------------------------------------------------------------------
-# Pending transcripts
-# ---------------------------------------------------------------------------
-
-
-def test_capture_state_pending_transcripts_count(tmp_path: Path) -> None:
-    from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
-
-    lore_root = _seed_lore_root(tmp_path)
-    tledger = TranscriptLedger(lore_root)
-    for i in range(3):
-        tledger.upsert(
-            TranscriptLedgerEntry(
-                integration="fake",
-                transcript_id=f"t{i}",
-                path=lore_root / f"t{i}.jsonl",
-                directory=lore_root,
-                digested_hash=None,
-                digested_index_hint=None,
-                synthesised_hash=None,
-                last_mtime=_NOW,
-                curator_a_run=None,
-                noteworthy=None,
-                session_note=None,
-            )
-        )
-
-    state = query_capture_state(lore_root, now=_NOW)
-    assert state.pending_transcripts == 3
-
-
-# ---------------------------------------------------------------------------
-# Work-lock detection
-# ---------------------------------------------------------------------------
-
-
-def test_capture_state_work_lock_held(tmp_path: Path) -> None:
-    lore_root = _seed_lore_root(tmp_path)
-    lock_dir = lore_root / ".lore" / "curator.lock"
-    lock_dir.mkdir()
-
-    state = query_capture_state(lore_root, now=_NOW)
-    assert any(c.work_lock_held for c in state.curators), (
-        "at least one curator should report work_lock_held=True"
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -57,7 +57,6 @@ def _build_app() -> typer.Typer:
     # unified `lore --help` listing.
     from lore_cli import (
         attach_cmd,
-        backfill_cmd,
         briefing_cmd,
         codemap_cmd,
         config_cmd,
@@ -120,7 +119,6 @@ def _build_app() -> typer.Typer:
     app.add_typer(toggle_cmd.on_app, name="on", rich_help_panel=_KN)
     app.add_typer(toggle_cmd.off_app, name="off", rich_help_panel=_KN)
 
-    app.add_typer(backfill_cmd.app, name="backfill", rich_help_panel=_ADV)
     app.add_typer(tier_cmd.app, name="tier", rich_help_panel=_ADV)
     app.add_typer(style_cmd.app, name="style", rich_help_panel=_ADV)
     app.add_typer(briefing_cmd.app, name="briefing", rich_help_panel=_ADV)

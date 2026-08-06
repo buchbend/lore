@@ -22,6 +22,7 @@ from lore_core.gh import gh_issue_view
 from lore_core.git import git_repo_root
 from lore_core.linkage import Linkage, classify_refs, extract_linkage
 from lore_core.repo_docs import list_docs
+from lore_core.config import list_wikis
 from lore_core.schema import parse_frontmatter
 from lore_core.scope_resolver import resolve_scope
 
@@ -63,10 +64,6 @@ def _session_matches(fm: dict[str, Any], *, repo: str, scope: str, focus: set[in
         return True
     refs = set(linkage.get("issues") or []) | set(linkage.get("epics") or [])
     return bool(focus) and bool(refs & focus)
-
-
-def _list_wikis(wiki_root: Path) -> list[Path]:
-    return [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
 
 
 def _session_date_from_path(md: Path, sessions_dir: Path) -> date | None:
@@ -121,7 +118,7 @@ def _matching_sessions(
     if not wiki_root.exists():
         return []
     out: list[dict[str, Any]] = []
-    for wiki_path in _list_wikis(wiki_root):
+    for wiki_path in list_wikis(wiki_root.parent):
         for d, md in _iter_session_notes(wiki_path, SCAN_DAYS):
             fm = parse_frontmatter(md.read_text(errors="replace"))
             if not _session_matches(fm, repo=repo, scope=scope, focus=focus):

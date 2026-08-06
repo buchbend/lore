@@ -2,10 +2,8 @@
 
 Each command is a thin shell: resolve cwd, read the stdin payload, check the
 suppression toggles, delegate, emit. The work itself lives in the domain
-layer — :mod:`lore_core.session_start` (banner assembly),
-:mod:`lore_core.drain_banner` (drain lines), :mod:`lore_curator.heartbeat`
-(mid-session scheduling), :mod:`lore_curator.capture_routing` (transcript
-registration, flush requests, spawn gate).
+layer — :mod:`lore_core.session_start` (banner assembly) and
+:mod:`lore_curator.capture_routing` (transcript registration).
 
 What stays here is the hook contract itself: the crash shield, the JSON
 envelope Claude Code expects per event, stdin payload parsing, the PID-keyed
@@ -101,25 +99,6 @@ def _context_log() -> str:
                 + body
             )
     return "lore: no context log found. SessionStart may not have fired. Run `lore doctor`.\n"
-
-
-def _append_context_log(sys_msg: str, ctx: str | None = None) -> None:
-    """Append a timestamped heartbeat entry to the PID-scoped context log."""
-    from datetime import UTC as _UTC
-    from datetime import datetime as _dt
-    cc_pid = _claude_code_pid() or os.getppid()
-    cache = _cache_path_for_pid(cc_pid)
-    if not cache.exists():
-        return
-    ts = _dt.now(_UTC).strftime("%H:%M")
-    entry = f"\n── {ts} ──\n{sys_msg}\n"
-    if ctx:
-        entry += f"  → injected: {ctx}\n"
-    try:
-        with open(cache, "a") as f:
-            f.write(entry)
-    except OSError:
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -701,36 +680,8 @@ def cmd_context_log() -> None:
 
 
 # ---------------------------------------------------------------------------
-# UserPromptSubmit heartbeat
+# UserPromptSubmit
 # ---------------------------------------------------------------------------
-
-# The scheduling logic lives in ``lore_curator.heartbeat``; the spawn and
-# stamp primitives live here in the CLI layer (which owns subprocess
-# launching). ``lore_curator`` must not import ``lore_cli``, so these two
-# shells hand the primitives down instead. Resolving them from this module's
-# globals on every call also keeps ``lore_cli.hooks.<name>`` the single
-# monkeypatch seam for the whole heartbeat path.
-
-
-def _heartbeat(
-    lore_root: Path,
-    cwd: Path,
-    wiki_cfg,
-    *,
-    pid: int | None = None,
-) -> tuple[str | None, str | None]:
-    """Check drain for new events; return (system_message, additional_context)."""
-    from lore_curator.heartbeat import heartbeat
-
-    return heartbeat(
-        lore_root,
-        cwd,
-        wiki_cfg,
-        pid=pid,
-        stamp_within_cooldown=_stamp_within_cooldown,
-        write_stamp=_write_stamp,
-        resolve_pid=_claude_code_pid,
-    )
 
 
 def cmd_user_prompt_submit(
@@ -741,7 +692,7 @@ def cmd_user_prompt_submit(
         help="Print raw text instead of Claude Code JSON envelope.",
     ),
 ) -> None:
-    """Lightweight heartbeat — check drain for new events."""
+    """Mid-session transcript registration plus the citations directive."""
     if _in_curator_mode():
         return
     _read_hook_payload()
@@ -752,54 +703,44 @@ def cmd_user_prompt_submit(
     if scope is None:
         return
     lore_root = _infer_lore_root(scope.claude_md_path)
-    wiki_cfg = _load_wiki_cfg_from_scope(scope, lore_root)
 
     # Mid-session transcript discovery + mtime refresh. Closes the
     # SessionStart-vs-transcript-creation race (sub-second; SessionStart
     # can sample the projects dir before Claude Code has created the
-    # transcript file) and keeps `last_mtime` fresh so `pending()` /
-    # the spawn-gate see work growing across the session. Without this,
-    # long sessions sit on accumulated turns until SessionEnd.
+    # transcript file) and keeps `last_mtime` fresh across the session.
+    # Without this, long sessions sit on accumulated turns until SessionEnd.
     try:
         adapter = get_adapter("claude-code")
         _register_pending_transcripts(lore_root, cwd_resolved, adapter=adapter)
     except Exception:
         pass  # never break the prompt path on a registration hiccup
 
-    sys_msg, ctx = _heartbeat(lore_root, cwd_resolved, wiki_cfg)
-
     # Citations toggle takes effect mid-session: re-assert the suppression
     # directive on every prompt while `/lore:off citations` is active so the
     # agent sees it on the very next turn after the user toggles it,
     # rather than waiting for the next SessionStart.
     cite_lines = _citation_directive_lines()
-    if cite_lines:
-        cite_block = "\n".join(line for line in cite_lines if line)
-        ctx = cite_block if not ctx else ctx + "\n\n" + cite_block
-
-    if not sys_msg and not ctx:
+    if not cite_lines:
+        return
+    ctx = "\n".join(line for line in cite_lines if line)
+    if not ctx:
         return
 
     if plain:
-        if sys_msg:
-            sys.stdout.write(sys_msg + "\n")
-        if ctx:
-            sys.stdout.write(ctx + "\n")
+        sys.stdout.write(ctx + "\n")
         return
 
-    envelope: dict = {}
-    if sys_msg:
-        envelope["systemMessage"] = sys_msg
-    if ctx:
-        envelope["hookSpecificOutput"] = {
-            "hookEventName": "UserPromptSubmit",
-            "additionalContext": ctx,
-        }
-    if envelope:
-        sys.stdout.write(json.dumps(envelope) + "\n")
-
-    if sys_msg:
-        _append_context_log(sys_msg, ctx)
+    sys.stdout.write(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "UserPromptSubmit",
+                    "additionalContext": ctx,
+                }
+            }
+        )
+        + "\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -965,7 +906,7 @@ def capture(
     scope_payload = {"wiki": scope.wiki, "scope": scope.scope}
     # Filled in by route_capture as soon as it knows them, so the error
     # branch below can still report counts computed before a failure.
-    progress: dict[str, object] = {"pending_after": 0, "pending_by_wiki": {}}
+    progress: dict[str, object] = {"registered": 0}
 
     try:
         try:
@@ -975,7 +916,7 @@ def capture(
                 event=event, integration=integration, scope=scope_payload,
                 duration_ms=_elapsed_ms(),
                 outcome="error",
-                pending_after=0,
+                registered=0,
                 error_code=ErrorCode.UNKNOWN_INTEGRATION,
                 error={"type": "UnknownIntegrationError", "message": integration},
                 cwd=str(cwd),
@@ -999,8 +940,7 @@ def capture(
             duration_ms=_elapsed_ms(),
             outcome="error",
             error_code=ErrorCode.CAPTURE_FAILED,
-            pending_after=progress["pending_after"],
-            pending_by_wiki=progress["pending_by_wiki"],
+            registered=progress["registered"],
             error={"type": type(exc).__name__, "message": str(exc)},
             cwd=str(cwd),
             pid=_capture_pid,
@@ -1012,8 +952,7 @@ def capture(
         event=event, integration=integration, scope=scope_payload,
         duration_ms=_elapsed_ms(),
         outcome=routed.outcome,
-        pending_after=routed.pending_after,
-        pending_by_wiki=routed.pending_by_wiki,
+        registered=routed.registered,
         run_id=None,
         cwd=str(cwd),
         pid=_capture_pid,
@@ -1029,10 +968,7 @@ def capture(
                 write_pending_breadcrumb,
             )
 
-            crumb = render_session_end_breadcrumb(
-                outcome=routed.outcome,
-                pending_after=routed.pending_after,
-            )
+            crumb = render_session_end_breadcrumb(outcome=routed.outcome)
             if crumb is not None:
                 write_pending_breadcrumb(lore_root, crumb)
         except Exception:

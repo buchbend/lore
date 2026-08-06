@@ -417,7 +417,7 @@ def _print_post_attach_guidance(
                 "see lore doctor[/dim]"
             )
     console.print(f"  [dim]* Notes will appear in[/dim] {wiki_sessions}/")
-    console.print("  [dim]* Historical sessions are not processed[/dim] (run [cyan]lore backfill[/cyan] to import past work)")
+    console.print("  [dim]* Historical sessions are not processed[/dim]")
     console.print()
     console.print("  [dim]Verify: start a new Claude Code session, then[/dim] [cyan]lore status[/cyan]")
 

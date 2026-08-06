@@ -615,14 +615,9 @@ def render_capture_state_block(
     """Render the capture-state breadcrumb plus the drain and cross-scope lines.
 
     Returns the block to append to the banner, or "" when nothing is worth
-    saying. Presentation only from the caller's point of view — but note the
-    drain lines are NOT side-effect free: rendering them advances the drain
-    cursors, which is what stops the same events resurfacing at the next
-    SessionStart. ``probe`` skips them for that reason, so ``lore doctor``
-    leaves no on-disk footprint.
+    saying. Presentation only — no cursor advances, no writes.
     """
     from lore_core.breadcrumb import BannerContext, render_banner
-    from lore_core.drain_banner import render_drain_lines
     from lore_core.wiki_config import load_wiki_config
 
     wiki_root = get_wiki_root()
@@ -655,14 +650,6 @@ def render_capture_state_block(
     )
     if banner is not None:
         out += "\n\n" + banner
-
-    if not probe:
-        try:
-            drain_lines = render_drain_lines(lore_root, cwd)
-            if drain_lines:
-                out += "\n" + "\n".join(drain_lines)
-        except (OSError, json.JSONDecodeError):
-            pass
 
     try:
         cross = cross_scope_breadcrumbs(lore_root, scope.wiki)

@@ -33,18 +33,17 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.spine import SpineWriter, read_spine
+from lore_core.timefmt import parse_ts
 
 SYSTEM_SESSION = "_system"
 
 
-# Canonical event vocabulary. Kept here so consumers (curators, sync,
-# news CLI) reference one list. A ``skip`` path is intentionally
-# absent — P3' replaces the LLM verdict with a deterministic append
-# rule, so ``noteworthy-false`` has no producer. Reserved for later
-# phases (LLM verdict, broadcast): ``noteworthy-false``, ``remote-news``.
-EVENT_VOCAB: frozenset[str] = frozenset(
-    {"note-filed", "note-appended", "surface-proposed", "transcript-synced"}
-)
+# Canonical event vocabulary. One kind, one producer: transcript sync
+# emits ``transcript-synced`` onto the shared ``_system`` stream. A kind
+# without a producer is a defect — every reader of it reports on records
+# nothing creates — so a new kind lands together with the code that
+# emits it, never ahead of it.
+EVENT_VOCAB: frozenset[str] = frozenset({"transcript-synced"})
 
 
 @dataclass
@@ -84,24 +83,18 @@ class DrainStore:
     ) -> None:
         """Emit one drain event onto the spine (``source="drain"``).
 
-        Raises ValueError on an unknown ``event`` name, or when a
-        non-``transcript-synced`` event is targeted at the system drain
-        (``SYSTEM_SESSION``) — the shared stream, where per-note events would
-        haunt every future SessionStart. The spine write itself never raises:
-        a failure is swallowed *and* marked (``spine-failed.marker``), so a
-        dropped drain event is no longer invisible.
+        Raises ValueError on an ``event`` name outside :data:`EVENT_VOCAB`.
+        The spine write itself never raises: a failure is swallowed *and*
+        marked (``spine-failed.marker``), so a dropped drain event is no
+        longer invisible.
 
-        ``trace_id`` correlates a note event with the flush that produced it
+        ``trace_id`` correlates an event with the flush that produced it
         (#188); ``None`` for events outside a traced flush. Callers must keep
         ``data`` small — a drain record shares the spine's PIPE_BUF atomicity
         budget (only bounded metadata is ever passed today).
         """
         if event not in EVENT_VOCAB:
             raise ValueError(f"unknown drain event: {event!r}")
-        if self._session_id == SYSTEM_SESSION and event != "transcript-synced":
-            raise ValueError(
-                f"system drain accepts only 'transcript-synced'; got {event!r}"
-            )
         # ponytail: no per-record size cap here; drain producers only ever pass
         # bounded metadata (wiki, wikilink, note path, transcript id). Add a
         # truncate-in-adapter guard if a large-payload producer ever appears.
@@ -130,7 +123,7 @@ class DrainStore:
         for rec in read_spine(self._lore_root, source="drain"):
             if rec.get("session_id") != self._session_id:
                 continue
-            ts = _parse_ts(rec.get("ts"))
+            ts = parse_ts(rec.get("ts"))
             if ts is None:
                 continue
             if since is not None and ts < since:
@@ -190,16 +183,6 @@ class DrainStore:
         anchor = now if now is not None else datetime.now(UTC)
         self.write_cursor(anchor)
         return anchor
-
-
-def _parse_ts(raw: Any) -> datetime | None:
-    """Parse a spine ``ts`` (ISO-8601, possibly ``Z``-suffixed)."""
-    if not isinstance(raw, str) or not raw:
-        return None
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
 
 
 def resolve_session_id(

@@ -1,9 +1,9 @@
-"""`lore trace` (#192) — correlated drill-down of one flush.
+"""`lore trace` (#192) — correlated drill-down of one trace_id.
 
 Golden-output tests for --plain / --json pin the rendering; the fixtures
-write spine records and flush records directly (the pattern used by
-test_status_cmd.py / test_log_cmd.py) rather than driving the full
-pipeline, since the reader is the thing under test here.
+write spine records directly (the pattern used by test_status_cmd.py /
+test_log_cmd.py) rather than driving the full pipeline, since the reader
+is the thing under test here.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ import json
 from pathlib import Path
 
 from lore_cli.trace_cmd import app
-from lore_core.flush_store import ErrorCode, FlushState, FlushStore
 from lore_core.spine import SpineWriter
 from typer.testing import CliRunner
 
@@ -36,7 +35,7 @@ def _invoke(lore_root: Path, *args: str, monkeypatch) -> object:
 
 
 # ---------------------------------------------------------------------------
-# AC1 — all five selectors
+# AC1 — every selector that resolves through the spine
 # ---------------------------------------------------------------------------
 
 
@@ -89,46 +88,6 @@ def test_session_id_selector_returns_all_flushes_of_session(tmp_path, monkeypatc
     assert "trace-A" in result.output
     assert "trace-B" in result.output
     assert "trace-C" not in result.output
-
-
-def test_last_selector_picks_most_recently_updated_flush(tmp_path, monkeypatch):
-    lore_root = _lore_root(tmp_path)
-    store = FlushStore(lore_root)
-    older = store.begin("older-buffer", wiki="private", trace_id="trace-older")
-    store.transition(older, FlushState.RUNNING)
-    store.transition(older, FlushState.PUBLISHED)
-    newer = store.begin("newer-buffer", wiki="private", trace_id="trace-newer")
-    store.transition(newer, FlushState.RUNNING)
-
-    result = _invoke(lore_root, "last", "--plain", monkeypatch=monkeypatch)
-    assert result.exit_code == 0
-    assert "trace-newer" in result.output
-    assert "trace-older" not in result.output
-
-
-def test_dead_selector_lists_dead_lettered_newest_first(tmp_path, monkeypatch):
-    lore_root = _lore_root(tmp_path)
-    store = FlushStore(lore_root)
-
-    first = store.begin("buf-1", wiki="private", trace_id="trace-dead-1")
-    store.transition(first, FlushState.RUNNING)
-    store.transition(first, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED)
-
-    second = store.begin("buf-2", wiki="private", trace_id="trace-dead-2")
-    store.transition(second, FlushState.RUNNING)
-    store.transition(second, FlushState.DEAD_LETTERED, reason=ErrorCode.SPAWN_FAILED)
-
-    # A published flush must not show up in the dead list.
-    ok = store.begin("buf-3", wiki="private", trace_id="trace-ok")
-    store.transition(ok, FlushState.RUNNING)
-    store.transition(ok, FlushState.PUBLISHED)
-
-    result = _invoke(lore_root, "dead", "--plain", monkeypatch=monkeypatch)
-    assert result.exit_code == 0
-    first_pos = result.output.index("trace-dead-2")
-    second_pos = result.output.index("trace-dead-1")
-    assert first_pos < second_pos, "newest dead-letter must render first"
-    assert "trace-ok" not in result.output
 
 
 def test_note_selector_resolves_via_frontmatter_linkage(tmp_path, monkeypatch):
@@ -229,18 +188,8 @@ def test_flag_selector_empty_does_not_crash(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# AC2 — header is the current flush status; steps carry model/tokens, note path
+# AC2 — steps carry model/tokens and the note path
 # ---------------------------------------------------------------------------
-
-
-def test_header_shows_current_flush_status(tmp_path, monkeypatch):
-    lore_root = _lore_root(tmp_path)
-    store = FlushStore(lore_root)
-    rec = store.begin("buf-status", wiki="private", trace_id="trace-status")
-    store.transition(rec, FlushState.RUNNING)
-
-    result = _invoke(lore_root, "trace-status", "--plain", monkeypatch=monkeypatch)
-    assert "-- running" in result.output
 
 
 def test_llm_step_shows_model_and_tokens(tmp_path, monkeypatch):
@@ -298,7 +247,7 @@ def test_golden_plain_output(tmp_path, monkeypatch):
 
     result = _invoke(lore_root, trace_id, "--plain", monkeypatch=monkeypatch)
     expected = (
-        "trace trace-golden -- unknown\n"
+        "trace trace-golden\n"
         "    hook/capture  +1.0s\n"
         "    curator/run-start  +2.0s\n"
         "    drain/note-filed -> wiki/private/sessions/x.md"
@@ -336,32 +285,32 @@ def test_golden_json_output(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_dead_lettered_flush_truncates_at_failure(tmp_path, monkeypatch):
+def test_a_failed_story_ends_at_its_last_event(tmp_path, monkeypatch):
     lore_root = _lore_root(tmp_path)
-    store = FlushStore(lore_root)
     trace_id = "trace-truncated"
-    rec = store.begin("buf-fail", wiki="private", trace_id=trace_id)
-    store.transition(rec, FlushState.RUNNING)
-    _emit(lore_root, source="curator", event="buffer-opened", trace_id=trace_id, run_id="r1")
-    store.transition(rec, FlushState.DEAD_LETTERED, reason=ErrorCode.COMPOSE_FAILED)
+    _emit(lore_root, source="hook", event="capture", trace_id=trace_id)
+    _emit(
+        lore_root,
+        source="hook",
+        event="capture-failed",
+        level="error",
+        trace_id=trace_id,
+        error_code="capture-failed",
+    )
 
     result = _invoke(lore_root, trace_id, "--plain", monkeypatch=monkeypatch)
     assert result.exit_code == 0
-    assert "-- dead-lettered" in result.output
-    # Last line rendered is the dead-letter transition itself — nothing
-    # is synthesized past the last real event.
+    # Nothing is synthesized past the last real event.
     last_line = [ln for ln in result.output.splitlines() if ln.strip()][-1]
-    assert "flush-dead-lettered" in last_line
-    assert "(compose-failed)" in last_line
+    assert "hook/capture-failed" in last_line
+    assert "(capture-failed)" in last_line
 
 
-def test_trace_with_no_events_does_not_crash(tmp_path, monkeypatch):
+def test_an_unknown_selector_reports_not_found(tmp_path, monkeypatch):
     lore_root = _lore_root(tmp_path)
-    store = FlushStore(lore_root)
-    store.begin("buf-empty", wiki="private", trace_id="trace-empty")
 
     result = _invoke(lore_root, "trace-empty", "--plain", monkeypatch=monkeypatch)
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 # ---------------------------------------------------------------------------
@@ -379,9 +328,6 @@ def _snapshot(lore_root: Path) -> dict[str, str]:
 
 def test_trace_never_writes_to_lore_root(tmp_path, monkeypatch):
     lore_root = _lore_root(tmp_path)
-    store = FlushStore(lore_root)
-    rec = store.begin("buf-ro", wiki="private", trace_id="trace-readonly")
-    store.transition(rec, FlushState.RUNNING)
     _emit(lore_root, source="curator", event="run-start", trace_id="trace-readonly", run_id="r1")
     note_dir = lore_root / "wiki" / "private" / "sessions"
     note_dir.mkdir(parents=True)
@@ -392,8 +338,6 @@ def test_trace_never_writes_to_lore_root(tmp_path, monkeypatch):
         ["trace-readonly"],
         ["trace-readonly", "--plain"],
         ["trace-readonly", "--json"],
-        ["last"],
-        ["dead"],
         ["flag"],
         [str(note_dir / "n.md")],
     ):

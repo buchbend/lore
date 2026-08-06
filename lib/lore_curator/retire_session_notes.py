@@ -32,6 +32,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from lore_core.config import list_wikis
 
 __all__ = [
     "BackfillItem",
@@ -196,14 +197,11 @@ def _recorded_branch(transcript: Path) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _wiki_dirs(lore_root: Path, wiki: str | None) -> list[Path]:
-    root = lore_root / "wiki"
-    if not root.is_dir():
-        return []
+def _selected_wikis(lore_root: Path, wiki: str | None) -> list[Path]:
+    dirs = list_wikis(lore_root)
     if wiki:
-        target = root / wiki
-        return [target] if target.is_dir() else []
-    return sorted(d for d in root.iterdir() if d.is_dir())
+        return [d for d in dirs if d.name == wiki]
+    return dirs
 
 
 def _iter_sessions_dirs(lore_root: Path, wiki: str | None):
@@ -213,7 +211,7 @@ def _iter_sessions_dirs(lore_root: Path, wiki: str | None):
     knows. :func:`_contained` resolves each candidate before it is
     allowed into the plan.
     """
-    for wiki_dir in _wiki_dirs(lore_root, wiki):
+    for wiki_dir in _selected_wikis(lore_root, wiki):
         sessions = wiki_dir / "sessions"
         if sessions.is_dir() and not sessions.is_symlink():
             yield sessions
@@ -262,7 +260,7 @@ def _sessions_roots(lore_root: Path, wiki: str | None = None) -> list[Path]:
     in-vault-looking paths, and ``--apply`` delete them.
     """
     roots: list[Path] = []
-    for wiki_dir in _wiki_dirs(lore_root, wiki):
+    for wiki_dir in _selected_wikis(lore_root, wiki):
         sessions = wiki_dir / "sessions"
         if sessions.is_dir() and not sessions.is_symlink():
             roots.append(sessions.resolve())

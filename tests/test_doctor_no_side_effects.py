@@ -11,13 +11,12 @@ that suppresses ALL spawn side-effects. `lore doctor` invokes with
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from lore_cli import doctor_cmd
 from lore_cli.hooks import hook_app
-from lore_core.ledger import WikiLedger, WikiLedgerEntry
 from typer.testing import CliRunner
 
 runner = CliRunner()
@@ -66,11 +65,6 @@ def _make_attached_project(root: Path) -> Path:
     return project
 
 
-def _yesterday() -> datetime:
-    now = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-    return now - timedelta(days=1)
-
-
 def _snapshot_dir(path: Path) -> dict[str, tuple[int, bytes]]:
     """Return {relative_path: (mtime_ns, content_hash_bytes)} for every file under path."""
     import hashlib
@@ -99,17 +93,15 @@ def test_doctor_probe_writes_no_state_files(tmp_path, monkeypatch) -> None:
     project = _make_attached_project(tmp_path)
     lore_root = project
 
-    # Pre-populate WikiLedger with yesterday's last_curator_a so that WITHOUT
-    # --probe the hook would spawn Curator A. With --probe (via doctor) it
-    # must NOT.
-    wledger = WikiLedger(lore_root, "testwiki")
-    wledger.write(WikiLedgerEntry(wiki="testwiki", last_curator_a=_yesterday()))
+    # Seed one file under .lore/ so the snapshot has something to compare.
+    (lore_root / ".lore").mkdir(parents=True, exist_ok=True)
+    (lore_root / ".lore" / "seed.json").write_text("{}")
 
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
     monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
 
     before = _snapshot_dir(lore_root / ".lore")
-    assert before, "precondition: .lore/ has the WikiLedger we just wrote"
+    assert before, "precondition: .lore/ has the file we just wrote"
 
     rc = doctor_cmd.main(["--cwd", str(project), "--json"])
     assert rc == 0
