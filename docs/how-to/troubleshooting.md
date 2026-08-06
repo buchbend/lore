@@ -8,7 +8,7 @@ status`, `lore doctor` are all covered in
 
 ## "Hooks aren't firing"
 
-Escalate through three commands, each one level deeper:
+Escalate through these steps, each one level deeper:
 
 1. **`lore status`** — check the `capture` section's `Hook` line. A
    timestamp within the last few minutes means hooks *are* firing; "no
@@ -20,14 +20,15 @@ Escalate through three commands, each one level deeper:
    Claude Code plugin cache silently keeps running old hook code even
    though `main` (or your installed version) has moved on; `--fix` can't
    repair this one, but the check names the exact drift.
-3. **`lore trace <session-id>`** — if `doctor` passes but notes still
-   don't appear, trace the session directly (the session_id is what
-   Claude Code shows in its own session info, or resolve it from
-   `$CLAUDE_SESSION_ID` in the failing shell). No steps at all means the
-   hook never ran; steps that stop after `hook/session-start` with no
-   `curator/*` events means a flush was never spawned — check
+3. **`lore status`'s news section** — if `doctor` passes but the ledger
+   still doesn't grow, check for a recent `transcript-synced` entry there.
+   Transcript sync's drain event lands on the shared system stream, not a
+   per-session one, so this confirms sync ran at all rather than for one
+   session in particular. Nothing there and a recent `Hook` timestamp
+   means the hook fired but the detached sync never spawned — check
    `$CLAUDE_PROJECT_DIR` and that the plugin hooks are actually installed
-   (`lore install`).
+   (`lore install`). `lore trace <session-id>` cannot help here: no
+   current producer mints a `trace_id`, so it always reports no match.
 
 ## "Nothing appeared in the wiki after my session"
 
@@ -36,9 +37,9 @@ session leaves a transcript-ledger entry, and a wiki note only when an
 agent or a human filed a flag. If you expected a flag, see
 ["My flag never appeared in the wiki"](#my-flag-never-appeared-in-the-wiki).
 
-To confirm capture itself ran, `lore status` shows the last hook fire and
-the registered-transcript count per wiki. `lore doctor` checks the hook
-wiring. Neither depends on anything having been written to a wiki.
+To confirm capture itself ran, `lore status` shows the last hook fire.
+`lore doctor` checks the hook wiring. Neither depends on anything
+having been written to a wiki.
 
 ## "A ref in my flag says `(unchecked)`"
 
@@ -100,18 +101,17 @@ by hand accepts that flag as far as the count is concerned, and records no
 accept/decline counters are not expected to sum. See
 [measure flag quality](measure-flag-quality.md).
 
-## "A flush looks stuck"
+## A `queued` or `running` flush record on disk
 
-`lore status`'s `flushes` line shows `queued` / `running` / `dead-lettered`
-counts. A flush sitting in `queued` or `running` for a long time is
-either genuinely still working or waiting out its
-exponential backoff after a failed
-attempt (base 60s, doubling, capped at 3600s — see
-`lore_core/flush_store.py`). `lore trace <selector>` shows which: a
-`flush-running` step with no `flush-published`/`flush-dead-lettered`
-after it is legitimately in-flight. If it's been longer than the retry cap and nothing moved, run
-`lore doctor` — a corrupted flush record is one of the `--fix`-repairable
-states.
+`lore_core/flush_store.py` is a reader now — nothing opens a new record.
+`.lore/flushes/` can still hold `queued` or `running` records left over
+from before the compose pipeline retired; the retention janitor purges
+`published` / `withheld` records past their age window, exempts
+`dead-lettered` records from that window entirely and caps them by
+count instead, and leaves `queued` / `running` records alone, since no
+code advances them any more. One sitting there is not a live flush
+stuck mid-flight — delete `.lore/flushes/` by hand if the leftovers
+bother you; nothing reads them back.
 
 ## Known rough edges (honest, not yet fixed)
 
@@ -130,8 +130,8 @@ states.
 
 These are gone, not renamed under a flag — `lore trace` and `lore status`
 fully absorbed their role (see `CHANGELOG.md`'s `### Removed` entry). Reach
-for `lore trace <selector>` for the correlated flush story these used to
-print, or `lore status` for the health snapshot.
+for `lore trace <selector>` for the correlated, chronological story these
+used to print, or `lore status` for the health snapshot.
 
 Other verbs that moved rather than vanished:
 
@@ -140,7 +140,6 @@ Other verbs that moved rather than vanished:
 | `lore detach` | `lore attach remove` |
 | `lore attachments <sub>` | `lore attach attachments <sub>` |
 | `lore registry ls` / `lore registry doctor` | `lore scopes wikis` / `lore scopes doctor` |
-| `lore curator backfill-slugs` | `lore migrate slugs` |
 | `lore curator --migrate-open-items` | `lore migrate open-items` |
 | `lore migrate --add-schema-version` | `lore migrate frontmatter --add-schema-version` |
 

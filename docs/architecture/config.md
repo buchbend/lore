@@ -105,7 +105,7 @@ Resolution: env > `.lore/config.yml:curator.openai.*` > error.
 
 `reasoning_effort_*` values are `low | medium | high` (case-insensitive)
 or empty string for "unset" (no `reasoning_effort` forwarded). See
-[Recommended openai-backend setup](../../README.md#recommended-openai-backend-setup-curator-a-narration)
+[Recommended openai-backend setup](../../README.md#recommended-openai-backend-setup-briefing-narration)
 in the README for the GPT-OSS-120B production recipe.
 
 Implemented in `lore_curator/llm_client.py:_resolve_openai_settings`.
@@ -162,16 +162,19 @@ YAML → defaults + warning.
 Per-vault-mount policy. Schema lives in
 `lib/lore_core/wiki_config.py:WikiConfig`. Subsections:
 
-- `git.{auto_commit, auto_push, auto_pull}`
-- `curator.{threshold_pending_turns, max_pending_age_s, a_noteworthy_tier,
-  curator_a_cooldown_s}`
-- `curator.{synthesis_buffer_cap_turns, synthesis_buffer_cap_chars,
-  synthesis_flush_timeout_s, synthesis_model_tier, reaper_max_per_pass,
-  buffer_done_retention_days, liveness_stale_threshold_s}` — buffer-and-flush knobs
+- `git.{auto_commit, auto_push, auto_pull}` — `auto_push` defaults to
+  whether the wiki has a git remote; an explicit value in the file
+  always wins over that default.
 - `models.{simple, middle, high}` — Claude model IDs per tier
 - `briefing.{audience, sinks}`
 - `heartbeat.{enabled, cooldown_s, push_context}`
 - `breadcrumb.{mode, scope_filter}`
+
+A `curator:` block is a retired key — `WikiConfig` carries no
+`curator` field, and `load_wiki_config` warns by name
+(`RETIRED_BLOCKS`) rather than the generic unknown-key notice. The
+per-session-turn-threshold knobs it used to hold retired with the
+compose pipeline that read them.
 
 Loader: `load_wiki_config(wiki_dir) -> WikiConfig`. Same fault-tolerant
 behaviour as root config.

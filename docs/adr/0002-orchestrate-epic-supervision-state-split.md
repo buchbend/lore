@@ -1,6 +1,6 @@
 # ADR 0002: Orchestrate-epic supervision-state split (board on the issue, working context on the epic note)
 
-- Status: Accepted
+- Status: Superseded by ADR 0010
 - Date: 2026-07-10
 - Context: epic [#229](https://github.com/buchbend/lore/issues/229),
   PRD [0006](../prd/0006-workflow-lightening-deepening.md), sub-issue
