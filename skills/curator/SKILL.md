@@ -18,10 +18,13 @@ Passes per wiki, all frontmatter-only — note bodies are never touched:
 1. **Supersession** — note A says "supersedes [[B]]" → B gets
    `superseded_by: [[A]]`. Only the relation is written; `status:` is
    never set (lifecycle is derived at read time).
-2. **Implements-propagation** — a session note's `implements: <slug>`
-   drops `draft:` on the target and stamps `implemented_by` /
-   `implemented_at` back-links; `implements: <slug>:superseded-by:<other>`
-   writes `superseded_by: [[other]]`.
+2. **Implements-propagation** — reads `implements: <slug>` frontmatter
+   from notes under `sessions/` and drops `draft:` on the target,
+   stamping `implemented_by` / `implemented_at` back-links;
+   `implements: <slug>:superseded-by:<other>` writes `superseded_by:
+   [[other]]`. Nothing writes a new session note since the compose
+   pipeline retired, so this pass only ever finds back-links on notes
+   that predate the retirement.
 3. **Git backfill** — missing `created` / `last_reviewed` filled from
    `git log --follow`.
 4. **Team-mode hint** — advises creating `_users.yml` once a solo wiki

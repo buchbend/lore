@@ -39,11 +39,11 @@ comment — precisely so a second run heals rather than duplicates.
    comment in place for every further update; a resumed run never opens a
    second status comment.
 
-The board comment carries only the durable per-feature state. The
-orchestrator's own working context — tier decisions, crosscheck verdicts,
-in-flight markers — rides a single composed **epic note** keyed to the epic,
-which the resumed run rehydrates through `lore_context_pack`. So its
-reasoning survives the interruption too, not just the feature checklist.
+The board comment carries the durable per-feature state in its table, and
+the orchestrator's own working context — tier decisions, crosscheck
+verdicts, in-flight markers — in a `## Notes` section below that same
+table. A resumed run reads both from the one comment, so its reasoning
+survives the interruption too, not just the feature checklist.
 
 ## If no prior run is found
 

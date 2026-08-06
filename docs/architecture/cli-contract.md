@@ -117,12 +117,10 @@ harness:
   tests expect. Translates `typer.Exit` / `SystemExit` /
   `click.exceptions.*` back to integer exit codes.
 
-- **`lore_core.run_render`** — pure renderers (no I/O) for run-log
-  records. Used by `curator_cmd` for the live trail during a curator
-  run.
-
-Both are import-time-cheap; they exist so individual verbs don't have
-to repeat plumbing.
+Import-time-cheap; it exists so individual verbs don't have to repeat
+plumbing. `lore_core.run_render` — the pure renderers `curator_cmd` used
+for a curator run's live trail — was deleted with the compose pipeline
+it rendered.
 
 ## Deprecating a verb
 

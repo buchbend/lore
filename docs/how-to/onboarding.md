@@ -74,19 +74,22 @@ repair path for a partial install.
 
    `doctor` re-confirms install integrity (nonzero exit on any failure);
    `status` shows whether a session has actually captured anything yet
-   (capture liveness, last hook fire, last note). A fresh install with no
-   session activity yet is expected to show "no activity" lines, not
-   errors — errors there mean something in step 2 needs a re-run.
+   (capture liveness, last hook fire). A fresh install with no session
+   activity yet is expected to show "no activity" lines, not errors —
+   errors there mean something in step 2 needs a re-run.
 
 ## If something's wrong
 
 See [troubleshooting.md](troubleshooting.md) — start with `lore status`,
-escalate to `lore doctor --fix` for repairable state, then `lore trace`
-for a specific flush's story.
+escalate to `lore doctor --fix` for repairable state, then
+`lore trace <session-id>` for one session's correlated story.
 
 ## Done when
 
 `lore doctor` exits 0, `lore status` shows the attached wiki with no
 alerts, and — after you've actually used Claude Code for a bit in the
-attached repo — a session note appears under
-`<wiki>/sessions/[<handle>/]YYYY/MM/`.
+attached repo — `status`'s `Hook` line carries a recent timestamp.
+Capture itself writes only a transcript-ledger entry; nothing lands in
+the wiki until you or the agent files one with `lore flag write` (or
+the `lore_flag` MCP tool). File one and confirm it appended to its
+owning topic note.

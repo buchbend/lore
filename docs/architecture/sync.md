@@ -1,9 +1,10 @@
 # Cross-host sync
 
-**Status:** active (introduced in 0.11.0)
+**Status:** active (introduced in 0.11.0; push transport restored by
+epic #375 after issue #361 left it without a caller)
 **Replaces:** the dataclass-shaped placeholder `WikiConfig.git.{auto_pull, auto_push}` that shipped without callers in 0.3.0–0.10.6.
 
-This ADR captures the conflict policy and runtime model behind Lore's
+This page captures the conflict policy and runtime model behind Lore's
 cross-host sync layer. **"Host" here means *machine*** — a user's
 laptop and workstation are two hosts of the same wiki.
 
@@ -36,10 +37,11 @@ produces — without producing temp artifacts or losing content.
 
 | Trigger | Where | What |
 |---|---|---|
-| **Curator A post-commit** | `lib/lore_curator/session_curator.py:_maybe_auto_commit` (existing) | After auto-commit of a freshly filed session note or appended chapter. |
-| LLM-merge follow-up | `lib/lore_core/git_sync.py:auto_push` | When push fails non-FF, run LLM merge, re-push. |
+| **Session boundary (SessionEnd hook)** | `lib/lore_cli/hooks.py` → `lib/lore_core/session_start.py:maybe_auto_push_for_scope` | Pushes the attached wiki once, after every flag filed that session is already committed (`lore_core/flag.py` commits each flag through `lore_core/session.py:commit_note` at write time). |
+| Manual | `lore briefing --wiki <name>` (unless `--no-git`) | The briefing one-shot pulls before gather and pushes after mark — parked with briefings (PRD 0011), not part of the session-boundary path. |
 
-`auto_push` is `auto_pull` + `git push`, with conflict-resolution baked in.
+`auto_push` is `auto_pull` + `git push`, with conflict-resolution baked
+in — see "Conflict policy" below for what "resolution" means today.
 
 ### What never gets pushed
 
@@ -50,32 +52,37 @@ produces — without producing temp artifacts or losing content.
 
 ## Conflict policy
 
-Three classes of conflict, each with a deterministic resolver.
+> **Status: parked.** `auto_push`'s `llm_client` parameter accepts a
+> client, but no caller passes one — the session-boundary push (above)
+> always calls it with none. A session-note or typed-note conflict
+> therefore always ends in `MERGE_BLOCKED`, `git merge --abort` runs,
+> and the working tree comes back clean; nothing below the "LLM call"
+> step in class 2 currently executes. The classifier, the merge path
+> and the prompt stay in the tree — the path resolves conflicts for the
+> push this epic restored — what's on hold is the decision to run a
+> model at the session boundary.
 
-### 1. Session notes — pre-pull eliminates conflicts in steady state
+Four classes of conflict, each with a deterministic resolver.
 
-Session notes live at `<wiki>/sessions[/<handle>]/<YYYY>/<MM>/<DD>-<slug>.md`.
-Two hosts can in principle produce the same path on the same day with
-the same slug. **The pre-pull at SessionStart eliminates this in steady
-state**: when Host B starts a session, it pulls Host A's commits first,
-sees the same-day note, and the existing append-to-today logic (in
-`session_writer.py:_find_todays_open_note`) merges the new chunk into
-that one note — same code path that handles concurrent same-host
-sessions today.
+### 1. Session notes — no longer written
 
-**Edge case fallback:** if the pre-pull is skipped (offline, dirty
-tree, network failure), and Host B writes its own day-note that later
-collides with Host A's on push, the LLM-merge resolver kicks in. The
-two notes get merged into one canonical body. No `.host-A.md` siblings.
+Session notes lived at `<wiki>/sessions[/<handle>]/<YYYY>/<MM>/<DD>-<slug>.md`.
+Nothing writes a new one since the compose pipeline retired (`#361`),
+so two hosts can no longer produce a same-day collision going forward.
+The classifier still recognizes a `sessions/` path as this conflict
+class — for a wiki that still carries pre-retirement session notes —
+and routes it through the same LLM-merge path as class 2, parked the
+same way.
 
-### 2. Manually-authored notes — LLM-merge on push conflict
+### 2. Typed-subdirectory notes — LLM-merge on push conflict
 
 Notes in a wiki's typed subdirectories (`concepts/`, `decisions/`,
-`projects/`, …) are written directly — by hand or via `/lore:inbox` —
-there is no automatic abstraction pass that populates them, so this
-conflict class is rarer than session-note conflicts in practice. The
-classifier and merge path still apply to whatever two hosts
-independently write there:
+`projects/`, …) are written directly — by hand, via `/lore:inbox`, or
+appended to by a flag (`lore_core/flag.py`) — there is no automatic
+abstraction pass that populates them on its own. This is the conflict
+class two hosts filing flags into the same topic note actually hit.
+The classifier and merge path apply to whatever two hosts independently
+write there:
 
 1. `git fetch origin`
 2. `git merge origin/<branch> --no-commit --no-ff`
@@ -85,16 +92,18 @@ independently write there:
    - LLM call (middle tier, ~$0.001) with structured prompt: "merge
      these two versions of `<note>`. Preserve all distinct facts,
      deduplicate restated points, keep wikilinks from both sides."
+     **Parked** — reached only when a caller passes an `llm_client`.
    - Write merged result, `git add <path>`
 5. If all conflicts resolved: `git commit -m "merge(auto-llm): N
    note(s)"`, `git push`
-6. If any unresolved: `git merge --abort`, log via `lore status`,
-   surface a `lore curator merge --resolve` action to the user.
+6. If any unresolved (the current outcome for every typed-note
+   conflict): `git merge --abort`, working tree returns clean. The
+   user resolves it with git.
 
-LLM-merge at push time is synchronous: by the time Host B's push
-completes, the wiki has one canonical note. No temp artifacts, no
-drift window where MCP search would see two notes about the same
-thing.
+LLM-merge at push time is designed to be synchronous: by the time Host
+B's push completes, the wiki would have one canonical note, no temp
+artifacts, no drift window where MCP search would see two notes about
+the same thing — once a caller opts a model into the session boundary.
 
 ### 3. Regenerable artifacts — pick either side, lint to truth
 
@@ -108,8 +117,9 @@ on either host's next regen.
 
 Anything else (CLAUDE.md root files, hand-edited markdown outside
 sessions/typed-notes) → `git merge --abort`, log via `lore status` with
-the path list and a `lore curator merge --resolve <path>` hint. Never
-silently overwrite hand-edited content.
+the path list. `lore` mounts no merge-resolution command for this —
+resolve the conflict with git directly in the wiki repo, commit, and
+push. Never silently overwrite hand-edited content.
 
 ---
 
@@ -128,10 +138,10 @@ regresses to "post-pull, MCP search may be stale for up to 5s." This
 is what 0.10.x ships today, so the optional-dep fallback is not a
 regression.
 
-**Self-edit handling:** the curator's own writes (session notes,
-chapters, hygiene-pass frontmatter edits) trip the watcher too. That's
-fine: the dirty flag just says "next query may need fresh data." The
-throttle prevents a reindex storm.
+**Self-edit handling:** a flag append and the hygiene curator's own
+frontmatter edits trip the watcher too. That's fine: the dirty flag
+just says "next query may need fresh data." The throttle prevents a
+reindex storm.
 
 ### Future direction (not for 0.11.0)
 
@@ -142,7 +152,7 @@ pattern it establishes:
 MCP server (lifetime = Claude session)
 ├── stdio JSON-RPC handler (existing tools)
 ├── fs-watch daemon thread → invalidates reindex cache
-└── [future]                → e.g. detach Curator A trigger from hooks?
+└── [future]                → e.g. detach auto_pull cadence from hooks?
 ```
 
 **Principle: MCP-daemon work is the fast-path; hooks are the
@@ -153,9 +163,10 @@ Don't add cron-style timers there — only activity-triggered work
 (file events, MCP queries). This keeps Lore consistent with its
 heartbeat-not-cron design.
 
-After 0.11.0 ships, candidates for migration are: Curator A trigger,
-`auto_pull` cadence (today only on SessionStart). Decide post-shipping
-based on observed behaviour, not now.
+After 0.11.0 ships, `auto_pull` cadence (today only on SessionStart) is
+a migration candidate. The compose pipeline's own mid-session spawn
+trigger, once a second candidate, retired with the pipeline (`#361`).
+Decide based on observed behaviour, not now.
 
 ---
 
@@ -165,16 +176,20 @@ Per-wiki, in `<wiki>/.lore-wiki.yml`:
 
 ```yaml
 git:
-  auto_commit: true     # the curator commits its own writes
-  auto_push: true       # push after each commit
+  auto_push: true       # push at the session boundary
   auto_pull: true       # fetch + ff at SessionStart
 ```
 
-Defaults: `auto_commit=false`, `auto_push=false`, `auto_pull=true`.
-The push/commit defaults stay false-by-default in 0.11.0 to avoid
-surprising users whose wiki repos are in odd states; flipping them
-to true is a one-line per-wiki opt-in. `auto_pull` defaults to true
-because it's read-only on a clean tree.
+Defaults: `auto_pull=true` — it's read-only on a clean tree, so there's
+no surprise in leaving it on. `auto_push` defaults to
+`git_sync.has_remote(wiki_dir)`: true for a wiki with a remote (a
+shared vault, where a flag reaches a teammate only after a push), false
+for a solo wiki with nowhere to push. A value written in the file
+always wins over that default.
+
+`git.auto_commit` is a schema field with no reader — `lore_core.flag`
+commits every flag unconditionally at write time, through
+`lore_core/session.py:commit_note`, regardless of this setting.
 
 ---
 
@@ -188,8 +203,9 @@ because it's read-only on a clean tree.
 | Clean tree, fast-forwardable | Fetch + ff | `lore status` (silent unless new commits pulled) |
 | Clean tree, diverged (we have local commits, remote has different commits) | Skip pull, surface to user | `lore status` `· wiki diverged — git pull manually` |
 | Push: remote ahead, FF possible | Fetch + ff + push | (silent) |
-| Push: typed-note conflict | LLM-merge → push | `lore status` shows merge count |
-| Push: unresolvable conflict | abort merge, surface to user | `lore status` `· merge needed: <paths>` |
+| Push: regenerable-artifact conflict | ours wins, `lore lint` reconciles | (silent) |
+| Push: typed-note or session-note conflict | `MERGE_BLOCKED` — LLM-merge is parked, so `git merge --abort` runs and the tree returns clean | `lore status` `· merge needed: <paths>` |
+| Push: unknown-path conflict | abort merge, surface to user | `lore status` `· merge needed: <paths>` |
 | `watchdog` not installed | Reindex throttle = 5s natural decay | (silent — same as 0.10.x) |
 
 ---

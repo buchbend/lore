@@ -187,12 +187,14 @@ network egress to PyPI / the marketplace.
 
 ## Bootstrap: passive capture
 
-Session notes auto-extract from Claude Code transcripts; explicit
-capture commands are no longer needed. Each session's turns accumulate
-in a buffer, and at session end the whole session is extracted into a
-single, per-session lab-notebook note — nothing is written while the
-session runs (see `CONTEXT.md` for the full model). Anything else
-in a wiki — concepts, decisions, projects, reference notes — is
+Capture is automatic and needs no explicit command. Every transcript
+Claude Code produces is registered into the transcript ledger and
+mirrored into the wiki's `.transcripts/`, stamped with a linkage block
+(repo, branch, PRs, issues, commits, files) derived from git state — no
+LLM call, no prose (see `CONTEXT.md` for the full model). Capture
+writes nothing into a wiki itself: the only crossing is the **flag**,
+filed deliberately by a human or an agent during the session. Anything
+else in a wiki — concepts, decisions, projects, reference notes — is
 written directly, by hand or via `/lore:inbox`; there is no automatic
 daily abstraction pass.
 
@@ -246,18 +248,19 @@ Interactive — asks for wiki + scope, writes the managed block to
 
 Once attached with a wiki present:
 
-- **Claude Code hooks**, plus ordinary tool activity, drive a per-session
-  buffer heartbeat — no cron. **SessionEnd is the only flush:** the whole
-  session is segmented into chunks, each chunk extracted into typed facts,
-  and the note body rendered from them by code, behind the publish gate.
-  Mid-session events (a pre-compact, the buffer tripping its cap) only
-  bookkeep — the buffer keeps accumulating and no model is called, because
-  which turns mattered is knowable only from the ending. No LLM runs inline
-  in the hook itself; the flush is detached.
-- **SessionStart** also sweeps any session whose owning process is
-  provably dead (crash, closed laptop lid) — its note gets one extraction
-  attempt and closes, under a global singleton lock. All detached —
-  SessionStart never blocks.
+- **Claude Code hooks register every transcript into the ledger.**
+  SessionStart, PreCompact, SessionEnd, and a mid-session
+  UserPromptSubmit heartbeat all route through the same registration
+  path (`lore_curator/capture_routing.py`): each upserts a ledger entry
+  and stamps its linkage block, and a session boundary promotes that
+  stamp to a full transcript read (edited files, commit SHAs). No LLM
+  call; registration is the end of the capture path, not a step toward
+  composing anything.
+- **SessionStart also spawns a detached transcript sync**, mirroring
+  every attached transcript into its wiki's `.transcripts/` and
+  emitting the one live drain event, `transcript-synced`. An
+  opportunistic, flock-guarded retention sweep runs alongside it. Both
+  detached — SessionStart never blocks.
 - **Banner at SessionStart** is deliberately minimal: a status line, an
   optional Focus block, a last-active-day recap read off the transcript
   ledger (day, session count, repos, branches, refs — no LLM call), a
@@ -294,21 +297,12 @@ Each wiki can set its own knobs in `<wiki>/.lore-wiki.yml`:
 
 ```yaml
 git:
-  auto_commit: true
-  auto_push: false              # push manually by default
+  auto_push: true                # true by default when the wiki has a remote
   auto_pull: true
-curator:
-  threshold_pending_turns: 30   # spawn the heartbeat when ≥ N buffered turns
-  max_pending_age_s: 600        # OR the oldest pending entry is this old
-  a_noteworthy_tier: middle     # middle (default) | simple (cheap, higher false-neg)
-  synthesis_buffer_cap_turns: 120   # record a cap-trip at this many turns...
-  synthesis_buffer_cap_chars: 240000 # ...or this many transcript chars
-                                     # (bookkeeping — the buffer keeps growing)
-  synthesis_model_tier: middle  # `models.*` tier for segmentation + extraction
 models:
   simple: claude-haiku-4-5
   middle: claude-sonnet-4-6
-  high:   claude-opus-4-7       # or 'off' — degrades synthesis_model_tier: high to middle
+  high:   claude-opus-4-7       # or 'off' to disable the high tier
 briefing:
   audience: personal
   sinks:
@@ -324,27 +318,28 @@ and add knobs only as you need them. Briefings publish manually
 
 ## Observability
 
-Every background producer (hooks, transcript sync, drain events, the
-retention janitor) writes one envelope onto one append-only event log,
-the **spine**, correlated end-to-end by a `trace_id` minted at hook fire.
-Three commands cover the common scenarios:
+Every background producer (hooks, the hygiene curator, transcript sync,
+the retention janitor, flags) writes one envelope onto one append-only
+event log, the **spine**. Each envelope carries a `trace_id` field for
+correlating several records into one story; no current producer mints
+one, so today's live correlation is by `session_id` instead. Three
+commands cover the common scenarios:
 
 | Scenario | Command |
 |---|---|
 | **"Is Lore healthy right now?"** | **`lore status`** |
-| "I had a session and nothing was captured" | `lore trace last` (or `lore trace dead` for stuck flushes) |
+| "I had a session and nothing was captured" | `lore trace <session-id>` |
 | "Hook plumbing feels off" | `lore doctor` (`--fix` repairs what it can) |
 | "Did my flag land, and when was it reviewed?" | `lore trace flag` |
 
 `lore status` is the first thing to run when you're wondering whether Lore is
-alive: capture liveness, flush queue (queued/running/dead-lettered), per-wiki
-connection health, retention usage, and an alerts section where every warning
-names its own drill-down command.
+alive: capture liveness, per-wiki connection health, a flags section, retention
+usage, and an alerts section where every warning names its own drill-down
+command.
 
 `lore trace <selector>` renders the chronological, correlated story of one
-unit of work — hook fire, gate outcome, write — for a
-trace_id, session_id, `last`, `dead` (lists dead-lettered flushes), or a note
-path / `[[wikilink]]`.
+unit of work for a trace_id, a session_id, `flag` (every flag-write/review
+event as a flat table), or a note path / `[[wikilink]]`.
 
 `lore log` / `lore news` / `lore runs` / `lore proc` have been removed —
 their debugging role is fully absorbed by `lore trace` / `lore status`
