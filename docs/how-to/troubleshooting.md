@@ -8,7 +8,7 @@ status`, `lore doctor` are all covered in
 
 ## "Hooks aren't firing"
 
-Escalate through three commands, each one level deeper:
+Escalate through these steps, each one level deeper:
 
 1. **`lore status`** — check the `capture` section's `Hook` line. A
    timestamp within the last few minutes means hooks *are* firing; "no
@@ -20,14 +20,15 @@ Escalate through three commands, each one level deeper:
    Claude Code plugin cache silently keeps running old hook code even
    though `main` (or your installed version) has moved on; `--fix` can't
    repair this one, but the check names the exact drift.
-3. **`lore trace <session-id>`** — if `doctor` passes but the ledger still
-   doesn't grow, trace the session directly (the session_id is what
-   Claude Code shows in its own session info, or resolve it from
-   `$CLAUDE_SESSION_ID` in the failing shell). No steps at all means the
-   hook never ran; steps that stop after `hook/session-start` with no
-   `drain/transcript-synced` event means transcript sync was never
-   spawned — check `$CLAUDE_PROJECT_DIR` and that the plugin hooks are
-   actually installed (`lore install`).
+3. **`lore status`'s news section** — if `doctor` passes but the ledger
+   still doesn't grow, check for a recent `transcript-synced` entry there.
+   Transcript sync's drain event lands on the shared system stream, not a
+   per-session one, so this confirms sync ran at all rather than for one
+   session in particular. Nothing there and a recent `Hook` timestamp
+   means the hook fired but the detached sync never spawned — check
+   `$CLAUDE_PROJECT_DIR` and that the plugin hooks are actually installed
+   (`lore install`). `lore trace <session-id>` cannot help here: no
+   current producer mints a `trace_id`, so it always reports no match.
 
 ## "Nothing appeared in the wiki after my session"
 
@@ -105,12 +106,12 @@ accept/decline counters are not expected to sum. See
 `lore_core/flush_store.py` is a reader now — nothing opens a new record.
 `.lore/flushes/` can still hold `queued` or `running` records left over
 from before the compose pipeline retired; the retention janitor purges
-resolved (`published` / `withheld` / `dead-lettered`) records past their
-age window and caps dead letters by count, but leaves `queued` /
-`running` records alone, since no code advances them any more. One
-sitting there is not a live flush stuck mid-flight — delete
-`.lore/flushes/` by hand if the leftovers bother you; nothing reads them
-back.
+`published` / `withheld` records past their age window, exempts
+`dead-lettered` records from that window entirely and caps them by
+count instead, and leaves `queued` / `running` records alone, since no
+code advances them any more. One sitting there is not a live flush
+stuck mid-flight — delete `.lore/flushes/` by hand if the leftovers
+bother you; nothing reads them back.
 
 ## Known rough edges (honest, not yet fixed)
 

@@ -116,10 +116,12 @@ on either host's next regen.
 ### 4. Unknown — bail to user
 
 Anything else (CLAUDE.md root files, hand-edited markdown outside
-sessions/typed-notes) → `git merge --abort`, log via `lore status` with
-the path list. `lore` mounts no merge-resolution command for this —
-resolve the conflict with git directly in the wiki repo, commit, and
-push. Never silently overwrite hand-edited content.
+sessions/typed-notes) → `git merge --abort`. `lore status` computes no
+alert for a blocked push; the SessionEnd hook's spine event carries
+`push=merge-blocked`, the only trace of it today. `lore` mounts no
+merge-resolution command for this — resolve the conflict with git
+directly in the wiki repo, commit, and push. Never silently overwrite
+hand-edited content.
 
 ---
 
@@ -204,8 +206,8 @@ commits every flag unconditionally at write time, through
 | Clean tree, diverged (we have local commits, remote has different commits) | Skip pull, surface to user | `lore status` `· wiki diverged — git pull manually` |
 | Push: remote ahead, FF possible | Fetch + ff + push | (silent) |
 | Push: regenerable-artifact conflict | ours wins, `lore lint` reconciles | (silent) |
-| Push: typed-note or session-note conflict | `MERGE_BLOCKED` — LLM-merge is parked, so `git merge --abort` runs and the tree returns clean | `lore status` `· merge needed: <paths>` |
-| Push: unknown-path conflict | abort merge, surface to user | `lore status` `· merge needed: <paths>` |
+| Push: typed-note or session-note conflict | `MERGE_BLOCKED` — LLM-merge is parked, so `git merge --abort` runs and the tree returns clean | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
+| Push: unknown-path conflict | abort merge, surface to user | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
 | `watchdog` not installed | Reindex throttle = 5s natural decay | (silent — same as 0.10.x) |
 
 ---

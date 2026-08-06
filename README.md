@@ -259,8 +259,10 @@ Once attached with a wiki present:
 - **SessionStart also spawns a detached transcript sync**, mirroring
   every attached transcript into its wiki's `.transcripts/` and
   emitting the one live drain event, `transcript-synced`. An
-  opportunistic, flock-guarded retention sweep runs alongside it. Both
-  detached — SessionStart never blocks.
+  opportunistic, flock-guarded retention sweep runs in-process
+  alongside it — short and lock-guarded, so it doesn't block
+  SessionStart in practice, but only the transcript sync is actually
+  detached.
 - **Banner at SessionStart** is deliberately minimal: a status line, an
   optional Focus block, a last-active-day recap read off the transcript
   ledger (day, session count, repos, branches, refs — no LLM call), a
@@ -302,7 +304,7 @@ git:
 models:
   simple: claude-haiku-4-5
   middle: claude-sonnet-4-6
-  high:   claude-opus-4-7       # or 'off' to disable the high tier
+  high:   claude-opus-4-7
 briefing:
   audience: personal
   sinks:
@@ -322,13 +324,13 @@ Every background producer (hooks, the hygiene curator, transcript sync,
 the retention janitor, flags) writes one envelope onto one append-only
 event log, the **spine**. Each envelope carries a `trace_id` field for
 correlating several records into one story; no current producer mints
-one, so today's live correlation is by `session_id` instead. Three
-commands cover the common scenarios:
+one, so `flag` is the one selector with live data behind it today.
+Three commands cover the common scenarios:
 
 | Scenario | Command |
 |---|---|
 | **"Is Lore healthy right now?"** | **`lore status`** |
-| "I had a session and nothing was captured" | `lore trace <session-id>` |
+| "I had a session and nothing was captured" | `lore status` / `lore doctor` |
 | "Hook plumbing feels off" | `lore doctor` (`--fix` repairs what it can) |
 | "Did my flag land, and when was it reviewed?" | `lore trace flag` |
 
@@ -339,7 +341,8 @@ command.
 
 `lore trace <selector>` renders the chronological, correlated story of one
 unit of work for a trace_id, a session_id, `flag` (every flag-write/review
-event as a flat table), or a note path / `[[wikilink]]`.
+event as a flat table, the selector with live data today), or a note path /
+`[[wikilink]]`.
 
 `lore log` / `lore news` / `lore runs` / `lore proc` have been removed —
 their debugging role is fully absorbed by `lore trace` / `lore status`

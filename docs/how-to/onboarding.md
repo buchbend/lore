@@ -81,8 +81,8 @@ repair path for a partial install.
 ## If something's wrong
 
 See [troubleshooting.md](troubleshooting.md) — start with `lore status`,
-escalate to `lore doctor --fix` for repairable state, then
-`lore trace <session-id>` for one session's correlated story.
+escalate to `lore doctor --fix` for repairable state, then check
+`lore status`'s news section for a recent `transcript-synced` entry.
 
 ## Done when
 

@@ -103,10 +103,13 @@ onto a note a flag appends to.
 a `trace_id`, sorted by timestamp — there is no separate correlation
 index, the trace *is* the filtered spine — so the mechanism stays
 correct for any future producer that threads one through. Until one
-exists, a `trace-id` or note-path/`[[wikilink]]` selector only resolves
-against pre-retirement data; `session-id` and `flag` are the selectors
-with live data behind them today (see "`lore trace <selector>`"
-below).
+exists, a `trace-id`, `session-id` or note-path/`[[wikilink]]` selector
+only resolves against pre-retirement data —
+`trace_ids_for_session()` (`lore_core/trace.py`) skips every record
+whose `trace_id` is unset, which today is all of them. `flag` is the
+one selector with live data behind it, since it bypasses trace_id
+correlation entirely and reads flag-write/flag-review events directly
+(see "`lore trace <selector>`" below).
 
 ---
 
@@ -165,18 +168,18 @@ so a reader never has to guess where to look next.
 ### `lore status`
 
 **Module:** `lore_cli/status_cmd.py`. The single glanceable "is Lore
-healthy right now?" dashboard — capture liveness (last hygiene run,
-last hook fire), per-wiki connection health (dirty / ahead / behind /
-reachable), a **flags** section (per-wiki flags written, withheld,
-pending, accepted, declined, retargeted — `lore_core.flag_metrics`
-aggregating the `source="flag"` spine events `flag.py` emits, plus
-`flag.count_pending` for the pending count itself), retention usage, an
-absorbed **news** section (background drain events — the old
-`lore news`), and an alerts section where every warning names its exact
-drill-down command. Reads only; exit code is 0 when healthy, nonzero when
-any alert fires. Every row reflects a state some code still writes —
-issue #377 removed the four capture rows and the flushes panel the
-compose pipeline used to feed.
+healthy right now?" dashboard — capture liveness (`Hook`, `Session`),
+per-wiki connection health (dirty / ahead / behind / reachable), a
+**flags** section (per-wiki flags written, withheld, pending, accepted,
+declined, retargeted — `lore_core.flag_metrics` aggregating the
+`source="flag"` spine events `flag.py` emits, plus `flag.count_pending`
+for the pending count itself), retention usage, an absorbed **news**
+section (background drain events — the old `lore news`), and an alerts
+section where every warning names its exact drill-down command. Reads
+only; exit code is 0 when healthy, nonzero when any alert fires. Every
+row reflects a state some code still writes — issue #377 removed five
+capture rows (`Last note`, `Last run`, `Last flush`, `Pending`, `Lock`)
+and the flushes panel the compose pipeline used to feed.
 
 ### `lore trace <selector>`
 
@@ -185,11 +188,13 @@ compose pipeline used to feed.
 trace_id, as a Rich tree (or `--plain` aligned text, or `--json` raw
 JSONL). Absorbs the debugging role of the old `lore log` / `lore runs` /
 `lore proc`. The selector accepts a trace_id (see above — no current
-producer mints one), a session_id (resolves every trace_id that session
-touched, newest first — the selector with live data behind it today),
-`flag` (lists every flag-write/flag-review spine event as a flat,
-chronological table instead of a tree — a flag carries no trace_id, it
-is a standing-alone fact; pairing one flag's write and verdict lines by
+producer mints one), a session_id (`trace_ids_for_session()` resolves
+every trace_id that session touched, but skips any record whose
+`trace_id` is unset, so it finds nothing on post-retirement data), `flag`
+(lists every flag-write/flag-review spine event as a flat, chronological
+table instead of a tree — bypasses trace_id correlation entirely, the
+one selector with live data today; a flag carries no trace_id, it is a
+standing-alone fact; pairing one flag's write and verdict lines by
 `flag_id` gives its review latency), or a note path / `[[wikilink]]`
 (reverse-resolved through the note's own `linkage.trace_id` — unset on
 any note a flag appended to, since no current writer stamps it). The
