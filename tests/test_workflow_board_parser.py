@@ -16,6 +16,7 @@ from lore_workflow import board_parser as mod
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "boards"
 
 WELL_FORMED = (FIXTURES / "well-formed.md").read_text(encoding="utf-8")
+WITH_NOTES_SECTION = (FIXTURES / "with-notes-section.md").read_text(encoding="utf-8")
 
 
 def test_marker_and_columns_are_exported_contract() -> None:
@@ -51,6 +52,14 @@ def test_resumed_run_can_select_by_state() -> None:
     rows = mod.parse_board(WELL_FORMED)
     merged = [r.issue for r in rows if r.state == "merged"]
     assert merged == ["ccatobs/widget#12"]
+
+
+def test_notes_section_does_not_change_parsed_rows() -> None:
+    # #379 moves the orchestrator's supervision narrative onto the board: a
+    # "## Notes" section now follows the table in the same comment. The
+    # parser must keep reading the table structurally and ignore the notes
+    # section, so a board with notes yields the same rows as one without.
+    assert mod.parse_board(WITH_NOTES_SECTION) == mod.parse_board(WELL_FORMED)
 
 
 # --- malformed inputs raise, never silently misread ------------------------
@@ -115,3 +124,18 @@ def test_parse_board_cmd_errors_on_malformed(capsys) -> None:
     assert rc == 1
     err = capsys.readouterr().err
     assert "marker" in err
+
+
+def test_parse_board_cmd_tolerates_notes_section(capsys) -> None:
+    from lore_cli import workflow_cmd
+
+    rc = workflow_cmd.main(["parse-board", str(FIXTURES / "with-notes-section.md")])
+    assert rc == 0
+    import json
+
+    payload = json.loads(capsys.readouterr().out)
+    assert [r["issue"] for r in payload["rows"]] == [
+        "ccatobs/widget#12",
+        "ccatobs/widget#13",
+        "ccatobs/widget#14",
+    ]
