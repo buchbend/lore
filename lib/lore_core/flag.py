@@ -389,6 +389,27 @@ def _append_block(path: Path, block: str, *, description: str, day: str) -> bool
     return True
 
 
+def _commit(wiki_path: Path, note_path: Path, flag_id: str) -> bool:
+    """Commit the flag into the wiki repo. Best-effort; never raises.
+
+    Three parts carry a flag to a teammate: this write, this commit, and
+    the push the session boundary runs. A wiki that is not a git repo
+    keeps the flag in its working tree instead — a transport that is not
+    there must never cost the write.
+    """
+    from lore_core.session import commit_note
+
+    try:
+        ok, _detail = commit_note(
+            wiki_path=wiki_path,
+            note_path=note_path,
+            message=f"lore: flag {flag_id}",
+        )
+    except (OSError, ValueError):
+        return False
+    return ok
+
+
 # ---------------------------------------------------------------------------
 # Telemetry
 # ---------------------------------------------------------------------------
@@ -506,6 +527,7 @@ def write(
         stamped=not human,
     )
     created = _append_block(note_path, block, description=lead, day=day)
+    committed = _commit(wiki_path, note_path, flag_id)
     _emit(
         root,
         EV_WRITE,
@@ -515,6 +537,7 @@ def write(
         note=str(note_path.relative_to(wiki_path)),
         created_note=created,
         reviewed=human,
+        committed=committed,
     )
     return FlagWrite(
         status="written",

@@ -27,6 +27,7 @@ from lore_core.git import current_repo
 from lore_core.spine import emit_hook_event
 
 if TYPE_CHECKING:
+    from lore_core.git_sync import SyncResult
     from lore_core.types import Scope
 
 
@@ -603,6 +604,31 @@ def maybe_auto_pull_for_scope(scope: Scope, lore_root: Path) -> str | None:
     if result.status is SyncStatus.SKIPPED_DIVERGED:
         return f"› wiki [[{scope.wiki}]] diverged from origin — `git pull` manually"
     return None
+
+
+def maybe_auto_push_for_scope(scope: Scope, lore_root: Path) -> SyncResult | None:
+    """Push this scope's wiki repo at the session boundary if config opts in.
+
+    Returns the sync result, or ``None`` when the wiki directory is
+    missing or the config opts out. Unlike :func:`maybe_auto_pull_for_scope`
+    this hands back the result instead of a banner line: no banner renders
+    at a session boundary, and the next SessionStart already tells the user
+    about a diverged wiki through the pull.
+
+    No LLM client is passed. A note both machines changed therefore ends
+    in ``MERGE_BLOCKED`` with the working tree handed back clean, and the
+    user resolves it with git.
+    """
+    from lore_core.git_sync import auto_push
+    from lore_core.wiki_config import load_wiki_config
+
+    wiki_dir = lore_root / "wiki" / scope.wiki
+    if not wiki_dir.exists():
+        return None
+    cfg = load_wiki_config(wiki_dir)
+    if not cfg.git.auto_push:
+        return None
+    return auto_push(wiki_dir)
 
 
 def render_capture_state_block(

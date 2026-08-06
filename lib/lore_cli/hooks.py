@@ -40,6 +40,7 @@ from lore_core.scopes import (
 from lore_core.session_start import MAX_CONTEXT_CHARS
 from lore_core.session_start import load_directive_lines as _load_directive_lines
 from lore_core.session_start import maybe_auto_pull_for_scope as _maybe_auto_pull_for_scope
+from lore_core.session_start import maybe_auto_push_for_scope as _maybe_auto_push_for_scope
 from lore_core.session_start import offer_notice_line as _offer_notice_line
 from lore_core.session_start import pre_compact_text as _pre_compact
 from lore_core.session_start import render_capture_state_block as _render_capture_state_block
@@ -1008,6 +1009,19 @@ def capture(
         )
         raise
 
+    # Session boundary: hand the wiki's commits to the remote. Every flag
+    # filed this session is already committed, so this is the step that
+    # puts them on a teammate's machine. It costs one network round trip
+    # at the end of a session, which is why it runs here and not per turn.
+    boundary: dict[str, object] = {}
+    if event == "session-end":
+        try:
+            pushed = _maybe_auto_push_for_scope(scope, lore_root)
+            if pushed is not None:
+                boundary["push"] = pushed.status.value
+        except Exception:  # noqa: BLE001 — an unreachable remote never fails the hook
+            boundary["push"] = "error"
+
     _emit_hook(
         event=event, integration=integration, scope=scope_payload,
         duration_ms=_elapsed_ms(),
@@ -1018,6 +1032,7 @@ def capture(
         cwd=str(cwd),
         pid=_capture_pid,
         ppid_cmd=_capture_ppid_cmd,
+        **boundary,
     )
 
     # Session-end breadcrumb, displayed at the next SessionStart. Only for

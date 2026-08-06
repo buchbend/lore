@@ -254,7 +254,7 @@ class StubLlm:
         self.messages = _StubLlmMessages(response_text)
 
 
-def test_auto_push_resolves_surface_conflict_via_llm(two_hosts) -> None:
+def test_auto_push_resolves_note_conflict_via_llm(two_hosts) -> None:
     _, host_a, host_b = two_hosts
 
     # Both hosts independently create concepts/foo.md with overlapping content.
@@ -277,7 +277,7 @@ def test_auto_push_resolves_surface_conflict_via_llm(two_hosts) -> None:
     result = auto_push(
         host_b,
         llm_client=StubLlm(merged_body),
-        surface_dirs=["concepts"],
+        note_dirs=["concepts"],
     )
     assert result.status is SyncStatus.MERGED, f"got {result}"
     assert "concepts/foo.md" in result.merged_paths
@@ -294,7 +294,7 @@ def test_auto_push_blocks_when_no_llm_client_provided(two_hosts) -> None:
     _git(host_a, "push")
     _commit_file(host_b, "concepts/foo.md", "---\ntype: concept\n---\nB\n", "b")
 
-    result = auto_push(host_b, llm_client=None, surface_dirs=["concepts"])
+    result = auto_push(host_b, llm_client=None, note_dirs=["concepts"])
     assert result.status is SyncStatus.MERGE_BLOCKED
     assert "concepts/foo.md" in result.blocked_paths
     # Tree should be back to clean — abort completed.
@@ -308,7 +308,7 @@ def test_auto_push_picks_ours_for_regenerable_artifacts(two_hosts) -> None:
     _git(host_a, "push")
     _commit_file(host_b, "_catalog.json", '{"b": 2}\n', "b catalog")
 
-    result = auto_push(host_b, llm_client=None, surface_dirs=["concepts"])
+    result = auto_push(host_b, llm_client=None, note_dirs=["concepts"])
     assert result.status is SyncStatus.MERGED, f"got {result}"
     assert "_catalog.json" in result.merged_paths
     # Ours wins.
@@ -321,7 +321,7 @@ def test_auto_push_blocks_unknown_conflict_path(two_hosts) -> None:
     _git(host_a, "push")
     _commit_file(host_b, "CLAUDE.md", "from b\n", "b")
 
-    result = auto_push(host_b, llm_client=None, surface_dirs=["concepts"])
+    result = auto_push(host_b, llm_client=None, note_dirs=["concepts"])
     assert result.status is SyncStatus.MERGE_BLOCKED
     assert "CLAUDE.md" in result.blocked_paths
 
@@ -378,8 +378,8 @@ def test_is_diverged_false_for_non_repo(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "path,expected",
     [
-        ("concepts/foo.md", ConflictKind.SURFACE),
-        ("decisions/2026-04-26-pivot.md", ConflictKind.SURFACE),
+        ("concepts/foo.md", ConflictKind.NOTE),
+        ("decisions/2026-04-26-pivot.md", ConflictKind.NOTE),
         ("sessions/alice/2026/04/26-foo.md", ConflictKind.SESSION),
         ("_catalog.json", ConflictKind.REGENERABLE),
         ("_threads.txt", ConflictKind.REGENERABLE),
@@ -399,3 +399,14 @@ def test_is_diverged_false_for_non_repo(tmp_path: Path) -> None:
 )
 def test_classify_conflict_path(path: str, expected: ConflictKind) -> None:
     assert _classify_conflict_path(path, ["concepts", "decisions"]) is expected
+
+
+def test_git_sync_declares_no_symbol_named_surface() -> None:
+    """Epic #131 retired a feature called surfaces; the word is now free."""
+    import inspect
+
+    from lore_core import git_sync
+
+    assert [n for n in dir(git_sync) if "surface" in n.lower()] == []
+    assert [n for n in ConflictKind.__members__ if "SURFACE" in n] == []
+    assert "note_dirs" in inspect.signature(git_sync.auto_push).parameters
