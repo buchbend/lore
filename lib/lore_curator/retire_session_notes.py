@@ -32,6 +32,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
 from lore_core.config import list_wikis
 
 __all__ = [

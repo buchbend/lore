@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.flag import EV_REVIEW, EV_WRITE, SPINE_SOURCE, count_pending
-from lore_core.timefmt import parse_ts
 from lore_core.spine import read_spine
+from lore_core.timefmt import parse_ts
 
 
 @dataclass(frozen=True)

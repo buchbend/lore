@@ -17,12 +17,11 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from lore_core.config import get_wiki_root
+from lore_core.config import get_wiki_root, list_wikis
 from lore_core.gh import gh_issue_view
 from lore_core.git import git_repo_root
 from lore_core.linkage import Linkage, classify_refs, extract_linkage
 from lore_core.repo_docs import list_docs
-from lore_core.config import list_wikis
 from lore_core.schema import parse_frontmatter
 from lore_core.scope_resolver import resolve_scope
 

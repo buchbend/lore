@@ -26,7 +26,6 @@ from lore_core.gh import gh_issues
 from lore_core.git import current_branch, current_repo
 from lore_core.types import Turn
 
-
 # ---------------------------------------------------------------------------
 # Commits
 # ---------------------------------------------------------------------------
