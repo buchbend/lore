@@ -213,15 +213,8 @@ def test_user_prompt_submit_runs_no_drain_read() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The flush store
+# The flush store — deleted whole (PRD 0013); see test_dead_code_gone.py.
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("method", ["begin", "transition", "record_failure"])
-def test_flush_store_exposes_no_write_method(method: str) -> None:
-    from lore_core.flush_store import FlushStore
-
-    assert not hasattr(FlushStore, method), f"FlushStore.{method} survives"
 
 
 @pytest.mark.parametrize("selector", ["dead", "last"])
@@ -263,7 +256,6 @@ def test_curator_lock_leaves_no_trace_in_the_code() -> None:
     [
         ("lore_core.lockfile", "read_lock_holder"),
         ("lore_core.lockfile", "curator_lock"),
-        ("lore_curator.session_activity", "_collect_activity"),
         ("lore_core.ledger", "WikiLedger"),
         ("lore_core.ledger", "WikiLedgerEntry"),
     ],

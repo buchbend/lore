@@ -134,15 +134,3 @@ def team_mode_recommended(wiki_path: Path, threshold: int = 2) -> bool:
     if team_mode_active(wiki_path):
         return False
     return len(distinct_git_authors(wiki_path)) >= threshold
-
-
-def session_note_dir(wiki_path: Path, handle: str) -> Path:
-    """Return the directory where a session note should be written.
-
-    In team mode: `sessions/<handle>/`. In solo mode: `sessions/`.
-    Creating the directory is the caller's responsibility.
-    """
-    base = wiki_path / "sessions"
-    if team_mode_active(wiki_path) and handle:
-        return base / handle
-    return base

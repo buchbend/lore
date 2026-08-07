@@ -7,10 +7,80 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
+import yaml
 from lore_cli import briefing_cmd
 from lore_core.briefing import gather, mark_incorporated, render_briefing
 from lore_core.linkage import Linkage
-from lore_core.note_document import Chapter, TopicBlock, append_chapter, close_note, create_note
+from lore_core.note_document import DISCLAIMER
+from lore_core.schema import parse_frontmatter, strip_frontmatter
+
+# ---------------------------------------------------------------------------
+# Note-seeding helpers.
+#
+# The chapter lifecycle these fixtures used (create_note, append_chapter,
+# Chapter, TopicBlock, close_note) was deleted with the compose pipeline
+# (PRD 0013) — nothing writes a session note through it any more. These
+# helpers write the same file shape by hand so the fixtures below still
+# produce a real note on disk for `gather` to read.
+# ---------------------------------------------------------------------------
+
+
+def _seed_note(
+    path, *, title, description, scope, created=None, extra_frontmatter=None, linkage=None
+):
+    day = created or "2026-01-01"
+    fm = {
+        "schema_version": 2,
+        "type": "session",
+        "note_status": "open",
+        "created": day,
+        "last_reviewed": day,
+        "title": title,
+        "description": description,
+        "scope": scope,
+        "chapters": [],
+    }
+    if extra_frontmatter:
+        fm.update(extra_frontmatter)
+    if linkage is not None:
+        fm["linkage"] = {
+            "schema_version": linkage.schema_version,
+            "repo": linkage.repo,
+            "branch": linkage.branch,
+            "issues": list(linkage.issues),
+            "prs": list(linkage.prs),
+            "epics": list(linkage.epics),
+            "author": linkage.author,
+            "trace_id": linkage.trace_id,
+        }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    path.write_text(f"---\n{dumped}\n---\n\n{DISCLAIMER}\n")
+
+
+def _append_topic_chapter(path, *, lead, body="", anchor_turn, from_turn, to_turn):
+    """Append a topic chapter in the exact shape the old renderer wrote."""
+    fm = parse_frontmatter(path.read_text())
+    existing_body = strip_frontmatter(path.read_text())
+    n = len(fm.get("chapters") or []) + 1
+    lead_para = f"**{lead}**"
+    if body:
+        lead_para = f"{lead_para} {body}"
+    segment = f"<!-- lore:chapter {n} @{from_turn}-{to_turn} -->\n\n{lead_para}\n\n@{anchor_turn}"
+    new_body = f"{existing_body.rstrip()}\n\n{segment}"
+    chapters = list(fm.get("chapters") or [])
+    chapters.append({"n": n, "kind": "topic", "from_turn": from_turn, "to_turn": to_turn})
+    fm["chapters"] = chapters
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    path.write_text(f"---\n{dumped}\n---\n\n{new_body.rstrip()}\n")
+
+
+def _close(path):
+    fm = parse_frontmatter(path.read_text())
+    body = strip_frontmatter(path.read_text())
+    fm["note_status"] = "closed"
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    path.write_text(f"---\n{dumped}\n---\n\n{body.rstrip()}\n")
 
 
 @pytest.fixture
@@ -22,20 +92,17 @@ def briefing_vault(tmp_path, monkeypatch):
     def write_session(name: str, lead: str, decision: str = "") -> None:
         """Write a real new-shape note: disclaimer + one chapter + one block."""
         path = wiki / "sessions" / f"{name}.md"
-        create_note(
+        _seed_note(
             path,
             title=name[11:],
             description=f"session {name}",
             scope="lore:test",
             created=name[:10],
         )
-        append_chapter(
-            path,
-            Chapter(blocks=[TopicBlock(lead=lead, body=decision, anchor_turn=12)]),
-            slice_from_turn=1,
-            slice_to_turn=12,
+        _append_topic_chapter(
+            path, lead=lead, body=decision, anchor_turn=12, from_turn=1, to_turn=12
         )
-        close_note(path)
+        _close(path)
 
     write_session("2026-04-15-fix-a", "Did the A thing.")
     write_session("2026-04-16-fix-b", "Did the B thing.", "Chose option Z because Y.")
@@ -141,18 +208,14 @@ def test_cli_publish_markdown_sink(briefing_vault, tmp_path, capsys, monkeypatch
             },
         )(),
     )
-    rc = briefing_cmd.main(
-        ["publish", "--sink", "markdown", "--out", str(out_path), "--json"]
-    )
+    rc = briefing_cmd.main(["publish", "--sink", "markdown", "--out", str(out_path), "--json"])
     assert rc == 0
     assert out_path.exists()
     assert "Briefing" in out_path.read_text()
 
 
 def test_cli_mark_writes_and_emits(briefing_vault, capsys):
-    rc = briefing_cmd.main(
-        ["mark", "--wiki", "ccat", "--session", "2026-04-15-fix-a.md"]
-    )
+    rc = briefing_cmd.main(["mark", "--wiki", "ccat", "--session", "2026-04-15-fix-a.md"])
     assert rc == 0
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["schema"] == "lore.briefing.mark/1"
@@ -307,9 +370,7 @@ def test_oneshot_dry_run_skips_publish_and_mark(briefing_vault, tmp_path, capsys
     assert not (wiki / ".briefing-ledger.json").exists()
 
 
-def test_oneshot_no_mark_publishes_without_ledger_write(
-    briefing_vault, tmp_path, capsys
-):
+def test_oneshot_no_mark_publishes_without_ledger_write(briefing_vault, tmp_path, capsys):
     _, wiki = briefing_vault
     out_path = tmp_path / "out.md"
     _write_briefing_yaml(wiki, target_path=str(out_path))
@@ -324,9 +385,7 @@ def test_oneshot_sink_override(briefing_vault, tmp_path):
     out_path = tmp_path / "override.md"
     # Yaml says markdown without target; override URI supplies the target.
     _write_briefing_yaml(wiki, sink="markdown")
-    rc = briefing_cmd.main(
-        ["--wiki", "ccat", "--sink", f"markdown:{out_path}"]
-    )
+    rc = briefing_cmd.main(["--wiki", "ccat", "--sink", f"markdown:{out_path}"])
     assert rc == 0
     assert out_path.exists()
 
@@ -360,19 +419,14 @@ def sharded_briefing_vault(tmp_path, monkeypatch):
 
     def write(name: str, summary: str) -> None:
         path = sessions / f"{name}.md"
-        create_note(
+        _seed_note(
             path,
             title=summary,
             description=summary,
             scope="lore:test",
             extra_frontmatter={"summary": summary},
         )
-        append_chapter(
-            path,
-            Chapter(blocks=[TopicBlock(lead="Did things.", anchor_turn=5)]),
-            slice_from_turn=1,
-            slice_to_turn=5,
-        )
+        _append_topic_chapter(path, lead="Did things.", anchor_turn=5, from_turn=1, to_turn=5)
 
     write("15-0900-fix-a", "fixed A")
     write("16-1200-fix-b", "fixed B")
@@ -420,19 +474,14 @@ def test_gather_sharded_without_handle(tmp_path, monkeypatch):
     sessions = wiki / "sessions" / "2026" / "04"
     sessions.mkdir(parents=True)
     path = sessions / "29-1100-thing.md"
-    create_note(
+    _seed_note(
         path,
         title="thing",
         description="did the thing",
         scope="lore:test",
         extra_frontmatter={"summary": "did the thing"},
     )
-    append_chapter(
-        path,
-        Chapter(blocks=[TopicBlock(lead="Did the thing.", anchor_turn=3)]),
-        slice_from_turn=1,
-        slice_to_turn=3,
-    )
+    _append_topic_chapter(path, lead="Did the thing.", anchor_turn=3, from_turn=1, to_turn=3)
     monkeypatch.setenv("LORE_ROOT", str(vault_root))
     result = gather(wiki="demo")
     assert "error" not in result
@@ -545,24 +594,18 @@ def test_compose_briefing_prose_empty_input_short_circuits():
     assert fake.messages.calls == []
 
 
-def test_oneshot_uses_llm_prose_when_client_available(
-    briefing_vault, tmp_path, monkeypatch
-):
+def test_oneshot_uses_llm_prose_when_client_available(briefing_vault, tmp_path, monkeypatch):
     """LLM client returns prose; CLI publishes it instead of the deterministic render."""
     _, wiki = briefing_vault
     out_path = tmp_path / "out.md"
     _write_briefing_yaml(wiki, target_path=str(out_path))
 
-    fake = _FakeClient(
-        text="## Briefing: 2026-04-29 (ccat)\n\n### What happened\n- shipped X\n"
-    )
+    fake = _FakeClient(text="## Briefing: 2026-04-29 (ccat)\n\n### What happened\n- shipped X\n")
 
     def fake_make_client(**_kw):
         return fake
 
-    monkeypatch.setattr(
-        "lore_curator.llm_client.make_llm_client", fake_make_client
-    )
+    monkeypatch.setattr("lore_curator.llm_client.make_llm_client", fake_make_client)
 
     rc = briefing_cmd.main(["--wiki", "ccat"])
     assert rc == 0
@@ -581,9 +624,7 @@ def test_oneshot_falls_back_when_llm_client_unavailable(
     out_path = tmp_path / "out.md"
     _write_briefing_yaml(wiki, target_path=str(out_path))
 
-    monkeypatch.setattr(
-        "lore_curator.llm_client.make_llm_client", lambda **_kw: None
-    )
+    monkeypatch.setattr("lore_curator.llm_client.make_llm_client", lambda **_kw: None)
 
     rc = briefing_cmd.main(["--wiki", "ccat"])
     assert rc == 0
@@ -593,9 +634,7 @@ def test_oneshot_falls_back_when_llm_client_unavailable(
     assert "deterministic fallback" in err
 
 
-def test_oneshot_falls_back_when_llm_call_raises(
-    briefing_vault, tmp_path, monkeypatch, capsys
-):
+def test_oneshot_falls_back_when_llm_call_raises(briefing_vault, tmp_path, monkeypatch, capsys):
     """LLM client raises → swallow + deterministic fallback."""
     _, wiki = briefing_vault
     out_path = tmp_path / "out.md"
@@ -603,9 +642,7 @@ def test_oneshot_falls_back_when_llm_call_raises(
 
     fake = _FakeClient(raises=RuntimeError("boom"))
 
-    monkeypatch.setattr(
-        "lore_curator.llm_client.make_llm_client", lambda **_kw: fake
-    )
+    monkeypatch.setattr("lore_curator.llm_client.make_llm_client", lambda **_kw: fake)
 
     rc = briefing_cmd.main(["--wiki", "ccat"])
     assert rc == 0
@@ -615,9 +652,7 @@ def test_oneshot_falls_back_when_llm_call_raises(
     assert "boom" in err or "LLM call failed" in err
 
 
-def test_oneshot_no_llm_flag_skips_compose(
-    briefing_vault, tmp_path, monkeypatch, capsys
-):
+def test_oneshot_no_llm_flag_skips_compose(briefing_vault, tmp_path, monkeypatch, capsys):
     """--no-llm: do not even attempt LLM, publish deterministic immediately."""
     _, wiki = briefing_vault
     out_path = tmp_path / "out.md"
@@ -682,7 +717,7 @@ def linkage_briefing_vault(tmp_path, monkeypatch):
 
     def write(name: str, *, author: str, epics: list[int], issues: list[int]) -> None:
         path = wiki / "sessions" / f"{name}.md"
-        create_note(
+        _seed_note(
             path,
             title=name[11:],
             description=f"session {name}",
@@ -696,13 +731,8 @@ def linkage_briefing_vault(tmp_path, monkeypatch):
                 author=author,
             ),
         )
-        append_chapter(
-            path,
-            Chapter(blocks=[TopicBlock(lead="Did the thing.", anchor_turn=5)]),
-            slice_from_turn=1,
-            slice_to_turn=5,
-        )
-        close_note(path)
+        _append_topic_chapter(path, lead="Did the thing.", anchor_turn=5, from_turn=1, to_turn=5)
+        _close(path)
 
     write("2026-04-15-fix-a", author="Alice", epics=[162], issues=[175])
     write("2026-04-16-fix-b", author="Bob", epics=[161], issues=[180])

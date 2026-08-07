@@ -12,6 +12,7 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 
 DEAD_MODULES = [
+    "lore_core.flush_store",
     "lore_curator.noteworthy",
     "lore_core.noteworthy_features",
     "lore_core.narrative_kind",
@@ -46,3 +47,20 @@ def test_hygiene_staleness_pass_is_gone():
 
     assert "staleness" not in {p.name for p in HYGIENE_PASSES}
     assert not hasattr(importlib.import_module("lore_curator.hygiene"), "_pass_staleness")
+
+
+# ---------------------------------------------------------------------------
+# No surviving docstring names a module the session-note teardown deleted.
+# ---------------------------------------------------------------------------
+
+LIB = REPO / "lib"
+
+
+@pytest.mark.parametrize("deleted_name", ["session_filer", "session_activity"])
+def test_no_docstring_names_a_deleted_module(deleted_name: str):
+    hits = sorted(
+        str(p.relative_to(REPO))
+        for p in LIB.rglob("*.py")
+        if deleted_name in p.read_text(errors="replace")
+    )
+    assert hits == [], f"{deleted_name!r} still named under lib/: {hits}"

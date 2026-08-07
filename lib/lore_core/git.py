@@ -29,9 +29,8 @@ def git_user_email(
          when no email is configured (curator-C jitter offset).
       4. Empty string.
 
-    Single source of truth — replaces three near-identical
-    reimplementations across ``lore_core.session``,
-    ``lore_curator.session_filer``, and ``lore_cli.hooks``.
+    Single source of truth — replaces near-identical reimplementations
+    across ``lore_core.session`` and ``lore_cli.hooks``.
     """
     import os
     if env_override:
