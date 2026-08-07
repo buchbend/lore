@@ -8,6 +8,68 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.71.0] - 2026-08-07
+
+Decides the nine read surfaces issue #404 listed (#406). Release 0.70.0
+retired the session-note lifecycle and left six surfaces with no producer; a
+symbol audit of `lib/` found two more that predate the epic. ADR 0010 states
+the rule each decision applies: a read surface without a live producer is a
+defect.
+
+Six surfaces leave the tree. Two documents drop a claim the code does not
+support. One surface gains the producer its documentation already promised.
+
+### Removed
+
+- **The `session-note` record type** (#404). `RunLogger.RECORD_TYPES` drops it,
+  along with its counter branch, its docstring example and `lore trace`'s match
+  on it. The `notes_new` and `notes_merged` counters go with the branch — the
+  branch was their only incrementer, so every run-end payload carried two zeros
+  that read as a live measurement.
+- **`RetentionConfig.dead_letter_hard_cap`** (#404). The field lost its reader
+  with the flush store.
+- **`errors.CATALOG_MISSING`, `errors.NO_WIKI` and `errors.PLAN_NOT_FOUND`**
+  (#404). No module read any of the three.
+- **Six `lore_core.gh` helpers** (#404): `split_filter`, `run_gh`, `gh_issues`,
+  `gh_prs`, `format_issue_line` and `format_pr_line`. `gh_issue_view` stays —
+  `lore_core.context_pack` calls it.
+- **The `issues:` and `prs:` keys** (#404), from `lore_core.offer.Offer`, from
+  `lore_core.session`, from `CLAUDE.md` and from `AGENTS.md`. The deleted list
+  wrappers were their only readers.
+- **`attach.LORE_KEYS`** (#404). No module read the tuple.
+
+### Added
+
+- **A `retention-downgrade` spine event** (#404). The janitor emits it with
+  `source="janitor"` after a hot-to-cold rotation, and `janitor-status.json`
+  records a `downgraded` field. `docs/architecture/observability.md` promised
+  both already.
+
+### Changed
+
+- **`lore_mcp.server` imports its error codes** (#404). Nine codes the server
+  wrote as string literals now come from `lore_core.errors`.
+- **`lore briefing`'s module docstring states the parked one-shot** (#404). PRD
+  0011 parks the feature, so the compose, publish and mark code stays; no
+  producer reaches it. `lore briefing publish` and `lore briefing mark` stay
+  reachable.
+- **`CONTEXT-FORMAT.md` names `read_note`** (#404), not the deleted
+  `render_note`.
+- **`brief/SKILL.md` drops its session-note claim** (#404).
+- **`docs/how-to/troubleshooting.md` names `sessions/_recent.txt`** (#404) as a
+  second leftover file, safe to delete.
+
+### Upgrading
+
+A `config.yml` that sets `observability.retention.dead_letter_hard_cap` still
+loads. The loader warns on the unknown key, falls back to defaults, and names
+the key to delete.
+
+A repository whose lore block or `.lore.yml` sets `issues:` or `prs:` still
+attaches. `parse_lore_yml` ignores an unknown key. Delete the two lines when
+convenient — no code has read them since the banner dropped its issue and PR
+counts.
+
 ## [0.70.0] - 2026-08-07
 
 Finishes the teardown that release 0.68.0 began (#392, PRD 0013). Release
