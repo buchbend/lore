@@ -1,14 +1,14 @@
 ---
 title: Retire the session-note lifecycle, its stock, and the curator framing
 status: draft
-epic: https://github.com/buchbend/lore/issues/TBD
+epic: https://github.com/buchbend/lore/issues/392
 repos:
   - buchbend/lore
 ---
 
 # PRD 0013: Retire the session-note lifecycle, its stock, and the curator framing
 
-> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/TBD).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/392).
 > The epic links here; this file is not embedded in the issue body.
 
 ## Problem
