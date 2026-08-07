@@ -105,7 +105,7 @@ The `text` and the `why` are the model's. **Every other word is code's**
 
 One chapter per extracted chunk, opened by an HTML-comment delimiter carrying
 its turn span. Each fact is stored twice: as a machine-readable
-`<!-- lore:fact {…} -->` marker (the copy `render_note` reads back) and as
+`<!-- lore:fact {…} -->` marker (the copy `read_note` parses back) and as
 human-readable text — the bold statement, its code-attached verbatim quote
 from the anchor turn, and the `@N` anchor. Drill-down chain: rendered line →
 fact in the ledger → quote → archived transcript turn.

@@ -22,7 +22,9 @@ from __future__ import annotations
 from typing import Any
 
 # Canonical error codes — keep client-facing strings centralised so the
-# MCP tool docs and handler modules stay in sync.
+# MCP tool docs and handler modules stay in sync. Every emit site imports
+# its constant; a code written as a literal drifts from the docs silently,
+# because renaming the constant then breaks nothing.
 NO_VAULT = "no_vault"
 NO_WIKIS = "no_wikis"
 WIKI_NOT_FOUND = "wiki_not_found"
@@ -31,14 +33,11 @@ SOURCE_NOT_A_FILE = "source_not_a_file"
 NOTE_NOT_FOUND = "note_not_found"
 PATH_NOT_FOUND = "path_not_found"
 PATH_ESCAPE = "path_escape"
-CATALOG_MISSING = "catalog_missing"
 SESSION_OFF = "session_off"
 UNKNOWN_TOOL = "unknown_tool"
 INVALID_KIND = "invalid_kind"
 INVALID_ENTRY = "invalid_entry"
 EMPTY_ENTRY = "empty_entry"
-NO_WIKI = "no_wiki"
-PLAN_NOT_FOUND = "plan_not_found"
 
 
 def mcp_error(

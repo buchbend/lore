@@ -13,7 +13,6 @@ import re
 from pathlib import Path
 
 SECTION_HEADING = "## Lore"
-LORE_KEYS: tuple[str, ...] = ("wiki", "scope", "backend", "issues", "prs")
 BULLET_RE = re.compile(r"^- ([A-Za-z][\w-]*): ?(.*)$")
 HEADING_RE = re.compile(r"^## (.+?)\s*$")
 

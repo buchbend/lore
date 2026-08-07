@@ -57,7 +57,7 @@ def _step_label(step: TraceStep) -> str:
             bits.append(f"model={model}")
         if tokens is not None:
             bits.append(f"tokens={tokens}")
-    elif step.event in ("note-filed", "note-appended", "session-note"):
+    elif step.event in ("note-filed", "note-appended"):
         path = step.data.get("path") or step.data.get("wikilink")
         if path:
             bits.append(f"-> {path}")

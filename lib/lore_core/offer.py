@@ -20,7 +20,7 @@ FILENAME = ".lore.yml"
 
 # Routing-relevant fields that participate in the fingerprint.
 # Changes to these invalidate prior accept/decline decisions and re-prompt.
-# Non-routing fields (issues, prs) are stored but do NOT affect the fingerprint.
+# Non-routing fields (backend, inherit) are stored but do NOT affect it.
 _FINGERPRINT_FIELDS: tuple[str, ...] = ("wiki", "scope", "wiki_source")
 
 
@@ -42,8 +42,6 @@ class Offer:
     scope: str = ""
     backend: str = "none"
     wiki_source: str | None = None
-    issues: str | None = None
-    prs: str | None = None
     schema_version: int = 1
     inherit: bool = False
 
@@ -74,8 +72,6 @@ def parse_lore_yml(path: Path) -> Offer | None:
         scope=scope,
         backend=_str_or_default(raw.get("backend"), "none"),
         wiki_source=_str_or_none(raw.get("wiki_source")),
-        issues=_str_or_none(raw.get("issues")),
-        prs=_str_or_none(raw.get("prs")),
         schema_version=int(raw.get("schema_version", 1)),
         inherit=raw.get("inherit") is True,
     )

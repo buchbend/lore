@@ -56,20 +56,26 @@ def test_emit_counters_and_ordering(tmp_path: Path):
     with RunLogger(tmp_path, trigger="hook", pending_count=3) as logger:
         logger.emit("transcript-start", transcript_id="t1", new_turns=10)
         logger.emit("noteworthy", transcript_id="t1", verdict=True, reason="x", tier="middle")
-        logger.emit(
-            "session-note", transcript_id="t1", action="filed", path="p.md", wikilink="[[p]]"
-        )
         logger.emit("transcript-start", transcript_id="t2", new_turns=5)
         logger.emit("skip", transcript_id="t2", reason="noteworthy-false")
     records = read_curator_runs(tmp_path)[logger.run_id]
     assert records[0]["type"] == "run-start"
     assert records[-1]["type"] == "run-end"
-    assert records[-1]["notes_new"] == 1
-    assert records[-1]["notes_merged"] == 0
     assert records[-1]["skipped"] == 1
     assert records[-1]["errors"] == 0
     kinds = [r["type"] for r in records[1:-1]]
-    assert kinds == ["transcript-start", "noteworthy", "session-note", "transcript-start", "skip"]
+    assert kinds == ["transcript-start", "noteworthy", "transcript-start", "skip"]
+
+
+def test_run_end_carries_no_note_counters(tmp_path: Path):
+    """The counters only ever moved on a `session-note` record. No emitter is
+    left, so a permanently-zero count in every run-end payload would read as a
+    live measurement of a retired pipeline."""
+    with RunLogger(tmp_path, trigger="hook") as logger:
+        logger.emit("skip", reason="x")
+    end = read_curator_runs(tmp_path)[logger.run_id][-1]
+    assert "notes_new" not in end
+    assert "notes_merged" not in end
 
 
 def test_exception_emits_error_and_runend_then_propagates(tmp_path: Path):

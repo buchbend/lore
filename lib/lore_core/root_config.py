@@ -54,17 +54,18 @@ class RetentionConfig:
 
     ``crash_log_days`` bounds ``$LORE_CACHE/crashes/``.
 
-    ``dead_letter_hard_cap`` was the escape valve for flush dead letters. The
-    flush store went with the compose pipeline, so no code reads the field any
-    more. It stays as a field so an existing ``config.yml`` carrying it still
-    parses.
+    ``dead_letter_hard_cap`` was the escape valve for flush dead letters and
+    went with the flush store. It is gone rather than retained: a declared
+    field is a knob a user can set, and one that changes nothing is worse than
+    an absent one. Loading is unaffected — ``_merge`` warns on the unknown key
+    and falls back to defaults, so an existing ``config.yml`` carrying it still
+    parses, and the warning names the key to delete.
     """
 
     hot_days: int = 7
     cold_days: int = 30
     cold_max_mb: int = 20
     crash_log_days: int = 30
-    dead_letter_hard_cap: int = 50
 
 
 @dataclass

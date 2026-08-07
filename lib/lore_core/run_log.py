@@ -60,7 +60,7 @@ class RunLogger:
     Context-manager usage:
 
         with RunLogger(lore_root, trigger="hook", role="a") as logger:
-            logger.emit("session-note", action="filed", path="...")
+            logger.emit("skip", reason="nothing noteworthy")
             ...
 
     Emits run-start on enter and run-end (with duration + counts) on exit;
@@ -82,7 +82,6 @@ class RunLogger:
             "noteworthy",
             "cascade-verdict",  # shadow-run feature-based classifier
             "merge-check",
-            "session-note",
             # Buffer-and-flush curator (plan: very-good-thats-the-mossy-lobster).
             # Lifecycle: opened -> appended* -> (cap-tripped|requested) -> spawned
             #   -> deterministic-completed -> llm-completed | degraded
@@ -135,8 +134,6 @@ class RunLogger:
         # run's events join the drain event and the published note (#188).
         self.trace_id = trace_id
         self._counts = {
-            "notes_new": 0,
-            "notes_merged": 0,
             "skipped": 0,
             "errors": 0,
             "actions_applied": 0,
@@ -230,13 +227,7 @@ class RunLogger:
         return dict(fields)
 
     def _counters_bookkeeping(self, record_type: str, fields: dict[str, Any]) -> None:
-        if record_type == "session-note":
-            action = fields.get("action")
-            if action == "filed":
-                self._counts["notes_new"] += 1
-            elif action == "merged":
-                self._counts["notes_merged"] += 1
-        elif record_type == "skip":
+        if record_type == "skip":
             self._counts["skipped"] += 1
         elif record_type == "error":
             self._counts["errors"] += 1

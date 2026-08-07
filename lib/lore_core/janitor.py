@@ -107,6 +107,15 @@ def run_janitor(lore_root: Path, cfg: ObservabilityConfig) -> JanitorReport:
             max_size_mb=cfg.hook_events.max_size_mb,
         ):
             report.downgraded = True
+            # Emitted here, not inside the rotation: `_rotate_locked` holds the
+            # rotation flock and is mid-rename, so a write from in there would
+            # be reentrant on the lock and land in a file about to move. After
+            # the return the hot file is fresh, and the event lands in it.
+            writer.emit(
+                source="janitor",
+                event="retention-downgrade",
+                data={"family": "spine-hot", "path": cold.name},
+            )
 
         # Cold tier: age or size cap deletes it outright — no tier below.
         if cold.exists():
@@ -192,6 +201,7 @@ def _write_status(lore_root: Path, report: JanitorReport) -> None:
         "hot_bytes": report.hot_bytes,
         "cold_bytes": report.cold_bytes,
         "deleted": report.deleted,
+        "downgraded": report.downgraded,
         "failed": report.failed,
     }
     try:

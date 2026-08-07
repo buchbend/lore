@@ -364,3 +364,143 @@ def test_the_one_wiki_enumerator_returns_empty_for_a_vault_with_no_wiki(tmp_path
     from lore_core.config import list_wikis
 
     assert list_wikis(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# Property 4 — no declaration outlives its producer
+#
+# The session-note teardown left surfaces whose producer went with it, plus
+# two that predate it. Each assertion pins one removal or one correction so
+# the surface cannot creep back silently.
+# ---------------------------------------------------------------------------
+
+
+def _repo_text(rel: str) -> str:
+    return (REPO / rel).read_text(errors="replace")
+
+
+def test_briefing_cmd_docstring_marks_the_one_shot_parked() -> None:
+    """`gather()` yields no sessions, so `_run_oneshot` returns before compose,
+    publish and mark on every real call. PRD 0011 parks that path rather than
+    reviving it; the module docstring has to say so."""
+    import lore_cli.briefing_cmd as mod
+
+    doc = (mod.__doc__ or "").lower()
+    assert "parked" in doc, "briefing_cmd's docstring must name the parked one-shot path"
+
+
+def test_run_log_declares_no_session_note_record_type() -> None:
+    from lore_core.run_log import RunLogger
+
+    assert "session-note" not in RunLogger.RECORD_TYPES
+
+
+def test_no_module_reads_the_session_note_record_type() -> None:
+    """No emitter is left, so no branch, docstring example or trace label may
+    keep matching on it."""
+    hits = sorted(
+        str(path.relative_to(REPO))
+        for path, body in _lib_sources().items()
+        if '"session-note"' in body
+    )
+    assert hits == [], f"the retired 'session-note' record type survives in: {hits}"
+
+
+def test_retention_config_declares_no_readerless_cap() -> None:
+    """`dead_letter_hard_cap` lost its reader with the flush store. An unknown
+    key still parses — `root_config` warns and falls back to defaults — so the
+    field's only remaining effect was to make a dead knob look live."""
+    from lore_core.root_config import RetentionConfig
+
+    assert not hasattr(RetentionConfig(), "dead_letter_hard_cap")
+
+
+def test_context_format_names_no_absent_note_document_symbol() -> None:
+    import lore_core.note_document as nd
+
+    referenced = set(
+        re.findall(r"`(render_note|read_note|append_\w+)`", _repo_text("CONTEXT-FORMAT.md"))
+    )
+    missing = sorted(name for name in referenced if not hasattr(nd, name))
+    assert missing == [], f"CONTEXT-FORMAT.md names absent note_document symbols: {missing}"
+
+
+def test_the_brief_skill_claims_no_session_note() -> None:
+    """The skill justified having no brief file by pointing at session notes.
+    No code writes one, so the justification names a surface that is gone.
+
+    Scoped to this one file on purpose: widening
+    ``test_no_skill_claims_lore_writes_a_session_note`` to the whole
+    ``lore-workflow/skills/`` tree is a separate change, and a blanket scan
+    here would also flag the *correct* negative claims other skills make."""
+    text = _repo_text("lore-workflow/skills/brief/SKILL.md")
+    assert not re.search(r"(?<!no )session notes? (do|does)\b", text)
+    assert not re.search(r"(?<!Nothing )writes a session note", text)
+
+
+def test_troubleshooting_names_the_recent_txt_leftover() -> None:
+    """`lint.generate_recent_txt` is gone, so a wiki that already holds
+    `sessions/_recent.txt` keeps it forever. The session-note section has to
+    name it alongside the notes themselves."""
+    assert "_recent.txt" in _repo_text("docs/how-to/troubleshooting.md")
+
+
+def test_errors_declares_no_constant_no_module_reads() -> None:
+    from lore_core import errors as errors_mod
+
+    sources = _lib_sources(exclude=frozenset({"errors.py"}))
+    unread = sorted(
+        name
+        for name, value in vars(errors_mod).items()
+        if name.isupper()
+        and isinstance(value, str)
+        and not any(name in body for body in sources.values())
+    )
+    assert unread == [], f"error-code constants no module imports: {unread}"
+
+
+def test_the_mcp_server_imports_every_error_code_it_emits() -> None:
+    """The module comment promises centralised client-facing strings. A code
+    written as a literal breaks that promise silently — renaming the constant
+    leaves the literal behind."""
+    from lore_core import errors as errors_mod
+
+    server = _repo_text("lib/lore_mcp/server.py")
+    declared = {v for n, v in vars(errors_mod).items() if n.isupper() and isinstance(v, str)}
+    literals = sorted(code for code in declared if f'"{code}"' in server)
+    assert literals == [], f"server.py writes declared error codes as literals: {literals}"
+
+
+def test_gh_declares_no_function_without_a_production_caller() -> None:
+    from lore_core import gh
+
+    sources = _lib_sources(exclude=frozenset({"gh.py"}))
+    orphaned = sorted(
+        name
+        for name, obj in vars(gh).items()
+        if inspect.isfunction(obj)
+        and obj.__module__ == "lore_core.gh"
+        and not any(name in body for body in sources.values())
+    )
+    assert orphaned == [], f"gh helpers no production caller reaches: {orphaned}"
+
+
+def test_the_offer_schema_declares_no_key_without_a_reader() -> None:
+    """`issues:`/`prs:` fed the SessionStart gh counts. The banner dropped those
+    counts; the keys stayed, so a user's filter had no effect and no warning.
+
+    ``Offer`` is the schema for a repo's lore block and its `.lore.yml` — a
+    field here is a key `lore config edit` offers and `validate_offer_raw`
+    accepts, so an unread field advertises a knob that does nothing."""
+    import dataclasses
+
+    from lore_core.offer import Offer
+
+    names = {f.name for f in dataclasses.fields(Offer)}
+    assert "issues" not in names
+    assert "prs" not in names
+
+
+@pytest.mark.parametrize("doc", ["CLAUDE.md", "AGENTS.md"])
+def test_this_repos_lore_block_sets_no_readerless_key(doc: str) -> None:
+    assert not re.search(r"^- (issues|prs):", _repo_text(doc), re.MULTILINE)

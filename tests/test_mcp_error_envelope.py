@@ -27,12 +27,12 @@ def test_mcp_error_helper_basic() -> None:
 
 
 def test_mcp_error_helper_with_next_hint() -> None:
-    err = _mcp_error("catalog_missing", "no _catalog.json", next_="run lore lint")
+    err = _mcp_error("no_wikis", "vault holds no wiki", next_="run lore init")
     assert err == {
         "error": {
-            "code": "catalog_missing",
-            "message": "no _catalog.json",
-            "next": "run lore lint",
+            "code": "no_wikis",
+            "message": "vault holds no wiki",
+            "next": "run lore init",
         }
     }
 

@@ -36,18 +36,14 @@ def _resolve_attach_block(cwd: Path) -> tuple[Path, dict] | None:
     block = {"wiki": scope.wiki, "scope": scope.scope, "backend": scope.backend}
 
     # Attachment paths store the repo root; look for a `.lore.yml` there
-    # and merge its non-routing fields (backend, issues, prs, wiki_source)
-    # into the block dict. This keeps downstream callers
+    # and merge its non-routing fields (backend, wiki_source) into the
+    # block dict. This keeps downstream callers
     # (`_session_start_from_lore`, etc.) working unchanged.
     repo_root = scope.claude_md_path.parent
     offer = parse_lore_yml(repo_root / LORE_YML)
     if offer is not None:
         if offer.backend:
             block["backend"] = offer.backend
-        if offer.issues:
-            block["issues"] = offer.issues
-        if offer.prs:
-            block["prs"] = offer.prs
         if offer.wiki_source:
             block["wiki_source"] = offer.wiki_source
 

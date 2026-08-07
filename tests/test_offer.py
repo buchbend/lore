@@ -32,8 +32,11 @@ def test_parse_full_offer(tmp_path: Path) -> None:
     assert offer.scope == "ccat:data-center:computers"
     assert offer.backend == "github"
     assert offer.wiki_source == "git@github.com:team/alpha-wiki.git"
-    assert offer.issues == "--assignee @me --state open"
-    assert offer.prs == "--author @me"
+    # `issues:`/`prs:` lost their reader with the gh list wrappers. A file
+    # written against an older Lore still parses — the keys are ignored, not
+    # an error, so an attached repo keeps working untouched.
+    assert not hasattr(offer, "issues")
+    assert not hasattr(offer, "prs")
 
 
 def test_parse_minimal_offer(tmp_path: Path) -> None:
@@ -176,9 +179,9 @@ def test_fingerprint_deterministic() -> None:
 
 
 def test_fingerprint_invariant_under_non_routing_fields() -> None:
-    a = Offer(wiki="w", scope="a:b", issues="--state open", prs="--author @me")
-    b = Offer(wiki="w", scope="a:b", issues="--state closed", prs=None)
-    # issues/prs are NOT routing-relevant → fingerprints equal
+    a = Offer(wiki="w", scope="a:b", backend="github")
+    b = Offer(wiki="w", scope="a:b", backend="none")
+    # backend is NOT routing-relevant → fingerprints equal
     assert offer_fingerprint(a) == offer_fingerprint(b)
 
 

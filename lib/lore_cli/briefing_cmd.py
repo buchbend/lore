@@ -4,9 +4,20 @@ The default form is the one-shot pipeline:
 
     lore briefing --wiki <name>
 
-which gathers new sessions, renders a deterministic markdown digest,
-publishes via the wiki's configured sink (`.lore-briefing.yml`), and
-marks the ledger.
+which would gather new sessions, render a deterministic markdown digest,
+publish via the wiki's configured sink (`.lore-briefing.yml`), and mark
+the ledger.
+
+**The one-shot is parked, not live.** Nothing writes a session note since
+the compose pipeline was retired, so ``gather()`` returns an empty
+``new_sessions`` list on every call (see ``lore_core.briefing.gather``)
+and ``_run_oneshot`` returns at its sessions check. No producer reaches
+the compose, publish, mark, commit or push code below that return. PRD
+0011 parks the feature rather than reviving it; the code stays so a
+future producer needs no rebuild, and ``tests/test_briefing.py`` covers
+the renderer and the prose composer as the pure functions they are.
+``lore briefing publish`` and ``lore briefing mark`` stay reachable —
+neither calls ``gather()``.
 
 The one-shot also coordinates the wiki repo across teammates:
 ``auto_pull`` runs before gather (so we see teammates' marks) and
