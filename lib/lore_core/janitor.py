@@ -33,8 +33,11 @@ concurrency (atomic replace / tolerant of FileNotFoundError) so they're
 composed alongside this, not inside the same critical section — see
 ``lore_cli._janitor_entry.run_opportunistic_janitor``.
 
-Every deletion and tier-downgrade emits a ``source="janitor"`` spine event;
-a delete failure emits a warn-level event instead of failing silently.
+Every tiered-retention deletion and tier-downgrade emits a
+``source="janitor"`` spine event; a delete failure emits a warn-level event
+instead of failing silently. The one-time ``.lore/flushes/`` removal is
+outside that invariant — it emits nothing, since it is upgrade cleanup
+rather than retention policy.
 """
 
 from __future__ import annotations
@@ -81,11 +84,11 @@ def janitor_lock(lore_root: Path):
 
 
 def run_janitor(lore_root: Path, cfg: ObservabilityConfig) -> JanitorReport:
-    """Enforce tiered retention across the spine + flush store. Never raises.
+    """Enforce tiered retention across the spine. Never raises.
 
     Self-contained critical section: acquires :func:`janitor_lock`, sweeps
-    the hot/cold spine tiers, the legacy run-archival family, and the
-    flush store's terminal/dead-letter purge, then persists the queryable
+    the hot/cold spine tiers and the legacy run-archival family, removes
+    ``.lore/flushes/`` if it is still there, then persists the queryable
     usage snapshot (see :func:`read_janitor_status`).
     """
     with janitor_lock(lore_root) as held:

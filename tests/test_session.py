@@ -1,8 +1,8 @@
 """Tests for `lore_core.session` (slug + commit) and `lore session commit` CLI.
 
-Auto-capture (curator A → session_writer) is the canonical write path.
-This file covers the `slugify` helper used by plans and the `commit` CLI
-verb used by inbox/briefing skills."""
+Lore writes no session note automatically; the compose pipeline that once
+filed one was retired. This file covers the `slugify` helper used by plans
+and the `commit` CLI verb used by inbox/briefing skills."""
 
 from __future__ import annotations
 

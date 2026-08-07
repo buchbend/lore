@@ -1,9 +1,9 @@
 """Unified retention janitor tests (issue #190).
 
 Covers the parts that don't already have a home in test_run_retention.py
-(run-archival), test_flush_store.py (dead-letter purge) or test_spine.py
-(hot->cold rotation): lock contention, cold-tier deletion, orchestration
-of all families in one pass, and the queryable usage status.
+(run-archival) or test_spine.py (hot->cold rotation): lock contention,
+cold-tier deletion, orchestration of all families in one pass, and the
+queryable usage status.
 """
 
 from __future__ import annotations

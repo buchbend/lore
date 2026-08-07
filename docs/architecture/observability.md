@@ -154,10 +154,12 @@ runs opportunistically from hook fire / curator run end
 | Crash logs (`$LORE_CACHE/crashes/`) | `retention.crash_log_days` (30d) | purge (`lore_cli/_crash_log.py`) |
 | Legacy drain orphans (`.lore/drain/_system.jsonl`) | rows whose referenced note path no longer exists | drop (`lore_core/janitor.py:prune_orphans`) — upgrade cleanup only; nothing writes this file post-#188 (drain events live on the spine, `source="drain"`, and get the same tiered retention as everything else above) |
 
-Every deletion and tier-downgrade emits a `source="janitor"` spine
-event (`retention-delete` / `retention-downgrade`); a delete failure
-emits a `warn`-level `retention-delete-failed` event instead of failing
-silently. The last pass's usage snapshot is queryable via
+Every tiered-retention deletion and tier-downgrade emits a
+`source="janitor"` spine event (`retention-delete` /
+`retention-downgrade`); a delete failure emits a `warn`-level
+`retention-delete-failed` event instead of failing silently. The
+one-time `.lore/flushes/` removal sits outside that invariant and emits
+nothing — it is upgrade cleanup, not retention policy. The last pass's usage snapshot is queryable via
 `read_janitor_status()` — that's what `lore status`'s retention section
 reads.
 
