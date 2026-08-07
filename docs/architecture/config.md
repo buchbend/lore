@@ -143,9 +143,10 @@ Vault-wide policy. Schema lives in
 - `observability.retention.{hot_days, cold_days, cold_max_mb, crash_log_days,
   dead_letter_hard_cap}` — the unified spine retention janitor: a hot tier keeps
   detailed events ~`hot_days`, a cold tier keeps compact summaries ~`cold_days`
-  under a `cold_max_mb` size cap; `crash_log_days` bounds crash-log retention and
-  `dead_letter_hard_cap` caps unresolved dead letters. See
-  `docs/architecture/observability.md`.
+  under a `cold_max_mb` size cap; `crash_log_days` bounds crash-log retention.
+  `dead_letter_hard_cap` capped flush dead letters. No code reads it any more —
+  the flush store went with the compose pipeline. A value there changes nothing.
+  See `docs/architecture/observability.md`.
 - `curator.backend` — `auto` | `subscription` | `api` | `openai`
 - `curator.openai.{base_url, api_key_env, model_simple, model_middle, model_high, reasoning_effort_simple, reasoning_effort_middle, reasoning_effort_high}`
 - `journal.enabled`

@@ -26,7 +26,7 @@ from lore_cli._argv_compat import argv_main
 
 app = typer.Typer(
     add_completion=False,
-    help="One-shot upgrades: frontmatter schema, session slugs.",
+    help="One-shot upgrades: frontmatter schema.",
     no_args_is_help=True,
     rich_markup_mode="rich",
 )

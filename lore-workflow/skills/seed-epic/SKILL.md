@@ -43,7 +43,8 @@ hand-authored, or from a wiki that predates the retirement — try
 `lore workflow seed-lift <path-to-that-note> --wiki-root <wiki-root>` first: on success (exit 0)
 use its `origin` and `findings` JSON fields verbatim for those two sections, and add its
 `source_note` under **Pointers** as an explicit reference, so a cold `/lore-workflow:orient` on
-the seed can pull the note back via `lore_read`/`lore_context_pack`.
+the seed can pull the note back by path via `lore_read` — `lore_context_pack` no longer
+surfaces notes.
 
 Draft each body with the template below. Lead with intent; make the **findings** section rich —
 that is the handover value. Pointers are starting points, not gospel (they may go stale).

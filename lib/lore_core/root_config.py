@@ -52,10 +52,12 @@ class RetentionConfig:
     ``cold_max_mb`` bound how long it survives before outright deletion
     (there is no tier below cold).
 
-    ``crash_log_days`` bounds ``$LORE_CACHE/crashes/``. ``dead_letter_hard_cap``
-    is the escape valve for flush dead letters: unresolved dead letters are
-    exempt from normal age-based retention (a human needs to see them) but
-    a permanently-stuck pipeline still can't grow the store forever.
+    ``crash_log_days`` bounds ``$LORE_CACHE/crashes/``.
+
+    ``dead_letter_hard_cap`` was the escape valve for flush dead letters. The
+    flush store went with the compose pipeline, so no code reads the field any
+    more. It stays as a field so an existing ``config.yml`` carrying it still
+    parses.
     """
 
     hot_days: int = 7

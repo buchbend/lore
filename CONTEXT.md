@@ -127,17 +127,17 @@ write; the default is a dry-run.
 ## Briefings
 
 `lore_core/briefing/gather.py:gather()` is the read-only half of
-`lore briefing`. It collects notes filed under `<wiki>/sessions/` since
-the last briefing, tracked in a per-wiki ledger. It hands their full
-bodies to whatever composes the briefing prose. Briefing publish is
-manual (`lore briefing publish`, `lore briefing mark`); there is no
-automatic daily trigger.
+`lore briefing`. It reports the wiki's briefing ledger and its sink
+config. Briefing publish is manual (`lore briefing publish`, `lore
+briefing mark`); there is no automatic daily trigger.
 
-**Briefings are parked** (PRD 0011). `gather()` reads a directory that
-capture no longer fills, so it finds new input only from whatever a human
-files there. What a briefing should read now that the session note is
-gone is an open question, deliberately left open rather than guessed. See `docs/how-to/matrix-bot.md` for the
-Matrix sink walkthrough.
+**Briefings are parked** (PRD 0011). `gather()` used to collect notes
+filed under `<wiki>/sessions/` since the last briefing and hand their
+bodies to the prose composer. PRD 0013 removed that walk, so
+`new_sessions` always comes back empty and a one-shot gather yields
+nothing. What a briefing should read now that the session note is gone
+is an open question, deliberately left open rather than guessed. See
+`docs/how-to/matrix-bot.md` for the Matrix sink walkthrough.
 
 ## Ambient banner vs. MCP pull
 
@@ -186,11 +186,13 @@ not from anything injected ambiently:
   map (symbols / directory / callers modes), never the whole map.
 - `lore_context_pack` (`lore_core/context_pack.py`) — a deterministic
   context resolver. It takes a scope, repo state, and an issue, PR or
-  epic. It returns a pointer pack: recent ledger entries for that scope,
-  ADRs and PRDs that bear on the scope, and open epic state. Each entry
-  carries a one-line summary and a selective body pull. The resolver
-  costs no LLM call. Orchestration skills read the pack before any
-  explorer subagent runs.
+  epic. It returns a pointer pack of three payload keys: `adr` and `prd`
+  for the repo docs that bear on the scope, and `epic_state`. The pack
+  lost its `sessions` key when the session-note stock retired (PRD 0013).
+  It joins on git-derived linkage and costs no LLM call. An `adr` or `prd`
+  entry carries a path, a title and a status; a reader pulls the body
+  afterwards with `lore_repo_docs_fetch`. Orchestration skills read the
+  pack before any explorer subagent runs.
 
 
 ## Retrieval substrate
@@ -247,8 +249,8 @@ Terms used in the workflow layer and orchestration:
   output, token-budgeted (~1k tokens) and curated for a specific feature
   or epic. Passed once at `orchestrate-epic` Map time and reused by every
   teammate, instead of having each teammate discover symbols independently.
-  Distinct from a full `lore_context_pack`, which joins ledger entries and
-  ADRs/PRDs; the codemap excerpt is the code-navigation half only.
+  Distinct from a full `lore_context_pack`, which joins ADRs/PRDs and epic
+  state; the codemap excerpt is the code-navigation half only.
 - **Epic note** — a single note written for the orchestration
   of an epic. The note records the roadmap DAG, per-feature tier
   decisions, crosscheck verdicts, and any escalations. Distinct from the
@@ -304,8 +306,8 @@ session note at every session boundary is gone, along with its per-wiki
   content a session writes into a wiki. Say "flag", not "gem" or
   "prospect".
 - **Crossing** — the path a fact takes from a working session to the team
-  wiki. The flag is the deliberate crossing, and becomes the only one when
-  the teardown lands.
+  wiki. The flag is the deliberate crossing, and the only one — the
+  teardown landed.
 - **Origin line** — the deterministic attribution line closing a flag
   block: author, date, code-verified refs, transcript pointer. A write
   carrying no transcript pointer and no ref is refused.

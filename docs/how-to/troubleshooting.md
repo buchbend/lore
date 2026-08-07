@@ -101,17 +101,29 @@ by hand accepts that flag as far as the count is concerned, and records no
 accept/decline counters are not expected to sum. See
 [measure flag quality](measure-flag-quality.md).
 
+## "My wiki still holds session notes under `sessions/`"
+
+Those files are inert markdown. No Lore code reads them: `lore lint`
+no longer walks the `sessions/` tree, `lore_context_pack` returns no
+`sessions` key, and `lore briefing` gathers nothing from the directory.
+Keep the files, move them, or delete them — Lore behaves the same either
+way. Delete them with `git rm` if you want the tree quiet; the wiki's git
+history keeps a copy.
+
+The three migration verbs that used to help here are gone:
+`lore migrate retire-session-notes`, `lore migrate open-items`, and the
+older `lore curator --migrate-open-items`. The transcript-ledger backfill
+that `retire-session-notes` ran has no replacement. A ledger entry that
+carries no linkage block keeps none.
+
 ## A `queued` or `running` flush record on disk
 
-`lore_core/flush_store.py` is a reader now — nothing opens a new record.
-`.lore/flushes/` can still hold `queued` or `running` records left over
-from before the compose pipeline retired; the retention janitor purges
-`published` / `withheld` records past their age window, exempts
-`dead-lettered` records from that window entirely and caps them by
-count instead, and leaves `queued` / `running` records alone, since no
-code advances them any more. One sitting there is not a live flush
-stuck mid-flight — delete `.lore/flushes/` by hand if the leftovers
-bother you; nothing reads them back.
+`.lore/flushes/` can still hold records left over from before the compose
+pipeline retired. No code reads them — `lore_core/flush_store.py` is
+deleted and no code advances a record. The retention janitor deletes the
+whole `.lore/flushes/` directory on its next opportunistic pass, so a
+`queued` or `running` record there is a leftover, not a flush stuck
+mid-flight. Delete the directory by hand if you want it gone sooner.
 
 ## Known rough edges (honest, not yet fixed)
 
@@ -140,8 +152,11 @@ Other verbs that moved rather than vanished:
 | `lore detach` | `lore attach remove` |
 | `lore attachments <sub>` | `lore attach attachments <sub>` |
 | `lore registry ls` / `lore registry doctor` | `lore scopes wikis` / `lore scopes doctor` |
-| `lore curator --migrate-open-items` | `lore migrate open-items` |
 | `lore migrate --add-schema-version` | `lore migrate frontmatter --add-schema-version` |
+
+`lore migrate open-items` and `lore migrate retire-session-notes` are not
+in that table — both were removed outright, with nothing to move to. See
+["My wiki still holds session notes under `sessions/`"](#my-wiki-still-holds-session-notes-under-sessions).
 
 `lore journal` still works; it is only hidden from `lore --help` while the
 feature stays parked.
