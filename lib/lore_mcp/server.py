@@ -37,6 +37,17 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_lore_root, get_wiki_root
+from lore_core.errors import (
+    EMPTY_ENTRY,
+    INVALID_ENTRY,
+    INVALID_KIND,
+    NOTE_NOT_FOUND,
+    PATH_ESCAPE,
+    PATH_NOT_FOUND,
+    SESSION_OFF,
+    UNKNOWN_TOOL,
+    WIKI_NOT_FOUND,
+)
 from lore_core.errors import mcp_error as _mcp_error
 from lore_core.freshness import (
     compute_freshness,
@@ -323,7 +334,7 @@ def handle_read(
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
         return _mcp_error(
-            "wiki_not_found",
+            WIKI_NOT_FOUND,
             f"wiki not found: {wiki}",
             next_="run `lore status` to list configured wikis",
         )
@@ -337,16 +348,16 @@ def handle_read(
     if slug:
         resolved = _resolve_slug(wiki_path, slug)
         if resolved is None:
-            return _mcp_error("note_not_found", f"note not found: {slug}")
+            return _mcp_error(NOTE_NOT_FOUND, f"note not found: {slug}")
         path = resolved
 
     target = (wiki_path / path).resolve()
     try:
         target.relative_to(wiki_path.resolve())
     except ValueError:
-        return _mcp_error("path_escape", "path escapes wiki root")
+        return _mcp_error(PATH_ESCAPE, "path escapes wiki root")
     if not target.exists():
-        return _mcp_error("path_not_found", f"not found: {path}")
+        return _mcp_error(PATH_NOT_FOUND, f"not found: {path}")
     text = target.read_text(errors="replace")
 
     # Notes carry no human-only region: they are machine-written and
@@ -465,20 +476,20 @@ def handle_journal_write(
 
     if kind not in journal.VALID_KINDS:
         return _mcp_error(
-            "invalid_kind",
+            INVALID_KIND,
             f"journal kind must be one of {journal.VALID_KINDS!r}, got {kind!r}",
         )
     text = (text or "").strip()
     if not text:
         return _mcp_error(
-            "empty_entry",
+            EMPTY_ENTRY,
             "journal entry text must be non-empty",
             next_="Pass a non-empty `text` arg.",
         )
     try:
         result = journal.write(kind, text, author=author)  # type: ignore[arg-type]
     except ValueError as e:
-        return _mcp_error("invalid_entry", str(e))
+        return _mcp_error(INVALID_ENTRY, str(e))
     return {"schema": "lore.journal.write/1", "data": result}
 
 
@@ -567,7 +578,7 @@ def handle_drill(
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
         return _mcp_error(
-            "wiki_not_found",
+            WIKI_NOT_FOUND,
             f"wiki not found: {wiki}",
             next_="run `lore status` to list configured wikis",
         )
@@ -741,7 +752,7 @@ def handle_verdict(
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
         return _mcp_error(
-            "wiki_not_found",
+            WIKI_NOT_FOUND,
             f"wiki not found: {wiki}",
             next_="run `lore status` to list configured wikis",
         )
@@ -756,15 +767,15 @@ def handle_verdict(
     if slug:
         resolved = _resolve_slug(wiki_path, slug)
         if resolved is None:
-            return _mcp_error("note_not_found", f"note not found: {slug}")
+            return _mcp_error(NOTE_NOT_FOUND, f"note not found: {slug}")
         rel_path = resolved
     target = (wiki_path / rel_path).resolve()
     try:
         target.relative_to(wiki_path.resolve())
     except ValueError:
-        return _mcp_error("path_escape", "path escapes wiki root")
+        return _mcp_error(PATH_ESCAPE, "path escapes wiki root")
     if not target.exists():
-        return _mcp_error("path_not_found", f"not found: {rel_path}")
+        return _mcp_error(PATH_NOT_FOUND, f"not found: {rel_path}")
 
     if verdict == "confirm":
         from lore_core.verdicts_sidecar import set_confirmed
@@ -892,7 +903,7 @@ def handle_pending_verdicts(wiki: str | None = None) -> dict[str, Any]:
     wiki_path = _resolve_wiki_with_active_scope_fallback(wiki)
     if wiki_path is None:
         return _mcp_error(
-            "wiki_not_found",
+            WIKI_NOT_FOUND,
             (
                 f"wiki not found: {wiki}" if wiki else
                 "could not resolve active wiki (no explicit `wiki`, no "
@@ -951,7 +962,7 @@ def handle_repo_docs_list(kind: str, repo_path: str | None = None) -> dict[str, 
     from lore_core.repo_docs import HOMES, list_docs
 
     if kind not in HOMES:
-        return _mcp_error("invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}")
+        return _mcp_error(INVALID_KIND, f"kind must be one of {sorted(HOMES)}, got {kind!r}")
     repo_root = _resolve_repo_root(repo_path)
     if repo_root is None:
         return _mcp_error(
@@ -978,7 +989,7 @@ def handle_repo_docs_fetch(kind: str, path: str, repo_path: str | None = None) -
     from lore_core.repo_docs import HOMES, read_doc
 
     if kind not in HOMES:
-        return _mcp_error("invalid_kind", f"kind must be one of {sorted(HOMES)}, got {kind!r}")
+        return _mcp_error(INVALID_KIND, f"kind must be one of {sorted(HOMES)}, got {kind!r}")
     repo_root = _resolve_repo_root(repo_path)
     if repo_root is None:
         return _mcp_error(
@@ -1504,7 +1515,7 @@ def _dispatch(tool_name: str, args: dict) -> Any:
         from lore_core.toggles import is_off
         if is_off("all", sid):
             return _mcp_error(
-                "session_off",
+                SESSION_OFF,
                 "Lore is muted for this session.",
                 next_="Run `lore on` from a shell in this session, or restart the session.",
             )
@@ -1537,7 +1548,7 @@ def _dispatch(tool_name: str, args: dict) -> Any:
         case "lore_context_pack":
             return handle_context_pack(**args)
         case _:
-            return _mcp_error("unknown_tool", f"unknown tool: {tool_name}")
+            return _mcp_error(UNKNOWN_TOOL, f"unknown tool: {tool_name}")
 
 
 def _start_reindex_watcher() -> None:

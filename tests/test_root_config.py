@@ -21,7 +21,6 @@ def test_retention_defaults_when_file_absent(tmp_path: Path):
     assert cfg.observability.retention.cold_days == 30
     assert cfg.observability.retention.cold_max_mb == 20
     assert cfg.observability.retention.crash_log_days == 30
-    assert cfg.observability.retention.dead_letter_hard_cap == 50
 
 
 def test_retention_partial_override(tmp_path: Path):

@@ -1,9 +1,9 @@
 """Tests for the schema-v2 SessionStart path.
 
-Covers the pure helpers (scope-tree walk, filter parsing, walk-up of
-`CLAUDE.md`) and the orchestrator. SessionStart itself never calls
-`gh` — issue/PR counts were dropped from the banner — so `gh.split_filter`
-and the formatters are exercised directly against `lore_core.gh`.
+Covers the pure helpers (scope-tree walk, walk-up of `CLAUDE.md`) and the
+orchestrator. SessionStart itself never calls `gh` — issue/PR counts were
+dropped from the banner, and the list wrappers and line formatters that
+served them were deleted once nothing else reached them.
 """
 
 from __future__ import annotations
@@ -34,27 +34,6 @@ SCOPES_YML_SAMPLE = {
         },
     }
 }
-
-
-# ---------- gh.split_filter (was hooks._split_filter pre-0.12.0) ----------
-
-
-@pytest.mark.parametrize("raw,expected", [
-    ("", []),
-    ("--assignee @me", ["--assignee", "@me"]),
-    ("--assignee @me --state open", ["--assignee", "@me", "--state", "open"]),
-    ('--label "needs triage"', ["--label", "needs triage"]),
-    (None, []),
-])
-def test_split_filter(raw, expected):
-    from lore_core import gh
-    assert gh.split_filter(raw) == expected
-
-
-def test_split_filter_malformed_falls_back_to_whitespace():
-    # Unterminated quote — shlex raises, fallback kicks in
-    from lore_core import gh
-    assert gh.split_filter('--label "oops') == ["--label", '"oops']
 
 
 # ---------- scope tree walk ----------
@@ -170,28 +149,6 @@ def test_resolve_attach_block_missing_file(tmp_path, monkeypatch):
     assert _resolve_attach_block(tmp_path) is None
 
 
-# ---------- formatters ----------
-
-
-def test_format_issue_line():
-    from lore_core import gh
-    assert gh.format_issue_line({"number": 47, "title": "retry cap"}) == "- #47 retry cap"
-
-
-def test_format_pr_line_draft():
-    from lore_core import gh
-    assert gh.format_pr_line(
-        {"number": 31, "title": "atm-table v2", "isDraft": True}
-    ) == "- #31 [draft] atm-table v2"
-
-
-def test_format_pr_line_ready():
-    from lore_core import gh
-    assert gh.format_pr_line(
-        {"number": 32, "title": "bugfix", "isDraft": False}
-    ) == "- #32 bugfix"
-
-
 # ---------- orchestrator (mocked gh) ----------
 
 
@@ -288,8 +245,14 @@ def test_status_line_shows_scope_not_project_wikilink(
 
 
 def test_session_start_never_shows_issue_or_pr_counts(fake_vault, tmp_path, monkeypatch):
-    """The banner never fetches or renders issue/PR counts — that
-    ambient gh fetch was dropped from SessionStart entirely."""
+    """The banner never fetches or renders issue/PR counts — that ambient gh
+    fetch was dropped from SessionStart entirely.
+
+    Guarded at the subprocess boundary rather than at a named helper: the
+    list wrappers the banner used are gone, and the invariant is that
+    SessionStart shells out to gh at all, not that one function stays unused.
+    A `.lore.yml` left over from an older Lore still carries the filter keys;
+    they are inert, and reaching them must not resurrect the fetch."""
     vault, wiki = fake_vault
     repo_dir = tmp_path / "data-transfer"
     repo_dir.mkdir()
@@ -300,14 +263,22 @@ def test_session_start_never_shows_issue_or_pr_counts(fake_vault, tmp_path, monk
     )
     monkeypatch.setattr(session_start, "current_repo", lambda _cwd: "ccatobs/data-transfer")
 
+    import subprocess as subprocess_mod
+
     from lore_core import gh as gh_mod
 
-    calls: list[tuple] = []
-    monkeypatch.setattr(gh_mod, "run_gh", lambda *a, **kw: calls.append((a, kw)) or [])
+    calls: list[list] = []
+    real_run = subprocess_mod.run
+
+    def spy(cmd, *a, **kw):
+        calls.append(list(cmd))
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(gh_mod.subprocess, "run", spy)
 
     out = hooks._session_start(str(repo_dir))
     assert ": active" in out
-    assert calls == [], "SessionStart must never call gh, even with issues/prs configured"
+    assert calls == [], "SessionStart must never shell out to gh"
     status_line = out.splitlines()[0]
     assert "issue" not in status_line
     assert "PR" not in status_line

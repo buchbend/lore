@@ -110,6 +110,10 @@ Keep the files, move them, or delete them — Lore behaves the same either
 way. Delete them with `git rm` if you want the tree quiet; the wiki's git
 history keeps a copy.
 
+A wiki that ran an older Lore also holds `sessions/_recent.txt`, the index
+`lore lint` used to regenerate over those notes. Nothing writes or reads it
+now, and nothing removes it. Delete it with the notes.
+
 The three migration verbs that used to help here are gone:
 `lore migrate retire-session-notes`, `lore migrate open-items`, and the
 older `lore curator --migrate-open-items`. The transcript-ledger backfill

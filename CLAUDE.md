@@ -5,8 +5,6 @@
 - wiki: private
 - scope: lore
 - backend: github
-- issues: --assignee @me --state open
-- prs: --author @me
 
 ## Releasing
 

@@ -59,8 +59,9 @@ Reuse the existing gates verbatim — no new document types:
   silently, no placeholder. (See [`domain-modeling`](../domain-modeling/SKILL.md).)
 - **Never write to `CONTEXT.md`** — a term worth adding belongs to `grilling`, not this skill.
 - **No PRD, no epic tracker.** Those belong to the chain.
-- **No brief file.** Lore's auto session capture already records the exchange; a persisted
-  brief would duplicate what session notes do.
+- **No brief file.** The brief is an alignment step, not an artifact — it exists to be
+  confirmed and handed straight to the downstream track. What survives the exchange belongs
+  in the issue this skill files, not in a second file that drifts from it.
 
 ### 5. Handoff
 

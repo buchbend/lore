@@ -143,6 +143,65 @@ def test_hot_tier_downgrades_by_age(tmp_path: Path):
     assert (tmp_path / ".lore" / "spine.jsonl.1").exists()
 
 
+def _seed_aged_hot(tmp_path: Path) -> None:
+    """One hot-tier record old enough to trip the age-triggered downgrade."""
+    hot = tmp_path / ".lore" / "spine.jsonl"
+    hot.parent.mkdir(parents=True, exist_ok=True)
+    hot.write_text(
+        json.dumps(
+            {
+                "ts": "2020-01-01T00:00:00Z",
+                "v": 1,
+                "source": "hook",
+                "event": "e",
+                "level": "info",
+                "trace_id": None,
+                "session_id": None,
+                "run_id": None,
+                "wiki": None,
+                "scope": None,
+                "error_code": None,
+                "data": {},
+            }
+        )
+        + "\n"
+    )
+
+
+def test_hot_tier_downgrade_emits_janitor_spine_event(tmp_path: Path):
+    """Same invariant the cold-tier delete already holds: every tiered-retention
+    action leaves a `source="janitor"` event behind. The event lands in the
+    fresh hot file, since the rotation moved the old one to cold."""
+    _seed_aged_hot(tmp_path)
+
+    run_janitor(tmp_path, _cfg(hot_days=7))
+    events = read_spine(tmp_path, source="janitor")
+    downgrades = [e for e in events if e["event"] == "retention-downgrade"]
+    assert downgrades, "a hot->cold rotation must emit retention-downgrade"
+    assert downgrades[0]["data"]["family"] == "spine-hot"
+    for e in events:
+        validate_envelope(e)
+
+
+def test_hot_tier_downgrade_reaches_the_status_file(tmp_path: Path):
+    """`JanitorReport.downgraded` tracked the rotation but never left the
+    dataclass — `lore status`'s retention section reads the status file."""
+    _seed_aged_hot(tmp_path)
+
+    run_janitor(tmp_path, _cfg(hot_days=7))
+    status = read_janitor_status(tmp_path)
+    assert status is not None
+    assert status["downgraded"] is True
+
+
+def test_status_records_no_downgrade_when_the_hot_tier_stays(tmp_path: Path):
+    SpineWriter(tmp_path).emit(source="hook", event="e")
+    run_janitor(tmp_path, _cfg(hot_days=7))
+    status = read_janitor_status(tmp_path)
+    assert status is not None
+    assert status["downgraded"] is False
+
+
 # ---------------------------------------------------------------------------
 # Queryable usage — consumed by `lore status` (#193).
 # ---------------------------------------------------------------------------
