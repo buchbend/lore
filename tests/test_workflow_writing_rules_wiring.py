@@ -15,7 +15,8 @@ import re
 from pathlib import Path
 
 import pytest
-from lore_core.style import default_style_path
+import yaml
+from lore_core.style import default_style_path, default_vale_config_path
 from lore_workflow import roadmap_validator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -37,6 +38,10 @@ FILING_SKILLS = (
 ROADMAP_FIELDS = ("Repo", "Type", "Blocked by")
 
 _SECTION = re.compile(r"^## (.+)$", re.M)
+# The linkage header is one line of bold-labelled fields separated by "·".
+# Four short values under four headings pushed the first sentence of content
+# past a reader's screen, and no parser ever read those headings.
+_LINKAGE = re.compile(r"\*\*([^*]+)\*\*\s*([^·\n]+)")
 
 
 def _skill_text(name: str) -> str:
@@ -62,20 +67,30 @@ def _required_sections() -> list[str]:
     return _sections(match.group(1))
 
 
-def _field(body: str, heading: str) -> str:
-    """First non-empty line under ``## <heading>``."""
-    match = re.search(rf"^## {re.escape(heading)}$\n+(.+)$", body, re.M)
-    assert match, f"rendered sub-issue has no '## {heading}' section"
-    return match.group(1).strip()
+def _linkage(text: str) -> dict[str, str]:
+    """The linkage header's fields, keyed by label."""
+    line = next((ln for ln in text.splitlines() if ln.startswith("**Epic**")), None)
+    assert line, "sub-issue template has no one-line linkage header"
+    return {label.strip(): value.strip() for label, value in _LINKAGE.findall(line)}
+
+
+def _field(body: str, label: str) -> str:
+    """A linkage field's value, read from the rendered header line."""
+    fields = _linkage(body)
+    assert label in fields, f"rendered sub-issue has no '{label}' linkage field"
+    return fields[label]
 
 
 def _render_sub_issue(values: dict[str, str]) -> str:
-    """Render a sub-issue from the template's own section list, so a section
-    dropped from the template is a section missing from the render."""
-    sections = _sections(_block(_skill_text("to-epic"), "sub-issue-template"))
-    return "\n\n".join(
-        f"## {name}\n{values.get(name, 'Filled by the drafting session.')}" for name in sections
+    """Render a sub-issue from the template's own linkage labels and section
+    list, so anything dropped from the template is missing from the render."""
+    template = _block(_skill_text("to-epic"), "sub-issue-template")
+    header = " · ".join(f"**{label}** {values.get(label, 'TODO')}" for label in _linkage(template))
+    body = "\n\n".join(
+        f"## {name}\n{values.get(name, 'Filled by the drafting session.')}"
+        for name in _sections(template)
     )
+    return f"{header}\n\n{body}"
 
 
 @pytest.mark.parametrize("skill", FILING_SKILLS)
@@ -93,9 +108,26 @@ def test_sub_issue_template_carries_the_writing_rules_skeleton() -> None:
 
 
 def test_sub_issue_template_keeps_the_epic_linkage_header() -> None:
+    fields = _linkage(_block(_skill_text("to-epic"), "sub-issue-template"))
+    missing = [f for f in ("Epic", *ROADMAP_FIELDS) if f not in fields]
+    assert not missing, f"sub-issue template is missing linkage fields: {missing}"
+
+
+def test_the_linkage_header_spends_no_headings() -> None:
+    """A reader scans the issue's content, so the linkage costs one line."""
     present = _sections(_block(_skill_text("to-epic"), "sub-issue-template"))
-    missing = [s for s in ("Epic", *ROADMAP_FIELDS) if s not in present]
-    assert not missing, f"sub-issue template is missing linkage sections: {missing}"
+    stray = [s for s in ("Epic", *ROADMAP_FIELDS) if s in present]
+    assert not stray, f"linkage fields belong in the header line, not headings: {stray}"
+
+
+def test_the_collapsed_labels_are_retired_headings() -> None:
+    """The Vale check is what catches a draft written from the pre-collapse
+    template, so the rule lists every label the header absorbed."""
+    rule = default_vale_config_path().parent / "WritingRules" / "RetiredHeading.yml"
+    retired = yaml.safe_load(rule.read_text(encoding="utf-8"))["raw"][0]
+    labels = _linkage(_block(_skill_text("to-epic"), "sub-issue-template"))
+    missing = [label for label in labels if label not in retired]
+    assert not missing, f"the retired-heading rule must list: {missing}"
 
 
 def test_epic_body_composed_from_the_template_passes_the_validator() -> None:

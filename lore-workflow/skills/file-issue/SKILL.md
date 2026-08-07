@@ -100,8 +100,10 @@ vale --config "$(lore style vale-config)" "${TMPDIR:-/tmp}/lore-file-issue-<slug
 
 Read the result by exit code, not by whether anything printed:
 
-- **Exit 1** — at least one `error`-level finding: banned vocabulary, or a sentence past
-  the length ceiling. Rewrite those, then run again until the exit code is 0.
+- **Exit 1** — at least one `error`-level finding: banned vocabulary, a sentence past the
+  length ceiling, or a retired heading. Rewrite those, then run again until the exit code
+  is 0. A retired heading means the structure you drafted from has moved — re-read the
+  template rather than renaming the heading.
 - **Exit 0 with findings printed** — `warning`-level heuristics only. Advisory.
 - **Exit 2** — the invocation itself is broken, not the prose. Vale exits 2 on an empty
   path argument and on a `--config` path it cannot resolve. **Stop and report.** Editing

@@ -184,24 +184,20 @@ below keeps the literal token, which is what the roadmap validator and `/lore-wo
 
 ## Sub-issue template
 
-An epic-linkage header, then the section skeleton the writing rules require. File it
+A one-line linkage header, then the section skeleton the writing rules require. File it
 through [`file-issue`](../file-issue/SKILL.md) in caller-template mode — that skill
 resolves the writing rules and applies them inside this structure, so none of those
 rules are repeated here. Keep "Required behaviour" to the slice's end-to-end behavior — not a
 layer-by-layer implementation — and path-free (same prototype exception as above).
 
+The header spends one line on four short values, so content starts above the fold. Fill
+each field on that line: **Epic** the tracker issue, fully qualified; **Repo** the repo
+this slice is implemented in; **Type** `AFK` (runs autonomously) or `HITL` (needs a human
+decision); **Blocked by** the blocking issues, or `None`. No parser reads these off the
+sub-issue — `orchestrate-epic` builds its DAG from the epic body's roadmap table.
+
 <sub-issue-template>
-## Epic
-owner/repo#<epic>
-
-## Repo
-The repo this slice is implemented in.
-
-## Type
-AFK (runs autonomously, no human input) or HITL (human-in-the-loop: needs a human decision).
-
-## Blocked by
-owner/repo#<n>, or "None — can start immediately".
+**Epic** owner/repo#<epic> · **Repo** owner/repo · **Type** AFK · **Blocked by** None
 
 ## Context
 ## Current behaviour

@@ -1,0 +1,20 @@
+# Structure check rather than prose: a heading no current template carries.
+#
+# A drafting session that reads a stale copy of a template reproduces that
+# template's headings, and every prose rule passes over them, so the draft
+# lints clean and posts. A batch of sub-issues shipped a retired skeleton
+# that way, months after the template had moved on.
+#
+# Error level, not warning. This config lints issue and PR drafts, where the
+# current templates carry none of these headings, and `file-issue` acts on the
+# exit code alone — a warning here would print and change nothing.
+#
+# Retire a heading from a template, add it here in the same change. The
+# anchors keep the match to a whole heading, so "Epic merge policy" and
+# "Epic body template" stay quiet.
+extends: existence
+message: "Retired heading '%s': re-read the current template before you draft."
+level: error
+scope: heading
+raw:
+  - '^(What to build|Epic|Repo|Type|Blocked by)$'
