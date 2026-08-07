@@ -1,9 +1,17 @@
-"""lore_curator — the session-note curator (Curator A).
+"""lore_curator — the capture-side and hygiene helpers.
 
-Files one lab-notebook session note per completed transcript. Entry
-point: :func:`lore_curator.session_curator.run_curator_a`.
+The package defines no entry point of its own; each module is imported
+directly by its caller. It holds:
 
-The A/B/C labels are internal shorthand; user-facing copy says simply
-"Curator". Curators B (daily surface extraction) and C (weekly defrag)
-were retired; only the per-session note filer remains.
+* :mod:`lore_curator.llm_client` — a backend-agnostic LLM client (Claude
+  subscription, API key, or a local endpoint), used by the briefing;
+* :mod:`lore_curator.capture_routing` — the decision layer between a hook
+  firing and the transcript ledger;
+* :mod:`lore_curator.hygiene` — the frontmatter-only passes behind the
+  ``lore curator`` command;
+* :mod:`lore_curator.ledger_linkage` — builds a ledger entry's linkage
+  block from git state and transcript turns.
+
+Nothing here composes a note. The package name is historical: renaming it
+would touch every importer and change no behaviour.
 """

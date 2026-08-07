@@ -326,7 +326,6 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _spawn_detached_transcript_sync,
     _stamp_within_cooldown,
     _write_stamp,
-    spawn,
 )
 
 hook_app = typer.Typer(

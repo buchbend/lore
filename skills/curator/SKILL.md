@@ -22,9 +22,9 @@ Passes per wiki, all frontmatter-only — note bodies are never touched:
    from notes under `sessions/` and drops `draft:` on the target,
    stamping `implemented_by` / `implemented_at` back-links;
    `implements: <slug>:superseded-by:<other>` writes `superseded_by:
-   [[other]]`. Nothing writes a new session note since the compose
-   pipeline retired, so this pass only ever finds back-links on notes
-   that predate the retirement.
+   [[other]]`. No producer writes into `sessions/` any more, so the pass
+   finds back-links only where a human authored them, or on notes that
+   predate the compose pipeline's retirement.
 3. **Git backfill** — missing `created` / `last_reviewed` filled from
    `git log --follow`.
 4. **Team-mode hint** — advises creating `_users.yml` once a solo wiki

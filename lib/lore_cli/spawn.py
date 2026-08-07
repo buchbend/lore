@@ -1,4 +1,4 @@
-"""Detached subprocess machinery for the curator/transcript-sync hooks.
+"""Detached subprocess machinery for the transcript-sync hook.
 
 This module owns the spawn-side safety net that the v0.37 hang storm forced
 us to build:
@@ -8,14 +8,12 @@ us to build:
 * a runaway gate that refuses fresh spawns when the prior child for a role
   is still alive past ``cooldown_s * 5``;
 * atomic log + meta-sidecar rotation so each generation is recoverable
-  after a crash;
-* a tiny ``SpawnRole`` registry + a single ``spawn(role, lore_root,
-  **extra)`` entry point so adding a new background process is one row.
+  after a crash.
 
-The legacy ``_spawn_detached_curator_{a,b,c}`` and
-``_spawn_detached_transcript_sync`` wrappers stay as one-liners that
-delegate to :func:`spawn` — existing call sites and test patch points
-keep working unchanged.
+``_spawn_detached`` stays role-parametric — the role string keys the lock,
+the cooldown stamp, the proc log and the meta sidecar, so every path on
+disk derives from it. Transcript sync is the only role left;
+:func:`_spawn_detached_transcript_sync` names it directly.
 """
 
 from __future__ import annotations
@@ -23,8 +21,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from lore_core.spine import ErrorCode, emit_hook_event
@@ -268,71 +264,24 @@ def _spawn_detached(
 
 
 # ---------------------------------------------------------------------------
-# SpawnRole registry + the single public ``spawn()`` entry point
+# The one spawning caller
 # ---------------------------------------------------------------------------
 
-
-@dataclass(frozen=True)
-class SpawnRole:
-    """One row in the spawn-role registry.
-
-    ``argv_builder`` is called with the keyword arguments forwarded from
-    :func:`spawn`. The returned argv is the *child* command;
-    ``_spawn_detached`` wraps it in ``python -m lore_cli._proc_wrapper``
-    for sidecar lifecycle tracking.
-    """
-
-    name: str
-    argv_builder: Callable[..., list[str]] = field(repr=False)
-    default_cooldown_s: int
-
-
-SPAWN_ROLES: dict[str, SpawnRole] = {
-    "transcripts": SpawnRole(
-        name="transcripts",
-        argv_builder=lambda: [
-            sys.executable,
-            "-m",
-            "lore_cli",
-            "transcripts",
-            "sync",
-        ],
-        default_cooldown_s=300,
-    ),
-}
-
-
-def spawn(role: str, lore_root: Path, *, cooldown_s: int | None = None, **extra) -> bool:
-    """Public entry point — fire-and-forget the registered subprocess for ``role``.
-
-    Looks up :data:`SPAWN_ROLES`, builds the argv (forwarding ``**extra``
-    to the role's ``argv_builder``), and dispatches through
-    :func:`_spawn_detached` with the role's cooldown + stamp-migration
-    flags. ``cooldown_s`` overrides the registry default when caller has
-    a wiki-config-derived value.
-    """
-    role_def = SPAWN_ROLES[role]
-    return _spawn_detached(
-        lore_root,
-        role_def.name,
-        role_def.argv_builder(**extra),
-        cooldown_s=(cooldown_s if cooldown_s is not None else role_def.default_cooldown_s),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Backward-compat wrappers — kept as one-liners over :func:`spawn` so
-# existing call sites and `patch("lore_cli.hooks._spawn_detached_curator_*")`
-# in the test suite keep working unchanged.
-# ---------------------------------------------------------------------------
+# Keys the spawn lock, the cooldown stamp, `.lore/proc/<role>.log` and the
+# meta sidecar. Changing the string orphans every one of those on upgrade.
+TRANSCRIPT_SYNC_ROLE = "transcripts"
 
 
 def _spawn_detached_transcript_sync(lore_root: Path, *, cooldown_s: int = 300) -> bool:
     """Fire-and-forget ``lore transcripts sync`` subprocess.
 
-    Runs on the same spawn-lock + cooldown pattern as the curators, so
-    a busy SessionStart hook can't stampede the filesystem with parallel
-    sync jobs. The P4a sync itself is idempotent; the lock exists purely
-    as a politeness budget.
+    Runs under the spawn lock + cooldown so a busy SessionStart hook can't
+    stampede the filesystem with parallel sync jobs. The sync itself is
+    idempotent; the lock exists purely as a politeness budget.
     """
-    return spawn("transcripts", lore_root, cooldown_s=cooldown_s)
+    return _spawn_detached(
+        lore_root,
+        TRANSCRIPT_SYNC_ROLE,
+        [sys.executable, "-m", "lore_cli", "transcripts", "sync"],
+        cooldown_s=cooldown_s,
+    )
