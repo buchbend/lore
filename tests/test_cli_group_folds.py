@@ -98,7 +98,7 @@ def test_attach_remove_is_noop_without_section(tmp_path: Path) -> None:
 
 # ---- `lore migrate` one-shot upgrade verbs ----
 
-@pytest.mark.parametrize("verb", ["frontmatter", "open-items"])
+@pytest.mark.parametrize("verb", ["frontmatter"])
 def test_migrate_exposes_upgrade_verb(verb: str) -> None:
     migrate = _root().commands["migrate"]
     assert verb in migrate.commands
@@ -108,6 +108,13 @@ def test_migrate_slugs_verb_is_gone() -> None:
     """The slug rename only ever renamed session notes, which no longer exist."""
     migrate = _root().commands["migrate"]
     assert "slugs" not in migrate.commands
+
+
+@pytest.mark.parametrize("verb", ["open-items", "retire-session-notes"])
+def test_migrate_session_note_verb_is_gone(verb: str) -> None:
+    """Both backed session-note artifacts the compose pipeline stopped writing."""
+    migrate = _root().commands["migrate"]
+    assert verb not in migrate.commands
 
 
 def test_curator_migrate_open_items_flag_gone() -> None:
