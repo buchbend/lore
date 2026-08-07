@@ -1,9 +1,9 @@
 # Lore
 
-**LLM-optimized knowledge graph for AI-coding teams.** Session notes
-auto-extracted into durable knowledge, repo-scoped context injected at
-session start, pluggable team briefings. No vector DB needed for small
-vaults; a full hybrid search + MCP server for larger ones.
+**LLM-optimized knowledge graph for AI-coding teams.** Transcripts captured
+and archived, team-relevant facts filed as reviewable flags, repo-scoped
+context injected at session start, pluggable team briefings. No vector DB
+needed for small vaults; a full hybrid search + MCP server for larger ones.
 
 > ⚠️ **Pre-1.0.** APIs, hook contracts, skill surfaces, frontmatter
 > schema, and CLI flags can still change between minor versions. Not
@@ -110,10 +110,10 @@ lore install                                            # detect installed integ
 lore init                                               # scaffold a vault + set $LORE_ROOT
 ```
 
-The `[capture]` extra adds the `claude-agent-sdk` + `anthropic` packages used
-by the curator to summarise transcripts. Drop it (`#egg=lore`) to install
-without LLM-driven capture; you'll still get retrieval, sessions, and
-briefings, just not auto-extraction.
+The `[capture]` extra adds the `claude-agent-sdk` + `anthropic` packages the
+briefing uses to call a model. Drop it (`#egg=lore`) to install without them;
+transcript capture, retrieval, sessions and flags all work regardless — only
+the LLM-backed briefing needs a model.
 
 > **Note:** the bare `pipx install lore` form will *not* work — the
 > name `lore` is squatted on PyPI by an unrelated package. Use the

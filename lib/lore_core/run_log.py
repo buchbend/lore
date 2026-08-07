@@ -1,4 +1,4 @@
-"""Run-log producer for curator invocations (A, B, C).
+"""Run-log producer for curator invocations.
 
 Curator run events are emitted onto the unified event spine
 (``source="curator"``) — one envelope per decision record, keyed by
@@ -7,8 +7,8 @@ tee; consumers reconstruct a run by grouping spine records on ``run_id``
 (see :mod:`lore_core.run_reader`).
 
 The :class:`RunLogger` context-manager API is unchanged, so every producer
-(``session_curator``, ``hygiene``, ``curator_cmd``) is untouched — only the
-sink moved. Two consequences of the move:
+(``hygiene``, ``curator_cmd``) is untouched — only the sink moved. Two
+consequences of the move:
 
 * **LLM records carry metadata only.** The spine's lock-free O_APPEND
   atomicity assumes each record stays well under ``PIPE_BUF`` (4 KB); a full

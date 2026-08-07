@@ -1,23 +1,24 @@
 # Session note format — title and body shape
 
-The exact shape a session note takes on disk. `CONTEXT.md` owns the
-vocabulary (buffer, flush, chapter, fact, ledger, disclaimer) and the write
-path; this file is the rendering. Grounded in `lore_core/note_document.py`
-and `lore_curator/stub_note.py`.
+**Nothing writes one any more.** The compose pipeline retired and the code
+that rendered a note is deleted. This file describes notes a vault may still
+hold, so a reader — human, or `read_note` in `lore_core/note_document.py` —
+knows what they are looking at. Everything below is in the past tense on
+purpose. `CONTEXT.md` owns the vocabulary (buffer, flush, chapter, fact,
+ledger, disclaimer).
 
-A note is written **once, at session close** — the whole file below appears
-in one step. Nothing is rendered while the session runs.
+A note was written **once, at session close** — the whole file below appeared
+in one step. Nothing was rendered while the session ran.
 
 ## Title: `scope: name`
 
-A note's frontmatter `title` is a placeholder at creation
-(`stub_note._placeholder_title`, e.g. `proj:x session — 2026-07-10`) — the
-first heartbeat fires before there is any content to name.
+A note's frontmatter `title` was a placeholder at creation (e.g. `proj:x
+session — 2026-07-10`) — the first heartbeat fired before there was any
+content to name.
 
-At close, one bounded LLM call writes the session's **headline** from the
-extracted fact table, and the headline names the note:
-`render_note(title=_scope_title(scope, headline))` replaces the placeholder
-with `<scope>: <name>`.
+At close, one bounded LLM call wrote the session's **headline** from the
+extracted fact table, and the headline named the note, replacing the
+placeholder with `<scope>: <name>`.
 
 - **scope first** — the linkage scope (repo/project slug, e.g. `proj:x` or
   `ccat:data-center`) so a list of notes sorts and scans by *where*, not by
@@ -26,9 +27,8 @@ with `<scope>: <name>`.
 
 Example: `proj:x: Traced the flush race`.
 
-The same headline slugs the filename (`chapter_flush._rename_to_topic_slug`),
-so title and filename always name the same topic. An empty headline leaves
-both at their placeholder.
+The same headline slugged the filename, so title and filename always name the
+same topic. An empty headline left both at their placeholder.
 
 ## Body: disclaimer, reading, ledger
 
