@@ -166,3 +166,24 @@ def test_status_tolerant_of_corrupt_file(tmp_path: Path):
     status_path.parent.mkdir(parents=True, exist_ok=True)
     status_path.write_text("{not json")
     assert read_janitor_status(tmp_path) is None
+
+
+# ---------------------------------------------------------------------------
+# The flush store's one-time teardown (PRD 0013): no reader is left, so the
+# janitor clears the directory itself instead of calling FlushStore.purge.
+# ---------------------------------------------------------------------------
+
+
+def test_janitor_deletes_the_flushes_directory(tmp_path: Path):
+    flushes = tmp_path / ".lore" / "flushes"
+    flushes.mkdir(parents=True)
+    (flushes / "stray.json").write_text("{}")
+
+    run_janitor(tmp_path, _cfg())
+
+    assert not flushes.exists()
+
+
+def test_janitor_runs_clean_without_a_flushes_directory(tmp_path: Path):
+    report = run_janitor(tmp_path, _cfg())
+    assert report.ran is True

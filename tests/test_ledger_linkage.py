@@ -289,3 +289,17 @@ def _run_route(tmp_path: Path, capture_routing, *, event: str) -> None:
         adapter=_FakeAdapter([]),
         transcript=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# session_activity retirement (three helpers move here; the module goes)
+# ---------------------------------------------------------------------------
+
+
+def test_session_activity_module_is_gone():
+    import importlib
+
+    import pytest
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("lore_curator.session_activity")

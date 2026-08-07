@@ -6,11 +6,45 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
 from lore_cli import workflow_cmd
 from lore_core import note_document as nd
-from lore_core.linkage import Linkage
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "roadmaps"
+
+
+def _seed_note_with_chapter(path: Path) -> None:
+    """Write a minimal note file directly, plus one topic chapter.
+
+    The chapter lifecycle (create_note, append_chapter, Chapter, TopicBlock)
+    was deleted with the compose pipeline (PRD 0013) — seed-lift only reads
+    a note through read_note, so the fixture writes the shape by hand.
+    """
+    fm = {
+        "schema_version": 2,
+        "type": "session",
+        "note_status": "open",
+        "created": "2026-07-10",
+        "last_reviewed": "2026-07-10",
+        "title": "Seed lift plumbing",
+        "description": "deterministic seed lift",
+        "scope": "lore",
+        "chapters": [{"n": 1, "kind": "topic", "from_turn": 0, "to_turn": 5}],
+        "linkage": {
+            "schema_version": 1,
+            "repo": "buchbend/lore",
+            "branch": "",
+            "issues": [],
+            "prs": [],
+            "epics": [229],
+            "author": "",
+            "trace_id": None,
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    body = f"{nd.DISCLAIMER}\n\n<!-- lore:chapter 1 @0-5 -->\n\n**Findings lead.** Findings body."
+    path.write_text(f"---\n{dumped}\n---\n\n{body}\n")
 
 
 def test_validate_roadmap_ok(capsys) -> None:
@@ -47,20 +81,7 @@ def test_create_prd_writes_file(tmp_path: Path) -> None:
 
 def test_seed_lift_prints_json_on_usable_note(tmp_path: Path, capsys) -> None:
     path = tmp_path / "sessions" / "10-topic.md"
-    nd.create_note(
-        path,
-        title="Seed lift plumbing",
-        description="deterministic seed lift",
-        scope="lore",
-        created="2026-07-10",
-        linkage=Linkage(repo="buchbend/lore", epics=[229]),
-    )
-    nd.append_chapter(
-        path,
-        nd.Chapter(blocks=[nd.TopicBlock(lead="Findings lead.", body="Findings body.")]),
-        slice_from_turn=0,
-        slice_to_turn=5,
-    )
+    _seed_note_with_chapter(path)
 
     rc = workflow_cmd.main(["seed-lift", str(path)])
 

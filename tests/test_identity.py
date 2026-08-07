@@ -94,6 +94,7 @@ def test_aliased_emails_empty_for_solo(solo_wiki):
 
 def test_distinct_git_authors_mocked(solo_wiki, monkeypatch):
     import subprocess
+
     class FakeResult:
         returncode = 0
         stdout = "alice@example.com\nbob@example.com\nalice@example.com\n"
@@ -131,9 +132,7 @@ def test_team_mode_recommended_solo_with_two_authors(solo_wiki, monkeypatch):
 
 
 def test_team_mode_recommended_solo_with_one_author(solo_wiki, monkeypatch):
-    monkeypatch.setattr(
-        identity, "distinct_git_authors", lambda _w: {"alice@example.com"}
-    )
+    monkeypatch.setattr(identity, "distinct_git_authors", lambda _w: {"alice@example.com"})
     assert identity.team_mode_recommended(solo_wiki) is False
 
 
@@ -194,20 +193,6 @@ def test_resolve_display_name_empty_handle_still_empty(rooted_wiki):
     assert identity.resolve_display_name(rooted_wiki, "") == ""
 
 
-# ---------- session_note_dir ----------
-
-
-def test_session_note_dir_solo(solo_wiki):
-    assert identity.session_note_dir(solo_wiki, "anyone") == solo_wiki / "sessions"
-
-
-def test_session_note_dir_team(team_wiki):
-    assert (
-        identity.session_note_dir(team_wiki, "buchbend")
-        == team_wiki / "sessions" / "buchbend"
-    )
-
-
-def test_session_note_dir_team_empty_handle_falls_back(team_wiki):
-    """An empty handle in team mode should still produce a valid dir."""
-    assert identity.session_note_dir(team_wiki, "") == team_wiki / "sessions"
+def test_session_note_dir_is_gone():
+    with pytest.raises(ImportError):
+        from lore_core.identity import session_note_dir  # noqa: F401

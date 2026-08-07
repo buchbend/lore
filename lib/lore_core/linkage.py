@@ -6,9 +6,9 @@ text, plus the author's display name. Missing signals degrade to
 absent/empty fields — this module never guesses.
 
 Repo and branch come from `lore_core.git` (already-resolved git state).
-Commit subject/body text is supplied by the caller (resolved via
-`lore_curator.session_activity.collect_commits_by_sha`, a curator-layer
-concern) so this module stays in the core layer with no upward import.
+Commit subject/body text is supplied by the caller — resolving it is a
+curator-layer concern — so this module stays in the core layer with no
+upward import.
 """
 
 from __future__ import annotations
@@ -72,8 +72,8 @@ def extract_linkage(
     """Derive linkage from git state, branch name, and commit text.
 
     `commit_texts` is one string per commit (subject + body); the caller
-    resolves it (e.g. via `collect_commits_by_sha`) since fetching commit
-    text is a curator-layer concern, not this module's.
+    resolves it, since fetching commit text is a curator-layer concern,
+    not this module's.
 
     `branch` overrides the checkout's current branch. A migration reading
     an archived session must use the branch that session was on, not the
