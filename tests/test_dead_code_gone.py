@@ -13,6 +13,9 @@ REPO = Path(__file__).resolve().parent.parent
 
 DEAD_MODULES = [
     "lore_core.flush_store",
+    "lore_core.session_writer",
+    "lore_curator.retire_session_notes",
+    "lore_curator.open_items_migration",
     "lore_curator.noteworthy",
     "lore_core.noteworthy_features",
     "lore_core.narrative_kind",

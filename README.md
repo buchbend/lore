@@ -288,10 +288,6 @@ Once attached with a wiki present:
   into its owning topic note. `lore flag list` shows what is pending;
   `lore flag review` walks it (accept / retarget / decline / skip). See
   [`docs/how-to/file-and-review-flags.md`](docs/how-to/file-and-review-flags.md).
-- `lore migrate retire-session-notes [--apply]` — backfill the transcript
-  ledger from the archived transcripts, then delete the session-note
-  stock. Dry-run by default; `--apply` deletes files. See
-  [`docs/how-to/retire-session-notes.md`](docs/how-to/retire-session-notes.md).
 
 ### Per-wiki configuration
 

@@ -1,15 +1,10 @@
 """Briefing gather — deterministic side of /lore:briefing.
 
-Splits the briefing pipeline so the LLM only writes prose:
-
-    deterministic gather (this module)  →  LLM compose body (skill)
-                                       →  CLI publish (briefing.sinks)
-                                       →  CLI mark-incorporated (ledger)
-
-`gather()` is read-only: it returns the new sessions since the last
-briefing plus the wiki's sink config + ledger state. The skill turns
-that into prose, then shells out to `lore briefing publish` for the
-sink-side write and `lore briefing mark` for the ledger commit.
+PRD 0011 parks the briefing feature rather than reviving it. Nothing
+writes a session note since the compose pipeline was retired, so
+`gather()` no longer walks `<wiki>/sessions/` — `new_sessions` is
+always empty. The ledger and sink-config reads stay: `lore briefing
+publish` and `lore briefing mark` still read this shape.
 """
 
 from __future__ import annotations
@@ -21,65 +16,9 @@ from typing import Any
 
 from lore_core.config import get_wiki_root
 from lore_core.errors import NO_VAULT, WIKI_NOT_FOUND, mcp_error
-from lore_core.schema import parse_frontmatter, strip_frontmatter
 
 _LEDGER_FILE = ".briefing-ledger.json"
 _CONFIG_FILE = ".lore-briefing.yml"
-
-
-def _parse_session_path(
-    rel_parts: tuple[str, ...], stem: str
-) -> tuple[date, str] | None:
-    """Extract (date, slug) from a session-note path.
-
-    Supports two layouts:
-
-    * Flat legacy::
-
-          sessions/YYYY-MM-DD-slug.md
-              → date from ``stem[:10]``, slug from ``stem[11:]``.
-
-    * Sharded (team-mode and post-shard flat)::
-
-          sessions/[<handle>/]YYYY/MM/DD-[HHMM-]slug.md
-              → date from path parents + 2-digit ``DD`` prefix of stem;
-                slug is whatever follows ``DD-`` (with optional 4-digit
-                ``HHMM-`` segment dropped).
-
-    Returns ``None`` for files that match neither shape (so callers can
-    skip non-session noise like ``_recent.md``).
-    """
-    # Flat legacy first — date in stem[:10].
-    try:
-        d = date.fromisoformat(stem[:10])
-        slug = stem[11:] if len(stem) > 11 else stem
-        return d, slug
-    except (ValueError, IndexError):
-        pass
-
-    # Sharded: need at least YYYY/MM/<file> in the path.
-    if len(rel_parts) < 3:
-        return None
-    yyyy = rel_parts[-3]
-    mm = rel_parts[-2]
-    if not (yyyy.isdigit() and len(yyyy) == 4):
-        return None
-    if not (mm.isdigit() and len(mm) == 2):
-        return None
-    if len(stem) < 2 or not stem[:2].isdigit():
-        return None
-    try:
-        d = date.fromisoformat(f"{yyyy}-{mm}-{stem[:2]}")
-    except ValueError:
-        return None
-
-    # Strip leading "DD-" and optional "HHMM-".
-    parts = stem.split("-", 2)
-    if len(parts) >= 2 and parts[1].isdigit() and len(parts[1]) == 4:
-        slug = parts[2] if len(parts) >= 3 else ""
-    else:
-        slug = "-".join(parts[1:])
-    return d, slug or stem
 
 
 def _read_ledger(wiki_path: Path) -> dict[str, Any]:
@@ -112,17 +51,13 @@ def gather(
     user: str | None = None,
     epic: int | None = None,
 ) -> dict[str, Any]:
-    """Collect new session notes since the last briefing.
+    """Report the wiki's briefing ledger and sink config.
 
-    Read-only — does NOT write the ledger. The caller composes the
-    briefing prose, publishes via `lore briefing publish`, then commits
-    the ledger update via `lore briefing mark`.
-
-    Each entry carries its `linkage` frontmatter (author, repo, branch,
-    issues, prs, epics) verbatim — the join key for keying digests by
-    author/scope/epic and for drill-down onward to ADRs/PRDs/issues.
-    `epic`, when given, filters to sessions whose linkage names that
-    epic (mirrors the existing `user` filter).
+    Read-only. `since`, `include_body_sections`, `user` and `epic` filtered
+    the `<wiki>/sessions/` walk this function used to do; the walk is gone
+    (PRD 0013) and `new_sessions` is always empty, so the parameters are
+    kept only so `lore briefing publish` and `lore briefing mark` need no
+    call-site change.
 
     Returns:
       {
@@ -130,17 +65,7 @@ def gather(
         "today": <YYYY-MM-DD>,
         "ledger": {"last_briefing": str|None, "incorporated_count": int},
         "sink_config": <dict|None>,
-        "new_sessions": [
-          {
-            "path": str (relative to wiki),
-            "date": str,
-            "slug": str,
-            "frontmatter": dict,
-            "linkage": dict,
-            "body": str  (when include_body_sections)
-          },
-          ...
-        ],
+        "new_sessions": [],
       }
     """
     wiki_root = get_wiki_root()
@@ -161,47 +86,6 @@ def gather(
     ledger = _read_ledger(wiki_path)
     incorporated = set(ledger.get("incorporated") or [])
 
-    sessions_dir = wiki_path / "sessions"
-    new_sessions: list[dict[str, Any]] = []
-    if sessions_dir.is_dir():
-        cutoff = date.fromisoformat(since) if since else None
-        for md in sorted(sessions_dir.rglob("*.md")):
-            stem = md.stem
-            rel_parts = md.relative_to(sessions_dir).parts
-            parsed = _parse_session_path(rel_parts, stem)
-            if parsed is None:
-                continue
-            d, slug = parsed
-            if cutoff and d < cutoff:
-                continue
-            rel = str(md.relative_to(wiki_path))
-            # Match by stem (filename without extension) — robust against
-            # sharded vs flat layouts.
-            if md.name in incorporated or stem + ".md" in incorporated:
-                continue
-            text = md.read_text(errors="replace")
-            frontmatter = parse_frontmatter(text)
-            linkage = frontmatter.get("linkage") or {}
-            entry: dict[str, Any] = {
-                "path": rel,
-                "date": d.isoformat(),
-                "slug": slug or stem,
-                "frontmatter": frontmatter,
-                "linkage": linkage,
-            }
-            if user and entry["frontmatter"].get("user") != user:
-                continue
-            if epic is not None and epic not in (linkage.get("epics") or []):
-                continue
-            if include_body_sections:
-                # Session notes carry no human-only region — machine-written
-                # and cleared by the publish gate before they land here — so
-                # the whole body (disclaimer + chronological chapters of
-                # topic blocks) feeds the briefing composer. There is no H2
-                # structure left to split on in the new note shape.
-                entry["body"] = strip_frontmatter(text).strip()
-            new_sessions.append(entry)
-
     return {
         "wiki": wiki,
         "today": date.today().isoformat(),
@@ -210,7 +94,7 @@ def gather(
             "incorporated_count": len(incorporated),
         },
         "sink_config": _read_sink_config(wiki_path),
-        "new_sessions": new_sessions,
+        "new_sessions": [],
     }
 
 

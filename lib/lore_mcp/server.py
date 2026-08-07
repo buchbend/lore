@@ -22,8 +22,8 @@ Exposed tools:
     lore_repo_docs_fetch    — fetch one ADR or PRD's content (pull-only)
     lore_tier_resolve       — resolve a semantic model tier to a concrete model
     lore_codemap            — bounded code-map query (symbols/directory/top-N)
-    lore_context_pack       — bounded pointer pack (sessions/ADR/PRD/epic state)
-                              joined from linkage frontmatter, given cwd/branch/issue
+    lore_context_pack       — bounded pointer pack (ADR/PRD/epic state)
+                              joined from git-derived linkage, given cwd/branch/issue
 
 Start:
     lore mcp
@@ -998,7 +998,7 @@ def handle_context_pack(
     issue: int | None = None,
     repo_path: str | None = None,
 ) -> dict[str, Any]:
-    """Bounded pointer pack for cwd/branch/issue, joined on linkage frontmatter.
+    """Bounded pointer pack for cwd/branch/issue, joined on git-derived linkage.
 
     Cold start (no git repo, no vault, no attached scope) degrades to a
     well-formed empty pack rather than an error — this is a planning
@@ -1457,12 +1457,12 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_context_pack",
             "description": (
-                "Bounded pointer pack (recent session notes, ADR/PRD entries, "
-                "epic state) for a cwd/branch/issue, joined purely on linkage "
-                "frontmatter — never an LLM call, never FTS ranking dressed up "
-                "as a join. Cold start (no repo, no vault, no attached scope) "
-                "returns a well-formed empty pack, never an error. Bodies are "
-                "pulled selectively afterward via `lore_read`/`lore_repo_docs_fetch`."
+                "Bounded pointer pack (ADR/PRD entries, epic state) for a "
+                "cwd/branch/issue, joined purely on git-derived linkage — "
+                "never an LLM call, never FTS ranking dressed up as a join. "
+                "Cold start (no repo, no vault, no attached scope) returns a "
+                "well-formed empty pack, never an error. Bodies are pulled "
+                "selectively afterward via `lore_read`/`lore_repo_docs_fetch`."
             ),
             "inputSchema": {
                 "type": "object",

@@ -10,6 +10,13 @@ see ours.
 These tests use a bare-repo + two-clone fixture (mirroring
 `test_git_sync.py`), one host playing "Alice" and the other "Bob",
 to verify cross-host coordination end-to-end.
+
+`gather()`'s walk over `<wiki>/sessions/` is retired (PRD 0013) — it always
+reports zero new sessions now, which would make every test below hit the
+"no new sessions" early return before touching git at all. `_stub_gather`
+stands in for it: real ledger-filter behaviour (via the retained
+`_read_ledger`) over a fixed candidate list, so the mark/commit/push path
+this file actually tests still runs.
 """
 
 from __future__ import annotations
@@ -20,9 +27,8 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-
 from lore_cli.briefing_cmd import _run_oneshot
-
+from lore_core.briefing.gather import _read_ledger
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -138,12 +144,54 @@ def vault_factory(monkeypatch):
     return use
 
 
+def _candidates(*names: str) -> list[dict]:
+    """Fake `new_sessions` entries for the session files the seed helpers wrote."""
+    return [
+        {
+            "path": f"sessions/{name}.md",
+            "date": name[:10],
+            "slug": name[11:],
+            "frontmatter": {},
+            "linkage": {},
+        }
+        for name in names
+    ]
+
+
+def _stub_gather(monkeypatch: pytest.MonkeyPatch, candidates: list[dict]) -> None:
+    """Replace `gather()` with the ledger-filter half only.
+
+    The directory walk that used to find these candidates is gone; this
+    keeps the ledger-driven "already incorporated" filtering real (via
+    the retained `_read_ledger`) so pull-propagation stays meaningful.
+    """
+    from lore_core.config import get_wiki_root
+
+    def fake_gather(*, wiki, since=None, include_body_sections=True, user=None, epic=None):
+        wiki_path = get_wiki_root() / wiki
+        ledger = _read_ledger(wiki_path)
+        incorporated = set(ledger.get("incorporated") or [])
+        new_sessions = [c for c in candidates if Path(c["path"]).name not in incorporated]
+        return {
+            "wiki": wiki,
+            "today": "2026-04-20",
+            "ledger": {
+                "last_briefing": ledger.get("last_briefing"),
+                "incorporated_count": len(incorporated),
+            },
+            "sink_config": None,
+            "new_sessions": new_sessions,
+        }
+
+    monkeypatch.setattr("lore_cli.briefing_cmd.gather", fake_gather)
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
 
-def test_oneshot_no_remote_proceeds_and_skips_push(tmp_path: Path, vault_factory):
+def test_oneshot_no_remote_proceeds_and_skips_push(tmp_path: Path, vault_factory, monkeypatch):
     """Single-user wiki without a remote: briefing publishes + marks
     locally, no push attempted, no errors."""
     vault = tmp_path / "vault"
@@ -152,6 +200,7 @@ def test_oneshot_no_remote_proceeds_and_skips_push(tmp_path: Path, vault_factory
     _seed_wiki_files(wiki, [("2026-04-15-fix-a", "- A thing")])
     out = tmp_path / "brief.md"
     vault_factory(vault)
+    _stub_gather(monkeypatch, _candidates("2026-04-15-fix-a"))
 
     code = _run_oneshot(
         wiki="ccat",
@@ -168,13 +217,14 @@ def test_oneshot_no_remote_proceeds_and_skips_push(tmp_path: Path, vault_factory
     assert "2026-04-15-fix-a.md" in ledger["incorporated"]
 
 
-def test_oneshot_pushes_ledger_after_mark(two_hosts, vault_factory):
+def test_oneshot_pushes_ledger_after_mark(two_hosts, vault_factory, monkeypatch):
     """Happy path: clean repo with remote → briefing publishes, commits
     ledger, pushes. Remote should now be ahead by one commit."""
     tmp, alice_vault, _bob_vault = two_hosts
     alice_wiki = alice_vault / "wiki" / "ccat"
     out = tmp / "alice-brief.md"
     vault_factory(alice_vault)
+    _stub_gather(monkeypatch, _candidates("2026-04-15-fix-a", "2026-04-16-fix-b"))
 
     code = _run_oneshot(
         wiki="ccat",
@@ -195,15 +245,17 @@ def test_oneshot_pushes_ledger_after_mark(two_hosts, vault_factory):
     assert origin_log.startswith("briefing(ccat):")
 
 
-def test_oneshot_pulls_before_gather(two_hosts, vault_factory):
+def test_oneshot_pulls_before_gather(two_hosts, vault_factory, monkeypatch):
     """Cross-host coordination: Alice publishes + pushes; Bob's briefing
     pulls Alice's ledger update first and finds 0 new sessions."""
     tmp, alice_vault, bob_vault = two_hosts
     alice_out = tmp / "alice-brief.md"
     bob_out = tmp / "bob-brief.md"
+    candidates = _candidates("2026-04-15-fix-a", "2026-04-16-fix-b")
 
     # Alice publishes.
     vault_factory(alice_vault)
+    _stub_gather(monkeypatch, candidates)
     code_a = _run_oneshot(
         wiki="ccat",
         since=None,
@@ -294,7 +346,7 @@ def test_oneshot_aborts_on_diverged(two_hosts, vault_factory, capsys):
     assert "diverged" in err.lower()
 
 
-def test_oneshot_no_git_flag_bypasses_coordination(two_hosts, vault_factory):
+def test_oneshot_no_git_flag_bypasses_coordination(two_hosts, vault_factory, monkeypatch):
     """--no-git should publish even when the repo would otherwise abort."""
     tmp, alice_vault, _bob_vault = two_hosts
     # Dirty the ledger.
@@ -303,6 +355,7 @@ def test_oneshot_no_git_flag_bypasses_coordination(two_hosts, vault_factory):
     )
     out = tmp / "brief.md"
     vault_factory(alice_vault)
+    _stub_gather(monkeypatch, _candidates("2026-04-15-fix-a", "2026-04-16-fix-b"))
 
     code = _run_oneshot(
         wiki="ccat",
@@ -317,7 +370,7 @@ def test_oneshot_no_git_flag_bypasses_coordination(two_hosts, vault_factory):
     assert out.exists()
 
 
-def test_oneshot_dry_run_skips_git(two_hosts, vault_factory):
+def test_oneshot_dry_run_skips_git(two_hosts, vault_factory, monkeypatch):
     """--dry-run preview must not touch git either (no commit, no push)."""
     tmp, alice_vault, _bob_vault = two_hosts
     alice_wiki = alice_vault / "wiki" / "ccat"
@@ -327,6 +380,7 @@ def test_oneshot_dry_run_skips_git(two_hosts, vault_factory):
     )
     head_before = _git(alice_wiki, "rev-parse", "HEAD").stdout.strip()
     vault_factory(alice_vault)
+    _stub_gather(monkeypatch, _candidates("2026-04-15-fix-a", "2026-04-16-fix-b"))
 
     code = _run_oneshot(
         wiki="ccat",

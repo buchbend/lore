@@ -32,13 +32,11 @@ subagent:
   issue/epic), CONTEXT.md / glossary read directly, `lore_repo_docs_list` for anything the
   pack's focus filter missed.
 - **Prior art** — the pack's `epic_state` (linked issue/epic status) as the trace of related
-  work. The pack's `sessions` field reads `wiki/<name>/sessions/`; nothing writes a new session
-  note since the compose pipeline retired, so treat it as empty and lean on `epic_state` plus a
-  targeted `lore_search`/`lore_drill` call instead.
+  work, plus a targeted `lore_search`/`lore_drill` call for anything the pack does not cover.
 
 Spawn a facet's `Explore` subagent only when the pack came back thin or empty for it (no
-matching ADR/PRD, no matching sessions) — it then searches beyond what the deterministic join
-found. The remaining facets fan out unconditionally, as before:
+matching ADR/PRD) — it then searches beyond what the deterministic join found. The remaining
+facets fan out unconditionally, as before:
 - **Code map** — where this touches the codebase: key modules, interfaces, current behavior,
   relevant tests. Start from `lore codemap` (or the `lore_codemap` MCP tool) for a ranked,
   deterministic index instead of a blind directory walk.

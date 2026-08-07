@@ -185,24 +185,13 @@ def discover_wikis(wiki_filter: str | None = None) -> list[Path]:
 
 
 def discover_notes(wiki_path: Path) -> list[Path]:
-    """Find all .md note files in knowledge directories and sessions/."""
+    """Find all .md note files in knowledge directories."""
     notes: list[Path] = []
     for kdir in KNOWLEDGE_DIRS:
         base = wiki_path / kdir
         if not base.exists():
             continue
         for md in sorted(base.rglob("*.md")):
-            if md.name in SKIP_FILES:
-                continue
-            if any(part in SKIP_DIRS for part in md.parts):
-                continue
-            notes.append(md)
-    sessions_dir = wiki_path / "sessions"
-    if sessions_dir.exists():
-        # In solo mode sessions live flat: sessions/*.md
-        # In team mode they're sharded: sessions/<handle>/*.md
-        # rglob covers both without extra branching.
-        for md in sorted(sessions_dir.rglob("*.md")):
             if md.name in SKIP_FILES:
                 continue
             if any(part in SKIP_DIRS for part in md.parts):
@@ -736,50 +725,6 @@ def generate_index_txt(wiki_name: str, notes: list[NoteInfo]) -> str:
 
         lines.append("")
 
-    session_count = sum(1 for n in notes if n.note_type == "session")
-    if session_count:
-        lines.append("## Sessions")
-        lines.append("")
-        lines.append(f"{session_count} session notes in `sessions/` (not indexed here).")
-        lines.append("")
-
-    return "\n".join(lines)
-
-
-def generate_recent_txt(wiki_path: Path, max_entries: int = 20) -> str | None:
-    """Generate a sessions/_recent.txt listing the most recent session notes.
-
-    Returns the file content, or None if the wiki has no sessions/ directory.
-
-    Sort uses :func:`lore_core.session_writer.session_path_sort_key` so
-    intra-day ordering reflects the ``DD-HHMM-`` prefix. Legacy
-    ``DD-slug.md`` notes (no HHMM) collapse to ``hhmm=0`` and appear at
-    the bottom of their day — see the helper docstring.
-    """
-    from lore_core.session_writer import session_path_sort_key
-
-    sessions_dir = wiki_path / "sessions"
-    if not sessions_dir.is_dir():
-        return None
-
-    # Collect all .md files under sessions/, excluding generated indexes
-    session_files: list[Path] = []
-    for md in sessions_dir.rglob("*.md"):
-        if md.name in SKIP_FILES:
-            continue
-        session_files.append(md)
-
-    if not session_files:
-        return None
-
-    session_files.sort(key=session_path_sort_key, reverse=True)
-
-    recent = session_files[:max_entries]
-
-    lines = ["# Recent Sessions", ""]
-    for sf in recent:
-        lines.append(f"- [[{sf.stem}]]")
-    lines.append("")  # trailing newline
     return "\n".join(lines)
 
 
@@ -997,11 +942,6 @@ def _regenerate_wiki(
 
     atomic_write_text(wiki_path / "_index.txt", generate_index_txt(wiki_name, notes))
     _drop_legacy_artifacts(wiki_path)
-
-    # sessions/_recent.txt — last 20 session notes as wikilinks
-    recent_txt = generate_recent_txt(wiki_path)
-    if recent_txt is not None:
-        atomic_write_text(wiki_path / "sessions" / "_recent.txt", recent_txt)
 
     # _concepts.txt, _decisions.txt — flat per-type collections at wiki root.
     # The ``.txt`` extension excludes them from the wikilink graph (which
