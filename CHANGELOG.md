@@ -8,6 +8,64 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.70.0] - 2026-08-07
+
+Finishes the teardown that release 0.68.0 began (#392, PRD 0013). Release
+0.68.0 deleted the pipeline that composed session notes. This release deletes
+the code that composed, stored, indexed and read one, and corrects the prose
+that still described the retired pipeline. The epic removed 6,823 lines and
+added 1,047.
+
+ADR 0010 states the producer rule: a read surface without a live producer is a
+defect. Issue #377 applied the rule to drain kinds, spine codes and status
+rows. Nobody enumerated the session note, so the rule never reached it.
+
+### Removed
+
+- **The session-note lifecycle** (#393). `lore_core.note_document` keeps
+  `DISCLAIMER`, `MARKER_WITHHELD`, `MARKER_FAILED`, `NoteClosedError`,
+  `NoteView`, `append_marker_chapter` and `read_note`. The chapter, fact and
+  render machinery is gone.
+- **`lore_core.flush_store`** (#393). The janitor removes `.lore/flushes/`
+  once, on its next run.
+- **`lore_curator.session_activity`** (#393). Three helpers moved into
+  `lore_curator.ledger_linkage`.
+- **`identity.session_note_dir`** (#393).
+- **`lore_core.session_writer`** (#394). `generate_recent_txt` was its one
+  caller and went with the linter change below.
+- **The `sessions` key in the context pack** (#394). The `lore_context_pack`
+  tool returns `adr`, `prd` and `epic_state`.
+- **`lore migrate retire-session-notes` and `lore migrate open-items`** (#394).
+  `lore_curator.retire_session_notes`, `lore_curator.open_items_migration` and
+  `docs/how-to/retire-session-notes.md` go with the two verbs.
+- **The `SpawnRole` registry** (#395). `lore_cli.spawn` calls its one role
+  directly. The runaway gate, the cooldown stamps and the log rotation stay.
+
+### Changed
+
+- **`lore lint` stops reading `<wiki>/sessions/`** (#394). The linter writes no
+  `sessions/_recent.txt`, states no session-note count, and reports no issue
+  for a file under that directory.
+- **`lore briefing` gathers no new session** (#394). `lore briefing publish`
+  and `lore briefing mark` still run.
+- **The curator package states what it holds** (#395). `lore_curator` names an
+  LLM client, capture routing and frontmatter hygiene. `lore_core.run_log`
+  names `hygiene` and `curator_cmd` as its producers.
+- **The plugin manifests state what lore captures** (#392).
+  `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` no longer
+  advertise session notes.
+
+### Upgrading
+
+A user who never ran `lore migrate retire-session-notes` keeps session-note
+files under `<wiki>/sessions/`. Those files stay on disk as inert markdown. No
+code reads them.
+
+That user cannot backfill transcript-ledger linkage from archived transcripts.
+The migration that offered the backfill is deleted and carries no replacement.
+The owner accepted the loss, and PRD 0013 records the decision.
+`docs/how-to/troubleshooting.md` records the state a reader will find.
+
 ## [0.69.0] - 2026-08-06
 
 Retires every read surface whose producer releases 0.67.0 and 0.68.0 deleted
