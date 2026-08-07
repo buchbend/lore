@@ -1,11 +1,16 @@
 # Session-note and curator residue — code sweep
 
-Swept at `fa1d326` (0.69.0). Method: AST symbol extraction across `lib/`, then a
-reference search over every non-test file. Docstring-only and comment-only
-mentions were excluded by hand. `CODEMAP.md` is a generated symbol index and was
-excluded — it names every symbol and matches everything.
+Swept at `509c126` (0.69.0, current `main`). Method: AST symbol extraction across
+`lib/`, then a reference search over every non-test file. Docstring-only and
+comment-only mentions were excluded by hand. `CODEMAP.md` is a generated symbol
+index and was excluded — it names every symbol and matches everything.
 
-Test baseline before any change: 2665 passed, 2 failed, 30 skipped.
+The first pass ran against the epic branch at `fa1d326`. Re-run after rebasing
+onto `main`, every code finding was identical; the docs findings changed and are
+corrected below. `main` now carries ADR 0010, which ratifies the producer rule
+this sweep applies.
+
+Test baseline before any change: 2667 passed, 2 failed, 38 skipped.
 Both failures (`test_cli_scopes.py::test_rename_reports_stale_checked_in_offer`,
 `test_install_dispatcher.py::test_refresh_claude_plugin_cache_runs_update_on_success`)
 assert on ANSI-wrapped terminal output and are unrelated to session notes.
@@ -155,12 +160,16 @@ curate a session note.
 | --- | --- |
 | `lib/lore_cli/session_cmd.py:3` | `lore_curator/session_filer.py` |
 | `lib/lore_core/session.py:5` | `lore_curator/session_filer.py` |
-| `lib/lore_core/session_writer.py:5` | `stub_note`, `synthesis`, `summary_merge` |
+| `lib/lore_core/session_writer.py:5,9` | `stub_note`, `synthesis`, `summary_merge` |
 | `lib/lore_core/git.py:34` | `lore_curator.session_filer` |
-| `lib/lore_core/linkage.py:10` | `session_activity.collect_commits_by_sha` |
-| `docs/architecture/sync.md:39` | `session_curator.py:_maybe_auto_commit` |
-| `docs/architecture/observability.md:53` | `lore_curator/chapter_flush.py` |
-| `CONTEXT-FORMAT.md:6` | `lore_curator/stub_note.py` |
+| `lib/lore_core/linkage.py:10,75` | `session_activity.collect_commits_by_sha` |
+| `lib/lore_core/run_log.py:10` | `session_curator` as a live run role |
+| `lib/lore_curator/session_activity.py:334` | `session_filer.py` |
+| `CONTEXT-FORMAT.md:6,14` | `lore_curator/stub_note.py`, `stub_note._placeholder_title` |
+
+`docs/architecture/sync.md` and `docs/architecture/observability.md` carried two
+more. Both were corrected by #389, merged into `main` as part of #390, and the
+observability text now reads as historical narrative. Neither needs work.
 
 ### `README.md`
 
