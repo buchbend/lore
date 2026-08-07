@@ -213,6 +213,7 @@ def test_context_pack_dispatch_routes(tmp_path: Path, monkeypatch: pytest.Monkey
     result = _dispatch("lore_context_pack", {"cwd": str(repo), "repo_path": str(repo)})
     assert result["schema"] == "lore.context_pack/1"
     assert result["repo"] == "acme/widget"
+    assert "sessions" not in result
 
 
 def test_gather_returns_no_sessions_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
