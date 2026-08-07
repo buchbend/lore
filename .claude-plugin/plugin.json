@@ -1,6 +1,6 @@
 {
   "name": "lore",
-  "description": "LLM-optimized knowledge graph for AI-coding teams \u2014 session notes, auto-extracted knowledge, pluggable briefings, magic context injection at session start.",
+  "description": "LLM-optimized knowledge graph for AI-coding teams \u2014 transcripts captured and archived, facts filed as reviewable flags, repo-scoped context injected at session start, pluggable team briefings.",
   "version": "0.69.0",
   "author": {
     "name": "Christof Buchbender"
@@ -11,7 +11,6 @@
     "knowledge-graph",
     "obsidian",
     "mcp",
-    "session-notes",
     "rag"
   ],
   "hooks": {

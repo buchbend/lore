@@ -1,24 +1,21 @@
 """Tests for `lore_core.context_pack` — the deterministic `lore_context_pack`
 join (PRD 0004).
 
-Relevance is a join on linkage keys (repo, scope, issue/epic) between
-session-note frontmatter and a connected repo's ADR/PRD homes — never an
-LLM call, never an FTS ranking dressed up as a join. Cold-start (no repo,
-no vault, no scope) degrades to a well-formed empty pack, never an error.
+Relevance is a join on linkage keys (repo, scope, issue/epic) drawn from the
+branch name and a connected repo's ADR/PRD homes — never an LLM call, never
+an FTS ranking dressed up as a join. Cold-start (no repo, no vault, no scope)
+degrades to a well-formed empty pack, never an error.
 """
 
 from __future__ import annotations
 
 import subprocess
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-import yaml
 from lore_core.context_pack import gather
 from lore_core.state.attachments import Attachment, AttachmentsFile
-
-_TODAY = date.today().isoformat()
 
 
 def _init_repo(repo_root: Path, *, branch: str = "main", remote_url: str | None = None) -> None:
@@ -39,83 +36,8 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text)
 
 
-def _session_note(
-    *,
-    repo: str = "",
-    epics: list[int] | None = None,
-    issues: list[int] | None = None,
-    scope: str = "w:s",
-    description: str = "a session",
-) -> str:
-    fm = {
-        "schema_version": 2,
-        "type": "session",
-        "created": _TODAY,
-        "last_reviewed": _TODAY,
-        "description": description,
-        "scope": scope,
-        "linkage": {
-            "schema_version": 1,
-            "repo": repo,
-            "branch": "main",
-            "issues": issues or [],
-            "prs": [],
-            "epics": epics or [],
-            "author": "",
-        },
-    }
-    return f"---\n{yaml.safe_dump(fm, sort_keys=False)}---\n\n# s\n"
-
-
 def _no_vault(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("LORE_ROOT", str(tmp_path / "no-such-vault"))
-
-
-# ---------------------------------------------------------------------------
-# repo-linkage join
-# ---------------------------------------------------------------------------
-
-
-def test_gather_joins_session_notes_by_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = tmp_path / "repo"
-    _init_repo(repo, remote_url="git@github.com:acme/widget.git")
-
-    vault = tmp_path / "vault"
-    wiki = vault / "wiki" / "w"
-    _write(wiki / "sessions" / f"{_TODAY}-matching.md", _session_note(repo="acme/widget"))
-    _write(wiki / "sessions" / f"{_TODAY}-unrelated.md", _session_note(repo="acme/other"))
-    monkeypatch.setenv("LORE_ROOT", str(vault))
-
-    result = gather(cwd=repo, repo_path=str(repo))
-    assert "error" not in result
-    assert result["repo"] == "acme/widget"
-    paths = {s["path"] for s in result["sessions"]}
-    assert any("matching" in p for p in paths)
-    assert not any("unrelated" in p for p in paths)
-
-
-def test_gather_finds_sharded_session_layout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Sessions in the canonical sharded layout (sessions/YYYY/MM/DD-slug.md,
-    what auto-capture writes) must join same as flat-layout ones. A prior bug
-    parsed only the stem's first 10 chars, which for a sharded filename is
-    "DD-slug" — not a date — and silently dropped every sharded session."""
-    repo = tmp_path / "repo"
-    _init_repo(repo, remote_url="git@github.com:acme/widget.git")
-
-    vault = tmp_path / "vault"
-    wiki = vault / "wiki" / "w"
-    today = date.today()
-    shard = wiki / "sessions" / f"{today.year}" / f"{today.month:02d}"
-    _write(shard / f"{today.day:02d}-sharded.md", _session_note(repo="acme/widget"))
-    monkeypatch.setenv("LORE_ROOT", str(vault))
-
-    result = gather(cwd=repo, repo_path=str(repo))
-    paths = {s["path"] for s in result["sessions"]}
-    assert any("sharded" in p for p in paths)
 
 
 # ---------------------------------------------------------------------------
@@ -126,42 +48,19 @@ def test_gather_finds_sharded_session_layout(
 def test_gather_joins_by_epic_from_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = tmp_path / "repo"
     _init_repo(repo, branch="epic/162")
-
-    vault = tmp_path / "vault"
-    wiki = vault / "wiki" / "w"
-    _write(
-        wiki / "sessions" / f"{_TODAY}-on-epic.md",
-        _session_note(repo="other/repo", epics=[162]),
-    )
-    _write(
-        wiki / "sessions" / f"{_TODAY}-off-epic.md",
-        _session_note(repo="other/repo", epics=[99]),
-    )
-    monkeypatch.setenv("LORE_ROOT", str(vault))
+    _no_vault(monkeypatch, tmp_path)
 
     result = gather(cwd=repo, repo_path=str(repo))
     assert result["focus_issues"] == [162]
-    paths = {s["path"] for s in result["sessions"]}
-    assert any("on-epic" in p for p in paths)
-    assert not any("off-epic" in p for p in paths)
 
 
 def test_gather_issue_param_widens_focus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = tmp_path / "repo"
     _init_repo(repo)
-
-    vault = tmp_path / "vault"
-    wiki = vault / "wiki" / "w"
-    _write(
-        wiki / "sessions" / f"{_TODAY}-issue-180.md",
-        _session_note(repo="other/repo", issues=[180]),
-    )
-    monkeypatch.setenv("LORE_ROOT", str(vault))
+    _no_vault(monkeypatch, tmp_path)
 
     result = gather(cwd=repo, repo_path=str(repo), issue=180)
     assert 180 in result["focus_issues"]
-    paths = {s["path"] for s in result["sessions"]}
-    assert any("issue-180" in p for p in paths)
 
 
 def test_gather_epic_state_calls_gh_issue_view(
@@ -255,23 +154,11 @@ def test_gather_joins_by_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         Attachment(path=repo, wiki="w", scope="w:s", attached_at=datetime(2026, 1, 1, tzinfo=UTC))
     )
     af.save()
-
-    wiki = vault / "wiki" / "w"
-    _write(
-        wiki / "sessions" / f"{_TODAY}-scoped.md", _session_note(repo="unrelated/repo", scope="w:s")
-    )
-    _write(
-        wiki / "sessions" / f"{_TODAY}-other-scope.md",
-        _session_note(repo="unrelated/repo", scope="w:other"),
-    )
     monkeypatch.setenv("LORE_ROOT", str(vault))
 
     result = gather(cwd=repo, repo_path=str(repo))
     assert result["scope"] == "w:s"
     assert result["wiki"] == "w"
-    paths = {s["path"] for s in result["sessions"]}
-    assert any("scoped.md" in p and "other-scope" not in p for p in paths)
-    assert not any("other-scope" in p for p in paths)
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +173,6 @@ def test_gather_cold_start_no_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     result = gather(cwd=repo, repo_path=str(repo))
     assert "error" not in result
-    assert result["sessions"] == []
     assert result["repo"] == "acme/widget"
 
 
@@ -300,32 +186,9 @@ def test_gather_cold_start_outside_git_repo(
     result = gather(cwd=stranger)
     assert "error" not in result
     assert result["repo"] == ""
-    assert result["sessions"] == []
     assert result["adr"] == []
     assert result["prd"] == []
     assert result["epic_state"] == []
-
-
-# ---------------------------------------------------------------------------
-# bounded pack
-# ---------------------------------------------------------------------------
-
-
-def test_gather_bounds_session_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from lore_core.context_pack import MAX_SESSIONS
-
-    repo = tmp_path / "repo"
-    _init_repo(repo, remote_url="git@github.com:acme/widget.git")
-
-    vault = tmp_path / "vault"
-    wiki = vault / "wiki" / "w"
-    for i in range(MAX_SESSIONS + 5):
-        d = date.today().isoformat()
-        _write(wiki / "sessions" / f"{d}-note-{i:02d}.md", _session_note(repo="acme/widget"))
-    monkeypatch.setenv("LORE_ROOT", str(vault))
-
-    result = gather(cwd=repo, repo_path=str(repo))
-    assert len(result["sessions"]) == MAX_SESSIONS
 
 
 # ---------------------------------------------------------------------------
@@ -350,3 +213,13 @@ def test_context_pack_dispatch_routes(tmp_path: Path, monkeypatch: pytest.Monkey
     result = _dispatch("lore_context_pack", {"cwd": str(repo), "repo_path": str(repo)})
     assert result["schema"] == "lore.context_pack/1"
     assert result["repo"] == "acme/widget"
+    assert "sessions" not in result
+
+
+def test_gather_returns_no_sessions_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo, remote_url="git@github.com:acme/widget.git")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo))
+    assert "sessions" not in result

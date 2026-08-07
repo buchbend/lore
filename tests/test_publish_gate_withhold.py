@@ -12,19 +12,33 @@ from __future__ import annotations
 import secrets as _secrets
 from pathlib import Path
 
+import yaml
 from lore_core import note_document as nd
 from lore_core import publish_gate as pg
 from lore_core import quarantine
 
 
 def _fixture_note(tmp_path: Path) -> Path:
+    """Seed a minimal note file directly.
+
+    append_marker_chapter only reads/appends an existing file — the
+    chapter lifecycle that once created one (create_note) is gone.
+    """
     path = tmp_path / "wiki" / "lore" / "sessions" / "2026" / "07" / "03-demo.md"
-    nd.create_note(
-        path,
-        title="Demo session",
-        description="A demo session note",
-        scope="lore",
-    )
+    fm = {
+        "schema_version": 2,
+        "type": "session",
+        "note_status": "open",
+        "created": "2026-07-03",
+        "last_reviewed": "2026-07-03",
+        "title": "Demo session",
+        "description": "A demo session note",
+        "scope": "lore",
+        "chapters": [],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    path.write_text(f"---\n{dumped}\n---\n\n{nd.DISCLAIMER}\n")
     return path
 
 

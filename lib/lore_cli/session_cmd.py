@@ -1,10 +1,8 @@
 """`lore session commit` — git-add + commit one note inside a wiki repo.
 
-Auto-capture (curator A → ``lore_curator/session_filer.py`` →
-``lore_core/session_writer.py``) is the canonical write path; it does
-its own commit when ``auto_commit: true`` is set on the wiki. This CLI
-verb exists for the explicit-write skills (inbox, briefing) that author
-a note in-thread and need to commit it.
+Lore writes no session note automatically; the compose pipeline that once
+filed one was retired. This CLI verb exists for the explicit-write skills
+(inbox, briefing) that author a note in-thread and need to commit it.
 """
 
 from __future__ import annotations

@@ -5,11 +5,16 @@
 
 > **Status: parked.** The chain below has session notes as its middle
 > stage, and the compose pipeline that wrote them retired in `#361`.
-> `gather()` still reads `<wiki>/sessions/`, so it now sees only what a
-> human files there. What a briefing should read instead — the transcript
-> ledger, accepted flags, or something else — is an open decision, not
-> something this page should guess. PRD 0011 parks briefings pending it.
-> Everything below describes the code as it stands.
+> PRD 0013 then removed the `<wiki>/sessions/` walk from `gather()`, so
+> `gather()` returns an empty `new_sessions` list on every call. It still
+> reports the wiki's briefing ledger and sink config, which is what
+> `lore briefing publish` and `lore briefing mark` read. What a briefing
+> should gather instead — the transcript ledger, accepted flags, or
+> something else — is an open decision, not something this page should
+> guess. PRD 0011 parks briefings pending it.
+>
+> **Read the rest as a description of the parked design, not of running
+> code.** The join it describes is intact in principle; it has no input.
 
 ## The drill-down chain
 
@@ -35,9 +40,10 @@ next one. Session notes already carry `linkage` frontmatter (`author`,
 `repo`, `branch`, `issues`, `prs`, `epics` — see
 `lore_core/linkage.py`). The transcript ledger carries an equivalent
 block, stamped by capture with no LLM call. `gather()`
-(`lore_core/briefing/gather.py`) passes that `linkage` dict through
-verbatim on every entry, plus an optional `epic` filter so a caller can
-scope gather to one epic's sessions directly.
+(`lore_core/briefing/gather.py`) used to pass that `linkage` dict through
+verbatim on every entry, and took an `epic` filter to scope one epic's
+sessions. It returns no entries now, so its filter parameters survive only
+to keep `lore briefing publish` and `lore briefing mark` unchanged.
 
 Both consumers of `gather()`'s output turn `linkage` into drill-down
 links:

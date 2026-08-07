@@ -10,7 +10,7 @@
     {
       "name": "lore",
       "source": "./",
-      "description": "LLM-optimized knowledge graph: session notes, auto-extracted knowledge, pluggable briefings, magic context injection."
+      "description": "LLM-optimized knowledge graph: transcripts captured and archived, facts filed as reviewable flags, repo-scoped context injected at session start, pluggable briefings."
     },
     {
       "name": "lore-workflow",

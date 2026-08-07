@@ -26,22 +26,25 @@ Tiers, per spine file:
 
 Legacy run-archival files and crash logs are separate families with their
 own age/count windows (see :mod:`lore_core.run_retention` and
-``lore_cli._crash_log``); this module composes run-archival + the flush
-store's dead-letter/terminal purge under ONE lock since both live under
-``lore_root/.lore/``. Crash-log purge and :func:`prune_orphans` (drain
-orphans) are independently safe under light concurrency (atomic replace /
-tolerant of FileNotFoundError) so they're composed alongside this, not
-inside the same critical section — see
+``lore_cli._crash_log``); this module composes run-archival under ONE
+lock since it lives under ``lore_root/.lore/``. Crash-log purge and
+:func:`prune_orphans` (drain orphans) are independently safe under light
+concurrency (atomic replace / tolerant of FileNotFoundError) so they're
+composed alongside this, not inside the same critical section — see
 ``lore_cli._janitor_entry.run_opportunistic_janitor``.
 
-Every deletion and tier-downgrade emits a ``source="janitor"`` spine event;
-a delete failure emits a warn-level event instead of failing silently.
+Every tiered-retention deletion and tier-downgrade emits a
+``source="janitor"`` spine event; a delete failure emits a warn-level event
+instead of failing silently. The one-time ``.lore/flushes/`` removal is
+outside that invariant — it emits nothing, since it is upgrade cleanup
+rather than retention policy.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
@@ -49,7 +52,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from lore_core.drain import SYSTEM_SESSION
-from lore_core.flush_store import FlushStore
 from lore_core.lockfile import flocked
 from lore_core.root_config import ObservabilityConfig
 from lore_core.run_retention import enforce_retention
@@ -82,11 +84,11 @@ def janitor_lock(lore_root: Path):
 
 
 def run_janitor(lore_root: Path, cfg: ObservabilityConfig) -> JanitorReport:
-    """Enforce tiered retention across the spine + flush store. Never raises.
+    """Enforce tiered retention across the spine. Never raises.
 
     Self-contained critical section: acquires :func:`janitor_lock`, sweeps
-    the hot/cold spine tiers, the legacy run-archival family, and the
-    flush store's terminal/dead-letter purge, then persists the queryable
+    the hot/cold spine tiers and the legacy run-archival family, removes
+    ``.lore/flushes/`` if it is still there, then persists the queryable
     usage snapshot (see :func:`read_janitor_status`).
     """
     with janitor_lock(lore_root) as held:
@@ -119,14 +121,10 @@ def run_janitor(lore_root: Path, cfg: ObservabilityConfig) -> JanitorReport:
             keep_trace=cfg.runs.keep_trace,
         )
 
-        # Flush store: terminal records age out, dead letters survive
-        # unless over the hard cap. Already emits its own events.
-        purge_result = FlushStore(lore_root).purge(
-            terminal_max_age_days=cfg.retention.cold_days,
-            dead_letter_hard_cap=cfg.retention.dead_letter_hard_cap,
-        )
-        report.deleted += purge_result.deleted
-        report.failed += purge_result.failed
+        # Flush records: no reader is left (PRD 0013). One-time cleanup —
+        # after the directory is gone this is a no-op on every later run.
+        if _remove_flushes_dir(lore_dir):
+            report.deleted += 1
 
         report.hot_bytes = _size_or_zero(hot)
         report.cold_bytes = _size_or_zero(cold)
@@ -164,6 +162,20 @@ def _maybe_delete_cold(
             level="warn",
             data={"family": "spine-cold", "path": cold.name, "error": str(exc)},
         )
+
+
+def _remove_flushes_dir(lore_dir: Path) -> bool:
+    """Delete ``.lore/flushes/`` if it is still there. Returns whether it was.
+
+    ponytail: no age/size tiering like the spine — nothing reads this
+    directory any more, so there is nothing to weigh against, only a
+    directory to clear once.
+    """
+    flushes = lore_dir / "flushes"
+    if not flushes.exists():
+        return False
+    shutil.rmtree(flushes, ignore_errors=True)
+    return True
 
 
 def _size_or_zero(path: Path) -> int:

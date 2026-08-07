@@ -226,8 +226,9 @@ def test_run_lint_removes_legacy_threads_md(tmp_path, monkeypatch):
 
 
 def test_run_lint_removes_legacy_recent_md(tmp_path, monkeypatch):
-    """Legacy ``sessions/_recent.md`` cleaned up so it doesn't drift
-    alongside the new ``.txt`` version."""
+    """Legacy ``sessions/_recent.md`` cleaned up on every run — vaults
+    self-heal regardless of whether the ``.txt`` successor is still
+    generated (it is not, since PRD 0013 retired that generation)."""
     wiki_root = tmp_path / "wiki"
     w = wiki_root / "mywiki"
     sessions = w / "sessions" / "2026" / "04"
@@ -242,5 +243,3 @@ def test_run_lint_removes_legacy_recent_md(tmp_path, monkeypatch):
     run_lint(json_output=True)
 
     assert not legacy_session_recent.exists()
-    # New .txt version exists.
-    assert (w / "sessions" / "_recent.txt").exists()

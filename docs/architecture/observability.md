@@ -113,24 +113,27 @@ correlation entirely and reads flag-write/flag-review events directly
 
 ---
 
-## The flush lifecycle state machine — retired
+## The flush lifecycle state machine — deleted
 
-**Module:** `lore_core/flush_store.py` (issue #189, retired by #377).
-`FlushRecord` used to track one flush unit (keyed by buffer stem)
+**Module:** `lore_core/flush_store.py` (issue #189) — no longer in the
+tree. `FlushRecord` used to track one flush unit (keyed by buffer stem)
 through:
 
 ```
 queued -> running -> published | withheld | dead-lettered(reason)
 ```
 
-Issue #361 deleted the compose pipeline that drove this machine; issue
-#377 deleted the write half that survived it — `begin`, `transition`,
-`record_failure`, the legal-transition table, and the bounded-retry
-backoff are gone. `FlushStore` is a reader now: `list()` reads whatever
-records are still on disk, and `purge()` is the retention janitor's
-entry point (below) — no code opens a new record. A `queued` or
-`running` record on disk today is a pre-#361 leftover, not a flush in
-flight; see
+The teardown ran in three steps. Issue #361 deleted the compose pipeline
+that drove this machine. Issue #377 deleted the write half that survived
+it — `begin`, `transition`, `record_failure`, the legal-transition table
+and the bounded-retry backoff. PRD 0013 then deleted the read half,
+because `list()` and `purge()` had no caller worth keeping once nothing
+opened a record.
+
+`.lore/flushes/` may still exist in a vault that ran the pipeline. The
+janitor now removes the directory outright instead of purging it by tier
+(below). A `queued` or `running` record there is a pre-#361 leftover, not
+a flush in flight; see
 [the troubleshooting guide](../how-to/troubleshooting.md#a-queued-or-running-flush-record-on-disk).
 
 ---
@@ -147,14 +150,16 @@ runs opportunistically from hook fire / curator run end
 | Spine — hot (`spine.jsonl`) | age > `retention.hot_days` (7d) or size > `hook_events.max_size_mb` (10MB) | downgrade: rotate to `spine.jsonl.1` |
 | Spine — cold (`spine.jsonl.1`) | age > `retention.cold_days` (30d) or size > `retention.cold_max_mb` (20MB) | delete outright — no tier below cold |
 | Legacy run-archival files | `runs.keep` (200) / `runs.max_total_mb` (100MB) / `runs.keep_trace` (30) | age/count-capped delete (`lore_core/run_retention.py`) |
-| Flush store | terminal records older than `retention.cold_days`; dead letters exempt from age but hard-capped at `retention.dead_letter_hard_cap` (50) | purge (`FlushStore.purge`) |
+| Flush records (`.lore/flushes/`) | no tier — no reader is left, so there is nothing to weigh | one-time delete of the whole directory (`lore_core/janitor.py:_remove_flushes_dir`); a no-op on every later pass |
 | Crash logs (`$LORE_CACHE/crashes/`) | `retention.crash_log_days` (30d) | purge (`lore_cli/_crash_log.py`) |
 | Legacy drain orphans (`.lore/drain/_system.jsonl`) | rows whose referenced note path no longer exists | drop (`lore_core/janitor.py:prune_orphans`) — upgrade cleanup only; nothing writes this file post-#188 (drain events live on the spine, `source="drain"`, and get the same tiered retention as everything else above) |
 
-Every deletion and tier-downgrade emits a `source="janitor"` spine
-event (`retention-delete` / `retention-downgrade`); a delete failure
-emits a `warn`-level `retention-delete-failed` event instead of failing
-silently. The last pass's usage snapshot is queryable via
+Every tiered-retention deletion and tier-downgrade emits a
+`source="janitor"` spine event (`retention-delete` /
+`retention-downgrade`); a delete failure emits a `warn`-level
+`retention-delete-failed` event instead of failing silently. The
+one-time `.lore/flushes/` removal sits outside that invariant and emits
+nothing — it is upgrade cleanup, not retention policy. The last pass's usage snapshot is queryable via
 `read_janitor_status()` — that's what `lore status`'s retention section
 reads.
 

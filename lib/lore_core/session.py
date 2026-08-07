@@ -1,11 +1,8 @@
 """Session-note helpers — slug, attach lookup, commit.
 
-The session-note pipeline is the auto-capture path: curator A picks
-noteworthy transcripts and routes them through
-``lore_curator/session_filer.py`` → ``lore_core/session_writer.file_or_merge``.
-That writer owns layout, frontmatter, and the append-to-today merge rule.
-
-This module keeps only the pieces other modules still need:
+Lore writes no session note automatically; the compose pipeline that once
+filed one was retired. This module keeps only the pieces other modules
+still need:
 
 * :func:`_resolve_attach_block` — attach lookup used by hooks/doctor
 * :func:`slugify` — slug derivation
