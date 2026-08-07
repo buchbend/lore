@@ -683,6 +683,10 @@ def test_spawn_writes_stamp_file_on_success(tmp_path: Path, no_subprocess, role:
     spawned = _invoke_spawn(role, lore_root, cooldown_s=60)
     assert spawned is True, f"expected first spawn to proceed; subprocess calls={no_subprocess}"
     assert len(no_subprocess) == 1
+    # `_spawn_detached_transcript_sync` is the only place the child argv is
+    # written down, so a typo in it would otherwise reach users unnoticed.
+    # The wrapper prepends its own argv; the child's trailing four are ours.
+    assert no_subprocess[0][-4:] == ["-m", "lore_cli", "transcripts", "sync"]
     stamp = _stamp_path(lore_root, role)
     assert stamp.exists(), f"stamp file {stamp} should be created"
     now = time.time()
