@@ -83,20 +83,46 @@ a flag.
 lore flag review
 ```
 
-Lore snapshots the pending list, then shows one flag at a time with its full
-block and prompts `accept / retarget / decline / skip? [a/r/d/s]`. The
-default is skip, so pressing Enter through the walk changes nothing.
+Lore opens the review page in your browser. A local listener serves it on
+`127.0.0.1` at an ephemeral port, gated by a token in the URL, and exits when
+you press Done or settle the last flag. Ctrl-C in the terminal also stops it.
+
+The page groups the pending flags by owning note and colours each one by its
+ref verdict — green for `✓`, amber for `(unchecked)`, red for `(not found)`.
+That verdict is code-stamped, so the colour tells you how much the lead is
+entitled to claim before you read a word of it. The code-stamped lead prefix
+(`Reported in session:`) shows as a label rather than as part of the sentence.
+
+Each card carries the same four verdicts as the terminal walk:
 
 | Verdict | What Lore does | Still pending after? |
 |---|---|---|
-| `a` accept | Removes the unreviewed marker. Nothing else in the note changes. | No |
-| `r` retarget | Prompts for a note, moves the block there, creates the note when it is missing. | Yes |
-| `d` decline | Deletes the flag block. The note's own prose is untouched. | No |
-| `s` skip | Nothing. | Yes |
+| Accept | Removes the unreviewed marker. Nothing else in the note changes. | No |
+| Retarget | Moves the block to the note you pick, creating it when missing. | Yes |
+| Decline | Deletes the flag block. The note's own prose is untouched. | No |
+| (leave it) | Nothing. | Yes |
 
-Retarget corrects where a flag lives, not whether you endorse its text, so
-the marker stays and the flag returns in the next walk. A target you mistype
-loses that one verdict and prints an error; the walk continues.
+The retarget field completes from the wiki's existing notes, so you rarely
+type a slug in full. Retarget corrects where a flag lives, not whether you
+endorse its text, so the marker stays, the card stays on the page, and the
+flag returns in the next review.
+
+Nothing about the verdicts is browser-specific: the page calls the same
+functions the terminal prompts call, and writes the same spine events.
+
+### Review in the terminal instead
+
+```
+lore flag review --tty
+```
+
+Lore snapshots the pending list, then shows one flag at a time with its full
+block and prompts `accept / retarget / decline / skip? [a/r/d/s]`. The
+default is skip, so pressing Enter through the walk changes nothing. A target
+you mistype loses that one verdict and prints an error; the walk continues.
+
+Lore falls back to these prompts on its own when no browser resolves on the
+host, which covers an SSH session and a headless machine.
 
 Declined flags leave the wiki but stay in its git history. Recover one with
 `git log -p` on the note.

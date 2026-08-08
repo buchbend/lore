@@ -158,16 +158,30 @@ def cmd_list(
 @app.command("review")
 def cmd_review(
     wiki: str | None = typer.Option(None, "--wiki", help="Wiki name (default: from cwd)."),
+    tty: bool = typer.Option(False, "--tty", help="Prompt in the terminal instead of a browser."),
 ) -> None:
     """Walk the unreviewed flags: accept, retarget, decline, or skip.
 
-    The list is snapshotted before the walk starts, so a retarget that
-    moves a flag into a note already visited cannot show it twice.
+    The browser page is the default surface: a flag's ref verdict decides
+    how much its lead may claim (``docs/adr/0004``), and in one terminal
+    colour that verdict reads as prose. The terminal prompts remain, and
+    take over on a host where no browser resolves.
+
+    In the terminal, the list is snapshotted before the walk starts, so a
+    retarget that moves a flag into a note already visited cannot show it
+    twice.
     """
+    from lore_cli import flag_review_html
+
     wiki_path = _resolve_wiki_path(wiki)
     items = flag.pending(wiki_path)
     if not items:
         typer.echo("(no pending flags)")
+        return
+
+    if not tty and flag_review_html.browser_available():
+        typer.echo(f"{len(items)} pending — opening the review page, Ctrl-C to stop")
+        flag_review_html.serve(wiki_path)
         return
 
     for i, item in enumerate(items, start=1):

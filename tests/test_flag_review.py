@@ -237,7 +237,7 @@ def test_a_no_op_verdict_emits_nothing(vault: Path):
 def test_review_walk_presents_the_four_verdicts(vault: Path):
     _topic_note(vault, "reaper")
     _flag(vault, "Look at me.")
-    result = runner.invoke(app, ["flag", "review", "--wiki", "lore"], input="s\n")
+    result = runner.invoke(app, ["flag", "review", "--wiki", "lore", "--tty"], input="s\n")
     assert result.exit_code == 0, result.output
     assert "Look at me." in result.output
     for verdict in ("accept", "retarget", "decline", "skip"):
@@ -247,14 +247,14 @@ def test_review_walk_presents_the_four_verdicts(vault: Path):
 def test_review_walk_skip_leaves_the_flag_pending(vault: Path):
     _topic_note(vault, "reaper")
     _flag(vault, "Still pending.")
-    runner.invoke(app, ["flag", "review", "--wiki", "lore"], input="s\n")
+    runner.invoke(app, ["flag", "review", "--wiki", "lore", "--tty"], input="s\n")
     assert flag.count_pending(_wiki(vault)) == 1
 
 
 def test_review_walk_accept_clears_the_marker(vault: Path):
     _topic_note(vault, "reaper")
     _flag(vault, "Accept via the walk.")
-    result = runner.invoke(app, ["flag", "review", "--wiki", "lore"], input="a\n")
+    result = runner.invoke(app, ["flag", "review", "--wiki", "lore", "--tty"], input="a\n")
     assert result.exit_code == 0, result.output
     assert flag.count_pending(_wiki(vault)) == 0
     assert "Accept via the walk." in _file(vault).read_text()
@@ -263,7 +263,7 @@ def test_review_walk_accept_clears_the_marker(vault: Path):
 def test_review_walk_decline_deletes_the_block(vault: Path):
     _topic_note(vault, "reaper")
     _flag(vault, "Decline via the walk.")
-    runner.invoke(app, ["flag", "review", "--wiki", "lore"], input="d\n")
+    runner.invoke(app, ["flag", "review", "--wiki", "lore", "--tty"], input="d\n")
     assert "Decline via the walk." not in _file(vault).read_text()
 
 
@@ -272,7 +272,7 @@ def test_review_walk_retarget_prompts_for_the_destination(vault: Path):
     _topic_note(vault, "drain")
     _flag(vault, "Retarget via the walk.")
     result = runner.invoke(
-        app, ["flag", "review", "--wiki", "lore"], input="r\nconcepts/drain.md\n"
+        app, ["flag", "review", "--wiki", "lore", "--tty"], input="r\nconcepts/drain.md\n"
     )
     assert result.exit_code == 0, result.output
     assert "Retarget via the walk." in _file(vault, "drain").read_text()
@@ -280,7 +280,7 @@ def test_review_walk_retarget_prompts_for_the_destination(vault: Path):
 
 def test_review_walk_on_an_empty_queue_says_so(vault: Path):
     _topic_note(vault, "reaper")
-    result = runner.invoke(app, ["flag", "review", "--wiki", "lore"])
+    result = runner.invoke(app, ["flag", "review", "--wiki", "lore", "--tty"])
     assert result.exit_code == 0, result.output
     assert "no pending flags" in result.output.lower()
 

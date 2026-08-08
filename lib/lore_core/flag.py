@@ -66,6 +66,8 @@ __all__ = [
     "BLOCK_OPEN_PREFIX",
     "EV_REVIEW",
     "EV_WRITE",
+    "LEAD_MISSING",
+    "LEAD_UNCHECKED",
     "ORIGIN_PREFIX",
     "SPINE_SOURCE",
     "UNREVIEWED_TOKEN",
@@ -104,8 +106,8 @@ EV_REVIEW = "flag-review"
 # Code-owned leads (docs/adr/0004). A flag whose refs could not be checked is
 # handed back to the session that said it; one whose ref does not exist is
 # demoted further. A verified flag needs no lead — its pointer carries the load.
-_LEAD_UNCHECKED = "Reported in session:"
-_LEAD_MISSING = "Claimed in session, ref not found:"
+LEAD_UNCHECKED = "Reported in session:"
+LEAD_MISSING = "Claimed in session, ref not found:"
 _STAMPS = {VERIFIED: "✓", UNCHECKED: "(unchecked)", MISSING: "(not found)"}
 
 _SLUG_MAX = 48
@@ -239,9 +241,9 @@ def render_block(
     if stamped:
         verdict = _weakest(refs, verdicts)
         if verdict == MISSING:
-            headline = f"{_LEAD_MISSING} {headline}"
+            headline = f"{LEAD_MISSING} {headline}"
         elif verdict == UNCHECKED:
-            headline = f"{_LEAD_UNCHECKED} {headline}"
+            headline = f"{LEAD_UNCHECKED} {headline}"
 
     parts = [f"**{headline}**"]
     body_text = _neutralize(body.strip())
