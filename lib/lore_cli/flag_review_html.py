@@ -1,4 +1,4 @@
-"""Browser review surface for pending flags — ``lore flag review --html``.
+"""Browser review surface for pending flags — ``lore flag review``.
 
 The terminal walk shows one flag at a time in one colour. A flag's most
 load-bearing signal is its verification stamp (``✓`` / ``(unchecked)`` /
@@ -59,11 +59,13 @@ def _inline(text: str) -> str:
 def _parts(item: flag.PendingFlag) -> dict:
     """Split one pending flag into the pieces the card renders."""
     lines = item.block.split("\n")
-    body_lines = [
-        line
-        for line in lines[1:-1]
-        if not line.startswith("**") and not line.startswith(flag.ORIGIN_PREFIX)
-    ]
+    # Drop by position, never by prefix: ``render_block`` emits the lead
+    # first and the origin line last, and a body paragraph may legitimately
+    # open in bold or quote an origin-shaped line. Matching on the prefix
+    # would withhold that prose from the card the reviewer votes on.
+    inner = lines[1:-1]
+    origin_at = flag._origin_index(inner)
+    body_lines = inner[1:origin_at] if origin_at >= 0 else inner[1:]
     body = "\n".join(body_lines).strip()
 
     lead = item.lead
@@ -148,12 +150,27 @@ def render_page(
     )
 
 
+# Every verdict rewrites its whole note, and the listener answers requests on
+# threads, so two cards settled together would race read-modify-write and lose
+# one silently. The terminal walk was serial and needed no such guard.
+# ponytail: one global lock — a per-note lock only matters if a review ever
+# runs verdicts in parallel on purpose, and a human clicks one card at a time.
+_VERDICT_LOCK = threading.Lock()
+
+
 def apply_verdict(wiki_path: Path, flag_id: str, verdict: str, target: str = "") -> dict:
     """One verdict, through the same functions the terminal walk calls."""
-    if verdict == "accept":
-        return {"ok": flag.accept(wiki_path, flag_id), "text": "accepted"}
-    if verdict == "decline":
-        return {"ok": flag.decline(wiki_path, flag_id), "text": "declined"}
+    with _VERDICT_LOCK:
+        return _apply(wiki_path, flag_id, verdict, target)
+
+
+def _apply(wiki_path: Path, flag_id: str, verdict: str, target: str) -> dict:
+    if verdict in ("accept", "decline"):
+        done = (flag.accept if verdict == "accept" else flag.decline)(wiki_path, flag_id)
+        # A flag resolved elsewhere first — a second tab, a parallel `--tty`
+        # run — must not report a verdict this call never applied.
+        past = "accepted" if verdict == "accept" else "declined"
+        return {"ok": done, "text": past if done else "already gone — reload"}
     if verdict == "retarget":
         if not target:
             return {"ok": False, "text": "no target given"}
@@ -176,7 +193,9 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def _authorised(self, supplied: str) -> bool:
-        return secrets.compare_digest(supplied, self.server.token)
+        # Compare bytes: compare_digest raises TypeError on a non-ASCII str,
+        # which would kill the handler instead of answering 403.
+        return secrets.compare_digest(supplied.encode(), self.server.token.encode())
 
     def _send(self, code: int, body: bytes, content_type: str) -> None:
         self.send_response(code)
@@ -264,6 +283,10 @@ def serve(wiki_path: Path, *, open_browser: bool = True) -> str:
     """Run the review page until the user is done. Returns the URL served."""
     server = build_server(wiki_path)
     url = f"http://127.0.0.1:{server.server_port}/?t={server.token}"
+    # Always print it. `browser_available` proves a handler resolves, not that
+    # it launches — a stale $BROWSER still returns False here, and without the
+    # URL the blocking serve_forever below is indistinguishable from a hang.
+    print(f"review at {url}")
     if open_browser:
         webbrowser.open(url)
     try:
@@ -366,6 +389,11 @@ const post = (path, data) =>
   fetch(path, {method: "POST", headers: {"Content-Type": "application/json"},
                body: JSON.stringify({...data, t: T})}).then(r => r.json());
 
+// A verdict that raises server-side answers 500, so r.json() rejects. Without
+// this the click leaves no mark at all and reads as "nothing happened".
+const sendVerdict = data =>
+  post("/verdict", data).catch(() => ({ok: false, text: "failed — see the terminal"}));
+
 function say(card, text) {
   const el = card.querySelector(".verdict");
   el.textContent = text;
@@ -403,14 +431,14 @@ document.addEventListener("click", e => {
     row.innerHTML = '<input list="notes" placeholder="wiki-relative path or slug">' +
                     '<button class="go">Move</button>';
     card.querySelector(".actions").after(row);
-    const send = () => post("/verdict", {id, verdict, target: row.querySelector("input").value})
+    const send = () => sendVerdict({id, verdict, target: row.querySelector("input").value})
       .then(res => { row.remove(); settle(card, res); });
     row.querySelector(".go").onclick = send;
     row.querySelector("input").onkeydown = ev => { if (ev.key === "Enter") send(); };
     row.querySelector("input").focus();
     return;
   }
-  post("/verdict", {id, verdict}).then(res => settle(card, res));
+  sendVerdict({id, verdict}).then(res => settle(card, res));
 });
 
 document.getElementById("done").onclick = () =>

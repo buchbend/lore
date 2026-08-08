@@ -127,6 +127,27 @@ def test_page_offers_existing_note_slugs_as_retarget_completions(vault: Path):
     assert '<option value="concepts/drain.md">' in page
 
 
+def test_body_paragraph_opening_in_bold_still_reaches_the_card(vault: Path):
+    # Dropping every line that opens with ** also drops body prose, and a
+    # reviewer must never accept a flag whose text the page withheld.
+    path = _note(vault, "reaper")
+    block = flag.render_block(
+        flag_id="a" * 12,
+        lead="The reaper drops stale rows.",
+        body="**Caveat:** the reaper skips rows a migration holds.",
+        author="claude",
+        day="2026-08-08",
+        refs=[("pr", "357")],
+        verdicts={("pr", "357"): UNCHECKED},
+        transcript="tr-1",
+        reviewed=False,
+        stamped=True,
+    )
+    path.write_text(f"{path.read_text()}\n{block}\n", encoding="utf-8")
+    page = board.render_page(flag.pending(_wiki(vault)), wiki="lore", token="t")
+    assert "the reaper skips rows a migration holds." in page
+
+
 def test_page_escapes_html_a_flag_body_could_carry(vault: Path):
     _stamped(vault, "reaper", "A lead with <script>alert(1)</script> inside.", UNCHECKED, "a" * 12)
     page = board.render_page(flag.pending(_wiki(vault)), wiki="lore", token="t")
@@ -162,6 +183,33 @@ def test_retarget_moves_the_block_and_keeps_it_pending(vault: Path):
     still = flag.pending(_wiki(vault))
     assert len(still) == 1
     assert Path(still[0].note_path).stem == "drain"
+
+
+def test_a_verdict_on_a_vanished_flag_does_not_report_success(vault: Path):
+    # A second tab, or a `--tty` run alongside, can resolve the flag first.
+    _note(vault, "reaper")
+    result = board.apply_verdict(_wiki(vault), "a" * 12, "accept")
+    assert result["ok"] is False
+    assert "accepted" not in result["text"]
+
+
+def test_concurrent_verdicts_in_one_note_all_land(vault: Path):
+    # Every verdict rewrites the whole note, and the listener is threaded,
+    # so without serialisation one write clobbers another silently.
+    ids = [f"{i:012x}" for i in range(6)]
+    for flag_id in ids:
+        _stamped(vault, "reaper", f"Fact {flag_id}.", UNCHECKED, flag_id)
+    assert flag.count_pending(_wiki(vault)) == 6
+
+    threads = [
+        threading.Thread(target=board.apply_verdict, args=(_wiki(vault), flag_id, "accept"))
+        for flag_id in ids
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert flag.count_pending(_wiki(vault)) == 0
 
 
 def test_retarget_without_a_target_is_refused(vault: Path):
@@ -208,6 +256,14 @@ def test_page_needs_the_token(vault: Path, server):
     _stamped(vault, "reaper", "Secret-ish.", UNCHECKED, "a" * 12)
     with pytest.raises(urllib.error.HTTPError) as caught:
         urllib.request.urlopen(_url(server, "/?t=wrong"), timeout=5)
+    assert caught.value.code == 403
+
+
+def test_a_non_ascii_token_is_refused_rather_than_raising(vault: Path, server):
+    # compare_digest raises TypeError on non-ASCII str, which would kill the
+    # handler and print a traceback instead of answering the request.
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        urllib.request.urlopen(_url(server, "/?t=%C3%BC"), timeout=5)
     assert caught.value.code == 403
 
 

@@ -53,6 +53,11 @@ page's behaviour lives in browser code, which the Python suite cannot
 reach — the suite covers the renderer, the verdict calls and the listener,
 and leaves the click handlers untested.
 
+The listener answers requests on threads, and each verdict rewrites its
+whole note. Two verdicts on one note would race and lose a write, so a
+lock serialises them. The terminal prompts needed no such lock, because
+the walk applied one verdict at a time.
+
 The locality boundary holds. The listener binds loopback only, it carries
 a per-run token, and it exits with the review. Lore still ships no
 network service, no sync and no remote reader, so ADR 0009 stands.
