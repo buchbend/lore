@@ -684,6 +684,8 @@ def cmd_context_log() -> None:
 # ---------------------------------------------------------------------------
 
 
+@hook_app.command("user-prompt-submit")
+@_shield_hook("UserPromptSubmit")
 def cmd_user_prompt_submit(
     cwd: str = typer.Option(None, "--cwd", help="Project working directory."),
     plain: bool = typer.Option(
