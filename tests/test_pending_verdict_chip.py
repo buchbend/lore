@@ -1,4 +1,10 @@
-"""Tests for the pending-verdict chip — slice 8 of PRD #65."""
+"""Tests for the pending-verdict chip — slice 8 of PRD #65.
+
+The chip counts the rows the picker returns, so each fixture writes the
+note file alongside the catalog entry. A bare ``status: stale`` marker
+carries no reason, which keeps the note on the worklist; see
+`test_pending_verdict_resolution.py` for the recorded-verdict rules.
+"""
 
 from __future__ import annotations
 
@@ -10,12 +16,27 @@ from lore_core.freshness import count_pending_verdicts
 
 
 def _write_catalog(wiki: Path, sections: dict, orphan_set: list[str] | None = None) -> None:
+    """Write the catalog and a matching note for every entry."""
     payload = {
         "wiki": wiki.name,
         "sections": sections,
         "orphan_set": orphan_set or [],
     }
     (wiki / "_catalog.json").write_text(json.dumps(payload))
+    for entries in sections.values():
+        for entry in entries:
+            _write_note(wiki, entry)
+
+
+def _write_note(wiki: Path, entry: dict) -> None:
+    p = wiki / entry["path"]
+    p.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["---", "type: concept"]
+    for key in ("status", "superseded_by"):
+        if entry.get(key):
+            lines.append(f"{key}: '{entry[key]}'")
+    lines += ["---", "body"]
+    p.write_text("\n".join(lines))
 
 
 def test_count_zero_when_no_catalog(tmp_path):
@@ -42,7 +63,8 @@ def test_count_status_stale_is_pending(tmp_path):
     assert count_pending_verdicts(tmp_path) == (1, False)
 
 
-def test_count_superseded_by_is_pending(tmp_path):
+def test_count_superseded_by_is_not_pending(tmp_path):
+    """Supersession is a recorded verdict, so the chip stays silent."""
     _write_catalog(
         tmp_path,
         sections={
@@ -51,7 +73,7 @@ def test_count_superseded_by_is_pending(tmp_path):
             ]
         },
     )
-    assert count_pending_verdicts(tmp_path) == (1, False)
+    assert count_pending_verdicts(tmp_path) == (0, False)
 
 
 def test_count_orphan_is_pending(tmp_path):

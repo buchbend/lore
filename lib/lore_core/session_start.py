@@ -155,8 +155,11 @@ def pending_verdict_chip(wiki: Path) -> str:
     """
     try:
         from lore_core.freshness import count_pending_verdicts
+        from lore_core.identity import current_handle
 
-        count, capped = count_pending_verdicts(wiki)
+        # The handle lets the count see disagreements, which live in the
+        # per-user sidecar. Without it the chip would undercount the picker.
+        count, capped = count_pending_verdicts(wiki, current_handle(wiki))
     except Exception:
         return ""
     if count <= 0:

@@ -65,6 +65,19 @@ def resolve_handle(wiki_path: Path, email: str) -> str:
     return email.split("@", 1)[0] if "@" in email else email
 
 
+def current_handle(wiki_path: Path) -> str:
+    """Best-effort handle for the current user, for personal-sidecar reads.
+
+    Returns ``""`` in a solo wiki with no `_users.yml` and no configured
+    git author. Callers read ``""`` as "no personal record" and skip the
+    sidecar lookup.
+    """
+    from lore_core.git import git_user_email
+
+    email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
+    return resolve_handle(wiki_path, email) if email else ""
+
+
 def resolve_display_name(wiki_path: Path, handle: str) -> str:
     """Return the display name for `handle`.
 

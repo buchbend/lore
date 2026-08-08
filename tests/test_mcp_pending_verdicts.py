@@ -72,7 +72,6 @@ def test_one_authored_marker_entry(tmp_path, monkeypatch):
             "status": "stale",
             "stale_by": "alice",
             "stale_at": "2026-05-01",
-            "stale_reason": "rewritten",
         },
     )
     _write_catalog(wiki, [{"path": "concepts/old.md", "status": "stale"}])
@@ -132,8 +131,8 @@ def test_disagreement_block_surfaces_in_response(tmp_path, monkeypatch):
 
 def test_auto_resolve_single_wiki_when_arg_omitted(tmp_path, monkeypatch):
     wiki = _setup_wiki(tmp_path, monkeypatch, wiki_name="only")
-    _write_note(wiki, "n.md", {"superseded_by": "[[x]]"})
-    _write_catalog(wiki, [{"path": "n.md", "superseded_by": "[[x]]"}])
+    _write_note(wiki, "n.md", {"status": "stale"})
+    _write_catalog(wiki, [{"path": "n.md", "status": "stale"}])
 
     result = handle_pending_verdicts()
     assert result["wiki"] == "only"
@@ -144,7 +143,7 @@ def test_explicit_wiki_arg_wins_over_auto(tmp_path, monkeypatch):
     # Two wikis — auto would be ambiguous, but explicit arg resolves it.
     _setup_wiki(tmp_path, monkeypatch, wiki_name="a")
     wiki_b = _setup_wiki(tmp_path, monkeypatch, wiki_name="b")
-    _write_note(wiki_b, "n.md", {"status": "stale", "stale_at": "2026-05-01", "stale_by": "alice", "stale_reason": "x"})
+    _write_note(wiki_b, "n.md", {"status": "stale", "stale_at": "2026-05-01", "stale_by": "alice"})
     _write_catalog(wiki_b, [{"path": "n.md", "status": "stale"}])
     # `a` has no catalog → empty
     result = handle_pending_verdicts(wiki="b")
@@ -186,7 +185,7 @@ def test_sort_order_disagreement_authored_orphan(tmp_path, monkeypatch):
     _write_note(
         wiki,
         "m-authored.md",
-        {"status": "stale", "stale_at": "2026-05-10", "stale_by": "alice", "stale_reason": "x"},
+        {"status": "stale", "stale_at": "2026-05-10", "stale_by": "alice"},
     )
     # Orphan-only
     _write_note(wiki, "a-orphan.md", {})

@@ -82,11 +82,9 @@ def _resolve_current_handle(wiki_path: Path) -> str:
     configured git author is acceptable — callers treat ``""`` as
     "no personal record" and skip the sidecar lookup.
     """
-    from lore_core.git import git_user_email
-    from lore_core.identity import resolve_handle
+    from lore_core.identity import current_handle
 
-    email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
-    return resolve_handle(wiki_path, email) if email else ""
+    return current_handle(wiki_path)
 
 
 def _freshness_block_for(

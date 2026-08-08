@@ -64,13 +64,13 @@ def _write_note(wiki: Path, rel: str, frontmatter: dict, body: str = "body") -> 
     [
         ({"path": "a.md", "status": "stale"}, set(), True),
         ({"path": "a.md", "status": "STALE"}, set(), True),  # case-insensitive
-        ({"path": "a.md", "superseded_by": "[[b]]"}, set(), True),
+        ({"path": "a.md", "superseded_by": "[[b]]"}, set(), False),  # recorded verdict
         ({"path": "a.md"}, {"a.md"}, True),
         ({"path": "a.md"}, set(), False),
         ({"path": "a.md", "status": "draft"}, set(), False),
         ({"path": "", "status": "stale"}, set(), True),  # status alone wins
-        ({"path": "", "superseded_by": ""}, set(), False),  # empty string falsy
-        ({"path": "", "superseded_by": None}, set(), False),
+        ({"path": "", "status": ""}, set(), False),  # empty string falsy
+        ({"path": "", "status": None}, set(), False),
         ({}, {"a.md"}, False),  # empty path → orphan check skipped
         ("not-a-dict", set(), False),  # type guard
     ],
@@ -82,11 +82,13 @@ def test_is_pending_from_catalog_entry(entry, orphans, expected) -> None:
 def test_count_and_list_agree_on_flagged_set(tmp_path: Path) -> None:
     """The chip predicate and the picker predicate must never drift.
 
-    Same catalog → same count from both surfaces.
+    Same catalog → same count from both surfaces. The set mixes the two
+    outcomes: `b.md` carries a recorded verdict and drops out, while
+    `a.md` and `c.md` still need one.
     """
     wiki = tmp_path / "w"
     wiki.mkdir()
-    _write_note(wiki, "a.md", {"status": "stale", "stale_by": "u", "stale_at": "2026-05-01", "stale_reason": "x"})
+    _write_note(wiki, "a.md", {"status": "stale", "stale_by": "u", "stale_at": "2026-05-01"})
     _write_note(wiki, "b.md", {"superseded_by": "[[c]]"})
     _write_note(wiki, "c.md", {})  # plain, no markers — but in orphan set
     _write_note(wiki, "d.md", {})  # not flagged anywhere
@@ -107,7 +109,7 @@ def test_count_and_list_agree_on_flagged_set(tmp_path: Path) -> None:
     entries = list_pending_verdicts(wiki, handle="")
 
     assert capped is False
-    assert count == len(entries) == 3
+    assert count == len(entries) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +153,6 @@ def test_authored_marker_cause_with_status_stale(tmp_path: Path) -> None:
             "status": "stale",
             "stale_by": "alice",
             "stale_at": "2026-05-01",
-            "stale_reason": "rewritten",
         },
     )
     _write_catalog(wiki, {"notes": [{"path": "concepts/old.md", "status": "stale"}]})
@@ -168,16 +169,18 @@ def test_authored_marker_cause_with_status_stale(tmp_path: Path) -> None:
     assert e.confirmed_at is None
 
 
-def test_authored_marker_cause_with_superseded_by(tmp_path: Path) -> None:
+def test_superseded_by_never_reaches_the_picker(tmp_path: Path) -> None:
+    """Supersession names the successor, so the verdict is already in.
+
+    The rest of the recorded-verdict rules live in
+    `test_pending_verdict_resolution.py`.
+    """
     wiki = tmp_path / "w"
     wiki.mkdir()
     _write_note(wiki, "a.md", {"superseded_by": "[[newer]]"})
     _write_catalog(wiki, {"notes": [{"path": "a.md", "superseded_by": "[[newer]]"}]})
 
-    entries = list_pending_verdicts(wiki, handle="")
-    assert len(entries) == 1
-    assert entries[0].cause == "authored_marker"
-    assert "superseded by" in entries[0].reason
+    assert list_pending_verdicts(wiki, handle="") == []
 
 
 def test_orphan_broken_cause(tmp_path: Path) -> None:
@@ -261,6 +264,7 @@ def test_disagreement_surfaced_when_personal_confirm_after_stale(tmp_path: Path)
 
 
 def test_no_disagreement_when_confirm_precedes_stale(tmp_path: Path) -> None:
+    """The stale verdict is the later word, so no conflict reopens the row."""
     wiki = tmp_path / "w"
     wiki.mkdir()
     _write_note(
@@ -280,15 +284,15 @@ def test_no_disagreement_when_confirm_precedes_stale(tmp_path: Path) -> None:
     )
     _write_catalog(wiki, {"notes": [{"path": "n.md", "status": "stale"}]})
 
-    entries = list_pending_verdicts(wiki, handle="bob")
-    assert entries[0].disagreement is None
+    # No disagreement plus a recorded verdict — the note leaves the worklist.
+    assert list_pending_verdicts(wiki, handle="bob") == []
 
 
 def test_no_handle_means_no_sidecar_read(tmp_path: Path) -> None:
     """Empty handle → confirmed_at always None regardless of sidecar contents."""
     wiki = tmp_path / "w"
     wiki.mkdir()
-    _write_note(wiki, "n.md", {"status": "stale", "stale_at": "2026-05-01", "stale_by": "alice", "stale_reason": "x"})
+    _write_note(wiki, "n.md", {"status": "stale", "stale_at": "2026-05-01", "stale_by": "alice"})
     sidecar_dir = wiki / "_verdicts"
     sidecar_dir.mkdir()
     (sidecar_dir / "bob.json").write_text(
@@ -313,7 +317,7 @@ def test_sort_disagreements_first(tmp_path: Path) -> None:
     _write_note(
         wiki,
         "a-plain.md",
-        {"status": "stale", "stale_at": "2026-05-10", "stale_by": "u", "stale_reason": "x"},
+        {"status": "stale", "stale_at": "2026-05-10", "stale_by": "u"},
     )
     _write_note(
         wiki,
@@ -341,7 +345,7 @@ def test_sort_authored_marker_before_orphan_broken(tmp_path: Path) -> None:
     wiki = tmp_path / "w"
     wiki.mkdir()
     _write_note(wiki, "x-orphan.md", {})
-    _write_note(wiki, "y-authored.md", {"status": "stale", "stale_at": "2026-05-01", "stale_by": "u", "stale_reason": "x"})
+    _write_note(wiki, "y-authored.md", {"status": "stale", "stale_at": "2026-05-01", "stale_by": "u"})
     _write_catalog(
         wiki,
         {"notes": [
@@ -361,12 +365,12 @@ def test_sort_most_recent_stale_first_within_bucket(tmp_path: Path) -> None:
     _write_note(
         wiki,
         "older.md",
-        {"status": "stale", "stale_at": "2026-04-01", "stale_by": "u", "stale_reason": "x"},
+        {"status": "stale", "stale_at": "2026-04-01", "stale_by": "u"},
     )
     _write_note(
         wiki,
         "newer.md",
-        {"status": "stale", "stale_at": "2026-05-10", "stale_by": "u", "stale_reason": "x"},
+        {"status": "stale", "stale_at": "2026-05-10", "stale_by": "u"},
     )
     _write_catalog(
         wiki,
@@ -425,8 +429,8 @@ def test_pending_entry_to_dict_shape(tmp_path: Path) -> None:
 def test_pending_entry_to_dict_minimal(tmp_path: Path) -> None:
     wiki = tmp_path / "w"
     wiki.mkdir()
-    _write_note(wiki, "n.md", {"superseded_by": "[[other]]"})
-    _write_catalog(wiki, {"notes": [{"path": "n.md", "superseded_by": "[[other]]"}]})
+    _write_note(wiki, "n.md", {"status": "stale"})
+    _write_catalog(wiki, {"notes": [{"path": "n.md", "status": "stale"}]})
 
     entries = list_pending_verdicts(wiki, handle="")
     d = pending_entry_to_dict(entries[0])
