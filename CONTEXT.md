@@ -68,8 +68,10 @@ queue file. `lore flag list` and the SessionStart chip find pending flags
 by scanning notes for the unreviewed marker. A flag accepted by hand in an
 editor is simply no longer pending.
 
-The review walk is `lore flag review`: accept, retarget, decline, skip. A
-flag a human writes lands without the marker and keeps its own words — the
+The review walk is `lore flag review`: accept, retarget, decline, skip. It
+opens a local browser page by default, colouring each flag by its ref
+verdict (`docs/adr/0011`); `--tty` keeps the terminal prompts. A flag a
+human writes lands without the marker and keeps its own words — the
 code-stamped phrasing rule constrains what a *model* may claim.
 
 ### The limit worth knowing
@@ -315,8 +317,9 @@ session note at every session boundary is gone, along with its per-wiki
   line until a human accepts it. Accept is the only verdict that removes
   it. A human-filed flag lands without it.
 - **Review walk** — the pull-based pass over unreviewed flags
-  (`lore flag review`): accept, retarget, decline, or skip. The banner
-  shows a count of pending flags and never their content.
+  (`lore flag review`): accept, retarget, decline, or skip. It runs in a
+  local browser page by default and in the terminal under `--tty`. The
+  banner shows a count of pending flags and never their content.
 - **Transcript ledger** — the machine-local store mapping each session to
   its transcript (`.lore/transcript-ledger.json`). Derived and
   rebuildable. Say "transcript ledger", not "breadcrumb ledger".
