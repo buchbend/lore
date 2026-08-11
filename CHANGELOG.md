@@ -8,6 +8,50 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.72.0] - 2026-08-11
+
+Moves the flag review walk into a browser page (#410) and restores the
+`UserPromptSubmit` hook entry point (#408).
+
+A flag's ref verdict is code-stamped and decides how much its lead may claim
+(ADR 0004). The terminal printed that verdict as text inside the origin line,
+in one colour, so a reviewer could not sort a queue by it. ADR 0011 records
+the local listener and why the locality boundary of ADR 0009 still holds.
+
+### Added
+
+- **A browser page for `lore flag review`** (#410). A listener on 127.0.0.1
+  serves it on an ephemeral port and opens it. Cards group by owning note and
+  carry the ref verdict as a colour: green for `✓`, amber for `(unchecked)`,
+  red for `(not found)`. The code-stamped lead prefix reads as a label instead
+  of as part of the sentence. The retarget field completes from the wiki's
+  existing notes.
+- **`lore flag review --tty`** (#410). Runs the terminal prompts. The command
+  falls back to them when stdout is not a terminal, and when no browser
+  resolves on the host.
+- **`tests/test_hooks_manifest_registered.py`** (#408). The test walks
+  `plugin.json` and asserts every `lore hook <sub>` string resolves to a
+  registered command. The existing hook tests call the function directly, so
+  they stayed green while the entry point was gone.
+
+### Changed
+
+- **The review page is the default surface** (#410). Verdicts call
+  `lore_core.flag.accept`, `lore_core.flag.decline` and
+  `lore_core.flag.retarget`, so the spine events and the note writes are
+  unchanged. A lock serialises them: the listener answers on threads, each
+  verdict rewrites its whole note, and two verdicts on one note raced.
+- **`lore_core.flag` exports `LEAD_MISSING` and `LEAD_UNCHECKED`** (#410). The
+  page reads the code-stamped prefixes to render them as a label.
+
+### Fixed
+
+- **`lore hook user-prompt-submit` is a registered command again** (#408).
+  Commit f258598 dropped `@hook_app.command("user-prompt-submit")` and
+  `@_shield_hook("UserPromptSubmit")` while removing an adjacent block, so
+  Claude Code reported `UsageError: No such command 'user-prompt-submit'` on
+  every prompt. The dropped shield also removed the crash guard.
+
 ## [0.71.0] - 2026-08-07
 
 Decides the nine read surfaces issue #404 listed (#406). Release 0.70.0
