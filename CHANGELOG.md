@@ -8,6 +8,39 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.73.0] - 2026-08-12
+
+Brings flag text under the team writing rules (#414).
+
+A flag lands on a wiki page, and a teammate reads it cold months after the
+session filed it. Issue and PR text carry the writing rules for that reader.
+Flag text sat outside the scope of those rules, so a flag arrived as dense
+session prose.
+
+### Added
+
+- **A "Flag text" section in the writing rules** (#414). The section names the
+  rules that apply to a lead and a body, and the three parts a flag skips: the
+  issue skeleton with EARS, rule 16 and rule 18. A flag carries the reasoning
+  that rule 18 sends to an ADR, so rule 18 cannot bind a flag.
+- **`tests/test_flag_writing_rules_wiring.py`** (#414). The test reads the word
+  ceilings out of the rules document rather than restating them. An edit to
+  rule 6 fails the `lore_flag` schema until the schema follows.
+
+### Changed
+
+- **The writing rules name flag text in their scope** (#414). The scope line
+  names it, and so does the block a team pastes into `CLAUDE.md` and
+  `AGENTS.md`.
+- **The `lore_flag` tool schema carries the rules** (#414). `lead` holds the
+  20-word ceiling and the rule to state the fact rather than the session that
+  found it. `body` holds the 25-word ceiling and asks where the fact was seen.
+  The schema is the one rules surface a session reads while it composes a flag.
+- **The SessionStart directive names a flag** (#414), beside an issue and a PR
+  body, on the line it already spends.
+- **`docs/how-to/file-and-review-flags.md` says how to write a flag** (#414),
+  for a person who files from a shell.
+
 ## [0.72.0] - 2026-08-11
 
 Moves the flag review walk into a browser page (#410) and restores the

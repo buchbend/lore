@@ -1,7 +1,7 @@
 {
   "name": "lore",
   "description": "LLM-optimized knowledge graph for AI-coding teams \u2014 transcripts captured and archived, facts filed as reviewable flags, repo-scoped context injected at session start, pluggable team briefings.",
-  "version": "0.72.0",
+  "version": "0.73.0",
   "author": {
     "name": "Christof Buchbender"
   },
