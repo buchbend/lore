@@ -1232,18 +1232,31 @@ def _tool_schema() -> list[dict]:
                 "with no ref and no transcript pointer is refused, and "
                 "refs that check out are what let the line read "
                 "plainly. Do not ask the user first, and do not flag "
-                "what a PR, issue or ADR already says."
+                "what a PR, issue or ADR already says. A teammate reads "
+                "the flag on a wiki page months later, so write both "
+                "fields to the team writing rules (`lore style show "
+                "writing-rules`)."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "lead": {
                         "type": "string",
-                        "description": "The fact, one sentence.",
+                        "description": (
+                            "The fact, one sentence of at most 20 words. "
+                            "Active voice, named actor. State the fact, "
+                            "not the session that found it."
+                        ),
                     },
                     "body": {
                         "type": "string",
-                        "description": "Why it is worth keeping. Two or three sentences.",
+                        "description": (
+                            "Why it is worth keeping. Two or three "
+                            "sentences of at most 25 words each. Name "
+                            "where you saw it: file path, command, run. "
+                            "No closing summary, no guess over a fact you "
+                            "lack."
+                        ),
                     },
                     "wiki": {
                         "type": "string",

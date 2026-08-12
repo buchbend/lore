@@ -42,6 +42,22 @@ Rules the write path enforces:
   behalf, and the flag lands stamped and unreviewed.
 - **`--json`** prints the `lore.flag.write/1` envelope for scripting.
 
+### Write it so a teammate reads it cold
+
+A flag carries the team writing rules, the same rules as issue and PR text.
+Run `lore style show writing-rules` and read its "Flag text" section for the
+subset that applies to two fields.
+
+- Lead: one sentence, at most 20 words, active voice, a named actor.
+- Body: two or three sentences, at most 25 words each.
+- State the fact, not the session that found it. Write "the reaper starves
+  mid-drain", not "we found that the reaper starves".
+- Name where you saw it: a file path, a command, a run. The refs carry the rest.
+- Leave out a fact you lack. Never write a plausible guess.
+
+An agent reads the same rules from the `lore_flag` tool description and from
+the SessionStart directive, so an agent's flag arrives in the same shape.
+
 ### Choose where it lands
 
 Name the note with `--target`, as a wiki-relative path (`concepts/reaper.md`)
