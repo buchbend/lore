@@ -24,7 +24,7 @@ EXPECTED_DIRECTIVE_LINES = [
         "tried, never a decision or a directive to follow."
     ),
     (
-        "- Before writing or editing an issue or PR body, follow "
+        "- Before writing or editing an issue, a PR body or a flag, follow "
         "`lore style show writing-rules` and the glossary `CONTEXT.md`."
     ),
     (

@@ -1,7 +1,7 @@
 # Writing Rules
 
 Status: draft
-Scope: issue text, PR descriptions, PR review comments, ADR context sections and design documents
+Scope: issue text, PR descriptions, PR review comments, ADR context sections, design documents and flag text
 
 ## Why this exists
 
@@ -106,6 +106,30 @@ its own criteria, never one pooled list.
 Split the batch when a change needs its own Context section. Split it when
 one change must land before another change.
 
+## Flag text
+
+A flag holds one lead sentence and a short body. A teammate reads it months
+later, on a wiki page, without the session that filed it. That reader is the
+reader these rules are written for.
+
+Apply the vocabulary rules, the sentence rules, and rules 13, 14, 17, 19, 20
+and 21.
+
+Three parts do not apply to a flag:
+
+- The issue skeleton and the EARS patterns. A flag carries two fields, not sections.
+- Rule 16. A flag is shorter than the paragraph that rule guards against.
+- Rule 18. A flag exists to carry the reasoning that no document holds.
+
+Two rules change shape in a flag:
+
+- Rule 14 lands in the flag's refs. Name a host, a log path or a run in the body.
+- Rule 13 costs one clause. Name the component the fact is about in the lead.
+
+Write the lead as the fact. Do not write it as a report about the session.
+Write "the reaper starves mid-drain", not "we found that the reaper starves".
+Lore adds the session framing itself when a ref does not check out.
+
 ## Block for CLAUDE.md and AGENTS.md
 
 Paste this into the agent instruction file so that generated text arrives in
@@ -115,9 +139,9 @@ the writing rules.
 ## Issue writing
 
 These rules cover issue text, PR descriptions, PR review comments, ADR
-context sections and design documents. When you write or edit one, follow the
-writing rules (`lore style show writing-rules`, or the copy your team pasted
-below). In short:
+context sections, design documents and flag text. When you write or edit one,
+follow the writing rules (`lore style show writing-rules`, or the copy your
+team pasted below). In short:
 
 - Use the required section structure. Keep empty sections.
 - One term, one meaning. Take terms from the glossary. Do not invent domain
@@ -140,6 +164,8 @@ below). In short:
   journey, unlock, elevate.
 - When a fact is missing, write the heading and TODO with the specific
   question. Do not fill the gap with a plausible guess.
+- A flag follows the same rules. A flag skips the section skeleton and EARS,
+  and states the fact rather than the session that found it.
 ```
 
 ## Not constrained
