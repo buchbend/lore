@@ -145,19 +145,28 @@ plan() dispatch — copy that pattern.
    contract change (new subcommand, schema, install behaviour); patch
    for bug fixes and doc-only changes. 1.0 lands when the install
    contract stops moving.
-2. **Bump both** `pyproject.toml:version` and
-   `.claude-plugin/plugin.json:version` to the same string.
-3. **Add a `## [X.Y.Z] — YYYY-MM-DD` section** in `CHANGELOG.md`
-   under `[Unreleased]`. Follow Keep a Changelog headings
-   (Added / Changed / Fixed / Deprecated / Removed / Security).
+2. **Run `python3 tools/release.py --part minor`.** The script branches
+   off `origin/main`, bumps `pyproject.toml:version` and
+   `.claude-plugin/plugin.json:version` in lockstep, writes the
+   `## [X.Y.Z] - YYYY-MM-DD` section in `CHANGELOG.md`, runs the
+   version-sync guard, commits `chore: release X.Y.Z`, pushes and opens
+   the pull request.
 
-   `tests/test_version_sync.py` enforces all three in pytest — if any
-   one is missing or disagrees, the test suite fails. Run
-   `pytest tests/test_version_sync.py` after bumping.
-4. **Commit + tag**: `git commit -m "release: vX.Y.Z" && git tag vX.Y.Z`.
-5. **Push with tags**: `git push && git push --tags`.
+   Write the section body yourself and pass it as `--notes notes.md`.
+   Without it the section holds the commit subjects that landed since
+   the last release, which is a record rather than a summary. Follow
+   Keep a Changelog headings (Added / Changed / Fixed / Deprecated /
+   Removed / Security). `--dry-run` prints the plan and writes nothing.
+   `--no-pr` stops after the commit.
+3. **Merge the pull request.** `main` is branch protected: the `test`
+   check has to pass, and direct pushes are blocked for everyone,
+   admins included. The script never merges.
 
-After push, users running `claude plugin update lore@lore` see the
+`tests/test_version_sync.py` enforces all three files in pytest — if any
+one is missing or disagrees, the test suite fails. The script runs that
+test before it commits.
+
+After the merge, users running `claude plugin update lore@lore` see the
 new version and re-cache; users on `pipx install
 git+https://github.com/buchbend/lore.git` re-install via
 `pipx upgrade lore` (or re-run the install command).
