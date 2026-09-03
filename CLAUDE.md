@@ -11,7 +11,9 @@
 Every merge to `main` that ships plugin-relevant behavior (hooks, MCP server,
 curator/capture code, skills) **must** end with a version bump — bump
 `.claude-plugin/plugin.json`, `pyproject.toml`, and `CHANGELOG.md` together in
-one `chore: release X.Y.Z` commit, landed via its own PR. `main` is
+one `chore: release X.Y.Z` commit, landed via its own PR. Run
+`python3 tools/release.py --notes notes.md` to cut it — the script bumps the
+three files, runs the version-sync guard, commits and opens the PR. `main` is
 branch-protected: the `test` check must pass, and direct pushes are blocked
 (admins included). `claude plugin update lore@lore`
 only re-fetches on a version *change*; without the bump, installed plugin
