@@ -1,17 +1,18 @@
 ---
 title: Retire flags; attach facts to repo artifacts; trim Lore to a context machine
-status: draft
-epic: TODO (file with /lore-workflow:to-epic once this draft is ratified)
+status: accepted
+epic: https://github.com/buchbend/lore/issues/419
 repos:
   - buchbend/lore
 ---
 
 # PRD 0014: Retire flags; attach facts to repo artifacts; trim Lore to a context machine
 
-> Source of truth for this epic. Tracker: TODO.
-> Decisions to record: one ADR for the filing rule, superseding ADR 0007, ADR 0008
-> (flag lands marked unreviewed) and ADR 0011 (review walk in a browser page); one
-> new ADR for federated search over the wiki index and GitHub.
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/419).
+> Decisions recorded in ADR [0012](../adr/0012-agents-file-facts-as-repo-artifacts.md)
+> (filing rule; supersedes ADR 0007, 0008 and 0011) and ADR
+> [0013](../adr/0013-search-over-wiki-and-github-is-federated-not-cached.md)
+> (federated search).
 > Design input: back-and-forth session 2026-09-16 (transcript index, buchbend/lore).
 
 ## Problem

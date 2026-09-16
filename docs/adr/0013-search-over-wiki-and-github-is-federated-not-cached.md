@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-09-16
 - **Deciders:** Christof Buchbender
-- **Relates to:** PRD [0014](../prd/0014-retire-flags-attach-facts-to-artifacts.md);
+- **Relates to:** PRD [0014](../prd/0014-retire-flags-attach-facts-to-artifacts.md), epic [#419](https://github.com/buchbend/lore/issues/419);
   ADR [0012](0012-agents-file-facts-as-repo-artifacts.md)
 
 ## Context

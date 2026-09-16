@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-09-16
 - **Deciders:** Christof Buchbender
-- **Relates to:** PRD [0014](../prd/0014-retire-flags-attach-facts-to-artifacts.md);
+- **Relates to:** PRD [0014](../prd/0014-retire-flags-attach-facts-to-artifacts.md), epic [#419](https://github.com/buchbend/lore/issues/419);
   supersedes ADR [0007](0007-session-notes-retired-flags-are-the-crossing.md),
   ADR [0008](0008-flag-lands-marked-unreviewed.md) and
   ADR [0011](0011-flag-review-runs-in-a-local-ephemeral-browser-page.md)
