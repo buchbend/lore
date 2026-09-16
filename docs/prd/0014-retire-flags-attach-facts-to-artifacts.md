@@ -70,7 +70,7 @@ Lore's remaining jobs. Lore is a context machine and a token-saving
 machine. Deterministic lookup first; an LLM call only where a lookup
 cannot answer.
 
-- Know, per repo and per org, where ADRs, PRDs, docs and issues live, and the team's language for them (glossary, writing rules, issue register).
+- Know, per repo and per org, where ADRs, PRDs, docs and issues live, and the team's language for them (glossary and writing rules).
 - Mirror issue and PR text locally, so an agent reads artifacts from disk and search instead of calling `gh` each time. Duplication is the point.
 - Inject the human-written wiki topic notes at session start, scoped to the repo.
 - Enforce look-first retrieval: tier resolve, context pack, codemap, artifact mirror, then exploration.
