@@ -9,14 +9,14 @@ repos:
 # PRD 0014: Retire flags; attach facts to repo artifacts; trim Lore to a context machine
 
 > Source of truth for this epic. Tracker: TODO.
-> Decisions to record: one ADR for the new crossing, superseding ADR 0007, ADR 0008
+> Decisions to record: one ADR for the filing rule, superseding ADR 0007, ADR 0008
 > (flag lands marked unreviewed) and ADR 0011 (review walk in a browser page); one
 > new ADR for federated search over the wiki index and GitHub.
-> Design input: back-and-forth session 2026-09-16 (transcript ledger, buchbend/lore).
+> Design input: back-and-forth session 2026-09-16 (transcript index, buchbend/lore).
 
 ## Problem
 
-The flag is the only session-to-wiki crossing (ADR 0007). Its write side
+The flag is the only path from a session to the wiki (ADR 0007). Its write side
 works. Its review side never ran.
 
 - `lore status` on 2026-09-16 (host saiyajin, vault `~/git/vault`): wiki
@@ -50,7 +50,7 @@ Lore stops writing to the wiki. Agents attach facts to the repo artifact
 that already has a reader and a lifecycle. Lore becomes a context
 machine over those artifacts plus human-written wiki topic notes.
 
-The crossing:
+The filing rule, one line per kind of fact:
 
 - A docs-versus-code gap, a trap, or a missing fact becomes an issue. A trivial fix close to the session's work is the exception. The agent fixes it in the session's branch and names it in the PR body.
 - A fact about an existing issue or PR becomes a comment on that issue or PR.
@@ -77,18 +77,18 @@ cannot answer.
 - Keep a local copy of issue and PR text, so an agent reads artifacts from disk and search instead of calling `gh` each time. Duplication is the point.
 - Inject the human-written wiki topic notes at session start, scoped to the repo.
 - Enforce look-first retrieval: tier resolve, context pack, codemap, federated search, then exploration.
-- Notice its own lookup gaps. When an agent spends many turns finding a fact a lookup should have served, the agent files an issue on the Lore repo. Opt-in per user, default off.
-- Capture transcripts and the transcript ledger (personal layer, ADR 0009). Unchanged.
+- Notice its own retrieval misses. A retrieval miss is a fact a Lore tool did not return, found instead by reading files or running commands. The agent files each miss as an issue on the Lore repo. Opt-in per user, default off.
+- Capture transcript copies and the transcript index (personal layer, ADR 0009). Unchanged.
 
 ## Implementation decisions
 
-- **Crossing** — the `lore-workflow:file-issue` skill and `gh` are the write path. Lore ships no new write verb. The session directive replaces "file a flag" with "attach the fact to its artifact". The MCP `lore_flag` tool is removed.
+- **Filing rule** — the `lore-workflow:file-issue` skill and `gh` are the write path. Lore ships no new write verb. The session directive replaces "file a flag" with "file the fact as an issue, a comment or a PR". The MCP `lore_flag` tool is removed.
 - **Agent-filed marker** — every issue an agent opens carries the label `agent-filed`, created on demand per repo. Every comment an agent posts opens with a line naming itself as agent-filed. An agent may comment on any issue or PR in the org. An agent closes only issues it opened itself (dead ends, closed as not-planned); it never changes the state of a human's issue.
 - **Decision gate** — grilling and domain-modeling keep writing ADRs and PRDs directly; the user negotiated them. Every other path to an ADR, a PRD or a wiki topic note is a PR. The session directive states the rule. The implement-issue, tdd and orchestrate-epic skills carry it.
 - **Federated search** — `lore_search` runs the wiki FTS query and one `gh search issues` call. The `gh` call targets the attached repo and the wiki's own git remote, with `--json number,title,state,url,updatedAt --limit 5`. The result holds two sections: wiki hits, then artifact hits. No merged ranking; GitHub ranks its section. No storage, no sync: when `gh` fails or is offline the tool returns the wiki section alone and says so. GitHub search covers titles, bodies and comments. The search API allows 30 calls a minute; the query log shows about 20 lookups a day. Before an agent comments, closes, merges or polls, it reads live through `gh`; search is for finding only. The context pack adds `body` to the fields it already fetches for the session's focus issues, so the common case needs no search at all.
-- **Local copy, rejected** — a markdown copy of issue and PR text under `$LORE_CACHE` was reviewed twice on 2026-09-16. Reading a known artifact from disk saves no tokens (issue #417: 3360 bytes via `gh`, 3151 cached). The one-call incremental sync loses comment threads past 100 entries and cannot see deletions. Lookup-gap feedback reporting offline work or rate limits reopens the question. The spec for that day, in five parts. Full list per repo diffed on update time. Re-fetch at exactly 100 comments. Sync time in frontmatter. Distinct index type with a capped share. Secret scanners on ingest.
-- **Lookup-gap feedback** — root config keys `feedback.lore_issues: false` and `feedback.lore_issues_repo: buchbend/lore`. When true, the orient, implement-issue and tdd skills carry one session-end check. The check asks whether the agent needed repeated search or exploration for a fact the codemap, context pack or federated search should have served. If so, the agent files one issue on `buchbend/lore` naming the fact, the tools tried and the turn count. When false, the skills skip the check. Never forced on. The trigger is the agent's own judgement at session end; no spine counter. A counter is the upgrade path if judgement proves too eager or too quiet.
-- **Session-end report** — the agent's final message lists the artifacts the session created or commented on. The skills carry the instruction; the ledger linkage block (issues, PRs) is the source the agent checks against. No hook output: SessionEnd stdout never reaches the user.
+- **Local copy, rejected** — a markdown copy of issue and PR text under `$LORE_CACHE` was reviewed twice on 2026-09-16. Reading a known artifact from disk saves no tokens (issue #417: 3360 bytes via `gh`, 3151 cached). The one-call incremental sync loses comment threads past 100 entries and cannot see deletions. Retrieval-miss feedback reporting offline work or rate limits reopens the question. The spec for that day, in five parts. Full list per repo diffed on update time. Re-fetch at exactly 100 comments. Sync time in frontmatter. Distinct index type with a capped share. Secret scanners on ingest.
+- **Retrieval-miss feedback** — root config keys `feedback.retrieval_misses: false` and `feedback.retrieval_misses_repo: buchbend/lore`. When true, the orient, implement-issue and tdd skills carry one session-end check. The check asks whether the agent needed repeated search or exploration for a fact the codemap, context pack or federated search should have served. If so, the agent files one issue on `buchbend/lore` naming the fact, the tools tried and the turn count. When false, the skills skip the check. Never forced on. The trigger is the agent's own judgement at session end; no spine counter. A counter is the upgrade path if judgement proves too eager or too quiet.
+- **Session-end report** — the agent's final message lists the artifacts the session created or commented on. The skills carry the instruction; the transcript index's linkage block (issues, PRs) is the source the agent checks against. No hook output: SessionEnd stdout never reaches the user.
 - **Dedup** — before filing, the agent searches open issues by the refs behind the fact. The file-issue skill carries that step. No Lore-side index.
 - **Sensitivity gate** — the publish gate keeps running on outbound issue and comment text. Fail closed, quarantine withheld text. Scope narrows from flag text to artifact text.
 - **Non-GitHub backends** — out of scope. The artifact location stays configurable in principle; only GitHub ships.
@@ -103,7 +103,7 @@ cannot answer.
 
 - Session-end report: prose in skills, so a grep test over the skill files asserts the instruction is present.
 - Flag removal: fixture vault with flag blocks → cleaned notes with every non-flag line intact; dry-run plan equals applied result.
-- Retirement: tests for removed paths are deleted with the code. Retained suites (capture, ledger, search, context pack, codemap, style) are the regression net.
+- Retirement: tests for removed paths are deleted with the code. Retained suites (capture, transcript index, search, context pack, codemap, style) are the regression net.
 - Federated search: stubbed `gh` output → two-section result; `gh` failure → wiki section plus a stated omission. No network in tests.
 - Decision gate: skill text is prose, so the check is a grep test over `lore-workflow/skills/*/SKILL.md` asserting the PR rule is present in each decision-writing skill.
 - Hook speed: one timing test with a threshold, marked slow, run in CI on Linux only.
@@ -121,7 +121,7 @@ cannot answer.
 - When `lore_search` runs with `gh` available, the result shall hold a wiki section and an artifact section with `owner/repo#number` refs.
 - If `gh` fails, then `lore_search` shall return the wiki section and name the omission.
 - When the context pack lists a focus issue, the pack shall include the issue body.
-- While `feedback.lore_issues` is false, no skill shall file an issue on the Lore repo.
+- While `feedback.retrieval_misses` is false, no skill shall file an issue on the Lore repo.
 - When the code sweep completes, the report shall list each candidate module with its last caller (code, skill or template), per the prose-caller rule.
 
 ## Out of scope
@@ -133,7 +133,11 @@ cannot answer.
 
 ## Glossary changes
 
-- Retire: flag, crossing (as defined for flags), origin line, unreviewed marker, review walk.
-- Add: lookup gap, a fact an agent found by exploration that a deterministic lookup should have served.
+- Retire: flag, crossing, origin line, unreviewed marker, review walk.
+- Rename: transcript ledger becomes transcript index in prose; the file name stays.
+- Add: transcript copy, a Claude Code transcript Lore copied into a wiki's `.transcripts` folder.
+- Add: filing rule, the rule saying which artifact holds each kind of fact.
+- Add: federated search, one `lore_search` call returning wiki notes from the local index, then issues and PRs from a live GitHub search.
+- Add: retrieval miss, a fact a Lore tool did not return that the agent then found by reading files or running commands.
 - Add: agent-filed, the label and the opening line marking an artifact an agent created.
 - No new term for "the per-repo record of where ADRs, PRDs, docs and issues live". The PRD says "codemap plus writing rules". Issue #417 owns the question.
