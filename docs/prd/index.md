@@ -19,4 +19,5 @@ PRDs are the source of truth for decisions. Each PRD lives at
 0011-session-note-retirement-flag-architecture
 0012-retire-producerless-surfaces
 0013-retire-the-session-note-lifecycle
+0014-retire-flags-attach-facts-to-artifacts
 ```
