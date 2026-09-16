@@ -307,8 +307,9 @@ Agents write nothing into the wiki on their own. Decisions in ADR 0012
 and 0013, spec in PRD 0014.
 
 - **Filing rule** — the rule saying which artifact holds each kind of
-  fact: an issue, a comment, a dead end closed as not-planned, an ADR as
-  a PR, a topic-note edit as a PR. Say "filing rule", not "crossing".
+  fact. The artifacts are an issue, a comment, a dead end closed as
+  not-planned, an ADR as a PR, and a topic-note edit as a PR. Say
+  "filing rule", not "crossing".
 - **Agent-filed** — an issue, comment or PR an agent created. The
   `agent-filed` label and the opening line carry the mark.
 - **Retrieval miss** — a fact a Lore tool did not return, that the agent
