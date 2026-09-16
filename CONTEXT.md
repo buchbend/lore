@@ -38,10 +38,10 @@ call, no prose. The entry is the durable record that the session happened
 and what it touched.
 
 **Zero or more flags.** A **flag** is one team-relevant fact an agent
-files *during* the session, deliberately (`lore_core/flag.py`). It is the
-only crossing from a private session to the team wiki. Nothing crosses by
-default: a session that files no flag leaves nothing in the wiki but its
-ledger entry.
+files *during* the session, deliberately (`lore_core/flag.py`). Retired by ADR 0012:
+the flag code leaves with the PRD 0014 retirement slice. Until then a
+session that files no flag leaves nothing in the wiki but its transcript
+index entry.
 
 Lore writes no session note. There is no compose pipeline, no buffer, no
 segmentation, no typed-fact extraction, no note render, and no LLM call at
@@ -49,6 +49,10 @@ a session boundary. Retired in `#361`; decisions in `docs/adr/0007`–`0009`,
 spec in `docs/prd/0011`.
 
 ## The flag
+
+> Retired by ADR 0012. Agents file facts as repo artifacts (see
+> "Filing and retrieval" in the glossary). This section describes the
+> code as it ships until the PRD 0014 retirement slice removes it.
 
 A flag is appended to the **owning topic note** at write time, not queued.
 It carries:
@@ -148,8 +152,8 @@ SessionStart injects a deliberately small, deterministic banner
 no LLM call and no network call. It holds a status line, an optional
 `## Focus` block for the attached project, and a last-active-day recap
 (`lore_core/session_start.py:last_active_day_recap`). The recap renders
-off the transcript ledger in at most three lines. Line one names the
-last day the ledger saw work, its session count and its repos. Line two
+off the transcript index in at most three lines. Line one names the
+last day the index saw work, its session count and its repos. Line two
 names the branches those sessions ran on. Line three names the issue and
 PR numbers they touched.
 Freshness lines join the banner only when there is positive evidence
@@ -170,8 +174,8 @@ not from anything injected ambiently:
   prose, then commits via a CLI verb.
 - `lore_flag` — file one team-relevant fact into its owning topic note,
   marked unreviewed (`lore_core/flag.py`). The only wiki write an agent
-  makes from a session, and the only crossing from a session to the team
-  surface.
+  makes from a session. Retired by ADR 0012; removed with the PRD 0014
+  retirement slice.
 - `lore_journal_write` — the AI/human scratch journal
   (`lore_core/journal.py`); freeform, no LLM abstraction, no
   propagation, never a source for ambient context.
@@ -297,36 +301,46 @@ Terms used in the workflow layer and orchestration:
   pull request, an epic and a batch of issues are pieces of work. A team
   points at one by its issue number, never by a coined short name.
 
-### Flag architecture
+### Filing and retrieval
 
-The flag is the crossing. The compose pipeline that used to write a
-session note at every session boundary is gone, along with its per-wiki
-`curator.*` config block. Decisions in ADR 0007–0009, spec in PRD 0011.
+Agents write nothing into the wiki on their own. Decisions in ADR 0012
+and 0013, spec in PRD 0014.
 
-- **Flag** — one team-relevant fact an agent files during a session: a
-  lead sentence, a short body, and an origin line. The only LLM-authored
-  content a session writes into a wiki. Say "flag", not "gem" or
-  "prospect".
-- **Crossing** — the path a fact takes from a working session to the team
-  wiki. The flag is the deliberate crossing, and the only one — the
-  teardown landed.
-- **Origin line** — the deterministic attribution line closing a flag
-  block: author, date, code-verified refs, transcript pointer. A write
-  carrying no transcript pointer and no ref is refused.
+- **Filing rule** — the rule saying which artifact holds each kind of
+  fact: an issue, a comment, a dead end closed as not-planned, an ADR as
+  a PR, a topic-note edit as a PR. Say "filing rule", not "crossing".
+- **Agent-filed** — an issue, comment or PR an agent created. The
+  `agent-filed` label and the opening line carry the mark.
+- **Retrieval miss** — a fact a Lore tool did not return, that the agent
+  then found by reading files or running commands. An agent files each
+  miss as an issue on the Lore repo when the user opts in.
+- **Federated search** — one `lore_search` call that returns two lists.
+  The first holds wiki notes from the local index. The second holds
+  issues and PRs from a live GitHub search. Nothing is stored.
+- **Transcript copy** — a Claude Code transcript Lore copied into a
+  wiki's `.transcripts` folder. Machine-local, never pushed.
+- **Transcript index** — the list of captured transcripts with what each
+  session worked on (`.lore/transcript-ledger.json`). Derived and
+  rebuildable. Say "transcript index", not "transcript ledger" or
+  "breadcrumb ledger".
+- **Linkage block** — the transcript index entry's `repo`, `branch`,
+  `prs`, `issues`, `commits` and `files` keys, written by capture with no
+  LLM call. It is what `lore_drill` reads to answer "which sessions
+  touched X" and what the SessionStart recap renders from.
+
+### Flag architecture (retired by ADR 0012)
+
+The terms below name code that ships until the PRD 0014 retirement
+slice removes it. Do not use them in new text.
+
+- **Flag** — one team-relevant fact an agent filed into a wiki topic
+  note: a lead sentence, a short body, and an origin line.
+- **Origin line** — the attribution line closing a flag block: author,
+  date, code-verified refs, transcript pointer.
 - **Unreviewed marker** — the token ending an agent-filed flag's origin
-  line until a human accepts it. Accept is the only verdict that removes
-  it. A human-filed flag lands without it.
-- **Review walk** — the pull-based pass over unreviewed flags
-  (`lore flag review`): accept, retarget, decline, or skip. It runs in a
-  local browser page by default and in the terminal under `--tty`. The
-  banner shows a count of pending flags and never their content.
-- **Transcript ledger** — the machine-local store mapping each session to
-  its transcript (`.lore/transcript-ledger.json`). Derived and
-  rebuildable. Say "transcript ledger", not "breadcrumb ledger".
-- **Linkage block** — the ledger entry's `repo`, `branch`, `prs`,
-  `issues`, `commits` and `files` keys, written by capture with no LLM
-  call. It is what `lore_drill` reads to answer "which sessions touched
-  X" and what the SessionStart recap renders from.
+  line until a human accepted it.
+- **Review walk** — the pass over unreviewed flags (`lore flag review`):
+  accept, retarget, decline, or skip.
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".
