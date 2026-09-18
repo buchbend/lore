@@ -113,6 +113,52 @@ def test_an_unterminated_fence_is_left_alone(vault: Path) -> None:
     assert note.read_text(encoding="utf-8") == before
 
 
+def test_an_unbalanced_fence_leaves_the_whole_note_alone(vault: Path, capsys) -> None:
+    """A deleted close line would pair one block's open with the next block's close.
+
+    The prose between the two open markers would go with the pair. The
+    command refuses the note instead and names it.
+    """
+    intact = BLOCK.replace("ab12cd34ef56", "0011223344ff")
+    body = (
+        "# Reaper\n\n"
+        "<!-- lore:flag id=ab12cd34ef56 -->\n"
+        "**A lead whose close line a human deleted.**\n"
+        "\n"
+        "Human prose between the two blocks.\n"
+        "\n" + intact
+    )
+    note = _note(_wiki(vault), "reaper", body)
+    before = note.read_text(encoding="utf-8")
+
+    dry = migrate_strip_flag_blocks(dry_run=True)
+    assert note.read_text(encoding="utf-8") == before
+
+    applied = migrate_strip_flag_blocks(dry_run=False)
+
+    assert note.read_text(encoding="utf-8") == before
+    assert dry["skipped"] == 1
+    assert applied["skipped"] == 1
+    assert applied["blocks"] == 0
+    out = capsys.readouterr().out
+    assert "skipped" in out
+    assert "reaper" in out
+
+
+def test_a_note_with_windows_line_endings_is_reported_as_skipped(vault: Path, capsys) -> None:
+    """The pattern anchors on a bare newline, so a CRLF block never matches."""
+    note = _note(_wiki(vault), "reaper", "# Reaper\n\n" + BLOCK)
+    note.write_bytes(note.read_text(encoding="utf-8").replace("\n", "\r\n").encode())
+    before = note.read_bytes()
+
+    result = migrate_strip_flag_blocks(dry_run=False)
+
+    assert note.read_bytes() == before
+    assert result["skipped"] == 1
+    assert result["blocks"] == 0
+    assert "skipped" in capsys.readouterr().out
+
+
 def test_rerunning_after_apply_changes_nothing(vault: Path) -> None:
     _note(_wiki(vault), "reaper", "# Reaper\n\n" + BLOCK)
 
