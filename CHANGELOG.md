@@ -8,6 +8,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.73.1] - 2026-09-18
+
+### Fixed
+
+- **SessionStart refreshes CODEMAP.md only inside a git work tree.** Outside
+  git the codemap discovery falls back to a full filesystem walk plus a
+  content hash of every file. A session started in a home directory walked
+  the whole home tree (696k files, 596 GB on the reporting host) on every
+  start and pinned a CPU core until Claude Code killed the hook. The hook now
+  checks `git rev-parse --is-inside-work-tree` first and skips the refresh
+  elsewhere. `lore codemap` on an explicit path keeps the walk fallback.
+
 ## [0.73.0] - 2026-08-12
 
 Brings flag text under the team writing rules (#414).
