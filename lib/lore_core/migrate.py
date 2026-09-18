@@ -7,6 +7,8 @@ once after upgrading to this version.
 
 from __future__ import annotations
 
+import re
+
 from rich.console import Console
 
 from lore_core.io import atomic_write_text
@@ -236,8 +238,7 @@ def migrate_strip_broken_wikilinks(
     verb = "would strip" if dry_run else "stripped"
     console.print()
     console.print(
-        f"[bold]{verb} {total_replacements} broken wikilinks[/bold] "
-        f"across {files_touched} file(s)."
+        f"[bold]{verb} {total_replacements} broken wikilinks[/bold] across {files_touched} file(s)."
     )
     if by_target:
         console.print()
@@ -252,3 +253,72 @@ def migrate_strip_broken_wikilinks(
         "replacements": total_replacements,
         "by_target": dict(by_target),
     }
+
+
+# ---------------------------------------------------------------------------
+# Flag-block removal (the flag crossing is retired; ADR 0012)
+# ---------------------------------------------------------------------------
+
+#: One whole fenced flag block, open marker through close marker. Matching the
+#: pair rather than walking lines is what makes a half-written fence safe: an
+#: unterminated open simply never matches, so no prose after it is dropped.
+_FLAG_BLOCK_RE = re.compile(
+    r"^<!-- lore:flag id=[0-9a-f]{12} -->\n.*?^<!-- /lore:flag -->\n?",
+    re.DOTALL | re.MULTILINE,
+)
+
+
+def strip_flag_blocks(text: str) -> tuple[str, int]:
+    """Return ``(text without its flag blocks, blocks removed)``.
+
+    Every line outside a block survives byte-identical, blank lines
+    included — the command runs over notes a human reads.
+    """
+    return _FLAG_BLOCK_RE.subn("", text)
+
+
+def migrate_strip_flag_blocks(
+    wiki_filter: str | None = None,
+    dry_run: bool = True,
+) -> dict:
+    """Remove every flag block from every note in the vault.
+
+    The blocks are dropped, not migrated: git history keeps them.
+    Returns ``{"files": N, "blocks": M}``.
+    """
+    wikis = discover_wikis(wiki_filter)
+    files_touched = 0
+    total_blocks = 0
+
+    for wiki_path in wikis:
+        wiki_name = wiki_path.name
+        for fpath in discover_notes(wiki_path):
+            if fpath.name in SKIP_FILES:
+                continue
+            if any(part in SKIP_DIRS for part in fpath.parts):
+                continue
+            try:
+                text = fpath.read_text(errors="replace")
+            except OSError:
+                continue
+            new_text, n = strip_flag_blocks(text)
+            if n == 0:
+                continue
+            files_touched += 1
+            total_blocks += n
+            rel = fpath.relative_to(wiki_path)
+            if dry_run:
+                console.print(f"[dim]would remove {n:2d}[/dim] {wiki_name}/{rel}")
+            else:
+                atomic_write_text(fpath, new_text)
+                console.print(f"[green]removed {n:2d}[/green] {wiki_name}/{rel}")
+
+    verb = "would remove" if dry_run else "removed"
+    console.print()
+    console.print(
+        f"[bold]{verb} {total_blocks} flag block(s)[/bold] across {files_touched} file(s)."
+    )
+    if dry_run:
+        console.print("[dim]Re-run with --apply to write changes.[/dim]")
+
+    return {"files": files_touched, "blocks": total_blocks}
