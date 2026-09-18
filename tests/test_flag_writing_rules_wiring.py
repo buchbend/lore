@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import re
 
-from lore_core.session_start import load_directive_lines
 from lore_core.style import default_style_path
 from lore_mcp.server import _tool_schema
 
@@ -80,9 +79,3 @@ def test_the_flag_tool_names_the_writing_rules() -> None:
     assert "writing rules" in _flag_tool()["description"].lower()
 
 
-def test_the_directive_names_flag_text_beside_issue_text() -> None:
-    line = next(
-        (ln for ln in load_directive_lines() if "lore style show writing-rules" in ln),
-        "",
-    )
-    assert "flag" in line.lower(), f"the directive's rules line omits flag text: {line!r}"

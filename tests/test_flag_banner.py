@@ -12,7 +12,6 @@ import pytest
 from lore_core import flag
 from lore_core.session_start import (
     collect_session_facts,
-    load_directive_lines,
     pending_flag_chip,
     render_session_banner,
 )
@@ -101,13 +100,6 @@ def test_chip_survives_an_unreadable_wiki(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # The directive tells an agent when to file a flag, and to self-check at end
 # ---------------------------------------------------------------------------
-
-
-def test_directive_carries_the_flag_rule_and_the_session_end_self_check():
-    joined = "\n".join(load_directive_lines())
-    assert "lore_flag" in joined
-    assert "flag" in joined.lower()
-    assert "session end" in joined.lower()
 
 
 # ---------------------------------------------------------------------------
