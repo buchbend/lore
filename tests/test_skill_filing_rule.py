@@ -30,6 +30,7 @@ def test_file_issue_labels_every_issue_agent_filed() -> None:
     text = _text("file-issue")
     assert "`agent-filed`" in text
     assert "label" in text.lower()
+    assert "--label agent-filed" in text, "the gh issue create command must carry the flag itself"
 
 
 def test_file_issue_creates_the_label_when_missing() -> None:

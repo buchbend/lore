@@ -63,8 +63,8 @@ goes into **one PR** on that branch.
 
 Decision gate: an ADR, a PRD or a wiki topic-note edit outside a grilling or
 domain-modeling session is a PR. A human merges it. This track runs outside both of
-those sessions, so any ADR it drafts goes into the PR this track already opens — never
-a direct commit to the target branch.
+those sessions. Any ADR it drafts goes into the PR this track already opens — never a
+direct commit to the target branch.
 
 Apply `domain-modeling`'s three [ADR](../domain-modeling/ADR-FORMAT.md) criteria to
 the decision the change embodies:
