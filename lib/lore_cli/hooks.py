@@ -491,6 +491,31 @@ def _read_hook_payload() -> dict:
     return payload
 
 
+def _refresh_codemap(cwd: Path) -> None:
+    """Refresh the local, gitignored CODEMAP.md for the repo at *cwd*.
+
+    Deterministic, no LLM, no network; the fingerprint no-op fast path makes
+    an unchanged tree cheap, so it runs inline. Never allowed to crash
+    SessionStart.
+
+    Only inside a git work tree. Outside git the codemap falls back to a full
+    filesystem walk plus a content hash of every file; a session started in a
+    home directory would walk the whole home tree on every start and pin a CPU
+    core until Claude Code kills the hook.
+    ponytail: inline generate; if a very large repo's first-run parse adds
+    perceptible startup latency, move this to a detached spawn like the
+    transcript mirror.
+    """
+    try:
+        from lore_core import codemap as _codemap
+
+        if not _codemap.is_git_work_tree(cwd):
+            return
+        _codemap.generate(cwd, quiet=True)
+    except Exception:  # noqa: BLE001 - codemap must never crash SessionStart
+        pass
+
+
 @hook_app.command("session-start")
 @_shield_hook("SessionStart")
 def cmd_session_start(
@@ -516,20 +541,8 @@ def cmd_session_start(
     cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(str(cwd_resolved))
 
-    # Refresh the local, gitignored CODEMAP.md for this repo. Deterministic,
-    # no LLM, no network; the fingerprint no-op fast path makes an unchanged
-    # tree cheap, so it is safe to run inline. Never allowed to crash
-    # SessionStart.
-    # ponytail: inline generate; if a very large repo's first-run parse adds
-    # perceptible startup latency, move this to a detached spawn like the
-    # transcript mirror below.
     if not probe:
-        try:
-            from lore_core import codemap as _codemap
-
-            _codemap.generate(cwd_resolved, quiet=True)
-        except Exception:  # noqa: BLE001 - codemap must never crash SessionStart
-            pass
+        _refresh_codemap(cwd_resolved)
 
     # Surface pending `.lore.yml` offers at the top of the banner.
     # Defensive: offer rendering reads multiple files and classifies state;
