@@ -82,9 +82,9 @@ def test_walk_fields_marks_file_vs_default(tmp_path: Path) -> None:
 
     assert fields_by_path["journal.enabled"].source == "file"
     assert fields_by_path["journal.enabled"].value is False
-    # backend was not set in YAML — should be default "auto"
-    assert fields_by_path["curator.backend"].source == "default"
-    assert fields_by_path["curator.backend"].value == "auto"
+    # display_name was not set in YAML — should be the empty default
+    assert fields_by_path["user.display_name"].source == "default"
+    assert fields_by_path["user.display_name"].value == ""
 
 
 def test_get_field_returns_leaf_info(tmp_path: Path) -> None:
@@ -103,7 +103,7 @@ def test_get_field_unknown_path_raises(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(KeyError, match="unknown config path"):
-        get_field(root, "curator.no_such_field")
+        get_field(root, "user.no_such_field")
 
 
 def test_get_field_on_group_raises(tmp_path: Path) -> None:
@@ -111,19 +111,19 @@ def test_get_field_on_group_raises(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(KeyError, match="config group"):
-        get_field(root, "curator")
+        get_field(root, "observability")
 
 
 def test_set_field_persists_and_round_trips(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, set_field
 
-    root = _fresh_root(tmp_path, "curator:\n  backend: openai\njournal:\n  enabled: false\n")
+    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\njournal:\n  enabled: false\n")
     fi = set_field(root, "journal.enabled", "true")
     assert fi.value is True
     assert fi.source == "file"
     # Re-read; siblings preserved.
     assert get_field(root, "journal.enabled").value is True
-    assert get_field(root, "curator.backend").value == "openai"
+    assert get_field(root, "user.display_name").value == "Ada"
 
 
 def test_set_field_creates_missing_parents(tmp_path: Path) -> None:
@@ -148,7 +148,7 @@ def test_set_field_rejects_unknown_path(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(KeyError, match="unknown config path"):
-        set_field(root, "curator.no_such_field", "true")
+        set_field(root, "user.no_such_field", "true")
 
 
 def test_set_field_bool_accepts_common_spellings(tmp_path: Path) -> None:
@@ -169,12 +169,11 @@ def test_schema_tree_covers_all_leaves() -> None:
     rows = schema_tree()
     paths = {p for p, _, _, _ in rows}
     # Spot-check leaves we ship today.
-    assert "curator.backend" in paths
     assert "journal.enabled" in paths
     assert "observability.runs.keep" in paths
     assert "user.display_name" in paths
     # No group should appear (only leaves).
-    assert "curator" not in paths
+    assert "user" not in paths
     assert "observability" not in paths
 
 
@@ -213,10 +212,10 @@ def test_unset_field_reverts_to_default(tmp_path: Path) -> None:
 def test_unset_field_preserves_siblings(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, unset_field
 
-    root = _fresh_root(tmp_path, "curator:\n  backend: openai\njournal:\n  enabled: true\n")
+    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\njournal:\n  enabled: true\n")
     unset_field(root, "journal.enabled")
     assert get_field(root, "journal.enabled").value is False
-    assert get_field(root, "curator.backend").value == "openai"  # untouched
+    assert get_field(root, "user.display_name").value == "Ada"  # untouched
 
 
 def test_unset_field_noop_when_not_set(tmp_path: Path) -> None:
@@ -266,13 +265,13 @@ def test_get_field_unknown_path_suggests_nearest(tmp_path: Path) -> None:
     from lore_core.root_config import get_field
 
     root = _fresh_root(tmp_path, "")
-    with pytest.raises(KeyError, match="did you mean.*curator.backend"):
-        get_field(root, "curator.backand")
+    with pytest.raises(KeyError, match="did you mean.*user.display_name"):
+        get_field(root, "user.display_nam")
 
 
 def test_set_field_unknown_path_suggests_nearest(tmp_path: Path) -> None:
     from lore_core.root_config import set_field
 
     root = _fresh_root(tmp_path, "")
-    with pytest.raises(KeyError, match="did you mean.*curator.backend"):
-        set_field(root, "curator.backand", "openai")
+    with pytest.raises(KeyError, match="did you mean.*user.display_name"):
+        set_field(root, "user.display_nam", "Ada")

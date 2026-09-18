@@ -1,4 +1,4 @@
-# Troubleshooting: hooks, missing flags, and capture
+# Troubleshooting: hooks, capture, and what lands in a wiki
 
 **Goal:** find the cause of a specific symptom using the three
 observability commands, without reading source. Background on *why*
@@ -33,79 +33,19 @@ Escalate through these steps, each one level deeper:
 ## "Nothing appeared in the wiki after my session"
 
 That is the normal case. Lore writes nothing into a wiki on its own: a
-session leaves a transcript-ledger entry, and a wiki note only when an
-agent or a human filed a flag. If you expected a flag, see
-["My flag never appeared in the wiki"](#my-flag-never-appeared-in-the-wiki).
+session leaves a transcript-ledger entry, and nothing else. A fact worth
+keeping leaves the session as a repo artifact — an issue, a comment, or a
+pull request on the wiki repo.
 
 To confirm capture itself ran, `lore status` shows the last hook fire.
 `lore doctor` checks the hook wiring. Neither depends on anything
 having been written to a wiki.
 
-## "A ref in my flag says `(unchecked)`"
-
-The ref could not be checked, which is not the same as being wrong. Commits,
-tags and files are verified against local git; pull requests and issues go to
-`gh`. When any of that is unavailable — you're offline, `gh` isn't installed
-or authenticated, the flag was written outside the repository — the check
-cannot run, and the ref is stamped `(unchecked)`.
-
-**Positive evidence only:** a check that could not run never promotes a ref and
-never demotes it either. A failed `gh` call means GitHub was unreachable, not
-that the PR is fake, so it can never render `(not found)` — otherwise an offline
-laptop would rewrite history. Writing never fails on this; it only hedges. See
-[ADR 0004](../adr/0004-authority-phrasing-is-code-stamped.md).
-
-`(not found)` is the other verdict, and it means the opposite: a check *did*
-run and came back empty. That ref does not exist, and its line is demoted to
-"Claimed in session, ref not found: …".
-
-## "My flag never appeared in the wiki"
-
-Three refusals, each with its own message on stderr.
-
-**`a flag needs an origin: pass a transcript pointer or at least one ref`** —
-the write carried neither. Inside a Claude Code session
-`$CLAUDE_SESSION_ID` supplies the transcript automatically; a plain shell has
-no session id, so pass at least one `--ref pr:123` / `--ref commit:3f9a2c1`.
-Exit code 1, nothing written.
-
-**`no wiki resolved — pass --wiki, or run inside an attached repo`** — the
-working directory maps to no attachment. Run `lore attach attachments show
-$PWD` to see what covers the path, or name the wiki with `--wiki`. Exit code
-2.
-
-**`withheld (<category>) — text held in quarantine <id>`** — the publish gate
-found a secret, an email address, a phone number or other personal data in
-the flag text — or failed while checking — and withheld it before anything
-touched the wiki. The gate fails closed, so a `gate-error` category means
-the check itself broke, not that your text was bad. Read the
-held text with `lore quarantine show <id>`, rewrite the fact without the
-material that tripped the gate, and file it again. Exit code 1.
-
-A flag that landed somewhere unexpected was routed, not lost: without
-`--target`, Lore appends to the top-ranked existing note for the lead
-sentence. `lore flag list` prints every pending flag with its note, and
-`lore flag review` moves one with the retarget verdict.
-
-## "The banner says N pending flags and I can't see them"
-
-By design — the banner carries a count and never flag content, so a
-teammate's unreviewed text cannot reach your context window through the
-banner alone. Run `lore flag list` for the leads, or `lore flag review` to
-walk them. The chip disappears at zero.
-
-If the count looks wrong, remember it is a live scan of the wiki's notes for
-the `unreviewed` marker, not a stored queue. Editing a marker out of a note
-by hand accepts that flag as far as the count is concerned, and records no
-`flag-review` event — which is why `lore status`'s pending count and its
-accept/decline counters are not expected to sum. See
-[measure flag quality](measure-flag-quality.md).
-
 ## "My wiki still holds session notes under `sessions/`"
 
 Those files are inert markdown. No Lore code reads them: `lore lint`
 no longer walks the `sessions/` tree, `lore_context_pack` returns no
-`sessions` key, and `lore briefing` gathers nothing from the directory.
+`sessions` key, and nothing else reads the directory.
 Keep the files, move them, or delete them — Lore behaves the same either
 way. Delete them with `git rm` if you want the tree quiet; the wiki's git
 history keeps a copy.

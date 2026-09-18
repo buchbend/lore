@@ -22,7 +22,7 @@ into one story, and **three** read commands instead of seven. Issue
 the flush state machine and the trace_id's one minter went with it (see
 below) — but the spine, `lore status`, `lore trace` and `lore doctor`
 stayed, now correlating the surviving producers: hooks, the hygiene
-curator, transcript sync, the retention janitor, and flags.
+curator, transcript sync, and the retention janitor.
 
 ---
 
@@ -38,7 +38,7 @@ appended to `$LORE_ROOT/.lore/spine.jsonl` through one writer,
 ```
 
 - **`source`** — the producer, one of the closed `SOURCES` set:
-  `hook`, `curator`, `drain`, `janitor`, `install`, `mcp`, `flag`. A
+  `hook`, `curator`, `drain`, `janitor`, `install`, `mcp`. A
   source outside this set is a bug, not data — `validate_envelope()`
   rejects it.
 - **`level`** — `info` / `warn` / `error`.
@@ -60,7 +60,6 @@ appended to `$LORE_ROOT/.lore/spine.jsonl` through one writer,
 | `janitor` | `lore_core/janitor.py`, `lore_core/run_retention.py`, `lore_cli/_crash_log.py` | Retention deletions/downgrades and their failures |
 | `install` | *(reserved, no producer yet)* | Onboarding-wizard events (PRD 0005 pillar C); not wired as of this writing — `lore init` doesn't emit to the spine today |
 | `mcp` | `lore_core/ledger.py` | `ledger-query` — one per `lore_drill` call whose query names an issue, a PR, an epic or a file path; a query that names none of those returns without emitting |
-| `flag` | `lore_core/flag.py` | `flag-write` (outcome `written`/`withheld`) and `flag-review` (verdict `accept`/`decline`/`retarget`), each carrying `flag_id` — read by `lore status`'s flags section and `lore trace flag` (`lore_core/flag_metrics.py`) |
 
 A drain event kind or a spine `ErrorCode` value is added only together
 with the code that produces it — a kind or code with no raiser is a
@@ -97,7 +96,7 @@ events, the matching drain events, and a published note's
 `linkage.trace_id` frontmatter field. Issue #361 deleted
 `chapter_flush.py` with the rest of the compose pipeline, so nothing
 mints a fresh `trace_id` today, and nothing stamps `linkage.trace_id`
-onto a note a flag appends to.
+onto a note.
 
 `lore trace <selector>` (below) still reads every spine record sharing
 a `trace_id`, sorted by timestamp — there is no separate correlation
@@ -106,10 +105,7 @@ correct for any future producer that threads one through. Until one
 exists, a `trace-id`, `session-id` or note-path/`[[wikilink]]` selector
 only resolves against pre-retirement data —
 `trace_ids_for_session()` (`lore_core/trace.py`) skips every record
-whose `trace_id` is unset, which today is all of them. `flag` is the
-one selector with live data behind it, since it bypasses trace_id
-correlation entirely and reads flag-write/flag-review events directly
-(see "`lore trace <selector>`" below).
+whose `trace_id` is unset, which today is all of them.
 
 ---
 
@@ -174,17 +170,15 @@ so a reader never has to guess where to look next.
 
 **Module:** `lore_cli/status_cmd.py`. The single glanceable "is Lore
 healthy right now?" dashboard — capture liveness (`Hook`, `Session`),
-per-wiki connection health (dirty / ahead / behind / reachable), a
-**flags** section (per-wiki flags written, withheld, pending, accepted,
-declined, retargeted — `lore_core.flag_metrics` aggregating the
-`source="flag"` spine events `flag.py` emits, plus `flag.count_pending`
-for the pending count itself), retention usage, an absorbed **news**
+per-wiki connection health (dirty / ahead / behind / reachable),
+retention usage, an absorbed **news**
 section (background drain events — the old `lore news`), and an alerts
 section where every warning names its exact drill-down command. Reads
 only; exit code is 0 when healthy, nonzero when any alert fires. Every
 row reflects a state some code still writes — issue #377 removed five
 capture rows (`Last note`, `Last run`, `Last flush`, `Pending`, `Lock`)
-and the flushes panel the compose pipeline used to feed.
+and the flushes panel the compose pipeline used to feed, and the flag
+retirement removed the flags section.
 
 ### `lore trace <selector>`
 
@@ -195,14 +189,9 @@ JSONL). Absorbs the debugging role of the old `lore log` / `lore runs` /
 `lore proc`. The selector accepts a trace_id (see above — no current
 producer mints one), a session_id (`trace_ids_for_session()` resolves
 every trace_id that session touched, but skips any record whose
-`trace_id` is unset, so it finds nothing on post-retirement data), `flag`
-(lists every flag-write/flag-review spine event as a flat, chronological
-table instead of a tree — bypasses trace_id correlation entirely, the
-one selector with live data today; a flag carries no trace_id, it is a
-standing-alone fact; pairing one flag's write and verdict lines by
-`flag_id` gives its review latency), or a note path / `[[wikilink]]`
-(reverse-resolved through the note's own `linkage.trace_id` — unset on
-any note a flag appended to, since no current writer stamps it). The
+`trace_id` is unset, so it finds nothing on post-retirement data), or a
+note path / `[[wikilink]]` (reverse-resolved through the note's own
+`linkage.trace_id` — unset, since no current writer stamps it). The
 `dead` and `last` selectors are gone with the flush lifecycle record
 they resolved through; either now raises the same "no trace, session,
 or note matches" error as any other unknown selector.
@@ -254,7 +243,4 @@ automatically as part of every opportunistic janitor pass.
   command follows, including these three and the deprecating-a-verb
   pattern the now-removed aliases used.
 - How-to: [`../how-to/onboarding.md`](../how-to/onboarding.md),
-  [`../how-to/troubleshooting.md`](../how-to/troubleshooting.md),
-  [`../how-to/measure-flag-quality.md`](../how-to/measure-flag-quality.md)
-  — the known-gem baseline and directive flip-probe that use the flags
-  section and `lore trace flag`.
+  [`../how-to/troubleshooting.md`](../how-to/troubleshooting.md).

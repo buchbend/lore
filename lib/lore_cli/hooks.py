@@ -950,10 +950,10 @@ def capture(
         )
         raise
 
-    # Session boundary: hand the wiki's commits to the remote. Every flag
-    # filed this session is already committed, so this is the step that
-    # puts them on a teammate's machine. It costs one network round trip
-    # at the end of a session, which is why it runs here and not per turn.
+    # Session boundary: hand the wiki's commits to the remote. Whatever
+    # landed in the wiki this session is already committed, so this is the
+    # step that puts it on a teammate's machine. It costs one network round
+    # trip at the end of a session, which is why it runs here and not per turn.
     boundary: dict[str, object] = {}
     if event == "session-end":
         try:

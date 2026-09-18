@@ -379,16 +379,6 @@ def _repo_text(rel: str) -> str:
     return (REPO / rel).read_text(errors="replace")
 
 
-def test_briefing_cmd_docstring_marks_the_one_shot_parked() -> None:
-    """`gather()` yields no sessions, so `_run_oneshot` returns before compose,
-    publish and mark on every real call. PRD 0011 parks that path rather than
-    reviving it; the module docstring has to say so."""
-    import lore_cli.briefing_cmd as mod
-
-    doc = (mod.__doc__ or "").lower()
-    assert "parked" in doc, "briefing_cmd's docstring must name the parked one-shot path"
-
-
 def test_run_log_declares_no_session_note_record_type() -> None:
     from lore_core.run_log import RunLogger
 
