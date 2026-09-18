@@ -102,9 +102,7 @@ def trace(
     # Argument default is None (not `...`) so this callback-only Typer app
     # collapses to a single command instead of a click Group requiring a
     # subcommand after the argument — same workaround as drill_cmd/search_cmd.
-    selector: str = typer.Argument(
-        None, help="trace-id | session-id | note path or [[wikilink]]"
-    ),
+    selector: str = typer.Argument(None, help="trace-id | session-id | note path or [[wikilink]]"),
     plain: bool = typer.Option(False, "--plain", help="Aligned text, no tree glyphs/color."),
     json_out: bool = typer.Option(False, "--json", help="Raw spine event list (JSONL)."),
 ) -> None:

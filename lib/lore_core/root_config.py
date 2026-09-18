@@ -133,8 +133,7 @@ def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:
     for key, value in raw.items():
         if not path and key in RETIRED_BLOCKS:
             warnings.warn(
-                f"root_config: '{key}' is retired and is ignored; "
-                f"remove it from {source}",
+                f"root_config: '{key}' is retired and is ignored; remove it from {source}",
                 stacklevel=3,
             )
             continue

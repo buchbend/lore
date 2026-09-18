@@ -117,8 +117,7 @@ def _merge(default_obj, overrides: dict[str, Any], source: Path):
             # written before the teardown carries the whole block, and a
             # warning per key buries the single fact the reader needs.
             warnings.warn(
-                f"wiki_config: '{key}' is retired and is ignored; "
-                f"remove it from {source}",
+                f"wiki_config: '{key}' is retired and is ignored; remove it from {source}",
                 stacklevel=3,
             )
             continue
