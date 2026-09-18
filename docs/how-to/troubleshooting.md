@@ -45,7 +45,7 @@ having been written to a wiki.
 
 Those files are inert markdown. No Lore code reads them: `lore lint`
 no longer walks the `sessions/` tree, `lore_context_pack` returns no
-`sessions` key, and `lore briefing` gathers nothing from the directory.
+`sessions` key, and nothing else reads the directory.
 Keep the files, move them, or delete them — Lore behaves the same either
 way. Delete them with `git rm` if you want the tree quiet; the wiki's git
 history keeps a copy.

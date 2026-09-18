@@ -32,13 +32,6 @@ class ModelsConfig:
 
 
 @dataclass
-class BriefingConfig:
-    auto: bool = True
-    audience: str = "personal"  # personal | team
-    sinks: list[str] = field(default_factory=list)
-
-
-@dataclass
 class HeartbeatConfig:
     enabled: bool = True
     cooldown_s: int = 120
@@ -55,7 +48,6 @@ class BreadcrumbConfig:
 class WikiConfig:
     git: GitConfig = field(default_factory=GitConfig)
     models: ModelsConfig = field(default_factory=ModelsConfig)
-    briefing: BriefingConfig = field(default_factory=BriefingConfig)
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     breadcrumb: BreadcrumbConfig = field(default_factory=BreadcrumbConfig)
 
@@ -63,7 +55,7 @@ class WikiConfig:
 #: Config blocks lore used to honour and no longer does. Named explicitly so
 #: a stale file gets a warning that says what happened, rather than the
 #: generic unknown-key notice.
-RETIRED_BLOCKS = frozenset({"curator"})
+RETIRED_BLOCKS = frozenset({"curator", "briefing"})
 
 
 def load_wiki_config(wiki_dir: Path) -> WikiConfig:
@@ -125,8 +117,8 @@ def _merge(default_obj, overrides: dict[str, Any], source: Path):
             # written before the teardown carries the whole block, and a
             # warning per key buries the single fact the reader needs.
             warnings.warn(
-                f"wiki_config: '{key}' retired with the compose pipeline "
-                f"and is ignored; remove it from {source}",
+                f"wiki_config: '{key}' is retired and is ignored; "
+                f"remove it from {source}",
                 stacklevel=3,
             )
             continue

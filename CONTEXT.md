@@ -85,21 +85,6 @@ Findings land in
 Obsidian is skipped rather than clobbered. `--apply` is required to
 write; the default is a dry-run.
 
-## Briefings
-
-`lore_core/briefing/gather.py:gather()` is the read-only half of
-`lore briefing`. It reports the wiki's briefing ledger and its sink
-config. Briefing publish is manual (`lore briefing publish`, `lore
-briefing mark`); there is no automatic daily trigger.
-
-**Briefings are parked** (PRD 0011). `gather()` used to collect notes
-filed under `<wiki>/sessions/` since the last briefing and hand their
-bodies to the prose composer. PRD 0013 removed that walk, so
-`new_sessions` always comes back empty and a one-shot gather yields
-nothing. What a briefing should read now that the session note is gone
-is an open question, deliberately left open rather than guessed. See
-`docs/how-to/matrix-bot.md` for the Matrix sink walkthrough.
-
 ## Ambient banner vs. MCP pull
 
 SessionStart injects a deliberately small, deterministic banner
@@ -178,7 +163,6 @@ above:
 | Private quarantine sidecar | `lore_core/quarantine.py` |
 | Deterministic ref verification (positive evidence only) | `lore_core/ref_verify.py` |
 | Frontmatter-only hygiene passes | `lore_curator/hygiene.py` |
-| Briefing gather (read-only) | `lore_core/briefing/gather.py` |
 | Repo ADR/PRD pull (filesystem side) | `lore_core/repo_docs.py` |
 | MCP server (tool dispatch) | `lore_mcp/server.py` |
 | Hook dispatch (the seven `lore hook ...` entry points) | `lore_cli/hooks.py` |

@@ -112,9 +112,9 @@ def relative_day(
     """Day-granular rendering: "today" / "yesterday" / "3d ago" / falls
     back to :func:`relative_time` for anything ≥7 days.
 
-    Use for briefing/digest contexts where calendar-day semantics matter
-    more than hours-since (e.g., "last briefing today" reads better than
-    "last briefing 14h ago" when it was this morning).
+    Use for digest contexts where calendar-day semantics matter more than
+    hours-since (e.g., "synced today" reads better than "synced 14h ago"
+    when it happened this morning).
     """
     parsed = _parse(ts)
     if parsed is None:

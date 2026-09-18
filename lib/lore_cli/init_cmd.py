@@ -94,7 +94,7 @@ def _maybe_set_display_name(root: Path, display_name: str | None) -> None:
     if not _is_interactive():
         return
     name = typer.prompt(
-        "Display name (used in session notes and briefings; blank to skip)",
+        "Display name (used where Lore names you; blank to skip)",
         default="",
         show_default=False,
     )
@@ -491,7 +491,7 @@ def init(
     display_name: str = typer.Option(
         None,
         "--display-name",
-        help="Personal display name for session notes/briefings (skips the prompt).",
+        help="Personal display name (skips the prompt).",
     ),
 ) -> None:
     """Run the unified onboarding wizard (idempotent and resumable)."""

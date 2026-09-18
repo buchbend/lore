@@ -18,9 +18,6 @@ class TestWikiConfigDefaults:
         assert cfg.models.simple == "claude-haiku-4-5"
         assert cfg.models.middle == "claude-sonnet-4-6"
         assert cfg.models.high == "claude-opus-4-7"
-        assert cfg.briefing.auto is True
-        assert cfg.briefing.audience == "personal"
-        assert cfg.briefing.sinks == []
         assert cfg.breadcrumb.mode == "normal"
         assert cfg.breadcrumb.scope_filter is True
 
@@ -47,16 +44,6 @@ class TestWikiConfigNestedDataclasses:
         assert cfg.models.high == "off"
         assert cfg.models.simple == "claude-haiku-4-5"  # defaults preserved
         assert cfg.models.middle == "claude-sonnet-4-6"
-
-    def test_load_briefing_sinks_parsed(self, tmp_path: Path):
-        """YAML with briefing.sinks list → parsed correctly."""
-        config_file = tmp_path / ".lore-wiki.yml"
-        config_file.write_text(
-            "briefing:\n  sinks:\n    - matrix:#dev-notes\n    - markdown:~/foo.md\n"
-        )
-        cfg = load_wiki_config(tmp_path)
-        assert cfg.briefing.sinks == ["matrix:#dev-notes", "markdown:~/foo.md"]
-        assert cfg.briefing.auto is True  # default preserved
 
     def test_load_breadcrumb_mode_parsed(self, tmp_path: Path):
         """YAML with breadcrumb.mode="quiet" → parsed correctly."""
@@ -144,11 +131,11 @@ class TestWikiConfigWriteBack:
     def test_set_field_persists_and_round_trips(self, tmp_path: Path) -> None:
         from lore_core.wiki_config import get_field, set_field
 
-        wiki = _fresh_wiki(tmp_path, "briefing:\n  audience: team\n")
+        wiki = _fresh_wiki(tmp_path, "breadcrumb:\n  mode: quiet\n")
         fi = set_field(wiki, "git.auto_push", "true")
         assert fi.value is True
         assert get_field(wiki, "git.auto_push").value is True
-        assert get_field(wiki, "briefing.audience").value == "team"  # untouched
+        assert get_field(wiki, "breadcrumb.mode").value == "quiet"  # untouched
 
     def test_set_field_rejects_bad_type_file_unchanged(self, tmp_path: Path) -> None:
         from lore_core.wiki_config import set_field
@@ -194,7 +181,6 @@ class TestWikiConfigWriteBack:
         assert "git.auto_commit" in paths
         assert "heartbeat.cooldown_s" in paths
         assert "models.simple" in paths
-        assert "briefing.audience" in paths
         assert "heartbeat.enabled" in paths
         assert "breadcrumb.mode" in paths
         assert "git" not in paths  # groups excluded, leaves only

@@ -105,15 +105,10 @@ or use `lore install --upgrade` once the binary is on your PATH.
 If you'd rather skip the bootstrap script and install by hand:
 
 ```bash
-pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"  # CLI + passive-capture extras
+pipx install "git+https://github.com/buchbend/lore.git#egg=lore"  # the CLI
 lore install                                            # detect installed integrations, wire each
 lore init                                               # scaffold a vault + set $LORE_ROOT
 ```
-
-The `[capture]` extra adds the `claude-agent-sdk` + `anthropic` packages the
-briefing uses to call a model. Drop it (`#egg=lore`) to install without them;
-transcript capture, retrieval, sessions and flags all work regardless — only
-the LLM-backed briefing needs a model.
 
 > **Note:** the bare `pipx install lore` form will *not* work — the
 > name `lore` is squatted on PyPI by an unrelated package. Use the
@@ -175,7 +170,7 @@ That alone gives you the `lore` plugin (hooks, skills, subagents, MCP); add
 `/plugin install lore-workflow@lore` for the planning-chain skills too — see
 [§ Two plugins](#two-plugins-lore--lore-workflow). Installing `lore` alone
 does not install the `lore` CLI itself. Run
-`pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"`
+`pipx install "git+https://github.com/buchbend/lore.git#egg=lore"`
 separately, or use `lore install --integration claude` once `lore` is on
 your PATH (it'll subprocess `claude plugin install lore@lore` for you).
 
@@ -217,12 +212,11 @@ For an editable dev checkout:
 ```bash
 cd /path/to/your/lore-checkout
 git pull origin main
-pip install -e ".[capture]"
+pip install -e .
 lore install
 ```
 
-(Fresh installs follow [§ Install](#install) above — the `[capture]` extras
-are already part of the canonical command.)
+(Fresh installs follow [§ Install](#install) above.)
 
 ### Attach a repo — one step per repo you work in
 
@@ -295,18 +289,13 @@ models:
   simple: claude-haiku-4-5
   middle: claude-sonnet-4-6
   high:   claude-opus-4-7
-briefing:
-  audience: personal
-  sinks:
-    - markdown:~/lore-briefing.md
 breadcrumb:
   mode: normal                  # quiet | normal | verbose
   scope_filter: true
 ```
 
 All fields default to sane values — start without a `.lore-wiki.yml`
-and add knobs only as you need them. Briefings publish manually
-(`lore briefing publish`) — there is no automatic cadence.
+and add knobs only as you need them.
 
 ## Observability
 
@@ -379,108 +368,6 @@ ln -s ~/git/myorg/team-knowledge ~/lore/wiki/team
 
 All `/lore:*` commands work with a single mount; no routing prompts.
 
-## Curator LLM backend — Claude subscription, Anthropic API, or OpenAI-compatible
-
-The curator can talk to three different LLM backends. Pick one based on
-where your API budget lives:
-
-| Backend | Selector | Auth | Used when |
-|---|---|---|---|
-| **Subscription** (`claude` CLI on PATH) | `subscription` | your existing `claude` login | you have a Claude Pro / Team subscription and the `claude` binary on PATH — zero extra cost per curator call |
-| **Anthropic API** (SDK) | `api` | `ANTHROPIC_API_KEY` | you want Claude models but pay per token |
-| **OpenAI-compatible** | `openai` | `LORE_OPENAI_API_KEY` + `LORE_OPENAI_BASE_URL` | you have an institutional gateway, a local model server (vLLM, llama.cpp, Ollama with the openai shim, LiteLLM, OpenRouter, …) or want to point at the real OpenAI API |
-| **auto** | `auto` | first one that works | the default — `claude` on PATH → API key → OpenAI gateway → no LLM (cascade rules only) |
-
-Selection precedence, highest first: CLI flag (`--backend`) → env var
-`LORE_LLM_BACKEND` → `curator.backend` in `$LORE_ROOT/.lore/config.yml`
-→ `auto`.
-
-### OpenAI-compatible backend setup
-
-Two files under `$LORE_ROOT/.lore/`. Non-secrets go in YAML; the API key
-goes in a separate, gitignored env file.
-
-**`$LORE_ROOT/.lore/config.yml`** — diffable, shareable:
-
-```yaml
-curator:
-  backend: openai
-  openai:
-    base_url: https://chat.kiconnect.nrw/api/v1   # your gateway root
-    # api_key_env: LORE_OPENAI_API_KEY            # optional override
-    model_simple: gpt-4o-mini                     # cheap tier
-    model_middle: gpt-4o                          # default tier (extraction at synthesis_model_tier: middle)
-    model_high:   gpt-4o                          # heaviest tier (synthesis_model_tier: high)
-```
-
-**`$LORE_ROOT/.lore/secrets.env`** — secrets only, mode `0600`:
-
-```
-# Auto-loaded by Lore at curator startup.
-# Process env wins; this file fills in anything the shell didn't export.
-LORE_OPENAI_API_KEY=sk-...
-```
-
-```bash
-chmod 600 $LORE_ROOT/.lore/secrets.env
-```
-
-That's it. The whole `$LORE_ROOT/.lore/` directory is gitignored at the
-vault level (see the default `.gitignore` written by `lore init`), so
-the file never ends up in a commit. Lore warns at load time if the file
-is readable by group or other.
-
-**Resolution rules per field**, highest precedence first:
-
-1. process env (e.g. `LORE_OPENAI_API_KEY` exported in your shell)
-2. `$LORE_ROOT/.lore/secrets.env`
-3. `$LORE_ROOT/.lore/config.yml` → `curator.openai.*`
-4. unset → curator falls back to subscription/API/no-LLM per `auto`
-
-The grammar of `secrets.env` is the dotenv subset every editor renders:
-one `KEY=VALUE` per line, `#` for comments, blank lines ignored, single
-or double quotes around the value optional and stripped on read. Any
-line that isn't shaped like that emits a one-line warning and is
-skipped — Lore will not silently fall over because of a stray paste.
-
-Recognised env vars (any of these can live in `secrets.env` *or* the
-shell — same precedence):
-
-| Var | Purpose |
-|---|---|
-| `LORE_LLM_BACKEND` | overrides `curator.backend` (`subscription` \| `api` \| `openai` \| `auto`) |
-| `LORE_OPENAI_BASE_URL` | OpenAI-compatible API root |
-| `LORE_OPENAI_API_KEY` | API key for the OpenAI-compatible endpoint |
-| `LORE_OPENAI_MODEL_SIMPLE` / `_MIDDLE` / `_HIGH` | per-tier model override |
-| `ANTHROPIC_API_KEY` | for the `api` backend |
-
-Verify the wiring with `lore doctor`, which checks selectability.
-
-### Recommended openai-backend setup (briefing narration)
-
-The narrator used to default to Mistral-119B, which has a known structural
-failure on retraction-heavy transcripts — it asserts decisions and outcomes
-the transcript later walks back (see experiments **005**, **006**, **007**
-in the [`lore-experiments`](https://github.com/) repo). Swapping the high
-tier to **GPT-OSS-120B with `reasoning_effort=high`** roughly halves
-contradicted claims (4 → 2 on the 007 sample) and passes the pre-committed
-gate.
-
-```yaml
-curator:
-  openai:
-    base_url: https://chat.kiconnect.nrw/api/v1
-    model_high: "Openai GPT OSS 120B"
-    reasoning_effort_high: high
-```
-
-- **Latency**: GPT-OSS-120B at `reasoning_effort=high` takes 80–100s per
-  call vs ~10s for Mistral.
-- **Cost**: both Mistral-119B and GPT-OSS-120B are free on the
-  kiconnect.nrw endpoint Lore points at by default.
-- **Backwards compatibility**: existing Mistral-only configs keep working
-  unchanged — leave `reasoning_effort_high` unset and nothing flips.
-
 ## Scheduling the curator — cost-free defaults
 
 The hygiene curator (propagates `supersedes:` / `implements:`
@@ -520,9 +407,8 @@ No files move. If your vault does not yet match the canonical shape,
   rebuilt from.
 - **Cheap context is automatic; expensive context is explicit.** Inject
   bounded, deterministic context at SessionStart and PreCompact (reading
-  cached files the linter regenerates). Invoke the LLM only at judgment
-  points: session extraction, contradiction checks, import enrichment,
-  curator review, briefing prose.
+  cached files the linter regenerates). Lore itself calls no model: the
+  agent in the session does the judging.
 - **Compose, don't replace.** Skills orchestrate; MCP and CLI tools
   provide retrieval primitives; peer knowledge tools layer alongside.
 - **No PreToolUse auto-enrichment.** Auto-injecting vault content on

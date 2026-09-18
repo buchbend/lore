@@ -31,19 +31,11 @@ search = [
     "model2vec>=0.3",
     "watchdog>=4",
 ]
-sinks = [
-    "matrix-nio>=0.24",  # matrix
-    "requests>=2.31",    # slack, discord, gh discussions
-]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
     "ruff>=0.5",
     "mypy>=1.10",
-]
-capture = [
-    "anthropic>=0.40",
-    "openai>=1.40",
 ]
 codemap = [
     "tree-sitter>=0.23",
