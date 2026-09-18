@@ -159,3 +159,39 @@ def test_context_pack_focus_issue_carries_the_body(tmp_path, monkeypatch):
     assert result["epic_state"] == [
         {"number": 162, "title": "Epic 162", "state": "OPEN", "body": "the ask"}
     ]
+
+
+def test_context_pack_focus_issue_on_a_feature_branch_carries_the_body(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    _init_repo(
+        repo, branch="feat/422-federated-search", remote_url="git@github.com:acme/widgets.git"
+    )
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path / "no-such-vault"))
+    argv_log = _stub_gh(
+        tmp_path,
+        monkeypatch,
+        payload={"number": 422, "title": "Federated search", "state": "OPEN", "body": "the ask"},
+    )
+
+    result = gather(cwd=repo, repo_path=str(repo))
+
+    assert result["focus_issues"] == [422]
+    assert argv_log.read_text().splitlines() == [
+        "issue view 422 --repo acme/widgets --json number,title,state,body"
+    ]
+    assert result["epic_state"] == [
+        {"number": 422, "title": "Federated search", "state": "OPEN", "body": "the ask"}
+    ]
+
+
+def test_search_covers_the_attached_repo_and_the_wiki_remote(tmp_path, monkeypatch):
+    notes = _wiki(tmp_path, monkeypatch)
+    _init_repo(notes.parent, branch="main", remote_url="git@github.com:acme/knowledge.git")
+    argv_log = _stub_gh(tmp_path, monkeypatch, payload=[ISSUE_HIT])
+
+    handle_search("alpha", wiki="demo", for_repo="acme/widgets", k=5)
+
+    assert argv_log.read_text().splitlines() == [
+        "search issues alpha --repo acme/widgets --repo acme/knowledge "
+        "--json number,title,state,url,updatedAt --limit 5"
+    ]
