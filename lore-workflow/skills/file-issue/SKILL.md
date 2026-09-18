@@ -124,13 +124,19 @@ back.
 ## 4. Post the exact file you linted
 
 ```bash
+gh label create agent-filed --repo <owner>/<repo> --color ededed \
+  --description "opened by an agent" 2>/dev/null || true
 gh issue create --repo <owner>/<repo> --title "<imperative title, max 12 words>" \
-  --body-file "${TMPDIR:-/tmp}/lore-file-issue-<slug>.md"
+  --body-file "${TMPDIR:-/tmp}/lore-file-issue-<slug>.md" --label agent-filed
 ```
 
+Every issue this skill opens carries the `agent-filed` label. `gh label create` above
+is a no-op once the label exists, so run it every time rather than checking first.
+
 Use `--body-file`, never a retyped `--body` string — the bytes Vale checked must be the
-bytes that get posted. For a PR body, swap in
-`gh pr create --body-file "${TMPDIR:-/tmp}/lore-file-issue-<slug>.md"`.
+bytes that get posted. For a PR body, swap in `gh pr create --body-file ...`. For a
+comment, draft the file so it opens with a line naming yourself as agent-filed, then
+post it with `gh issue comment <n> --body-file ...` or `gh pr comment <n> --body-file ...`.
 
 In batch mode the caller chooses the granularity it asked for: one issue holding the
 numbered blocks, or one issue per block. Do not silently split or merge what you were

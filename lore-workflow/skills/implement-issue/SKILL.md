@@ -61,6 +61,11 @@ goes into **one PR** on that branch.
 
 ### 4. ADR gate
 
+Decision gate: an ADR, a PRD or a wiki topic-note edit outside a grilling or
+domain-modeling session is a PR. A human merges it. This track runs outside both of
+those sessions. Any ADR it drafts goes into the PR this track already opens — never a
+direct commit to the target branch.
+
 Apply `domain-modeling`'s three [ADR](../domain-modeling/ADR-FORMAT.md) criteria to
 the decision the change embodies:
 
@@ -96,6 +101,14 @@ closes, and report back.
 
 **Merging stays with the user.** They are present on this track, so the skill opens
 the PR and stops there — it does not self-merge. **Never merge on red.**
+
+### 7. Session end
+
+Before your final message, run the retrieval-miss check: read `feedback.retrieval_misses`
+(`lore config get feedback.retrieval_misses`). When true, file one issue per retrieval
+miss on `feedback.retrieval_misses_repo` through [`file-issue`](../file-issue/SKILL.md),
+naming the fact, the tools tried, and the turn count. When false, skip the check. Then
+list every issue and PR the session created or commented on in your final message.
 
 ## Relationship to the chain
 

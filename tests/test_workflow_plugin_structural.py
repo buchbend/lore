@@ -85,6 +85,7 @@ SKILL_LINE_BUDGET = 150
 SKILL_LINE_BUDGET_WAIVERS: dict[str, int] = {
     "orchestrate-epic": 300,
     "to-epic": 220,
+    "file-issue": 160,
 }
 
 _MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")

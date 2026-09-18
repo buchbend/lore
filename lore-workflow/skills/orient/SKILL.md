@@ -74,6 +74,14 @@ On confirmation, carry the shared understanding into the grilling step — defau
 `/lore-workflow:to-epic` slices depend on). Say "grill me" for plain `/lore-workflow:grilling` instead when there is no domain model to align
 against.
 
+### 6. Session end
+
+Before handing off, run the retrieval-miss check: read `feedback.retrieval_misses`
+(`lore config get feedback.retrieval_misses`). When true, file one issue per retrieval
+miss on `feedback.retrieval_misses_repo` through `file-issue`, naming the fact, the
+tools tried, and the turn count. When false, skip the check. List every issue and PR
+the session created or commented on in your final message.
+
 Chain: `/lore-workflow:orient` → `/lore-workflow:grilling` → `/lore-workflow:to-epic` → `/lore-workflow:orchestrate-epic`.
 
 Lighter rungs exist beside the chain: a single change that is clear-ish but unwritten
