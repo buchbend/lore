@@ -1,6 +1,6 @@
 """Tests for freshness wiring on MCP retrieval surfaces (slice 1).
 
-Covers ``handle_read`` and ``handle_search`` (which `handle_drill`
+Covers ``handle_read`` and ``_wiki_hits`` (which `handle_drill`
 composes; drill therefore inherits freshness automatically — verified
 by a smoke test).
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from lore_mcp.server import handle_read, handle_search
+from lore_mcp.server import _wiki_hits, handle_read
 
 
 def _setup_wiki(
@@ -106,7 +106,7 @@ def test_handle_read_section_response_carries_freshness(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# handle_search
+# _wiki_hits
 # ---------------------------------------------------------------------------
 
 
@@ -126,7 +126,7 @@ def _bootstrap_searchable_wiki(
     return wiki
 
 
-def test_handle_search_each_hit_carries_freshness(tmp_path, monkeypatch):
+def test__wiki_hits_each_hit_carries_freshness(tmp_path, monkeypatch):
     files = {
         "fresh.md": dedent("""\
             ---
@@ -147,7 +147,7 @@ def test_handle_search_each_hit_carries_freshness(tmp_path, monkeypatch):
             """),
     }
     _bootstrap_searchable_wiki(tmp_path, monkeypatch, files)
-    hits = handle_search("alpha fox", wiki="demo", k=5)
+    hits = _wiki_hits("alpha fox", wiki="demo", k=5)
     assert len(hits) >= 1
     for h in hits:
         assert "freshness" in h
@@ -160,7 +160,7 @@ def test_handle_search_each_hit_carries_freshness(tmp_path, monkeypatch):
         assert by_path["concepts/fresh.md"]["freshness"]["status"] == "confirmed"
 
 
-def test_handle_search_default_is_confirmed(tmp_path, monkeypatch):
+def test__wiki_hits_default_is_confirmed(tmp_path, monkeypatch):
     files = {
         "n.md": dedent("""\
             ---
@@ -172,7 +172,7 @@ def test_handle_search_default_is_confirmed(tmp_path, monkeypatch):
             """),
     }
     _bootstrap_searchable_wiki(tmp_path, monkeypatch, files)
-    hits = handle_search("alpha", wiki="demo", k=5)
+    hits = _wiki_hits("alpha", wiki="demo", k=5)
     if hits:
         assert hits[0]["freshness"]["status"] == "confirmed"
         assert hits[0]["freshness"]["cause"] == "none"

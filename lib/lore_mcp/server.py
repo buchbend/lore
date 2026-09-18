@@ -4,7 +4,8 @@ Runs as a local STDIO server. Any MCP client (Claude Desktop, Cursor,
 Windsurf, Zed, etc.) can register this and query the vault.
 
 Exposed tools:
-    lore_search             — hybrid ranked search, top-k paths
+    lore_search             — federated: ranked wiki-note hits plus a live
+                              GitHub issue/PR search, as two unmerged lists
     lore_read               — read one note by wiki/path
     lore_drill              — composite multi-stage retrieval (search→read→
                               expand→read_expanded) in one envelope with a
@@ -237,7 +238,7 @@ def _log_reindex_skip(wiki: str | None, reason: str) -> None:
         pass
 
 
-def handle_search(
+def _wiki_hits(
     query: str,
     wiki: str | None = None,
     for_repo: str | None = None,
@@ -286,6 +287,78 @@ def handle_search(
         })
     sorted_out, _audit = apply_search_filter(out)
     return sorted_out
+
+
+def _artifact_repos(wiki: str | None, for_repo: str | None) -> list[str]:
+    """Repos the live GitHub search covers: the attached repo, then the wiki's remote.
+
+    The wiki's own remote is the org knowledge repo — issues filed there
+    are as relevant as the code repo's, and neither is discoverable from
+    the other.
+    """
+    from lore_core.git import current_repo
+
+    repos: list[str] = []
+    attached = for_repo or current_repo()
+    if attached:
+        repos.append(attached)
+    wiki_path = _resolve_wiki(wiki)
+    if wiki_path is not None:
+        remote = current_repo(wiki_path)
+        if remote and remote not in repos:
+            repos.append(remote)
+    return repos
+
+
+def _artifact_ref(url: str, number: Any) -> str:
+    """`owner/repo#number` from a GitHub issue or PR URL."""
+    parts = url.split("github.com/", 1)[-1].split("/")
+    if len(parts) >= 2:
+        return f"{parts[0]}/{parts[1]}#{number}"
+    return f"#{number}"
+
+
+def handle_search(
+    query: str,
+    wiki: str | None = None,
+    for_repo: str | None = None,
+    k: int = 5,
+) -> dict[str, Any]:
+    """Wiki index hits, then live GitHub artifact hits. Two lists, no merge.
+
+    GitHub ranks its own list and nothing is stored. When `gh` cannot
+    answer — missing, unauthenticated, offline, non-zero exit — the
+    result holds the wiki list and a `note` naming the omission, so an
+    empty artifact list is never mistaken for "no such issue".
+    """
+    from lore_core.gh import gh_search_issues
+
+    result: dict[str, Any] = {
+        "wiki": _wiki_hits(query, wiki=wiki, for_repo=for_repo, k=k),
+        "artifacts": [],
+    }
+    repos = _artifact_repos(wiki, for_repo)
+    if not repos:
+        result["note"] = "GitHub hits omitted: no repo attached and the wiki has no git remote."
+        return result
+    hits = gh_search_issues(query, repos)
+    if hits is None:
+        result["note"] = (
+            "GitHub hits omitted: `gh search issues` failed or the machine is "
+            f"offline ({', '.join(repos)})."
+        )
+        return result
+    result["artifacts"] = [
+        {
+            "ref": _artifact_ref(h.get("url", ""), h.get("number")),
+            "title": h.get("title", ""),
+            "state": h.get("state", ""),
+            "url": h.get("url", ""),
+            "updated_at": h.get("updatedAt", ""),
+        }
+        for h in hits
+    ]
+    return result
 
 
 def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
@@ -607,7 +680,7 @@ def handle_drill(
 
     # Stage 1: search
     t0 = _time.monotonic()
-    hits = handle_search(query=query, wiki=wiki, k=k)
+    hits = _wiki_hits(query=query, wiki=wiki, k=k)
     trace.append({
         "stage": "search",
         "query": query,
@@ -1071,8 +1144,15 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_search",
             "description": (
-                "Hybrid ranked search across the vault's knowledge notes. "
-                "Returns top-k paths with descriptions and scores."
+                "Federated search. Returns two lists, never merged: `wiki` "
+                "holds ranked knowledge-note paths from the local index, "
+                "`artifacts` holds issues and PRs from one live GitHub "
+                "search, each with an `owner/repo#number` ref. A `note` "
+                "field appears when the GitHub side was left out (no repo "
+                "attached, `gh` failed, machine offline). Search is for "
+                "finding. Nothing about an artifact is stored here, so read "
+                "it live through `gh` before you comment on it, close it, "
+                "merge it or poll its state."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1081,7 +1161,10 @@ def _tool_schema() -> list[dict]:
                     "wiki": {"type": "string", "description": "Scope to one wiki (optional)"},
                     "for_repo": {
                         "type": "string",
-                        "description": "Boost notes tagged with this repo (org/name)",
+                        "description": (
+                            "Repo to prefer (org/name): boosts notes tagged with "
+                            "it and points the GitHub search at it"
+                        ),
                     },
                     "k": {"type": "integer", "default": 5},
                 },

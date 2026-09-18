@@ -7,7 +7,7 @@ from pathlib import Path
 from textwrap import dedent
 
 from lore_core.verdicts_sidecar import set_confirmed
-from lore_mcp.server import handle_read, handle_search
+from lore_mcp.server import _wiki_hits, handle_read
 
 
 def _setup(tmp_path: Path, monkeypatch, body: str, name: str = "n.md") -> Path:
@@ -51,7 +51,7 @@ def test_no_disagreement_field_when_no_conflict(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch, body)
     result = handle_read("concepts/n.md", wiki="demo")
     assert "disagreement" not in result["freshness"]
-def test_handle_search_disagreement_surfaces_with_downrank(tmp_path, monkeypatch):
+def test__wiki_hits_disagreement_surfaces_with_downrank(tmp_path, monkeypatch):
     body_dis = dedent("""\
         ---
         type: concept
@@ -80,7 +80,7 @@ def test_handle_search_disagreement_surfaces_with_downrank(tmp_path, monkeypatch
 
     run_lint()
 
-    hits = handle_search("alpha", wiki="demo", k=5)
+    hits = _wiki_hits("alpha", wiki="demo", k=5)
     by_path = {h["path"]: h for h in hits}
     if "concepts/dis.md" in by_path:
         # Surfaces in search (recall property), and carries the disagreement.
