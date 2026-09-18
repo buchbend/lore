@@ -152,5 +152,5 @@ def test_readme_states_what_lore_captures():
     opening = (REPO / "README.md").read_text(encoding="utf-8").split("## The pitch")[0]
 
     assert "transcript" in opening.lower()
-    assert "flag" in opening.lower()
+    assert "repo artifacts" in opening.lower()
     assert not SESSION_NOTE_RE.search(opening)

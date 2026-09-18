@@ -1,9 +1,9 @@
 # Lore
 
 **LLM-optimized knowledge graph for AI-coding teams.** Transcripts captured
-and archived, team-relevant facts filed as reviewable flags, repo-scoped
-context injected at session start, pluggable team briefings. No vector DB
-needed for small vaults; a full hybrid search + MCP server for larger ones.
+and archived, team-relevant facts filed as repo artifacts — issues, comments
+and pull requests — repo-scoped context injected at session start. No vector
+DB needed for small vaults; a full hybrid search + MCP server for larger ones.
 
 > ⚠️ **Pre-1.0.** APIs, hook contracts, skill surfaces, frontmatter
 > schema, and CLI flags can still change between minor versions. Not
@@ -18,14 +18,14 @@ nothing captures *why*. Lore closes the loop:
 ```
 Session with AI  →  transcript captured and archived, ledger entry
                     stamped with repo/branch/PRs/issues/commits/files
-                 →  an agent files a flag the moment one team-relevant
-                    fact appears — one stamped sentence, gated for
-                    PII/secrets, appended to its topic note unreviewed
-                 →  a human accepts, retargets or declines it
+                 →  an agent files each team-relevant fact as the repo
+                    artifact that already has a reader: an issue, a
+                    comment on an issue or PR, or a pull request
+                 →  the developer triages it in the tracker
 ```
 
-The crossing is the **flag**: one deliberate, reviewable fact per
-occasion. Capture itself is automatic and costs no model call — see the
+The write path is the **filing rule**: each kind of fact gets the artifact
+that owns it. Capture itself is automatic and costs no model call — see the
 "Bootstrap" section below. Lore writes nothing into a wiki on its own.
 Ratified decisions live in the connected repo's ADRs/PRDs, pulled on
 demand via MCP — Lore does not extract decisions from transcripts.
@@ -37,7 +37,7 @@ independently:
 
 | Plugin | What it's for | Depends on |
 |---|---|---|
-| **`lore`** | The notes/vault system above: session capture, search, MCP, briefings. | nothing else |
+| **`lore`** | The notes/vault system above: session capture, search, MCP. | nothing else |
 | **`lore-workflow`** | An opinionated planning chain — epics, PRDs, TDD — that calls `lore`'s deterministic substrate (code map, model tiers). | `lore` |
 
 `lore-workflow` is opt-in: install `lore` alone for the notes pipeline, or
@@ -56,8 +56,8 @@ issue, and `tdd` as the discipline every implementation teammate follows.
 See [`docs/conventions.md`](docs/conventions.md) for the full chain, the
 artifact-home contract (PRD/ADR/`AGENTS.md` placement), and the tier
 vocabulary; [`docs/how-to/`](docs/how-to/) for task recipes
-(run an epic, use the fast path, resume a broken epic, onboard a repo, file
-and review flags); [`docs/explanation/`](docs/explanation/) for the
+(run an epic, use the fast path, resume a broken epic, onboard a repo);
+[`docs/explanation/`](docs/explanation/) for the
 reasoning behind the design; and
 [`lore-workflow/README.md`](lore-workflow/README.md) for the skill roster.
 
@@ -192,11 +192,10 @@ Claude Code produces is registered into the transcript ledger and
 mirrored into the wiki's `.transcripts/`, stamped with a linkage block
 (repo, branch, PRs, issues, commits, files) derived from git state — no
 LLM call, no prose (see `CONTEXT.md` for the full model). Capture
-writes nothing into a wiki itself: the only crossing is the **flag**,
-filed deliberately by a human or an agent during the session. Anything
-else in a wiki — concepts, decisions, projects, reference notes — is
-written directly, by hand or via `/lore:inbox`; there is no automatic
-daily abstraction pass.
+writes nothing into a wiki itself. Everything in a wiki — concepts,
+decisions, projects, reference notes — is written directly, by hand, via
+`/lore:inbox`, or through a pull request an agent opens; there is no
+automatic daily abstraction pass.
 
 ### Update from an older install
 
@@ -265,8 +264,8 @@ Once attached with a wiki present:
   detached.
 - **Banner at SessionStart** is deliberately minimal: a status line, an
   optional Focus block, a last-active-day recap read off the transcript
-  ledger (day, session count, repos, branches, refs — no LLM call), a
-  count of pending flags, freshness lines only on positive evidence, and
+  ledger (day, session count, repos, branches, refs — no LLM call),
+  freshness lines only on positive evidence, and
   a fixed directive pointing at MCP pull for anything deeper. `lore!:`
   prefix flags actionable errors.
 
@@ -274,9 +273,6 @@ Once attached with a wiki present:
 
 - `lore ingest --from <file.jsonl> --integration cursor --directory <cwd>` —
   ingest a transcript from any integration lore doesn't auto-capture.
-- `lore flag write "<lead>" --body "<why>" --ref pr:357` — file a flag
-  from a shell.
-- `lore flag review` — walk the unreviewed flags and resolve them.
 - `lore curator [--wiki <name>] [--apply]` — the frontmatter-only
   hygiene pass (supersession, `implements:` back-links, git-date
   backfill, team-mode hint); dry-run by default.
@@ -284,10 +280,8 @@ Once attached with a wiki present:
   list configured wikis and validate them. (For looking up the
   attachment covering a specific path, use `lore attach attachments show
   <path>`.)
-- `lore flag write "<lead>" --ref pr:123` — file one team-relevant fact
-  into its owning topic note. `lore flag list` shows what is pending;
-  `lore flag review` walks it (accept / retarget / decline / skip). See
-  [`docs/how-to/file-and-review-flags.md`](docs/how-to/file-and-review-flags.md).
+- `lore migrate flag-blocks [--apply]` — remove the blocks the retired
+  flag crossing left in wiki notes. Dry-run by default.
 
 ### Per-wiki configuration
 
@@ -317,10 +311,9 @@ and add knobs only as you need them. Briefings publish manually
 ## Observability
 
 Every background producer (hooks, the hygiene curator, transcript sync,
-the retention janitor, flags) writes one envelope onto one append-only
+the retention janitor) writes one envelope onto one append-only
 event log, the **spine**. Each envelope carries a `trace_id` field for
-correlating several records into one story; no current producer mints
-one, so `flag` is the one selector with live data behind it today.
+correlating several records into one story.
 Three commands cover the common scenarios:
 
 | Scenario | Command |
@@ -328,16 +321,14 @@ Three commands cover the common scenarios:
 | **"Is Lore healthy right now?"** | **`lore status`** |
 | "I had a session and nothing was captured" | `lore status` / `lore doctor` |
 | "Hook plumbing feels off" | `lore doctor` (`--fix` repairs what it can) |
-| "Did my flag land, and when was it reviewed?" | `lore trace flag` |
 
 `lore status` is the first thing to run when you're wondering whether Lore is
-alive: capture liveness, per-wiki connection health, a flags section, retention
+alive: capture liveness, per-wiki connection health, retention
 usage, and an alerts section where every warning names its own drill-down
 command.
 
 `lore trace <selector>` renders the chronological, correlated story of one
-unit of work for a trace_id, a session_id, `flag` (every flag-write/review
-event as a flat table, the selector with live data today), or a note path /
+unit of work for a trace_id, a session_id, or a note path /
 `[[wikilink]]`.
 
 `lore log` / `lore news` / `lore runs` / `lore proc` have been removed —

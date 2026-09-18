@@ -96,7 +96,7 @@ def load_wiki_config(wiki_dir: Path) -> WikiConfig:
 def _with_auto_push_default(cfg: WikiConfig, wiki_dir: Path, *, set_by_file: bool) -> WikiConfig:
     """Default ``git.auto_push`` to whether the wiki has a git remote.
 
-    A wiki with a remote is a shared vault, and a flag reaches a
+    A wiki with a remote is a shared vault, and an edit reaches a
     teammate only after a push. A solo wiki has nowhere to push, so the
     same default reads false there. A value written in the file always
     wins over both.

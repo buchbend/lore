@@ -7,7 +7,7 @@ hint) and writes `_review.md` per wiki.
 Frontmatter-only judgement calls, no model in the loop. The subcommands that
 composed session notes from pending transcripts — `run`, `flush`, `reap`,
 `sweep` — retired with the compose pipeline; a session's record is now its
-transcript-ledger entry, and the deliberate crossing to a wiki is `lore flag`.
+transcript-ledger entry.
 """
 
 from __future__ import annotations

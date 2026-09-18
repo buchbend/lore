@@ -61,7 +61,7 @@ SCHEMA_VERSION = 2
 
 # Closed producer set. A source outside this set is a bug, not data.
 SOURCES: frozenset[str] = frozenset(
-    {"hook", "curator", "drain", "janitor", "install", "mcp", "flag"}
+    {"hook", "curator", "drain", "janitor", "install", "mcp"}
 )
 
 LEVELS: frozenset[str] = frozenset({"info", "warn", "error"})
@@ -314,7 +314,7 @@ def read_spine(
     rotated sibling. Pass ``path`` to point this same malformed-line-
     tolerant parse at a different file — e.g. the rotated cold sibling
     (``spine.jsonl.1``), which is how a reader widens its window past one
-    hot-spine rotation (``lore_core.flag_metrics``) without duplicating
+    hot-spine rotation without duplicating
     this parsing logic.
     """
     path = path or lore_root / ".lore" / "spine.jsonl"
