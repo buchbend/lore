@@ -64,7 +64,8 @@ tiers:
 ```
 
 Only the tiers you list are overridden; everything else falls through
-to `lib/lore_core/tiers/table.py`.
+to `lib/lore_core/tiers/table.py`. See `lib/lore_core/root_config.py:TierConfig`
+and `tests/test_tiers.py::test_config_override_wins_over_table_default`.
 
 To run the whole workflow on Sonnet, for example on a smaller
 subscription, override the two Opus tiers. `mid` already resolves to
@@ -79,5 +80,4 @@ tiers:
 ```
 
 Skills keep naming semantic tiers, so `super-orchestrate`'s default
-`frontier` floor then runs every spawn on Sonnet. See `lib/lore_core/root_config.py:TierConfig`
-and `tests/test_tiers.py::test_config_override_wins_over_table_default`.
+`frontier` floor then runs every spawn on Sonnet.

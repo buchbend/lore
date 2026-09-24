@@ -3,7 +3,7 @@ name: lore-workflow:orchestrate-epic
 description: Supervise parallel TDD implementation of an epic tracker issue across one or
   more repos — plans, dispatches teammates, crosschecks every PR, and merges the epic
   autonomously. Use when the user points at an epic/tracker issue and wants orchestrated,
-  batched, autonomous implementation.
+  streaming, autonomous implementation.
 ---
 
 # Orchestrate Epic
@@ -55,14 +55,15 @@ No board comment found → fresh run; proceed to the gate.
 
 **Roadmap gate + effort band.** Run `lore workflow validate-roadmap --json` →
 `{ok, rows, repos, edges, problems}`. `ok: false` → refuse to start: report `problems` and stop, never
-dispatching against a malformed or cyclic roadmap. Otherwise build the feature DAG from `edges` and split it
-into dependency-ordered batches (features in a batch are independent). Pick the band from the numbers, not by
-eye: **compact** iff `repos == 1`, every `Type` is AFK, and either the DAG offers no real parallelism — every
-batch holds exactly one feature, i.e. a straight chain of any length — or `rows ≤ 3`; **standard** otherwise
-(full batched loop, concurrency cap N). Fan-out only pays when features actually run side by side. Record the
+dispatching against a malformed or cyclic roadmap. Otherwise build the feature DAG from `edges`. A feature's
+**batch** is its depth in the DAG: 1 without blockers, else one more than its deepest blocker. Batches feed the
+effort band and the board's Batch column only; dispatch never waits on a whole batch. Pick the band from the
+numbers, not by eye: **compact** iff `repos == 1`, every `Type` is AFK, and the DAG offers no parallelism —
+every batch holds exactly one feature, i.e. a straight chain of any length; **standard** otherwise (full
+streaming loop, concurrency cap N). Fan-out only pays when features actually run side by side. Record the
 band in the board's notes section, then create and push `epic/<issue>` from the up-to-date `target_branch`.
 
-**Emit the board.** One comment on the epic issue, edited in place at a few deliberate points (batch start,
+**Emit the board.** One comment on the epic issue, edited in place at a few deliberate points (each dispatch,
 each merge, each blocker, completion) — never a second comment. It MUST carry, verbatim, the marker and
 columns `parse-board` reads, followed by a `## Notes` section:
 ```
@@ -88,16 +89,19 @@ excerpts** — never the whole map. Shape it as the four-part subagent brief eve
 - **Expected output format** — one branch `feat/<n>-slug`, one PR per feature, red→green TDD evidence.
 - **Tool/source guidance** — the ranked codemap excerpts (files, symbols, conventions), `lore codemap` /
   `lore_codemap` to widen from, where domain language lives (CONTEXT.md / glossary, `docs/adr`).
-- **Task boundaries** — the scope fence and shared-file touchpoints to stay clear of.
+- **Task boundaries** — the scope fence, and the files sibling features edit at the same time. Shared files
+  never serialize features: each teammate keeps its edits there small, and the later merge rebases.
 
-**Dispatch.** Per feature in the batch: worktree off `epic/<issue>`, spawn a background teammate pinned to it
-(cap N, default 4) **with `LORE_SUPPRESS_CAPTURE=1` in its environment**, so it leaves no standalone capture
-fragment. Choose the model tier from the feature's assessed
-complexity (cheaper for well-scoped work, strongest for cross-cutting) and pass the resolved model in the
+**Dispatch (streaming).** A feature is ready once every feature in its `Blocked by` has merged into
+`epic/<issue>`. Dispatch each ready feature at once, up to N running teammates (default 4); a free slot takes the
+next ready feature. Per feature: worktree off `epic/<issue>`, spawn a background teammate pinned to it
+**with `LORE_SUPPRESS_CAPTURE=1` in its environment**, so it leaves no standalone capture fragment. Choose the
+model tier from the feature's assessed complexity (cheaper for well-scoped work, strongest for cross-cutting) and pass the resolved model in the
 spawn call (`lore tier resolve <tier>`, see [TIER-DELEGATION.md](../../TIER-DELEGATION.md)); no delegation
 inherits your session model. Record the tier and its rationale in the board's notes section; the table row
 carries only the assigned tier. A caller-supplied **tier floor** (`super-orchestrate` passes one, `frontier`
-by default) replaces this choice and every reviewer tier below, for every spawn; record it once in the notes.
+by default; never below `strong`) replaces this choice and every reviewer tier below, for every spawn; record
+it once in the notes.
 
 _Liveness._ Event-driven, not polled: the harness's completion notification is the primary signal. Fallback:
 a teammate silent ~30 minutes is respawned once into the same worktree with the same brief; a second death on
@@ -105,68 +109,80 @@ the same feature is not respawned — mark it blocked and escalate.
 
 _Compact mode._ Skip the fan-out: one worktree, one teammate, briefed to implement every feature of the band
 sequentially — still one branch and one PR per feature, still strict TDD, still each PR crosschecked below.
-The crosscheck batches exactly as in standard mode: one strong-tier reviewer over the band's PRs in one pass.
+The crosscheck runs exactly as in standard mode; a straight chain gives every batch one PR.
 
-**Crosscheck (delegated, batched).** When teammates report their PRs you do **not** read the diffs —
-delegating the read keeps your context free as the epic grows. Spawn **one reviewer subagent per batch** at
-the **strong-tier** (`lore tier resolve strong`; no delegation inherits the session model): it reads each of
-the batch's PR diffs and linked sub-issues and returns one verdict block per PR, posting each as that PR's
-comment; you consume only the verdicts and record their outcomes in the board's notes section. A batch of one
-degenerates to a per-PR review; if one PR's diff is too large to share a reviewer, split that reviewer out and
-note the deviation in the board's notes section. Per PR the verdict is exactly:
+**Crosscheck (delegated, one reviewer per batch, fed on arrival).** You do **not** read the diffs — delegating
+the read keeps your context free as the epic grows. When the first PR of a batch opens, spawn **one reviewer
+subagent for that batch** at the **strong-tier** (`lore tier resolve strong`; no delegation inherits the session
+model). Each later PR of the same batch goes to that reviewer by `SendMessage` the moment it opens, so the
+reviewer sees siblings side by side and no PR waits for the slowest one. Per PR, the reviewer reads the diff
+and its linked sub-issue, checks it against the siblings it has already read, posts the verdict block as that
+PR's comment and returns it. You consume only the verdict and record its outcome in the board's notes section.
+If one PR's diff is too large to share a reviewer, split that reviewer out and note the deviation in the notes.
+The verdict is exactly:
 ```
 PR #<n>
-reviewer tier: strong
+reviewer tier: <tier>
 verdict: PASS | FAIL
 - CI green: pass | fail — <note>
+- correctness (`code-review <n> low`): pass | fail — <confirmed findings>
 - tests map to acceptance criteria: pass | fail — <note>
 - red→green evidence present (failing test first): pass | fail — <note>
 - scope respected (only files this feature needs): pass | fail — <note>
 - ruff clean (check + format --check): pass | fail — <note>
 fixes (only on FAIL): 1. <precise fix>  2. <precise fix>  …
 ```
+The correctness line comes from the built-in `code-review`, run by the reviewer on the PR, never with
+`--comment` or `--fix`. It hunts bugs outside the acceptance criteria, which the other lines cannot see. A
+confirmed correctness finding fails the line; cleanup findings go in the note only. Start it first: it runs
+while the reviewer works the other lines.
+**Any `fail` line makes the verdict FAIL** — no reviewer passes a PR over a failed item. A failure that the
+base branch already shows is no failure of this PR: write it `pass — inherited: <base run or test name>`.
 Post with `gh pr comment <n> --body …`. On **PASS**, advance to Merge. On **FAIL**, `SendMessage` the teammate
-the numbered fix list and re-review (that PR alone) once it reports back — **max 2 fix rounds**. A round that doesn't move the
+the numbered fix list and re-review (that PR alone, by the same batch reviewer) once it reports back — **max 2 fix rounds**. A round that doesn't move the
 verdict → send the `/lore-workflow:debug` method (reproduce, isolate root cause, heed its circuit breaker),
 not a vaguer "try again". Still FAIL after the second → mark the feature blocked and escalate. The Dispatch
 tier is advisory; a reviewer tier deviation is allowed but recorded in the board's notes section (full
 contract: [TIER-DELEGATION.md](../../TIER-DELEGATION.md), `docs/model-tiers.md`).
 
-**Merge.** Merge crosscheck-passed PRs into `epic/<issue>` in dependency order; rebase later siblings on the
-updated branch and re-run their CI. A rebase conflict returns to that feature's teammate (respawned with
+**Merge.** Merge each PR into `epic/<issue>` as soon as its crosscheck passes. Its blockers merged before it
+was dispatched, so arrival order is dependency order. If `epic/<issue>` moved since the PR's CI ran, rebase the
+PR and merge on green CI. A rebase conflict returns to that feature's teammate (respawned with
 conflict context if it exited) — you never resolve conflicts by hand; escalate only if the teammate can't.
 Cross-repo: merge a producer's feature and capture its commit SHA before dispatching the consumer that pins
 it. As each feature merges, close the loop: tick its roadmap checkbox (`- [ ]` → `- [x]`), close its sub-issue
 (`gh issue close <n> --comment "Merged via PR #<pr>"`), set its board row to `merged`, and record the outcome
-and any tier deviation in the board's notes section. When a batch is fully merged, dispatch the next; repeat
-to the roadmap's end.
+and any tier deviation in the board's notes section. Then dispatch every feature the merge made ready (see
+Dispatch); repeat to the roadmap's end.
 
 _Post-merge invariants._ After every merge into `epic/<issue>`, verify epic-branch CI is green before
 dispatching dependents. Where the repo carries migrations, verify a single migration head (e.g. `alembic
-heads`) — squash-merges can silently fork the migration DAG. A failed invariant blocks the batch: fix forward
-or escalate.
+heads`) — squash-merges can silently fork the migration DAG. A failed invariant blocks further dispatch: fix
+forward or escalate.
 
-**Document (delegated, pre-merge).** Docs ship with the epic, not after it (ADR 0005). Once all features are
-merged and epic-branch CI is green, invoke `document-epic` in its **pre-merge mode**: it classifies the
-cumulative diff (`<target_branch>...epic/<issue>`) into the Diátaxis four and commits the doc updates directly
-onto `epic/<issue>` — no separate docs PR. If it escalates, or its edits cannot go green after one fix pass,
-fall back: drop the docs commit, merge the epic without it, and run standalone `document-epic` afterwards (its
-own auto-merging docs PR) — docs never block a green epic.
+**Epic tail (docs and review in parallel).** Once every feature has merged and epic-branch CI is green, open
+one PR `epic/<issue> → <target_branch>` linking every sub-issue. Then start both delegations at once:
+- **Docs** — docs ship with the epic, not after it (ADR 0005). Invoke `document-epic` in its **pre-merge
+  mode**: it classifies the cumulative diff (`<target_branch>...epic/<issue>`) into the Diátaxis four and
+  commits the doc updates directly onto `epic/<issue>` — no separate docs PR. If it escalates, or its edits
+  cannot go green after one fix pass, fall back: drop the docs commit, merge the epic without it, and run
+  standalone `document-epic` afterwards (its own auto-merging docs PR) — docs never block a green epic.
+- **Whole-epic review** — one strong-tier reviewer over the cumulative code diff. Not a per-feature
+  re-review: scope it to cross-feature consistency (inconsistent naming, duplicated helpers, conflicting edits
+  to shared files), the class that only surfaces once every diff is merged together. Its correctness line runs
+  `code-review <epic PR> medium` over the cumulative diff. Skip the review when the epic has ≤ 2 features —
+  the crosscheck just read those same diffs.
 
-**Merge the epic.** Features merged, docs committed, epic-branch CI green → open one PR
-`epic/<issue> → <target_branch>` linking every sub-issue.
+When the docs commit lands, `SendMessage` the same reviewer that commit alone: it checks docs against behavior,
+the one check that needs both halves. The reviewer returns one verdict, reusing the verdict shape with this
+cross-feature checklist, and posts it on the epic PR. With the review skipped, the merge waits only on the docs
+commit (or its fallback) and green CI.
 
-**Whole-epic review (delegated).** Before merging that PR, spawn one strong-tier reviewer over the cumulative
-diff (`<target_branch>...epic/<issue>`). Skip this stage entirely when the epic has ≤ 2 features — the
-crosscheck just read those same diffs; go straight to the deploy-gate check and merge. Not a per-feature
-re-review — scope it to cross-feature consistency (inconsistent naming, duplicated helpers, conflicting edits
-to shared files), the class that only surfaces once every diff is merged together, plus docs-vs-behavior
-mismatches now that the diff carries the docs commit. Reuse the reviewer verdict shape with this cross-feature checklist; post it on
-the epic PR. It gates the merge like a crosscheck: **PASS** → merge; **FAIL** → route the fix list to the
+The verdict gates the merge like a crosscheck: **PASS** → merge; **FAIL** → route the fix list to the
 teammate(s) owning the affected files, re-review once, max 2 rounds, then mark the epic blocked and escalate
 rather than merge. The epic→target merge follows the deploy-gate policy: if `epic-policy` returned
-`deploy_gate: true`, record the one human confirmation in the board's notes section before merging. Merge, and mark the
-epic issue done with the merge SHA.
+`deploy_gate: true`, record the one human confirmation in the board's notes section before merging. Merge on
+green epic-branch CI, and mark the epic issue done with the merge SHA.
 
 **Cleanup.** Delete every merged feature branch (local and remote) and remove its worktree. Leave nothing
 behind but the epic branch's own history.
@@ -198,7 +214,8 @@ Report.
 > Method: strict TDD via `/lore-workflow:tdd` — failing test first, make it pass, refactor; include the
 > failing-test output in the PR body. Before pushing, run ruff (check + format) and the full suite, both
 > clean. When stuck, use the `/lore-workflow:debug` circuit breaker, not a 4th blind fix.
-> Scope fence: change only what this feature needs; no edits to shared files outside scope.
+> Scope fence: change only what this feature needs. Sibling features may edit the same files at the same
+> time: keep your edits there small and local. A rebase conflict comes back to you to resolve.
 > Sibling-write hazard: parallel teammates in separate worktrees under one session can share an isolation
 > pointer, so in-place editor writes (Edit/Write) from one can clobber another. Apply file changes via shell
 > (heredoc or scripted edits) at absolute paths instead.
@@ -207,6 +224,7 @@ Report.
 > changes and any decisions you made.
 
 ## Stop conditions (escalate, pause that branch only)
-A feature flagged HITL; a teammate failing crosscheck after 2 fix rounds; an ambiguous spec needing a
+A feature flagged HITL; a teammate failing crosscheck after 2 fix rounds; a whole-epic review failing after 2
+fix rounds; an ambiguous spec needing a
 scientific/architectural call; an unresolvable merge conflict; or a CI-infra failure. Otherwise keep going.
 Emit the board on every escalation and at completion.
