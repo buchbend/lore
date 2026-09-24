@@ -1,6 +1,6 @@
 """Throttle on the per-search reindex call — Phase 7.
 
-Backstory: ``handle_search`` calls ``backend.reindex(wiki=...)`` before
+Backstory: ``_wiki_hits`` calls ``backend.reindex(wiki=...)`` before
 every search. Reindex is already incremental (sha-compare per file
 against the cached catalog), but still walks the wiki directory tree
 and stats every note on each call. Bursty agent traffic (Claude
@@ -120,8 +120,8 @@ def test_dirty_flag_for_other_wiki_does_not_trigger() -> None:
     assert backend.reindex.call_count == 1  # still throttled — unrelated dirty
 
 
-def test_handle_search_uses_throttle(monkeypatch: pytest.MonkeyPatch) -> None:
-    """End-to-end: two ``handle_search`` calls in quick succession only
+def test__wiki_hits_uses_throttle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """End-to-end: two ``_wiki_hits`` calls in quick succession only
     trigger one reindex."""
     from lore_mcp import server
 
@@ -129,8 +129,8 @@ def test_handle_search_uses_throttle(monkeypatch: pytest.MonkeyPatch) -> None:
     backend.search.return_value = []
     monkeypatch.setattr(server, "FtsBackend", lambda: backend)
 
-    server.handle_search("query a", wiki="private")
-    server.handle_search("query b", wiki="private")
+    server._wiki_hits("query a", wiki="private")
+    server._wiki_hits("query b", wiki="private")
     assert backend.reindex.call_count == 1
     assert backend.search.call_count == 2
 

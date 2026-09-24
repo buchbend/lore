@@ -5,7 +5,7 @@ Settles P3.2 from the multi-agent synthesis review. The handler chains
 ``{trace, result}`` with structured stage breadcrumbs alongside the
 note bodies. See ``docs/architecture/lore-drill.md``.
 
-These tests stub the underlying handlers (``handle_search``,
+These tests stub the underlying handlers (``_wiki_hits``,
 ``handle_read``, ``extract_wikilinks``) so they exercise the
 composition + short-circuit + truncation logic only — the leaf
 handlers have their own coverage.
@@ -50,7 +50,7 @@ def test_drill_full_chain_records_each_stage():
     def fake_resolve(wiki_path, slug):
         return f"{slug}.md" if f"{slug}.md" in bodies else None
 
-    with patch("lore_mcp.server.handle_search", return_value=hits) as m_search, \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits) as m_search, \
          patch("lore_mcp.server.handle_read", side_effect=fake_read) as m_read, \
          patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
@@ -86,7 +86,7 @@ def test_drill_full_chain_records_each_stage():
 def test_drill_short_circuits_when_search_returns_zero():
     from lore_mcp.server import handle_drill
 
-    with patch("lore_mcp.server.handle_search", return_value=[]), \
+    with patch("lore_mcp.server._wiki_hits", return_value=[]), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
         out = handle_drill(query="nothing", wiki="private")
 
@@ -108,7 +108,7 @@ def test_drill_short_circuits_expand_when_no_wikilinks():
     hits = [_hit("solo.md")]
     bodies = {"solo.md": "## Solo\nno wikilinks here"}
 
-    with patch("lore_mcp.server.handle_search", return_value=hits), \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits), \
          patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None, include_human=False: _read(path, bodies[path])), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
         out = handle_drill(query="solo", wiki="private")
@@ -132,7 +132,7 @@ def test_drill_truncates_expanded_when_over_limit():
     def fake_resolve(_wiki_path, slug):
         return f"{slug}.md" if f"{slug}.md" in bodies else None
 
-    with patch("lore_mcp.server.handle_search", return_value=hits), \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits), \
          patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None, include_human=False: _read(path, bodies[path])), \
          patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
@@ -171,7 +171,7 @@ def test_drill_skips_unresolvable_wikilinks():
     def fake_resolve(_wiki_path, slug):
         return f"{slug}.md" if f"{slug}.md" in bodies else None
 
-    with patch("lore_mcp.server.handle_search", return_value=hits), \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits), \
          patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None, include_human=False: _read(path, bodies[path])), \
          patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
@@ -189,7 +189,7 @@ def test_drill_skips_unresolvable_wikilinks():
 def test_drill_default_k_is_five():
     from lore_mcp.server import handle_drill
 
-    with patch("lore_mcp.server.handle_search", return_value=[]) as m, \
+    with patch("lore_mcp.server._wiki_hits", return_value=[]) as m, \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
         handle_drill(query="x", wiki="private")
 
@@ -212,7 +212,7 @@ def test_drill_does_not_report_truncation_when_under_cap_due_to_unresolvable():
     def fake_resolve(_wiki_path, slug):
         return f"{slug}.md" if f"{slug}.md" in bodies else None
 
-    with patch("lore_mcp.server.handle_search", return_value=hits), \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits), \
          patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None, include_human=False: _read(path, bodies[path])), \
          patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
@@ -240,7 +240,7 @@ def test_drill_truncated_slugs_lists_dropped_links():
     def fake_resolve(_wiki_path, slug):
         return f"{slug}.md" if f"{slug}.md" in bodies else None
 
-    with patch("lore_mcp.server.handle_search", return_value=hits), \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits), \
          patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None, include_human=False: _read(path, bodies[path])), \
          patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
@@ -264,7 +264,7 @@ def test_drill_expand_only_filters_to_intersection():
     def fake_resolve(_wiki_path, slug):
         return f"{slug}.md" if f"{slug}.md" in bodies else None
 
-    with patch("lore_mcp.server.handle_search", return_value=hits), \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits), \
          patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None, include_human=False: _read(path, bodies[path])), \
          patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
@@ -297,7 +297,7 @@ def test_drill_expand_only_cannot_add_undiscovered_slugs():
     def fake_resolve(_wiki_path, slug):
         return f"{slug}.md" if f"{slug}.md" in bodies else None
 
-    with patch("lore_mcp.server.handle_search", return_value=hits), \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits), \
          patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None, include_human=False: _read(path, bodies[path])), \
          patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
@@ -319,7 +319,7 @@ def test_drill_expand_only_empty_after_filter_short_circuits():
     def fake_resolve(_wiki_path, slug):
         return f"{slug}.md" if f"{slug}.md" in bodies else None
 
-    with patch("lore_mcp.server.handle_search", return_value=hits), \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits), \
          patch("lore_mcp.server.handle_read", side_effect=lambda path, wiki=None, include_human=False: _read(path, bodies[path])), \
          patch("lore_mcp.server._resolve_slug", side_effect=fake_resolve), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
@@ -347,7 +347,7 @@ def test_drill_records_read_failures_in_trace():
             return _read(path, bodies[path])
         return {"error": {"code": "path_not_found", "message": f"not found: {path}"}}
 
-    with patch("lore_mcp.server.handle_search", return_value=hits), \
+    with patch("lore_mcp.server._wiki_hits", return_value=hits), \
          patch("lore_mcp.server.handle_read", side_effect=fake_read), \
          patch("lore_mcp.server._resolve_wiki", return_value="WIKI_PATH_STUB"):
         out = handle_drill(query="x", wiki="private")
