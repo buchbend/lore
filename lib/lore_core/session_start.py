@@ -1,7 +1,7 @@
 """SessionStart context assembly — what Lore injects when a session opens.
 
-Gathers the facts (project note, last-active-day recap, pending verdicts and
-flags) and renders the banner. Deliberately cheap: reads cached files the
+Gathers the facts (project note, last-active-day recap, pending freshness
+verdicts) and renders the banner. Deliberately cheap: reads cached files the
 linter regenerates (``_index.txt``, ``_catalog.json``) and the transcript
 ledger, no LLM, no network. The banner is ambient-minimal — status line,
 optional Focus block, the recap, one directive. Depth is a pull (MCP), not
@@ -166,24 +166,6 @@ def pending_verdict_chip(wiki: Path) -> str:
     return f"{rendered} pending {label}"
 
 
-def pending_flag_chip(wiki: Path) -> str:
-    """`· N pending flag(s)` chip text, or empty.
-
-    Count only — ADR 0008 forbids the banner from carrying flag content,
-    so a teammate's unreviewed text can never be pulled into a context
-    window by the banner alone. Zero-state suppressed entirely.
-    """
-    try:
-        from lore_core.flag import count_pending
-
-        count = count_pending(wiki)
-    except Exception:
-        return ""
-    if count <= 0:
-        return ""
-    return f"{count} pending flag" + ("" if count == 1 else "s")
-
-
 def last_active_day_recap(lore_root: Path) -> tuple[str, ...]:
     """Recap the most recent day the transcript ledger saw work.
 
@@ -290,7 +272,6 @@ class SessionFacts:
     scope: str = ""
     project_entry: dict | None = None
     pending_chip: str | None = None
-    flag_chip: str | None = None
     #: Last-active-day recap off the transcript ledger (≤3 lines).
     recap: tuple[str, ...] = ()
 
@@ -308,7 +289,6 @@ def collect_session_facts(
     """
     project_entry = project_note_for_repo(wiki, repo) if repo else None
     pending_chip = pending_verdict_chip(wiki) or None
-    flag_chip = pending_flag_chip(wiki) or None
     # ``<lore_root>/wiki/<name>`` is the fixed vault layout, so the ledger
     # is reachable without threading lore_root through every caller.
     recap = last_active_day_recap(wiki.parent.parent)
@@ -318,7 +298,6 @@ def collect_session_facts(
         scope=scope,
         project_entry=project_entry,
         pending_chip=pending_chip,
-        flag_chip=flag_chip,
         recap=recap,
     )
 
@@ -346,8 +325,6 @@ def render_session_banner(facts: SessionFacts) -> str:
         injected_bits.append(facts.recap[0].split(" — ")[0].lower())
     if facts.pending_chip:
         injected_bits.append(facts.pending_chip)
-    if facts.flag_chip:
-        injected_bits.append(facts.flag_chip)
     status_line = f"lore {lore_version()}: active" + (
         " · " + " · ".join(injected_bits) if injected_bits else ""
     )

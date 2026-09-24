@@ -37,8 +37,7 @@ produces — without producing temp artifacts or losing content.
 
 | Trigger | Where | What |
 |---|---|---|
-| **Session boundary (SessionEnd hook)** | `lib/lore_cli/hooks.py` → `lib/lore_core/session_start.py:maybe_auto_push_for_scope` | Pushes the attached wiki once, after every flag filed that session is already committed (`lore_core/flag.py` commits each flag through `lore_core/session.py:commit_note` at write time). |
-| Manual | `lore briefing --wiki <name>` (unless `--no-git`) | The briefing one-shot pulls before gather and pushes after mark — parked with briefings (PRD 0011), not part of the session-boundary path. |
+| **Session boundary (SessionEnd hook)** | `lib/lore_cli/hooks.py` → `lib/lore_core/session_start.py:maybe_auto_push_for_scope` | Pushes the attached wiki once, after whatever landed in it this session is already committed. |
 
 `auto_push` is `auto_pull` + `git push`, with conflict-resolution baked
 in — see "Conflict policy" below for what "resolution" means today.
@@ -77,10 +76,9 @@ same way.
 ### 2. Typed-subdirectory notes — LLM-merge on push conflict
 
 Notes in a wiki's typed subdirectories (`concepts/`, `decisions/`,
-`projects/`, …) are written directly — by hand, via `/lore:inbox`, or
-appended to by a flag (`lore_core/flag.py`) — there is no automatic
-abstraction pass that populates them on its own. This is the conflict
-class two hosts filing flags into the same topic note actually hit.
+`projects/`, …) are written directly — by hand or via `/lore:inbox` —
+there is no automatic abstraction pass that populates them on its own.
+This is the conflict class two hosts editing the same topic note hit.
 The classifier and merge path apply to whatever two hosts independently
 write there:
 
@@ -140,8 +138,8 @@ regresses to "post-pull, MCP search may be stale for up to 5s." This
 is what 0.10.x ships today, so the optional-dep fallback is not a
 regression.
 
-**Self-edit handling:** a flag append and the hygiene curator's own
-frontmatter edits trip the watcher too. That's fine: the dirty flag
+**Self-edit handling:** the hygiene curator's own frontmatter edits trip
+the watcher too. That's fine: the dirty flag
 just says "next query may need fresh data." The throttle prevents a
 reindex storm.
 
@@ -185,13 +183,13 @@ git:
 Defaults: `auto_pull=true` — it's read-only on a clean tree, so there's
 no surprise in leaving it on. `auto_push` defaults to
 `git_sync.has_remote(wiki_dir)`: true for a wiki with a remote (a
-shared vault, where a flag reaches a teammate only after a push), false
+shared vault, where an edit reaches a teammate only after a push), false
 for a solo wiki with nowhere to push. A value written in the file
 always wins over that default.
 
-`git.auto_commit` is a schema field with no reader — `lore_core.flag`
-commits every flag unconditionally at write time, through
-`lore_core/session.py:commit_note`, regardless of this setting.
+`git.auto_commit` is a schema field with no reader — a caller that wants
+a note committed calls `lore_core/session.py:commit_note` directly,
+regardless of this setting.
 
 ---
 

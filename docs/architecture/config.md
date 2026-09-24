@@ -79,42 +79,12 @@ the user to have explicitly set `LORE_ROOT` should call
 `require_lore_root()` instead — that one errors when env is unset
 rather than silently falling back to `~/lore`.
 
-#### Curator backend selection
+#### Curator
 
 | Var | Type | Default | Read in | Wins over |
 |-----|------|---------|---------|-----------|
-| `LORE_LLM_BACKEND` | `auto` \| `subscription` \| `api` \| `openai` | `auto` | `lore_curator/llm_client.py:make_llm_client` | `.lore/config.yml:curator.backend` |
 | `LORE_CURATOR_MODE` | `1` \| unset | unset | `lore_cli/hooks.py:_in_curator_mode` | (internal — set by the curator's own detached-subprocess spawns, not a user knob) |
-| `LORE_CLAUDE_TIMEOUT_S` | float seconds | `300.0` | `llm_client.py:_resolve_claude_timeout` | constructor arg |
 | `LORE_SUPPRESS_CAPTURE` | `1` \| unset | unset | `lore_cli/hooks.py:_capture_suppressed`, checked first thing in `capture()` | (dispatch contract — set by an orchestrator when it launches a teammate session whose transcript should not become its own standalone note; unset leaves capture unchanged) |
-
-#### OpenAI-compatible backend (when `LORE_LLM_BACKEND=openai`)
-
-Resolution: env > `.lore/config.yml:curator.openai.*` > error.
-
-| Var | Maps to config key |
-|-----|--------------------|
-| `LORE_OPENAI_BASE_URL` | `base_url` |
-| `LORE_OPENAI_API_KEY` | (api key — never in config files) |
-| `LORE_OPENAI_MODEL_SIMPLE` | `model_simple` |
-| `LORE_OPENAI_MODEL_MIDDLE` | `model_middle` |
-| `LORE_OPENAI_MODEL_HIGH`   | `model_high` |
-| `LORE_OPENAI_REASONING_EFFORT_SIMPLE` | `reasoning_effort_simple` |
-| `LORE_OPENAI_REASONING_EFFORT_MIDDLE` | `reasoning_effort_middle` |
-| `LORE_OPENAI_REASONING_EFFORT_HIGH`   | `reasoning_effort_high` |
-
-`reasoning_effort_*` values are `low | medium | high` (case-insensitive)
-or empty string for "unset" (no `reasoning_effort` forwarded). See
-[Recommended openai-backend setup](../../README.md#recommended-openai-backend-setup-briefing-narration)
-in the README for the GPT-OSS-120B production recipe.
-
-Implemented in `lore_curator/llm_client.py:_resolve_openai_settings`.
-
-#### Anthropic SDK (when `LORE_LLM_BACKEND=api`)
-
-| Var | Read in |
-|-----|---------|
-| `ANTHROPIC_API_KEY` | `lore_curator/llm_client.py:SDKClient.__init__` |
 
 #### Observability / runtime
 
@@ -125,12 +95,6 @@ Implemented in `lore_curator/llm_client.py:_resolve_openai_settings`.
 | `LORE_ASCII` | `1` forces ASCII icon set in `run_render.py` (override TTY autodetect) |
 | `NO_COLOR` | Standard convention; `run_render.should_use_color()` honours it |
 | `LORE_CACHE` | Override the search-index cache dir (default: `~/.cache/lore/`) |
-
-#### Sinks (briefing publishing)
-
-| Var | Effect |
-|-----|--------|
-| `LORE_MATRIX_HOMESERVER`, `LORE_MATRIX_USER_ID`, `LORE_MATRIX_ROOM_ID` | Matrix sink connection params |
 
 ### 3. `$LORE_ROOT/.lore/config.yml` — root config
 
@@ -147,12 +111,14 @@ Vault-wide policy. Schema lives in
   `docs/architecture/observability.md`.
   `dead_letter_hard_cap` was removed with the flush store. A `config.yml` that
   still sets it loads normally; the loader warns and names the key to delete.
-- `curator.backend` — `auto` | `subscription` | `api` | `openai`
-- `curator.openai.{base_url, api_key_env, model_simple, model_middle, model_high, reasoning_effort_simple, reasoning_effort_middle, reasoning_effort_high}`
 - `journal.enabled`
 - `tiers.overrides.<host>.<tier>` — override the shipped model-tier table
   (`lib/lore_core/tiers/table.py`) for one host/tier cell; see
   `docs/model-tiers.md`.
+
+A `curator:` block is a retired key here too — the LLM-backend selector
+left with the LLM client, and `load_root_config` warns by name
+(`RETIRED_BLOCKS`).
 
 Loader: `load_root_config(lore_root) -> RootConfig`. Missing file →
 all defaults. Unknown keys → `warnings.warn` (not fatal). Malformed
@@ -167,60 +133,19 @@ Per-vault-mount policy. Schema lives in
   whether the wiki has a git remote; an explicit value in the file
   always wins over that default.
 - `models.{simple, middle, high}` — Claude model IDs per tier
-- `briefing.{audience, sinks}`
 - `heartbeat.{enabled, cooldown_s, push_context}`
 - `breadcrumb.{mode, scope_filter}`
 
-A `curator:` block is a retired key — `WikiConfig` carries no
-`curator` field, and `load_wiki_config` warns by name
+A `curator:` or `briefing:` block is a retired key — `WikiConfig`
+carries neither field, and `load_wiki_config` warns by name
 (`RETIRED_BLOCKS`) rather than the generic unknown-key notice. The
-per-session-turn-threshold knobs it used to hold retired with the
-compose pipeline that read them.
+per-session-turn-threshold knobs retired with the compose pipeline; the
+briefing knobs retired with the briefing command.
 
 Loader: `load_wiki_config(wiki_dir) -> WikiConfig`. Same fault-tolerant
 behaviour as root config.
 
-### 5. `<wiki>/.lore-briefing.yml` — per-wiki briefing sink config
-
-Per-wiki sink connection details for `lore briefing publish`. Loaded
-by `lib/lore_core/briefing/gather.py:_read_sink_config()` on every
-`gather()` call (returned in the envelope as `sink_config`); also
-loaded by `lore briefing publish --wiki <name>` and threaded through
-to the sink dispatcher.
-
-Free-form YAML (no typed dataclass — kept lightweight to match the
-`.lore.yml` precedent). Top-level shape:
-
-```yaml
-sink: <scheme>     # required: which sink to publish to
-matrix:
-  homeserver: …    # only required when sink: matrix
-  user_id: …
-  room_id: …
-markdown:
-  path: …          # only required when sink: markdown (URI target wins)
-```
-
-Resolution within a sink follows env > yaml > error, mirroring the
-OpenAI backend pattern. See `docs/how-to/matrix-bot.md` for an
-end-to-end walkthrough.
-
-Flat top-level keys (`homeserver:` / `user_id:` / `room_id:` /
-`path:` at document root) are accepted as a transitional fallback
-with a one-time deprecation warning per process. New configs should
-use the nested form.
-
-`sink:` must agree with the URI scheme passed to `dispatch()` /
-`lore briefing publish --sink`. Mismatches raise
-`SinkConfigMismatchError` (CLI exit 2).
-
-**Secrets do not live here.** Matrix access tokens stay at
-`~/.local/share/lore/matrix-credentials.json`; future webhook-style
-sinks will use `*_env: LORE_*` indirection (mirroring `api_key_env`
-in `curator.openai`) with values from the shell or
-`$LORE_ROOT/.lore/secrets.env`.
-
-### 6. `<repo>/CLAUDE.md ## Lore` block — attachment metadata
+### 5. `<repo>/CLAUDE.md ## Lore` block — attachment metadata
 
 Records the wiki/scope binding for a working directory and any GH
 filter overrides. Read by hooks at SessionStart for status-line
@@ -251,7 +176,7 @@ Each source has a justified role:
 - **Root config** (`config.yml`) — vault-wide policy that's per-user,
   not per-wiki: observability budgets, default backend.
 - **Wiki config** (`.lore-wiki.yml`) — per-mount policy: this wiki
-  uses these models, this curator schedule, this briefing audience.
+  uses these models, this curator schedule, this breadcrumb mode.
 - **Plugin manifest** — Claude Code's contract; we don't own the
   schema.
 - **Install templates** — integration-specific shapes; not a "setting" but
@@ -259,8 +184,7 @@ Each source has a justified role:
 
 The config layer that *should* be unified is "env override → file
 override → default" — and that already is, for every env var listed
-above. The unification is a *pattern* (in `_resolve_mode`,
-`_resolve_openai_settings`, `_resolve_claude_timeout`); when a new
+above. The unification is a *pattern* (in `_resolve_mode`); when a new
 env-overridable setting is added, follow the same shape.
 
 ---

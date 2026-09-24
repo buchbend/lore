@@ -7,6 +7,8 @@ once after upgrading to this version.
 
 from __future__ import annotations
 
+import re
+
 from rich.console import Console
 
 from lore_core.io import atomic_write_text
@@ -236,8 +238,7 @@ def migrate_strip_broken_wikilinks(
     verb = "would strip" if dry_run else "stripped"
     console.print()
     console.print(
-        f"[bold]{verb} {total_replacements} broken wikilinks[/bold] "
-        f"across {files_touched} file(s)."
+        f"[bold]{verb} {total_replacements} broken wikilinks[/bold] across {files_touched} file(s)."
     )
     if by_target:
         console.print()
@@ -252,3 +253,105 @@ def migrate_strip_broken_wikilinks(
         "replacements": total_replacements,
         "by_target": dict(by_target),
     }
+
+
+# ---------------------------------------------------------------------------
+# Flag-block removal (the flag crossing is retired; ADR 0012)
+# ---------------------------------------------------------------------------
+
+#: One whole fenced flag block, open marker through close marker. Matching the
+#: pair rather than walking lines is what makes a half-written fence safe: an
+#: unterminated open simply never matches, so no prose after it is dropped.
+_FLAG_BLOCK_RE = re.compile(
+    r"^<!-- lore:flag id=[0-9a-f]{12} -->\n.*?^<!-- /lore:flag -->\n?",
+    re.DOTALL | re.MULTILINE,
+)
+
+
+#: The open marker alone, counted loosely so any spelling the block pattern
+#: cannot pair is still seen: a Windows line ending, an indented marker, a
+#: marker quoted inside prose.
+_FLAG_OPEN_MARKER = "<!-- lore:flag id="
+
+
+def strip_flag_blocks(text: str) -> tuple[str, int, bool]:
+    """Return ``(text, blocks removed, refused)``.
+
+    Every line outside a block survives byte-identical, blank lines
+    included — the command runs over notes a human reads.
+
+    Removal is refused for the whole note when the blocks removed do not
+    account for every open marker. Two notes reach that state. A note whose
+    close line a human deleted would pair one block's open marker with the
+    next block's close marker and take the prose between them. A note the
+    pattern cannot match at all, such as one written with Windows line
+    endings, would keep its markers. Both are reported for a human to edit.
+    """
+    opened = text.count(_FLAG_OPEN_MARKER)
+    new_text, removed = _FLAG_BLOCK_RE.subn("", text)
+    if removed != opened:
+        return text, 0, True
+    return new_text, removed, False
+
+
+def migrate_strip_flag_blocks(
+    wiki_filter: str | None = None,
+    dry_run: bool = True,
+) -> dict:
+    """Remove every flag block from every note in the vault.
+
+    The blocks are dropped, not migrated: git history keeps them. A note
+    whose markers do not pair is reported and left alone.
+    Returns ``{"files": N, "blocks": M, "skipped": K}``.
+    """
+    wikis = discover_wikis(wiki_filter)
+    files_touched = 0
+    total_blocks = 0
+    skipped = 0
+
+    for wiki_path in wikis:
+        wiki_name = wiki_path.name
+        for fpath in discover_notes(wiki_path):
+            if fpath.name in SKIP_FILES:
+                continue
+            if any(part in SKIP_DIRS for part in fpath.parts):
+                continue
+            try:
+                # newline="" keeps a note's own line endings out of the
+                # comparison: universal-newline reading turns a CRLF note into
+                # one the pattern matches, and writing it back would rewrite
+                # every line ending in the file.
+                with fpath.open(errors="replace", newline="") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            new_text, n, refused = strip_flag_blocks(text)
+            rel = fpath.relative_to(wiki_path)
+            if refused:
+                skipped += 1
+                console.print(
+                    f"[yellow]skipped[/yellow] {wiki_name}/{rel} "
+                    "(markers do not pair; edit by hand)"
+                )
+                continue
+            if n == 0:
+                continue
+            files_touched += 1
+            total_blocks += n
+            if dry_run:
+                console.print(f"[dim]would remove {n:2d}[/dim] {wiki_name}/{rel}")
+            else:
+                atomic_write_text(fpath, new_text)
+                console.print(f"[green]removed {n:2d}[/green] {wiki_name}/{rel}")
+
+    verb = "would remove" if dry_run else "removed"
+    console.print()
+    console.print(
+        f"[bold]{verb} {total_blocks} flag block(s)[/bold] across {files_touched} file(s)."
+    )
+    if skipped:
+        console.print(f"[yellow]skipped {skipped} note(s)[/yellow] whose markers do not pair.")
+    if dry_run:
+        console.print("[dim]Re-run with --apply to write changes.[/dim]")
+
+    return {"files": files_touched, "blocks": total_blocks, "skipped": skipped}

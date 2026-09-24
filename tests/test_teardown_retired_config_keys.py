@@ -6,8 +6,8 @@ All of it retired with the pipeline. A config file written before the
 teardown must not become a hard error — lore warns and carries on with the
 rest of the file intact.
 
-`curator.backend` is a different setting living in the root config, and is
-untouched by this.
+The root config's own `curator.backend` block retired with the LLM client and
+warns the same way.
 """
 
 from __future__ import annotations
@@ -81,10 +81,8 @@ def test_a_whole_retired_block_warns_once(tmp_path: Path) -> None:
     assert cfg.git.auto_push is True
 
 
-def test_curator_backend_in_the_root_config_is_untouched() -> None:
-    """The backend selector is a root-config setting and survives the teardown."""
+def test_the_root_config_backend_block_retired_with_the_llm_client() -> None:
+    """Nothing Lore keeps calls a model, so the backend selector has no reader."""
     from lore_core.root_config import RootConfig
 
-    assert hasattr(RootConfig(), "curator"), (
-        "root config keeps `curator.backend` — only the per-wiki compose knobs retire"
-    )
+    assert not hasattr(RootConfig(), "curator")

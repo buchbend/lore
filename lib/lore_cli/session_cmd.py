@@ -2,7 +2,7 @@
 
 Lore writes no session note automatically; the compose pipeline that once
 filed one was retired. This CLI verb exists for the explicit-write skills
-(inbox, briefing) that author a note in-thread and need to commit it.
+(inbox) that author a note in-thread and need to commit it.
 """
 
 from __future__ import annotations

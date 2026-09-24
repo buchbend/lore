@@ -1,8 +1,9 @@
 """`lore migrate` — one-shot upgrade paths for existing vaults.
 
-One verb, idempotent and dry-run by default:
+Verbs are idempotent and dry-run by default:
 
 * ``lore migrate frontmatter`` — schema-evolution rewrites of note frontmatter
+* ``lore migrate flag-blocks`` — drop the retired flag blocks from note bodies
 
 This is an upgrade you run once when a vault falls behind the current
 schema. It is unrelated to the retired `lore backfill`, which imported historical
@@ -19,6 +20,7 @@ from lore_core.migrate import (
     add_schema_version,
     migrate_minimal_status,
     migrate_strip_broken_wikilinks,
+    migrate_strip_flag_blocks,
 )
 from lore_core.schema import SCHEMA_VERSION
 
@@ -26,7 +28,7 @@ from lore_cli._argv_compat import argv_main
 
 app = typer.Typer(
     add_completion=False,
-    help="One-shot upgrades: frontmatter schema.",
+    help="One-shot upgrades: frontmatter schema, flag-block removal.",
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
@@ -79,6 +81,23 @@ def cmd_frontmatter(
         return
     print(ctx.get_help())
     raise typer.Exit(code=2)
+
+
+@app.command("flag-blocks")
+def cmd_flag_blocks(
+    wiki: str = typer.Option(None, "--wiki", "-w", help="Scope to a single wiki."),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Actually write changes. Without this, runs dry.",
+    ),
+) -> None:
+    """Remove every `<!-- lore:flag ... -->` block from every note body.
+
+    The flag crossing retired; the blocks it left behind are dropped
+    rather than migrated. Git history keeps them.
+    """
+    migrate_strip_flag_blocks(wiki_filter=wiki, dry_run=not apply)
 
 
 main = argv_main(app)

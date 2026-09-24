@@ -1,13 +1,10 @@
-"""The publish gate evaluates flag text, and nothing else.
+"""The publish gate takes one argument: the text about to be published.
 
-The gate used to sit in front of two writers: the chapter composer and the
-flag writer. The composer retired, so the injectable-``Gate``-object
-machinery it needed — a Protocol, a pass-through stand-in, and a class
-wrapper around one pure function — has no second implementation left to
-abstract over. The flag writer calls :func:`evaluate` directly.
-
-Covers the teardown's third acceptance criterion: the publish gate evaluates
-flag text only.
+The gate used to sit in front of the chapter composer, which injected it as
+an object. The composer retired, so the injectable-``Gate`` machinery it
+needed — a Protocol, a pass-through stand-in, and a class wrapper around one
+pure function — has no implementation left to abstract over. Callers call
+:func:`evaluate` directly.
 """
 
 from __future__ import annotations
@@ -15,8 +12,8 @@ from __future__ import annotations
 import pytest
 
 
-def test_evaluate_names_its_input_for_the_only_caller_left() -> None:
-    """`chapter_text` would be a lie: a flag is not a chapter."""
+def test_evaluate_names_its_input_neutrally() -> None:
+    """`chapter_text` would be a lie: the gate scans any outbound text."""
     import inspect
 
     from lore_core.publish_gate import evaluate
@@ -35,12 +32,12 @@ def test_the_injectable_gate_machinery_is_gone(name: str) -> None:
 
     assert not hasattr(pg, name), (
         f"{name} existed so the chapter composer could inject a gate; "
-        f"the composer is gone and flag.py calls evaluate() directly"
+        f"the composer is gone and callers call evaluate() directly"
     )
 
 
-def test_the_gate_still_withholds_a_flag_carrying_a_secret() -> None:
-    """The behaviour the flag writer depends on is unchanged."""
+def test_the_gate_still_withholds_text_carrying_a_secret() -> None:
+    """The behaviour every outbound writer depends on is unchanged."""
     from lore_core.publish_gate import evaluate
 
     verdict = evaluate("token AKIAIOSFODNN7EXAMPLE leaked into the config")
@@ -48,7 +45,7 @@ def test_the_gate_still_withholds_a_flag_carrying_a_secret() -> None:
     assert verdict.category
 
 
-def test_the_gate_passes_ordinary_flag_text() -> None:
+def test_the_gate_passes_ordinary_text() -> None:
     from lore_core.publish_gate import evaluate
 
     verdict = evaluate("The reaper starves mid-drain when the queue is empty.")

@@ -77,52 +77,6 @@ class ObservabilityConfig:
 
 
 @dataclass
-class OpenAIBackendConfig:
-    """Settings for an OpenAI-compatible curator backend (e.g. local model gateways).
-
-    ``base_url`` is the OpenAI-compatible API root (e.g. ``https://chat.kiconnect.nrw/api/v1``).
-    ``api_key_env`` names the env var holding the API key — this stays out of
-    config files. The recommended persistent home for the key itself is
-    ``$LORE_ROOT/.lore/secrets.env`` (see :mod:`lore_core.secrets_env`); that
-    file is auto-loaded into ``os.environ`` at curator startup, lives inside
-    the gitignored ``.lore/`` directory, and never appears in diffs.
-    ``model_{simple,middle,high}`` override the Anthropic tier names; leave empty to fall
-    back to the env var ``LORE_OPENAI_MODEL_{SIMPLE,MIDDLE,HIGH}`` or pass-through.
-
-    ``reasoning_effort_{simple,middle,high}`` opt the corresponding tier into a
-    reasoning-capable model's effort knob (``"low" | "medium" | "high"``).
-    Empty string means "unset" (no reasoning_effort forwarded). The empty-
-    string-means-unset convention lets the typed CLI set path (``lore config
-    set ...``) and the existing schema walker keep working without learning
-    about ``None`` as a YAML/CLI value. Validated and forwarded to the wire
-    by ``lore_curator.llm_client._resolve_openai_settings``; values from env
-    var ``LORE_OPENAI_REASONING_EFFORT_{SIMPLE,MIDDLE,HIGH}`` win over config.
-    """
-
-    base_url: str = ""
-    api_key_env: str = "LORE_OPENAI_API_KEY"
-    model_simple: str = ""
-    model_middle: str = ""
-    model_high: str = ""
-    reasoning_effort_simple: str = ""
-    reasoning_effort_middle: str = ""
-    reasoning_effort_high: str = ""
-
-
-@dataclass
-class CuratorBackendConfig:
-    """Curator LLM backend selection.
-
-    ``backend`` is one of: ``"auto"`` | ``"subscription"`` | ``"api"`` | ``"openai"``.
-    ``auto`` prefers claude-on-PATH → ANTHROPIC_API_KEY → OpenAI (if configured) → None.
-    Env var ``LORE_LLM_BACKEND`` and CLI ``--backend`` override this config value.
-    """
-
-    backend: str = "auto"
-    openai: OpenAIBackendConfig = field(default_factory=OpenAIBackendConfig)
-
-
-@dataclass
 class JournalConfig:
     """AI + human freeform journal feature flag.
 
@@ -152,8 +106,8 @@ class TierConfig:
 class UserConfig:
     """Personal identity, used when a wiki has no team-mode `_users.yml`.
 
-    ``display_name`` names the person in authored session notes and
-    briefings instead of falling back to the OS `$USER` login name.
+    ``display_name`` names the person instead of falling back to the OS
+    `$USER` login name.
     """
 
     display_name: str = ""
@@ -162,16 +116,27 @@ class UserConfig:
 @dataclass
 class RootConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
-    curator: CuratorBackendConfig = field(default_factory=CuratorBackendConfig)
     journal: JournalConfig = field(default_factory=JournalConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
     user: UserConfig = field(default_factory=UserConfig)
+
+
+#: Config blocks lore used to honour and no longer does. Named explicitly so a
+#: stale file gets one warning for the block that says what happened, rather
+#: than the generic unknown-key notice once per knob inside it.
+RETIRED_BLOCKS = frozenset({"curator"})
 
 
 def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:
     """Merge raw into target dataclass in place; warn on unknown keys."""
     valid = {f.name for f in fields(target)}
     for key, value in raw.items():
+        if not path and key in RETIRED_BLOCKS:
+            warnings.warn(
+                f"root_config: '{key}' is retired and is ignored; remove it from {source}",
+                stacklevel=3,
+            )
+            continue
         if key not in valid:
             qualified = f"{path}.{key}" if path else key
             warnings.warn(f"root_config: unknown key {qualified!r} in {source}", stacklevel=3)
