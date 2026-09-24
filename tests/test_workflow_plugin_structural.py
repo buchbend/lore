@@ -45,6 +45,7 @@ EXPECTED_SKILL_NAMES = {
     "orchestrate-epic",
     "orient",
     "seed-epic",
+    "super-orchestrate",
     "tdd",
     "to-epic",
 }

@@ -18,8 +18,8 @@ Four tiers, ordered strongest -> cheapest:
 
 | Tier | Semantic role | Claude Code model |
 |------|----------------|--------------------|
-| `frontier` | Strongest reasoning: orchestration, grilling / synthesis. | `claude-opus-4-8` (the session's driving model) |
-| `strong` | Crosscheck / review; architectural or cross-cutting implementation. | `claude-opus-4-8` |
+| `frontier` | Strongest reasoning: orchestration, grilling / synthesis. | `claude-opus-5-5` (the session's driving model) |
+| `strong` | Crosscheck / review; architectural or cross-cutting implementation. | `claude-opus-5-5` |
 | `mid` | Exploration / gathering; mechanical implementation. | `claude-sonnet-5` |
 | `cheap` | Bulk-mechanical sub-tasks only — never a stage's default. | `claude-haiku-4-5` |
 
@@ -64,5 +64,20 @@ tiers:
 ```
 
 Only the tiers you list are overridden; everything else falls through
-to `lib/lore_core/tiers/table.py`. See `lib/lore_core/root_config.py:TierConfig`
+to `lib/lore_core/tiers/table.py`.
+
+To run the whole workflow on Sonnet, for example on a smaller
+subscription, override the two Opus tiers. `mid` already resolves to
+Sonnet, and `cheap` stays on Haiku:
+
+```yaml
+tiers:
+  overrides:
+    claude:
+      frontier: claude-sonnet-5
+      strong: claude-sonnet-5
+```
+
+Skills keep naming semantic tiers, so `super-orchestrate`'s default
+`frontier` floor then runs every spawn on Sonnet. See `lib/lore_core/root_config.py:TierConfig`
 and `tests/test_tiers.py::test_config_override_wins_over_table_default`.

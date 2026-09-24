@@ -24,6 +24,7 @@ delegation conventions shared across skills live in
 | `domain-modeling` | Build and sharpen a project's domain model (CONTEXT.md, ADRs). |
 | `to-epic` | Turn a plan/PRD into a PRD file plus an epic tracker issue with a roadmap DAG. |
 | `orchestrate-epic` | Supervise parallel TDD implementation of an epic — plan, dispatch, crosscheck, land. |
+| `super-orchestrate` | Supervise several epics — map dependencies between them, one `orchestrate-epic` lead per epic, frontier tier by default. |
 | `implement-issue` | Fast path for one well-understood GitHub issue, outside the epic chain. |
 | `brief` | Middle rung — pack-only orientation + one reflected brief, then handoff to `implement-issue` or `tdd`. |
 | `consolidate-docs` | Sweep a wild-grown docs tree — plan-approved merge/move/delete back into Diátaxis shape. |

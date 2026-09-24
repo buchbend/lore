@@ -44,9 +44,15 @@ the workflow uses it but does not ship it.
 fast path for one well-understood issue, keeping the same discipline (strict
 TDD, ADR check, Diátaxis docs pass) at single-issue weight.
 
+`super-orchestrate` sits **one level above `orchestrate-epic`**. It takes
+several epics, maps the dependencies between them, and hands each epic to an
+**epic lead** running `orchestrate-epic`. A downstream epic starts after its
+upstream epics merge. Epics that only touch the same files run in
+parallel; the epic lead that merges second reconciles both in a fix step.
+
 **Bundled skills:** `ccat-workflow-init`, `seed-epic`, `orient`, `grilling`,
 `domain-modeling`, `to-epic`, `orchestrate-epic`, `document-epic`, `tdd`,
-`debug`, `implement-issue` — all
+`debug`, `implement-issue`, `super-orchestrate` — all
 shipped as `lore-workflow:<name>` skills. `ccat-workflow-init` is a one-time
 onboarding scaffold, not part of the per-epic chain above; see
 [Onboard a repo](how-to/onboard-a-repo.md).
@@ -253,5 +259,10 @@ first time.
   escalations.
 - **epic seed** — a tracker issue capturing a session's context for a cold
   session to `orient` on; not yet a formed spec.
+- **epic lead** — a subagent that `super-orchestrate` spawns to run
+  `orchestrate-epic` on one epic; it reports to the supervisor, never to the
+  human.
+- **tier floor** — one tier a caller sets for every spawn of a run, replacing
+  the per-stage tier choices; `super-orchestrate` sets `frontier` by default.
 - **cold session** — a fresh session with no memory of prior conversation,
   starting only from the repo and issue it is pointed at.
