@@ -52,7 +52,8 @@ parallel; the epic lead that merges second reconciles both in a fix step.
 
 **Bundled skills:** `ccat-workflow-init`, `seed-epic`, `orient`, `grilling`,
 `domain-modeling`, `to-epic`, `orchestrate-epic`, `document-epic`, `tdd`,
-`debug`, `implement-issue`, `super-orchestrate` — all
+`debug`, `implement-issue`, `super-orchestrate`, `brief`, `consolidate-docs`,
+`file-issue` — all
 shipped as `lore-workflow:<name>` skills. `ccat-workflow-init` is a one-time
 onboarding scaffold, not part of the per-epic chain above; see
 [Onboard a repo](how-to/onboard-a-repo.md).

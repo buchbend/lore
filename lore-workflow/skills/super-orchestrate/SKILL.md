@@ -39,11 +39,12 @@ validate-roadmap --json -`. Any `ok: false` → report every failing epic's `pro
 spawn. A partial run on a known-bad input only moves the failure downstream.
 
 **Resume.** Look for the upstream comment (marker below) on every epic.
-- Present on every epic → the epic DAG is on record and confirmed: skip Map, Confirm and Record.
-- Present on some epics only → the input changed: Map all epics again.
-- Per epic, derive state from GitHub. An epic PR merged into the target branch → **merged**. An
-  `orchestrate-epic` board comment → **started**: relaunch its lead, which resumes from that board.
-  Neither → **queued**.
+- Present on every epic, and every epic the comments name is in the input → the epic DAG is on record and
+  confirmed: skip Map, Confirm and Record. Read the tier floor back from the comments.
+- Otherwise the input changed: Map all epics again.
+- Per epic, derive state from GitHub. Every epic PR merged into its target branch → **merged**; read each
+  merge SHA with `gh pr view <pr> --json mergeCommit`. An `orchestrate-epic` board comment, with every upstream
+  epic merged → **started**: its lead resumes from that board. Anything else → **queued**.
 
 **Map (delegated).** Spawn one analyst subagent at the tier floor. Per epic it reads the body and roadmap,
 the linked PRD under `docs/prd/`, the sub-issues' acceptance criteria, and ranked `lore codemap` slices
@@ -83,21 +84,23 @@ Overlaps: owner/repo#<n> — <shared files, symbols or migrations> | none
 Tier floor: <floor>
 ```
 
-**Dispatch.** Launch the lead of every queued epic whose upstream epics have all merged, at most M at once.
+**Dispatch.** At most M leads run at once. Whenever a slot is free — at the start and after every lead
+report — launch the next lead: started epics first, then queued epics whose upstream epics have all merged.
 Each lead is a background subagent at the tier floor, spawned with worktree isolation and
 `LORE_SUPPRESS_CAPTURE=1` in its environment. Pass it the filled Lead brief below.
 
 _Liveness._ Event-driven: a lead's completion notification is the signal; never poll. A lead that ends
-without a merged, escalation or blocked report is respawned once with the same brief. `orchestrate-epic`
+without a `merged` or `escalation` report is respawned once with the same brief. `orchestrate-epic`
 resumes it from its board. A second death marks the epic blocked; escalate.
 
 **On each lead report.**
-- **merged** — note the epic PR's merge SHA. Dispatch every queued epic whose upstream epics have now all
-  merged, and pass the SHA to each of them.
-- **escalation** — a HITL feature, a crosscheck failing twice, an ambiguous spec, a conflict, a CI-infra
-  failure, or a deploy-gate confirmation. Ask the human one question per escalation, with the lead's
-  evidence attached. `SendMessage` the answer to that lead, which resumes. Other epics keep running.
-- **blocked** — the lead has stopped for good. Its downstream epics stay queued; report them with the cause.
+- **merged** — note each repo's epic PR and merge SHA, and pass them to the downstream leads. `SendMessage`
+  every running lead that overlaps the merged epic: its target branch moved, so it repeats its fix step.
+- **escalation** — any `orchestrate-epic` stop condition, or a deploy-gate confirmation. Ask the human one
+  question per escalation, with the lead's evidence attached. The answer either resumes the lead by
+  `SendMessage`, or blocks the epic. Other epics keep running.
+- A **blocked** epic — blocked by the human or by a second death — keeps its downstream epics queued;
+  report them with the cause.
 
 **Final checklist.** Before reporting completion, emit and satisfy this — each item verified true, not
 merely intended:
@@ -122,19 +125,23 @@ Report, per epic: state, epic PR, merge SHA, upstream edges.
 > re-implement them.
 > Overlapping epics, running beside you: owner/repo#<m> — <shared files, symbols or migrations> | none.
 > Read their bodies and PRDs, so you know what each one intends.
-> **Fix step**, after the docs commit and before the whole-epic review. Merge the target branch into
+> **Fix step**, after the last feature merges and before the epic tail. Merge the target branch into
 > `epic/<n>`. Resolve every conflict yourself, keeping the intent of both epics. You are the one agent
 > that knows why each side changed. Re-parent this epic's migrations onto the target branch's head and
 > verify a single head. Get the full suite and epic-branch CI green. Repeat the fix step whenever the
-> target branch moves before your epic PR merges. A fix step that resolved a conflict makes the
-> whole-epic review mandatory, also for an epic of two features or fewer. The fix step overrides
+> target branch moves before your epic PR merges, or when the supervisor says it moved. A fix step that
+> resolved a conflict goes to the whole-epic reviewer again, even for two features or fewer, even after a
+> passing review. A deploy-gate confirmation given for the earlier tree is asked again. The fix step overrides
 > `orchestrate-epic`'s rule against resolving conflicts by hand, for this merge only. A conflict between
 > features of your own epic still goes back to their teammate.
-> You run in your own worktree. Never switch the branch of a checkout you did not create.
-> You cannot reach the human. On a stop condition or a deploy-gate confirmation, let the other features
-> of the epic reach merged or blocked first. Then end with an escalation report: the question, the
-> evidence, the board state. The supervisor answers by message, and you resume.
-> End with exactly one report: `merged` (epic PR, merge SHA) | `escalation` (as above) | `blocked` (cause).
+> You run in your own worktree. Never switch the branch of a checkout you did not create. Other leads run
+> beside you under one session, and in-place editor writes (Edit/Write) can land in a sibling's worktree.
+> Apply your own file changes via shell at absolute paths.
+> You cannot reach the human. Every stop `orchestrate-epic` would escalate or mark blocked, and every
+> deploy-gate confirmation, is an escalation to the supervisor. Let the other features of the epic reach
+> merged or blocked first. Then end with an escalation report: the question, the evidence, the board
+> state. The supervisor answers by message, and you resume.
+> End with exactly one report: `merged` (per repo: epic PR, merge SHA) | `escalation` (as above).
 
 ## Stop conditions
 A roadmap failing the gate; a cycle in the epic DAG; the confirmation pending or rejected; an escalation
