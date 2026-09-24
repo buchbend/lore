@@ -96,7 +96,8 @@ fragment. Choose the model tier from the feature's assessed
 complexity (cheaper for well-scoped work, strongest for cross-cutting) and pass the resolved model in the
 spawn call (`lore tier resolve <tier>`, see [TIER-DELEGATION.md](../../TIER-DELEGATION.md)); no delegation
 inherits your session model. Record the tier and its rationale in the board's notes section; the table row
-carries only the assigned tier.
+carries only the assigned tier. A caller-supplied **tier floor** (`super-orchestrate` passes one, `frontier`
+by default) replaces this choice and every reviewer tier below, for every spawn; record it once in the notes.
 
 _Liveness._ Event-driven, not polled: the harness's completion notification is the primary signal. Fallback:
 a teammate silent ~30 minutes is respawned once into the same worktree with the same brief; a second death on

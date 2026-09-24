@@ -12,8 +12,8 @@ TIER_ORDER: tuple[str, ...] = ("frontier", "strong", "mid", "cheap")
 
 TABLE: dict[str, dict[str, str]] = {
     "claude": {
-        "frontier": "claude-opus-4-8",
-        "strong": "claude-opus-4-8",
+        "frontier": "claude-opus-5-5",
+        "strong": "claude-opus-5-5",
         "mid": "claude-sonnet-5",
         "cheap": "claude-haiku-4-5",
     },
