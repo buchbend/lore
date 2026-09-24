@@ -8,6 +8,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.74.0] - 2026-09-24
+
+Adds a skill that runs several epics in one session (#431), and moves the
+two Opus tiers to Opus 5.5.
+
+### Added
+
+- **`lore-workflow:super-orchestrate`** (#431). The skill takes two or more
+  epic tracker issues. One analyst subagent maps the dependencies between the
+  epics. The supervisor asks the human once to confirm the epic list and the
+  order. Each epic then runs under its own epic lead, a subagent that runs
+  `orchestrate-epic`. A downstream epic starts after its upstream epics merge.
+  Epics that only share files run side by side, and the epic lead that merges
+  second resolves the conflict in a fix step.
+- **An all-Sonnet example in `docs/model-tiers.md`** (#431). The vault config
+  overrides `frontier` and `strong`, and every tier then resolves to Sonnet.
+
+### Changed
+
+- **`frontier` and `strong` resolve to `claude-opus-5-5`** on the `claude`
+  host (#431). A vault override in `$LORE_ROOT/.lore/config.yml` still wins.
+- **`orchestrate-epic` accepts a tier floor from its caller** (#431). The
+  floor replaces every implementation tier and every reviewer tier.
+- **The `lore-workflow` plugin moves to 0.6.0** (#431).
+
 ## [0.73.1] - 2026-09-18
 
 ### Fixed
