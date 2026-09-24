@@ -118,3 +118,19 @@ After all tests pass, look for refactor candidates:
 [ ] Code is minimal for this test
 [ ] No speculative features added
 ```
+
+## Decision gate
+
+An ADR, a PRD or a wiki topic-note edit outside a grilling or domain-modeling session
+is a PR. A human merges it. When this loop produces one of those, open it as a PR
+instead of committing it directly to the target branch.
+
+## Session end
+
+Retrieval-miss check: read `feedback.retrieval_misses` (`lore config get
+feedback.retrieval_misses`). When true, file one issue per retrieval miss on
+`feedback.retrieval_misses_repo` through `file-issue`, naming the fact, the tools
+tried, and the turn count. A retrieval miss is a fact a Lore tool did not return that
+you found instead by reading files or running commands. When false, skip the check.
+
+List every issue and PR the session created or commented on in your final message.

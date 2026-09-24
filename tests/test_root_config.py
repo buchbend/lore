@@ -15,6 +15,20 @@ def test_defaults_when_file_absent(tmp_path: Path):
     assert cfg.observability.runs.keep_trace == 30
 
 
+def test_feedback_defaults_when_file_absent(tmp_path: Path):
+    cfg = load_root_config(tmp_path)
+    assert cfg.feedback.retrieval_misses is False
+    assert cfg.feedback.retrieval_misses_repo == "buchbend/lore"
+
+
+def test_schema_tree_lists_feedback_keys_with_defaults():
+    from lore_core.root_config import schema_tree
+
+    defaults = {path: default for path, _type, default, _doc in schema_tree()}
+    assert defaults["feedback.retrieval_misses"] is False
+    assert defaults["feedback.retrieval_misses_repo"] == "buchbend/lore"
+
+
 def test_retention_defaults_when_file_absent(tmp_path: Path):
     cfg = load_root_config(tmp_path)
     assert cfg.observability.retention.hot_days == 7

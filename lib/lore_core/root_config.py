@@ -103,6 +103,21 @@ class TierConfig:
 
 
 @dataclass
+class FeedbackConfig:
+    """Session-end retrieval-miss reporting, opt-in per user.
+
+    A retrieval miss is a fact a Lore tool did not return, found instead by
+    reading files or running commands. When ``retrieval_misses`` is true,
+    the orient, implement-issue and tdd skills file one issue per miss on
+    ``retrieval_misses_repo``, naming the fact, the tools tried, and the
+    turn count. Off by default: the check never runs unasked.
+    """
+
+    retrieval_misses: bool = False
+    retrieval_misses_repo: str = "buchbend/lore"
+
+
+@dataclass
 class UserConfig:
     """Personal identity, used when a wiki has no team-mode `_users.yml`.
 
@@ -119,6 +134,7 @@ class RootConfig:
     journal: JournalConfig = field(default_factory=JournalConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
     user: UserConfig = field(default_factory=UserConfig)
+    feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
 
 
 #: Config blocks lore used to honour and no longer does. Named explicitly so a
