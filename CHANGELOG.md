@@ -8,6 +8,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.74.1] - 2026-09-26
+
+Ships `lore-workflow` 0.7.0 with the new skill `quick-orchestrate` (#437).
+
+### Added
+
+- **`lore-workflow:quick-orchestrate`, a light variant of `orchestrate-epic`.**
+  The skill runs only on the human's request. It fits a small epic whose
+  slices mostly build one new package. The lead writes the slices that share
+  new files itself. A teammate builds each slice in an independent code area,
+  in its own worktree, and commits without a PR. The lead merges locally into
+  the epic branch. One independent review and the docs pass run on the single
+  epic PR, and the human merges it.
+
 ## [0.74.0] - 2026-09-24
 
 Adds a skill that runs several epics in one session (#431), speeds up
