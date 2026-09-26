@@ -15,7 +15,7 @@
     {
       "name": "lore-workflow",
       "source": "./lore-workflow",
-      "description": "Deterministic epic/PRD/TDD workflow skills for AI-coding teams (15 skills: orient, grilling, to-epic, orchestrate-epic, super-orchestrate, tdd, debug, document-epic, \u2026). Depends on lore."
+      "description": "Deterministic epic/PRD/TDD workflow skills for AI-coding teams (16 skills: orient, grilling, to-epic, orchestrate-epic, quick-orchestrate, super-orchestrate, tdd, debug, document-epic, \u2026). Depends on lore."
     }
   ]
 }

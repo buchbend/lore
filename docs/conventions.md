@@ -50,9 +50,15 @@ several epics, maps the dependencies between them, and hands each epic to an
 upstream epics merge. Epics that only touch the same files run in
 parallel; the epic lead that merges second reconciles both in a fix step.
 
+`quick-orchestrate` is a **light variant of `orchestrate-epic`**, run only on
+the human's request. The lead writes the slices that share new code itself and
+delegates only independent slices. Teammates commit without a PR, and the lead
+merges them locally into `epic/<n>`. One independent reviewer and the docs pass
+run on the single epic PR, and the human merges it.
+
 **Bundled skills:** `ccat-workflow-init`, `seed-epic`, `orient`, `grilling`,
 `domain-modeling`, `to-epic`, `orchestrate-epic`, `document-epic`, `tdd`,
-`debug`, `implement-issue`, `super-orchestrate`, `brief`, `consolidate-docs`,
+`debug`, `implement-issue`, `super-orchestrate`, `quick-orchestrate`, `brief`, `consolidate-docs`,
 `file-issue` — all
 shipped as `lore-workflow:<name>` skills. `ccat-workflow-init` is a one-time
 onboarding scaffold, not part of the per-epic chain above; see
