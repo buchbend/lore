@@ -212,8 +212,10 @@ Report.
 > guidance, task boundaries, carrying the ranked ~1k-token codemap excerpts from `lore codemap` (never the
 > whole map). Read it before exploring — repo discovery is done; widen from it only as needed.
 > Method: strict TDD via `/lore-workflow:tdd` — failing test first, make it pass, refactor; include the
-> failing-test output in the PR body. Before pushing, run ruff (check + format) and the full suite, both
-> clean. When stuck, use the `/lore-workflow:debug` circuit breaker, not a 4th blind fix.
+> failing-test output in the PR body. Before pushing, run ruff (check + format) and the test files your
+> feature touched plus the tests of shared surfaces it reaches (routes, permissions, schema), all clean.
+> Do not run the full suite: epic-branch CI runs it after each merge (see Test runs in `tdd`).
+> When stuck, use the `/lore-workflow:debug` circuit breaker, not a 4th blind fix.
 > Scope fence: change only what this feature needs. Sibling features may edit the same files at the same
 > time: keep your edits there small and local. A rebase conflict comes back to you to resolve.
 > Sibling-write hazard: parallel teammates in separate worktrees under one session can share an isolation
