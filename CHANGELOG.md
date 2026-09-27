@@ -8,6 +8,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.74.2] - 2026-09-27
+
+Ships `lore-workflow` 0.7.1 with scoped test runs (#439).
+
+### Changed
+
+- **`lore-workflow:tdd` scopes each test run.** In the loop, the agent runs
+  the touched test files only. Before a push, the agent adds the tests of
+  shared surfaces such as route lists, permission and scope maps. The full
+  suite runs once at the merge point, with the project's parallel runner.
+  UI and flow work checks the running app and leaves the full suite for the
+  merge point.
+- **`lore-workflow:orchestrate-epic` teammates skip the full suite before a
+  push.** Epic-branch CI runs the full suite after each merge.
+
 ## [0.74.1] - 2026-09-26
 
 Ships `lore-workflow` 0.7.0 with the new skill `quick-orchestrate` (#437).
