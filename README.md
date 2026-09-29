@@ -254,9 +254,8 @@ Once attached with a wiki present:
   every attached transcript into its wiki's `.transcripts/` and
   emitting the one live drain event, `transcript-synced`. An
   opportunistic, flock-guarded retention sweep runs in-process
-  alongside it — short and lock-guarded, so it doesn't block
-  SessionStart in practice, but only the transcript sync is actually
-  detached.
+  alongside it, short enough not to block SessionStart. The transcript
+  sync, the wiki pull and the codemap refresh run as detached children.
 - **SessionStart also spawns two more detached children**, so a slow
   remote or a large repo never delays the banner. `lore hook wiki-pull`
   fetches and fast-forwards the attached wiki. `lore hook codemap-refresh`

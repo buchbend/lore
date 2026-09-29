@@ -601,10 +601,15 @@ def record_auto_pull(lore_root: Path, wiki: str) -> None:
     """
     from lore_core.io import atomic_write_text
 
-    warning = _auto_pull_wiki(wiki, lore_root)
-    path = _auto_pull_record_path(lore_root, wiki)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(path, json.dumps({"warning": warning}))
+    warning: str | None = None
+    try:
+        warning = _auto_pull_wiki(wiki, lore_root)
+    finally:
+        # A pull that raised records no warning, so a stale one from an
+        # earlier session does not outlive the attempt.
+        path = _auto_pull_record_path(lore_root, wiki)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, json.dumps({"warning": warning}))
 
 
 def recorded_auto_pull_warning(lore_root: Path, wiki: str) -> str | None:

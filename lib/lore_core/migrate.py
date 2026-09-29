@@ -360,7 +360,9 @@ def migrate_strip_flag_blocks(
         f"[bold]{verb} {total_blocks} flag block(s)[/bold] across {files_touched} file(s)."
     )
     if skipped:
-        console.print(f"[yellow]skipped {skipped} note(s)[/yellow] that could not be edited safely.")
+        console.print(
+            f"[yellow]skipped {skipped} note(s)[/yellow] that could not be edited safely."
+        )
     if dry_run:
         console.print("[dim]Re-run with --apply to write changes.[/dim]")
 

@@ -2,7 +2,7 @@
 
 Lore writes no session note automatically; the compose pipeline that once
 filed one was retired. This file covers the `slugify` helper used by plans
-and the `commit` CLI verb used by inbox/briefing skills."""
+and the `commit` CLI verb used by inbox skills."""
 
 from __future__ import annotations
 

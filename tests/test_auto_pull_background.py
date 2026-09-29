@@ -9,6 +9,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from lore_core.session_start import record_auto_pull, recorded_auto_pull_warning
 
 
@@ -59,6 +61,23 @@ def test_clean_pull_clears_an_earlier_warning(tmp_path: Path) -> None:
     _git(wiki, "checkout", "--", "a.md")
 
     record_auto_pull(lore_root, "demo")
+
+    assert recorded_auto_pull_warning(lore_root, "demo") is None
+
+
+def test_a_pull_that_raises_clears_an_earlier_warning(tmp_path: Path, monkeypatch) -> None:
+    lore_root = tmp_path / "vault"
+    wiki = _wiki_with_remote(lore_root)
+    (wiki / "a.md").write_text("edited\n")
+    record_auto_pull(lore_root, "demo")
+    assert recorded_auto_pull_warning(lore_root, "demo") is not None
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("pull blew up")
+
+    monkeypatch.setattr("lore_core.session_start._auto_pull_wiki", boom)
+    with pytest.raises(RuntimeError):
+        record_auto_pull(lore_root, "demo")
 
     assert recorded_auto_pull_warning(lore_root, "demo") is None
 
