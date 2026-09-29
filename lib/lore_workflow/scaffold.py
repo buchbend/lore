@@ -14,6 +14,9 @@ What it does:
 2. Create docs/prd/index.md and docs/adr/index.md (toctree stubs) if absent.
 3. Ensure docs/index.md exists and wires both prd/index and adr/index into
    its first toctree block, idempotently.
+4. Append ADR 0015's reading rule to AGENTS.md unless the file carries it.
+   The text comes from the SessionStart directive template, so the hook and
+   AGENTS.md say the same thing.
 
 Deliberately out of scope (per PRD 0003, a sibling slice, #170): the
 .claude/settings.json permissions allowlist and hook wiring. This module
@@ -23,6 +26,8 @@ never touches settings.json.
 from __future__ import annotations
 
 from pathlib import Path
+
+from lore_core.session_start import reading_rule
 
 from lore_workflow.prd_docs import wire_toctree
 
@@ -99,6 +104,23 @@ def _migrate_claude_md(target: Path) -> bool:
     return changed
 
 
+_READING_RULE_HEADING = "## Reading ADRs and PRDs"
+
+
+def _append_reading_rule(target: Path) -> bool:
+    """Append ADR 0015's reading rule to AGENTS.md once. Returns whether it wrote."""
+    rule = reading_rule()
+    agents_md = target / "AGENTS.md"
+    current = agents_md.read_text(encoding="utf-8") if agents_md.exists() else ""
+    if not rule or rule in current:
+        return False
+    separator = "" if not current else ("\n" if current.endswith("\n") else "\n\n")
+    agents_md.write_text(
+        f"{current}{separator}{_READING_RULE_HEADING}\n\n{rule}\n", encoding="utf-8"
+    )
+    return True
+
+
 def _create_index_stub(index_path: Path, stub: str) -> bool:
     if index_path.exists():
         return False
@@ -129,6 +151,7 @@ def scaffold(target: Path) -> bool:
     target = Path(target).resolve()
 
     changed = _migrate_claude_md(target)
+    changed |= _append_reading_rule(target)
     changed |= _create_index_stub(target / "docs" / "adr" / "index.md", _ADR_INDEX_STUB)
     changed |= _create_index_stub(target / "docs" / "prd" / "index.md", _PRD_INDEX_STUB)
     changed |= _wire_docs_index(target)
