@@ -1,7 +1,7 @@
 # Writing Rules
 
 Status: draft
-Scope: issue text, PR descriptions, PR review comments, ADR context sections, design documents and flag text
+Scope: issue text, PR bodies, PR review comments, ADRs, PRDs, docs, the handover section and flag text
 
 ## Why this exists
 
@@ -56,8 +56,12 @@ fact.
 20. A short name for a thing belongs in the glossary. Where the glossary holds no entry, write the meaning out. `L0` means a data level.
 21. A short name for a piece of work never enters a title, a description, a document or a commit message. A phase, a group and a priority code are such names. Cite the issue number instead. Not "the G4 group" but "issue 412".
 
-Enforcement differs per rule. Vale lints rules 3 and 6, the banned words and
-the sentence length. Rules 9 and 12 run as regex heuristics that catch the
+### ADRs and PRDs
+
+22. No absolutes in ADR and PRD text outside an invariant line. Absolutes: always, never, no exceptions, fixed, must. State the strength in the `Holds` section instead.
+
+Enforcement differs per rule. Vale lints rules 3 and 6 everywhere and rule 22
+in ADRs and PRDs. Rules 9 and 12 run as regex heuristics that catch the
 common forms and miss the rest. Rules 4 and 10 need a human reviewer, because
 Vale does not tag parts of speech. Rules 1, 2 and 20 need the glossary.
 
