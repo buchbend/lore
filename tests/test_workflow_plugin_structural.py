@@ -83,7 +83,7 @@ BANNED_SCRIPT_REFERENCES = (
 
 SKILL_LINE_BUDGET = 150
 SKILL_LINE_BUDGET_WAIVERS: dict[str, int] = {
-    "build": 200,
+    "build": 225,
     "to-epic": 220,
     "file-issue": 160,
 }

@@ -8,8 +8,8 @@ description: Write the handover section for work that stops before its finish po
 
 # Handover
 
-**Tier note:** this step runs in the main session at frontier-tier. It is not delegated to a
-subagent.
+**Tier note:** this step runs in the main session at frontier-tier. The step is not delegated
+to a subagent.
 
 Run `lore style show writing-rules` before you write. The handover section and the seed issue
 are team-facing text.
@@ -51,8 +51,10 @@ question.
 
 1. **Resolve what you can.** Run `lore workflow ledger-check` (epic: pipe the board comment into
    `lore workflow ledger-check -`). File each `left` line you can through
-   [`file-issue`](../file-issue/SKILL.md) and set it `filed`. Leave ADR and term candidates open
-   for the next session; name them under **State**.
+   [`file-issue`](../file-issue/SKILL.md) and set it `filed` with `lore workflow ledger-set`.
+   In epic mode, add `--board -`, pipe the board comment in, and write the printed body back to
+   the comment; see [build's epic tail](../build/epic-tail.md) § 2. Leave ADR and term
+   candidates open for the next session; name them under **State**.
 2. **Write the handover section** into its home. With no home, write a seed issue.
 3. **Leave the resume line.** `lore workflow ledger-add --kind resume --text "<state>" --next
    "<next ask>"` (epic: with `--path -`, pasted into the board's `## Ledger`).

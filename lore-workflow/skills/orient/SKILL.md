@@ -56,7 +56,7 @@ them in one message at the `mid` tier (required): pass `lore tier resolve mid` a
 - **What we are deciding** — the crux and the real choices.
 - **Open questions and assumptions.**
 - **What I understand you want** — one short paragraph in the project's domain language.
-- **Relevant landscape** — at most five bullets, each a fact that constrains a decision. Close
+- **Relevant context** — at most five bullets, each a fact that constrains a decision. Close
   with "ask for the long version".
 - **Tentative scope** — in and out, marked provisional.
 

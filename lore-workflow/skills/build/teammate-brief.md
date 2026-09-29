@@ -29,3 +29,6 @@ Fill the brackets and pass the text to each `epic` teammate.
 > Deliver: push, write the PR body through `/lore-workflow:file-issue` in PR-body mode, open the
 > PR linking #<n>. Report the PR number, the red→green evidence, a one-paragraph summary, and the
 > candidates above.
+
+Exception: in the human-present option of `epic` mode (`SKILL.md`), replace the Deliver
+paragraph. The teammate commits on its branch, opens no PR, and reports the branch.

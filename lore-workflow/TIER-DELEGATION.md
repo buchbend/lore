@@ -43,7 +43,7 @@ review): **set by the risk level**. `lore workflow risk <pr> --json` prints `low
 | `high` | `strong` | `code-review medium` |
 
 The agent may raise the level and never lowers it. The reviewer does not judge CI or ruff: the
-orchestrator reads both from `gh pr checks`.
+`build` run reads both from `gh pr checks`.
 
 **Exploration fan-out** (`orient` full mode, step 2): **required `mid`**. Parallel explorers
 (code map, docs, cross-repo scan) run at `mid`. A cheaper tier skips the depth; `frontier`

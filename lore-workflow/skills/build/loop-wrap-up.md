@@ -33,7 +33,7 @@ commit in the first resume line of the ledger.
    `<base>..loop/<slug>`.
 6. **Commit, test, merge locally** as in a round.
 7. **Finish point.** `lore workflow ledger-check` passes, or you go back to step 3.
-8. **Wrap-up PR.** This is the one thing that reaches the remote. Add the version bump as the
+8. **Wrap-up PR.** The wrap-up PR is the one thing that reaches the remote. Add the version bump as the
    last commit if the repo's `AGENTS.md` or `CLAUDE.md` requires one. Push `loop/<slug>`. Open
    one PR `loop/<slug> → <target>`. Its body is the handover section, in the shape
    [`handover`](../handover/SKILL.md) gives, written through `file-issue` in PR-body mode.

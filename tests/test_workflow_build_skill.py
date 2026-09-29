@@ -155,3 +155,37 @@ def test_every_lore_workflow_verb_in_the_skills_exists() -> None:
         cited |= set(re.findall(r"lore workflow ([a-z][a-z-]*)", path.read_text(encoding="utf-8")))
     assert cited, "no skill cites a `lore workflow` verb"
     assert cited <= registered, f"skills cite unknown verbs: {sorted(cited - registered)}"
+
+
+# --- who merges after a PASS ----------------------------------------------
+
+PASS_ACTIONS = (
+    "**PASS and green checks, `epic` feature PR:** merge it into `epic/<issue>`.",
+    "**PASS and green checks, the epic PR:** go back to [epic-tail.md](epic-tail.md) § 4.",
+    "**PASS and green checks, `issue` mode:** go on to the finish point. The user merges.",
+)
+
+
+def test_a_pass_names_its_mode_before_any_merge() -> None:
+    review = _text("build/review.md")
+    for line in PASS_ACTIONS:
+        assert line in review, line
+    assert "PASS and green checks: merge" not in review
+
+
+def test_issue_mode_never_tells_the_agent_to_merge() -> None:
+    """Issue mode ends at the finish point; the user merges its PR."""
+    issue = _section("Mode `issue`")
+    # "pre-merge" names a mode of `document`, not a merge.
+    merges = re.findall(r"(?<!pre-)\bmerg\w*", issue, re.I)
+    assert merges == ["merges"], merges
+    assert "The user merges." in issue
+
+
+def test_epic_outcomes_go_through_ledger_set_on_the_board() -> None:
+    """`ledger-set` edits a file unless it gets `--board -`; an epic has no file."""
+    assert "`--board -`" in _section("Rules for every mode")
+    assert "lore workflow ledger-set <n> --outcome approved --board -" in _text(
+        "build/epic-tail.md"
+    )
+    assert "`--board -`" in _text("handover/SKILL.md")

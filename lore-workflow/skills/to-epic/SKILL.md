@@ -65,7 +65,7 @@ rebases), so cut the fewest slices that earn a split. A split earns its cost onl
 **real parallelism** (slices teammates can build side by side, also in the same files), **a HITL
 boundary** (isolate the human decision so the AFK remainder runs unattended), or **risk
 isolation** (quarantine the uncertain piece from the safe work). Everything else merges —
-hard rule: **a strictly linear blocked-by chain collapses into one slice**; the orchestrator
+hard rule: **a strictly linear blocked-by chain collapses into one slice**; `build`
 serializes it anyway, so extra rows buy only overhead. Conceptual separation and layer
 boundaries never justify a split. **Blocked by** records a real dependency only: the slice
 needs code, a schema or an interface that another slice adds. Two slices that only edit the

@@ -47,7 +47,9 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
   tell the user that `/clear` is safe. After `/clear`, resume from the last resume line.
 - **Finish point.** Run `lore workflow ledger-check` (epic: pipe the board comment into `lore
   workflow ledger-check -`). Do not finish while it exits 1. Set each outcome with `lore workflow
-  ledger-set <n> --outcome approved|dropped|"filed <owner/repo#n>"`.
+  ledger-set <n> --outcome approved|dropped|"filed <owner/repo#n>"`. In `epic` mode, add
+  `--board -`, pipe the board comment in, and write the printed body back to the comment. The
+  commands are in [epic-tail.md](epic-tail.md) § 2.
 - **Handover section.** Each finish point writes `## Handover` in the shape
   [`handover`](../handover/SKILL.md) gives. Work that stops early runs `handover` instead.
 - **Version bump.** If the repo's `AGENTS.md` or `CLAUDE.md` requires a version bump per release,
@@ -63,10 +65,14 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
 
 Small asks, the human watching. No PRD, no teammates, no PR per round.
 
-**Stop and advise design** before you code an ask with any of these signs: a new data model,
-table, API endpoint or persisted state; several features or component boundaries; a choice
-between real alternatives the user has not made; auth, permissions, secrets or other users'
-data; no way to state it as one testable behaviour. Name the sign in one line. Recommend
+**Stop and advise design** before you code an ask with any of these signs:
+- a new data model, table, API endpoint or persisted state;
+- several features or component boundaries;
+- a choice between real alternatives the user has not made;
+- auth, permissions, secrets or other users' data;
+- no way to state it as one testable behaviour.
+
+Name the sign in one line. Recommend
 `orient` then `issue`, or `grilling` then `to-epic`. Log the ask as a `left` line and carry on
 with the small asks. The user may say "do it anyway"; then slice it into small rounds.
 
@@ -170,26 +176,41 @@ in its environment. Tier: `mid` for well-scoped work, `strong` for cross-cutting
 [teammate-brief.md](teammate-brief.md). A teammate silent for about 30 minutes is spawned once
 more into the same worktree. A second death blocks the feature.
 
-**Review.** When a PR opens, follow [review.md](review.md). PASS and green checks: merge.
+**Review.** When a feature PR opens, follow [review.md](review.md). PASS and green checks: merge
+it into `epic/<issue>`.
 
-**Merge.** Merge each passing PR into `epic/<issue>`. If the epic branch moved, rebase the PR
-and wait for green checks. A rebase conflict goes back to the teammate. For a cross-repo pin,
-merge the producer and record its SHA first. Then tick the roadmap checkbox, close the
-sub-issue (`gh issue close <n> --comment "Merged via PR #<pr>"`), set the row to `merged`, add
-the teammate's ADR and term candidates to the ledger, and add the resume line (breakpoint). Check that epic-branch CI is green and, where the repo has
-migrations, that one migration head remains. Dispatch every feature the merge made ready.
+**Merge.** Merge each passing feature PR into `epic/<issue>`. If the epic branch moved, rebase
+the PR and wait for green checks. A rebase conflict goes back to the teammate. For a cross-repo
+pin, merge the producer and record its SHA before you dispatch the consumer that pins it. After
+each merge:
+- tick the roadmap checkbox;
+- close the sub-issue (`gh issue close <n> --comment "Merged via PR #<pr>"`);
+- set the row to `merged`;
+- add the teammate's ADR and term candidates to the ledger;
+- add the resume line (breakpoint);
+- check that epic-branch CI is green and, where the repo has migrations, that one migration head
+  remains.
 
-**Human present, on request.** When the user asks for a quick run and stays present, and every
-row is AFK in one repo without a deploy gate: build the slices that share new files yourself
-on `epic/<issue>`. Give teammates only the independent slices; they commit without a PR, and
-you merge their branches with `--no-ff`. Your own slices may write tests beside the code. Then
-break two or three pieces of key logic, confirm the tests fail, restore, and note the check on
-the board. Then run the epic tail: its whole-epic review is the one review of this run, for any
-number of features, and the user merges instead of you.
+Then dispatch every feature the merge made ready.
+
+**Human present, on request.** This option needs three things. The user asks for a quick run
+and stays present. Every row is AFK. One repo without a deploy gate holds all rows.
+- Build the slices that share new files yourself, on `epic/<issue>`.
+- Give teammates only the independent slices. They commit without a PR; you merge their
+  branches with `--no-ff`.
+- Your own slices may write tests beside the code. Then break two or three pieces of key logic,
+  confirm the tests fail, restore, and note the check on the board.
+- Then run the epic tail. Its whole-epic review is the one review of this run, for any number
+  of features. The user merges instead of you.
 
 **Epic tail.** When every row is merged and CI is green, read [epic-tail.md](epic-tail.md) and
 follow it.
 
-**Stop conditions.** A HITL row; a PR still failing after two fix rounds; an ambiguous spec
-that needs a scientific or architectural call; a merge conflict no teammate resolves; a CI
-infrastructure failure. Note it on the board, keep the other features running, and report.
+**Stop conditions:**
+- a HITL row;
+- a PR still failing after two fix rounds;
+- an ambiguous spec that needs a scientific or architectural call;
+- a merge conflict no teammate resolves;
+- a CI infrastructure failure.
+
+Note the stop on the board, keep the other features running, and report.
