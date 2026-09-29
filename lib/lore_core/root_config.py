@@ -129,12 +129,45 @@ class UserConfig:
 
 
 @dataclass
+class RiskConfig:
+    """Thresholds for ``lore workflow risk`` (PRD 0015 § Build).
+
+    The risk level is ``high`` when a diff changes more than ``max_lines``
+    lines or more than ``max_files`` files, touches a file in the top
+    ``fanin_top_fraction`` of Python import fan-in, or touches a path that
+    matches one of ``sensitive_paths``. The globs match the repo-relative
+    path with ``fnmatch`` (``*`` crosses ``/``); a leading ``**/`` also
+    matches at the repo root.
+    """
+
+    max_lines: int = 400
+    max_files: int = 10
+    fanin_top_fraction: float = 0.1
+    sensitive_paths: list[str] = field(
+        default_factory=lambda: [
+            "**/auth/**",
+            "**/*permission*",
+            "**/*secret*",
+            "**/*credential*",
+        ]
+    )
+
+
+@dataclass
+class WorkflowConfig:
+    """Settings for the ``lore workflow`` verbs."""
+
+    risk: RiskConfig = field(default_factory=RiskConfig)
+
+
+@dataclass
 class RootConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     journal: JournalConfig = field(default_factory=JournalConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
     user: UserConfig = field(default_factory=UserConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+    workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
 
 
 #: Config blocks lore used to honour and no longer does. Named explicitly so a

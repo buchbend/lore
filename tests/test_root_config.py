@@ -289,3 +289,29 @@ def test_set_field_unknown_path_suggests_nearest(tmp_path: Path) -> None:
     root = _fresh_root(tmp_path, "")
     with pytest.raises(KeyError, match="did you mean.*user.display_name"):
         set_field(root, "user.display_nam", "Ada")
+
+
+def test_workflow_risk_defaults_and_override(tmp_path: Path):
+    cfg = load_root_config(tmp_path)
+    assert cfg.workflow.risk.max_lines == 400
+    assert cfg.workflow.risk.max_files == 10
+    assert cfg.workflow.risk.fanin_top_fraction == 0.1
+    assert "**/auth/**" in cfg.workflow.risk.sensitive_paths
+
+    (tmp_path / ".lore").mkdir()
+    (tmp_path / ".lore" / "config.yml").write_text(
+        "workflow:\n  risk:\n    max_lines: 50\n    sensitive_paths: ['billing/**']\n"
+    )
+    cfg = load_root_config(tmp_path)
+    assert cfg.workflow.risk.max_lines == 50
+    assert cfg.workflow.risk.sensitive_paths == ["billing/**"]
+
+
+def test_config_get_workflow_risk_max_lines(tmp_path: Path, monkeypatch):
+    from lore_cli.config_cmd import app
+    from typer.testing import CliRunner
+
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    result = CliRunner().invoke(app, ["get", "workflow.risk.max_lines"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert "400" in result.output
