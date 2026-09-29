@@ -1,89 +1,94 @@
 ---
 name: lore-workflow:orient
 description: The first step of a piece of work — the session does its own homework, then
-  reflects its understanding back for confirmation before any planning or grilling. Use at
-  the start of a task, when the user says "orient", "get oriented", "what's your
-  understanding", or wants the session to reflect back before planning.
+  reflects its understanding back for confirmation before any planning or grilling. A light
+  mode ("brief me") pulls only the context pack and code map and hands one change straight to
+  build. Use at the start of a task, when the user says "orient", "get oriented", "brief me",
+  "what's your understanding", or wants the session to reflect back before planning.
 ---
 
 # Orient
 
-You are orienting: before any planning or grilling, do your own homework on what the user
-asked, then reflect your understanding back for confirmation. You explore and restate; you do
-not implement, and you do not fix scope unilaterally.
+Before any planning, do your own homework on what the user asked, then reflect your
+understanding back for confirmation. You explore and restate. You do not implement, and you do
+not fix scope alone. Nothing is persisted: the reflected understanding lives in the chat.
 
-**Mode:** conversation only — nothing is persisted. The reflected understanding lives in the
-chat and becomes the input to the next step.
+Pick the weight:
 
-## Process
+| Mode | Use when | Hands off to |
+|---|---|---|
+| **Full** | Several features, or the shape is unsettled. | [`grilling`](../grilling/SKILL.md) |
+| **Light** ("brief me") | One change, clear-ish in the user's head, not written down. | [`build`](../build/SKILL.md) |
 
-### 1. Capture intent
-Take the user's stated goal as the seed, verbatim. Don't expand it or jump to solutions yet.
-If they pass an issue reference (e.g. an epic seed from `/lore-workflow:seed-epic`), fetch and read it
-(`gh ... --json`) and treat its Intent + Findings as the seed.
+A written, clear issue skips this skill: run `build` in `issue` mode.
 
-### 2. Pull the context pack, then fan out only what's thin
-Before spawning anything, pull the deterministic context pack **once, up front**:
-`lore_context_pack` (cold-start-safe — an empty repo/vault returns a well-formed empty pack,
-never an error) plus `lore_repo_docs_list` / `lore_repo_docs_fetch` for the full ADR/PRD
-listing and any body worth reading in full. Two facets are served straight from that pull, no
-subagent:
-- **Docs & decisions** — the pack's `adr` / `prd` entries (already linked to the focus
-  issue/epic), CONTEXT.md / glossary read directly, `lore_repo_docs_list` for anything the
-  pack's focus filter missed.
-- **Prior art** — the pack's `epic_state` (linked issue/epic status) as the trace of related
-  work, plus a targeted `lore_search`/`lore_drill` call for anything the pack does not cover.
+## 1. Capture intent
 
-Spawn a facet's `Explore` subagent only when the pack came back thin or empty for it (no
-matching ADR/PRD) — it then searches beyond what the deterministic join found. The remaining
-facets fan out unconditionally, as before:
-- **Code map** — where this touches the codebase: key modules, interfaces, current behavior,
-  relevant tests. Start from `lore codemap` (or the `lore_codemap` MCP tool) for a ranked,
-  deterministic index instead of a blind directory walk.
-- **Cross-repo / external** — only when the intent plausibly spans repos or downstream consumers.
+Take the user's stated goal as the seed, verbatim. Do not expand it or jump to solutions. When
+the user passes an issue reference, such as a seed issue from
+[`handover`](../handover/SKILL.md), read it (`gh issue view <n> --json title,body`). Its Intent
+and Findings are the seed.
 
-Whatever subagents this leaves running go out concurrently, in a single message, at **mid-tier
-(REQUIRED)**: resolve the tier to a concrete model with `lore tier resolve mid` and set each
-spawn's model parameter to that resolution — see
-[TIER-DELEGATION.md](../../TIER-DELEGATION.md) for the no-implicit-inherit rule this enforces.
+## 2. Pull the context pack
 
-Scale the fan-out to the ask: a small change may need a single Explore pass (or none, if the
-pack already covers it); a broad feature warrants all facets.
+Pull `lore_context_pack` once, up front. It is cold-start-safe: an empty repo returns an empty
+pack. Add `lore_repo_docs_list` and `lore_repo_docs_fetch` for the full ADR and PRD listing. Read
+ADRs and PRDs as context; only `Invariant` lines bind.
 
-### 3. Reflect back
-Present a tight brief in the conversation — **one screen, ~300 words, hard cap**. Order it so
-what the user must react to comes first:
-- **What we're actually deciding** — the crux, and the real choices ahead.
-- **Open questions & assumptions** — the unknowns, and the assumptions you're running on.
-- **What I understand you want** — one short paragraph, in the project's domain language.
-- **Relevant landscape** — at most five bullets, each a fact that constrains a decision (an
-  ADR that forbids an option, a module that already does half the work). Everything else you
-  learned stays in your context; close with "ask for the long version" instead of printing it.
-- **Tentative scope** — in / out, marked provisional.
+- **Docs and decisions** come from the pack's `adr` and `prd` entries and from `CONTEXT.md`.
+- **Prior art** comes from the pack's `epic_state`, plus one targeted `lore_search` or
+  `lore_drill` call for what the pack lacks.
+- **Code** comes from `lore codemap` (or the `lore_codemap` tool): a ranked index, not a
+  directory walk.
 
-The cap governs the printed brief, never the homework behind it — explore fully, report
-selectively.
+**Light mode stops here.** Spawn no explorer. Where the pack is thin for a facet, say so in the
+brief.
 
-### 4. Loop
-Ask whether this matches. If the user corrects or adds input, re-orient with a *targeted*
-re-explore — only the facets that moved, not a full re-run. Repeat until they confirm.
+**Full mode** fans out only what the pack left thin: one `Explore` subagent for docs the pack
+missed, one for the code map, one for cross-repo consumers when the intent spans repos. Spawn
+them in one message at the `mid` tier (required): pass `lore tier resolve mid` as each model; see
+[TIER-DELEGATION.md](../../TIER-DELEGATION.md). Scale the fan-out to the ask.
 
-### 5. Handoff
-On confirmation, carry the shared understanding into the grilling step — default to
-`/lore-workflow:grilling` in its "grill with docs" mode (it aligns terminology against CONTEXT.md/ADRs, which the downstream
-`/lore-workflow:to-epic` slices depend on). Say "grill me" for plain `/lore-workflow:grilling` instead when there is no domain model to align
-against.
+## 3. Reflect back
 
-### 6. Session end
+**Full mode.** One screen, about 300 words, hard cap. Put what the user must react to first:
 
-Before handing off, run the retrieval-miss check: read `feedback.retrieval_misses`
-(`lore config get feedback.retrieval_misses`). When true, file one issue per retrieval
-miss on `feedback.retrieval_misses_repo` through `file-issue`, naming the fact, the
-tools tried, and the turn count. When false, skip the check. List every issue and PR
-the session created or commented on in your final message.
+- **What we are deciding** — the crux and the real choices.
+- **Open questions and assumptions.**
+- **What I understand you want** — one short paragraph in the project's domain language.
+- **Relevant landscape** — at most five bullets, each a fact that constrains a decision. Close
+  with "ask for the long version".
+- **Tentative scope** — in and out, marked provisional.
 
-Chain: `/lore-workflow:orient` → `/lore-workflow:grilling` → `/lore-workflow:to-epic` → `/lore-workflow:orchestrate-epic`.
+**Light mode.** One message: what you understand, the constraints from the pack, a provisional
+scope, and three to five questions, each with your recommended answer filled in. The user replies
+once ("yes to your recs except #3"). Ask a second round only when an answer forks the design.
 
-Lighter rungs exist beside the chain: a single change that is clear-ish but unwritten
-takes `/lore-workflow:brief`; a written, clear issue takes `/lore-workflow:implement-issue`.
-Reserve this chain for multi-feature or unsettled work.
+The cap governs the printed brief, never the homework behind it.
+
+## 4. Loop
+
+Ask whether this matches. On a correction, explore again only the facets that moved. Repeat until
+the user confirms. When light mode finds the work is several features or unsettled, say so and
+switch to full mode; the brief so far seeds step 1.
+
+## 5. Hand off
+
+- **Full mode:** `/lore-workflow:grilling`, in "grill with docs" mode by default. It aligns terms
+  against `CONTEXT.md` and ADRs, which `to-epic` depends on. Say "grill me" when there is no
+  domain model to align against.
+- **Light mode:** file the agreed intent and acceptance criteria through
+  [`file-issue`](../file-issue/SKILL.md), then run `build` in `issue` mode. When even an issue is
+  ceremony, run `build` in `loop` mode. Write no brief file: the issue holds what survives.
+  **Never write to `CONTEXT.md`** — a term worth adding belongs to `grilling`, not this skill.
+  An ADR candidate goes on the build ledger.
+
+## 6. Session end
+
+Before you hand off, run the retrieval-miss check: read `feedback.retrieval_misses` (`lore config
+get feedback.retrieval_misses`). When true, file one issue per retrieval miss on
+`feedback.retrieval_misses_repo` through `file-issue`, naming the fact, the tools tried, and the
+turn count. When false, skip the check. List every issue and PR the session created or commented
+on in your final message.
+
+Chain: `orient → grilling → to-epic → build → document`, with `handover` at any stop.

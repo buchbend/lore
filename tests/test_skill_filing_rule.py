@@ -51,10 +51,10 @@ def test_file_issue_closes_only_own_issues() -> None:
 
 # --- decision gate ---------------------------------------------------------
 
-DECISION_GATE = "outside a grilling or domain-modeling session is a PR. A human merges it."
+DECISION_GATE = "outside a grilling session is a PR. A human merges it."
 
 
-@pytest.mark.parametrize("skill", ["implement-issue", "tdd", "orchestrate-epic"])
+@pytest.mark.parametrize("skill", ["build", "tdd"])
 def test_decision_gate_present(skill: str) -> None:
     text = _text(skill)
     assert DECISION_GATE in text, f"{skill}/SKILL.md is missing the decision gate"
@@ -65,7 +65,7 @@ def test_decision_gate_present(skill: str) -> None:
 SESSION_END_LIST = "issue and PR the session created or commented on"
 
 
-@pytest.mark.parametrize("skill", ["orient", "implement-issue", "tdd"])
+@pytest.mark.parametrize("skill", ["orient", "build", "tdd"])
 def test_session_end_list_present(skill: str) -> None:
     text = _text(skill)
     assert SESSION_END_LIST in text, f"{skill}/SKILL.md is missing the session-end list"
@@ -74,7 +74,7 @@ def test_session_end_list_present(skill: str) -> None:
 # --- retrieval-miss check ---------------------------------------------------
 
 
-@pytest.mark.parametrize("skill", ["orient", "implement-issue", "tdd"])
+@pytest.mark.parametrize("skill", ["orient", "build", "tdd"])
 def test_retrieval_miss_check_present(skill: str) -> None:
     text = _text(skill)
     assert "feedback.retrieval_misses" in text
@@ -82,7 +82,7 @@ def test_retrieval_miss_check_present(skill: str) -> None:
     assert "retrieval miss" in text.lower()
 
 
-@pytest.mark.parametrize("skill", ["orient", "implement-issue", "tdd"])
+@pytest.mark.parametrize("skill", ["orient", "build", "tdd"])
 def test_retrieval_miss_check_names_the_skip_condition(skill: str) -> None:
     """AC: while the flag is false, the skills instruct the agent to skip the check."""
     text = _text(skill).lower()

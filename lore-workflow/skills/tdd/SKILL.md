@@ -132,7 +132,7 @@ A failure outside the touched files at the merge point goes back to the change t
 
 ## Decision gate
 
-An ADR, a PRD or a wiki topic-note edit outside a grilling or domain-modeling session
+An ADR, a PRD or a wiki topic-note edit outside a grilling session
 is a PR. A human merges it. When this loop produces one of those, open it as a PR
 instead of committing it directly to the target branch.
 

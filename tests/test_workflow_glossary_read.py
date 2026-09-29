@@ -3,7 +3,7 @@
 The writing rules already tell a writer to take terms from the glossary; no
 skill read one before this. `file-issue` step 1 now reads `CONTEXT.md` in the
 same step it resolves the writing rules, drafts without one when the repo
-holds none, and never writes to the file — that stays `domain-modeling`'s
+holds none, and never writes to the file — that stays `grilling`'s
 write path (see `test_workflow_glossary_write_gate.py`).
 """
 
