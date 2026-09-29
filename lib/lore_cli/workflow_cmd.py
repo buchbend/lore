@@ -317,11 +317,15 @@ def ledger_check_cmd(
     """Gate a finish point: exit 1 while any non-resume ledger line is `open`.
 
     Names each open line with its index for `ledger-set`. A malformed ledger
-    line also exits 1. A missing ledger has nothing to check and exits 0.
+    line also exits 1. A missing ledger has nothing to check and exits 0. Empty stdin exits 1.
     """
     if path == "-":
         text = sys.stdin.read()
         source = "stdin"
+        if not text.strip():
+            # A failed `gh api … --jq .body` pipes nothing; the gate fails closed.
+            print("ledger-check: no input on stdin", file=sys.stderr)
+            raise typer.Exit(code=1)
     else:
         ledger = _ledger_path(path)
         source = str(ledger)

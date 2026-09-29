@@ -21,9 +21,10 @@ Set each outcome on the board: pipe the comment body through `ledger-set`, then 
 back to the comment.
 
 ```
+set -o pipefail
 gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
-  | lore workflow ledger-set <n> --outcome approved --board - > board.md
-gh api -X PATCH repos/<owner>/<repo>/issues/comments/<id> -F body=@board.md
+  | lore workflow ledger-set <n> --outcome approved --board - > board.md \
+  && gh api -X PATCH repos/<owner>/<repo>/issues/comments/<id> -F body=@board.md
 ```
 
 ## 3. Docs, then review

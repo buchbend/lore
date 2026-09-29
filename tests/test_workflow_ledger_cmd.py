@@ -274,3 +274,11 @@ def test_ledger_set_board_takes_only_stdin(capsys) -> None:
     rc = workflow_cmd.main(["ledger-set", "1", "--outcome", "approved", "--board", "board.md"])
     assert rc == 1
     assert "--board -" in capsys.readouterr().err
+
+
+def test_ledger_check_fails_on_empty_stdin(monkeypatch, capsys) -> None:
+    """A failed `gh api … --jq .body` pipes nothing; the epic gate must not pass."""
+    _stdin(monkeypatch, "  \n")
+    rc = workflow_cmd.main(["ledger-check", "-"])
+    assert rc == 1
+    assert "no input on stdin" in capsys.readouterr().err
