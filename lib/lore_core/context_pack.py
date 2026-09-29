@@ -103,7 +103,7 @@ def gather(
         "focus_issues": sorted(focus),
         "adr": adrs,
         "prd": prds,
-        # ADRs, then current PRDs, then shipped PRDs (ADR 0015).
+        # Paths only: ADRs, then current PRDs, then shipped PRDs (ADR 0015).
         "ranked": rank_docs(adrs, prds),
         "epic_state": _issue_state(linkage.repo, focus),
     }
