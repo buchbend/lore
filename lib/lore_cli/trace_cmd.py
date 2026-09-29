@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 import typer
 from lore_core.timefmt import parse_ts
@@ -97,6 +98,45 @@ def _render_plain(trace: FlushTrace) -> str:
     return "\n".join(lines)
 
 
+def _tokens(session: str | None, json_out: bool) -> None:
+    from lore_core.config import get_lore_root
+    from lore_core.token_trace import find_transcript, trace_tokens
+
+    if not session:
+        console.print("[red]error:[/red] usage: lore trace tokens <session-id | path.jsonl>")
+        raise typer.Exit(code=2)
+    try:
+        lore_root = get_lore_root()
+    except Exception:
+        lore_root = None
+    path = find_transcript(lore_root, session)
+    if path is None:
+        console.print(f"[red]no transcript found for session {session!r}[/red]", markup=True)
+        raise typer.Exit(code=1)
+
+    phases = [p.as_dict() for p in trace_tokens(path)]
+    total = sum(p["total"] for p in phases)
+    if json_out:
+        sys.stdout.write(json.dumps({"session": session, "phases": phases, "total": total}) + "\n")
+        return
+    from rich.table import Table
+
+    table = Table(title=f"tokens {Path(session).name}", box=None, pad_edge=False)
+    table.add_column("phase", no_wrap=True)
+    for col in ("messages", "input", "output", "cache read", "cache write", "total"):
+        table.add_column(col, justify="right")
+    for p in phases:
+        table.add_row(
+            p["name"],
+            *(
+                str(p[k])
+                for k in ("messages", "input", "output", "cache_read", "cache_write", "total")
+            ),
+        )
+    table.add_row("all", "", "", "", "", "", str(total), style="bold")
+    console.print(table, markup=False, highlight=False)
+
+
 @app.callback(invoke_without_command=True)
 def trace(
     # Argument default is None (not `...`) so this callback-only Typer app
@@ -105,13 +145,21 @@ def trace(
     selector: str = typer.Argument(None, help="trace-id | session-id | note path or [[wikilink]]"),
     plain: bool = typer.Option(False, "--plain", help="Aligned text, no tree glyphs/color."),
     json_out: bool = typer.Option(False, "--json", help="Raw spine event list (JSONL)."),
+    session: str = typer.Argument(None, help="With `tokens`: session id or .jsonl path."),
 ) -> None:
-    """Chronological drill-down of one story, correlated by trace_id."""
+    """Chronological drill-down of one story, correlated by trace_id.
+
+    `lore trace tokens <session>` prints token totals per skill or agent phase.
+    """
     from lore_core.config import get_lore_root
 
     if not selector:
         console.print("[red]error:[/red] selector is required")
         raise typer.Exit(code=2)
+
+    if selector == "tokens":
+        _tokens(session, json_out)
+        return
 
     try:
         lore_root = get_lore_root()
