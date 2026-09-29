@@ -20,7 +20,8 @@ Two open PRs that both bump conflict on `CHANGELOG.md`. The second PR merges
 `main` and reruns `--in-branch`. Drop its earlier bump commit first.
 
 `python3 tools/release.py --notes notes.md` (no `--in-branch`) still cuts a
-separate release PR. Use it when a merged change shipped without a bump.
+separate release PR. Use the separate PR when a merged change shipped without
+a bump.
 
 `main` is branch-protected: the `test` check must pass, and direct pushes are
 blocked (admins included). `claude plugin update lore@lore`
