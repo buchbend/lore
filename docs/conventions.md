@@ -56,9 +56,15 @@ delegates only independent slices. Teammates commit without a PR, and the lead
 merges them locally into `epic/<n>`. One independent reviewer and the docs pass
 run on the single epic PR, and the human merges it.
 
+`quick-feedback-loop` is a **track for small iterative work** with the human
+watching the live dev stack. Each round is test-first in a worktree and merges
+locally into `develop` or `main`, with no PR. ADR and glossary candidates
+collect on a ledger. At wrap-up the human approves them, the agent writes them,
+and a Diátaxis docs pass runs.
+
 **Bundled skills:** `ccat-workflow-init`, `seed-epic`, `orient`, `grilling`,
 `domain-modeling`, `to-epic`, `orchestrate-epic`, `document-epic`, `tdd`,
-`debug`, `implement-issue`, `super-orchestrate`, `quick-orchestrate`, `brief`, `consolidate-docs`,
+`debug`, `implement-issue`, `super-orchestrate`, `quick-orchestrate`, `quick-feedback-loop`, `brief`, `consolidate-docs`,
 `file-issue` — all
 shipped as `lore-workflow:<name>` skills. `ccat-workflow-init` is a one-time
 onboarding scaffold, not part of the per-epic chain above; see
