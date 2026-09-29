@@ -9,7 +9,8 @@ description: Build code in one of three modes. `loop` — fast rounds with the h
 
 # Build
 
-Pick the mode, then follow its section. Read a sibling file only when the run reaches it.
+The user names the mode (`/lore-workflow:build epic owner/repo#n`), or you pick it from the table.
+Then follow its section. Read a sibling file only when the run reaches it.
 
 | Mode | Use when | Finish point |
 |---|---|---|
@@ -112,14 +113,13 @@ On "wrap up", read [loop-wrap-up.md](loop-wrap-up.md) and follow it.
 3. **Branch.** `lore workflow epic-policy <repo_root>` gives `target_branch`. Create
    `feat/<issue>-<slug>` off it in a worktree. Implement with [`tdd`](../tdd/SKILL.md), one PR.
 4. **Docs.** Run the pre-merge mode of [`document`](../document/SKILL.md) on the branch diff.
-5. **Review.** Follow [review.md](review.md) for the PR. Fix the findings. Keep `gh pr checks`
-   green.
-6. **Finish point.** Present the open ledger lines to the user in one message, as
-   [loop-wrap-up.md](loop-wrap-up.md) steps 3 and 4 do. Write the approved ADRs and terms into
-   the same PR. `lore workflow ledger-check` passes, or you go back to the user. Write the PR
-   body through `file-issue`: what the change does, then the handover section. Add the version
-   bump as the last commit if the repo needs one. Open the PR, linking the issue. Run `lore
-   workflow ledger-archive`. The user merges.
+5. **Open the PR**, linking the issue. Write the body through `file-issue`: what the change does.
+6. **Review.** Follow [review.md](review.md). Fix the findings. Keep `gh pr checks` green.
+7. **Finish point.** Present the open ledger lines to the user in one message, as
+   [loop-wrap-up.md](loop-wrap-up.md) steps 3 and 4 do. Push the approved ADRs and terms to the
+   same PR. `lore workflow ledger-check` passes, or you go back to the user. Add the handover
+   section to the PR body (`gh pr edit <n> --body-file …`). Add the version bump as the last
+   commit if the repo needs one. Run `lore workflow ledger-archive`. The user merges.
 
 ## Mode `epic`
 
@@ -157,9 +157,9 @@ branch and one PR each. Otherwise **standard**: up to four teammates at once.
 - <blocker or escalation only>
 ```
 
-`lore workflow parse-board` reads the marker and the columns verbatim; the marker keeps its old
-name. `State` is queued, running, review, merged or blocked. Then create and push `epic/<issue>` from
-`target_branch`.
+`lore workflow parse-board` reads the marker and the columns verbatim; the marker keeps its
+old name. `State` is queued, running, review, merged or blocked. Then create and push
+`epic/<issue>` from `target_branch`.
 
 **Codemap excerpt.** Build it once: rank `lore codemap` symbols against the epic's touchpoints
 and keep about 1k tokens. Every teammate gets the same excerpt.
@@ -175,8 +175,8 @@ more into the same worktree. A second death blocks the feature.
 **Merge.** Merge each passing PR into `epic/<issue>`. If the epic branch moved, rebase the PR
 and wait for green checks. A rebase conflict goes back to the teammate. For a cross-repo pin,
 merge the producer and record its SHA first. Then tick the roadmap checkbox, close the
-sub-issue (`gh issue close <n> --comment "Merged via PR #<pr>"`), set the row to `merged`, and
-add the resume line (breakpoint). Check that epic-branch CI is green and, where the repo has
+sub-issue (`gh issue close <n> --comment "Merged via PR #<pr>"`), set the row to `merged`, add
+the teammate's ADR and term candidates to the ledger, and add the resume line (breakpoint). Check that epic-branch CI is green and, where the repo has
 migrations, that one migration head remains. Dispatch every feature the merge made ready.
 
 **Human present, on request.** When the user asks for a quick run and stays present, and every
@@ -184,7 +184,8 @@ row is AFK in one repo without a deploy gate: build the slices that share new fi
 on `epic/<issue>`. Give teammates only the independent slices; they commit without a PR, and
 you merge their branches with `--no-ff`. Your own slices may write tests beside the code. Then
 break two or three pieces of key logic, confirm the tests fail, restore, and note the check on
-the board. One review over the epic PR follows [review.md](review.md). The user merges.
+the board. Then run the epic tail: its whole-epic review is the one review of this run, for any
+number of features, and the user merges instead of you.
 
 **Epic tail.** When every row is merged and CI is green, read [epic-tail.md](epic-tail.md) and
 follow it.
