@@ -14,7 +14,7 @@ holds the bump as its last commit. Run
 `python3 tools/release.py --in-branch --notes notes.md` on the PR branch. The
 script bumps `.claude-plugin/plugin.json`, `pyproject.toml` and `CHANGELOG.md`
 together, runs the version-sync guard, and commits `chore: release X.Y.Z` on the
-current branch. It creates no branch, pushes nothing and opens no PR.
+current branch. The script creates no branch, pushes nothing and opens no PR.
 
 Two open PRs that both bump conflict on `CHANGELOG.md`. The second PR merges
 `main` and reruns `--in-branch`. Drop its earlier bump commit first.
