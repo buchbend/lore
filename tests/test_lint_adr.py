@@ -9,6 +9,7 @@ predate the section and are skipped.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from lore_cli.__main__ import app
@@ -141,8 +142,10 @@ def test_bare_lint_still_runs_the_vault_lint_not_the_adr_check() -> None:
     """The `adr` sub-verb must not swallow the vault lint's own help."""
     result = runner.invoke(app, ["lint", "--help"])
     assert result.exit_code == 0
-    assert "adr" in result.output
-    assert "--check-only" in result.output
+    # CI renders Rich help with colour codes that split option names.
+    output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "adr" in output
+    assert "--check-only" in output
 
 
 # --- the ADR template carries the sections the lint reads -----------------
