@@ -45,6 +45,7 @@ other line, so a ledger file can hold a heading or prose.
 | `lore workflow ledger-add --kind K --text T [--outcome O] [--next ASK] [--path P]` | Appends one line. The default path is the git-dir ledger of the current directory. A `resume` line gets the current time. `--path -` prints the line for a board comment. |
 | `lore workflow ledger-set <index\|text> --outcome O [--path P]` | Sets the outcome of one line in place. The index is the number that `ledger-check` prints. The text selects exactly one line. |
 | `lore workflow ledger-check [PATH\|-]` | Exits 1 and names each `open` line. Exits 0 when every line has an outcome. A missing ledger file exits 0. `-` reads a ledger or a whole board comment from standard input. |
+| `lore workflow ledger-archive [--path P]` | Renames a finished ledger to `lore-ledger.<UTC-date>.done.md` in the same folder. Exits 1 while a line is `open`. A second archive on the same day gets a `-2` suffix. A missing ledger exits 0. |
 | `lore workflow parse-board` | Adds a `ledger` key to its JSON output: one `{kind, outcome, timestamp, text}` object per line. |
 
 ## Breakpoint hooks
@@ -54,7 +55,10 @@ resolve the git dir from the `.git` entry and start no child process.
 
 - `lore hook pre-compact` adds one line that names the ledger path.
 - `lore hook session-start` quotes the last resume line and offers to
-  resume from it.
+  resume from it. The hook skips the offer when the ledger has no `open`
+  line and its last line is not a resume line: that run finished.
+- The `build` skill runs `ledger-archive` at each `loop` and `issue`
+  finish point, after the check passes. An archived ledger gets no offer.
 - Neither hook mentions a ledger when the worktree has none.
 
 ## Risk level

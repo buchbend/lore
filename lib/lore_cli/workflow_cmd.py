@@ -20,6 +20,7 @@ from lore_workflow.ledger import (
     LedgerEntry,
     LedgerParseError,
     append_entry,
+    archive_ledger,
     default_ledger_path,
     format_entry,
     open_entries,
@@ -321,6 +322,30 @@ def ledger_check_cmd(
         print(f"  {index}. [{entry.kind}] {entry.text}")
     print("Set each outcome: approved, dropped or filed <owner/repo#n>.")
     raise typer.Exit(code=1)
+
+
+@app.command("ledger-archive")
+def ledger_archive_cmd(
+    path: str | None = typer.Option(
+        None, "--path", help="Ledger file (default: <git-dir>/lore-ledger.md of the cwd)."
+    ),
+) -> None:
+    """Rename a finished ledger to `lore-ledger.<UTC-date>.done.md`.
+
+    Run it at a loop or issue finish point, after `ledger-check` passes. The
+    SessionStart resume offer then stops. Exits 1 while a line is open. A
+    missing ledger has nothing to archive and exits 0.
+    """
+    ledger = _ledger_path(path)
+    if not ledger.exists():
+        print(f"no ledger at {ledger}: nothing to archive")
+        return
+    try:
+        target = archive_ledger(ledger)
+    except (OSError, ValueError) as exc:
+        print(f"ledger-archive: {ledger}: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+    print(f"ledger archived: {target}")
 
 
 def _risk_config():
