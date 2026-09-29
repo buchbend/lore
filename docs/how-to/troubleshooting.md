@@ -71,11 +71,6 @@ mid-flight. Delete the directory by hand if you want it gone sooner.
 
 ## Known rough edges (honest, not yet fixed)
 
-- **LLM prompt/response text isn't persisted** in run events — only
-  metadata (model, token count, latency) is kept, to stay well under the
-  spine's `PIPE_BUF` atomicity budget. To see the actual prompts/responses
-  for a specific run, re-run with `LORE_TRACE_LLM=1` set and watch the
-  live output.
 - **`lore doctor --fix --json` interleaves human-readable repair
   prompts/receipts before the JSON envelope** on stdout — the repairs run
   and print ahead of the `if json_out` branch. Script against `lore

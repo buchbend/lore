@@ -56,7 +56,8 @@ issue, and `tdd` as the discipline every implementation teammate follows.
 See [`docs/conventions.md`](docs/conventions.md) for the full chain, the
 artifact-home contract (PRD/ADR/`AGENTS.md` placement), and the tier
 vocabulary; [`docs/how-to/`](docs/how-to/) for task recipes
-(run an epic, use the fast path, resume a broken epic, onboard a repo);
+(run an epic, use the fast path, resume a broken epic, onboard a repo,
+file facts as artifacts, search notes and issues);
 [`docs/explanation/`](docs/explanation/) for the
 reasoning behind the design; and
 [`lore-workflow/README.md`](lore-workflow/README.md) for the skill roster.
@@ -256,12 +257,29 @@ Once attached with a wiki present:
   alongside it — short and lock-guarded, so it doesn't block
   SessionStart in practice, but only the transcript sync is actually
   detached.
+- **SessionStart also spawns two more detached children**, so a slow
+  remote or a large repo never delays the banner. `lore hook wiki-pull`
+  fetches and fast-forwards the attached wiki. `lore hook codemap-refresh`
+  refreshes `CODEMAP.md`. Both are hidden verbs that run in the
+  background. A dirty-tree or diverged-history warning from the pull
+  shows in the banner one session later, because the child records it
+  after the banner is drawn.
 - **Banner at SessionStart** is deliberately minimal: a status line, an
   optional Focus block, a last-active-day recap read off the transcript
   ledger (day, session count, repos, branches, refs — no LLM call),
   freshness lines only on positive evidence, and
   a fixed directive pointing at MCP pull for anything deeper. `lore!:`
   prefix flags actionable errors.
+
+### Search
+
+`lore_search` (MCP) is a federated search. It returns two lists: ranked
+wiki notes from the local index, then issues and PRs from one live GitHub
+search. Nothing about an artifact is stored. When `gh` cannot answer, the
+result holds the wiki list and names the omission. See
+[`docs/how-to/search-notes-and-issues.md`](docs/how-to/search-notes-and-issues.md).
+The context pack carries the body of each focus issue, so the common case
+needs no search.
 
 ### Manual escape hatches
 
@@ -285,10 +303,6 @@ Each wiki can set its own knobs in `<wiki>/.lore-wiki.yml`:
 git:
   auto_push: true                # true by default when the wiki has a remote
   auto_pull: true
-models:
-  simple: claude-haiku-4-5
-  middle: claude-sonnet-4-6
-  high:   claude-opus-4-7
 breadcrumb:
   mode: normal                  # quiet | normal | verbose
   scope_filter: true
@@ -379,12 +393,12 @@ trade-off:
 |---------|------|---------|-----|
 | `/schedule /lore:curator <wiki>` on laptop | **free** | any | individuals |
 | `cron` + `claude -p "/lore:curator <wiki>"` | **free** | any | power users, no `/schedule` |
-| GitHub Actions, **on push** to a wiki repo | **API $** | per-push, incremental | shared team wikis |
-| GitHub Actions, cron | **API $** | nightly | always-on, no laptop |
+| GitHub Actions, **on push** to a wiki repo | **free** | per-push, incremental | shared team wikis |
+| GitHub Actions, cron | **free** | nightly | always-on, no laptop |
 | Home server + cron | **free** | any | users with always-on box |
 
-Reference workflows in [`examples/`](./examples). Every LLM invocation
-costs tokens; no default forces a cost on you.
+Reference workflows in [`examples/`](./examples). The curator makes no
+model call, so no pattern costs API tokens.
 
 ## Using Lore with an existing markdown vault
 

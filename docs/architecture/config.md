@@ -90,7 +90,6 @@ rather than silently falling back to `~/lore`.
 
 | Var | Effect |
 |-----|--------|
-| `LORE_TRACE_LLM` | `1` enables verbose LLM I/O dump to `lore_core/run_log` |
 | `LORE_LOG_NOW`, `LORE_STATUS_NOW` | Inject a fake "now" timestamp for log/status formatting tests |
 | `LORE_ASCII` | `1` forces ASCII icon set in `run_render.py` (override TTY autodetect) |
 | `NO_COLOR` | Standard convention; `run_render.should_use_color()` honours it |
@@ -112,6 +111,10 @@ Vault-wide policy. Schema lives in
   `dead_letter_hard_cap` was removed with the flush store. A `config.yml` that
   still sets it loads normally; the loader warns and names the key to delete.
 - `journal.enabled`
+- `feedback.{retrieval_misses, retrieval_misses_repo}` — opt-in session-end
+  reporting of retrieval misses; `retrieval_misses` defaults to `false`,
+  `retrieval_misses_repo` to `buchbend/lore`. See
+  `docs/how-to/file-facts-as-artifacts.md`.
 - `tiers.overrides.<host>.<tier>` — override the shipped model-tier table
   (`lib/lore_core/tiers/table.py`) for one host/tier cell; see
   `docs/model-tiers.md`.
@@ -132,7 +135,8 @@ Per-vault-mount policy. Schema lives in
 - `git.{auto_commit, auto_push, auto_pull}` — `auto_push` defaults to
   whether the wiki has a git remote; an explicit value in the file
   always wins over that default.
-- `models.{simple, middle, high}` — Claude model IDs per tier
+- `models.{simple, middle, high}` — Claude model IDs per tier. No retained
+  code reads these keys since the LLM client retired; the loader still accepts them.
 - `heartbeat.{enabled, cooldown_s, push_context}`
 - `breadcrumb.{mode, scope_filter}`
 
@@ -174,9 +178,9 @@ Each source has a justified role:
 - **Env vars** — single-process overrides, the cheapest way to flip
   one knob without editing files.
 - **Root config** (`config.yml`) — vault-wide policy that's per-user,
-  not per-wiki: observability budgets, default backend.
+  not per-wiki: observability budgets and retention.
 - **Wiki config** (`.lore-wiki.yml`) — per-mount policy: this wiki
-  uses these models, this curator schedule, this breadcrumb mode.
+  uses this git sync policy, this breadcrumb mode.
 - **Plugin manifest** — Claude Code's contract; we don't own the
   schema.
 - **Install templates** — integration-specific shapes; not a "setting" but

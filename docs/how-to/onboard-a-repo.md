@@ -40,7 +40,7 @@ an existing file.
 - **`docs/prd/index.md` and `docs/adr/index.md`** — stubs for the PRD and
   ADR homes — and a root **`docs/index.md`** that wires them in.
 
-The code-map (`CODEMAP.md`, refreshed via `lore`'s own `SessionStart` hook)
+The code-map (`CODEMAP.md`, refreshed by a detached background child that `lore`'s own `SessionStart` hook spawns)
 and the `lore tier resolve` / spawn-model gate come from `lore` itself —
 nothing workflow-specific to wire up for either. The autonomy-permissions
 allowlist and the `## Epic merge policy` section in `AGENTS.md` (the
