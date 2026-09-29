@@ -649,6 +649,15 @@ def cmd_session_start(
         except Exception:  # noqa: BLE001 - orientation must never crash SessionStart
             pass
 
+    try:  # PRD 0015 breakpoint: offer to resume a build run from its ledger
+        from lore_workflow.ledger import resume_offer
+
+        offer = resume_offer(cwd_resolved)
+        if offer:
+            out = out + "\n\n" + offer
+    except Exception:  # noqa: BLE001 - ledger must never crash SessionStart
+        pass
+
     _emit("SessionStart", out, plain=plain)
 
 
@@ -677,7 +686,16 @@ def cmd_pre_compact(
     _read_hook_payload()
     if _session_off_all():
         return
-    out = _pre_compact(_resolve_cwd(cwd))
+    cwd_resolved = _resolve_cwd(cwd)
+    out = _pre_compact(cwd_resolved)
+    try:  # PRD 0015 breakpoint: name the build ledger so it survives compaction
+        from lore_workflow.ledger import precompact_note
+
+        note = precompact_note(Path(cwd_resolved))
+        if note:
+            out = f"{out}\n{note}" if out else note
+    except Exception:  # noqa: BLE001 - ledger must never crash PreCompact
+        pass
     _emit("PreCompact", out, plain=plain)
 
 

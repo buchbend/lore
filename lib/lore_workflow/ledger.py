@@ -274,3 +274,51 @@ def parse_ledger_source(text: str) -> list[LedgerEntry]:
 def open_entries(entries: list[LedgerEntry]) -> list[tuple[int, LedgerEntry]]:
     """Return ``(1-based index, entry)`` for each non-resume line still open."""
     return [(i, e) for i, e in enumerate(entries, start=1) if e.is_open]
+
+
+# ---------------------------------------------------------------------------
+# Breakpoint hooks
+# ---------------------------------------------------------------------------
+
+
+def precompact_note(cwd: Path) -> str | None:
+    """The PreCompact line that names the ledger of *cwd*, or None if absent."""
+    path = default_ledger_path(cwd)
+    if path is None or not path.is_file():
+        return None
+    return (
+        f"lore: build ledger at {path} — re-read it after compaction; "
+        "`lore workflow ledger-check` gates the finish point."
+    )
+
+
+def last_resume_line(text: str) -> str | None:
+    """Return the last well-formed resume line in *text*, verbatim.
+
+    Tolerant by design: a malformed line elsewhere does not hide it.
+    """
+    found: str | None = None
+    for raw in text.splitlines():
+        if not raw.lstrip().startswith("- [resume]"):
+            continue
+        try:
+            entry = parse_line(raw)
+        except LedgerParseError:
+            continue
+        if entry is not None:
+            found = raw.strip()
+    return found
+
+
+def resume_offer(cwd: Path) -> str | None:
+    """The SessionStart line offering to resume, or None without a resume line."""
+    path = default_ledger_path(cwd)
+    if path is None or not path.is_file():
+        return None
+    line = last_resume_line(path.read_text(encoding="utf-8", errors="replace"))
+    if line is None:
+        return None
+    return (
+        f"lore: build ledger at {path} has a resume point. "
+        f'Offer the user to resume from it: "{line}"'
+    )
