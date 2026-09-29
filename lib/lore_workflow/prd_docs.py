@@ -179,3 +179,61 @@ def create_prd(
 
     wire_toctree(prd_dir / "index.md", name)
     return prd_path
+
+
+# --- shipped PRD (ADR 0015) -------------------------------------------------
+
+#: The line a shipped PRD carries under its title.
+HISTORICAL_PREFIX = "> Historical. Current decisions:"
+
+
+class PrdShipError(ValueError):
+    """The PRD cannot be marked shipped as asked."""
+
+
+def _adr_number(adr: str) -> str:
+    digits = adr.strip().upper().removeprefix("ADR").strip().lstrip("-")
+    if not digits.isdigit():
+        raise PrdShipError(f"not an ADR number: {adr!r}")
+    return f"{int(digits):04d}"
+
+
+def _with_status_shipped(lines: list[str]) -> list[str]:
+    """Set `status: shipped` in the leading front-matter; add one if absent."""
+    if not lines or lines[0].strip() != "---":
+        return ["---", "status: shipped", "---", "", *lines]
+    try:
+        end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration as exc:
+        raise PrdShipError("front-matter has no closing `---`") from exc
+    block = lines[1:end]
+    status_at = next((i for i, line in enumerate(block) if line.startswith("status:")), None)
+    if status_at is None:
+        block.append("status: shipped")
+    else:
+        block[status_at] = "status: shipped"
+    return [lines[0], *block, *lines[end:]]
+
+
+def ship_prd(path: Path, adrs: list[str]) -> None:
+    """Mark the PRD at *path* shipped and point it at its current ADRs.
+
+    Sets front-matter `status: shipped` and puts one line under the H1:
+    `> Historical. Current decisions: ADR 0014, ADR 0015.` A second run
+    replaces that line instead of adding another, so the call is idempotent.
+    """
+    if not adrs:
+        raise PrdShipError("name at least one current ADR")
+    numbers = ", ".join(f"ADR {_adr_number(adr)}" for adr in adrs)
+    historical = f"{HISTORICAL_PREFIX} {numbers}."
+
+    lines = _with_status_shipped(path.read_text(encoding="utf-8").splitlines())
+    body_start = lines.index("---", 1) + 1
+    title_at = next((i for i in range(body_start, len(lines)) if lines[i].startswith("# ")), None)
+    if title_at is None:
+        raise PrdShipError(f"{path} has no H1 title to put the historical line under")
+    rest = lines[title_at + 1 :]
+    while rest and (not rest[0].strip() or rest[0].startswith(HISTORICAL_PREFIX)):
+        rest.pop(0)
+    lines = [*lines[: title_at + 1], "", historical, "", *rest]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
