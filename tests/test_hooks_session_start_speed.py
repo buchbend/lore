@@ -122,13 +122,21 @@ def _run_hook(lore_root: Path, project: Path, *, timeout: float) -> tuple[float,
 
 @pytest.fixture()
 def reap_ssh(tmp_path: Path):
-    """Kill fake-ssh processes left sleeping by a background pull."""
+    """Kill the background pull a test leaves sleeping in the fake ssh.
+
+    The detached child may reach the fake ssh only after the test ends, so
+    wait briefly for it, then kill its whole process group (the child runs
+    in a session of its own).
+    """
     pids = tmp_path / "ssh.pids"
     yield f"echo $$ >> {pids}"
+    deadline = time.monotonic() + 3
+    while not pids.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
     if pids.exists():
         for line in pids.read_text().split():
-            with contextlib.suppress(ProcessLookupError, ValueError):
-                os.kill(int(line), signal.SIGKILL)
+            with contextlib.suppress(ProcessLookupError, PermissionError, ValueError):
+                os.killpg(os.getpgid(int(line)), signal.SIGKILL)
 
 
 def test_session_start_under_two_seconds_on_warm_cache(tmp_path: Path, reap_ssh: str) -> None:
