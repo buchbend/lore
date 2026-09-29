@@ -8,8 +8,9 @@ bump leaves every installed cache on the old code while `main` moves on.
 `tests/test_version_sync.py` guards the three files; this script is what makes
 them agree in the first place.
 
-`main` is branch protected, so the bump lands as its own pull request. The
-script stops at the open PR — merging stays a human act.
+`main` is branch protected. By default the bump lands as its own pull request,
+and the script stops at the open PR — merging stays a human act. With
+`--in-branch` the bump is the last commit of the shipping branch instead.
 
 The CHANGELOG section it writes holds the commit subjects that landed since
 the last release, which are facts rather than a summary. Pass `--notes` with a
@@ -21,6 +22,9 @@ Usage:
     python3 tools/release.py --notes notes.md     # notes.md holds the section body
     python3 tools/release.py --dry-run            # print the plan, touch nothing
     python3 tools/release.py --no-pr              # commit locally, push nothing
+    python3 tools/release.py --in-branch --notes notes.md
+                                                  # bump as the last commit of the
+                                                  # current branch: no branch, push, PR
 
 Stdlib only, and no `lore_core` import: the script has to run in a checkout
 whose install is broken, which is a state a release is often cutting a fix for.
@@ -162,21 +166,39 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--notes", type=Path, help="File holding the CHANGELOG section body.")
     parser.add_argument("--dry-run", action="store_true", help="Print the plan and stop.")
     parser.add_argument("--no-pr", action="store_true", help="Commit locally; do not push.")
+    parser.add_argument(
+        "--in-branch",
+        action="store_true",
+        help="Commit the bump on the current branch. No new branch, no push, no PR.",
+    )
     args = parser.parse_args(argv)
 
+    if args.in_branch and git("rev-parse", "--abbrev-ref", "HEAD") in ("main", "HEAD"):
+        sys.exit("--in-branch needs a feature branch: HEAD is main or detached")
     if git("status", "--porcelain"):
         sys.exit("working tree is dirty — commit or set aside your changes first")
-    if not args.no_pr and shutil.which("gh") is None:
+    if not args.no_pr and not args.in_branch and shutil.which("gh") is None:
         sys.exit("gh is not on PATH — install it, or pass --no-pr")
 
     git("fetch", "origin")
     current = read_version(PYPROJECT.read_text(encoding="utf-8"))
     version = next_version(current, args.part)
-    branch = f"chore/release-{version}"
+    branch = (
+        git("rev-parse", "--abbrev-ref", "HEAD") if args.in_branch else f"chore/release-{version}"
+    )
 
-    subjects = landed_subjects()
-    if not subjects:
-        sys.exit(f"nothing landed on origin/main since {current} — no release to cut")
+    if args.in_branch:
+        subjects = [
+            s
+            for s in git("log", "--no-merges", "--format=%s", "origin/main..HEAD").splitlines()
+            if s.strip()
+        ]
+        if not subjects and not args.notes:
+            sys.exit("no commits ahead of origin/main — nothing for this branch to release")
+    else:
+        subjects = landed_subjects()
+        if not subjects:
+            sys.exit(f"nothing landed on origin/main since {current} — no release to cut")
     notes = (
         args.notes.read_text(encoding="utf-8")
         if args.notes
@@ -190,7 +212,8 @@ def main(argv: list[str] | None = None) -> int:
         print("dry run — nothing written")
         return 0
 
-    git("checkout", "-b", branch, "origin/main")
+    if not args.in_branch:
+        git("checkout", "-b", branch, "origin/main")
     PYPROJECT.write_text(
         bump_pyproject(PYPROJECT.read_text(encoding="utf-8"), version), encoding="utf-8"
     )
@@ -207,6 +230,9 @@ def main(argv: list[str] | None = None) -> int:
 
     git("add", "pyproject.toml", ".claude-plugin/plugin.json", "CHANGELOG.md")
     git("commit", "-m", f"{RELEASE_SUBJECT} {version}")
+    if args.in_branch:
+        print(f"committed the bump on {branch} — push it with the rest of the PR")
+        return 0
     if args.no_pr:
         print(f"committed on {branch} — push and open the PR when ready")
         return 0
