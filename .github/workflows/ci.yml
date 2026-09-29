@@ -26,6 +26,11 @@ jobs:
       - name: pytest
         run: pytest -q
 
+      # ADR 0015: each ADR from 0014 on carries `## Holds`, and each
+      # invariant line names a test that exists. Blocking.
+      - name: lore lint adr
+        run: lore lint adr
+
       # advisory until repo is ruff-clean — see #196
       - name: ruff check
         continue-on-error: true
