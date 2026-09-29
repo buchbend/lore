@@ -198,6 +198,26 @@ def _git_ls_files(root: Path) -> list[tuple[str, str]] | None:
     return entries
 
 
+def is_git_work_tree(root: Path) -> bool:
+    """True when *root* lies inside a git work tree (root or any subdirectory).
+
+    Discovery outside git falls back to a full filesystem walk plus a content
+    hash of every file. Automatic callers (the SessionStart hook) must check
+    this first: a session started in a home directory would otherwise walk
+    the entire home tree on every start.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (FileNotFoundError, OSError):
+        return False
+    return proc.returncode == 0 and proc.stdout.strip() == "true"
+
+
 def _walk_files(root: Path) -> list[str]:
     """Fallback discovery: walk *root*, pruning IGNORE_DIRS, return relpaths."""
     found: list[str] = []

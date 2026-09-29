@@ -47,3 +47,13 @@ spawn call (no implicit inheritance). The implementation-teammate tier is adviso
 explorers (code map, docs, cross-repo scan) run at mid; cheaper tiers skip
 the depth, frontier-tier would waste tokens on mechanical discovery.
 
+**Tier floor** (`super-orchestrate`): **caller-set, `frontier` by default**.
+The supervisor resolves one tier for every spawn of the run: the dependency
+analyst, each epic lead, and every teammate, reviewer and docs pass under a
+lead. The floor replaces the advisory implementation tiers and the strong
+review tier above. A floor below `strong` would break the review rule, so the
+floor never goes below `strong`.
+
+A smaller plan keeps the floor and remaps the tiers instead: override
+`frontier` and `strong` in the vault config (see `docs/model-tiers.md`, "User
+overrides"), and every spawn runs on the cheaper model.

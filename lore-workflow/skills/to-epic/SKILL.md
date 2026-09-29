@@ -60,13 +60,15 @@ Break the work into **tracer-bullet** features — each a slice cutting end-to-e
 layers, sized as one teammate / one branch / one PR. Every row costs fixed downstream
 overhead in `/lore-workflow:orchestrate-epic` (teammate spawn, crosscheck, merge, sibling
 rebases), so cut the fewest slices that earn a split. A split earns its cost only for
-**real parallelism** (independent files/repos genuinely running side by side), **a HITL
+**real parallelism** (slices teammates can build side by side, also in the same files), **a HITL
 boundary** (isolate the human decision so the AFK remainder runs unattended), or **risk
 isolation** (quarantine the uncertain piece from the safe work). Everything else merges —
 hard rule: **a strictly linear blocked-by chain collapses into one slice**; the orchestrator
 serializes it anyway, so extra rows buy only overhead. Conceptual separation and layer
-boundaries never justify a split. Target 2–4 slices (1 is fine; more than 6 smells like two
-epics). For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
+boundaries never justify a split. **Blocked by** records a real dependency only: the slice
+needs code, a schema or an interface that another slice adds. Two slices that only edit the
+same files carry no edge — they run in parallel and the later merge rebases. Target 2–4
+slices (1 is fine; more than 6 smells like two epics). For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
 blocked-by, and acceptance criteria as checkboxes. HITL slices need a human decision;
 `/lore-workflow:orchestrate-epic` escalates rather than auto-implements them, so resolve
 what you can into AFK during planning.

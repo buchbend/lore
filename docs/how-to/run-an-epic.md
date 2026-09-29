@@ -6,6 +6,7 @@ a merged epic and its documentation.
 Reach for this when the work is really several features, or when its shape
 is still unsettled and needs shaping before any code is written. For one
 small, clear change, use the [fast path](use-the-fast-path.md) instead.
+For several epics at once, see [Run several epics](run-several-epics.md).
 
 ## Before you start
 

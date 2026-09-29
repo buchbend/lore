@@ -294,3 +294,15 @@ def test_cli_quiet_is_silent_on_no_op(tmp_path: Path, capsys) -> None:
     capsys.readouterr()
     assert cm.main([str(tmp_path), "--quiet"]) == 0
     assert capsys.readouterr().out == ""
+
+
+def test_is_git_work_tree_false_for_plain_directory(tmp_path: Path) -> None:
+    _write(tmp_path, "a.py", "x = 1\n")
+    assert cm.is_git_work_tree(tmp_path) is False
+
+
+def test_is_git_work_tree_true_for_repo_root_and_subdir(tmp_path: Path) -> None:
+    _git_repo(tmp_path)
+    _write(tmp_path, "pkg/a.py", "x = 1\n")
+    assert cm.is_git_work_tree(tmp_path) is True
+    assert cm.is_git_work_tree(tmp_path / "pkg") is True

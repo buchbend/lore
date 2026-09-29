@@ -8,6 +8,109 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.75.0] - 2026-09-29
+
+Ships `lore-workflow` 0.8.0 with the new skill `quick-feedback-loop`.
+
+### Added
+
+- **`lore-workflow:quick-feedback-loop` hones a feature in fast rounds.** The
+  agent codes each round test-first in a worktree. The agent merges each round
+  into the branch the live dev stack serves, `develop` or `main`.
+- **The main session runs only the round's own tests.** A background subagent
+  at the `cheap` tier runs the full suite after each merge. A failure becomes
+  the first ask of the next round.
+- **The agent flags asks that need proper design.** A checklist names the
+  signs, such as a new data model or an auth change. The agent recommends
+  `brief`, or `grilling` then `to-epic`.
+- **Wrap-up writes the approved ADRs and glossary terms.** The agent collects
+  candidates on an untracked ledger during the loop. The user approves each
+  candidate before the agent writes it. A Diátaxis docs pass follows.
+- **Wrap-up offers an advisory pass.** An architect subagent and a web-design
+  subagent at the `strong` tier return refactor suggestions. Neither changes
+  code.
+
+## [0.74.2] - 2026-09-27
+
+Ships `lore-workflow` 0.7.1 with scoped test runs (#439).
+
+### Changed
+
+- **`lore-workflow:tdd` scopes each test run.** In the loop, the agent runs
+  the touched test files only. Before a push, the agent adds the tests of
+  shared surfaces such as route lists, permission and scope maps. The full
+  suite runs once at the merge point, with the project's parallel runner.
+  UI and flow work checks the running app and leaves the full suite for the
+  merge point.
+- **`lore-workflow:orchestrate-epic` teammates skip the full suite before a
+  push.** Epic-branch CI runs the full suite after each merge.
+
+## [0.74.1] - 2026-09-26
+
+Ships `lore-workflow` 0.7.0 with the new skill `quick-orchestrate` (#437).
+
+### Added
+
+- **`lore-workflow:quick-orchestrate`, a light variant of `orchestrate-epic`.**
+  The skill runs only on the human's request. It fits a small epic whose
+  slices mostly build one new package. The lead writes the slices that share
+  new files itself. A teammate builds each slice in an independent code area,
+  in its own worktree, and commits without a PR. The lead merges locally into
+  the epic branch. One independent review and the docs pass run on the single
+  epic PR, and the human merges it.
+
+## [0.74.0] - 2026-09-24
+
+Adds a skill that runs several epics in one session (#431), speeds up
+`orchestrate-epic` without dropping a review (#434), and moves the two Opus
+tiers to Opus 5.5.
+
+### Added
+
+- **`lore-workflow:super-orchestrate`** (#431, #434). The skill takes two or
+  more epic tracker issues. One analyst subagent maps the dependencies between
+  the epics. The supervisor asks the human once to confirm the epic list and
+  the order. Each epic then runs under its own epic lead, a subagent that runs
+  `orchestrate-epic`. A downstream epic starts after its upstream epics merge.
+  Epics that only share files run side by side, and the epic lead that merges
+  second resolves the conflict in a fix step.
+- **A correctness line in the crosscheck verdict** (#434). The reviewer runs
+  the built-in `code-review` on each feature PR at `low` and on the epic PR at
+  `medium`. A confirmed bug fails the line.
+- **An all-Sonnet example in `docs/model-tiers.md`** (#431). The vault config
+  overrides `frontier` and `strong`, and every tier then resolves to Sonnet.
+
+### Changed
+
+- **`orchestrate-epic` dispatches a feature once its own blockers merge**
+  (#434). The next batch no longer waits for the whole current batch.
+- **One crosscheck reviewer per batch, fed as each PR opens** (#434). No PR
+  waits for its slowest sibling.
+- **The docs pass and the whole-epic review run in parallel** (#434). The
+  reviewer checks the docs commit against the behaviour when the commit lands.
+- **Any `fail` line makes a crosscheck verdict FAIL** (#434). A failure the
+  base branch already shows is written `pass — inherited: <evidence>`.
+- **`to-epic` draws a `Blocked by` edge only for a real dependency** (#434).
+  Slices that only share files run in parallel.
+- **`frontier` and `strong` resolve to `claude-opus-5-5`** on the `claude`
+  host (#431). A vault override in `$LORE_ROOT/.lore/config.yml` still wins.
+- **`orchestrate-epic` accepts a tier floor from its caller** (#431). The
+  floor replaces every implementation tier and every reviewer tier, and never
+  goes below `strong`.
+- **The `lore-workflow` plugin moves to 0.6.0** (#431).
+
+## [0.73.1] - 2026-09-18
+
+### Fixed
+
+- **SessionStart refreshes CODEMAP.md only inside a git work tree.** Outside
+  git the codemap discovery falls back to a full filesystem walk plus a
+  content hash of every file. A session started in a home directory walked
+  the whole home tree (696k files, 596 GB on the reporting host) on every
+  start and pinned a CPU core until Claude Code killed the hook. The hook now
+  checks `git rev-parse --is-inside-work-tree` first and skips the refresh
+  elsewhere. `lore codemap` on an explicit path keeps the walk fallback.
+
 ## [0.73.0] - 2026-08-12
 
 Brings flag text under the team writing rules (#414).

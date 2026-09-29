@@ -109,6 +109,17 @@ After all tests pass, look for refactor candidates:
 
 **Never refactor while RED.** Get to GREEN first.
 
+## Test runs
+
+A full suite on every change burns time and tokens without catching more. Scope each run:
+
+- **In the loop:** run the test files you touched, and nothing else.
+- **Before a push or hand-off:** add the tests of shared surfaces the change reaches, such as route lists, permission and scope maps, and schema checks. Run ruff.
+- **At a merge point:** run the full suite once, on the epic branch or in CI. Use the project's parallel runner (`pytest -n auto`, `vitest`) where it has one.
+- **UI or flow work:** check the change in the running app; collect the full suite for the merge point.
+
+A failure outside the touched files at the merge point goes back to the change that caused it.
+
 ## Checklist Per Cycle
 
 ```
