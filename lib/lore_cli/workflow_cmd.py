@@ -26,6 +26,7 @@ from lore_workflow.ledger import (
     open_entries,
     parse_board_ledger,
     parse_ledger_source,
+    set_board_outcome,
     set_outcome,
     utc_now,
 )
@@ -274,8 +275,29 @@ def ledger_set_cmd(
     path: str | None = typer.Option(
         None, "--path", help="Ledger file (default: <git-dir>/lore-ledger.md of the cwd)."
     ),
+    board: str | None = typer.Option(
+        None,
+        "--board",
+        help="'-': read an epic board comment on stdin, print the whole updated comment.",
+    ),
 ) -> None:
-    """Set the outcome of one line in a ledger file, in place."""
+    """Set the outcome of one line in a ledger file, in place.
+
+    With `--board -`, rewrite the line inside the `## Ledger` section of a
+    board comment read from stdin, and print the whole updated comment. Edit
+    the comment on GitHub with that output.
+    """
+    if board is not None:
+        if board != "-":
+            print("ledger-set: use --board - and pipe the board comment in", file=sys.stderr)
+            raise typer.Exit(code=1)
+        try:
+            updated, _ = set_board_outcome(sys.stdin.read(), selector, outcome)
+        except ValueError as exc:
+            print(f"ledger-set: {exc}", file=sys.stderr)
+            raise typer.Exit(code=1) from exc
+        sys.stdout.write(updated)
+        return
     try:
         line = set_outcome(_ledger_path(path), selector, outcome)
     except (OSError, ValueError) as exc:

@@ -197,17 +197,36 @@ def set_outcome(path: Path, selector: str, outcome: str) -> str:
     case-insensitive substring that matches exactly one non-resume line.
     Every other line stays as it was. Returns the rewritten line.
     """
-    validate_outcome(outcome)
     text = path.read_text(encoding="utf-8")
-    target = _select(parse_ledger(text), selector)
+    new_text, new_line = _rewrite_outcome(text, parse_ledger(text), selector, outcome)
+    path.write_text(new_text, encoding="utf-8")
+    return new_line
+
+
+def set_board_outcome(text: str, selector: str, outcome: str) -> tuple[str, str]:
+    """Set the outcome of one line in the ``## Ledger`` section of a board comment.
+
+    *selector* works as in :func:`set_outcome`, counted over the board's
+    ledger section only. Every other line of *text*, including a line with
+    the same text outside the section, stays as it was. Returns the whole
+    updated comment and the rewritten line.
+    """
+    return _rewrite_outcome(text, parse_board_ledger(text), selector, outcome)
+
+
+def _rewrite_outcome(
+    text: str, entries: list[LedgerEntry], selector: str, outcome: str
+) -> tuple[str, str]:
+    """Rewrite the source line of the selected entry; return (text, new line)."""
+    validate_outcome(outcome)
+    target = _select(entries, selector)
     if target.kind == "resume":
         raise ValueError("a resume line carries no outcome")
     new_line = format_entry(LedgerEntry(kind=target.kind, text=target.text, outcome=outcome))
     lines = text.splitlines(keepends=True)
     ending = "\n" if lines[target.line - 1].endswith("\n") else ""
     lines[target.line - 1] = new_line + ending
-    path.write_text("".join(lines), encoding="utf-8")
-    return new_line
+    return "".join(lines), new_line
 
 
 def archive_ledger(path: Path) -> Path:

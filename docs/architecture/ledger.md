@@ -44,6 +44,7 @@ other line, so a ledger file can hold a heading or prose.
 |---|---|
 | `lore workflow ledger-add --kind K --text T [--outcome O] [--next ASK] [--path P]` | Appends one line. The default path is the git-dir ledger of the current directory. A `resume` line gets the current time. `--path -` prints the line for a board comment. |
 | `lore workflow ledger-set <index\|text> --outcome O [--path P]` | Sets the outcome of one line in place. The index is the number that `ledger-check` prints. The text selects exactly one line. |
+| `lore workflow ledger-set <index\|text> --outcome O --board -` | Reads a board comment on standard input. Sets the outcome of one line in its `## Ledger` section and prints the whole comment. Edit the board comment with that output. |
 | `lore workflow ledger-check [PATH\|-]` | Exits 1 and names each `open` line. Exits 0 when every line has an outcome. A missing ledger file exits 0. `-` reads a ledger or a whole board comment from standard input. |
 | `lore workflow ledger-archive [--path P]` | Renames a finished ledger to `lore-ledger.<UTC-date>.done.md` in the same folder. Exits 1 while a line is `open`. A second archive on the same day gets a `-2` suffix. A missing ledger exits 0. |
 | `lore workflow parse-board` | Adds a `ledger` key to its JSON output: one `{kind, outcome, timestamp, text}` object per line. |

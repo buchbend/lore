@@ -228,3 +228,49 @@ def test_ledger_archive_refuses_a_ledger_with_open_lines(tmp_path, capsys) -> No
 def test_ledger_archive_without_ledger_passes_with_note(tmp_path, capsys) -> None:
     assert workflow_cmd.main(["ledger-archive", "--path", str(tmp_path / "lore-ledger.md")]) == 0
     assert "no ledger" in capsys.readouterr().out
+
+
+# --- ledger-set on a board comment (epic mode) ------------------------------
+
+
+def test_ledger_set_board_rewrites_the_line_and_prints_the_whole_body(monkeypatch, capsys) -> None:
+    _stdin(monkeypatch, BOARD)
+    rc = workflow_cmd.main(["ledger-set", "2", "--outcome", "approved", "--board", "-"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out == BOARD.replace("- [term] open — risk level", "- [term] approved — risk level")
+
+    _stdin(monkeypatch, out)
+    assert workflow_cmd.main(["ledger-check", "-"]) == 0
+
+
+def test_ledger_set_board_selects_by_text(monkeypatch, capsys) -> None:
+    _stdin(monkeypatch, BOARD)
+    rc = workflow_cmd.main(
+        ["ledger-set", "risk", "--outcome", "filed buchbend/lore#500", "--board", "-"]
+    )
+    assert rc == 0
+    assert "- [term] filed buchbend/lore#500 — risk level" in capsys.readouterr().out
+
+
+def test_ledger_set_board_leaves_a_same_text_line_outside_the_ledger(monkeypatch, capsys) -> None:
+    board = BOARD.replace("- Blocker: none.", "- [term] open — risk level")
+    _stdin(monkeypatch, board)
+    assert workflow_cmd.main(["ledger-set", "2", "--outcome", "dropped", "--board", "-"]) == 0
+    out = capsys.readouterr().out
+    assert out.count("- [term] open — risk level") == 1
+    assert out.index("- [term] dropped — risk level") < out.index("## Notes")
+
+
+def test_ledger_set_board_refuses_a_resume_line(monkeypatch, capsys) -> None:
+    _stdin(monkeypatch, BOARD)
+    assert workflow_cmd.main(["ledger-set", "3", "--outcome", "approved", "--board", "-"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "resume" in captured.err
+
+
+def test_ledger_set_board_takes_only_stdin(capsys) -> None:
+    rc = workflow_cmd.main(["ledger-set", "1", "--outcome", "approved", "--board", "board.md"])
+    assert rc == 1
+    assert "--board -" in capsys.readouterr().err
