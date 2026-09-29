@@ -14,6 +14,19 @@ from pathlib import Path
 import typer
 from lore_workflow.board_parser import BoardParseError, parse_board
 from lore_workflow.epic_policy import resolve_epic_policy
+from lore_workflow.ledger import (
+    KINDS,
+    LedgerEntry,
+    LedgerParseError,
+    append_entry,
+    default_ledger_path,
+    format_entry,
+    open_entries,
+    parse_board_ledger,
+    parse_ledger_source,
+    set_outcome,
+    utc_now,
+)
 from lore_workflow.prd_docs import create_prd
 from lore_workflow.roadmap_validator import roadmap_counts, validate_roadmap
 from lore_workflow.seed_epic import compose_seed_lift
@@ -153,18 +166,132 @@ def parse_board_cmd(
 ) -> None:
     """Parse an orchestrate-epic supervision-board comment into JSON rows.
 
-    Emits {rows: [{feature, issue, tier, batch, state, pr}, ...]}. A missing
-    marker, missing columns, or a malformed row exits 1 with a clear error on
-    stderr — never a silent misread.
+    Emits {rows: [{feature, issue, tier, batch, state, pr}, ...],
+    ledger: [{kind, outcome, timestamp, text}, ...]}. `ledger` holds the
+    lines of the `## Ledger` section, empty when the board has none. A
+    missing marker, missing columns, a malformed row or a malformed ledger
+    line exits 1 with a clear error on stderr — never a silent misread.
     """
     text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
     try:
         rows = parse_board(text)
-    except BoardParseError as exc:
+        ledger = parse_board_ledger(text)
+    except (BoardParseError, LedgerParseError) as exc:
         print(f"board parse error: {exc}", file=sys.stderr)
         raise typer.Exit(code=1) from exc
     # stdout, not rich console: keep it parse-clean for machine consumers.
-    print(json.dumps({"rows": [asdict(row) for row in rows]}))
+    print(
+        json.dumps({"rows": [asdict(row) for row in rows], "ledger": [e.to_dict() for e in ledger]})
+    )
+
+
+def _ledger_path(path: str | None) -> Path:
+    """Resolve `--path`, or the git-dir ledger of the cwd."""
+    if path:
+        return Path(path)
+    resolved = default_ledger_path(Path.cwd())
+    if resolved is None:
+        print("not inside a git repository; pass --path", file=sys.stderr)
+        raise typer.Exit(code=1)
+    return resolved
+
+
+@app.command("ledger-add")
+def ledger_add_cmd(
+    kind: str = typer.Option(..., "--kind", help=f"One of: {', '.join(KINDS)}."),
+    text: str = typer.Option(..., "--text", help="The line's text. For a resume line: the state."),
+    outcome: str = typer.Option(
+        "open",
+        "--outcome",
+        help="open | approved | dropped | 'filed <owner/repo#n>'. Ignored for resume.",
+    ),
+    next_ask: str | None = typer.Option(
+        None, "--next", help="Resume lines only: the next ask, appended as '; next: <ask>'."
+    ),
+    path: str | None = typer.Option(
+        None, "--path", help="Ledger file (default: <git-dir>/lore-ledger.md of the cwd)."
+    ),
+) -> None:
+    """Append one line to a loop/issue ledger file and print it.
+
+    An epic keeps its ledger in the board comment; print the line with
+    `--path -` and paste it into the `## Ledger` section.
+    """
+    if kind == "resume":
+        body = f"{text}; next: {next_ask}" if next_ask else text
+        entry = LedgerEntry(kind=kind, text=body, timestamp=utc_now())
+    else:
+        entry = LedgerEntry(kind=kind, text=text, outcome=outcome)
+    try:
+        if path == "-":
+            print(format_entry(entry))
+            return
+        line = append_entry(_ledger_path(path), entry)
+    except ValueError as exc:
+        print(f"ledger-add: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+    print(line)
+
+
+@app.command("ledger-set")
+def ledger_set_cmd(
+    selector: str = typer.Argument(
+        ..., help="1-based line index as ledger-check lists it, or text that matches one line."
+    ),
+    outcome: str = typer.Option(
+        ..., "--outcome", help="approved | dropped | 'filed <owner/repo#n>' | open."
+    ),
+    path: str | None = typer.Option(
+        None, "--path", help="Ledger file (default: <git-dir>/lore-ledger.md of the cwd)."
+    ),
+) -> None:
+    """Set the outcome of one line in a ledger file, in place."""
+    try:
+        line = set_outcome(_ledger_path(path), selector, outcome)
+    except (OSError, ValueError) as exc:
+        print(f"ledger-set: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+    print(line)
+
+
+@app.command("ledger-check")
+def ledger_check_cmd(
+    path: str | None = typer.Argument(
+        None,
+        help="Ledger file, or '-' to read a ledger or a board comment from stdin "
+        "(default: <git-dir>/lore-ledger.md of the cwd).",
+    ),
+) -> None:
+    """Gate a finish point: exit 1 while any non-resume ledger line is `open`.
+
+    Names each open line with its index for `ledger-set`. A malformed ledger
+    line also exits 1. A missing ledger has nothing to check and exits 0.
+    """
+    if path == "-":
+        text = sys.stdin.read()
+        source = "stdin"
+    else:
+        ledger = _ledger_path(path)
+        source = str(ledger)
+        if not ledger.exists():
+            print(f"no ledger at {ledger}: nothing to check")
+            return
+        text = ledger.read_text(encoding="utf-8")
+    try:
+        entries = parse_ledger_source(text)
+    except LedgerParseError as exc:
+        print(f"ledger-check: {source}: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+    still_open = open_entries(entries)
+    if not still_open:
+        print(f"ledger OK: {len(entries)} line(s), none open ({source})")
+        return
+    # Plain print, not rich: `[adr]` would read as rich markup.
+    print(f"ledger has {len(still_open)} open line(s) ({source}):")
+    for index, entry in still_open:
+        print(f"  {index}. [{entry.kind}] {entry.text}")
+    print("Set each outcome: approved, dropped or filed <owner/repo#n>.")
+    raise typer.Exit(code=1)
 
 
 main = argv_main(app)
