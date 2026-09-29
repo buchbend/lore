@@ -115,6 +115,10 @@ Vault-wide policy. Schema lives in
   reporting of retrieval misses; `retrieval_misses` defaults to `false`,
   `retrieval_misses_repo` to `buchbend/lore`. See
   `docs/how-to/file-facts-as-artifacts.md`.
+- `workflow.risk.{max_lines, max_files, fanin_top_fraction, sensitive_paths}` —
+  thresholds for `lore workflow risk`. The defaults are 400 lines, 10 files,
+  the top 10% of Python import fan-in, and globs for auth, permission,
+  secret and credential paths. See `docs/architecture/ledger.md`.
 - `tiers.overrides.<host>.<tier>` — override the shipped model-tier table
   (`lib/lore_core/tiers/table.py`) for one host/tier cell; see
   `docs/model-tiers.md`.
