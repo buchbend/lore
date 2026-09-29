@@ -10,7 +10,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from lore_core.session_start import record_auto_pull, recorded_auto_pull_warning
 
 
