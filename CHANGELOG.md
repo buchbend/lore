@@ -8,6 +8,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.75.0] - 2026-09-29
+
+Ships `lore-workflow` 0.8.0 with the new skill `quick-feedback-loop`.
+
+### Added
+
+- **`lore-workflow:quick-feedback-loop` hones a feature in fast rounds.** The
+  agent codes each round test-first in a worktree. The agent merges each round
+  into the branch the live dev stack serves, `develop` or `main`.
+- **The main session runs only the round's own tests.** A background subagent
+  at the `cheap` tier runs the full suite after each merge. A failure becomes
+  the first ask of the next round.
+- **The agent flags asks that need proper design.** A checklist names the
+  signs, such as a new data model or an auth change. The agent recommends
+  `brief`, or `grilling` then `to-epic`.
+- **Wrap-up writes the approved ADRs and glossary terms.** The agent collects
+  candidates on an untracked ledger during the loop. The user approves each
+  candidate before the agent writes it. A Diátaxis docs pass follows.
+- **Wrap-up offers an advisory pass.** An architect subagent and a web-design
+  subagent at the `strong` tier return refactor suggestions. Neither changes
+  code.
+
 ## [0.74.2] - 2026-09-27
 
 Ships `lore-workflow` 0.7.1 with scoped test runs (#439).
