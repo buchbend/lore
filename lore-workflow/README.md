@@ -26,7 +26,7 @@ delegation conventions shared across skills live in
 | `orchestrate-epic` | Supervise parallel TDD implementation of an epic — plan, dispatch, crosscheck, land. |
 | `quick-orchestrate` | Light `orchestrate-epic` for a small epic built fast with the human present — lead builds the shared slices, local merges, one epic PR, one independent review. |
 | `super-orchestrate` | Supervise several epics — map dependencies between them, one `orchestrate-epic` lead per epic, frontier tier by default. |
-| `quick-feedback-loop` | Hone a feature in fast rounds — test-first in a worktree, merged each round into the branch the live dev stack runs; ADR and term candidates approved and written at wrap-up, then a docs pass. |
+| `quick-feedback-loop` | Hone a feature in fast rounds — test-first in a worktree, only new tests in the loop, full suite in the background, merged each round into the branch the live dev stack runs; advises design for big asks; ADR and term candidates approved and written at wrap-up, then docs and an optional architect/web-design pass. |
 | `implement-issue` | Fast path for one well-understood GitHub issue, outside the epic chain. |
 | `brief` | Middle rung — pack-only orientation + one reflected brief, then handoff to `implement-issue` or `tdd`. |
 | `consolidate-docs` | Sweep a wild-grown docs tree — plan-approved merge/move/delete back into Diátaxis shape. |
