@@ -10,6 +10,7 @@ import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from lore_workflow.board_parser import BoardParseError, parse_board
@@ -27,7 +28,7 @@ from lore_workflow.ledger import (
     set_outcome,
     utc_now,
 )
-from lore_workflow.prd_docs import create_prd
+from lore_workflow.prd_docs import PrdShipError, create_prd, ship_prd
 from lore_workflow.risk import (
     RiskInputError,
     assess,
@@ -116,6 +117,27 @@ def create_prd_cmd(
         target or Path("."), slug=slug, title=title, epic_url=epic_url, repos=repo or []
     )
     console.print(f"[green]wrote[/green] {path}")
+
+
+@app.command("prd-ship")
+def prd_ship_cmd(
+    path: Annotated[Path, typer.Argument(help="Path to the PRD file.")],
+    adr: Annotated[
+        list[str] | None,
+        typer.Option("--adr", help="A current ADR number, e.g. 0014. Repeat for each ADR."),
+    ] = None,
+) -> None:
+    """Mark a PRD shipped once its epic merged (ADR 0015).
+
+    Sets `status: shipped` and adds `> Historical. Current decisions: ADR ...`
+    under the title. Retrieval then ranks the PRD below ADRs. Idempotent.
+    """
+    try:
+        ship_prd(path, adr or [])
+    except (PrdShipError, OSError) as exc:
+        console.print(f"[red]prd-ship failed[/red]: {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]shipped[/green] {path}")
 
 
 @app.command("epic-policy")

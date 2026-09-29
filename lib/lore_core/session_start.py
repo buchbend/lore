@@ -119,6 +119,24 @@ def load_directive_lines() -> list[str]:
     return [*text.rstrip("\n").split("\n"), ""]
 
 
+#: The directive line that carries ADR 0015's reading rule starts with this.
+_READING_RULE_PREFIX = "- ADRs and PRDs explain"
+
+
+def reading_rule() -> str:
+    """ADR 0015's reading rule, read from the directive template.
+
+    The template is the one source: SessionStart injects the line, and
+    ``lore attach --scaffold-workflow`` writes the same text into AGENTS.md.
+    Returns an empty string when the template can't be read, like
+    :func:`load_directive_lines`.
+    """
+    for line in load_directive_lines():
+        if line.startswith(_READING_RULE_PREFIX):
+            return line[2:]
+    return ""
+
+
 PRECOMPACT_DIRECTIVE = (
     "lore: vault-first — call `lore_search` MCP before asking the user "
     "about wikilinked terms."

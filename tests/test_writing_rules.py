@@ -173,16 +173,18 @@ def test_context_md_defines_the_new_terms() -> None:
 
 COVERED_ARTIFACTS = (
     "issue text",
-    "PR descriptions",
+    "PR bodies",
     "PR review comments",
-    "ADR context sections",
-    "design documents",
+    "ADRs",
+    "PRDs",
+    "docs",
+    "handover section",
 )
 
 
 def test_scope_line_names_every_covered_artifact() -> None:
-    """PR review comments and design documents follow the same rules. Session
-    notes do not — PRD 0009 places them outside, with their own voice."""
+    """PR review comments, ADRs, PRDs and docs follow the same rules (PRD 0015).
+    Session notes do not — PRD 0009 places them outside, with their own voice."""
     scope = next(line for line in _default_text().splitlines() if line.startswith("Scope:"))
     for artifact in COVERED_ARTIFACTS:
         assert artifact in scope, scope
@@ -221,8 +223,9 @@ def test_paste_block_carries_both_short_name_rules() -> None:
 
 def test_rules_stay_under_the_line_budget() -> None:
     """An over-specified instruction file is a known failure mode. The document
-    was compacted from 245 lines to 139; every addition replaces text."""
-    assert len(_default_text().splitlines()) < 180
+    was compacted from 245 lines to 139; every addition replaces text. Rule 22
+    (ADR 0015) raised the ceiling by five lines for its own subsection."""
+    assert len(_default_text().splitlines()) < 185
 
 
 # --- the writing rules and the deprecated alias --------------------------

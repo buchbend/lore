@@ -26,6 +26,26 @@ jobs:
       - name: pytest
         run: pytest -q
 
+      # ADR 0015: each ADR from 0014 on carries `## Holds`, and each
+      # invariant line names a test that exists. Blocking.
+      - name: lore lint adr
+        run: lore lint adr
+
+      # PRD 0015: Vale with the Lore config over docs/**/*.md. Pinned to the
+      # version the Vale tests run against.
+      - name: Install Vale
+        env:
+          VALE_VERSION: "3.22.0"
+        run: |
+          curl -sSfL "https://github.com/errata-ai/vale/releases/download/v${VALE_VERSION}/vale_${VALE_VERSION}_Linux_64-bit.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP" vale
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      # Fails on error level only. tools/vale-docs-baseline.json holds the
+      # error count of docs older than this step; a file fails above it.
+      - name: vale docs
+        run: python3 tools/vale_docs.py --config "$(lore style vale-config)"
+
       # advisory until repo is ruff-clean — see #196
       - name: ruff check
         continue-on-error: true

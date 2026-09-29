@@ -545,3 +545,66 @@ def test_an_unchanged_glossary_reuses_the_tree(tmp_path: Path) -> None:
     stamp = first.stat().st_mtime_ns
     assert vale_config_for(repo) == first
     assert first.stat().st_mtime_ns == stamp
+
+
+# --- rule 22: no absolutes in ADR and PRD text (ADR 0015) -----------------
+
+_ABSOLUTES_FIXTURE = """\
+# ADR 0020: Fixture
+
+## Holds
+
+- **Invariant** (test: `tests/test_x.py::test_y`): the parser must always
+  reject the input, and it never lets a fixed value through.
+- **Default:** the team never skips the check.
+
+The layout is fixed. Write `always` and `must` in a code span.
+
+```
+never inside a fenced block
+```
+"""
+
+
+def _absolutes(alerts: list[dict]) -> list[tuple[int, str]]:
+    return [(a["Line"], a["Match"].lower()) for a in alerts if a["Check"].endswith("Absolutes")]
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+@pytest.mark.parametrize("home", ["adr", "prd"])
+def test_vale_flags_an_absolute_in_decision_record_prose(tmp_path: Path, home: str) -> None:
+    """One alert per prose hit. A code span, a fenced block and an invariant
+    line, wrapped continuation included, stay quiet."""
+    fixture = tmp_path / "docs" / home / "0020-fixture.md"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text(_ABSOLUTES_FIXTURE, encoding="utf-8")
+    _code, alerts = _vale(default_vale_config_path(), fixture)
+    assert _absolutes(alerts) == [(7, "never"), (9, "fixed")]
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_vale_leaves_absolutes_alone_outside_adr_and_prd(tmp_path: Path) -> None:
+    """An issue draft or a how-to may say `must`: the rule covers decision records."""
+    fixture = tmp_path / "docs" / "how-to" / "guide.md"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text(_ABSOLUTES_FIXTURE, encoding="utf-8")
+    _code, alerts = _vale(default_vale_config_path(), fixture)
+    assert _absolutes(alerts) == []
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_the_absolutes_rule_survives_the_glossary_copy(tmp_path: Path) -> None:
+    """`vale_config_for` rewrites the ini; the ADR/PRD section must travel with it."""
+    repo = _repo_with_glossary(tmp_path, "Holds")
+    fixture = repo / "docs" / "adr" / "0020-fixture.md"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text(_ABSOLUTES_FIXTURE, encoding="utf-8")
+    _code, alerts = _vale(vale_config_for(repo), fixture)
+    assert _absolutes(alerts) == [(7, "never"), (9, "fixed")]
+
+
+def test_the_absolutes_rule_matches_rule_22() -> None:
+    """Rule 22's words and the Vale tokens are one list in two places."""
+    path = default_vale_config_path().parent / "WritingRules" / "Absolutes.yml"
+    tokens = yaml.safe_load(path.read_text(encoding="utf-8"))["tokens"]
+    assert tokens == _listed_after("Absolutes:", _writing_rules_text())
