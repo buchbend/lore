@@ -143,3 +143,40 @@ def test_bare_lint_still_runs_the_vault_lint_not_the_adr_check() -> None:
     assert result.exit_code == 0
     assert "adr" in result.output
     assert "--check-only" in result.output
+
+
+# --- the ADR template carries the sections the lint reads -----------------
+
+ADR_FORMAT = REPO_ROOT / "lore-workflow" / "skills" / "domain-modeling" / "ADR-FORMAT.md"
+ADR_0015 = REPO_ROOT / "docs" / "adr" / "0015-decision-records-state-their-strength.md"
+
+
+def _strength_sections(text: str) -> list[str]:
+    """The `Holds`, `Revisit if` and `Amendments` stubs ADR 0015 shows in its fence."""
+    fence = text[text.index("```md\n## Holds") + len("```md\n") :]
+    fence = fence[: fence.index("```")]
+    return ["## " + part.strip() for part in fence.split("## ") if part.strip()]
+
+
+def test_the_adr_template_carries_the_sections_adr_0015_shows() -> None:
+    template = ADR_FORMAT.read_text(encoding="utf-8")
+    sections = _strength_sections(ADR_0015.read_text(encoding="utf-8"))
+    assert [s.splitlines()[0] for s in sections] == [
+        "## Holds",
+        "## Revisit if",
+        "## Amendments",
+    ]
+    for section in sections:
+        assert section in template
+
+
+def test_the_adr_template_keeps_the_three_criteria_gate() -> None:
+    template = ADR_FORMAT.read_text(encoding="utf-8")
+    for criterion in ("Hard to reverse", "Surprising without context", "real trade-off"):
+        assert criterion in template
+
+
+def test_the_adr_template_says_text_outside_holds_is_background() -> None:
+    template = ADR_FORMAT.read_text(encoding="utf-8")
+    assert "outside `Holds` is background" in template
+    assert "Mechanism detail stays out of `Decision`" in template

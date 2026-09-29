@@ -1,7 +1,7 @@
 <!--
 Adapted for CCAT: MADR-lite template (Context · Decision · Consequences /
 Trade-offs · Alternatives considered · Status) plus a deterministic toctree-
-wiring step. Deviates from upstream mattpocock/skills, whose ADR-FORMAT.md uses
+wiring step, and the Holds / Revisit if / Amendments sections of ADR 0015. Deviates from upstream mattpocock/skills, whose ADR-FORMAT.md uses
 a freeform 1-3 sentence template with optional sections and no docs-site wiring.
 The three-criteria "offer ADRs sparingly" gate is kept verbatim from upstream.
 See THIRD-PARTY.md for provenance.
@@ -28,6 +28,16 @@ ADR is more than a single paragraph here.
 - **Deciders:** {who}
 - **Relates to:** {links to the PRD / epic / sub-issue this records}
 
+## Holds
+
+- **Invariant** (test: `tests/test_x.py::test_y`): <what must stay true>.
+- **Default:** <what to do unless the task gives a reason>.
+- **Incidental:** <how it was built at the time; change freely>.
+
+## Revisit if
+
+- <a condition that reopens the decision>
+
 ## Context
 
 What forces are in play — the problem, the constraints, the background a future
@@ -52,7 +62,36 @@ are the valuable part — they stop someone re-proposing a settled option later.
 (Also carried in the header line above.) Track the decision's lifecycle:
 `Proposed` → `Accepted`, and later `Deprecated` or `Superseded by ADR-NNNN` when
 revisited.
+
+## Amendments
+
+- YYYY-MM-DD: <what changed and why>.
 ```
+
+## Holds: how strong each part is
+
+ADR 0015 adds `Holds`, `Revisit if` and `Amendments`. `lore lint adr` checks
+every ADR from 0014 onward, and CI runs the check.
+
+- `Holds` sits after the header block. Sort each part of the decision into one
+  of three kinds:
+  - **Invariant:** a hard line. The line names the test that enforces it, as
+    `(test: <path>::<name>)`. No test, no invariant. `lore lint adr` fails when
+    the test file or the test name does not exist.
+  - **Default:** what an agent does unless the task gives a reason. An agent
+    that deviates names the deviation and the reason in the PR.
+  - **Incidental:** how the team built it at the time. Change it freely.
+- A `Holds` section with only `Default` and `Incidental` lines is valid.
+- Text outside `Holds` is background. It explains the decision; an agent does
+  not follow it as an instruction.
+- Mechanism detail stays out of `Decision`: a version floor, a regex form, a
+  substring match. Put it in `Holds` as `Incidental`, or leave it to the code.
+- `Revisit if` names the conditions that reopen the decision.
+- `Amendments` takes one dated line per relaxed or sharpened rule. A reversal
+  of the whole decision takes a superseding ADR. Write `None.` until the first
+  amendment.
+- Keep absolutes out of the text outside an invariant line: `always`, `never`,
+  `no exceptions`, `fixed`, `must`. See rule 22 of the writing rules.
 
 ## Numbering
 
