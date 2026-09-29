@@ -562,13 +562,18 @@ def maybe_auto_pull_for_scope(scope: Scope, lore_root: Path) -> str | None:
     Returns a one-line user-facing warning when the pull was skipped for
     a reason the user should know about (dirty tree, diverged history),
     or ``None`` for clean / silent outcomes (already in sync, no remote,
-    pull succeeded). The caller renders the warning into the SessionStart
-    banner so divergence is surfaced; auto-pull is otherwise transparent.
+    pull succeeded). The fetch needs the network, so the SessionStart hook
+    never calls this inline: :func:`record_auto_pull` runs it in a detached
+    child and the next banner shows the recorded warning.
     """
+    return _auto_pull_wiki(scope.wiki, lore_root)
+
+
+def _auto_pull_wiki(wiki: str, lore_root: Path) -> str | None:
     from lore_core.git_sync import SyncStatus, auto_pull
     from lore_core.wiki_config import load_wiki_config
 
-    wiki_dir = lore_root / "wiki" / scope.wiki
+    wiki_dir = lore_root / "wiki" / wiki
     if not wiki_dir.exists():
         return None
     cfg = load_wiki_config(wiki_dir)
@@ -577,10 +582,39 @@ def maybe_auto_pull_for_scope(scope: Scope, lore_root: Path) -> str | None:
 
     result = auto_pull(wiki_dir)
     if result.status is SyncStatus.SKIPPED_DIRTY:
-        return f"› wiki [[{scope.wiki}]] has uncommitted changes — auto-pull skipped"
+        return f"› wiki [[{wiki}]] has uncommitted changes — auto-pull skipped"
     if result.status is SyncStatus.SKIPPED_DIVERGED:
-        return f"› wiki [[{scope.wiki}]] diverged from origin — `git pull` manually"
+        return f"› wiki [[{wiki}]] diverged from origin — `git pull` manually"
     return None
+
+
+def _auto_pull_record_path(lore_root: Path, wiki: str) -> Path:
+    return lore_root / ".lore" / "auto-pull" / f"{wiki}.json"
+
+
+def record_auto_pull(lore_root: Path, wiki: str) -> None:
+    """Pull *wiki* from origin and record the banner warning the pull earned.
+
+    Runs in the detached child the SessionStart hook spawns, so a slow or
+    dead remote never holds up the banner. The next session start reads the
+    record back through :func:`recorded_auto_pull_warning`.
+    """
+    from lore_core.io import atomic_write_text
+
+    warning = _auto_pull_wiki(wiki, lore_root)
+    path = _auto_pull_record_path(lore_root, wiki)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, json.dumps({"warning": warning}))
+
+
+def recorded_auto_pull_warning(lore_root: Path, wiki: str) -> str | None:
+    """Return the warning the last background pull of *wiki* recorded, if any."""
+    try:
+        data = json.loads(_auto_pull_record_path(lore_root, wiki).read_text())
+    except (OSError, ValueError):
+        return None
+    warning = data.get("warning") if isinstance(data, dict) else None
+    return warning if isinstance(warning, str) else None
 
 
 def maybe_auto_push_for_scope(scope: Scope, lore_root: Path) -> SyncResult | None:

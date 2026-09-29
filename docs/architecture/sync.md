@@ -30,7 +30,7 @@ produces — without producing temp artifacts or losing content.
 
 | Trigger | Where | What |
 |---|---|---|
-| **SessionStart** | `lore_cli/hooks.py` (existing hook) | Fetch + fast-forward each attached wiki on a clean tree. ~200ms latency for a clean tree. Skipped silently when no remote, dirty tree, or non-FF history. |
+| **SessionStart** | `lore_cli/hooks.py` spawns a detached `lore hook wiki-pull` child | Fetch + fast-forward the attached wiki on a clean tree, off the banner's critical path: a slow or unreachable remote never delays the banner. The child records a dirty-tree or diverged-history warning, and the next banner shows it. Silent when no remote exists. |
 | Manual | `lore status` shows divergence; user runs `git pull` themselves | When auto-pull bailed (dirty/diverged), the user is the next line of defence. |
 
 ### When auto_push fires

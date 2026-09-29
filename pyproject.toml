@@ -62,3 +62,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+
+[tool.pytest.ini_options]
+# Registered, not deselected: CI's plain `pytest -q` runs slow tests too.
+markers = [
+    "slow: subprocess or timing test (seconds, not milliseconds); runs in CI",
+]
