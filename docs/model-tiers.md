@@ -19,8 +19,8 @@ Four tiers, ordered strongest -> cheapest:
 | Tier | Semantic role | Claude Code model |
 |------|----------------|--------------------|
 | `frontier` | Strongest reasoning: orchestration, grilling / synthesis. | `claude-opus-5-5` (the session's driving model) |
-| `strong` | Crosscheck / review; architectural or cross-cutting implementation. | `claude-opus-5-5` |
-| `mid` | Exploration / gathering; mechanical implementation. | `claude-sonnet-5` |
+| `strong` | Review of a `high` risk PR; architectural or cross-cutting implementation. | `claude-opus-5-5` |
+| `mid` | Exploration / gathering; mechanical implementation; review of a `low` risk PR. | `claude-sonnet-5` |
 | `cheap` | Bulk-mechanical sub-tasks only — never a stage's default. | `claude-haiku-4-5` |
 
 **Cursor's column is PROVISIONAL** — a best guess seeded ahead of any
@@ -79,5 +79,5 @@ tiers:
       strong: claude-sonnet-5
 ```
 
-Skills keep naming semantic tiers, so `super-orchestrate`'s default
-`frontier` floor then runs every spawn on Sonnet.
+Skills keep naming semantic tiers, so every `frontier` and `strong` spawn
+then runs on Sonnet.

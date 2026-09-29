@@ -36,6 +36,9 @@ Homes
 - ``epic`` mode: a ``## Ledger`` section in the board comment, after the
   table and before ``## Notes``. :func:`parse_board_ledger` reads it.
 
+At a loop or issue finish point, :func:`archive_ledger` renames the file to
+``lore-ledger.<UTC-date>.done.md`` so the SessionStart resume offer stops.
+
 Standard library only.
 """
 
@@ -102,6 +105,11 @@ def validate_outcome(outcome: str) -> str:
 def utc_now() -> str:
     """Current time as the ISO 8601 UTC timestamp a resume line carries."""
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def utc_date() -> str:
+    """Current UTC date, as the archive name of a finished ledger carries it."""
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 def format_entry(entry: LedgerEntry) -> str:
@@ -189,17 +197,61 @@ def set_outcome(path: Path, selector: str, outcome: str) -> str:
     case-insensitive substring that matches exactly one non-resume line.
     Every other line stays as it was. Returns the rewritten line.
     """
-    validate_outcome(outcome)
     text = path.read_text(encoding="utf-8")
-    target = _select(parse_ledger(text), selector)
+    new_text, new_line = _rewrite_outcome(text, parse_ledger(text), selector, outcome)
+    path.write_text(new_text, encoding="utf-8")
+    return new_line
+
+
+def set_board_outcome(text: str, selector: str, outcome: str) -> tuple[str, str]:
+    """Set the outcome of one line in the ``## Ledger`` section of a board comment.
+
+    *selector* works as in :func:`set_outcome`, counted over the board's
+    ledger section only. Every other line of *text*, including a line with
+    the same text outside the section, stays as it was. Returns the whole
+    updated comment and the rewritten line.
+    """
+    return _rewrite_outcome(text, parse_board_ledger(text), selector, outcome)
+
+
+def _rewrite_outcome(
+    text: str, entries: list[LedgerEntry], selector: str, outcome: str
+) -> tuple[str, str]:
+    """Rewrite the source line of the selected entry; return (text, new line)."""
+    validate_outcome(outcome)
+    target = _select(entries, selector)
     if target.kind == "resume":
         raise ValueError("a resume line carries no outcome")
     new_line = format_entry(LedgerEntry(kind=target.kind, text=target.text, outcome=outcome))
     lines = text.splitlines(keepends=True)
     ending = "\n" if lines[target.line - 1].endswith("\n") else ""
     lines[target.line - 1] = new_line + ending
-    path.write_text("".join(lines), encoding="utf-8")
-    return new_line
+    return "".join(lines), new_line
+
+
+def archive_ledger(path: Path) -> Path:
+    """Rename a finished ledger to ``lore-ledger.<UTC-date>.done.md`` beside it.
+
+    A run archives its ledger at the finish point, after the ledger check
+    passes, so the SessionStart resume offer stops firing for it. Raises
+    ValueError while a line is still open. A second archive on the same day
+    gets a ``-2``, ``-3`` … suffix and leaves the earlier one in place.
+    Returns the archive path.
+    """
+    still_open = open_entries(parse_ledger(path.read_text(encoding="utf-8")))
+    if still_open:
+        raise ValueError(
+            f"{len(still_open)} open line(s); run `lore workflow ledger-check` and set each outcome"
+        )
+    stem = path.name.removesuffix(".md")
+    date = utc_date()
+    target = path.with_name(f"{stem}.{date}.done.md")
+    n = 2
+    while target.exists():
+        target = path.with_name(f"{stem}.{date}-{n}.done.md")
+        n += 1
+    path.rename(target)
+    return target
 
 
 # ---------------------------------------------------------------------------
@@ -310,13 +362,38 @@ def last_resume_line(text: str) -> str | None:
     return found
 
 
+def _looks_finished(text: str) -> bool:
+    """True when no line is open and the last entry is not a resume line.
+
+    Tolerant like :func:`last_resume_line`: malformed lines are skipped.
+    """
+    entries: list[LedgerEntry] = []
+    for raw in text.splitlines():
+        try:
+            entry = parse_line(raw)
+        except LedgerParseError:
+            continue
+        if entry is not None:
+            entries.append(entry)
+    if not entries or any(e.is_open for e in entries):
+        return False
+    return entries[-1].kind != "resume"
+
+
 def resume_offer(cwd: Path) -> str | None:
-    """The SessionStart line offering to resume, or None without a resume line."""
+    """The SessionStart line offering to resume, or None.
+
+    None without a resume line, and None for a ledger that looks finished:
+    no open line, and an outcome line after the last resume line. The build
+    skill archives a finished ledger (:func:`archive_ledger`), which also
+    ends the offer.
+    """
     path = default_ledger_path(cwd)
     if path is None or not path.is_file():
         return None
-    line = last_resume_line(path.read_text(encoding="utf-8", errors="replace"))
-    if line is None:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    line = last_resume_line(text)
+    if line is None or _looks_finished(text):
         return None
     return (
         f"lore: build ledger at {path} has a resume point. "

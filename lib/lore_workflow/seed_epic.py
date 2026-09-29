@@ -1,6 +1,6 @@
 """Seed-epic Origin/Findings lift — pull from the session note, not freehand.
 
-`compose_seed_lift` gives the seed-epic skill's "Write the seed(s)" step a
+`compose_seed_lift` gives the handover skill's "Write the seed(s)" step a
 deterministic Origin (from the note's linkage) and Findings (from the
 note's topic-chapter bodies) instead of a model reconstructing them from
 memory. Returns ``None`` — the caller's signal to fall back to the existing

@@ -1,14 +1,14 @@
 ---
 name: lore-workflow:to-epic
 description: Turn the current conversation or a plan/PRD into a PRD file under docs/prd/ plus
-  an epic tracker issue with one sub-issue per feature, structured so /lore-workflow:orchestrate-epic can
+  an epic tracker issue with one sub-issue per feature, structured so /lore-workflow:build can
   implement it autonomously. Use when the user wants an epic/tracker issue, or to turn a
   plan/PRD into an orchestratable epic.
 ---
 
 # To Epic
 
-Produce two coupled artifacts that `/lore-workflow:orchestrate-epic` consumes:
+Produce two coupled artifacts that `build` in `epic` mode consumes:
 
 1. **The PRD as a file** at `docs/prd/NNNN-kebab.md` (MyST Markdown) — the **source of
    truth**, versioned in the repo, reviewable in PRs, and rendered in the docs site. It is
@@ -17,7 +17,7 @@ Produce two coupled artifacts that `/lore-workflow:orchestrate-epic` consumes:
    it), and carries the **roadmap table** (the canonical dependency DAG) plus one sub-issue
    per feature (one feature = one teammate = one branch = one PR).
 
-This skill is the human checkpoint — `/lore-workflow:orchestrate-epic` runs hands-off afterward, so get the
+This skill is the human checkpoint — `build` in `epic` mode runs hands-off afterward, so get the
 breakdown right here.
 
 Tracker: the project's GitHub issues, via `gh` (use `--json` for reads — see the repo's own
@@ -37,7 +37,7 @@ lore workflow create-prd --slug <kebab> --title "<Title>" --epic-url <url> \
 
 ### 1. Gather context
 Work from the conversation. If the user passes a plan, PRD, or issue reference — including
-an epic-seed issue produced by `/lore-workflow:seed-epic` (labeled `epic-seed`) — fetch and read it
+an epic-seed issue produced by `/lore-workflow:handover` (labeled `epic-seed`) — fetch and read it
 (`gh ... --json`; see the repo's own conventions doc, if any).
 
 ### 2. Explore the repo(s)
@@ -53,31 +53,33 @@ Condense a PRD — do NOT interview, synthesize what you already know: Problem, 
 Implementation decisions, Testing decisions, Out of scope. Prefer deep modules testable in
 isolation. This PRD is the **source of truth** and becomes the **file** at
 `docs/prd/NNNN-kebab.md`, **not** the epic body. The epic body links it and carries only the
-one-paragraph summary + roadmap (see Publish).
+one-paragraph summary + roadmap (see Publish). Run `lore style show writing-rules` before you
+write the PRD and the epic body; both are team-facing text. The PRD sections below are a
+starting shape, not a fixed skeleton: a PRD takes the shape its task needs.
 
 ### 4. Draft the roadmap (fewest slices that earn their overhead)
 Break the work into **tracer-bullet** features — each a slice cutting end-to-end through all
 layers, sized as one teammate / one branch / one PR. Every row costs fixed downstream
-overhead in `/lore-workflow:orchestrate-epic` (teammate spawn, crosscheck, merge, sibling
+overhead in `build` in `epic` mode (teammate spawn, review, merge, sibling
 rebases), so cut the fewest slices that earn a split. A split earns its cost only for
 **real parallelism** (slices teammates can build side by side, also in the same files), **a HITL
 boundary** (isolate the human decision so the AFK remainder runs unattended), or **risk
 isolation** (quarantine the uncertain piece from the safe work). Everything else merges —
-hard rule: **a strictly linear blocked-by chain collapses into one slice**; the orchestrator
+hard rule: **a strictly linear blocked-by chain collapses into one slice**; `build`
 serializes it anyway, so extra rows buy only overhead. Conceptual separation and layer
 boundaries never justify a split. **Blocked by** records a real dependency only: the slice
 needs code, a schema or an interface that another slice adds. Two slices that only edit the
 same files carry no edge — they run in parallel and the later merge rebases. Target 2–4
 slices (1 is fine; more than 6 smells like two epics). For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
 blocked-by, and acceptance criteria as checkboxes. HITL slices need a human decision;
-`/lore-workflow:orchestrate-epic` escalates rather than auto-implements them, so resolve
+`build` in `epic` mode escalates rather than auto-implements them, so resolve
 what you can into AFK during planning.
 
 ### 5. Quiz the user (the checkpoint)
 Present the breakdown as a numbered list (Title · Repo · Type · Blocked by · criteria) **and
 the parallel batches it implies** (topological grouping of the DAG). Ask: right granularity?
 dependencies correct? repos correct? AFK/HITL correct? merge or split any slice? — when in
-doubt, merge. Iterate to approval — `/lore-workflow:orchestrate-epic` will not ask again.
+doubt, merge. Iterate to approval — `build` in `epic` mode will not ask again.
 
 ### 6. Publish
 Order matters so every cross-reference resolves:
@@ -97,12 +99,12 @@ Order matters so every cross-reference resolves:
    and (if an ADR records this decision) cross-link PRD ↔ ADR — **bidirectional
    cross-references** PRD ↔ epic ↔ ADR ↔ sub-issue throughout.
 5. **Close the consumed seed.** If this epic was formed from an epic-seed issue (labeled
-   `epic-seed`, produced by `/lore-workflow:seed-epic`), close that seed issue with a comment linking the
+   `epic-seed`, produced by `/lore-workflow:handover`), close that seed issue with a comment linking the
    newly formed epic (`gh issue close <seed> --comment "Formed into epic <owner/repo#epic>"`).
    Skip this step when the epic was not formed from a seed.
 
 **Gate publishing on the roadmap validator.** The roadmap table is the dependency DAG
-`/lore-workflow:orchestrate-epic` consumes, so it must be well-formed before the epic goes live. Run the
+`build` in `epic` mode consumes, so it must be well-formed before the epic goes live. Run the
 deterministic, dependency-free `lore workflow validate-roadmap` on the composed epic body —
 e.g. `gh issue view <epic> --json body -q .body | lore workflow validate-roadmap -`, or point
 it at the drafted body file (`lore workflow validate-roadmap <path>`). It checks the required
@@ -114,7 +116,7 @@ Use fully-qualified refs (`owner/repo#n`) for every cross-repo link. Do not modi
 parent issues.
 
 Finish by printing the PRD file path, the epic reference, and the exact next command:
-`/lore-workflow:orchestrate-epic <owner/repo#n>`.
+`/lore-workflow:build epic <owner/repo#n>`.
 
 ## PRD file template
 
@@ -160,7 +162,7 @@ What this epic deliberately does not cover.
 ## Epic body template
 
 The epic is a **tracker, not a spec**: it **links** the PRD (no PRD content duplicated here)
-and carries the roadmap DAG — the table **stays in the epic body**, where `/lore-workflow:orchestrate-epic` reads it.
+and carries the roadmap DAG — the table **stays in the epic body**, where `build` in `epic` mode reads it.
 
 <epic-body-template>
 ## Summary
@@ -169,9 +171,9 @@ One paragraph: problem → solution. Full spec lives in the PRD.
 **PRD:** [`docs/prd/NNNN-kebab.md`](../blob/<branch>/docs/prd/NNNN-kebab.md) — the source of truth.
 
 ## Roadmap
-Canonical DAG for `/lore-workflow:orchestrate-epic` — one row per feature/sub-issue. Type is AFK (runs
+Canonical DAG for `build` in `epic` mode — one row per feature/sub-issue. Type is AFK (runs
 autonomously, no human input) or HITL (human-in-the-loop: needs a human decision); the table
-below keeps the literal token, which is what the roadmap validator and `/lore-workflow:orchestrate-epic` read.
+below keeps the literal token, which is what the roadmap validator and `build` in `epic` mode read.
 
 | # | Feature | Issue | Repo | Type | Blocked by |
 |---|---------|-------|------|------|------------|
@@ -196,7 +198,7 @@ The header spends one line on four short values, so content starts above the fol
 each field on that line: **Epic** the tracker issue, fully qualified; **Repo** the repo
 this slice is implemented in; **Type** `AFK` (runs autonomously) or `HITL` (needs a human
 decision); **Blocked by** the blocking issues, or `None`. No parser reads these off the
-sub-issue — `orchestrate-epic` builds its DAG from the epic body's roadmap table.
+sub-issue — `build` builds its DAG from the epic body's roadmap table.
 
 <sub-issue-template>
 **Epic** owner/repo#<epic> · **Repo** owner/repo · **Type** AFK · **Blocked by** None

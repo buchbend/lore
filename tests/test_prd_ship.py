@@ -132,11 +132,12 @@ def test_context_pack_ranks_a_shipped_prd_below_adrs(
     repo = _repo(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(tmp_path / "no-such-vault"))
     pack = gather(cwd=repo, repo_path=str(repo))
-    ranked = [(e["kind"], e["path"]) for e in pack["ranked"]]
-    assert ranked == [
-        ("adr", "docs/adr/0014-home.md"),
-        ("prd", "docs/prd/0002-current.md"),
-        ("prd", "docs/prd/0001-old.md"),
+    # Paths only: the entries themselves already sit under `adr` and `prd`,
+    # and repeating them doubles the pack's token cost.
+    assert pack["ranked"] == [
+        "docs/adr/0014-home.md",
+        "docs/prd/0002-current.md",
+        "docs/prd/0001-old.md",
     ]
 
 

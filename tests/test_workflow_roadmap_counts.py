@@ -1,6 +1,6 @@
 """Machine-readable counts + `--json` output for the roadmap validator (#223).
 
-`/orchestrate-epic` reads roadmap size (feature rows, distinct repos, dependency
+`build` (epic mode) reads roadmap size (feature rows, distinct repos, dependency
 edges) to plan batches; deriving it from validator prose is scraping. These
 counts come straight off the already-parsed rows — no second table parse.
 """

@@ -150,7 +150,7 @@ def test_bare_lint_still_runs_the_vault_lint_not_the_adr_check() -> None:
 
 # --- the ADR template carries the sections the lint reads -----------------
 
-ADR_FORMAT = REPO_ROOT / "lore-workflow" / "skills" / "domain-modeling" / "ADR-FORMAT.md"
+ADR_FORMAT = REPO_ROOT / "lore-workflow" / "skills" / "grilling" / "ADR-FORMAT.md"
 ADR_0015 = REPO_ROOT / "docs" / "adr" / "0015-decision-records-state-their-strength.md"
 
 

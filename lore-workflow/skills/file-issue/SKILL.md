@@ -149,10 +149,10 @@ Report every URL you created back to the caller.
 
 ## Callers
 
-[`to-epic`](../to-epic/SKILL.md), [`seed-epic`](../seed-epic/SKILL.md),
-[`brief`](../brief/SKILL.md), [`implement-issue`](../implement-issue/SKILL.md), and
-[`orchestrate-epic`](../orchestrate-epic/SKILL.md) — both its follow-ups and the PR
-bodies its teammates open — file through this skill instead of writing issue or PR
+[`orient`](../orient/SKILL.md), [`grilling`](../grilling/SKILL.md),
+[`to-epic`](../to-epic/SKILL.md), [`build`](../build/SKILL.md) — its follow-ups, its PR
+bodies and the PR bodies its teammates open — [`document`](../document/SKILL.md) and
+[`handover`](../handover/SKILL.md) file through this skill instead of writing issue or PR
 bodies inline.
 
 Machine-readable text stays exempt: roadmap tables, board comments, and reviewer

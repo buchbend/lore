@@ -24,8 +24,8 @@ The SessionStart directive tells the agent the filing rule below.
 | Across several repos | An issue on the org knowledge repo |
 | For a wiki topic note | A pull request on the wiki repo with the edit |
 
-An ADR or PRD negotiated with the user in a `grilling` or domain-modeling
-session is the one exception. That skill writes the file directly, because
+An ADR or PRD negotiated with the user in a `grilling` session is the one
+exception. That skill writes the file directly, because
 the user was in the loop.
 
 ## File it
@@ -64,7 +64,7 @@ feedback:
   retrieval_misses_repo: buchbend/lore
 ```
 
-While `retrieval_misses` is true, the `orient`, `implement-issue` and `tdd`
+While `retrieval_misses` is true, the `orient`, `build` and `tdd`
 skills run one check at session end. The agent files one issue per miss on
 `retrieval_misses_repo`. The issue names the fact, the tools tried and the
 turn count. While the key is false, no skill files on that repo.

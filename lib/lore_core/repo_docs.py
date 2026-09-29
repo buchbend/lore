@@ -74,19 +74,16 @@ def is_shipped(entry: dict[str, Any]) -> bool:
     return str(entry.get("status") or "").strip().lower() == SHIPPED
 
 
-def rank_docs(adrs: list[dict[str, Any]], prds: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One list in reading order: ADRs, then current PRDs, then shipped PRDs.
+def rank_docs(adrs: list[dict[str, Any]], prds: list[dict[str, Any]]) -> list[str]:
+    """Paths in reading order: ADRs, then current PRDs, then shipped PRDs.
 
-    Each entry gains a ``kind`` key. A shipped PRD ranks below every ADR, so a
-    reader meets the current decision before the plan it came from.
+    A shipped PRD ranks below every ADR, so a reader meets the current
+    decision before the plan it came from. Only the paths: the entries
+    themselves sit in the ``adr`` and ``prd`` lists already.
     """
-    current = [p for p in prds if not is_shipped(p)]
-    shipped = [p for p in prds if is_shipped(p)]
-    return [
-        *({**e, "kind": "adr"} for e in adrs),
-        *({**e, "kind": "prd"} for e in current),
-        *({**e, "kind": "prd"} for e in shipped),
-    ]
+    current = [p["path"] for p in prds if not is_shipped(p)]
+    shipped = [p["path"] for p in prds if is_shipped(p)]
+    return [*(e["path"] for e in adrs), *current, *shipped]
 
 
 def resolve_doc(repo_root: Path, kind: str, path: str) -> Path | None:

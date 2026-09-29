@@ -20,11 +20,13 @@ from lore_workflow.ledger import (
     LedgerEntry,
     LedgerParseError,
     append_entry,
+    archive_ledger,
     default_ledger_path,
     format_entry,
     open_entries,
     parse_board_ledger,
     parse_ledger_source,
+    set_board_outcome,
     set_outcome,
     utc_now,
 )
@@ -193,7 +195,7 @@ def parse_board_cmd(
         "-", help="Path to the board comment body, or '-' to read stdin."
     ),
 ) -> None:
-    """Parse an orchestrate-epic supervision-board comment into JSON rows.
+    """Parse a build epic-mode supervision-board comment into JSON rows.
 
     Emits {rows: [{feature, issue, tier, batch, state, pr}, ...],
     ledger: [{kind, outcome, timestamp, text}, ...]}. `ledger` holds the
@@ -273,8 +275,29 @@ def ledger_set_cmd(
     path: str | None = typer.Option(
         None, "--path", help="Ledger file (default: <git-dir>/lore-ledger.md of the cwd)."
     ),
+    board: str | None = typer.Option(
+        None,
+        "--board",
+        help="'-': read an epic board comment on stdin, print the whole updated comment.",
+    ),
 ) -> None:
-    """Set the outcome of one line in a ledger file, in place."""
+    """Set the outcome of one line in a ledger file, in place.
+
+    With `--board -`, rewrite the line inside the `## Ledger` section of a
+    board comment read from stdin, and print the whole updated comment. Edit
+    the comment on GitHub with that output.
+    """
+    if board is not None:
+        if board != "-":
+            print("ledger-set: use --board - and pipe the board comment in", file=sys.stderr)
+            raise typer.Exit(code=1)
+        try:
+            updated, _ = set_board_outcome(sys.stdin.read(), selector, outcome)
+        except ValueError as exc:
+            print(f"ledger-set: {exc}", file=sys.stderr)
+            raise typer.Exit(code=1) from exc
+        sys.stdout.write(updated)
+        return
     try:
         line = set_outcome(_ledger_path(path), selector, outcome)
     except (OSError, ValueError) as exc:
@@ -294,11 +317,15 @@ def ledger_check_cmd(
     """Gate a finish point: exit 1 while any non-resume ledger line is `open`.
 
     Names each open line with its index for `ledger-set`. A malformed ledger
-    line also exits 1. A missing ledger has nothing to check and exits 0.
+    line also exits 1. A missing ledger has nothing to check and exits 0. Empty stdin exits 1.
     """
     if path == "-":
         text = sys.stdin.read()
         source = "stdin"
+        if not text.strip():
+            # A failed `gh api … --jq .body` pipes nothing; the gate fails closed.
+            print("ledger-check: no input on stdin", file=sys.stderr)
+            raise typer.Exit(code=1)
     else:
         ledger = _ledger_path(path)
         source = str(ledger)
@@ -321,6 +348,30 @@ def ledger_check_cmd(
         print(f"  {index}. [{entry.kind}] {entry.text}")
     print("Set each outcome: approved, dropped or filed <owner/repo#n>.")
     raise typer.Exit(code=1)
+
+
+@app.command("ledger-archive")
+def ledger_archive_cmd(
+    path: str | None = typer.Option(
+        None, "--path", help="Ledger file (default: <git-dir>/lore-ledger.md of the cwd)."
+    ),
+) -> None:
+    """Rename a finished ledger to `lore-ledger.<UTC-date>.done.md`.
+
+    Run it at a loop or issue finish point, after `ledger-check` passes. The
+    SessionStart resume offer then stops. Exits 1 while a line is open. A
+    missing ledger has nothing to archive and exits 0.
+    """
+    ledger = _ledger_path(path)
+    if not ledger.exists():
+        print(f"no ledger at {ledger}: nothing to archive")
+        return
+    try:
+        target = archive_ledger(ledger)
+    except (OSError, ValueError) as exc:
+        print(f"ledger-archive: {ledger}: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+    print(f"ledger archived: {target}")
 
 
 def _risk_config():

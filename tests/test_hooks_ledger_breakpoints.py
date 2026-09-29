@@ -82,3 +82,29 @@ def test_malformed_ledger_never_crashes_the_hooks(repo: Path) -> None:
     _run("session-start", "--cwd", str(repo), "--plain", "--probe")
     out = _run("pre-compact", "--cwd", str(repo), "--plain")
     assert "lore-ledger.md" in out
+
+
+def test_finished_ledger_gets_no_resume_offer(repo: Path) -> None:
+    """No open line and the last line is an outcome: the run finished."""
+    (repo / ".git" / "lore-ledger.md").write_text(
+        "- [resume] 2026-09-29T09:00:00Z — round 1 merged; next: wrap up\n"
+        "- [adr] approved — Keep risk deterministic\n"
+    )
+    start = _run("session-start", "--cwd", str(repo), "--plain", "--probe")
+    assert "resume" not in start.lower()
+
+
+def test_open_line_keeps_the_resume_offer(repo: Path) -> None:
+    """An open line means the run is not finished, whatever comes last."""
+    (repo / ".git" / "lore-ledger.md").write_text(
+        "- [resume] 2026-09-29T09:00:00Z — round 1 merged; next: round 2\n"
+        "- [left] open — Retry the flaky test\n"
+    )
+    start = _run("session-start", "--cwd", str(repo), "--plain", "--probe")
+    assert "round 1 merged; next: round 2" in start
+
+
+def test_archived_ledger_gets_no_resume_offer(repo: Path) -> None:
+    (repo / ".git" / "lore-ledger.2026-09-29.done.md").write_text(LEDGER)
+    start = _run("session-start", "--cwd", str(repo), "--plain", "--probe")
+    assert "resume" not in start.lower()

@@ -1,6 +1,6 @@
 """Per-repo epic policy: target branch + deploy gate (#223).
 
-`/orchestrate-epic` resolves both facts deterministically at Map time instead
+`build` (epic mode) resolves both facts deterministically at Map time instead
 of guessing deploy semantics. Fixture repos are built in tmp_path: a bare repo
 stands in for `origin`, AGENTS.md carries (or omits) the deploy-gate marker.
 """

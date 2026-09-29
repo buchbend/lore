@@ -41,12 +41,12 @@ mapping to its acceptance criteria is not accepted.
 
 ## How it shows up in the chain
 
-- On the [epic chain](../how-to/run-an-epic.md), every fan-out teammate
-  follows `lore-workflow:tdd`, and each feature's crosscheck verifies the
-  tests map to the acceptance criteria before the pull request merges.
-- On the [fast path](../how-to/use-the-fast-path.md), the same strict loop
-  is one of the invariants the single-issue track keeps even though it drops
-  the fan-out and multi-PR integration.
+- On the [epic chain](../how-to/run-an-epic.md), every teammate follows
+  `lore-workflow:tdd`, and each feature's review checks that the tests map
+  to the acceptance criteria before the pull request merges.
+- On the [fast path](../how-to/use-the-fast-path.md), `build` keeps the same
+  strict loop in `issue` and `loop` mode, without the teammates and the
+  per-feature PRs.
 
 Enforcing the loop everywhere is what lets the autonomous build be trusted
 at all: the tests are the standing evidence that the shipped behaviour is

@@ -192,3 +192,93 @@ def test_ledger_add_to_stdout_for_a_board_ledger(capsys) -> None:
     rc = workflow_cmd.main(["ledger-add", "--kind", "left", "--text", "docs pass", "--path", "-"])
     assert rc == 0
     assert capsys.readouterr().out.strip() == "- [left] open — docs pass"
+
+
+def test_ledger_archive_renames_a_finished_ledger(tmp_path, monkeypatch, capsys) -> None:
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "lore-ledger.md").write_text("- [adr] approved — a\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("lore_workflow.ledger.utc_date", lambda: "2026-09-29")
+    assert workflow_cmd.main(["ledger-archive"]) == 0
+    assert not (git_dir / "lore-ledger.md").exists()
+    archived = git_dir / "lore-ledger.2026-09-29.done.md"
+    assert archived.read_text() == "- [adr] approved — a\n"
+    assert str(archived) in capsys.readouterr().out
+
+
+def test_ledger_archive_keeps_an_earlier_archive_of_the_same_day(tmp_path, monkeypatch) -> None:
+    ledger = tmp_path / "lore-ledger.md"
+    ledger.write_text("- [term] dropped — b\n")
+    (tmp_path / "lore-ledger.2026-09-29.done.md").write_text("earlier\n")
+    monkeypatch.setattr("lore_workflow.ledger.utc_date", lambda: "2026-09-29")
+    assert workflow_cmd.main(["ledger-archive", "--path", str(ledger)]) == 0
+    assert (tmp_path / "lore-ledger.2026-09-29.done.md").read_text() == "earlier\n"
+    assert (tmp_path / "lore-ledger.2026-09-29-2.done.md").read_text() == "- [term] dropped — b\n"
+
+
+def test_ledger_archive_refuses_a_ledger_with_open_lines(tmp_path, capsys) -> None:
+    ledger = tmp_path / "lore-ledger.md"
+    ledger.write_text("- [left] open — flaky test\n")
+    assert workflow_cmd.main(["ledger-archive", "--path", str(ledger)]) == 1
+    assert ledger.exists()
+    assert "open" in capsys.readouterr().err
+
+
+def test_ledger_archive_without_ledger_passes_with_note(tmp_path, capsys) -> None:
+    assert workflow_cmd.main(["ledger-archive", "--path", str(tmp_path / "lore-ledger.md")]) == 0
+    assert "no ledger" in capsys.readouterr().out
+
+
+# --- ledger-set on a board comment (epic mode) ------------------------------
+
+
+def test_ledger_set_board_rewrites_the_line_and_prints_the_whole_body(monkeypatch, capsys) -> None:
+    _stdin(monkeypatch, BOARD)
+    rc = workflow_cmd.main(["ledger-set", "2", "--outcome", "approved", "--board", "-"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out == BOARD.replace("- [term] open — risk level", "- [term] approved — risk level")
+
+    _stdin(monkeypatch, out)
+    assert workflow_cmd.main(["ledger-check", "-"]) == 0
+
+
+def test_ledger_set_board_selects_by_text(monkeypatch, capsys) -> None:
+    _stdin(monkeypatch, BOARD)
+    rc = workflow_cmd.main(
+        ["ledger-set", "risk", "--outcome", "filed buchbend/lore#500", "--board", "-"]
+    )
+    assert rc == 0
+    assert "- [term] filed buchbend/lore#500 — risk level" in capsys.readouterr().out
+
+
+def test_ledger_set_board_leaves_a_same_text_line_outside_the_ledger(monkeypatch, capsys) -> None:
+    board = BOARD.replace("- Blocker: none.", "- [term] open — risk level")
+    _stdin(monkeypatch, board)
+    assert workflow_cmd.main(["ledger-set", "2", "--outcome", "dropped", "--board", "-"]) == 0
+    out = capsys.readouterr().out
+    assert out.count("- [term] open — risk level") == 1
+    assert out.index("- [term] dropped — risk level") < out.index("## Notes")
+
+
+def test_ledger_set_board_refuses_a_resume_line(monkeypatch, capsys) -> None:
+    _stdin(monkeypatch, BOARD)
+    assert workflow_cmd.main(["ledger-set", "3", "--outcome", "approved", "--board", "-"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "resume" in captured.err
+
+
+def test_ledger_set_board_takes_only_stdin(capsys) -> None:
+    rc = workflow_cmd.main(["ledger-set", "1", "--outcome", "approved", "--board", "board.md"])
+    assert rc == 1
+    assert "--board -" in capsys.readouterr().err
+
+
+def test_ledger_check_fails_on_empty_stdin(monkeypatch, capsys) -> None:
+    """A failed `gh api … --jq .body` pipes nothing; the epic gate must not pass."""
+    _stdin(monkeypatch, "  \n")
+    rc = workflow_cmd.main(["ledger-check", "-"])
+    assert rc == 1
+    assert "no input on stdin" in capsys.readouterr().err

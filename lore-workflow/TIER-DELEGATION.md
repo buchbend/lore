@@ -20,7 +20,7 @@ the tier contract and burns frontier-tier tokens on work a cheaper tier
 would do. Every delegation point in this plugin names its tier and
 resolves it explicitly; none relies on inheritance.
 
-**Frontier main-session note.** Some steps (`grilling`, `seed-epic`) run
+**Frontier main-session note.** Some steps (`grilling`, `handover`) run
 **in the main session**, at frontier-tier reasoning, and are never
 delegated to a subagent at all — there is no spawn to resolve. That is a
 different rule from the one above and the two are not interchangeable:
@@ -29,31 +29,31 @@ simply state they don't spawn.
 
 ## Workflow-specific tier choices
 
-**Implementation teammates** (`orchestrate-epic` Dispatch step): **advisory tier
-selection**. Assess each feature for complexity and choose a tier for its
-implementation teammate — `mid` for mechanical or well-scoped changes, `strong` for
-architectural, ambiguous, or cross-cutting ones. Pass the tier to `lore tier
-resolve` and set the spawn's model parameter to the resolved result (see "Resolution at spawn time"
-above). Deviations are allowed but recorded in the supervision trail; adequate
-output at mid-tier is preferred to stronger-tier cost.
+**Implementation teammates** (`build`, `epic` mode, Dispatch): **advisory**. Assess each
+feature: `mid` for mechanical or well-scoped changes, `strong` for architectural, ambiguous or
+cross-cutting ones. Pass the tier to `lore tier resolve` and set the spawn's model parameter to
+the result. A deviation is allowed; adequate output at `mid` beats the cost of `strong`.
 
-**Review passes** (implementation-teammate review in `implement-issue`, per-feature
-crosscheck in `orchestrate-epic`, whole-epic review in `orchestrate-epic`):
-**required strong-tier**. Reviewers carry the strong-tier's resolved model in the
-spawn call (no implicit inheritance). The implementation-teammate tier is advisory
-(see above); the review tier is not — it is always strong.
+**Review passes** (`build`: the per-PR review in `issue` and `epic` mode, the whole-epic
+review): **set by the risk level**. `lore workflow risk <pr> --json` prints `low` or `high`.
 
-**Exploration fan-out** (`orient` step 2): **required mid-tier**. Parallel
-explorers (code map, docs, cross-repo scan) run at mid; cheaper tiers skip
-the depth, frontier-tier would waste tokens on mechanical discovery.
+| Risk level | Reviewer tier | Correctness pass |
+|---|---|---|
+| `low` | `mid` | `code-review low` |
+| `high` | `strong` | `code-review medium` |
 
-**Tier floor** (`super-orchestrate`): **caller-set, `frontier` by default**.
-The supervisor resolves one tier for every spawn of the run: the dependency
-analyst, each epic lead, and every teammate, reviewer and docs pass under a
-lead. The floor replaces the advisory implementation tiers and the strong
-review tier above. A floor below `strong` would break the review rule, so the
-floor never goes below `strong`.
+The agent may raise the level and never lowers it. The reviewer does not judge CI or ruff: the
+`build` run reads both from `gh pr checks`.
 
-A smaller plan keeps the floor and remaps the tiers instead: override
-`frontier` and `strong` in the vault config (see `docs/model-tiers.md`, "User
-overrides"), and every spawn runs on the cheaper model.
+**Exploration fan-out** (`orient` full mode, step 2): **required `mid`**. Parallel explorers
+(code map, docs, cross-repo scan) run at `mid`. A cheaper tier skips the depth; `frontier`
+wastes tokens on mechanical discovery.
+
+**Background suite** (`build`, `loop` mode): **`cheap`**. The full suite and ruff after each
+round are bulk-mechanical: run, read the exit code, report the failing test ids.
+
+**Advisory pass** (`build`, loop wrap-up): **`strong`**. The architect and web-design reviewers
+read a cumulative diff and rank refactor suggestions.
+
+A smaller plan remaps the tiers instead of skipping steps: override `frontier` and `strong` in
+the vault config (see `docs/model-tiers.md`, "User overrides").
