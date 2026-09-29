@@ -28,6 +28,13 @@ from lore_workflow.ledger import (
     utc_now,
 )
 from lore_workflow.prd_docs import create_prd
+from lore_workflow.risk import (
+    RiskInputError,
+    assess,
+    diff_for_pr,
+    diff_for_range,
+    parse_unified_diff,
+)
 from lore_workflow.roadmap_validator import roadmap_counts, validate_roadmap
 from lore_workflow.seed_epic import compose_seed_lift
 from rich.console import Console
@@ -292,6 +299,66 @@ def ledger_check_cmd(
         print(f"  {index}. [{entry.kind}] {entry.text}")
     print("Set each outcome: approved, dropped or filed <owner/repo#n>.")
     raise typer.Exit(code=1)
+
+
+def _risk_config():
+    """`workflow.risk` from the root config; defaults when it cannot load."""
+    from lore_core.config import get_lore_root
+    from lore_core.root_config import RiskConfig, load_root_config
+
+    try:
+        return load_root_config(get_lore_root()).workflow.risk
+    except Exception:  # noqa: BLE001 - a broken config falls back to defaults
+        return RiskConfig()
+
+
+@app.command("risk")
+def risk_cmd(
+    pr_arg: int | None = typer.Argument(None, metavar="[PR]", help="Pull request number."),
+    pr: int | None = typer.Option(None, "--pr", help="Pull request number (`gh pr diff`)."),
+    rev_range: str | None = typer.Option(
+        None, "--range", help="Revision range such as main..HEAD (`git diff`)."
+    ),
+    diff: str | None = typer.Option(
+        None, "--diff", help="A unified diff file, or '-' to read stdin."
+    ),
+    repo: str | None = typer.Option(None, "--repo", help="owner/repo for --pr."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit {level, reasons, notes, files, lines}."
+    ),
+) -> None:
+    """Print the risk level of a diff: `low` or `high`, then the reasons.
+
+    Thresholds and sensitive paths come from `workflow.risk` in the root
+    config. Exits 0 for either level; exits 1 when the diff cannot be read.
+    """
+    pr = pr if pr is not None else pr_arg
+    chosen = [x for x in (pr, rev_range, diff) if x is not None]
+    if len(chosen) != 1:
+        print("risk: pass exactly one of --pr, --range or --diff", file=sys.stderr)
+        raise typer.Exit(code=1)
+    cwd = Path.cwd()
+    try:
+        if pr is not None:
+            text = diff_for_pr(pr, repo=repo, cwd=cwd)
+        elif rev_range is not None:
+            text = diff_for_range(rev_range, cwd=cwd)
+        else:
+            text = sys.stdin.read() if diff == "-" else Path(diff).read_text(encoding="utf-8")
+    except (RiskInputError, OSError) as exc:
+        print(f"risk: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+
+    root = next((p for p in (cwd, *cwd.parents) if (p / ".git").exists()), cwd)
+    result = assess(parse_unified_diff(text), _risk_config(), root=root)
+    if as_json:
+        print(json.dumps(result.to_dict()))
+        return
+    print(result.level)
+    for reason in result.reasons:
+        print(f"- {reason}")
+    for note in result.notes:
+        print(f"note: {note}")
 
 
 main = argv_main(app)
