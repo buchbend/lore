@@ -1,4 +1,4 @@
-"""Detached subprocess machinery for the transcript-sync hook.
+"""Detached subprocess machinery for SessionStart background work.
 
 This module owns the spawn-side safety net that the v0.37 hang storm forced
 us to build:
@@ -12,8 +12,10 @@ us to build:
 
 ``_spawn_detached`` stays role-parametric — the role string keys the lock,
 the cooldown stamp, the proc log and the meta sidecar, so every path on
-disk derives from it. Transcript sync is the only role left;
-:func:`_spawn_detached_transcript_sync` names it directly.
+disk derives from it. Two callers use it: the transcript mirror
+(:func:`_spawn_detached_transcript_sync`) and the per-wiki auto-pull
+(:func:`_spawn_detached_wiki_pull`), which keeps the network fetch off the
+banner's critical path.
 """
 
 from __future__ import annotations
@@ -202,7 +204,7 @@ def _spawn_detached(
         if runaway is not None:
             warn_stamp = lore_root / ".lore" / f"curator-{role}.runaway.stamp"
             if not _stamp_within_cooldown(warn_stamp, cooldown_s * 10):
-                try:
+                with contextlib.suppress(Exception):
                     emit_hook_event(
                         lore_root,
                         event="spawn-throttle",
@@ -216,8 +218,6 @@ def _spawn_detached(
                             "runaway_threshold_s": effective_runaway,
                         },
                     )
-                except Exception:
-                    pass
                 with contextlib.suppress(OSError):
                     _write_stamp(warn_stamp)
             return False
@@ -264,7 +264,7 @@ def _spawn_detached(
 
 
 # ---------------------------------------------------------------------------
-# The one spawning caller
+# Spawning callers
 # ---------------------------------------------------------------------------
 
 # Keys the spawn lock, the cooldown stamp, `.lore/proc/<role>.log` and the
@@ -283,5 +283,20 @@ def _spawn_detached_transcript_sync(lore_root: Path, *, cooldown_s: int = 300) -
         lore_root,
         TRANSCRIPT_SYNC_ROLE,
         [sys.executable, "-m", "lore_cli", "transcripts", "sync"],
+        cooldown_s=cooldown_s,
+    )
+
+
+def _spawn_detached_wiki_pull(lore_root: Path, wiki: str, *, cooldown_s: int = 30) -> bool:
+    """Fire-and-forget ``lore hook wiki-pull --wiki <wiki>``.
+
+    The fetch needs the network; a slow or dead remote must never hold up
+    the SessionStart banner. The role is keyed per wiki, so two wikis never
+    share a lock or a cooldown.
+    """
+    return _spawn_detached(
+        lore_root,
+        f"wiki-pull-{wiki}",
+        [sys.executable, "-m", "lore_cli", "hook", "wiki-pull", "--wiki", wiki],
         cooldown_s=cooldown_s,
     )

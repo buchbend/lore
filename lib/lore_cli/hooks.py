@@ -37,10 +37,11 @@ from lore_core.scopes import (
 )
 from lore_core.session_start import MAX_CONTEXT_CHARS
 from lore_core.session_start import load_directive_lines as _load_directive_lines
-from lore_core.session_start import maybe_auto_pull_for_scope as _maybe_auto_pull_for_scope
 from lore_core.session_start import maybe_auto_push_for_scope as _maybe_auto_push_for_scope
 from lore_core.session_start import offer_notice_line as _offer_notice_line
 from lore_core.session_start import pre_compact_text as _pre_compact
+from lore_core.session_start import record_auto_pull as _record_auto_pull
+from lore_core.session_start import recorded_auto_pull_warning as _recorded_auto_pull_warning
 from lore_core.session_start import render_capture_state_block as _render_capture_state_block
 from lore_core.session_start import render_project_orientation as _render_project_orientation
 from lore_core.session_start import session_start_text as _session_start
@@ -324,6 +325,7 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _rotate_meta_sidecar,
     _spawn_detached,
     _spawn_detached_transcript_sync,
+    _spawn_detached_wiki_pull,
     _stamp_within_cooldown,
     _write_stamp,
 )
@@ -562,16 +564,17 @@ def cmd_session_start(
     if scope is None and not probe:
         _nudge_unattached(cwd_resolved, out)
 
-    # Cross-host auto-pull (Phase 10 / 0.11.0).
-    # Fast-forward this scope's wiki repo from origin if the wiki opted in
-    # via .lore-wiki.yml's git.auto_pull (default true). Strictly read-only
-    # on dirty/diverged trees — never disrupts the user's in-flight work.
-    # Warning rendered into the banner footer so the user sees diverged
-    # state surfaced; otherwise silent.
+    # Cross-host auto-pull (Phase 10 / 0.11.0). A detached child
+    # fast-forwards this scope's wiki from origin if the wiki opted in via
+    # .lore-wiki.yml's git.auto_pull (default true); the fetch needs the
+    # network, so it never blocks the banner (#424). The banner footer shows
+    # the dirty/diverged warning the previous background pull recorded.
     auto_pull_warning: str | None = None
     if scope is not None and lore_root is not None and not probe:
         try:
-            auto_pull_warning = _maybe_auto_pull_for_scope(scope, lore_root)
+            auto_pull_warning = _recorded_auto_pull_warning(lore_root, scope.wiki)
+            if (lore_root / "wiki" / scope.wiki / ".git").exists():
+                _spawn_detached_wiki_pull(lore_root, scope.wiki)
         except Exception:  # noqa: BLE001 — pull must never crash SessionStart
             auto_pull_warning = None
 
@@ -625,6 +628,15 @@ def cmd_session_start(
             pass
 
     _emit("SessionStart", out, plain=plain)
+
+
+@hook_app.command("wiki-pull", hidden=True)
+def cmd_wiki_pull(
+    wiki: str = typer.Option(..., "--wiki", help="Wiki to pull from origin."),
+) -> None:
+    """Background child: pull a wiki and record the banner warning (#424)."""
+    lore_root = get_lore_root()
+    _record_auto_pull(lore_root, wiki)
 
 
 @hook_app.command("pre-compact")
