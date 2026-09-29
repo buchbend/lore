@@ -6,6 +6,10 @@ issue belongs to PRD (product requirements document) 0014,
 the branch retired flags, briefings and the LLM (large language model) client.
 The report changes no code. The owner decides every deletion.
 
+The snapshot is pinned to `c1e4081`. The sibling PR 448 adds two hidden hook
+verbs, `wiki-pull` and `codemap-refresh`. Each has a caller in `spawn.py`, so
+no conclusion below changes.
+
 `lib/` holds 139 Python modules and 31,503 lines at this commit. `skills/` and
 `lore-workflow/` define no module, verb or tool. Their skill files appear
 below as callers.
@@ -78,7 +82,7 @@ epics and roadmaps.
 | Kind | Rows | 1 artifact map | 2 wiki notes | 3 retrieval | 4 capture | all four | none | No caller |
 | --- | --: | --: | --: | --: | --: | --: | --: | --: |
 | Modules | 139 | 13 | 37 | 25 | 19 | 36 | 9 | 2 |
-| CLI verbs | 79 | 7 | 29 | 7 | 5 | 20 | 11 | 24 |
+| CLI verbs | 79 | 7 | 29 | 7 | 5 | 20 | 11 | 19 |
 | MCP tools | 12 | 2 | 1 | 8 | 0 | 0 | 1 | 0 |
 | Config keys | 40 | 0 | 11 | 3 | 3 | 14 | 9 | 11 |
 
@@ -91,7 +95,7 @@ epics and roadmaps.
 | all four | 9,812 |
 | none | 1,928 |
 
-The deletion candidates below hold 17 rows.
+The deletion candidates below hold 12 rows.
 
 ## Modules
 
@@ -310,11 +314,11 @@ One row per leaf verb, plus the bare forms of `lore install`, `lore attach` and
 | `lore hook capture` | `lore_cli/hooks.py` | `.claude-plugin/plugin.json:30` · manifest | 4 capture |  |
 | `lore inbox classify` | `lore_cli/inbox_cmd.py` | none | 2 wiki notes | skill uses the MCP tool |
 | `lore inbox archive` | `lore_cli/inbox_cmd.py` | `skills/inbox/SKILL.md:5` (+1) · skill | 2 wiki notes |  |
-| `lore journal write` | `lore_cli/journal_cmd.py` | none | none | hidden |
-| `lore journal read` | `lore_cli/journal_cmd.py` | none | none | hidden |
-| `lore journal enable` | `lore_cli/journal_cmd.py` | none | none | hidden |
-| `lore journal disable` | `lore_cli/journal_cmd.py` | none | none | hidden |
-| `lore journal status` | `lore_cli/journal_cmd.py` | none | none | hidden |
+| `lore journal write` | `lore_cli/journal_cmd.py` | `docs/how-to/troubleshooting.md:105` · docs | none | hidden |
+| `lore journal read` | `lore_cli/journal_cmd.py` | `docs/how-to/troubleshooting.md:105` · docs | none | hidden |
+| `lore journal enable` | `lore_cli/journal_cmd.py` | `docs/how-to/troubleshooting.md:105` · docs | none | hidden |
+| `lore journal disable` | `lore_cli/journal_cmd.py` | `docs/how-to/troubleshooting.md:105` · docs | none | hidden |
+| `lore journal status` | `lore_cli/journal_cmd.py` | `docs/how-to/troubleshooting.md:105` · docs | none | hidden |
 | `lore ingest` | `lore_cli/ingest_cmd.py` | `README.md:268` · docs | 4 capture |  |
 | `lore mcp` | `lore_cli/mcp_cmd.py` | `.claude-plugin/plugin.json:99` · manifest | 3 retrieval |  |
 | `lore migrate frontmatter` | `lore_cli/migrate_cmd.py` | `README.md:396` (+1) · docs | 2 wiki notes |  |
@@ -416,11 +420,6 @@ Each row below names no caller and no retained job. The owner gates each one.
 | --- | --- | --: | --- |
 | `lore_core/publish_gate.py` | module | 397 | `tests/test_publish_gate.py`, `_shape.py`, `_withhold.py`; `CONTEXT.md:48` and `:160` |
 | `lore_core/secrets_env.py` | module | 184 | `tests/test_secrets_env.py` |
-| `lore journal write` | verb | — | all five `journal` verbs live in `lore_cli/journal_cmd.py` |
-| `lore journal read` | verb | — | as above |
-| `lore journal enable` | verb | — | as above |
-| `lore journal disable` | verb | — | as above |
-| `lore journal status` | verb | — | as above |
 | `lore quarantine list` | verb | — | all four `quarantine` verbs live in `lore_cli/quarantine_cmd.py` |
 | `lore quarantine show` | verb | — | as above |
 | `lore quarantine clear` | verb | — | as above |
@@ -442,12 +441,14 @@ caller is itself a candidate or serves no job.
 - `lore_core/quarantine.py` (207 lines) and `lore_cli/quarantine_cmd.py`
   (158 lines). `publish_gate.py` is the only code that writes a quarantine
   entry. The four `quarantine` verbs have no caller.
-- `lore_cli/journal_cmd.py` (138 lines) and `lore_core/journal.py`
-  (263 lines). The journal is a parked feature and off by default. The
-  hidden verbs have no caller. The live callers are the session-start
-  directive at `lib/lore_cli/hooks.py:408`, the `lore_journal_write` tool,
-  the `journal.enabled` key, and `LORE_AI_AUTHOR` and `LORE_USER_HANDLE`.
-  Delete them as one unit or keep them as one unit.
+- The journal, as one unit to delete or keep: `lore_cli/journal_cmd.py`
+  (138 lines), `lore_core/journal.py` (263 lines), the five hidden
+  `lore journal` verbs, the `lore_journal_write` tool, the `journal.enabled`
+  key, and `LORE_AI_AUTHOR` and `LORE_USER_HANDLE`. The journal is a parked
+  feature and off by default. `docs/how-to/troubleshooting.md:105` says the
+  hidden verbs still work, so they have a caller. The session-start
+  directive at `lib/lore_cli/hooks.py:408` offers the tool when the journal
+  is on.
 
 ## Unclear
 
