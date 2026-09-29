@@ -1,14 +1,14 @@
 ---
 title: Slim the workflow around one home per fact and decision records that state their strength
 status: accepted
-epic: "TODO: epic issue URL, set by to-epic"
+epic: https://github.com/buchbend/lore/issues/443
 repos:
   - buchbend/lore
 ---
 
 # PRD 0015: Slim the workflow around one home per fact and decision records that state their strength
 
-> Source of truth for this epic. Tracker: TODO (set by `to-epic`).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/443).
 > Decisions recorded in ADR [0014](../adr/0014-one-home-per-fact.md)
 > (one home per fact) and ADR
 > [0015](../adr/0015-decision-records-state-their-strength.md) (decision
@@ -212,20 +212,19 @@ the work.
 
 ## Roadmap input for `to-epic`
 
+`to-epic` keeps the fewest slices that earn a split. Three slices run in
+parallel. The skill slice waits for the CLI verbs the skills call.
+
 | # | Feature | Type | Blocked by |
 |---|---|---|---|
-| 1 | ADR template, `lore lint adr`, reading rule in SessionStart and `AGENTS.md` | AFK | — |
-| 2 | Absolutes rule, writing rules in every text skill, Vale in CI | AFK | — |
-| 3 | Ledger format, `ledger-check`, resume lines, breakpoint hooks | AFK | — |
-| 4 | `lore workflow risk` | AFK | — |
-| 5 | `build` skill with `loop`, `issue` and `epic` modes; handover section; remove the five old build skills | HITL | 3, 4 |
-| 6 | Skill merges: `orient`, `grilling`, `document`, `handover`; remove `ccat-workflow-init` | AFK | 2 |
-| 7 | Shipped-PRD status, ranking in search and context pack | AFK | 6 |
-| 8 | `tools/release.py --in-branch` and `CLAUDE.md` | AFK | — |
-| 9 | `lore trace tokens` | AFK | — |
-| 10 | `conventions.md` points at ADR 0014; tidy Lore's own docs | AFK | 5, 6, 7 |
+| 1 | Decision records: ADR template, `lore lint adr`, reading rule, absolutes rule, Vale in CI, shipped-PRD ranking | AFK | — |
+| 2 | Ledger, `ledger-check`, breakpoint hooks and `lore workflow risk` | AFK | — |
+| 3 | `tools/release.py --in-branch` and `lore trace tokens` | AFK | — |
+| 4 | `build` skill with three modes, skill merges, handover section, writing rules in every text skill | HITL | 1, 2 |
 
-Feature 5 is HITL: the owner reviews the merged skill text before merge.
+The epic tail runs the docs pass. The pass points `conventions.md` at ADR
+0014 and tidies Lore's own docs. Feature 4 is HITL: the owner reviews the
+merged skill text in the epic PR before merge.
 
 ## Testing decisions
 
