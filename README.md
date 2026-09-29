@@ -60,7 +60,7 @@ More reading:
   fact lives, and the tier vocabulary.
 - [`docs/how-to/`](docs/how-to/): task recipes. Run an epic, use the fast
   path, resume a build run, onboard a repo, file facts as artifacts, search
-  notes and issues.
+  notes and issues, record a decision, measure token use.
 - [`docs/explanation/`](docs/explanation/): the reasons behind the design.
 - [`lore-workflow/README.md`](lore-workflow/README.md): the skill roster.
 
@@ -334,6 +334,9 @@ command.
 `lore trace <selector>` renders the chronological, correlated story of one
 unit of work for a trace_id, a session_id, or a note path /
 `[[wikilink]]`.
+
+`lore trace tokens <session>` prints token totals per skill or subagent phase
+of one session ([how to measure token use](docs/how-to/measure-token-use.md)).
 
 `lore log` / `lore news` / `lore runs` / `lore proc` have been removed —
 their debugging role is fully absorbed by `lore trace` / `lore status`

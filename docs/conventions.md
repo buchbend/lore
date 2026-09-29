@@ -71,7 +71,8 @@ Placement details the table leaves out:
   create-prd` writes the file and wires it into `docs/prd/index.md`. `NNNN`
   is zero-padded (`0001`, `0002`).
 - An ADR is `docs/adr/NNNN-kebab.md` in the format of the ADR template in the
-  `grilling` skill.
+  `grilling` skill. [Record a decision](how-to/record-a-decision.md) walks
+  through `Holds` and `lore lint adr`.
 - The epic issue links the PRD and does not embed it. See
   [Why the PRD lives in the repo](explanation/why-prd-in-repo.md).
 - Cross-references run both ways: PRD, epic issue, ADR and sub-issue each

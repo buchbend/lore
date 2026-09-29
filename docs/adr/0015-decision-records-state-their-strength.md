@@ -119,4 +119,4 @@ A Vale rule flags them and skips code spans.
 
 ## Amendments
 
-None.
+- 2026-09-29: `domain-modeling` merged into `grilling` (PRD 0015). The ADR template is `grilling/ADR-FORMAT.md`.

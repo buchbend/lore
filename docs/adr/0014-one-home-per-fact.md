@@ -14,7 +14,7 @@
   check passes. Promote to invariant when the `ledger-check` test lands
   (PRD 0015).
 - **Default:** a decision that meets the three ADR criteria of
-  `domain-modeling` becomes an ADR. A new domain term enters `CONTEXT.md`.
+  `grilling` becomes an ADR. A new domain term enters `CONTEXT.md`.
 - **Incidental:** PR bodies and PRDs carry no fixed section skeleton. Each
   takes the shape its task needs.
 - **Incidental:** the table names GitHub as the tracker. ADR 0012 keeps
@@ -89,4 +89,4 @@ dropped, or filed as an issue.
 
 ## Amendments
 
-None.
+- 2026-09-29: `domain-modeling` merged into `grilling` (PRD 0015). The three ADR criteria now live in `grilling`.
