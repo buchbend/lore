@@ -13,8 +13,9 @@ it with `lore lint adr`. Change it later without a new record.
 
 1. **Copy the template.** The template lives in
    `lore-workflow/skills/grilling/ADR-FORMAT.md`. Number the file one above the
-   highest in `docs/adr/`: `docs/adr/NNNN-slug.md`. Add the stem `NNNN-slug` to
-   the first `{toctree}` block in `docs/adr/index.md`.
+   highest in `docs/adr/`: `docs/adr/NNNN-slug.md`. In a repo scaffolded by
+   `lore attach --scaffold-workflow`, add the stem `NNNN-slug` to the first
+   `{toctree}` block in `docs/adr/index.md`.
 
 2. **Fill in `Holds`.** Sort each part of the decision into one of three kinds:
 
@@ -48,9 +49,11 @@ it with `lore lint adr`. Change it later without a new record.
    exist. `--json` prints the report as JSON. ADRs 0001 to 0013 are skipped. CI
    runs the same check.
 
-6. **Check the wording.** The writing rules flag `always`, `never`,
-   `no exceptions`, `fixed` and `must` in docs prose. Keep them out of the text
-   outside an invariant line. Run `lore style show writing-rules` for the rules.
+6. **Check the wording.** Writing rule 22 flags `always`, `never`,
+   `no exceptions`, `fixed` and `must` in ADR and PRD text, outside an
+   invariant line. Vale reports these words as warnings. The CI docs gate
+   fails on error-level alerts only. Run `lore style show writing-rules` for
+   the rules.
 
 ## Change a decision later
 

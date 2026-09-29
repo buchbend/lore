@@ -28,6 +28,7 @@ subagent that spent them.
    phase               messages  input  output  cache read  cache write  total
    main                       2     11       7         103           24    145
    skill:tdd                  2     22      12         202            2    238
+   skill:review               2     33      18         303           53    407
    agent:explore repo         2     45      25         405            5    480
    all                                                                    1270
    ```

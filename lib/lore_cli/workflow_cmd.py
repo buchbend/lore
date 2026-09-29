@@ -248,6 +248,10 @@ def ledger_add_cmd(
     An epic keeps its ledger in the board comment; print the line with
     `--path -` and paste it into the `## Ledger` section.
     """
+    if not text.strip():
+        # A blank line would be written and then rejected by the parser.
+        print("ledger-add: --text is empty", file=sys.stderr)
+        raise typer.Exit(code=1)
     if kind == "resume":
         body = f"{text}; next: {next_ask}" if next_ask else text
         entry = LedgerEntry(kind=kind, text=body, timestamp=utc_now())

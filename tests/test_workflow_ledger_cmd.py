@@ -282,3 +282,12 @@ def test_ledger_check_fails_on_empty_stdin(monkeypatch, capsys) -> None:
     rc = workflow_cmd.main(["ledger-check", "-"])
     assert rc == 1
     assert "no input on stdin" in capsys.readouterr().err
+
+
+def test_ledger_add_rejects_blank_text(tmp_path: Path, capsys) -> None:
+    """Blank text would write a line the parser rejects; refuse it up front."""
+    ledger = tmp_path / "lore-ledger.md"
+    rc = workflow_cmd.main(["ledger-add", "--kind", "adr", "--text", "  ", "--path", str(ledger)])
+    assert rc == 1
+    assert "text" in capsys.readouterr().err
+    assert not ledger.exists()
