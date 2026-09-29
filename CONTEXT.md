@@ -262,6 +262,53 @@ and 0013, spec in PRD 0014.
   `prs`, `issues`, `commits` and `files` keys, written by capture with no
   LLM call. It is what `lore_drill` reads to answer "which sessions
   touched X" and what the SessionStart recap renders from.
+
+### Decision records and build
+
+Decisions in ADR 0014 and 0015, spec in PRD 0015.
+
+- **Home** — the one artifact that holds a kind of fact. Every other
+  artifact links to the home and does not restate the fact. ADR 0014
+  holds the table of homes.
+- **Holds** — the section of an ADR that states how strong each part of
+  the decision is. Every line is an invariant, a default or an
+  incidental. Text outside the section is background.
+- **Invariant** — a Holds line that a named test enforces. Only an
+  invariant binds an agent. A line without a test is not an invariant.
+- **Default** — a Holds line an agent follows unless the task gives a
+  reason to deviate. The agent names the deviation and the reason in
+  the PR.
+- **Incidental** — a Holds line that records how the team built the
+  decision at the time. An agent changes it freely.
+- **Amendment** — a dated entry in an ADR's Amendments section that
+  relaxes or sharpens a Holds line. A reversal of the whole decision
+  takes a new, superseding ADR instead.
+- **Shipped PRD** — a PRD whose epic merged. Its status is `shipped` and
+  its first line points at the ADRs that stay current. Retrieval ranks it
+  below ADRs and never injects it.
+- **Ledger** — the working list of one build run: ADR candidates, term
+  candidates, left-on-the-table items and resume lines. The ledger of
+  `loop` and `issue` mode lives in the worktree's git directory. The
+  ledger of `epic` mode lives in the board comment.
+- **Ledger check** — `lore workflow ledger-check`. It blocks a finish
+  point while a ledger line has no outcome: approved, dropped or filed.
+- **Finish point** — the step where a build run ends: loop wrap-up, the
+  `issue` PR, or the epic tail.
+- **Resume line** — a ledger line holding the run's state and the next
+  ask. The agent writes one after each merged round or feature.
+- **Breakpoint** — a moment after a resume line where the agent tells
+  the user that `/clear` or a compaction loses nothing.
+- **Build mode** — one of `loop`, `issue` and `epic`, the three shapes of
+  the `build` skill. `loop` is human-present rounds with local merges.
+  `issue` takes one issue to one PR. `epic` runs a roadmap with
+  teammates.
+- **Risk level** — `low` or `high`, from `lore workflow risk <pr>`. The
+  level sets the review depth. An agent raises the level and never
+  lowers it.
+- **Handover section** — the `## Handover` section of an epic issue, or
+  the wrap-up PR body of a loop. It names what shipped, the decisions,
+  the deviations from the PRD, the follow-ups and the known limits.
+
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".
