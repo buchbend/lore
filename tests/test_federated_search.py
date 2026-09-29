@@ -107,7 +107,8 @@ def test_one_gh_call_carries_the_pinned_fields_and_limit(tmp_path, monkeypatch):
 
     calls = argv_log.read_text().splitlines()
     assert calls == [
-        "search issues alpha --include-prs --repo acme/widgets --json number,title,state,url,updatedAt --limit 5"
+        "search issues alpha --include-prs --repo acme/widgets "
+        "--json number,title,state,url,updatedAt --limit 5"
     ]
 
 

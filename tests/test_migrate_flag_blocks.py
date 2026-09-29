@@ -208,3 +208,20 @@ def test_cli_apply_writes(vault: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "lore:flag" not in note.read_text(encoding="utf-8")
+
+
+def test_invalid_utf8_note_is_reported_and_left_byte_identical(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A note that is not valid UTF-8 is skipped: decoding with replacement
+    would rewrite its bytes as U+FFFD on --apply."""
+    path = _wiki(vault) / "concepts" / "latin.md"
+    raw = b"# Caf\xe9\n\n" + BLOCK.encode("utf-8")
+    path.write_bytes(raw)
+
+    result = migrate_strip_flag_blocks(dry_run=False)
+
+    assert path.read_bytes() == raw
+    assert result["skipped"] == 1
+    assert result["files"] == 0
+    assert "latin.md" in capsys.readouterr().out

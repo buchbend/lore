@@ -301,7 +301,8 @@ def migrate_strip_flag_blocks(
     """Remove every flag block from every note in the vault.
 
     The blocks are dropped, not migrated: git history keeps them. A note
-    whose markers do not pair is reported and left alone.
+    whose markers do not pair, or that is not valid UTF-8, is reported and
+    left alone.
     Returns ``{"files": N, "blocks": M, "skipped": K}``.
     """
     wikis = discover_wikis(wiki_filter)
@@ -321,8 +322,17 @@ def migrate_strip_flag_blocks(
                 # comparison: universal-newline reading turns a CRLF note into
                 # one the pattern matches, and writing it back would rewrite
                 # every line ending in the file.
-                with fpath.open(errors="replace", newline="") as fh:
+                with fpath.open(encoding="utf-8", newline="") as fh:
                     text = fh.read()
+            except UnicodeDecodeError:
+                # Decoding with replacement would rewrite the note's bytes
+                # as U+FFFD on --apply, so report it and leave it alone.
+                skipped += 1
+                console.print(
+                    f"[yellow]skipped[/yellow] {wiki_name}/{fpath.relative_to(wiki_path)} "
+                    "(not valid UTF-8; edit by hand)"
+                )
+                continue
             except OSError:
                 continue
             new_text, n, refused = strip_flag_blocks(text)
@@ -350,7 +360,7 @@ def migrate_strip_flag_blocks(
         f"[bold]{verb} {total_blocks} flag block(s)[/bold] across {files_touched} file(s)."
     )
     if skipped:
-        console.print(f"[yellow]skipped {skipped} note(s)[/yellow] whose markers do not pair.")
+        console.print(f"[yellow]skipped {skipped} note(s)[/yellow] that could not be edited safely.")
     if dry_run:
         console.print("[dim]Re-run with --apply to write changes.[/dim]")
 
