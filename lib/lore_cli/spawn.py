@@ -300,3 +300,30 @@ def _spawn_detached_wiki_pull(lore_root: Path, wiki: str, *, cooldown_s: int = 3
         [sys.executable, "-m", "lore_cli", "hook", "wiki-pull", "--wiki", wiki],
         cooldown_s=cooldown_s,
     )
+
+
+def _spawn_codemap_refresh(cwd: Path) -> bool:
+    """Fire-and-forget ``lore hook codemap-refresh --cwd <cwd>``.
+
+    A refresh parses every Python file before it can compare fingerprints
+    (about a second on a mid-size repo), so SessionStart never runs it
+    inline. The child takes a per-repo lock; no vault is needed, because
+    the map belongs to the repo, attached or not.
+    """
+    import subprocess
+
+    env = os.environ.copy()
+    env["LORE_CURATOR_MODE"] = "1"
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "lore_cli", "hook", "codemap-refresh", "--cwd", str(cwd)],
+            cwd=str(cwd),
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True

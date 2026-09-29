@@ -23,6 +23,7 @@ Exposed via `lore_cli.__main__` dispatch (see subcommand wiring there).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -323,6 +324,7 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _prior_spawn_runaway,
     _process_is_ours,
     _rotate_meta_sidecar,
+    _spawn_codemap_refresh,
     _spawn_detached,
     _spawn_detached_transcript_sync,
     _spawn_detached_wiki_pull,
@@ -496,17 +498,15 @@ def _read_hook_payload() -> dict:
 def _refresh_codemap(cwd: Path) -> None:
     """Refresh the local, gitignored CODEMAP.md for the repo at *cwd*.
 
-    Deterministic, no LLM, no network; the fingerprint no-op fast path makes
-    an unchanged tree cheap, so it runs inline. Never allowed to crash
-    SessionStart.
+    Deterministic, no LLM, no network, but it parses every Python file
+    before the fingerprint check, so SessionStart runs it in a detached
+    child (``lore hook codemap-refresh``) rather than inline (#424). Never
+    allowed to crash SessionStart.
 
     Only inside a git work tree. Outside git the codemap falls back to a full
     filesystem walk plus a content hash of every file; a session started in a
     home directory would walk the whole home tree on every start and pin a CPU
     core until Claude Code kills the hook.
-    ponytail: inline generate; if a very large repo's first-run parse adds
-    perceptible startup latency, move this to a detached spawn like the
-    transcript mirror.
     """
     try:
         from lore_core import codemap as _codemap
@@ -516,6 +516,27 @@ def _refresh_codemap(cwd: Path) -> None:
         _codemap.generate(cwd, quiet=True)
     except Exception:  # noqa: BLE001 - codemap must never crash SessionStart
         pass
+
+
+def _codemap_lock_path(cwd: Path) -> Path:
+    """Per-repo lock so back-to-back session starts share one refresh."""
+    import hashlib
+
+    key = hashlib.sha256(str(Path(cwd).resolve()).encode()).hexdigest()[:16]
+    return _cache_dir() / "codemap" / f"{key}.lock"
+
+
+@hook_app.command("codemap-refresh", hidden=True)
+def cmd_codemap_refresh(
+    cwd: str = typer.Option(..., "--cwd", help="Repository to map."),
+) -> None:
+    """Background child: refresh CODEMAP.md unless a refresh already runs."""
+    from lore_core.lockfile import flocked
+
+    target = Path(cwd)
+    with flocked(_codemap_lock_path(target), blocking=False) as held:
+        if held:
+            _refresh_codemap(target)
 
 
 @hook_app.command("session-start")
@@ -544,7 +565,8 @@ def cmd_session_start(
     out = _session_start(str(cwd_resolved))
 
     if not probe:
-        _refresh_codemap(cwd_resolved)
+        with contextlib.suppress(Exception):  # codemap must never crash SessionStart
+            _spawn_codemap_refresh(cwd_resolved)
 
     # Surface pending `.lore.yml` offers at the top of the banner.
     # Defensive: offer rendering reads multiple files and classifies state;
