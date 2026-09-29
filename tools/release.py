@@ -173,6 +173,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    if args.in_branch and git("rev-parse", "--abbrev-ref", "HEAD") in ("main", "HEAD"):
+        sys.exit("--in-branch needs a feature branch: HEAD is main or detached")
     if git("status", "--porcelain"):
         sys.exit("working tree is dirty — commit or set aside your changes first")
     if not args.no_pr and not args.in_branch and shutil.which("gh") is None:

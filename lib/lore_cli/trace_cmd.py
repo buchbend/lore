@@ -21,6 +21,7 @@ from lore_core.trace import (
     resolve_selector,
 )
 from rich.console import Console
+from rich.markup import escape
 from rich.tree import Tree
 
 from lore_cli._argv_compat import argv_main
@@ -111,7 +112,7 @@ def _tokens(session: str | None, json_out: bool) -> None:
         lore_root = None
     path = find_transcript(lore_root, session)
     if path is None:
-        console.print(f"[red]no transcript found for session {session!r}[/red]", markup=True)
+        console.print(f"[red]no transcript found for session {escape(repr(session))}[/red]")
         raise typer.Exit(code=1)
 
     phases = [p.as_dict() for p in trace_tokens(path)]
@@ -122,9 +123,10 @@ def _tokens(session: str | None, json_out: bool) -> None:
     from rich.table import Table
 
     table = Table(title=f"tokens {Path(session).name}", box=None, pad_edge=False)
-    table.add_column("phase", no_wrap=True)
+    # Numbers stay whole; a long phase name folds instead.
+    table.add_column("phase", overflow="fold", min_width=8)
     for col in ("messages", "input", "output", "cache read", "cache write", "total"):
-        table.add_column(col, justify="right")
+        table.add_column(col, justify="right", no_wrap=True, min_width=len(col))
     for p in phases:
         table.add_row(
             p["name"],

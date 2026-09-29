@@ -95,3 +95,40 @@ def test_cli_missing_session_exits_nonzero_and_names_it(tmp_path, monkeypatch) -
     result = runner.invoke(app, ["tokens", "no-such-session"], catch_exceptions=False)
     assert result.exit_code != 0
     assert "no-such-session" in result.output
+
+
+REAL = Path(__file__).parent / "fixtures" / "token_trace_real" / "sess-1.jsonl"
+
+
+def test_subagent_files_fill_the_agent_row_and_main_keeps_its_own_turns() -> None:
+    rows = _rows(REAL)
+    # m1 (spawns the agent) and m2 (orchestrator turn after the spawn) stay in main.
+    assert rows["main"]["messages"] == 2
+    assert rows["main"]["input"] == 11
+    # agent-x holds s1 (two lines, one message) and s2.
+    assert rows["agent:explore repo"]["messages"] == 2
+    assert rows["agent:explore repo"]["input"] == 300
+
+
+def test_nested_agent_gets_its_own_row_by_tool_use_id() -> None:
+    row = _rows(REAL)["agent:deep dive"]
+    assert (row["messages"], row["output"]) == (1, 7)
+
+
+def test_subagent_file_without_a_spawn_gets_a_row_from_its_meta() -> None:
+    assert _rows(REAL)["agent:orphan job"]["cache_read"] == 5
+
+
+def test_narrow_console_keeps_numbers_whole(monkeypatch) -> None:
+    import io
+
+    from lore_cli import trace_cmd
+    from rich.console import Console
+
+    buf = io.StringIO()
+    monkeypatch.setattr(trace_cmd, "console", Console(width=80, file=buf))
+    result = runner.invoke(app, ["tokens", str(FIXTURE)], catch_exceptions=False)
+    assert result.exit_code == 0
+    for number in ("1270", "405"):
+        assert number in buf.getvalue()
+    assert "…" not in buf.getvalue()

@@ -22,6 +22,9 @@ Two open PRs that both bump conflict on `CHANGELOG.md`. The second PR merges
 `python3 tools/release.py --notes notes.md` (no `--in-branch`) still cuts a
 separate release PR. Use the separate PR when a merged change shipped without
 a bump.
+A squash merge of a PR with an in-branch bump loses the `chore: release` subject.
+The separate mode uses that subject to find its range. After such a merge, pass
+`--notes` to the separate mode.
 
 `main` is branch-protected: the `test` check must pass, and direct pushes are
 blocked (admins included). `claude plugin update lore@lore`

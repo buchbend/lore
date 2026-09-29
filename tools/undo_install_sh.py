@@ -140,8 +140,7 @@ def _read_settings() -> dict:
         return json.loads(SETTINGS_PATH.read_text())
     except json.JSONDecodeError:
         _warn(
-            f"{SETTINGS_PATH} is not valid JSON — leaving untouched. "
-            "Fix it manually then re-run."
+            f"{SETTINGS_PATH} is not valid JSON — leaving untouched. Fix it manually then re-run."
         )
         return {}
 
@@ -164,9 +163,7 @@ def _strip_lore_hooks(cfg: dict) -> int:
             kept = []
             for h in grp.get("hooks", []):
                 cmd = h.get("command", "")
-                if isinstance(cmd, str) and cmd.startswith(
-                    LEGACY_HOOK_COMMAND_PREFIX
-                ):
+                if isinstance(cmd, str) and cmd.startswith(LEGACY_HOOK_COMMAND_PREFIX):
                     removed += 1
                     continue
                 kept.append(h)
@@ -232,10 +229,9 @@ def _clean_settings(dry: bool) -> tuple[int, int, int]:
         h = _strip_lore_hooks(cfg)
         p = _strip_lore_permissions(cfg)
         e = _strip_lore_env(cfg)
-        if (h or p or e):
+        if h or p or e:
             _say(
-                f"settings.json: -{h} hook(s), -{p} permission rule(s), "
-                f"-{e} env entr(y/ies)",
+                f"settings.json: -{h} hook(s), -{p} permission rule(s), -{e} env entr(y/ies)",
                 dry=dry,
             )
             if not dry:

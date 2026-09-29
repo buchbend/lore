@@ -225,3 +225,11 @@ def test_in_branch_adds_one_bump_commit_on_the_current_branch(
     assert guard_calls == [1]
     assert _git(shipping_repo, "status", "--porcelain") == ""
     assert "feat/thing" not in _git(shipping_repo, "branch", "-r")
+
+
+@pytest.mark.parametrize("target", ["main", "--detach"])
+def test_in_branch_refuses_main_and_detached_head(shipping_repo: Path, target: str) -> None:
+    _git(shipping_repo, "checkout", *(["main"] if target == "main" else ["--detach"]))
+    with pytest.raises(SystemExit) as exc:
+        release.main(["--in-branch"])
+    assert "feature branch" in str(exc.value)
