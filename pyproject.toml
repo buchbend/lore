@@ -31,19 +31,11 @@ search = [
     "model2vec>=0.3",
     "watchdog>=4",
 ]
-sinks = [
-    "matrix-nio>=0.24",  # matrix
-    "requests>=2.31",    # slack, discord, gh discussions
-]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
     "ruff>=0.5",
     "mypy>=1.10",
-]
-capture = [
-    "anthropic>=0.40",
-    "openai>=1.40",
 ]
 codemap = [
     "tree-sitter>=0.23",
@@ -70,3 +62,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+
+[tool.pytest.ini_options]
+# Registered, not deselected: CI's plain `pytest -q` runs slow tests too.
+markers = [
+    "slow: subprocess or timing test (seconds, not milliseconds); runs in CI",
+]

@@ -103,7 +103,7 @@ def test_drill_returns_transcript_pointers_for_a_routed_query(
     _seed(tmp_path)
     (tmp_path / "wiki" / "demo").mkdir(parents=True)
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
-    monkeypatch.setattr(server, "handle_search", lambda **kw: [])
+    monkeypatch.setattr(server, "_wiki_hits", lambda **kw: [])
 
     out = server.handle_drill(query="#358", wiki="demo")
 

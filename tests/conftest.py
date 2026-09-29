@@ -22,9 +22,9 @@ def _isolate_user_config(tmp_path_factory, monkeypatch):
     POSIX-only assumption: ``Path.home()`` reads ``$HOME``, so ``setenv``
     suffices. We deliberately do NOT monkeypatch ``pathlib.Path.home``
     directly — the repo has 20+ unrelated callsites (cache, install,
-    adapters), and ``briefing/sinks/matrix.py`` evaluates ``Path.home()``
-    at import time where a fixture cannot reach it. Limiting the
-    isolation to env vars keeps the blast radius bounded.
+    adapters), some of them evaluated at import time where a fixture
+    cannot reach them. Limiting the isolation to env vars keeps the blast
+    radius bounded.
     """
     fake_home = tmp_path_factory.mktemp("home")
     monkeypatch.setenv("HOME", str(fake_home))

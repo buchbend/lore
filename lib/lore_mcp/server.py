@@ -4,7 +4,8 @@ Runs as a local STDIO server. Any MCP client (Claude Desktop, Cursor,
 Windsurf, Zed, etc.) can register this and query the vault.
 
 Exposed tools:
-    lore_search             — hybrid ranked search, top-k paths
+    lore_search             — federated: ranked wiki-note hits plus a live
+                              GitHub issue/PR search, as two unmerged lists
     lore_read               — read one note by wiki/path
     lore_drill              — composite multi-stage retrieval (search→read→
                               expand→read_expanded) in one envelope with a
@@ -14,8 +15,6 @@ Exposed tools:
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
     lore_journal_write      — append a freeform entry to the AI or human journal
-    lore_flag               — file one team-relevant fact into its owning topic
-                              note, marked unreviewed
     lore_pending_verdicts   — enumerate wiki-wide pending freshness verdicts
     lore_verdict            — record a freshness verdict (confirm/stale/clear-stale)
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
@@ -237,7 +236,7 @@ def _log_reindex_skip(wiki: str | None, reason: str) -> None:
         pass
 
 
-def handle_search(
+def _wiki_hits(
     query: str,
     wiki: str | None = None,
     for_repo: str | None = None,
@@ -286,6 +285,78 @@ def handle_search(
         })
     sorted_out, _audit = apply_search_filter(out)
     return sorted_out
+
+
+def _artifact_repos(wiki: str | None, for_repo: str | None) -> list[str]:
+    """Repos the live GitHub search covers: the attached repo, then the wiki's remote.
+
+    The wiki's own remote is the org knowledge repo — issues filed there
+    are as relevant as the code repo's, and neither is discoverable from
+    the other.
+    """
+    from lore_core.git import current_repo
+
+    repos: list[str] = []
+    attached = for_repo or current_repo()
+    if attached:
+        repos.append(attached)
+    wiki_path = _resolve_wiki(wiki)
+    if wiki_path is not None:
+        remote = current_repo(wiki_path)
+        if remote and remote not in repos:
+            repos.append(remote)
+    return repos
+
+
+def _artifact_ref(url: str, number: Any) -> str:
+    """`owner/repo#number` from a GitHub issue or PR URL."""
+    parts = url.split("github.com/", 1)[-1].split("/")
+    if len(parts) >= 2:
+        return f"{parts[0]}/{parts[1]}#{number}"
+    return f"#{number}"
+
+
+def handle_search(
+    query: str,
+    wiki: str | None = None,
+    for_repo: str | None = None,
+    k: int = 5,
+) -> dict[str, Any]:
+    """Wiki index hits, then live GitHub artifact hits. Two lists, no merge.
+
+    GitHub ranks its own list and nothing is stored. When `gh` cannot
+    answer — missing, unauthenticated, offline, non-zero exit — the
+    result holds the wiki list and a `note` naming the omission, so an
+    empty artifact list is never mistaken for "no such issue".
+    """
+    from lore_core.gh import gh_search_issues
+
+    result: dict[str, Any] = {
+        "wiki": _wiki_hits(query, wiki=wiki, for_repo=for_repo, k=k),
+        "artifacts": [],
+    }
+    repos = _artifact_repos(wiki, for_repo)
+    if not repos:
+        result["note"] = "GitHub hits omitted: no repo attached and the wiki has no git remote."
+        return result
+    hits = gh_search_issues(query, repos)
+    if hits is None:
+        result["note"] = (
+            "GitHub hits omitted: `gh search issues` failed or the machine is "
+            f"offline ({', '.join(repos)})."
+        )
+        return result
+    result["artifacts"] = [
+        {
+            "ref": _artifact_ref(h.get("url", ""), h.get("number")),
+            "title": h.get("title", ""),
+            "state": h.get("state", ""),
+            "url": h.get("url", ""),
+            "updated_at": h.get("updatedAt", ""),
+        }
+        for h in hits
+    ]
+    return result
 
 
 def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
@@ -493,63 +564,6 @@ def handle_journal_write(
     return {"schema": "lore.journal.write/1", "data": result}
 
 
-def handle_flag(
-    lead: str,
-    body: str = "",
-    wiki: str | None = None,
-    target: str | None = None,
-    refs: list[dict] | None = None,
-    transcript: str | None = None,
-    cwd: str | None = None,
-) -> dict[str, Any]:
-    """File one flag into its owning topic note, marked unreviewed.
-
-    Agent-authored by definition, so the write is stamped: refs are
-    verified against ``cwd``'s repo and the phrasing follows from what
-    they establish (docs/adr/0004). A withheld write is a normal result,
-    not an error — the caller learns the gate held the text back and
-    where to review it.
-    """
-    from pathlib import Path as _Path
-
-    from lore_core import flag as _flag
-    from lore_core.git import current_repo, git_repo_root
-
-    if not (lead or "").strip():
-        return _mcp_error(
-            "empty_flag",
-            "a flag needs a lead sentence",
-            next_="Pass a one-sentence `lead`.",
-        )
-    pairs = [
-        (str(r.get("type", "")), str(r.get("value", "")))
-        for r in (refs or [])
-        if isinstance(r, dict)
-    ]
-    here = _Path(cwd) if cwd else _Path.cwd()
-    try:
-        result = _flag.write(
-            lead,
-            body or "",
-            wiki=wiki,
-            target=target,
-            refs=pairs,
-            transcript=transcript,
-            cwd=here,
-            repo_root=git_repo_root(here),
-            repo=current_repo(here) or "",
-        )
-    except _flag.OriginMissing as e:
-        return _mcp_error(
-            "missing_origin",
-            str(e),
-            next_="Pass `transcript` (the session id) or at least one ref.",
-        )
-    except ValueError as e:
-        return _mcp_error("invalid_flag", str(e))
-    return {"schema": "lore.flag.write/1", "data": result.__dict__}
-
-
 def handle_drill(
     query: str,
     wiki: str | None = None,
@@ -607,7 +621,7 @@ def handle_drill(
 
     # Stage 1: search
     t0 = _time.monotonic()
-    hits = handle_search(query=query, wiki=wiki, k=k)
+    hits = _wiki_hits(query=query, wiki=wiki, k=k)
     trace.append({
         "stage": "search",
         "query": query,
@@ -1071,8 +1085,15 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_search",
             "description": (
-                "Hybrid ranked search across the vault's knowledge notes. "
-                "Returns top-k paths with descriptions and scores."
+                "Federated search. Returns two lists, never merged: `wiki` "
+                "holds ranked knowledge-note paths from the local index, "
+                "`artifacts` holds issues and PRs from one live GitHub "
+                "search, each with an `owner/repo#number` ref. A `note` "
+                "field appears when the GitHub side was left out (no repo "
+                "attached, `gh` failed, machine offline). Search is for "
+                "finding. Nothing about an artifact is stored here, so read "
+                "it live through `gh` before you comment on it, close it, "
+                "merge it or poll its state."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1081,7 +1102,10 @@ def _tool_schema() -> list[dict]:
                     "wiki": {"type": "string", "description": "Scope to one wiki (optional)"},
                     "for_repo": {
                         "type": "string",
-                        "description": "Boost notes tagged with this repo (org/name)",
+                        "description": (
+                            "Repo to prefer (org/name): boosts notes tagged with "
+                            "it and points the GitHub search at it"
+                        ),
                     },
                     "k": {"type": "integer", "default": 5},
                 },
@@ -1216,84 +1240,6 @@ def _tool_schema() -> list[dict]:
                     },
                 },
                 "required": ["kind", "text"],
-            },
-        },
-        {
-            "name": "lore_flag",
-            "description": (
-                "File ONE team-relevant fact into the wiki. Use it the "
-                "moment a fact appears that no artifact records — a "
-                "trap, a dead end and why it was abandoned, reasoning "
-                "nobody wrote down, a gap between the docs and the "
-                "code. Lore appends it to the owning topic note and "
-                "marks it unreviewed for the owner to accept. One fact "
-                "per call; a lead sentence plus a short body saying why "
-                "it is worth keeping. Give the refs behind it — a flag "
-                "with no ref and no transcript pointer is refused, and "
-                "refs that check out are what let the line read "
-                "plainly. Do not ask the user first, and do not flag "
-                "what a PR, issue or ADR already says. A teammate reads "
-                "the flag on a wiki page months later, so write both "
-                "fields to the team writing rules (`lore style show "
-                "writing-rules`)."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "lead": {
-                        "type": "string",
-                        "description": (
-                            "The fact, one sentence of at most 20 words. "
-                            "Active voice, named actor. State the fact, "
-                            "not the session that found it."
-                        ),
-                    },
-                    "body": {
-                        "type": "string",
-                        "description": (
-                            "Why it is worth keeping. Two or three "
-                            "sentences of at most 25 words each. Name "
-                            "where you saw it: file path, command, run. "
-                            "No closing summary, no guess over a fact you "
-                            "lack."
-                        ),
-                    },
-                    "wiki": {
-                        "type": "string",
-                        "description": "Wiki name. Omit to resolve from cwd.",
-                    },
-                    "target": {
-                        "type": "string",
-                        "description": (
-                            "Owning note (wiki-relative path or slug). Omit "
-                            "to let lore propose one by search ranking."
-                        ),
-                    },
-                    "refs": {
-                        "type": "array",
-                        "description": (
-                            "Evidence: {type, value} — type is one of "
-                            "pr/issue/commit/file/tag."
-                        ),
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "type": {"type": "string"},
-                                "value": {"type": "string"},
-                            },
-                            "required": ["type", "value"],
-                        },
-                    },
-                    "transcript": {
-                        "type": "string",
-                        "description": "Transcript/session id. Defaults to $CLAUDE_SESSION_ID.",
-                    },
-                    "cwd": {
-                        "type": "string",
-                        "description": "Working directory used for wiki routing and ref checks.",
-                    },
-                },
-                "required": ["lead"],
             },
         },
         {
@@ -1544,8 +1490,6 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_inbox_classify(**args)
         case "lore_journal_write":
             return handle_journal_write(**args)
-        case "lore_flag":
-            return handle_flag(**args)
         case "lore_verdict":
             return handle_verdict(**args)
         case "lore_pending_verdicts":

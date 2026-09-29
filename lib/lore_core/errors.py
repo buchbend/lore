@@ -7,7 +7,7 @@ recovery hint shown verbatim to the user.
 
 This module lives in ``lore_core`` (not ``lore_mcp``) because handler
 modules under ``lore_core`` build error envelopes for MCP consumption
-(``resume.gather``, ``inbox.classify``, ``briefing.gather``, etc.) — if
+(``resume.gather``, ``inbox.classify``, etc.) — if
 the helper lived in ``lore_mcp``, ``lore_core`` would import "up" into
 the MCP layer. The ``lore_mcp`` server re-exports the helper for
 back-compat with its private ``_mcp_error`` name.

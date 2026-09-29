@@ -213,7 +213,7 @@ _WIKI_OPTION = typer.Option(
 def cmd_get(
     path: str | None = typer.Argument(
         None,
-        help="Dotted config path (e.g. `curator.backend`). Omit to show the full "
+        help="Dotted config path (e.g. `feedback.retrieval_misses`). Omit to show the full "
         "resolved config with provenance.",
     ),
     wiki: str | None = _WIKI_OPTION,

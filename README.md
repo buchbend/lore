@@ -1,9 +1,9 @@
 # Lore
 
 **LLM-optimized knowledge graph for AI-coding teams.** Transcripts captured
-and archived, team-relevant facts filed as reviewable flags, repo-scoped
-context injected at session start, pluggable team briefings. No vector DB
-needed for small vaults; a full hybrid search + MCP server for larger ones.
+and archived, team-relevant facts filed as repo artifacts — issues, comments
+and pull requests — repo-scoped context injected at session start. No vector
+DB needed for small vaults; a full hybrid search + MCP server for larger ones.
 
 > ⚠️ **Pre-1.0.** APIs, hook contracts, skill surfaces, frontmatter
 > schema, and CLI flags can still change between minor versions. Not
@@ -18,14 +18,14 @@ nothing captures *why*. Lore closes the loop:
 ```
 Session with AI  →  transcript captured and archived, ledger entry
                     stamped with repo/branch/PRs/issues/commits/files
-                 →  an agent files a flag the moment one team-relevant
-                    fact appears — one stamped sentence, gated for
-                    PII/secrets, appended to its topic note unreviewed
-                 →  a human accepts, retargets or declines it
+                 →  an agent files each team-relevant fact as the repo
+                    artifact that already has a reader: an issue, a
+                    comment on an issue or PR, or a pull request
+                 →  the developer triages it in the tracker
 ```
 
-The crossing is the **flag**: one deliberate, reviewable fact per
-occasion. Capture itself is automatic and costs no model call — see the
+The write path is the **filing rule**: each kind of fact gets the artifact
+that owns it. Capture itself is automatic and costs no model call — see the
 "Bootstrap" section below. Lore writes nothing into a wiki on its own.
 Ratified decisions live in the connected repo's ADRs/PRDs, pulled on
 demand via MCP — Lore does not extract decisions from transcripts.
@@ -37,7 +37,7 @@ independently:
 
 | Plugin | What it's for | Depends on |
 |---|---|---|
-| **`lore`** | The notes/vault system above: session capture, search, MCP, briefings. | nothing else |
+| **`lore`** | The notes/vault system above: session capture, search, MCP. | nothing else |
 | **`lore-workflow`** | An opinionated planning chain — epics, PRDs, TDD — that calls `lore`'s deterministic substrate (code map, model tiers). | `lore` |
 
 `lore-workflow` is opt-in: install `lore` alone for the notes pipeline, or
@@ -56,8 +56,9 @@ issue, and `tdd` as the discipline every implementation teammate follows.
 See [`docs/conventions.md`](docs/conventions.md) for the full chain, the
 artifact-home contract (PRD/ADR/`AGENTS.md` placement), and the tier
 vocabulary; [`docs/how-to/`](docs/how-to/) for task recipes
-(run an epic, use the fast path, resume a broken epic, onboard a repo, file
-and review flags); [`docs/explanation/`](docs/explanation/) for the
+(run an epic, use the fast path, resume a broken epic, onboard a repo,
+file facts as artifacts, search notes and issues);
+[`docs/explanation/`](docs/explanation/) for the
 reasoning behind the design; and
 [`lore-workflow/README.md`](lore-workflow/README.md) for the skill roster.
 
@@ -105,15 +106,10 @@ or use `lore install --upgrade` once the binary is on your PATH.
 If you'd rather skip the bootstrap script and install by hand:
 
 ```bash
-pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"  # CLI + passive-capture extras
+pipx install "git+https://github.com/buchbend/lore.git#egg=lore"  # the CLI
 lore install                                            # detect installed integrations, wire each
 lore init                                               # scaffold a vault + set $LORE_ROOT
 ```
-
-The `[capture]` extra adds the `claude-agent-sdk` + `anthropic` packages the
-briefing uses to call a model. Drop it (`#egg=lore`) to install without them;
-transcript capture, retrieval, sessions and flags all work regardless — only
-the LLM-backed briefing needs a model.
 
 > **Note:** the bare `pipx install lore` form will *not* work — the
 > name `lore` is squatted on PyPI by an unrelated package. Use the
@@ -175,7 +171,7 @@ That alone gives you the `lore` plugin (hooks, skills, subagents, MCP); add
 `/plugin install lore-workflow@lore` for the planning-chain skills too — see
 [§ Two plugins](#two-plugins-lore--lore-workflow). Installing `lore` alone
 does not install the `lore` CLI itself. Run
-`pipx install "git+https://github.com/buchbend/lore.git#egg=lore[capture]"`
+`pipx install "git+https://github.com/buchbend/lore.git#egg=lore"`
 separately, or use `lore install --integration claude` once `lore` is on
 your PATH (it'll subprocess `claude plugin install lore@lore` for you).
 
@@ -192,11 +188,10 @@ Claude Code produces is registered into the transcript ledger and
 mirrored into the wiki's `.transcripts/`, stamped with a linkage block
 (repo, branch, PRs, issues, commits, files) derived from git state — no
 LLM call, no prose (see `CONTEXT.md` for the full model). Capture
-writes nothing into a wiki itself: the only crossing is the **flag**,
-filed deliberately by a human or an agent during the session. Anything
-else in a wiki — concepts, decisions, projects, reference notes — is
-written directly, by hand or via `/lore:inbox`; there is no automatic
-daily abstraction pass.
+writes nothing into a wiki itself. Everything in a wiki — concepts,
+decisions, projects, reference notes — is written directly, by hand, via
+`/lore:inbox`, or through a pull request an agent opens; there is no
+automatic daily abstraction pass.
 
 ### Update from an older install
 
@@ -218,12 +213,11 @@ For an editable dev checkout:
 ```bash
 cd /path/to/your/lore-checkout
 git pull origin main
-pip install -e ".[capture]"
+pip install -e .
 lore install
 ```
 
-(Fresh installs follow [§ Install](#install) above — the `[capture]` extras
-are already part of the canonical command.)
+(Fresh installs follow [§ Install](#install) above.)
 
 ### Attach a repo — one step per repo you work in
 
@@ -260,23 +254,36 @@ Once attached with a wiki present:
   every attached transcript into its wiki's `.transcripts/` and
   emitting the one live drain event, `transcript-synced`. An
   opportunistic, flock-guarded retention sweep runs in-process
-  alongside it — short and lock-guarded, so it doesn't block
-  SessionStart in practice, but only the transcript sync is actually
-  detached.
+  alongside it, short enough not to block SessionStart. The transcript
+  sync, the wiki pull and the codemap refresh run as detached children.
+- **SessionStart also spawns two more detached children**, so a slow
+  remote or a large repo never delays the banner. `lore hook wiki-pull`
+  fetches and fast-forwards the attached wiki. `lore hook codemap-refresh`
+  refreshes `CODEMAP.md`. Both are hidden verbs that run in the
+  background. A dirty-tree or diverged-history warning from the pull
+  shows in the banner one session later, because the child records it
+  after the banner is drawn.
 - **Banner at SessionStart** is deliberately minimal: a status line, an
   optional Focus block, a last-active-day recap read off the transcript
-  ledger (day, session count, repos, branches, refs — no LLM call), a
-  count of pending flags, freshness lines only on positive evidence, and
+  ledger (day, session count, repos, branches, refs — no LLM call),
+  freshness lines only on positive evidence, and
   a fixed directive pointing at MCP pull for anything deeper. `lore!:`
   prefix flags actionable errors.
+
+### Search
+
+`lore_search` (MCP) is a federated search. It returns two lists: ranked
+wiki notes from the local index, then issues and PRs from one live GitHub
+search. Nothing about an artifact is stored. When `gh` cannot answer, the
+result holds the wiki list and names the omission. See
+[`docs/how-to/search-notes-and-issues.md`](docs/how-to/search-notes-and-issues.md).
+The context pack carries the body of each focus issue, so the common case
+needs no search.
 
 ### Manual escape hatches
 
 - `lore ingest --from <file.jsonl> --integration cursor --directory <cwd>` —
   ingest a transcript from any integration lore doesn't auto-capture.
-- `lore flag write "<lead>" --body "<why>" --ref pr:357` — file a flag
-  from a shell.
-- `lore flag review` — walk the unreviewed flags and resolve them.
 - `lore curator [--wiki <name>] [--apply]` — the frontmatter-only
   hygiene pass (supersession, `implements:` back-links, git-date
   backfill, team-mode hint); dry-run by default.
@@ -284,10 +291,8 @@ Once attached with a wiki present:
   list configured wikis and validate them. (For looking up the
   attachment covering a specific path, use `lore attach attachments show
   <path>`.)
-- `lore flag write "<lead>" --ref pr:123` — file one team-relevant fact
-  into its owning topic note. `lore flag list` shows what is pending;
-  `lore flag review` walks it (accept / retarget / decline / skip). See
-  [`docs/how-to/file-and-review-flags.md`](docs/how-to/file-and-review-flags.md).
+- `lore migrate flag-blocks [--apply]` — remove the blocks the retired
+  flag crossing left in wiki notes. Dry-run by default.
 
 ### Per-wiki configuration
 
@@ -297,30 +302,20 @@ Each wiki can set its own knobs in `<wiki>/.lore-wiki.yml`:
 git:
   auto_push: true                # true by default when the wiki has a remote
   auto_pull: true
-models:
-  simple: claude-haiku-4-5
-  middle: claude-sonnet-4-6
-  high:   claude-opus-4-7
-briefing:
-  audience: personal
-  sinks:
-    - markdown:~/lore-briefing.md
 breadcrumb:
   mode: normal                  # quiet | normal | verbose
   scope_filter: true
 ```
 
 All fields default to sane values — start without a `.lore-wiki.yml`
-and add knobs only as you need them. Briefings publish manually
-(`lore briefing publish`) — there is no automatic cadence.
+and add knobs only as you need them.
 
 ## Observability
 
 Every background producer (hooks, the hygiene curator, transcript sync,
-the retention janitor, flags) writes one envelope onto one append-only
+the retention janitor) writes one envelope onto one append-only
 event log, the **spine**. Each envelope carries a `trace_id` field for
-correlating several records into one story; no current producer mints
-one, so `flag` is the one selector with live data behind it today.
+correlating several records into one story.
 Three commands cover the common scenarios:
 
 | Scenario | Command |
@@ -328,16 +323,14 @@ Three commands cover the common scenarios:
 | **"Is Lore healthy right now?"** | **`lore status`** |
 | "I had a session and nothing was captured" | `lore status` / `lore doctor` |
 | "Hook plumbing feels off" | `lore doctor` (`--fix` repairs what it can) |
-| "Did my flag land, and when was it reviewed?" | `lore trace flag` |
 
 `lore status` is the first thing to run when you're wondering whether Lore is
-alive: capture liveness, per-wiki connection health, a flags section, retention
+alive: capture liveness, per-wiki connection health, retention
 usage, and an alerts section where every warning names its own drill-down
 command.
 
 `lore trace <selector>` renders the chronological, correlated story of one
-unit of work for a trace_id, a session_id, `flag` (every flag-write/review
-event as a flat table, the selector with live data today), or a note path /
+unit of work for a trace_id, a session_id, or a note path /
 `[[wikilink]]`.
 
 `lore log` / `lore news` / `lore runs` / `lore proc` have been removed —
@@ -388,108 +381,6 @@ ln -s ~/git/myorg/team-knowledge ~/lore/wiki/team
 
 All `/lore:*` commands work with a single mount; no routing prompts.
 
-## Curator LLM backend — Claude subscription, Anthropic API, or OpenAI-compatible
-
-The curator can talk to three different LLM backends. Pick one based on
-where your API budget lives:
-
-| Backend | Selector | Auth | Used when |
-|---|---|---|---|
-| **Subscription** (`claude` CLI on PATH) | `subscription` | your existing `claude` login | you have a Claude Pro / Team subscription and the `claude` binary on PATH — zero extra cost per curator call |
-| **Anthropic API** (SDK) | `api` | `ANTHROPIC_API_KEY` | you want Claude models but pay per token |
-| **OpenAI-compatible** | `openai` | `LORE_OPENAI_API_KEY` + `LORE_OPENAI_BASE_URL` | you have an institutional gateway, a local model server (vLLM, llama.cpp, Ollama with the openai shim, LiteLLM, OpenRouter, …) or want to point at the real OpenAI API |
-| **auto** | `auto` | first one that works | the default — `claude` on PATH → API key → OpenAI gateway → no LLM (cascade rules only) |
-
-Selection precedence, highest first: CLI flag (`--backend`) → env var
-`LORE_LLM_BACKEND` → `curator.backend` in `$LORE_ROOT/.lore/config.yml`
-→ `auto`.
-
-### OpenAI-compatible backend setup
-
-Two files under `$LORE_ROOT/.lore/`. Non-secrets go in YAML; the API key
-goes in a separate, gitignored env file.
-
-**`$LORE_ROOT/.lore/config.yml`** — diffable, shareable:
-
-```yaml
-curator:
-  backend: openai
-  openai:
-    base_url: https://chat.kiconnect.nrw/api/v1   # your gateway root
-    # api_key_env: LORE_OPENAI_API_KEY            # optional override
-    model_simple: gpt-4o-mini                     # cheap tier
-    model_middle: gpt-4o                          # default tier (extraction at synthesis_model_tier: middle)
-    model_high:   gpt-4o                          # heaviest tier (synthesis_model_tier: high)
-```
-
-**`$LORE_ROOT/.lore/secrets.env`** — secrets only, mode `0600`:
-
-```
-# Auto-loaded by Lore at curator startup.
-# Process env wins; this file fills in anything the shell didn't export.
-LORE_OPENAI_API_KEY=sk-...
-```
-
-```bash
-chmod 600 $LORE_ROOT/.lore/secrets.env
-```
-
-That's it. The whole `$LORE_ROOT/.lore/` directory is gitignored at the
-vault level (see the default `.gitignore` written by `lore init`), so
-the file never ends up in a commit. Lore warns at load time if the file
-is readable by group or other.
-
-**Resolution rules per field**, highest precedence first:
-
-1. process env (e.g. `LORE_OPENAI_API_KEY` exported in your shell)
-2. `$LORE_ROOT/.lore/secrets.env`
-3. `$LORE_ROOT/.lore/config.yml` → `curator.openai.*`
-4. unset → curator falls back to subscription/API/no-LLM per `auto`
-
-The grammar of `secrets.env` is the dotenv subset every editor renders:
-one `KEY=VALUE` per line, `#` for comments, blank lines ignored, single
-or double quotes around the value optional and stripped on read. Any
-line that isn't shaped like that emits a one-line warning and is
-skipped — Lore will not silently fall over because of a stray paste.
-
-Recognised env vars (any of these can live in `secrets.env` *or* the
-shell — same precedence):
-
-| Var | Purpose |
-|---|---|
-| `LORE_LLM_BACKEND` | overrides `curator.backend` (`subscription` \| `api` \| `openai` \| `auto`) |
-| `LORE_OPENAI_BASE_URL` | OpenAI-compatible API root |
-| `LORE_OPENAI_API_KEY` | API key for the OpenAI-compatible endpoint |
-| `LORE_OPENAI_MODEL_SIMPLE` / `_MIDDLE` / `_HIGH` | per-tier model override |
-| `ANTHROPIC_API_KEY` | for the `api` backend |
-
-Verify the wiring with `lore doctor`, which checks selectability.
-
-### Recommended openai-backend setup (briefing narration)
-
-The narrator used to default to Mistral-119B, which has a known structural
-failure on retraction-heavy transcripts — it asserts decisions and outcomes
-the transcript later walks back (see experiments **005**, **006**, **007**
-in the [`lore-experiments`](https://github.com/) repo). Swapping the high
-tier to **GPT-OSS-120B with `reasoning_effort=high`** roughly halves
-contradicted claims (4 → 2 on the 007 sample) and passes the pre-committed
-gate.
-
-```yaml
-curator:
-  openai:
-    base_url: https://chat.kiconnect.nrw/api/v1
-    model_high: "Openai GPT OSS 120B"
-    reasoning_effort_high: high
-```
-
-- **Latency**: GPT-OSS-120B at `reasoning_effort=high` takes 80–100s per
-  call vs ~10s for Mistral.
-- **Cost**: both Mistral-119B and GPT-OSS-120B are free on the
-  kiconnect.nrw endpoint Lore points at by default.
-- **Backwards compatibility**: existing Mistral-only configs keep working
-  unchanged — leave `reasoning_effort_high` unset and nothing flips.
-
 ## Scheduling the curator — cost-free defaults
 
 The hygiene curator (propagates `supersedes:` / `implements:`
@@ -501,12 +392,12 @@ trade-off:
 |---------|------|---------|-----|
 | `/schedule /lore:curator <wiki>` on laptop | **free** | any | individuals |
 | `cron` + `claude -p "/lore:curator <wiki>"` | **free** | any | power users, no `/schedule` |
-| GitHub Actions, **on push** to a wiki repo | **API $** | per-push, incremental | shared team wikis |
-| GitHub Actions, cron | **API $** | nightly | always-on, no laptop |
+| GitHub Actions, **on push** to a wiki repo | **free** | per-push, incremental | shared team wikis |
+| GitHub Actions, cron | **free** | nightly | always-on, no laptop |
 | Home server + cron | **free** | any | users with always-on box |
 
-Reference workflows in [`examples/`](./examples). Every LLM invocation
-costs tokens; no default forces a cost on you.
+Reference workflows in [`examples/`](./examples). The curator makes no
+model call, so no pattern costs API tokens.
 
 ## Using Lore with an existing markdown vault
 
@@ -529,9 +420,8 @@ No files move. If your vault does not yet match the canonical shape,
   rebuilt from.
 - **Cheap context is automatic; expensive context is explicit.** Inject
   bounded, deterministic context at SessionStart and PreCompact (reading
-  cached files the linter regenerates). Invoke the LLM only at judgment
-  points: session extraction, contradiction checks, import enrichment,
-  curator review, briefing prose.
+  cached files the linter regenerates). Lore itself calls no model: the
+  agent in the session does the judging.
 - **Compose, don't replace.** Skills orchestrate; MCP and CLI tools
   provide retrieval primitives; peer knowledge tools layer alongside.
 - **No PreToolUse auto-enrichment.** Auto-injecting vault content on

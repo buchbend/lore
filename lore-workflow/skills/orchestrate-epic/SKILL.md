@@ -34,6 +34,9 @@ a hard blocker (see Stop conditions).
   every-PR-crosschecked invariants all still hold.
 - Strict TDD (red→green→refactor) per feature — no green PR without tests mapping its acceptance criteria.
   Never merge on red CI.
+- **Decision gate.** An ADR, a PRD or a wiki topic-note edit outside a grilling or
+  domain-modeling session is a PR. A human merges it. A teammate that drafts one opens
+  it inside its feature PR, per `tdd`'s decision gate — never a direct commit.
 
 ## Loop
 
