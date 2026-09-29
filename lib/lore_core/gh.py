@@ -57,7 +57,7 @@ def gh_search_issues(query: str, repos: list[str], limit: int = 5) -> list[dict]
     """
     if not repos:
         return []
-    cmd = ["gh", "search", "issues", query]
+    cmd = ["gh", "search", "issues", query, "--include-prs"]
     for repo in repos:
         cmd += ["--repo", repo]
     cmd += ["--json", "number,title,state,url,updatedAt", "--limit", str(limit)]

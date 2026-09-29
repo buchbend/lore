@@ -7,4 +7,6 @@
 - A fact about an existing issue or PR becomes a comment on it.
 - A dead end becomes an issue you opened, closed as not planned, with the reason in the close comment.
 - A fact for a wiki topic note becomes a pull request on the wiki repo.
+- An ADR, a PRD or a wiki topic-note edit outside a grilling or domain-modeling session is a pull request. A human merges it; never merge it yourself.
+- Close only issues you opened; never change the state of a human's issue or PR.
 - At session end, list every artifact the session opened or commented on.

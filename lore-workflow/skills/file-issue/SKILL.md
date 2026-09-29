@@ -138,6 +138,9 @@ bytes that get posted. For a PR body, swap in `gh pr create --body-file ...`. Fo
 comment, draft the file so it opens with a line naming yourself as agent-filed, then
 post it with `gh issue comment <n> --body-file ...` or `gh pr comment <n> --body-file ...`.
 
+Close only an issue you opened yourself (a dead end, closed as not planned with the reason in the
+close comment); never change the state of a human's issue or PR.
+
 In batch mode the caller chooses the granularity it asked for: one issue holding the
 numbered blocks, or one issue per block. Do not silently split or merge what you were
 given.

@@ -107,7 +107,7 @@ def test_one_gh_call_carries_the_pinned_fields_and_limit(tmp_path, monkeypatch):
 
     calls = argv_log.read_text().splitlines()
     assert calls == [
-        "search issues alpha --repo acme/widgets --json number,title,state,url,updatedAt --limit 5"
+        "search issues alpha --include-prs --repo acme/widgets --json number,title,state,url,updatedAt --limit 5"
     ]
 
 
@@ -192,6 +192,6 @@ def test_search_covers_the_attached_repo_and_the_wiki_remote(tmp_path, monkeypat
     handle_search("alpha", wiki="demo", for_repo="acme/widgets", k=5)
 
     assert argv_log.read_text().splitlines() == [
-        "search issues alpha --repo acme/widgets --repo acme/knowledge "
+        "search issues alpha --include-prs --repo acme/widgets --repo acme/knowledge "
         "--json number,title,state,url,updatedAt --limit 5"
     ]

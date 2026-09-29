@@ -43,6 +43,12 @@ def test_file_issue_comments_open_naming_themselves_agent_filed() -> None:
     assert "opens with a line naming yourself as agent-filed" in text
 
 
+def test_file_issue_closes_only_own_issues() -> None:
+    text = _text("file-issue")
+    assert "Close only an issue you opened yourself" in text
+    assert "never change the state of a human's issue or PR" in text
+
+
 # --- decision gate ---------------------------------------------------------
 
 DECISION_GATE = "outside a grilling or domain-modeling session is a PR. A human merges it."
