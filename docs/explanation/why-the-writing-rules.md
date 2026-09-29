@@ -136,7 +136,7 @@ actionable
 A warning a writer reads and dismisses beats an error that stops the draft.
 
 A person approves every glossary entry for the same reason. `grilling` is the
-only door into `CONTEXT.md`, and `domain-modeling` proposes each wording and
+only door into `CONTEXT.md`, and it proposes each wording and
 waits for the user's yes. An agent that appends its own terms defeats the check
 that would have caught them. The `nix.dev` Vale adoption shows the failure
 (<https://github.com/NixOS/nix.dev/pull/798>).

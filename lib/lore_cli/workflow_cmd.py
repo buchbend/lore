@@ -194,7 +194,7 @@ def parse_board_cmd(
         "-", help="Path to the board comment body, or '-' to read stdin."
     ),
 ) -> None:
-    """Parse an orchestrate-epic supervision-board comment into JSON rows.
+    """Parse a build epic-mode supervision-board comment into JSON rows.
 
     Emits {rows: [{feature, issue, tier, batch, state, pr}, ...],
     ledger: [{kind, outcome, timestamp, text}, ...]}. `ledger` holds the

@@ -108,7 +108,7 @@ class FeedbackConfig:
 
     A retrieval miss is a fact a Lore tool did not return, found instead by
     reading files or running commands. When ``retrieval_misses`` is true,
-    the orient, implement-issue and tdd skills file one issue per miss on
+    the orient, build and tdd skills file one issue per miss on
     ``retrieval_misses_repo``, naming the fact, the tools tried, and the
     turn count. Off by default: the check never runs unasked.
     """

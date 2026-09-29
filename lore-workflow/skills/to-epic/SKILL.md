@@ -60,7 +60,7 @@ starting shape, not a fixed skeleton: a PRD takes the shape its task needs.
 ### 4. Draft the roadmap (fewest slices that earn their overhead)
 Break the work into **tracer-bullet** features — each a slice cutting end-to-end through all
 layers, sized as one teammate / one branch / one PR. Every row costs fixed downstream
-overhead in `build` in `epic` mode (teammate spawn, crosscheck, merge, sibling
+overhead in `build` in `epic` mode (teammate spawn, review, merge, sibling
 rebases), so cut the fewest slices that earn a split. A split earns its cost only for
 **real parallelism** (slices teammates can build side by side, also in the same files), **a HITL
 boundary** (isolate the human decision so the AFK remainder runs unattended), or **risk

@@ -2,7 +2,7 @@
 
 The migrated conventions/how-to docs under ``docs/`` cite
 ``lore-workflow:<skill>`` skill names and reference the
-``seed-epic → orient → ... → document-epic`` chain by name. Nothing catches
+``orient → grilling → to-epic → build → document`` chain by name. Nothing catches
 it if a skill is renamed or removed and the docs are not updated to match —
 this test does.
 """
@@ -15,15 +15,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_ROOT = REPO_ROOT / "lore-workflow" / "skills"
 MCP_SERVER = REPO_ROOT / "lib" / "lore_mcp" / "server.py"
-DOCS_FILES = (
-    sorted((REPO_ROOT / "docs").rglob("*.md"))
-    + [REPO_ROOT / "README.md", REPO_ROOT / "CONTEXT.md"]
-)
+DOCS_FILES = sorted((REPO_ROOT / "docs").rglob("*.md")) + [
+    REPO_ROOT / "README.md",
+    REPO_ROOT / "CONTEXT.md",
+]
 
 SKILL_REF_RE = re.compile(r"lore-workflow:([a-z][a-z-]*)")
-CHAIN_RE = re.compile(
-    r"seed-epic\s*→\s*orient\s*→\s*grilling\s*→\s*to-epic\s*→\s*orchestrate-epic\s*→\s*document-epic"
-)
+CHAIN_RE = re.compile(r"orient\s*→\s*grilling\s*→\s*to-epic\s*→\s*build\s*→\s*document\b")
 
 
 def _shipped_skill_names() -> set[str]:

@@ -2,7 +2,7 @@
 """Per-repo epic-merge policy: target branch + deploy gate (peer of
 ``roadmap_validator.py``).
 
-``/orchestrate-epic`` must resolve two repo facts deterministically at Map
+``build`` (epic mode) must resolve two repo facts deterministically at Map
 time — never guess them from prose:
 
 - **target_branch** — where the epic branch is cut from and where it lands.

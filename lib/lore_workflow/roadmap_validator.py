@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Roadmap-DAG validator for the epic workflow (peer of ``prd_docs.py``).
 
-The ``/to-epic`` skill emits, and ``/orchestrate-epic`` consumes, a Markdown
+The ``/to-epic`` skill emits, and ``build`` (epic mode) consumes, a Markdown
 *roadmap table* in the epic issue body: the canonical dependency DAG, one row
 per feature/sub-issue. That table drives autonomous dispatch, so a malformed
 table is not a cosmetic problem — it derails the orchestrator. This module is
 the deterministic gate both skills run: ``/to-epic`` before publishing the epic,
-``/orchestrate-epic`` before dispatching any teammate.
+``build`` (epic mode) before dispatching any teammate.
 
 Like the ``prd_docs`` peer it is self-contained — standard library only, so it
 runs in CI with no install step — and does no GitHub I/O: the caller supplies the
@@ -370,7 +370,7 @@ def validate_roadmap(markdown: str) -> ValidationResult:
 class RoadmapCounts:
     """Shape of a roadmap for planners: feature rows, distinct repos, and
     dependency edges (blocked-by tokens). Read off already-parsed rows so
-    ``/orchestrate-epic`` sizes batches from a count, not from prose."""
+    ``build`` (epic mode) sizes batches from a count, not from prose."""
 
     rows: int
     repos: int
