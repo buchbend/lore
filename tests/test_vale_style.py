@@ -423,6 +423,21 @@ def test_vale_leaves_a_glossary_hyphenated_name_alone(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_the_hyphenated_check_leaves_english_compounds_alone(tmp_path: Path) -> None:
+    """A two-letter lowercase segment is English (up, re, no, in, to), not a
+    short name. Only one letter or two capitals marks a short name."""
+    repo = _repo_with_glossary(tmp_path, "L0")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(
+        "# Title\n\nFile a follow-up, re-run the check, keep the no-op, opt-in "
+        "to the end-to-end run, and wrap-up. The C-ext and X-foo loaders stay.\n"
+    )
+    _, alerts = _vale(vale_config_for(repo), fixture)
+    hyphen = [a["Match"] for a in alerts if a["Check"].endswith("HyphenatedShortName")]
+    assert sorted(hyphen) == ["C-ext", "X-foo"]
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
 def test_the_short_name_check_reports_at_warning(tmp_path: Path) -> None:
     repo = _repo_with_glossary(tmp_path, "L0")
     fixture = tmp_path / "issue.md"

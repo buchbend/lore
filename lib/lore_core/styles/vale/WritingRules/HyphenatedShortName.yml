@@ -1,5 +1,7 @@
-# Rule 20, hyphenated half: a hyphenated token with a segment of one or two
-# letters, such as `C-ext`, is a short name rather than an English compound.
+# Rule 20, hyphenated half: a hyphenated token with a segment of one letter
+# or two capitals, such as `C-ext` or `PR-body`, is a short name. A two-letter
+# lowercase segment (up, re, no, in, to) marks an English compound such as
+# follow-up or re-run, and stays out.
 #
 # UnknownShortName.yml cannot see it. Vale 3.22 applies Hunspell's default
 # BREAK rules, so the dictionary accepts a hyphenated token once each segment
@@ -14,4 +16,4 @@ message: "Rule 20 (short name): '%s' is in neither the glossary nor common Engli
 level: warning
 nonword: true
 raw:
-  - '(?<![\w-])(?=(?:[A-Za-z]+-)*[A-Za-z]{1,2}(?![A-Za-z]))[A-Za-z]+(?:-[A-Za-z]+)+(?![\w-])'
+  - '(?<![\w-])(?=(?:[A-Za-z]+-)*(?:[A-Za-z]|[A-Z]{2})(?![A-Za-z]))[A-Za-z]+(?:-[A-Za-z]+)+(?![\w-])'

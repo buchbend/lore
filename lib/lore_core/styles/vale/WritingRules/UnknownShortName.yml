@@ -18,7 +18,7 @@
 #     reference.
 #   - A hyphenated token whose every segment is an English word of three
 #     letters or more is a compound adjective, not a name. A token with a
-#     shorter segment, such as `C-ext`, is a name. Vale 3.22 accepts `C-ext`
+#     segment of one letter or two capitals, such as `C-ext`, is a name. Vale 3.22 accepts `C-ext`
 #     here anyway, since its dictionary splits at the hyphen and holds both
 #     `C` and `ext`, so HyphenatedShortName.yml flags that shape instead.
 #   - A possessive is unknown only because of the trailing `'s`, so `another's`
