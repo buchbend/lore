@@ -558,7 +558,7 @@ def cmd_session_start(
     """Inject vault context at session start."""
     if _in_curator_mode():
         return
-    _read_hook_payload()
+    payload = _read_hook_payload()
     if _session_off_all():
         return
     cwd_resolved = Path(_resolve_cwd(cwd))
@@ -658,6 +658,15 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - ledger must never crash SessionStart
         pass
 
+    try:  # the payload's source tells a /clear or compaction from a fresh start
+        from lore_core.handover import session_start_block
+
+        block = session_start_block(cwd_resolved, payload.get("source"), probe=probe)
+        if block:
+            out = out + "\n\n" + block
+    except Exception:  # noqa: BLE001 - handover must never crash SessionStart
+        pass
+
     _emit("SessionStart", out, plain=plain)
 
 
@@ -695,6 +704,14 @@ def cmd_pre_compact(
         if note:
             out = f"{out}\n{note}" if out else note
     except Exception:  # noqa: BLE001 - ledger must never crash PreCompact
+        pass
+    try:
+        from lore_core.handover import precompact_note as _handover_note
+
+        note = _handover_note(Path(cwd_resolved))
+        if note:
+            out = f"{out}\n{note}" if out else note
+    except Exception:  # noqa: BLE001 - handover must never crash PreCompact
         pass
     _emit("PreCompact", out, plain=plain)
 
