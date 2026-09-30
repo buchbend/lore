@@ -78,7 +78,6 @@ class RunLogger:
             "llm-response",
             # Curator A
             "transcript-start",
-            "redaction",
             "noteworthy",
             "cascade-verdict",  # shadow-run feature-based classifier
             "merge-check",
