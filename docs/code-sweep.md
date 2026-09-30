@@ -1,5 +1,21 @@
 # Code sweep: callers and jobs for `lib/`
 
+> **Update 2026-09-30.** The owner approved the deletions. Issue 423
+> deleted these rows from the code on 2026-09-30:
+>
+> - The deletion candidates: `publish_gate.py`, `secrets_env.py`, the four
+>   `lore quarantine` verbs, and the `models.*` and `heartbeat.*` wiki
+>   keys. A `.lore-wiki.yml` that still sets `models` or `heartbeat` loads
+>   with a warning.
+> - The rows that fall with a candidate: `redaction.py`, `quarantine.py`
+>   and `quarantine_cmd.py`. The journal stays.
+> - `ref_verify.py` from "Unclear", and the `llm_client` parameter of
+>   `git_sync.auto_push`.
+>
+> `note_document.py` stays, because `seed_epic.py` and `trace.py` still
+> import `read_note`. The deletion took only its marker-chapter writer and
+> its ref-stamp code. The body below stays the snapshot at `c1e4081`.
+
 Swept at `c1e4081` on branch `epic/419` on 2026-09-29, for issue 423. The
 issue belongs to PRD (product requirements document) 0014,
 `docs/prd/0014-retire-flags-attach-facts-to-artifacts.md`. The sweep ran after
