@@ -213,6 +213,20 @@ def test_plugin_cache_drift_fails_when_pip_lags_behind_cache(tmp_path, monkeypat
     assert "restart Claude Code" in msg
 
 
+def test_plugin_cache_drift_points_at_the_plugin_when_cache_lags_behind_pip(tmp_path, monkeypatch):
+    """The binary was upgraded but the plugin was not: the fix is a plugin
+    update and a restart, not another binary upgrade."""
+    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    _write_plugin_index(tmp_path, version="0.74.2")
+    import importlib.metadata as _md
+    monkeypatch.setattr(_md, "version", lambda _name: "0.75.0")
+    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    assert ok is False
+    assert "claude plugin update lore@lore" in msg
+    assert "restart Claude Code" in msg
+    assert "pipx" not in msg
+
+
 def test_plugin_cache_drift_unreadable_index_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
     plugins_dir = tmp_path / ".claude" / "plugins"

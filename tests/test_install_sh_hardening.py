@@ -38,3 +38,26 @@ def test_install_sh_upgrade_refreshes_both_plugin_caches():
         "the upgrade path must refresh lore-workflow@lore too — otherwise its "
         "skills cache silently stays on the old version (#311)"
     )
+
+
+def test_install_sh_pipx_upgrade_does_not_force_over_the_existing_venv():
+    """`pipx install --force` fails when pipx builds venvs with uv: uv refuses
+    to create a venv over the existing one, the script stops, and neither the
+    binary nor the plugins move. Uninstall then install, as `pipx reinstall`
+    does, works with both venv backends."""
+    text = INSTALL_SH.read_text()
+    assert "pipx install --force" not in text
+    upgrade = text.split("Upgrading lore via pipx", 1)[1].split(";;", 1)[0]
+    assert "pipx uninstall lore" in upgrade
+    assert 'pipx install "$LORE_FROM"' in upgrade
+
+
+def test_install_sh_upgrade_refreshes_the_marketplace_before_the_plugins():
+    text = INSTALL_SH.read_text()
+    refresh = text.index("claude plugin marketplace update lore")
+    assert refresh < text.index("claude plugin update lore@lore")
+
+
+def test_install_sh_upgrade_says_how_to_load_the_new_plugin():
+    text = INSTALL_SH.read_text()
+    assert "claude --continue" in text
