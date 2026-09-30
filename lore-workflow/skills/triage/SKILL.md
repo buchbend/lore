@@ -117,16 +117,33 @@ Fix gaps and repeats before you build the page.
 
 ## 7. The page
 
-Build one page from `triage.json` as [PAGE.md](PAGE.md) describes. Publish it as an artifact
-when the harness offers one. Else write `triage-<repo>.html` in the scratchpad and name the
-path.
+Build one page from `triage.json` as [PAGE.md](PAGE.md) describes. Publish it as an artifact,
+or else write `triage-<repo>.html` in the scratchpad.
 
 ## 8. Report and wait
 
 In chat: the repo state in one line, the counts per verdict, the `Critical` list, the three
-biggest cleanups, and the page link. Then stop and wait for the discussion.
+biggest cleanups, and the page link. Say that the page takes decisions and gives a prompt to
+paste back. Then stop and wait.
 
-After the user decides, act only on what they approved. Write each comment, new issue and
+## 9. Act on the answer
+
+The user pastes a `triage answer` block or decides in chat. Each decided line is the approval
+for that number and nothing more. A note on a line is an instruction to you, not text for
+GitHub.
+
+| Line | Action |
+|---|---|
+| `agree` or `set` `Close: done` | Close as `completed`; the comment names the evidence. |
+| `agree` or `set` `Close: drop / move / duplicate` | Close as `not_planned`. A duplicate names its target. A move files the issue on the target repo first and links it. |
+| `agree` or `set` another verdict | No change on GitHub unless the note asks for a label or a comment. |
+| `PR #n merge` | Merge on green checks; report the merge SHA. |
+| `PR #n close` / `rebuild` | Close with the reason; for `rebuild`, file the follow-up issue. |
+| `risk n file` | File a new issue with the evidence. |
+| `discuss`, `decide`, `Q<n>` | Take these up one at a time after the other lines. |
+
+List the planned actions in one message, then act. Ask about an unclear line and act on the
+rest. At the end, report every artifact you changed. Write each comment, new issue and
 close reason through [`file-issue`](../file-issue/SKILL.md). Close only with a comment that
 names the evidence, and set `state_reason` (`completed` or `not_planned`).
 A human's issue or PR changes state only when the user approved that number in the

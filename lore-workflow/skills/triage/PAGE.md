@@ -31,9 +31,48 @@ step, no external data calls.
 6. **Questions for you.** Numbered decisions the user has to make, each naming the issues it
    unblocks.
 
+## Decide on the page
+
+The page lets the user step through many entries fast and hand the decisions back in one paste.
+
+- **Decision per entry.** Each issue, PR and untracked risk gets a row of buttons:
+  - issue: `agree` (take the proposed verdict), one button per other verdict, `discuss`;
+  - PR: `merge`, `rebuild`, `close`, `decide`, `discuss`;
+  - risk: `file`, `skip`, `discuss`.
+- **Comment per entry.** A small text field under the buttons. A comment alone counts as
+  `discuss`.
+- **Answers to the questions.** A text field under each question in "Questions for you".
+- **Stepping.** `j` / `k` move to the next or previous entry, `a` agrees, `1`–`6` pick a verdict
+  in list order, `d` marks `discuss`, `c` focuses the comment. Keys do nothing while a text field
+  has focus. An "undecided only" toggle hides decided entries. A counter shows `decided / total`.
+- **Memory.** Keep the decisions in `localStorage`, keyed by repo and generation time, inside
+  `try`/`catch`. The page works without it.
+
+## The answer prompt
+
+A fixed panel at the bottom holds a read-only text field that updates on every decision, and a
+**Copy** button. Copy with `navigator.clipboard.writeText`. When that throws, select the text
+and use `document.execCommand("copy")`, then say "Press Ctrl+C" if that fails too. The text
+lists only decided entries, in page order:
+
+```text
+triage answer <owner>/<repo> @<short HEAD sha> — <decided> of <total> decided
+#123 agree Close: done
+#124 set Backlog — note: <comment>
+#130 discuss — note: <comment>
+PR #88 merge
+PR #91 close — note: <comment>
+risk 2 file — note: <comment>
+Q1: <answer>
+```
+
+One line per entry. Replace line breaks inside a comment with spaces. The user pastes this text
+into the session; `SKILL.md` § 9 reads it.
+
 ## Checks before you publish
 
 - The count chips add up to the number of open issues.
 - Each open issue appears once on the page.
 - Each link points at `https://github.com/<owner>/<repo>/…`.
 - The page reads at phone width.
+- A decision, a comment and a question answer each show up in the answer prompt.
