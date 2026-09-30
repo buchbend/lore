@@ -183,3 +183,34 @@ def test_the_adr_template_says_text_outside_holds_is_background() -> None:
     template = ADR_FORMAT.read_text(encoding="utf-8")
     assert "outside `Holds` is background" in template
     assert "Mechanism detail stays out of `Decision`" in template
+
+
+def test_a_test_reference_wrapped_onto_a_continuation_line_passes(tmp_path: Path) -> None:
+    _test_file(tmp_path)
+    _adr(
+        tmp_path,
+        "0016-wrapped.md",
+        "- **Invariant** the parser rejects a stray flag in every mode\n"
+        "  (test: `tests/test_real.py::test_exists`).\n"
+        "- **Default:** fine.",
+    )
+    result = _lint(tmp_path)
+    assert result.exit_code == 0, result.output
+
+
+def test_a_wrapped_reference_to_a_missing_test_names_the_items_first_line(
+    tmp_path: Path,
+) -> None:
+    _test_file(tmp_path)
+    _adr(
+        tmp_path,
+        "0016-wrapped-bad.md",
+        "- **Default:** fine.\n"
+        "- **Invariant** the parser rejects a stray flag in every mode\n"
+        "  (test: `tests/test_real.py::test_gone`).",
+    )
+    result = _lint(tmp_path)
+    assert result.exit_code == 1, result.output
+    # Line 8 is the Invariant's first line; the reference sits on line 9.
+    assert "docs/adr/0016-wrapped-bad.md:8" in result.output
+    assert "test_gone" in result.output

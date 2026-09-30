@@ -27,6 +27,8 @@ _STRENGTH_RE = re.compile(r"^\s*[-*]\s+\*\*(Invariant|Default|Incidental)\b")
 # `test: tests/x.py::test_y`, with or without backticks around the reference.
 _TEST_REF_RE = re.compile(r"test:\s*`?([^\s`)]+::[^\s`)]+)`?")
 
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
+
 _DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
@@ -108,6 +110,16 @@ def _check_invariant(repo_root: Path, rel: str, number: int, line: str) -> Probl
     return Problem(rel, number, reason) if reason else None
 
 
+def _item_text(body: list[tuple[int, str]], index: int) -> str:
+    """The list item at ``body[index]`` joined with its indented continuation lines."""
+    parts = [body[index][1]]
+    for _, line in body[index + 1 :]:
+        if not line.strip() or not line[0].isspace() or _LIST_ITEM_RE.match(line):
+            break
+        parts.append(line.strip())
+    return " ".join(parts)
+
+
 def _lint_one(repo_root: Path, path: Path, rel: str) -> list[Problem]:
     lines = path.read_text(encoding="utf-8").splitlines()
     start = _holds_line(lines)
@@ -115,13 +127,14 @@ def _lint_one(repo_root: Path, path: Path, rel: str) -> list[Problem]:
         return [Problem(rel, 1, "missing `## Holds` section (ADR 0015)")]
     problems = []
     strengths = 0
-    for number, line in _holds_body(lines, start):
+    body = _holds_body(lines, start)
+    for index, (number, line) in enumerate(body):
         kind = _STRENGTH_RE.match(line)
         if kind is None:
             continue
         strengths += 1
         if kind.group(1) == "Invariant":
-            problem = _check_invariant(repo_root, rel, number, line)
+            problem = _check_invariant(repo_root, rel, number, _item_text(body, index))
             if problem is not None:
                 problems.append(problem)
     if strengths == 0:
