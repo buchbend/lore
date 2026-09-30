@@ -1,4 +1,4 @@
-"""Tests for lore_core.git_sync — auto_pull / auto_push / LLM-merge.
+"""Tests for lore_core.git_sync — auto_pull / auto_push / conflict classification.
 
 Uses a bare-repo + two-clone fixture pattern: ``origin.git`` is a bare
 repo; ``host_a`` and ``host_b`` are two clones representing two
@@ -226,75 +226,13 @@ def test_auto_push_unreachable_remote_queues_locally_and_recovers_on_next_sync(
 # ---------------------------------------------------------------------------
 
 
-class _StubLlmMessages:
-    def __init__(self, response_text: str) -> None:
-        self._text = response_text
-        self.calls: list[dict] = []
-
-    def create(self, **kwargs):
-        self.calls.append(kwargs)
-
-        class _Block:
-            type = "text"
-
-            def __init__(self, text):
-                self.text = text
-
-        class _Resp:
-            def __init__(self, text):
-                self.content = [_Block(text)]
-
-        return _Resp(self._text)
-
-
-class StubLlm:
-    """Anthropic-shape stub: ``llm.messages.create(...)`` returns canned text."""
-
-    def __init__(self, response_text: str) -> None:
-        self.messages = _StubLlmMessages(response_text)
-
-
-def test_auto_push_resolves_note_conflict_via_llm(two_hosts) -> None:
-    _, host_a, host_b = two_hosts
-
-    # Both hosts independently create concepts/foo.md with overlapping content.
-    _commit_file(
-        host_a,
-        "concepts/foo.md",
-        "---\ntype: concept\n---\n# foo\n\nFact A.\n",
-        "host_a adds foo",
-    )
-    _git(host_a, "push")
-
-    _commit_file(
-        host_b,
-        "concepts/foo.md",
-        "---\ntype: concept\n---\n# foo\n\nFact B.\n",
-        "host_b adds foo",
-    )
-
-    merged_body = "---\ntype: concept\n---\n# foo\n\nFact A. Fact B.\n"
-    result = auto_push(
-        host_b,
-        llm_client=StubLlm(merged_body),
-        note_dirs=["concepts"],
-    )
-    assert result.status is SyncStatus.MERGED, f"got {result}"
-    assert "concepts/foo.md" in result.merged_paths
-    assert (host_b / "concepts" / "foo.md").read_text() == merged_body
-
-    # Crucially: no per-host artefact files.
-    foo_dir = host_b / "concepts"
-    assert sorted(p.name for p in foo_dir.iterdir()) == ["foo.md"]
-
-
-def test_auto_push_blocks_when_no_llm_client_provided(two_hosts) -> None:
+def test_auto_push_blocks_a_note_conflict(two_hosts) -> None:
     _, host_a, host_b = two_hosts
     _commit_file(host_a, "concepts/foo.md", "---\ntype: concept\n---\nA\n", "a")
     _git(host_a, "push")
     _commit_file(host_b, "concepts/foo.md", "---\ntype: concept\n---\nB\n", "b")
 
-    result = auto_push(host_b, llm_client=None, note_dirs=["concepts"])
+    result = auto_push(host_b, note_dirs=["concepts"])
     assert result.status is SyncStatus.MERGE_BLOCKED
     assert "concepts/foo.md" in result.blocked_paths
     # Tree should be back to clean — abort completed.
@@ -308,7 +246,7 @@ def test_auto_push_picks_ours_for_regenerable_artifacts(two_hosts) -> None:
     _git(host_a, "push")
     _commit_file(host_b, "_catalog.json", '{"b": 2}\n', "b catalog")
 
-    result = auto_push(host_b, llm_client=None, note_dirs=["concepts"])
+    result = auto_push(host_b, note_dirs=["concepts"])
     assert result.status is SyncStatus.MERGED, f"got {result}"
     assert "_catalog.json" in result.merged_paths
     # Ours wins.
@@ -321,7 +259,7 @@ def test_auto_push_blocks_unknown_conflict_path(two_hosts) -> None:
     _git(host_a, "push")
     _commit_file(host_b, "CLAUDE.md", "from b\n", "b")
 
-    result = auto_push(host_b, llm_client=None, note_dirs=["concepts"])
+    result = auto_push(host_b, note_dirs=["concepts"])
     assert result.status is SyncStatus.MERGE_BLOCKED
     assert "CLAUDE.md" in result.blocked_paths
 
