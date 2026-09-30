@@ -353,7 +353,3 @@ def cmd_schema() -> None:
         "  [dim]This is the full set of typed fields stored in[/dim] "
         "[cyan]$LORE_ROOT/.lore/config.yml[/cyan]."
     )
-    console.print(
-        "  [dim]Credentials live in[/dim] [cyan]$LORE_ROOT/.lore/secrets.env[/cyan] "
-        "[dim](never put feature toggles there).[/dim]"
-    )
