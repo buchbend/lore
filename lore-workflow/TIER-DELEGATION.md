@@ -49,6 +49,10 @@ The agent may raise the level and never lowers it. The reviewer does not judge C
 (code map, docs, cross-repo scan) run at `mid`. A cheaper tier skips the depth; `frontier`
 wastes tokens on mechanical discovery.
 
+**Triage lenses** (`triage`, step 3): **`strong`** for the security and architect lenses,
+**`mid`** for the ops lens. The security lens must not miss an exposure; ops checks are
+mostly mechanical.
+
 **Background suite** (`build`, `loop` mode): **`cheap`**. The full suite and ruff after each
 round are bulk-mechanical: run, read the exit code, report the failing test ids.
 

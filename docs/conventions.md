@@ -32,6 +32,7 @@ orient → grilling → to-epic → build → document
 | `tdd` | The red-green-refactor loop every `build` mode follows. |
 | `debug` | Root-cause debugging with a circuit breaker after three failed fixes. |
 | `file-issue` | Writes issue text and PR bodies under the writing rules and files them. |
+| `triage` | Reviews every open issue and PR of a repo against the code, gives each a verdict, and presents one filterable page for discussion. Review only until the user decides. |
 
 `code-review` is a built-in Claude Code command, not a bundled skill. The
 workflow uses it but does not ship it.
@@ -157,6 +158,8 @@ rules every skill shares live in
 | Implementation, architectural or cross-cutting | `strong` |
 | Review of a PR at risk level `low` | `mid` |
 | Review of a PR at risk level `high` | `strong` |
+| `triage` lenses: security, architect | `strong` |
+| `triage` lens: ops | `mid` |
 | Loop wrap-up advisory pass | `strong` |
 | Loop background suite | `cheap` |
 
