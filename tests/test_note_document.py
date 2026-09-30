@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 import yaml
 from lore_core import note_document as nd
-from lore_core.schema import parse_frontmatter, strip_frontmatter
 
 # ---------------------------------------------------------------------------
 # Helpers

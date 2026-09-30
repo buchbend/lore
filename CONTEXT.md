@@ -132,7 +132,6 @@ above:
 |---|---|
 | Transcript capture, ledger registration, linkage stamp | `lore_curator/capture_routing.py` |
 | Note reading (used by trace and seed-lift) | `lore_core/note_document.py` |
-| Deterministic ref verification (positive evidence only) | `lore_core/ref_verify.py` |
 | Frontmatter-only hygiene passes | `lore_curator/hygiene.py` |
 | Repo ADR/PRD pull (filesystem side) | `lore_core/repo_docs.py` |
 | MCP server (tool dispatch) | `lore_mcp/server.py` |
