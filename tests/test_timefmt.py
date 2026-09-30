@@ -184,3 +184,12 @@ def test_no_relative_time_duplicates_remain() -> None:
         "Expected all relative-time helpers inside lore_core/timefmt.py; "
         f"found duplicates:\n{chr(10).join(offenders)}"
     )
+
+
+def test_parse_ts_stamps_utc_on_a_z_suffix() -> None:
+    from lore_core.timefmt import parse_ts
+
+    parsed = parse_ts("2026-04-21T12:00:00Z")
+    assert parsed is not None
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() == timedelta(0)

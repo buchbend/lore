@@ -432,3 +432,9 @@ def test_lore_root_errors_share_a_common_base() -> None:
 def test_deprecated_lorerootnotset_alias() -> None:
     """``LoreRootNotSet`` is the deprecated alias for ``LoreRootNotConfigured``."""
     assert LoreRootNotSet is LoreRootNotConfigured
+
+
+def test_list_wikis_returns_empty_for_a_vault_with_no_wiki(tmp_path: Path) -> None:
+    from lore_core.config import list_wikis
+
+    assert list_wikis(tmp_path) == []

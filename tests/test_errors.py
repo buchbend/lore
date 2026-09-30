@@ -43,3 +43,16 @@ def test_lore_mcp_re_export_works():
     """The MCP server's _mcp_error alias still resolves to the helper."""
     from lore_mcp.server import _mcp_error
     assert _mcp_error("a", "b") == mcp_error("a", "b")
+
+
+def test_the_mcp_server_imports_every_error_code_it_emits():
+    """The server writes each declared code through its constant, never as a
+    literal: renaming the constant would leave a literal behind."""
+    from pathlib import Path
+
+    from lore_core import errors as errors_mod
+
+    server = (Path(__file__).resolve().parent.parent / "lib/lore_mcp/server.py").read_text()
+    declared = {v for n, v in vars(errors_mod).items() if n.isupper() and isinstance(v, str)}
+    literals = sorted(code for code in declared if f'"{code}"' in server)
+    assert literals == [], f"server.py writes declared error codes as literals: {literals}"

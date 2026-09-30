@@ -388,3 +388,15 @@ def test_emit_hook_event_warning_outcome_is_warn_level(tmp_path: Path) -> None:
     emit_hook_event(tmp_path, event="spawn-throttle", outcome="prior-runaway")
     rec = _read(tmp_path / ".lore" / "spine.jsonl")[0]
     assert rec["level"] == "warn"
+
+
+def test_every_spine_error_code_is_reachable() -> None:
+    """Each error code is raised as ``ErrorCode.<NAME>`` somewhere under lib/."""
+    lib = Path(__file__).resolve().parent.parent / "lib"
+    sources = [p.read_text(errors="replace") for p in lib.rglob("*.py") if p.name != "spine.py"]
+    unreachable = sorted(
+        code.name
+        for code in ErrorCode
+        if not any(f"ErrorCode.{code.name}" in body for body in sources)
+    )
+    assert unreachable == [], f"spine error codes no caller raises: {unreachable}"

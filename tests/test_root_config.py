@@ -358,3 +358,26 @@ def test_risk_section_that_is_not_a_mapping_keeps_defaults(tmp_path: Path) -> No
     with pytest.warns(UserWarning, match="risk"):
         cfg = load_root_config(tmp_path)
     assert cfg.workflow.risk == RiskConfig()
+
+
+def test_a_retired_curator_block_warns_once_and_keeps_loading(tmp_path: Path):
+    """The root ``curator:`` block selected the LLM backend. It retired with
+    the LLM client; a file that still sets it loads and warns once by name."""
+    from lore_core.root_config import RootConfig
+
+    assert not hasattr(RootConfig(), "curator")
+    cfg_dir = tmp_path / ".lore"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yml").write_text(
+        "curator:\n  backend: openai\n  openai:\n    base_url: https://example.invalid\n"
+        "journal:\n  enabled: true\n",
+        encoding="utf-8",
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg = load_root_config(tmp_path)
+
+    curator_warnings = [w for w in caught if "curator" in str(w.message)]
+    assert len(curator_warnings) == 1, [str(w.message) for w in caught]
+    assert cfg.journal.enabled is True
