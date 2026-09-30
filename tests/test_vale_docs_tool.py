@@ -68,6 +68,55 @@ def test_the_baseline_holds_counts_per_docs_file() -> None:
         assert isinstance(count, int) and count > 0, (path, count)
 
 
+def test_merge_baseline_lowers_counts_and_keeps_files_not_linted() -> None:
+    mod = _load()
+    old = {"docs/a.md": 3, "docs/b.md": 2, "other/c.md": 5}
+    current = {"docs/a.md": 1, "docs/new.md": 4}
+    merged, raised = mod.merge_baseline(old, current, ["docs"])
+    # a went down, b is clean now and drops out, c was not linted, new is recorded.
+    assert merged == {"docs/a.md": 1, "docs/new.md": 4, "other/c.md": 5}
+    assert raised == []
+
+
+def test_merge_baseline_never_raises_a_count() -> None:
+    mod = _load()
+    merged, raised = mod.merge_baseline({"docs/a.md": 1}, {"docs/a.md": 3}, ["docs/a.md"])
+    assert merged == {"docs/a.md": 1}
+    assert raised == ["docs/a.md"]
+
+
+def _write_baseline_run(mod, monkeypatch, tmp_path, old, alerts, paths):
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps(old), encoding="utf-8")
+    monkeypatch.setattr(mod, "run_vale", lambda config, p: alerts)
+    code = mod.main(["--config", "x.ini", "--baseline", str(baseline), "--write-baseline", *paths])
+    return code, json.loads(baseline.read_text(encoding="utf-8"))
+
+
+def test_write_baseline_on_a_subset_keeps_the_other_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = _load()
+    old = {"docs/a.md": 3, "docs/b.md": 2}
+    code, written = _write_baseline_run(
+        mod, monkeypatch, tmp_path, old, {"docs/a.md": [_alert(1)]}, ["docs/a.md"]
+    )
+    assert code == 0
+    assert written == {"docs/a.md": 1, "docs/b.md": 2}
+
+
+def test_write_baseline_refuses_to_raise_a_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load()
+    old = {"docs/a.md": 1, "docs/b.md": 2}
+    alerts = {"docs/a.md": [_alert(1), _alert(2), _alert(3)], "docs/b.md": [_alert(1)]}
+    code, written = _write_baseline_run(mod, monkeypatch, tmp_path, old, alerts, ["docs"])
+    assert code == 1
+    assert written == {"docs/a.md": 1, "docs/b.md": 1}
+    assert "docs/a.md" in capsys.readouterr().out
+
+
 @pytest.mark.skipif(shutil.which("vale") is None, reason="vale not on PATH")
 def test_the_current_docs_pass_the_step(tmp_path: Path) -> None:
     """The CI step is green on the tree it ships with."""
