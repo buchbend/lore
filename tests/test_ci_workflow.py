@@ -63,3 +63,23 @@ def test_workflow_runs_vale_over_the_docs_with_a_pinned_binary_and_blocks_on_it(
     assert lint > install
     assert "lore style vale-config" in runs[lint]
     assert not steps[lint].get("continue-on-error", False)
+
+
+def test_workflow_installs_vale_before_pytest():
+    """The Vale tests skip when the binary is missing, so pytest runs after the
+    install or CI never runs them."""
+    runs = [step.get("run", "") for step in _steps()]
+    install = next(i for i, run in enumerate(runs) if "errata-ai/vale/releases" in run)
+    pytest_at = next(i for i, run in enumerate(runs) if run.startswith("pytest"))
+    assert install < pytest_at
+
+
+def test_workflow_verifies_the_vale_tarball_checksum():
+    """The tarball is checked against a pinned sha256 before it is unpacked."""
+    steps = _steps()
+    install = next(s for s in steps if "errata-ai/vale/releases" in s.get("run", ""))
+    sha = str(install.get("env", {}).get("VALE_SHA256", ""))
+    assert len(sha) == 64 and all(c in "0123456789abcdef" for c in sha), sha
+    run = install["run"]
+    assert "sha256sum -c" in run
+    assert run.index("sha256sum -c") < run.index("tar ")

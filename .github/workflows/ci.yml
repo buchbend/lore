@@ -23,6 +23,21 @@ jobs:
       - name: Install dev dependencies
         run: pip install -e .[dev]
 
+      # PRD 0015: Vale with the Lore config over docs/**/*.md. Pinned to the
+      # version the Vale tests run against, and installed before pytest so
+      # those tests run instead of skipping. VALE_SHA256 is the Linux_64-bit
+      # line of the release's vale_<version>_checksums.txt.
+      - name: Install Vale
+        env:
+          VALE_VERSION: "3.22.0"
+          VALE_SHA256: "52f5cd0314a1b7384cac6aa102a68193977312f6ba9c9f3ae001b5deec8e3a10"
+        run: |
+          tarball="$RUNNER_TEMP/vale_${VALE_VERSION}_Linux_64-bit.tar.gz"
+          curl -sSfL -o "$tarball" "https://github.com/errata-ai/vale/releases/download/v${VALE_VERSION}/vale_${VALE_VERSION}_Linux_64-bit.tar.gz"
+          echo "${VALE_SHA256}  $tarball" | sha256sum -c -
+          tar -xzf "$tarball" -C "$RUNNER_TEMP" vale
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
       - name: pytest
         run: pytest -q
 
@@ -30,16 +45,6 @@ jobs:
       # invariant line names a test that exists. Blocking.
       - name: lore lint adr
         run: lore lint adr
-
-      # PRD 0015: Vale with the Lore config over docs/**/*.md. Pinned to the
-      # version the Vale tests run against.
-      - name: Install Vale
-        env:
-          VALE_VERSION: "3.22.0"
-        run: |
-          curl -sSfL "https://github.com/errata-ai/vale/releases/download/v${VALE_VERSION}/vale_${VALE_VERSION}_Linux_64-bit.tar.gz" \
-            | tar -xz -C "$RUNNER_TEMP" vale
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       # Fails on error level only. tools/vale-docs-baseline.json holds the
       # error count of docs older than this step; a file fails above it.
