@@ -284,6 +284,23 @@ def test_the_document_passes_its_own_style_apart_from_the_banned_word_line() -> 
 # --- unknown short names: the glossary is the ignore list -----------------
 
 
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_the_participial_opener_rule_reads_sentences_not_headings(tmp_path: Path) -> None:
+    """Rule 9 is about a sentence that opens on a participle. Vale 3.22 feeds
+    heading text to `sentence` scope too, and a title such as `Writing Rules`
+    is a noun phrase, not an opener."""
+    fixture = tmp_path / "issue.md"
+    fixture.write_text(
+        "# Writing Rules\n\n## Handling errors\n\nIt reads the file. "
+        "Having parsed the header, it stops.\n"
+    )
+    _, alerts = _vale(default_vale_config_path(), fixture)
+    openers = [
+        (a["Line"], a["Match"]) for a in alerts if a["Check"] == "WritingRules.ParticipialOpener"
+    ]
+    assert openers == [(5, "Having")]
+
+
 def _repo_with_glossary(parent: Path, *terms: str) -> Path:
     """A repo directory whose CONTEXT.md defines ``terms`` in bold."""
     repo = parent / "repo"
@@ -315,6 +332,13 @@ def test_packaged_ini_ships_the_short_name_check_switched_off() -> None:
     line, so a config that drops it silently loses the check."""
     ini = default_vale_config_path().read_text(encoding="utf-8")
     assert "WritingRules.UnknownShortName = NO" in ini
+
+
+def test_packaged_ini_ships_the_hyphenated_short_name_check_switched_off() -> None:
+    """The hyphenated half of rule 20 needs the glossary as much as the
+    spelling half, so the packaged config ships it off too."""
+    ini = default_vale_config_path().read_text(encoding="utf-8")
+    assert "WritingRules.HyphenatedShortName = NO" in ini
 
 
 def test_glossary_terms_takes_the_bold_terms(tmp_path: Path) -> None:
@@ -381,6 +405,21 @@ def test_vale_leaves_a_glossary_short_name_alone(tmp_path: Path) -> None:
     matches = [alert["Match"] for alert in alerts]
     assert "G4" in matches, "the check did not run, so the L0 result proves nothing"
     assert "L0" not in matches
+
+
+@pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")
+def test_vale_leaves_a_glossary_hyphenated_name_alone(tmp_path: Path) -> None:
+    """Vale 3.22 accepts a hyphenated token whose segments are all dictionary
+    words, so `C-ext` reaches rule 20 through the hyphenated check. A glossary
+    entry still exempts it there."""
+    repo = _repo_with_glossary(tmp_path, "L0", "C-ext")
+    fixture = tmp_path / "issue.md"
+    fixture.write_text("# Title\n\nThe C-ext stage feeds the X-foo loader.\n")
+    code, alerts = _vale(vale_config_for(repo), fixture)
+    matches = [alert["Match"] for alert in alerts]
+    assert "X-foo" in matches, "the check did not run, so the C-ext result proves nothing"
+    assert "C-ext" not in matches
+    assert code == 0
 
 
 @pytest.mark.skipif(VALE_MISSING, reason="vale not on PATH")

@@ -2,9 +2,13 @@
 # word (the common participial-clause-opener shape, e.g. "Having parsed the
 # header, ..."). Catches the common forms and misses the rest, per the
 # honest checkability claim in the writing rules.
+#
+# Vale 3.22 hands heading text to `sentence` scope as well, where a title such
+# as "Writing Rules" is a noun phrase and not an opener. `~heading` keeps the
+# rule on prose sentences.
 extends: existence
 message: "Rule 9 (participial opener): do not open a sentence with a participle; write two sentences."
 level: warning
-scope: sentence
+scope: sentence & ~heading
 raw:
   - '^[A-Z]\w*ing\b'
