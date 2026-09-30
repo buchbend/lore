@@ -8,6 +8,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.78.0] - 2026-09-30
+
+Deletes the owner-approved candidates from `docs/code-sweep.md` (#423).
+`lib/` shrinks by about 1,650 lines and `tests/` by about 2,500.
+
+### Removed
+
+- **The publish gate, redaction and quarantine.** Nothing reached them from
+  the `lore` command. The four `lore quarantine` verbs are gone.
+- **`secrets_env.py`** and the `lore config schema` line about
+  `.lore/secrets.env`.
+- **The parked model merge path in `git_sync`.** No caller passed a model
+  client. A note conflict ends in `MERGE_BLOCKED`, as it did on every real
+  push.
+- **`ref_verify.py`** and the marker-chapter writer in `note_document.py`.
+  `read_note` stays for `lore trace` and `lore workflow seed-lift`.
+- **Five test files that only checked that old code stayed deleted.** Their
+  live checks moved to the test files of the code they check.
+  `test_flag_retirement.py` stays for one more release.
+
+### Changed
+
+- **The wiki config blocks `models:` and `heartbeat:` are retired.** An old
+  `.lore-wiki.yml` still loads; Lore warns once per block and applies the
+  rest.
+
+The journal stays.
+
 ## [0.77.0] - 2026-09-30
 
 Ships epic #443 (PRD 0015): one home per fact, decision records that state
