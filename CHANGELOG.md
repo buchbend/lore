@@ -8,6 +8,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.81.0] - 2026-09-30
+
+### Changed
+
+- fix(install): lore update upgrades the CLI and both plugins in one run (#461)
+- feat: handover note injected at SessionStart after /clear or compaction (#462)
+
 ## [0.80.0] - 2026-09-30
 
 Ships `lore-workflow` 0.12.0.
