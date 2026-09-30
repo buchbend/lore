@@ -8,6 +8,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.76.0] - 2026-09-29
+
+Ships epic #419 (PRD 0014): flags retire, agents file facts as repo
+artifacts, and search reaches GitHub. Ships `lore-workflow` 0.9.0.
+
+### Removed
+
+- **Flags, the flag review page and the flag metrics.** ADR 0012 retires the
+  flag. `lore status` and `lore trace` show no flag section. The MCP tool
+  `lore_flag` is gone.
+- **Briefings and the LLM client.** Nothing in Lore calls a model any more.
+  The `models.*` wiki config keys are accepted and unread.
+
+### Added
+
+- **Agents file each fact as a repo artifact.** A docs-versus-code gap
+  becomes an issue with the label `agent-filed`. A fact about an issue or PR
+  becomes a comment. A decision outside a grilling session becomes a PR a
+  human merges. See `docs/how-to/file-facts-as-artifacts.md`.
+- **The session directive states the filing rule.** It also says: close only
+  issues you opened, and list every artifact you filed in your final message.
+- **`lore_search` is federated.** One call returns wiki notes from the local
+  index, then issues and PRs from a live GitHub search. When `gh` fails, the
+  result holds the wiki list and a `note`. See
+  `docs/how-to/search-notes-and-issues.md`.
+- **The context pack carries the body of every focus issue.**
+- **`lore migrate flag-blocks [--apply]`** removes old flag blocks from wiki
+  notes. The command skips and names a note it cannot parse safely.
+- **Opt-in retrieval-miss check.** With `feedback.retrieval_misses: true`,
+  the orient, implement-issue and tdd skills file a missed fact as an issue
+  on the Lore repo.
+- **`docs/code-sweep.md`** lists every module, CLI verb, MCP tool and config
+  key with its last caller. It names 12 deletion candidates for the owner.
+
+### Changed
+
+- **SessionStart finishes in about 0.2 s.** It took 1.2–1.8 s on a warm
+  cache, and 21 s with an unreachable wiki remote. The wiki pull and the
+  CODEMAP refresh now run as detached children. A dirty or diverged wiki
+  warning appears one session later than before.
+
 ## [0.75.0] - 2026-09-29
 
 Ships `lore-workflow` 0.8.0 with the new skill `quick-feedback-loop`.
