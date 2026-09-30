@@ -43,33 +43,6 @@ segmentation, no typed-fact extraction, no note render, and no LLM call at
 a session boundary. Retired in `#361`; decisions in `docs/adr/0007`–`0009`,
 spec in `docs/prd/0011`.
 
-## The publish gate + quarantine
-
-`lore_core/publish_gate.py:evaluate` scans text a session is about to
-publish outside the machine — an issue body, a comment, a note edit. It
-is the last check between a session's output and a shared surface. The
-gate **fails closed**: any error anywhere in it withholds rather than
-passes.
-
-Cheapest-first, short-circuiting on the first hit:
-
-1. **Deterministic scanners** — high-entropy secrets (via
-   `lore_core.redaction`), email addresses, phone numbers.
-2. **One small-model detection call** (`LlmPiiDetector`, cheapest
-   tier) for fuzzy PII/secrets that slip the scanners. The
-   call is pattern recognition, not truth verification, so it is
-   exempt from the no-LLM-judges-LLM rule. The call is a tripwire, not
-   a guarantee. This file and the module docstring both say so.
-
-On a withhold, `apply_withhold` puts the withheld text into the private
-**quarantine** sidecar
-(`lore_core/quarantine.py`), one JSON file per entry under
-`.lore/quarantine/`. That path sits inside the already-private
-`.lore/` area and never reaches the shared wiki.
-`lore quarantine list/show/clear/kill` is the reviewer's flow over that
-sidecar. `list` never prints body content, because an entry may hold
-the very secret that tripped the gate.
-
 ## Hygiene — the retained frontmatter-only curator
 
 `lore curator [--wiki] [--apply]` takes no subcommand — `run`, `flush`,
@@ -157,11 +130,8 @@ above:
 
 | Concern | Module |
 |---|---|
-| Publish gate over outbound text (scanners, detector, withhold) | `lore_core/publish_gate.py` |
 | Transcript capture, ledger registration, linkage stamp | `lore_curator/capture_routing.py` |
-| Note reading (used by trace, seed-lift, the gate) | `lore_core/note_document.py` |
-| Private quarantine sidecar | `lore_core/quarantine.py` |
-| Deterministic ref verification (positive evidence only) | `lore_core/ref_verify.py` |
+| Note reading (used by trace and seed-lift) | `lore_core/note_document.py` |
 | Frontmatter-only hygiene passes | `lore_curator/hygiene.py` |
 | Repo ADR/PRD pull (filesystem side) | `lore_core/repo_docs.py` |
 | MCP server (tool dispatch) | `lore_mcp/server.py` |

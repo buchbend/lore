@@ -101,3 +101,12 @@ def test_drain_cmd_and_deprecated_verbs_removed() -> None:
     for verb in ("log", "news", "runs", "proc"):
         assert not (CLI_DIR / f"{verb}_cmd.py").exists(), f"{verb}_cmd.py should be deleted"
         assert f'name="{verb}"' not in text, f"lore {verb} should no longer be mounted"
+
+
+def test_status_and_trace_are_mounted() -> None:
+    import typer.main
+    from lore_cli.__main__ import app
+
+    commands = typer.main.get_command(app).commands
+    assert "status" in commands
+    assert "trace" in commands

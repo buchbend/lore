@@ -14,9 +14,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
-
-from lore_core.schema import parse_frontmatter, split_frontmatter
 
 
 class SyncStatus(str, Enum):
@@ -28,7 +25,7 @@ class SyncStatus(str, Enum):
     SKIPPED_DIRTY = "dirty"  # uncommitted local changes — refused
     SKIPPED_DIVERGED = "diverged"  # both sides have unique commits
     SKIPPED_UNREACHABLE = "unreachable"
-    MERGED = "merged"  # auto_push: LLM resolved one+ conflicts
+    MERGED = "merged"  # auto_push: took ours on regenerable conflicts
     MERGE_BLOCKED = "merge-blocked"  # auto_push: aborted, user action needed
 
 
@@ -45,8 +42,8 @@ class SyncResult:
 
 
 class ConflictKind(str, Enum):
-    NOTE = "note"  # LLM-merge (parked)
-    SESSION = "session"  # LLM-merge (parked; rare — pre-pull eliminates)
+    NOTE = "note"  # bail to user
+    SESSION = "session"  # bail to user (rare — pre-pull eliminates)
     REGENERABLE = "regenerable"  # ours wins; lint reconciles
     UNKNOWN = "unknown"  # bail to user
 
@@ -230,25 +227,20 @@ def auto_pull(wiki_dir: Path) -> SyncResult:
 def auto_push(
     wiki_dir: Path,
     *,
-    llm_client: Any = None,
     note_dirs: list[str] | None = None,
 ) -> SyncResult:
-    """Push local commits, resolving conflicts via LLM merge if needed.
+    """Push local commits, taking ours on regenerable conflicts.
 
-    ``note_dirs`` is the list of subdirectory names whose conflicts are
-    eligible for LLM merge (e.g. ``["concepts", "decisions", "results"]``).
-    If not given, a permissive default set is used. Used to classify a
-    conflict path as LLM-mergeable vs other (bail).
-
-    ``llm_client`` is parked: no caller passes one, so a note conflict
-    always ends in MERGE_BLOCKED with the working tree handed back
-    clean. The path stays in the tree because the merge itself works —
-    what is on hold is the decision to run a model at the boundary.
+    ``note_dirs`` is the list of subdirectory names whose conflicts count
+    as note conflicts (e.g. ``["concepts", "decisions", "results"]``).
+    If not given, a permissive default set is used. A note conflict ends
+    in MERGE_BLOCKED with the working tree handed back clean; the user
+    resolves it with git.
 
     Returns:
       OK                — push succeeded outright
       NOOP              — nothing to push
-      MERGED            — LLM merged one or more conflicts; push succeeded
+      MERGED            — took ours on regenerable conflicts; push succeeded
       MERGE_BLOCKED     — at least one conflict couldn't be auto-resolved;
                           working tree returned to clean (merge --abort)
       other skip codes  — same as auto_pull
@@ -335,14 +327,7 @@ def auto_push(
             _git(wiki_dir, "add", path)
             merged.append(path)
             continue
-        if kind in (ConflictKind.NOTE, ConflictKind.SESSION):
-            if llm_client is None:
-                blocked.append(path)
-                continue
-            ok = _resolve_via_llm(wiki_dir, path, llm_client=llm_client)
-            (merged if ok else blocked).append(path)
-            continue
-        # UNKNOWN
+        # NOTE, SESSION, UNKNOWN
         blocked.append(path)
 
     if blocked:
@@ -358,7 +343,7 @@ def auto_push(
         wiki_dir,
         "commit",
         "-m",
-        f"merge(auto-llm): {len(merged)} note(s)" if merged else "merge",
+        f"merge(auto): {len(merged)} regenerable file(s)" if merged else "merge",
     )
     if commit.returncode != 0:
         _git(wiki_dir, "merge", "--abort")
@@ -368,7 +353,7 @@ def auto_push(
         )
     push3 = _git(wiki_dir, "push")
     if push3.returncode != 0:
-        # LLM-merge commit landed locally; push failed (network, auth, etc.).
+        # Merge commit landed locally; push failed (network, auth, etc.).
         # Next auto_push retries via the step-1 fast path.
         return SyncResult(
             status=SyncStatus.SKIPPED_UNREACHABLE,
@@ -383,7 +368,7 @@ def auto_push(
 
 
 # ---------------------------------------------------------------------------
-# Conflict classification + LLM merge
+# Conflict classification
 # ---------------------------------------------------------------------------
 
 
@@ -394,11 +379,10 @@ def _list_conflicts(wiki_dir: Path) -> list[str]:
 
 
 def _note_dirs(wiki_dir: Path) -> list[str]:
-    """Return the subdirectory names classified as LLM-mergeable notes.
+    """Return the subdirectory names classified as notes.
 
-    A permissive default set — better to LLM-merge a note that turned out
-    to be hand-edited than to bail. Used only to classify a conflict path;
-    ``wiki_dir`` is unused but kept for call-site stability.
+    Used only to classify a conflict path; ``wiki_dir`` is unused but
+    kept for call-site stability.
     """
     return ["concepts", "decisions", "results", "people", "places", "questions"]
 
@@ -419,161 +403,6 @@ def _classify_conflict_path(path: str, note_dirs: list[str]) -> ConflictKind:
         return ConflictKind.SESSION
 
     return ConflictKind.UNKNOWN
-
-
-def _read_version(wiki_dir: Path, ref: str, path: str) -> str | None:
-    """Return the file content at ``ref`` (HEAD, MERGE_HEAD, or merge base)."""
-    r = _git(wiki_dir, "show", f"{ref}:{path}")
-    return r.stdout if r.returncode == 0 else None
-
-
-def _merge_base_ref(wiki_dir: Path) -> str:
-    r = _git(wiki_dir, "merge-base", "HEAD", "MERGE_HEAD")
-    return r.stdout.strip()
-
-
-def _resolve_via_llm(
-    wiki_dir: Path,
-    path: str,
-    *,
-    llm_client: Any,
-) -> bool:
-    """LLM-merge a single conflicted file. Returns True on success.
-
-    Parked — reachable only when a caller passes an ``llm_client``, and
-    none does.
-    """
-    ours = _read_version(wiki_dir, "HEAD", path)
-    theirs = _read_version(wiki_dir, "MERGE_HEAD", path)
-    base_ref = _merge_base_ref(wiki_dir)
-    base = _read_version(wiki_dir, base_ref, path) if base_ref else None
-
-    if ours is None or theirs is None:
-        # File deleted on one side — fall back to the surviving copy.
-        survivor = ours if ours is not None else theirs
-        if survivor is None:
-            return False
-        (wiki_dir / path).write_text(survivor)
-        _git(wiki_dir, "add", path)
-        return True
-
-    merged = _llm_merge_text(
-        path=path,
-        ours=ours,
-        theirs=theirs,
-        base=base,
-        llm_client=llm_client,
-    )
-    if merged is None:
-        return False
-    (wiki_dir / path).write_text(merged)
-    _git(wiki_dir, "add", path)
-    return True
-
-
-def _llm_merge_text(
-    *,
-    path: str,
-    ours: str,
-    theirs: str,
-    base: str | None,
-    llm_client: Any,
-) -> str | None:
-    """Call the LLM to produce a merged version. Returns None on failure.
-
-    The merge prompt is deliberately minimal — a note has a free-form
-    body and structured frontmatter. We trust the LLM to preserve both,
-    then validate the result re-parses as a valid note (frontmatter
-    extractable, body present).
-
-    Parked with the rest of the LLM-merge path.
-    """
-    fm_ours = parse_frontmatter(ours)
-    note_type = fm_ours.get("type", "note")
-
-    prompt = _MERGE_PROMPT.format(
-        path=path,
-        type=note_type,
-        ours=ours,
-        theirs=theirs,
-        base=base if base else "(no common ancestor)",
-    )
-    try:
-        merged = _call_llm_for_merge(llm_client, prompt)
-    except Exception:  # noqa: BLE001 — LLM client variants vary
-        return None
-    if not merged or not merged.strip():
-        return None
-
-    # Sanity check: result must still parse as markdown with frontmatter,
-    # the frontmatter must yaml-parse to a dict, and (per the prompt
-    # contract) carry a ``type`` key. Reject malformed responses rather
-    # than letting them clobber a real note.
-    if split_frontmatter(merged) is None:
-        return None
-    fm = parse_frontmatter(merged)
-    if not isinstance(fm, dict) or "type" not in fm:
-        return None
-
-    return merged
-
-
-_MERGE_PROMPT = """\
-Merge two conflicting versions of a Lore knowledge-vault note. Both
-versions describe the same topic — preserve every distinct fact,
-deduplicate restated points, and keep wikilinks (``[[…]]``) from both
-sides intact.
-
-Path: {path}
-Type: {type}
-
-=== OURS ===
-{ours}
-
-=== THEIRS ===
-{theirs}
-
-=== COMMON ANCESTOR ===
-{base}
-
-Output ONLY the merged file content — no commentary, no fences, no
-prefix. Start directly with the YAML frontmatter (`---`) and end with
-the body. The frontmatter must be valid YAML and at minimum carry
-``type: {type}``.
-"""
-
-
-def _call_llm_for_merge(llm_client: Any, prompt: str) -> str | None:
-    """Adapter over the heterogeneous llm_client shapes Lore supports.
-
-    Three known shapes:
-      - ``messages.create(model=…, messages=[…])``       (Anthropic SDK + Fake)
-      - ``complete(prompt) -> str``                       (Subprocess client)
-      - ``chat(messages=[…]) -> {"text": …}``             (OpenAI-compat)
-
-    The merge prompt is plain text; structured-output isn't needed.
-    """
-    # Anthropic-style — preferred path
-    if hasattr(llm_client, "messages") and hasattr(llm_client.messages, "create"):
-        r = llm_client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=8192,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        for block in getattr(r, "content", []):
-            if getattr(block, "type", None) == "text":
-                return getattr(block, "text", None)
-        return None
-
-    if hasattr(llm_client, "complete"):
-        return llm_client.complete(prompt)
-
-    if hasattr(llm_client, "chat"):
-        out = llm_client.chat(messages=[{"role": "user", "content": prompt}])
-        if isinstance(out, dict):
-            return out.get("text")
-
-    return None
 
 
 # ---------------------------------------------------------------------------

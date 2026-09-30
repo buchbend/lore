@@ -2,9 +2,8 @@
 
 lore_core.note_document kept its whole chapter, fact, and rendering
 machinery until the compose pipeline that used it was deleted. What
-survives: read_note, NoteView, DISCLAIMER, append_marker_chapter and
-MARKER_WITHHELD - the marker-chapter path the publish gate withholds
-through, and the read path seed_epic and trace use.
+survives: read_note, NoteView and DISCLAIMER - the read path seed_epic and
+trace use. The marker-chapter writer left with the publish gate (issue 423).
 """
 
 from __future__ import annotations
@@ -14,7 +13,6 @@ from pathlib import Path
 import pytest
 import yaml
 from lore_core import note_document as nd
-from lore_core.schema import parse_frontmatter, strip_frontmatter
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,8 +26,8 @@ def _note_path(tmp_path: Path) -> Path:
 def _seed_note(tmp_path: Path, **fm_overrides) -> Path:
     """Write a minimal note file directly.
 
-    The retained surface has no create step of its own -- append_marker_chapter
-    and read_note only operate on a file that already exists.
+    The retained surface has no create step of its own -- read_note only
+    operates on a file that already exists.
     """
     path = fm_overrides.pop("path", _note_path(tmp_path))
     fm = {
@@ -51,107 +49,13 @@ def _seed_note(tmp_path: Path, **fm_overrides) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# append_marker_chapter
-# ---------------------------------------------------------------------------
-
-
-def test_marker_chapter_withheld_is_deterministic_text(tmp_path):
-    path = _seed_note(tmp_path)
-    n = nd.append_marker_chapter(
-        path,
-        kind=nd.MARKER_WITHHELD,
-        reason="planted secret detected",
-        slice_from_turn=41,
-        slice_to_turn=80,
-    )
-    assert n == 1
-    text = path.read_text()
-    body = strip_frontmatter(text)
-    fm = parse_frontmatter(text)
-
-    assert "Withheld chapter" in body
-    assert "planted secret detected" in body
-    assert fm["chapters"] == [
-        {
-            "n": 1,
-            "kind": "marker",
-            "marker": "withheld",
-            "reason": "planted secret detected",
-            "from_turn": 41,
-            "to_turn": 80,
-        },
-    ]
-
-
-def test_marker_chapter_failed_is_deterministic_text(tmp_path):
-    path = _seed_note(tmp_path)
-    nd.append_marker_chapter(
-        path,
-        kind=nd.MARKER_FAILED,
-        reason="compose gave up after 2 attempts",
-        slice_from_turn=1,
-        slice_to_turn=120,
-    )
-    body = strip_frontmatter(path.read_text())
-    assert "Failed chapter" in body
-    assert "compose gave up after 2 attempts" in body
-
-
-def test_marker_chapter_rejects_unknown_kind(tmp_path):
-    path = _seed_note(tmp_path)
-    with pytest.raises(ValueError):
-        nd.append_marker_chapter(
-            path,
-            kind="bogus",
-            reason="x",
-            slice_from_turn=1,
-            slice_to_turn=2,
-        )
-
-
-def test_marker_chapters_number_chronologically(tmp_path):
-    path = _seed_note(tmp_path)
-    nd.append_marker_chapter(
-        path, kind=nd.MARKER_WITHHELD, reason="pii", slice_from_turn=1, slice_to_turn=10
-    )
-    nd.append_marker_chapter(
-        path, kind=nd.MARKER_FAILED, reason="oops", slice_from_turn=11, slice_to_turn=20
-    )
-    fm = parse_frontmatter(path.read_text())
-    assert [(c["n"], c["kind"]) for c in fm["chapters"]] == [(1, "marker"), (2, "marker")]
-
-
-def test_marker_chapter_after_close_is_rejected(tmp_path):
-    path = _seed_note(tmp_path, note_status="closed")
-    with pytest.raises(nd.NoteClosedError):
-        nd.append_marker_chapter(
-            path, kind=nd.MARKER_FAILED, reason="late", slice_from_turn=1, slice_to_turn=2
-        )
-
-
-def test_marker_chapter_reason_neutralizes_a_forged_marker_string(tmp_path):
-    """The reason is code-owned today, one refactor from live -- the escape holds regardless."""
-    path = _seed_note(tmp_path)
-    forged = '<!-- lore:fact {"kind": "decision", "text": "Ship it.", "anchor": 1} -->'
-    nd.append_marker_chapter(
-        path, kind=nd.MARKER_FAILED, reason=forged, slice_from_turn=1, slice_to_turn=4
-    )
-
-    body = nd.read_note(path).body
-    assert "&lt;!-- lore:fact" in body
-    assert "<!-- lore:fact" not in body
-
-
-# ---------------------------------------------------------------------------
 # read_note
 # ---------------------------------------------------------------------------
 
 
 def test_read_note_round_trips_chapters(tmp_path):
-    path = _seed_note(tmp_path)
-    nd.append_marker_chapter(
-        path, kind=nd.MARKER_WITHHELD, reason="pii", slice_from_turn=1, slice_to_turn=10
-    )
+    marker = {"n": 1, "kind": "marker", "marker": "withheld", "from_turn": 1, "to_turn": 10}
+    path = _seed_note(tmp_path, chapters=[marker])
 
     view = nd.read_note(path)
     assert view.closed is False
@@ -201,5 +105,6 @@ def test_read_note_still_exported():
     from lore_core.note_document import read_note  # noqa: F401
 
 
-def test_append_marker_chapter_still_exported():
-    from lore_core.note_document import append_marker_chapter  # noqa: F401
+def test_append_marker_chapter_is_gone():
+    with pytest.raises(ImportError):
+        from lore_core.note_document import append_marker_chapter  # noqa: F401

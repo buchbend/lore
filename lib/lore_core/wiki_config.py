@@ -25,20 +25,6 @@ class GitConfig:
 
 
 @dataclass
-class ModelsConfig:
-    simple: str = "claude-haiku-4-5"
-    middle: str = "claude-sonnet-4-6"
-    high: str = "claude-opus-4-7"  # or "off"
-
-
-@dataclass
-class HeartbeatConfig:
-    enabled: bool = True
-    cooldown_s: int = 120
-    push_context: bool = True  # inject additionalContext with wikilinks
-
-
-@dataclass
 class BreadcrumbConfig:
     mode: str = "normal"  # quiet | normal | verbose
     scope_filter: bool = True
@@ -47,15 +33,14 @@ class BreadcrumbConfig:
 @dataclass
 class WikiConfig:
     git: GitConfig = field(default_factory=GitConfig)
-    models: ModelsConfig = field(default_factory=ModelsConfig)
-    heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     breadcrumb: BreadcrumbConfig = field(default_factory=BreadcrumbConfig)
 
 
 #: Config blocks lore used to honour and no longer does. Named explicitly so
 #: a stale file gets a warning that says what happened, rather than the
-#: generic unknown-key notice.
-RETIRED_BLOCKS = frozenset({"curator", "briefing"})
+#: generic unknown-key notice. ``models`` and ``heartbeat`` lost their last
+#: reader with the LLM client (issue 423).
+RETIRED_BLOCKS = frozenset({"curator", "briefing", "models", "heartbeat"})
 
 
 def load_wiki_config(wiki_dir: Path) -> WikiConfig:

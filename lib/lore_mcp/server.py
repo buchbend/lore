@@ -431,10 +431,9 @@ def handle_read(
         return _mcp_error(PATH_NOT_FOUND, f"not found: {path}")
     text = target.read_text(errors="replace")
 
-    # Notes carry no human-only region: they are machine-written and
-    # cleared by the publish gate. ``include_human`` is retained on the
-    # signature for callers that still pass it, but there is nothing to
-    # redact — the full body is returned.
+    # Notes carry no human-only region. ``include_human`` is retained on
+    # the signature for callers that still pass it, but there is nothing
+    # to redact — the full body is returned.
 
     freshness = _freshness_block_for(
         wiki_path, path, orphan_set=load_orphan_set(wiki_path)

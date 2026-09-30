@@ -139,16 +139,17 @@ Per-vault-mount policy. Schema lives in
 - `git.{auto_commit, auto_push, auto_pull}` — `auto_push` defaults to
   whether the wiki has a git remote; an explicit value in the file
   always wins over that default.
-- `models.{simple, middle, high}` — Claude model IDs per tier. No retained
-  code reads these keys since the LLM client retired; the loader still accepts them.
-- `heartbeat.{enabled, cooldown_s, push_context}`
 - `breadcrumb.{mode, scope_filter}`
 
-A `curator:` or `briefing:` block is a retired key — `WikiConfig`
-carries neither field, and `load_wiki_config` warns by name
-(`RETIRED_BLOCKS`) rather than the generic unknown-key notice. The
-per-session-turn-threshold knobs retired with the compose pipeline; the
-briefing knobs retired with the briefing command.
+A `curator:`, `briefing:`, `models:` or `heartbeat:` block is a retired
+key. `WikiConfig` carries none of these fields, and `load_wiki_config`
+warns by name (`RETIRED_BLOCKS`) rather than the generic unknown-key
+notice. The rest of the file still applies.
+
+- The per-session-turn-threshold knobs retired with the compose pipeline.
+- The briefing knobs retired with the briefing command.
+- The model IDs per tier and the heartbeat knobs lost their last reader
+  with the LLM client (issue 423).
 
 Loader: `load_wiki_config(wiki_dir) -> WikiConfig`. Same fault-tolerant
 behaviour as root config.

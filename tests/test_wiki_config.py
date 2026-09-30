@@ -1,6 +1,7 @@
 """Tests for per-wiki config loader."""
 
 import subprocess
+import warnings
 from pathlib import Path
 
 import pytest
@@ -15,9 +16,6 @@ class TestWikiConfigDefaults:
         assert cfg.git.auto_commit is False
         assert cfg.git.auto_push is False
         assert cfg.git.auto_pull is True
-        assert cfg.models.simple == "claude-haiku-4-5"
-        assert cfg.models.middle == "claude-sonnet-4-6"
-        assert cfg.models.high == "claude-opus-4-7"
         assert cfg.breadcrumb.mode == "normal"
         assert cfg.breadcrumb.scope_filter is True
 
@@ -32,19 +30,10 @@ class TestWikiConfigPartialMerge:
         assert cfg.git.auto_commit is False  # default preserved
         assert cfg.git.auto_pull is True
         # All other sections fully default
-        assert cfg.models.simple == "claude-haiku-4-5"
+        assert cfg.breadcrumb.mode == "normal"
 
 
 class TestWikiConfigNestedDataclasses:
-    def test_load_models_high_off_parsed(self, tmp_path: Path):
-        """YAML with models.high="off" → parsed correctly."""
-        config_file = tmp_path / ".lore-wiki.yml"
-        config_file.write_text('models:\n  high: "off"\n')
-        cfg = load_wiki_config(tmp_path)
-        assert cfg.models.high == "off"
-        assert cfg.models.simple == "claude-haiku-4-5"  # defaults preserved
-        assert cfg.models.middle == "claude-sonnet-4-6"
-
     def test_load_breadcrumb_mode_parsed(self, tmp_path: Path):
         """YAML with breadcrumb.mode="quiet" → parsed correctly."""
         config_file = tmp_path / ".lore-wiki.yml"
@@ -116,17 +105,17 @@ class TestWikiConfigWriteBack:
         from lore_core.wiki_config import get_field
 
         wiki = _fresh_wiki(tmp_path, "")
-        fi = get_field(wiki, "heartbeat.cooldown_s")
-        assert fi.value == 120
+        fi = get_field(wiki, "breadcrumb.mode")
+        assert fi.value == "normal"
         assert fi.source == "default"
-        assert fi.type_name == "int"
+        assert fi.type_name == "str"
 
     def test_get_field_unknown_path_raises_with_suggestion(self, tmp_path: Path) -> None:
         from lore_core.wiki_config import get_field
 
         wiki = _fresh_wiki(tmp_path, "")
-        with pytest.raises(KeyError, match="did you mean.*models.simple"):
-            get_field(wiki, "models.simpel")
+        with pytest.raises(KeyError, match="did you mean.*breadcrumb.mode"):
+            get_field(wiki, "breadcrumb.mdoe")
 
     def test_set_field_persists_and_round_trips(self, tmp_path: Path) -> None:
         from lore_core.wiki_config import get_field, set_field
@@ -161,27 +150,25 @@ class TestWikiConfigWriteBack:
         from lore_core.wiki_config import get_field, set_field, unset_field
 
         wiki = _fresh_wiki(tmp_path, "")
-        set_field(wiki, "heartbeat.cooldown_s", "5")
-        assert get_field(wiki, "heartbeat.cooldown_s").value == 5
-        fi = unset_field(wiki, "heartbeat.cooldown_s")
-        assert fi.value == 120
-        assert get_field(wiki, "heartbeat.cooldown_s").value == 120
+        set_field(wiki, "breadcrumb.mode", "quiet")
+        assert get_field(wiki, "breadcrumb.mode").value == "quiet"
+        fi = unset_field(wiki, "breadcrumb.mode")
+        assert fi.value == "normal"
+        assert get_field(wiki, "breadcrumb.mode").value == "normal"
 
     def test_unset_field_noop_when_not_set(self, tmp_path: Path) -> None:
         from lore_core.wiki_config import unset_field
 
         wiki = _fresh_wiki(tmp_path, "")
-        fi = unset_field(wiki, "heartbeat.cooldown_s")
-        assert fi.value == 120
+        fi = unset_field(wiki, "breadcrumb.mode")
+        assert fi.value == "normal"
 
     def test_schema_tree_covers_all_leaves(self) -> None:
         from lore_core.wiki_config import schema_tree
 
         paths = {p for p, _, _, _ in schema_tree()}
         assert "git.auto_commit" in paths
-        assert "heartbeat.cooldown_s" in paths
-        assert "models.simple" in paths
-        assert "heartbeat.enabled" in paths
+        assert "breadcrumb.scope_filter" in paths
         assert "breadcrumb.mode" in paths
         assert "git" not in paths  # groups excluded, leaves only
 
@@ -192,11 +179,16 @@ class TestAutoPushDefault:
     def _repo(self, tmp_path: Path, *, remote: bool) -> Path:
         wiki = tmp_path / "wiki"
         wiki.mkdir()
-        subprocess.run(["git", "init", "--initial-branch=main"], cwd=wiki, check=True,
-                       capture_output=True)
+        subprocess.run(
+            ["git", "init", "--initial-branch=main"], cwd=wiki, check=True, capture_output=True
+        )
         if remote:
-            subprocess.run(["git", "remote", "add", "origin", str(tmp_path / "origin.git")],
-                           cwd=wiki, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "remote", "add", "origin", str(tmp_path / "origin.git")],
+                cwd=wiki,
+                check=True,
+                capture_output=True,
+            )
         return wiki
 
     def test_auto_push_defaults_true_for_a_wiki_with_a_remote(self, tmp_path: Path):
@@ -209,3 +201,40 @@ class TestAutoPushDefault:
         wiki = self._repo(tmp_path, remote=True)
         (wiki / ".lore-wiki.yml").write_text("git:\n  auto_push: false\n")
         assert load_wiki_config(wiki).git.auto_push is False
+
+
+class TestRetiredBlocks:
+    """A config file written before a retirement still loads.
+
+    The loader warns once per retired block, by name, and applies the rest
+    of the file. ``curator`` retired with the compose pipeline, ``briefing``
+    with the briefing command, and ``models`` and ``heartbeat`` with the
+    LLM client (issue 423).
+    """
+
+    RETIRED = {
+        "curator": "curator:\n  threshold_pending_turns: 7\n  reaper_max_per_pass: 1\n",
+        "briefing": "briefing:\n  auto: true\n  sinks:\n    - matrix\n",
+        "models": "models:\n  simple: a\n  middle: b\n  high: 'off'\n",
+        "heartbeat": "heartbeat:\n  enabled: false\n  cooldown_s: 5\n  push_context: false\n",
+    }
+
+    @pytest.mark.parametrize("block", sorted(RETIRED))
+    def test_the_wiki_config_declares_no_retired_block(self, block: str) -> None:
+        assert not hasattr(WikiConfig(), block)
+
+    @pytest.mark.parametrize("block", sorted(RETIRED))
+    def test_a_retired_block_warns_once_and_keeps_loading(self, tmp_path: Path, block: str):
+        (tmp_path / ".lore-wiki.yml").write_text(
+            self.RETIRED[block] + "git:\n  auto_push: true\n", encoding="utf-8"
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cfg = load_wiki_config(tmp_path)
+
+        messages = [str(w.message) for w in caught]
+        named = [m for m in messages if f"'{block}' is retired and is ignored" in m]
+        assert len(named) == 1, messages
+        assert len(messages) == 1, messages
+        assert cfg.git.auto_push is True

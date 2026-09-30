@@ -200,11 +200,17 @@ def test_compose_seed_lift_returns_none_when_note_is_thin(tmp_path: Path) -> Non
 def test_compose_seed_lift_returns_none_when_only_marker_chapters(tmp_path: Path) -> None:
     # Withheld/failed marker chapters are procedural bookkeeping, not
     # findings — a note with only markers and no linkage is still thin.
-    path = _seed_note(
-        tmp_path, title="Gate-withheld session", description="publish gate withheld the chapter"
+    # The fixture writes the marker by hand, in the shape the deleted
+    # marker-chapter writer left in a note (issue 423).
+    path = _seed_note(tmp_path, title="Gate-withheld session", description="chapter withheld")
+    marker = {"n": 1, "kind": "marker", "marker": "withheld", "from_turn": 0, "to_turn": 5}
+    fm = parse_frontmatter(path.read_text())
+    fm["chapters"] = [marker]
+    body = (
+        f"{nd.DISCLAIMER}\n\n<!-- lore:chapter 1 marker:withheld @0-5 -->\n\n"
+        "> **Withheld chapter.** A chapter covering turns @0–@5 was withheld."
     )
-    nd.append_marker_chapter(
-        path, kind=nd.MARKER_WITHHELD, reason="quote mismatch", slice_from_turn=0, slice_to_turn=5
-    )
+    dumped = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    path.write_text(f"---\n{dumped}\n---\n\n{body}\n")
 
     assert compose_seed_lift(path) is None

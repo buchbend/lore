@@ -51,17 +51,12 @@ in — see "Conflict policy" below for what "resolution" means today.
 
 ## Conflict policy
 
-> **Status: parked.** `auto_push`'s `llm_client` parameter accepts a
-> client, but no caller passes one — the session-boundary push (above)
-> always calls it with none. A session-note or typed-note conflict
-> therefore always ends in `MERGE_BLOCKED`, `git merge --abort` runs,
-> and the working tree comes back clean; nothing below the "LLM call"
-> step in class 2 currently executes. The classifier, the merge path
-> and the prompt stay in the tree — the path resolves conflicts for the
-> push this epic restored — what's on hold is the decision to run a
-> model at the session boundary.
+Lore runs no model at a push conflict. The LLM (large language model)
+merge path left with the retired LLM client (issue 423). `auto_push`
+takes ours for a regenerable file and hands every other conflict back
+to the user.
 
-Four classes of conflict, each with a deterministic resolver.
+Four classes of conflict:
 
 ### 1. Session notes — no longer written
 
@@ -69,39 +64,21 @@ Session notes lived at `<wiki>/sessions[/<handle>]/<YYYY>/<MM>/<DD>-<slug>.md`.
 Nothing writes a new one since the compose pipeline retired (`#361`),
 so two hosts can no longer produce a same-day collision going forward.
 The classifier still recognizes a `sessions/` path as this conflict
-class — for a wiki that still carries pre-retirement session notes —
-and routes it through the same LLM-merge path as class 2, parked the
-same way.
+class, for a wiki that still carries pre-retirement session notes.
+`auto_push` blocks it the same way as class 2.
 
-### 2. Typed-subdirectory notes — LLM-merge on push conflict
+### 2. Typed-subdirectory notes — bail to user
 
 Notes in a wiki's typed subdirectories (`concepts/`, `decisions/`,
-`projects/`, …) are written directly — by hand or via `/lore:inbox` —
-there is no automatic abstraction pass that populates them on its own.
+`projects/`, …) are written directly — by hand or via `/lore:inbox`.
 This is the conflict class two hosts editing the same topic note hit.
-The classifier and merge path apply to whatever two hosts independently
-write there:
 
 1. `git fetch origin`
 2. `git merge origin/<branch> --no-commit --no-ff`
 3. Enumerate conflicted paths: `git diff --name-only --diff-filter=U`
-4. Classify each path. For a typed-subdirectory note:
-   - Read OURS (HEAD), THEIRS (origin), BASE (merge-base)
-   - LLM call (middle tier, ~$0.001) with structured prompt: "merge
-     these two versions of `<note>`. Preserve all distinct facts,
-     deduplicate restated points, keep wikilinks from both sides."
-     **Parked** — reached only when a caller passes an `llm_client`.
-   - Write merged result, `git add <path>`
-5. If all conflicts resolved: `git commit -m "merge(auto-llm): N
-   note(s)"`, `git push`
-6. If any unresolved (the current outcome for every typed-note
-   conflict): `git merge --abort`, working tree returns clean. The
-   user resolves it with git.
-
-LLM-merge at push time is designed to be synchronous: by the time Host
-B's push completes, the wiki would have one canonical note, no temp
-artifacts, no drift window where MCP search would see two notes about
-the same thing — once a caller opts a model into the session boundary.
+4. Classify each path. A typed-subdirectory note counts as unresolved.
+5. On any unresolved path, `auto_push` runs `git merge --abort` and the
+   working tree returns clean. The user resolves the conflict with git.
 
 ### 3. Regenerable artifacts — pick either side, lint to truth
 
@@ -204,7 +181,7 @@ regardless of this setting.
 | Clean tree, diverged (we have local commits, remote has different commits) | Skip pull, surface to user | `lore status` `· wiki diverged — git pull manually` |
 | Push: remote ahead, FF possible | Fetch + ff + push | (silent) |
 | Push: regenerable-artifact conflict | ours wins, `lore lint` reconciles | (silent) |
-| Push: typed-note or session-note conflict | `MERGE_BLOCKED` — LLM-merge is parked, so `git merge --abort` runs and the tree returns clean | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
+| Push: typed-note or session-note conflict | `MERGE_BLOCKED` — `git merge --abort` runs and the tree returns clean | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
 | Push: unknown-path conflict | abort merge, surface to user | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
 | `watchdog` not installed | Reindex throttle = 5s natural decay | (silent — same as 0.10.x) |
 
@@ -215,9 +192,7 @@ regardless of this setting.
 - Bare-repo fixtures for two hosts (`tmp_path/host_a`, `tmp_path/host_b`,
   shared `tmp_path/origin`)
 - `auto_pull`: clean tree → ff; dirty tree → skip + log; diverged → skip + status flag
-- `auto_push`: typed-note conflict → LLM-stub merge → assert merged file present, no
-  `.host-*` siblings, exit code 0
-- `auto_push`: session-conflict → LLM-stub merge → assert one canonical file
+- `auto_push`: typed-note conflict → `git merge --abort` → tree clean, path blocked
 - `auto_push`: regenerable conflict (`_catalog.json`) → ours wins → lint reconciles
 - `auto_push`: unknown-path conflict → `git merge --abort` → status flag
 - `reindex_watcher`: write a `.md`, assert dirty flag within 50ms, assert next

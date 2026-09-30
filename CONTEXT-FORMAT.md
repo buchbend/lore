@@ -46,7 +46,7 @@ same topic. An empty headline left both at their placeholder.
   rewrite. — file docs/adr/0003.md ✓ @10
 
 ## Findings
-- The gate scans the marker too. — file lib/lore_core/publish_gate.py ✓ @18
+- Auto-push takes ours on a regenerable conflict. — file lib/lore_core/git_sync.py ✓ @18
 - Observed in session: The local model returns empty on oversized prompts. @24
 
 ## Open

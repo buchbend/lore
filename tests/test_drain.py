@@ -252,3 +252,19 @@ def test_resolve_session_id_pid_fallback_when_no_hints(tmp_path, monkeypatch):
     sid, origin = resolve_session_id(cwd)
     assert sid == f"pid-{os.getpid()}"
     assert origin == "pid-fallback"
+
+
+def test_every_drain_event_kind_has_an_emitter() -> None:
+    """Each kind in the vocabulary has an ``.emit("<kind>")`` call under lib/."""
+    import re
+
+    lib = Path(__file__).resolve().parent.parent / "lib"
+    sources = [p.read_text(errors="replace") for p in lib.rglob("*.py") if p.name != "drain.py"]
+    orphaned = sorted(
+        kind
+        for kind in EVENT_VOCAB
+        if not any(
+            re.search(rf"""\.emit\(\s*["']{re.escape(kind)}["']""", body) for body in sources
+        )
+    )
+    assert orphaned == [], f"drain event kinds with no emitter: {orphaned}"
