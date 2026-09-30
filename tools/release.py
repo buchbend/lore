@@ -142,6 +142,22 @@ def landed_subjects() -> list[str]:
     return [line for line in log.splitlines() if line.strip()]
 
 
+def _version_key(version: str) -> tuple[int, ...]:
+    match = _SEMVER.match(version)
+    if not match:
+        raise ValueError(f"not a semver version: {version!r}")
+    return tuple(int(g) for g in match.groups())
+
+
+def main_is_ahead(main_version: str, branch_version: str) -> bool:
+    """True when `origin/main` released past the version this branch carries.
+
+    A branch cut before main's last release still holds the older version, and
+    bumping it would repeat a version main already shipped.
+    """
+    return _version_key(main_version) > _version_key(branch_version)
+
+
 def run_version_guard() -> None:
     """Run the three-file guard against the files just written."""
     if shutil.which("pytest") is None:
@@ -182,6 +198,13 @@ def main(argv: list[str] | None = None) -> int:
 
     git("fetch", "origin")
     current = read_version(PYPROJECT.read_text(encoding="utf-8"))
+    if args.in_branch:
+        main_version = read_version(git("show", "origin/main:pyproject.toml"))
+        if main_is_ahead(main_version, current):
+            sys.exit(
+                f"origin/main is at {main_version}, this branch at {current}: "
+                "merge main into this branch first"
+            )
     version = next_version(current, args.part)
     branch = (
         git("rev-parse", "--abbrev-ref", "HEAD") if args.in_branch else f"chore/release-{version}"

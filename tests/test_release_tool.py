@@ -233,3 +233,30 @@ def test_in_branch_refuses_main_and_detached_head(shipping_repo: Path, target: s
     with pytest.raises(SystemExit) as exc:
         release.main(["--in-branch"])
     assert "feature branch" in str(exc.value)
+
+
+def test_in_branch_refuses_a_branch_cut_before_main_released(
+    shipping_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """main released 0.73.0 after the branch was cut. Bumping the branch's own
+    0.72.0 would repeat main's 0.73.0, so the script stops and says why."""
+    monkeypatch.setattr(release, "run_version_guard", lambda: None)
+    _git(shipping_repo, "checkout", "main")
+    (shipping_repo / "pyproject.toml").write_text(
+        PYPROJECT.replace("0.72.0", "0.73.0"), encoding="utf-8"
+    )
+    _git(shipping_repo, "commit", "-am", "chore: release 0.73.0")
+    _git(shipping_repo, "push", "origin", "main")
+    _git(shipping_repo, "checkout", "feat/thing")
+    before = _git(shipping_repo, "rev-parse", "HEAD")
+    notes = tmp_path / "notes.md"
+    notes.write_text("### Added\n\n- A thing.\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        release.main(["--in-branch", "--notes", str(notes)])
+
+    message = str(exc.value)
+    assert "origin/main is at 0.73.0" in message
+    assert "merge main into this branch first" in message
+    assert _git(shipping_repo, "rev-parse", "HEAD") == before
+    assert _git(shipping_repo, "status", "--porcelain") == ""
