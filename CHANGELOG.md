@@ -8,63 +8,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
-## [0.77.0] - 2026-09-30
-
-Ships epic #443 (PRD 0015): one home per fact, decision records that state
-their strength, and one `build` skill. Ships `lore-workflow` 0.10.0.
-
-### Added
-
-- **ADRs state their strength.** The ADR template gains `Holds` (invariant,
-  default, incidental), `Revisit if` and `Amendments`. `lore lint adr`
-  fails an ADR from 0014 onward without `Holds`, and an invariant that names
-  a missing test. CI runs the lint. See `docs/how-to/record-a-decision.md`.
-- **Agents read ADRs and PRDs as context.** SessionStart injects the
-  reading rule; `lore attach --scaffold-workflow` writes it into `AGENTS.md`.
-- **Writing rule 22** flags absolutes in ADR and PRD text. CI runs Vale over
-  `docs/` against a per-file baseline.
-- **`lore workflow prd-ship`** marks a PRD shipped. Retrieval ranks a shipped
-  PRD below ADRs.
-- **Build ledger.** `lore workflow ledger-add`, `ledger-set` (also
-  `--board -`), `ledger-check` and `ledger-archive`. `pre-compact` names the
-  ledger; SessionStart offers to resume from its last resume line.
-- **`lore workflow risk`** prints `low` or `high` with reasons. The level
-  sets the review depth.
-- **`lore trace tokens`** sums tokens per skill and agent phase, subagent
-  transcripts included. See `docs/how-to/measure-token-use.md`.
-- **`tools/release.py --in-branch`** puts the version bump in the shipping
-  PR.
-
-### Changed
-
-- **`lore-workflow` ships nine skills instead of 17:** `orient`, `grilling`,
-  `to-epic`, `build`, `tdd`, `debug`, `document`, `handover`, `file-issue`.
-  `build` has the modes `loop`, `issue` and `epic`, and replaces
-  `orchestrate-epic`, `quick-orchestrate`, `super-orchestrate`,
-  `implement-issue` and `quick-feedback-loop`. The skills folder shrinks from
-  122 KB to 80 KB.
-- **Review depth follows the risk level:** `low` gets a `mid` reviewer,
-  `high` a `strong` one. CI and ruff status come from `gh pr checks`, not
-  from the model.
-- **Each build run ends with a handover section** and a passing
-  `ledger-check`.
-
-### Fixed
-
-- **`tools/release.py --in-branch` refuses a stale branch.** When
-  `origin/main` carries a newer version, the script stops and asks for a
-  merge of `main` first.
-- **`tools/vale_docs.py --write-baseline` keeps other files' entries** and
-  never raises a count.
-- **CI checks the Vale tarball's sha256** and installs Vale before pytest, so
-  the Vale style tests run in CI. Two rules follow Vale 3.22: headings leave
-  rule 9, and a new check catches hyphenated short names such as `C-ext`.
-- **`lore lint adr` reads a test reference wrapped onto a second line.**
-- **`workflow.risk` config values are type-checked**; a bad value falls back
-  to the default with a warning.
-- **`lore workflow risk --repo other/repo` skips fan-in** instead of measuring
-  the local checkout.
-
 ## [0.76.0] - 2026-09-29
 
 Ships epic #419 (PRD 0014): flags retire, agents file facts as repo
