@@ -54,7 +54,7 @@ Any `fail` line makes the verdict FAIL.
 
 - **PASS and green checks, `epic` feature PR:** merge it into `epic/<issue>`.
 - **PASS and green checks, the epic PR:** go back to [epic-tail.md](epic-tail.md) § 4.
-- **PASS and green checks, `issue` mode:** go on to the finish point. The user merges.
+- **PASS and green checks, `issue` mode:** go on to the finish point. Merge after the merge approval.
 - **FAIL:** send the numbered fixes to the teammate. In `issue` mode, fix them yourself. The same
   reviewer checks that PR again. At most two fix rounds.
 - A round that does not move the verdict gets the [`debug`](../debug/SKILL.md) method, not "try

@@ -38,7 +38,8 @@ commit in the first resume line of the ledger.
    one PR `loop/<slug> → <target>`. Its body is the handover section, in the shape
    [`handover`](../handover/SKILL.md) gives, written through `file-issue` in PR-body mode.
 9. **Archive the ledger:** `lore workflow ledger-archive`.
-10. **Report** the PR, the ADRs and terms written, and the filed issues. Once the user merges the
-    PR, sync the local target with the remote. A squash merge makes the local target diverge:
-    ask before `git reset --hard origin/<target>`. Remove the worktree and the branch when the
-    user confirms.
+10. **Report and ask.** Report the PR, the ADRs and terms written, and the filed issues, in the
+    merge approval message of [SKILL.md](SKILL.md). On a yes, merge the PR. After the merge, by
+    you or the user, sync the local target with the remote. A squash merge makes the local
+    target diverge: ask before `git reset --hard origin/<target>`. Remove the worktree and the
+    branch when the user confirms.
