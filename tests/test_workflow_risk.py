@@ -220,3 +220,53 @@ def test_cli_risk_survives_a_bad_risk_config(tmp_path, monkeypatch, capsys) -> N
     rc = workflow_cmd.main(["risk", "--diff", str(diff_file)])
     assert rc == 0
     assert capsys.readouterr().out.splitlines()[0] == "low"
+
+
+# --- --repo naming another repository ---------------------------------------
+
+
+def _git_origin(repo: Path, url: str) -> None:
+    import subprocess
+
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True, capture_output=True)
+    for args in (
+        ["remote", "add", "origin", url],
+        ["add", "."],
+        ["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "init"],
+    ):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+
+def _risk_pr(tmp_path, monkeypatch, capsys, cwd: Path, *args: str) -> str:
+    diff_file = tmp_path / "pr.diff"
+    diff_file.write_text(_file_diff("lib/pkg/core.py", ["X = 2"]))
+    _stub_gh(tmp_path, monkeypatch, f"cat {diff_file}\n")
+    monkeypatch.chdir(cwd)
+    assert workflow_cmd.main(["risk", "--pr", "5", *args]) == 0
+    return capsys.readouterr().out
+
+
+@pytest.mark.parametrize("origin", ["https://github.com/me/mine.git", "git@github.com:me/mine.git"])
+def test_cli_repo_matching_the_local_remote_keeps_fan_in(
+    fanin_repo, tmp_path, monkeypatch, capsys, origin
+) -> None:
+    _git_origin(fanin_repo, origin)
+    out = _risk_pr(tmp_path, monkeypatch, capsys, fanin_repo, "--repo", "me/mine")
+    assert "high fan-in" in out
+    assert "fan-in skipped" not in out
+
+
+def test_cli_repo_naming_another_repository_skips_fan_in(
+    fanin_repo, tmp_path, monkeypatch, capsys
+) -> None:
+    _git_origin(fanin_repo, "https://github.com/me/mine.git")
+    out = _risk_pr(tmp_path, monkeypatch, capsys, fanin_repo, "--repo", "other/repo")
+    assert out.splitlines()[0] == "low"
+    assert "note: fan-in skipped: --repo names another repository" in out
+
+
+def test_cli_repo_with_no_origin_or_no_git_repo_skips_fan_in(tmp_path, monkeypatch, capsys) -> None:
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    out = _risk_pr(tmp_path, monkeypatch, capsys, plain, "--repo", "other/repo")
+    assert "note: fan-in skipped: --repo names another repository" in out

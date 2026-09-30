@@ -37,6 +37,7 @@ from lore_workflow.risk import (
     diff_for_pr,
     diff_for_range,
     parse_unified_diff,
+    repo_is_local,
 )
 from lore_workflow.roadmap_validator import roadmap_counts, validate_roadmap
 from lore_workflow.seed_epic import compose_seed_lift
@@ -427,7 +428,10 @@ def risk_cmd(
         raise typer.Exit(code=1) from exc
 
     root = next((p for p in (cwd, *cwd.parents) if (p / ".git").exists()), cwd)
-    result = assess(parse_unified_diff(text), _risk_config(), root=root)
+    skip = None
+    if repo and (not (root / ".git").exists() or not repo_is_local(repo, root)):
+        skip = "fan-in skipped: --repo names another repository"
+    result = assess(parse_unified_diff(text), _risk_config(), root=root, skip_fan_in=skip)
     if as_json:
         print(json.dumps(result.to_dict()))
         return

@@ -144,6 +144,36 @@ def diff_for_pr(pr: int, *, repo: str | None = None, cwd: Path | None = None) ->
     return _run(cmd, cwd, f"gh pr diff {pr}")
 
 
+_REMOTE_RE = re.compile(r"[/:]([^/:\s]+)/([^/:\s]+?)(?:\.git)?/?$")
+
+
+def local_repo_slug(cwd: Path) -> str | None:
+    """``owner/repo`` of the checkout's ``origin`` remote, or None if unknown.
+
+    Reads ``git remote get-url origin``; handles https and ssh forms.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    match = _REMOTE_RE.search(proc.stdout.strip())
+    return f"{match.group(1)}/{match.group(2)}" if match else None
+
+
+def repo_is_local(repo: str, cwd: Path) -> bool:
+    """True when *repo* (``owner/repo``) is the checkout's own GitHub remote."""
+    slug = local_repo_slug(cwd)
+    return slug is not None and slug.lower() == repo.strip().lower()
+
+
 def diff_for_range(rev_range: str, *, cwd: Path | None = None) -> str:
     """Unified diff of a revision range such as ``main..HEAD``, via ``git diff``."""
     cmd = ["git", "diff", "--no-color", "--no-ext-diff", "-M", rev_range]
@@ -270,10 +300,17 @@ def _matches(path: str, patterns: Iterable[str]) -> str | None:
     return None
 
 
-def assess(diffs: list[FileDiff], cfg: Any, *, root: Path | None = None) -> RiskResult:
+def assess(
+    diffs: list[FileDiff],
+    cfg: Any,
+    *,
+    root: Path | None = None,
+    skip_fan_in: str | None = None,
+) -> RiskResult:
     """Grade *diffs* against *cfg* (a :class:`RiskConfig`).
 
     *root* is the repo root for the fan-in signal; None skips that signal.
+    *skip_fan_in* skips it too, with that text as the note.
     """
     reasons: list[str] = []
     notes: list[str] = []
@@ -298,7 +335,9 @@ def assess(diffs: list[FileDiff], cfg: Any, *, root: Path | None = None) -> Risk
             reasons.append(f"sensitive path: {d.path} (matches {pattern})")
 
     changed_py = [d.path for d in diffs if d.path.endswith(".py") and d.status != "A"]
-    if root is None:
+    if skip_fan_in:
+        notes.append(skip_fan_in)
+    elif root is None:
         notes.append("fan-in signal skipped: no repo root")
     elif changed_py:
         fan_in = python_fan_in(root)
