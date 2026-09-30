@@ -6,7 +6,7 @@ asserts prose. What is asserted is the machine-consumed part:
 - the filing skills point at that skill instead of prescribing filing,
 - `to-epic`'s sub-issue template carries the writing rules' own section skeleton,
 - and an epic body composed from that template's linkage fields still passes
-  the roadmap validator, which is what `orchestrate-epic` reads.
+  the roadmap validator, which is what `build` reads in `epic` mode.
 """
 
 from __future__ import annotations
@@ -24,12 +24,12 @@ SKILLS_ROOT = REPO_ROOT / "lore-workflow" / "skills"
 
 # Every skill that writes issue or PR text. `file-issue` itself does the writing.
 FILING_SKILLS = (
+    "orient",
+    "grilling",
     "to-epic",
-    "seed-epic",
-    "orchestrate-epic",
-    "implement-issue",
-    "brief",
-    "document-epic",
+    "build",
+    "document",
+    "handover",
 )
 
 # Linkage fields the roadmap table's columns are built from. Losing one of

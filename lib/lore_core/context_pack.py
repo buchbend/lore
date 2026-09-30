@@ -19,7 +19,7 @@ from typing import Any
 from lore_core.gh import gh_issue_view
 from lore_core.git import git_repo_root
 from lore_core.linkage import Linkage, classify_refs, extract_linkage
-from lore_core.repo_docs import list_docs
+from lore_core.repo_docs import list_docs, rank_docs
 from lore_core.scope_resolver import resolve_scope
 
 
@@ -92,6 +92,8 @@ def gather(
     scope = scope_obj.scope if scope_obj else ""
     wiki = scope_obj.wiki if scope_obj else ""
 
+    adrs = _matching_docs(repo_root, "adr", focus)
+    prds = _matching_docs(repo_root, "prd", focus)
     return {
         "schema": "lore.context_pack/1",
         "repo": linkage.repo,
@@ -99,7 +101,9 @@ def gather(
         "scope": scope,
         "wiki": wiki,
         "focus_issues": sorted(focus),
-        "adr": _matching_docs(repo_root, "adr", focus),
-        "prd": _matching_docs(repo_root, "prd", focus),
+        "adr": adrs,
+        "prd": prds,
+        # Paths only: ADRs, then current PRDs, then shipped PRDs (ADR 0015).
+        "ranked": rank_docs(adrs, prds),
         "epic_state": _issue_state(linkage.repo, focus),
     }

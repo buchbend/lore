@@ -154,3 +154,109 @@ def test_the_repo_files_survive_a_round_trip(tmp_path: Path) -> None:
 
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert f"## [{following}]" in release.insert_section(changelog, following, "2026-01-01", "- x")
+
+
+# --- --in-branch ------------------------------------------------------------
+
+
+def _git(cwd: Path, *args: str) -> str:
+    import subprocess
+
+    return subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+@pytest.fixture
+def shipping_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A clone with an `origin/main` and a feature branch that holds one commit."""
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", "-b", "main", str(origin))
+    work = tmp_path / "work"
+    _git(tmp_path, "clone", str(origin), str(work))
+    for name in ("user.name", "user.email"):
+        _git(work, "config", name, "test")
+    (work / ".claude-plugin").mkdir()
+    (work / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+    (work / ".claude-plugin" / "plugin.json").write_text(MANIFEST, encoding="utf-8")
+    (work / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-m", "chore: release 0.72.0")
+    _git(work, "push", "origin", "main")
+    _git(work, "checkout", "-b", "feat/thing")
+    (work / "thing.txt").write_text("x", encoding="utf-8")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-m", "feat: a thing")
+
+    monkeypatch.setattr(release, "REPO_ROOT", work)
+    monkeypatch.setattr(release, "PYPROJECT", work / "pyproject.toml")
+    monkeypatch.setattr(release, "MANIFEST", work / ".claude-plugin" / "plugin.json")
+    monkeypatch.setattr(release, "CHANGELOG", work / "CHANGELOG.md")
+    return work
+
+
+def test_in_branch_adds_one_bump_commit_on_the_current_branch(
+    shipping_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    guard_calls: list[int] = []
+    monkeypatch.setattr(release, "run_version_guard", lambda: guard_calls.append(1))
+    # No gh on PATH, and any gh call fails the test.
+    monkeypatch.setattr(release.shutil, "which", lambda name: None)
+    real_run = release.subprocess.run
+
+    def no_gh(cmd, *a, **kw):
+        assert cmd[0] != "gh", "--in-branch must not call gh"
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(release.subprocess, "run", no_gh)
+    notes = tmp_path / "notes.md"
+    notes.write_text("### Added\n\n- A thing.\n", encoding="utf-8")
+    before = _git(shipping_repo, "rev-parse", "HEAD")
+
+    assert release.main(["--in-branch", "--notes", str(notes)]) == 0
+
+    assert _git(shipping_repo, "rev-parse", "--abbrev-ref", "HEAD") == "feat/thing"
+    assert _git(shipping_repo, "rev-list", "--count", f"{before}..HEAD") == "1"
+    assert _git(shipping_repo, "log", "-1", "--format=%s") == "chore: release 0.73.0"
+    changed = set(_git(shipping_repo, "show", "--name-only", "--format=", "HEAD").splitlines())
+    assert changed == {"pyproject.toml", ".claude-plugin/plugin.json", "CHANGELOG.md"}
+    assert 'version = "0.73.0"' in (shipping_repo / "pyproject.toml").read_text()
+    assert "## [0.73.0]" in (shipping_repo / "CHANGELOG.md").read_text()
+    assert guard_calls == [1]
+    assert _git(shipping_repo, "status", "--porcelain") == ""
+    assert "feat/thing" not in _git(shipping_repo, "branch", "-r")
+
+
+@pytest.mark.parametrize("target", ["main", "--detach"])
+def test_in_branch_refuses_main_and_detached_head(shipping_repo: Path, target: str) -> None:
+    _git(shipping_repo, "checkout", *(["main"] if target == "main" else ["--detach"]))
+    with pytest.raises(SystemExit) as exc:
+        release.main(["--in-branch"])
+    assert "feature branch" in str(exc.value)
+
+
+def test_in_branch_refuses_a_branch_cut_before_main_released(
+    shipping_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """main released 0.73.0 after the branch was cut. Bumping the branch's own
+    0.72.0 would repeat main's 0.73.0, so the script stops and says why."""
+    monkeypatch.setattr(release, "run_version_guard", lambda: None)
+    _git(shipping_repo, "checkout", "main")
+    (shipping_repo / "pyproject.toml").write_text(
+        PYPROJECT.replace("0.72.0", "0.73.0"), encoding="utf-8"
+    )
+    _git(shipping_repo, "commit", "-am", "chore: release 0.73.0")
+    _git(shipping_repo, "push", "origin", "main")
+    _git(shipping_repo, "checkout", "feat/thing")
+    before = _git(shipping_repo, "rev-parse", "HEAD")
+    notes = tmp_path / "notes.md"
+    notes.write_text("### Added\n\n- A thing.\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        release.main(["--in-branch", "--notes", str(notes)])
+
+    message = str(exc.value)
+    assert "origin/main is at 0.73.0" in message
+    assert "merge main into this branch first" in message
+    assert _git(shipping_repo, "rev-parse", "HEAD") == before
+    assert _git(shipping_repo, "status", "--porcelain") == ""

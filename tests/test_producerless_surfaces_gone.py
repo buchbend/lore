@@ -415,15 +415,16 @@ def test_context_format_names_no_absent_note_document_symbol() -> None:
     assert missing == [], f"CONTEXT-FORMAT.md names absent note_document symbols: {missing}"
 
 
-def test_the_brief_skill_claims_no_session_note() -> None:
-    """The skill justified having no brief file by pointing at session notes.
-    No code writes one, so the justification names a surface that is gone.
+def test_the_orient_skill_claims_no_session_note() -> None:
+    """The retired brief skill justified having no brief file by pointing at
+    session notes. Its light mode now lives in orient; no code writes a
+    session note, so orient must not claim one either.
 
     Scoped to this one file on purpose: widening
     ``test_no_skill_claims_lore_writes_a_session_note`` to the whole
     ``lore-workflow/skills/`` tree is a separate change, and a blanket scan
     here would also flag the *correct* negative claims other skills make."""
-    text = _repo_text("lore-workflow/skills/brief/SKILL.md")
+    text = _repo_text("lore-workflow/skills/orient/SKILL.md")
     assert not re.search(r"(?<!no )session notes? (do|does)\b", text)
     assert not re.search(r"(?<!Nothing )writes a session note", text)
 

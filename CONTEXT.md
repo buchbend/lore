@@ -159,7 +159,7 @@ above:
 |---|---|
 | Publish gate over outbound text (scanners, detector, withhold) | `lore_core/publish_gate.py` |
 | Transcript capture, ledger registration, linkage stamp | `lore_curator/capture_routing.py` |
-| Note reading (used by trace, seed-epic, the gate) | `lore_core/note_document.py` |
+| Note reading (used by trace, seed-lift, the gate) | `lore_core/note_document.py` |
 | Private quarantine sidecar | `lore_core/quarantine.py` |
 | Deterministic ref verification (positive evidence only) | `lore_core/ref_verify.py` |
 | Frontmatter-only hygiene passes | `lore_curator/hygiene.py` |
@@ -175,38 +175,21 @@ above:
 
 Terms used in the workflow layer and orchestration:
 
-- **Workflow** — a skill-bundled planning chain: `seed-epic → orient →
-  grilling → to-epic → orchestrate-epic → document-epic`. Each step
-  is a callable skill, with checkpoints between shaping (human-controlled)
-  and autonomous build. See `docs/conventions.md` for the stage vocabulary,
-  artifact homes, and tier assignments.
+- **Workflow** — a skill-bundled planning chain: `orient → grilling →
+  to-epic → build → document`, with `handover` at any stop. Each step is a
+  callable skill. The human checkpoint sits between shaping and the build.
+  See `docs/conventions.md` for the stage vocabulary and tier assignments.
 - **Skill** — a callable, namespaced Claude Code automation block (e.g.,
-  `lore-workflow:orient`, `lore:verify`). Skills are registered in
+  `lore-workflow:build`, `lore:verify`). Skills are registered in
   `plugin.json` and dispatched by CLI invocation or intra-skill routing.
   Workflow skills are bundled in the `lore-workflow` plugin.
 - **Lore context pack** — synonym for `lore_context_pack` (see above).
 - **Codemap excerpt** — a bounded, ranked slice of the `lore codemap`
   output, token-budgeted (~1k tokens) and curated for a specific feature
-  or epic. Passed once at `orchestrate-epic` Map time and reused by every
-  teammate, instead of having each teammate discover symbols independently.
+  or epic. Built once at the Map step of `build` in `epic` mode and reused
+  by every teammate, instead of having each teammate discover symbols independently.
   Distinct from a full `lore_context_pack`, which joins ADRs/PRDs and epic
   state; the codemap excerpt is the code-navigation half only.
-- **Epic note** — a single note written for the orchestration
-  of an epic. The note records the roadmap DAG, per-feature tier
-  decisions, crosscheck verdicts, and any escalations. Distinct from the
-  per-feature implementation notes written by teammate agents; the epic
-  note is the orchestrator's record of supervision.
-- **Handover (session)** — a working-context handover from one Claude Code
-  session to a cold session starting fresh. The source session ends with a
-  `/lore:handover` invoke, which drafts a structured note of context
-  (problem framing, attempted paths, current blockers). A cold session
-  resumes with `/lore:continue`, which loads the handover note and carries
-  its facts into the new session's work.
-- **Handover (epic seed)** — a tracker issue linking an epic seed (the
-  source of structured context for the `orient` step). The epic seed
-  differs from a session handover. A team files the seed in the issue
-  tracker. The seed is one-time context for a shaped body of work, not
-  a carry-forward between sessions.
 - **Writing rules** — the prose style an agent uses for issue text, PR
   descriptions, PR review comments, ADR context sections and design
   documents. Session notes stay out. The document holds sentence and
@@ -262,6 +245,58 @@ and 0013, spec in PRD 0014.
   `prs`, `issues`, `commits` and `files` keys, written by capture with no
   LLM call. It is what `lore_drill` reads to answer "which sessions
   touched X" and what the SessionStart recap renders from.
+
+### Decision records and build
+
+Decisions in ADR 0014 and 0015, spec in PRD 0015.
+
+- **Home** — the one artifact that holds a kind of fact. Every other
+  artifact links to the home and does not restate the fact. ADR 0014
+  holds the table of homes.
+- **Holds** — the section of an ADR that states how strong each part of
+  the decision is. Every line is an invariant, a default or an
+  incidental. Text outside the section is background.
+- **Invariant** — a Holds line that a named test enforces. Only an
+  invariant binds an agent. A line without a test is not an invariant.
+- **Default** — a Holds line an agent follows unless the task gives a
+  reason to deviate. The agent names the deviation and the reason in
+  the PR.
+- **Incidental** — a Holds line that records how the team built the
+  decision at the time. An agent changes it freely.
+- **Amendment** — a dated entry in an ADR's Amendments section that
+  relaxes or sharpens a Holds line. A reversal of the whole decision
+  takes a new, superseding ADR instead.
+- **Shipped PRD** — a PRD whose epic merged. Its status is `shipped` and
+  its first line points at the ADRs that stay current. Retrieval ranks it
+  below ADRs and never injects it.
+- **Ledger** — the working list of one build run: ADR candidates, term
+  candidates, left-on-the-table items and resume lines. The ledger of
+  `loop` and `issue` mode lives in the worktree's git directory. The
+  ledger of `epic` mode lives in the board comment.
+- **Ledger check** — `lore workflow ledger-check`. It blocks a finish
+  point while a ledger line has no outcome: approved, dropped or filed.
+- **Finish point** — the step where a build run ends: loop wrap-up, the
+  `issue` PR, or the epic tail.
+- **Resume line** — a ledger line holding the run's state and the next
+  ask. The agent writes one after each merged round or feature.
+- **Breakpoint** — a moment after a resume line where the agent tells
+  the user that `/clear` or a compaction loses nothing.
+- **Build mode** — one of `loop`, `issue` and `epic`, the three shapes of
+  the `build` skill. `loop` is human-present rounds with local merges.
+  `issue` takes one issue to one PR. `epic` runs a roadmap with
+  teammates.
+- **Risk level** — `low` or `high`, from `lore workflow risk <pr>`. The
+  level sets the review depth. An agent raises the level and never
+  lowers it.
+- **Handover section** — the `## Handover` section of an epic issue or of
+  a build PR body. It names what
+  shipped, the decisions, the deviations from the PRD, the follow-ups and
+  the known limits. `build` writes it at the finish point. The `handover`
+  skill writes it for work that stops early.
+- **Seed issue** — a tracker issue labeled `epic-seed` that the `handover`
+  skill writes. It carries intent and findings for a cold session to
+  orient on. It is no spec.
+
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".

@@ -1,4 +1,4 @@
-"""Unit tests for `lore_workflow.diataxis` — the document-epic classification
+"""Unit tests for `lore_workflow.diataxis` — the document classification
 heuristic.
 
 Ported near-verbatim from ccat-agent-workflow's `tests/test_diataxis.py`.

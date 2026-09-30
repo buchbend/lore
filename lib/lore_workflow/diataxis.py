@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Diátaxis quadrant-classification heuristic for the document-epic skill.
+"""Diátaxis quadrant-classification heuristic for the document skill.
 
-The `document-epic` skill body is LLM-driven prose, but the part that decides
+The `document` skill body is LLM-driven prose, but the part that decides
 *which Diátaxis quadrant a given change belongs to* must be deterministic so it
 can be tested and so two runs of the skill agree. That decision lives here as a
 pure helper with no I/O and no third-party dependency (stdlib only, so it runs
@@ -16,7 +16,7 @@ The four Diátaxis quadrants (https://diataxis.fr/):
   - explanation — understanding-oriented; background, the "why", trade-offs.
 
 Hard rule encoded here and relied on by the skill: `docs/prd/` and `docs/adr/`
-are the canonical, human-owned record. `document-epic` reads them for intent but
+are the canonical, human-owned record. `document` reads them for intent but
 NEVER edits them, so they are excluded from every quadrant — `classify()`
 returns None for them regardless of where they sit under `docs/`.
 """

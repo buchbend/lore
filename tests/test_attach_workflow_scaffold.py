@@ -52,6 +52,10 @@ def test_manual_scaffold_flag_creates_docs(lore_env: Path, tmp_path: Path) -> No
     assert (repo / "docs" / "adr" / "index.md").exists()
     assert (repo / "AGENTS.md").exists()
     assert (repo / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
+    # ADR 0015: the scaffold writes the same reading rule SessionStart injects.
+    from lore_core.session_start import reading_rule
+
+    assert reading_rule() in (repo / "AGENTS.md").read_text()
 
 
 def test_manual_without_flag_does_not_scaffold(lore_env: Path, tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 """Supervision-board comment parser (#223).
 
-The board comment is the durable supervision trail `/orchestrate-epic` edits in
+The board comment is the durable supervision trail `build` (epic mode) edits in
 place. A resumed run must read prior state structurally, not by model-scraping
 the Markdown. This parser is the contract feature #228 will EMIT against: the
 marker, the required columns, and this fixture are that contract.

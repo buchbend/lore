@@ -30,7 +30,7 @@ def test_existing_claude_md_migrated_to_agents_md(tmp_path: Path) -> None:
     (tmp_path / "CLAUDE.md").write_text(original, encoding="utf-8")
     mod.scaffold(tmp_path)
     agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
-    assert original.strip() == agents.strip()
+    assert agents.startswith(original)
     assert (tmp_path / "CLAUDE.md").read_text(encoding="utf-8").strip() == "@AGENTS.md"
 
 
@@ -100,3 +100,29 @@ def test_idempotent_full_rerun_is_noop(tmp_path: Path) -> None:
 def test_scaffold_returns_whether_anything_changed(tmp_path: Path) -> None:
     assert mod.scaffold(tmp_path) is True
     assert mod.scaffold(tmp_path) is False
+
+
+# --- ADR 0015 reading rule in AGENTS.md -----------------------------------
+
+
+def test_scaffold_writes_the_reading_rule_into_agents_md(tmp_path: Path) -> None:
+    from lore_core.session_start import reading_rule
+
+    rule = reading_rule()
+    assert rule.startswith("ADRs and PRDs explain where the code comes from.")
+    mod.scaffold(tmp_path)
+    assert rule in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_scaffold_appends_the_reading_rule_to_an_existing_agents_md_once(
+    tmp_path: Path,
+) -> None:
+    from lore_core.session_start import reading_rule
+
+    (tmp_path / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("# Guide\n\nHouse rules.\n", encoding="utf-8")
+    mod.scaffold(tmp_path)
+    mod.scaffold(tmp_path)
+    agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert agents.startswith("# Guide\n\nHouse rules.\n")
+    assert agents.count(reading_rule()) == 1

@@ -1,281 +1,212 @@
 # Conventions
 
-The canonical conventions for the `lore-workflow` planning chain: what the
-chain's steps are, where every artifact it produces lives, and the vocabulary
-it uses. A repo that adopts `lore-workflow` speaks this language — PRDs, ADRs,
-the agent guide, and epics all land in the same places, regardless of which
-repo the chain is run in.
-
-It answers two questions:
-
-1. **What is the workflow chain** — the steps, bundled or not.
-2. **Where does each artifact live.**
+The conventions of the `lore-workflow` chain: the steps, where each fact
+lives, which stage runs at which tier, and the terms the chain uses. A repo
+that adopts `lore-workflow` speaks this language.
 
 For the tier-resolution mechanics (which model a semantic tier maps to on
-which host), see [`docs/model-tiers.md`](model-tiers.md); this page only fixes
-which *stage* runs at which tier.
+which host), see [`docs/model-tiers.md`](model-tiers.md). This page only names
+the tier of each stage.
 
 ---
 
 ## The workflow chain
 
-A piece of work flows through a fixed chain of skills. Each step hands off to
-the next; the human is the checkpoint between *shaping* and *autonomous
-build*.
+A piece of work flows through a chain of skills. The human is the checkpoint
+between shaping and the autonomous build.
 
 ```
-seed-epic → orient → grilling → to-epic → orchestrate-epic → document-epic
+orient → grilling → to-epic → build → document
 ```
+
+`handover` runs at any stop.
 
 | Step | What it does |
 |------|--------------|
-| `seed-epic` | End-of-session capture: distils hard-won context into a GitHub **epic seed** issue a cold session can `orient` on. A discussion seed, not a spec. |
-| `orient` | First step of any work. The session does its own homework with read-only subagents, then reflects its understanding back for confirmation. Explores; does not implement or fix scope. |
-| `grilling` | A relentless, one-question-at-a-time interview that stress-tests a plan. Default mode ("grill me") checks whether `domain-modeling` is needed at the end; "grill with docs" mode runs it alongside the interview from the start, sharpening terminology and updating `CONTEXT.md`/ADRs inline. |
-| `to-epic` | The human checkpoint. Turns a shaped plan into an **epic tracker** issue (linking a PRD under `docs/prd/`) plus one sub-issue per feature, emitting the canonical roadmap DAG `orchestrate-epic` consumes. |
-| `orchestrate-epic` | Fully autonomous: fans out one test-first teammate per feature, crosschecks every pull request, integrates onto an `epic/<n>` branch in dependency order, and lands one final pull request to the detected target branch. |
-| `document-epic` | Runs as `orchestrate-epic`'s **automatic pre-merge stage** (see below), not a manual step. Commits the Diátaxis docs onto the epic branch so they ship in the epic PR; standalone it catches up an already-merged epic via a docs PR. |
-| `tdd` | The red→green→refactor loop every implementation teammate follows. |
+| `orient` | The first step. The session does its own homework, then reflects its understanding back for confirmation. A light mode ("brief me") pulls only the context pack and hands one change to `build`. |
+| `grilling` | An interview that stress-tests a plan. It also sharpens the domain model: it writes approved terms into `CONTEXT.md` and ADRs with `Holds` and `Revisit if`. |
+| `to-epic` | The human checkpoint. Writes the PRD under `docs/prd/`, the epic tracker issue and one sub-issue per feature, with the roadmap table `build` reads. |
+| `build` | Builds code in one of three modes. See below. |
+| `document` | Brings the Diátaxis docs in line with the code. At the epic tail it runs before the merge and marks the PRD shipped. |
+| `handover` | Writes the handover section for work that stops before its finish point, and turns follow-up work into a seed issue. |
+| `tdd` | The red-green-refactor loop every `build` mode follows. |
+| `debug` | Root-cause debugging with a circuit breaker after three failed fixes. |
+| `file-issue` | Writes issue text and PR bodies under the writing rules and files them. |
 
-`code-review` is a **built-in** Claude Code command, not a bundled skill —
-the workflow uses it but does not ship it.
+`code-review` is a built-in Claude Code command, not a bundled skill. The
+workflow uses it but does not ship it.
 
-`implement-issue` is a **track beside this chain, not a step in it** — the
-fast path for one well-understood issue, keeping the same discipline (strict
-TDD, ADR check, Diátaxis docs pass) at single-issue weight.
+### Build modes
 
-`super-orchestrate` sits **one level above `orchestrate-epic`**. It takes
-several epics, maps the dependencies between them, and hands each epic to an
-**epic lead** running `orchestrate-epic`. A downstream epic starts after its
-upstream epics merge. Epics that only touch the same files run in
-parallel; the epic lead that merges second reconciles both in a fix step.
+| Mode | Use when | Finish point |
+|------|----------|--------------|
+| `loop` | The user reacts to a running feature in fast rounds. | One wrap-up PR from `loop/<slug>`. Rounds merge locally; nothing else reaches the remote. |
+| `issue` | One written, clear issue. | One PR. The user merges it. |
+| `epic` | An epic tracker issue with a roadmap. | The epic PR, then the handover section in the epic issue. |
 
-`quick-orchestrate` is a **light variant of `orchestrate-epic`**, run only on
-the human's request. The lead writes the slices that share new code itself and
-delegates only independent slices. Teammates commit without a PR, and the lead
-merges them locally into `epic/<n>`. One independent reviewer and the docs pass
-run on the single epic PR, and the human merges it.
+Every mode keeps a ledger of ADR candidates, term candidates and
+left-on-the-table items. `lore workflow ledger-check` blocks each finish
+point while a line is still open. After each merged round or feature the
+agent writes a resume line, and `/clear` is then safe. See
+[the ledger reference](architecture/ledger.md).
 
-`quick-feedback-loop` is a **track for small iterative work** with the human
-watching the live dev stack. Each round is test-first in a worktree and merges
-locally into `develop` or `main`, with no PR. ADR and glossary candidates
-collect on a ledger. At wrap-up the human approves them, the agent writes them,
-and a Diátaxis docs pass runs.
+Several epics take one `build` run each. Start a downstream epic after its
+upstream epic merged.
 
-**Bundled skills:** `ccat-workflow-init`, `seed-epic`, `orient`, `grilling`,
-`domain-modeling`, `to-epic`, `orchestrate-epic`, `document-epic`, `tdd`,
-`debug`, `implement-issue`, `super-orchestrate`, `quick-orchestrate`, `quick-feedback-loop`, `brief`, `consolidate-docs`,
-`file-issue` — all
-shipped as `lore-workflow:<name>` skills. `ccat-workflow-init` is a one-time
-onboarding scaffold, not part of the per-epic chain above; see
+Onboard a repo once with `lore attach --scaffold-workflow`. See
 [Onboard a repo](how-to/onboard-a-repo.md).
 
 ---
 
-## Artifact homes
+## Where each fact lives
 
-Every workflow artifact has exactly one canonical home:
+ADR 0014 holds the table of homes: which artifact holds each kind of fact,
+and who writes it. See
+[ADR 0014 § Decision](adr/0014-one-home-per-fact.md#decision). Other
+artifacts link to the home and do not restate the fact.
 
-| Artifact | Canonical home | Format |
-|----------|----------------|--------|
-| PRD (source of truth) | `docs/prd/NNNN-kebab.md` | MyST Markdown |
-| ADR | `docs/adr/NNNN-kebab.md` | MADR-lite |
-| Epic | GitHub issue (tracker) | issue body, *links* the PRD |
-| Sub-issue | GitHub issue | one per feature |
-| Per-repo agent guide | `AGENTS.md` (repo root) | Markdown, canonical |
-| Agent guide shim | `CLAUDE.md` (repo root) | one-line `@AGENTS.md` import |
+Placement details the table leaves out:
 
-`NNNN` is zero-padded (`0001`, `0002`, ...).
-
-**PRD stays in the repo, not the issue body.** `docs/prd/NNNN-kebab.md` is
-MyST Markdown; the GitHub epic **links** the PRD rather than embedding it —
-the issue body carries the roadmap DAG and sub-issue checklist, while the PRD
-carries the durable spec. This keeps the spec versioned and reviewable in
-PRs, rather than frozen in an issue body. `lore workflow create-prd` writes
-the file and wires it into `docs/prd/index.md` idempotently — see
-[`to-epic`](../lore-workflow/skills/to-epic/SKILL.md).
-
-**ADR** lives at `docs/adr/NNNN-kebab.md` in **MADR-lite** form — Context,
-Decision, Consequences / Trade-offs, Alternatives considered, plus a Status
-line.
-
-**Bidirectional cross-references** tie the chain together so any node reaches
-the others:
-
-```
-PRD ↔ epic issue ↔ ADR ↔ sub-issue
-```
-
-The PRD links the epic and any ADR it depends on; the epic links the PRD and
-its sub-issues; an ADR links the PRD/epic it records; each sub-issue links
-back to the epic.
+- A PRD is `docs/prd/NNNN-kebab.md` in MyST Markdown. `lore workflow
+  create-prd` writes the file and wires it into `docs/prd/index.md`. `NNNN`
+  is zero-padded (`0001`, `0002`).
+- An ADR is `docs/adr/NNNN-kebab.md` in the format of the ADR template in the
+  `grilling` skill. [Record a decision](how-to/record-a-decision.md) walks
+  through `Holds` and `lore lint adr`.
+- The epic issue links the PRD and does not embed it. See
+  [Why the PRD lives in the repo](explanation/why-prd-in-repo.md).
+- Cross-references run both ways: PRD, epic issue, ADR and sub-issue each
+  link the others.
 
 ### Per-repo agent guide
 
-Each repo carries one canonical agent guide, **`AGENTS.md`**, at the root —
-project-specific instructions for any coding agent. **`CLAUDE.md` becomes a
-one-line shim** that re-exports it:
+Each repo carries one agent guide, **`AGENTS.md`**, at the root. `CLAUDE.md`
+is a one-line shim that imports it:
 
 ```markdown
 @AGENTS.md
 ```
 
-This keeps a single source of truth (`AGENTS.md`) while staying compatible
-with Claude Code's `CLAUDE.md` auto-load. `lore attach --scaffold-workflow`
-(and the `ccat-workflow-init` skill, a thin pointer at the same command)
-migrates an existing `CLAUDE.md` into this shape.
+Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore attach
+--scaffold-workflow` moves an existing `CLAUDE.md` into this shape.
 
-### gh-epic-as-tracker
+### The epic issue as tracker
 
-The GitHub epic issue is a coordination surface, not a spec:
+The GitHub epic issue coordinates the work. It is not the spec:
 
-- a one-paragraph problem/solution summary, linking the PRD;
-- the roadmap DAG (`# | Feature | Issue | Repo | Type | Blocked by`);
-- a checklist of sub-issues for the parallel-batch plan.
+- a one-paragraph summary that links the PRD;
+- the roadmap table (`# | Feature | Issue | Repo | Type | Blocked by`);
+- a checklist of the sub-issues.
 
-`orchestrate-epic` reads the tracker — specifically the roadmap DAG — to
-decide fan-out order. The detailed spec stays in the linked PRD; the tracker
-stays the coordination surface.
+`build` reads the roadmap table to order the features. At the finish point
+it writes the handover section into the epic issue body.
 
 ### Reading the tracker with `gh`
 
-Read epic and sub-issue bodies through the JSON API, never the rendered text
-view: `gh issue view <n> --json body -q .body` (same for PR bodies and
-comments). The plain-text view times out on large trackers.
+Read issue and PR bodies through the JSON API, not the rendered text view:
+`gh issue view <n> --json body -q .body`. The plain-text view times out on
+large trackers.
 
 ---
 
-## `document-epic`'s auto stage
+## Docs at the epic tail
 
-`document-epic` is **not a manual step**. It runs as an `orchestrate-epic`
-subagent stage **before the epic PR lands** (ADR 0005):
+`document` runs inside the `build` epic tail, before the epic PR merges
+(ADR 0005):
 
-1. The epic's feature PRs are integrated into `epic/<n>` and its CI is green.
-2. `orchestrate-epic` dispatches `document-epic` in **pre-merge mode**: it
-   generates the Diátaxis docs for the cumulative diff and **commits them
-   onto the epic branch** — no separate docs PR.
-3. The docs ship inside the epic PR: the whole-epic review sees them and the
-   epic's CI gates them. Docs stop being an afterthought that trails the
-   merge.
-4. Fallback: if the docs stage escalates or cannot go green, the epic lands
-   without it and standalone `document-epic` runs afterwards — its own docs
-   PR, auto-merged on green, human review post-hoc. Docs never block a green
-   epic.
+1. Every feature PR merged into `epic/<n>`, and its CI is green.
+2. `document` in pre-merge mode updates the Diátaxis docs for the whole
+   diff. It commits them onto the epic branch. No separate docs PR.
+3. `document` runs `lore workflow prd-ship` to set the PRD's status to
+   `shipped`.
+4. For an epic with three or more features, the whole-epic reviewer checks
+   the docs commit against the behaviour.
+5. When the docs step fails, the epic merges without it. `document` then
+   runs in catch-up mode and opens its own docs PR.
 
-Standalone invocation (pointing it at an already-merged epic) remains the
-catch-up path and keeps the old behavior: docs PR, auto-merge on green.
-
-### Diátaxis handoff
-
-`document-epic` produces the Diátaxis four, and only these:
+`document` produces the Diátaxis four:
 
 | Quadrant | What | Where |
 |----------|------|-------|
 | Tutorial | learning-oriented walkthrough | `docs/tutorials/` |
 | How-to guide | task-oriented recipe | `docs/how-to/` |
-| Reference | docstrings + code-level reference | code + `docs/` |
+| Reference | docstrings and code-level reference | code and `docs/` |
 | Explanation | understanding-oriented background | `docs/explanation/` |
 
-**`document-epic` NEVER touches `docs/prd/` or `docs/adr/`.** Those are the
-human-owned record of intent and decisions — `to-epic` and ADR authorship
-write them; `document-epic` only reads them for context.
+`document` does not edit the content of `docs/prd/` or `docs/adr/`. The one
+exception is the status change `prd-ship` makes.
 
 ---
 
 ## Model tiers
 
-Every delegation point in the workflow selects a **semantic tier**
-(`frontier` / `strong` / `mid` / `cheap`), never a concrete model name. The
-tiers, the per-host resolution table, the ordinal/collapse rule, the
-fallback behavior, and the cheap-reservation rule all live in
-[`docs/model-tiers.md`](model-tiers.md) and are resolved via
-`lore tier resolve <tier>`. This section fixes *which stage runs at which
-tier* and *how strictly the mapping is enforced* — see also
-[`lore-workflow/TIER-DELEGATION.md`](../lore-workflow/TIER-DELEGATION.md) for
-the shared spawn-resolution boilerplate every skill points back to.
+Every delegation point names a semantic tier (`frontier`, `strong`, `mid`,
+`cheap`), never a concrete model. `lore tier resolve <tier>` resolves it. The
+rules for each tier live in [`docs/model-tiers.md`](model-tiers.md). The spawn
+rules every skill shares live in
+[`lore-workflow/TIER-DELEGATION.md`](../lore-workflow/TIER-DELEGATION.md).
 
-### Stage → tier
+### Stage and tier
 
 | Stage | Tier |
 |-------|------|
-| Orchestration | `frontier` |
-| Grilling / synthesis | `frontier` |
-| Exploration / gathering | `mid` |
-| Implementation — mechanical | `mid` |
-| Implementation — architectural, ambiguous, cross-cutting | `strong` |
-| Crosscheck / review | `strong` |
+| `build` epic orchestration | `frontier` |
+| `grilling`, `handover` | `frontier`, in the main session |
+| Exploration in `orient` | `mid` |
+| Implementation, mechanical | `mid` |
+| Implementation, architectural or cross-cutting | `strong` |
+| Review of a PR at risk level `low` | `mid` |
+| Review of a PR at risk level `high` | `strong` |
+| Loop wrap-up advisory pass | `strong` |
+| Loop background suite | `cheap` |
 
-`cheap` appears in no row: it is reserved explicitly for bulk-mechanical
-sub-tasks and is **no stage's default** (see `docs/model-tiers.md`).
+`lore workflow risk <pr>` sets the risk level from the diff. An agent may
+raise the level and does not lower it. CI and ruff status come from `gh pr
+checks`, not from the reviewer.
 
-### Enforcement: REQUIRED vs ADVISORY
+### Required and advisory
 
-The mapping is enforced at two strengths:
-
-- **REQUIRED** — every run: the **exploration / gathering** tier (`mid`) and
-  the **crosscheck / review** tier (`strong`); and the rule that **no
-  delegation ever inherits the session model implicitly** — every spawn
-  names a tier *and* resolves it to a concrete model in the spawn call
-  itself (see "Resolution at spawn time" in `docs/model-tiers.md`; tier
-  prose alone resolves nothing). `tests/test_workflow_plugin_structural.py`
-  enforces the no-hardcoded-model-name half of this mechanically.
-- **ADVISORY** — the table is the default for the **implementation-teammate**
-  tiers (mechanical vs. architectural/cross-cutting); a deviation is allowed
-  but recorded in the supervision trail.
-
-For the REQUIRED categories, inadequate output at a tier is retried **once**
-at the next tier up (**T+1**); a second inadequate result is not escalated
-again — it is raised as a blocker instead.
+- **Required:** the exploration tier, the review tier that the risk level
+  sets, and the rule that no spawn inherits the session model. Every spawn
+  names a tier and passes the resolved model in the spawn call.
+  `tests/test_workflow_plugin_structural.py` checks that no skill names a
+  concrete model.
+- **Advisory:** the implementation-teammate tiers. A deviation is allowed.
 
 ---
 
 ## House style for human-facing output
 
-The prose rules for issue bodies, PR bodies, status comments, and reports
-live in the writing rules, not here. Run `lore style show writing-rules`
-to print the version that applies to the current repo, and follow it before
-writing or editing any such artifact. Every skill that writes a human-facing
-artifact inherits this rule; it is not opt-in per skill.
+The writing rules hold the prose rules for issue bodies, PR bodies, ADRs,
+PRDs, docs and the handover section. Run `lore style show writing-rules` to
+print the version for the current repo. Every skill that writes team-facing
+text runs the command first.
 
-This does not touch the workflow's own terms of art (`AFK`, `HITL`, and the
-machine-read table columns) — those stay precise and unchanged so tooling
-that checks them keeps working. The writing rules are about the surrounding prose
-a human reads.
+The workflow's terms of art (`AFK`, `HITL`, the machine-read table columns)
+stay as they are. Tools read them.
 
 ## Glossary
 
-Plain-English definitions of the workflow's terms of art. The terms
-themselves stay — they are precise and machine-checked (the roadmap
-validator reads the literal `AFK`/`HITL` tokens, for example) — these
-definitions just remove the decoding cost for a reader meeting them for the
-first time.
+Plain definitions of the workflow's terms of art. Domain terms live in the
+repo's `CONTEXT.md`.
 
-- **tracer bullet** — a thin slice of a feature, built end-to-end, that
-  proves the approach works before the feature is built out further.
+- **tracer bullet** — a thin slice of a feature, built end to end, that
+  proves the approach before the feature grows.
 - **vertical slice** — a piece of work that cuts through every layer (data,
   logic, UI) instead of one layer at a time.
-- **AFK** — "away from keyboard": the feature runs autonomously, no human
-  input needed.
-- **HITL** — "human-in-the-loop": the feature needs a human decision or
+- **AFK** — "away from keyboard": the feature runs without human input.
+- **HITL** — "human in the loop": the feature needs a human decision or a
   design review.
-- **crosscheck** — the strong-tier review a delegated reviewer performs on a
-  teammate's PR before merge.
-- **fan out** — dispatch multiple teammate agents to work in parallel, one
-  per feature.
-- **green / red** — a test suite that passes / fails; shorthand for the
-  TDD loop.
-- **deploy gate** — a marker a repo declares that requires human
-  confirmation before a merge that would deploy, instead of merging
-  automatically.
-- **supervision trail** — the durable, on-GitHub record of what an
-  autonomous run did: status comments, crosscheck verdicts, tier
-  escalations.
-- **epic seed** — a tracker issue capturing a session's context for a cold
-  session to `orient` on; not yet a formed spec.
-- **epic lead** — a subagent that `super-orchestrate` spawns to run
-  `orchestrate-epic` on one epic; it reports to the supervisor, never to the
-  human.
-- **tier floor** — one tier a caller sets for every spawn of a run, replacing
-  the per-stage tier choices; `super-orchestrate` sets `frontier` by default.
-- **cold session** — a fresh session with no memory of prior conversation,
-  starting only from the repo and issue it is pointed at.
+- **review** — the check a delegated reviewer runs on a PR before the merge:
+  correctness, acceptance criteria, scope.
+- **fan out** — dispatch several teammate agents in parallel, one per
+  feature.
+- **green / red** — a test suite that passes or fails.
+- **deploy gate** — a marker in a repo that asks for human confirmation
+  before a merge that deploys.
+- **board** — the one status comment on an epic issue: the feature table,
+  the ledger section and the notes on blockers and escalations.
+- **seed issue** — a tracker issue that `handover` writes for a cold
+  session to `orient` on. It is not a spec yet. Label: `epic-seed`.
+- **cold session** — a fresh session with no memory of an earlier
+  conversation. It starts only from the repo and the issue it gets.

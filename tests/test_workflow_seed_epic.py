@@ -1,4 +1,4 @@
-"""Tests `lore_workflow.seed_epic` — Origin/Findings lift for `/lore-workflow:seed-epic`.
+"""Tests `lore_workflow.seed_epic` — Origin/Findings lift for `/lore-workflow:handover`.
 
 The seed's Origin and Findings sections are lifted straight from the
 current session's note (linkage + chapter body) instead of being

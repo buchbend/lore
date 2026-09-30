@@ -44,12 +44,19 @@ EXPECTED_DIRECTIVE_LINES = [
     ),
     ("- A fact for a wiki topic note becomes a pull request on the wiki repo."),
     (
-        "- An ADR, a PRD or a wiki topic-note edit outside a grilling or "
-        "domain-modeling session is a pull request. A human merges it; "
-        "never merge it yourself."
+        "- An ADR, a PRD or a wiki topic-note edit outside a grilling "
+        "session is a pull request. A human merges it; never merge it "
+        "yourself."
     ),
     "- Close only issues you opened; never change the state of a human's issue or PR.",
     ("- At session end, list every artifact the session opened or commented on."),
+    (
+        "- ADRs and PRDs explain where the code comes from. Read them as "
+        "context. Only `Invariant` lines bind, and a test enforces each one. "
+        "When a task conflicts with a default or with an ADR's reasoning, "
+        "deviate and name the deviation in the PR. Propose an amendment when "
+        "a rule looks out of date."
+    ),
     "",
 ]
 
@@ -151,3 +158,36 @@ def test_session_start_shield_catches_unexpected_exception(monkeypatch, capsys):
     # Actionable hints are the whole point of the shield.
     assert "lore install --upgrade" in full
     assert "lore doctor" in full
+
+
+# --- the ADR 0015 reading rule -------------------------------------------
+
+#: ADR 0015's reading rule, word for word.
+READING_RULE = (
+    "ADRs and PRDs explain where the code comes from. Read them as context. "
+    "Only `Invariant` lines bind, and a test enforces each one. When a task "
+    "conflicts with a default or with an ADR's reasoning, deviate and name the "
+    "deviation in the PR. Propose an amendment when a rule looks out of date."
+)
+
+
+def test_reading_rule_is_read_from_the_directive_template():
+    from lore_core.session_start import reading_rule
+
+    assert reading_rule() == READING_RULE
+    assert f"- {READING_RULE}" in _load_directive_lines()
+
+
+def test_session_start_in_an_attached_repo_carries_the_reading_rule(monkeypatch, tmp_path):
+    from lore_core import session_start
+
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
+    block = {"wiki": wiki.name, "scope": wiki.name, "backend": None, "issues": None, "prs": None}
+    out = session_start.session_start_from_lore(
+        str(tmp_path), (tmp_path / "CLAUDE.md", block), tmp_path
+    )
+
+    assert out is not None
+    assert READING_RULE in out

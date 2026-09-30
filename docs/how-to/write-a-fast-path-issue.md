@@ -1,8 +1,7 @@
 # Write a good fast-path issue
 
 **Goal:** write a GitHub issue that the [fast path](use-the-fast-path.md)
-(`/lore-workflow:implement-issue`) can pick up and implement directly, with
-no back-and-forth.
+(`/lore-workflow:build` in `issue` mode) can implement with no back-and-forth.
 
 Run `lore style show writing-rules` and follow its section skeleton and EARS
 acceptance criteria. The rules are the source of truth for issue-body

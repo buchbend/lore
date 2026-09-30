@@ -48,19 +48,21 @@ dependency only runs one way — nothing in `lore` core imports or requires
 The chain it bundles:
 
 ```
-seed-epic → orient → grilling → to-epic → orchestrate-epic → document-epic
+orient → grilling → to-epic → build → document
 ```
 
-with `implement-issue` as a lighter-weight track for one well-understood
-issue, and `tdd` as the discipline every implementation teammate follows.
-See [`docs/conventions.md`](docs/conventions.md) for the full chain, the
-artifact-home contract (PRD/ADR/`AGENTS.md` placement), and the tier
-vocabulary; [`docs/how-to/`](docs/how-to/) for task recipes
-(run an epic, use the fast path, resume a broken epic, onboard a repo,
-file facts as artifacts, search notes and issues);
-[`docs/explanation/`](docs/explanation/) for the
-reasoning behind the design; and
-[`lore-workflow/README.md`](lore-workflow/README.md) for the skill roster.
+with `handover` at any stop. `build` runs in three modes: `loop` for fast
+rounds, `issue` for one clear issue, `epic` for a roadmap. `tdd` is the
+discipline every mode follows.
+More reading:
+
+- [`docs/conventions.md`](docs/conventions.md): the full chain, where each
+  fact lives, and the tier vocabulary.
+- [`docs/how-to/`](docs/how-to/): task recipes. Run an epic, use the fast
+  path, resume a build run, onboard a repo, file facts as artifacts, search
+  notes and issues, record a decision, measure token use.
+- [`docs/explanation/`](docs/explanation/): the reasons behind the design.
+- [`lore-workflow/README.md`](lore-workflow/README.md): the skill roster.
 
 Install both from this one marketplace:
 
@@ -332,6 +334,9 @@ command.
 `lore trace <selector>` renders the chronological, correlated story of one
 unit of work for a trace_id, a session_id, or a note path /
 `[[wikilink]]`.
+
+`lore trace tokens <session>` prints token totals per skill or subagent phase
+of one session ([how to measure token use](docs/how-to/measure-token-use.md)).
 
 `lore log` / `lore news` / `lore runs` / `lore proc` have been removed —
 their debugging role is fully absorbed by `lore trace` / `lore status`
