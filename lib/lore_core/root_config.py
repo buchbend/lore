@@ -193,8 +193,36 @@ def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:
         current = getattr(target, key)
         if is_dataclass(current) and isinstance(value, dict):
             _merge(current, value, f"{path}.{key}" if path else key, source)
+        elif is_dataclass(current):
+            qualified = f"{path}.{key}" if path else key
+            warnings.warn(
+                f"root_config: {qualified!r} must be a mapping in {source}; using defaults",
+                stacklevel=3,
+            )
         else:
             setattr(target, key, value)
+
+
+def _validate_risk(risk: RiskConfig, source: Path) -> None:
+    """Repair ``workflow.risk`` values of the wrong type, warning for each."""
+    defaults = RiskConfig()
+
+    def warn(key: str, why: str) -> None:
+        warnings.warn(f"root_config: workflow.risk.{key} {why} in {source}", stacklevel=3)
+
+    for key in ("max_lines", "max_files", "fanin_top_fraction"):
+        value = getattr(risk, key)
+        number = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if not number or value <= 0:
+            warn(key, f"must be a positive number, got {value!r}; using {getattr(defaults, key)}")
+            setattr(risk, key, getattr(defaults, key))
+    paths = risk.sensitive_paths
+    if isinstance(paths, str):
+        warn("sensitive_paths", "must be a list of globs, got a string; treating it as one glob")
+        risk.sensitive_paths = [paths]
+    elif not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+        warn("sensitive_paths", f"must be a list of globs, got {paths!r}; using the defaults")
+        risk.sensitive_paths = list(defaults.sensitive_paths)
 
 
 def load_root_config(lore_root: Path) -> RootConfig:
@@ -216,6 +244,7 @@ def load_root_config(lore_root: Path) -> RootConfig:
         warnings.warn(f"root_config: top-level must be a mapping at {path}", stacklevel=2)
         return cfg
     _merge(cfg, raw, "", path)
+    _validate_risk(cfg.workflow.risk, path)
     return cfg
 
 

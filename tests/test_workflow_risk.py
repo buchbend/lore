@@ -205,3 +205,18 @@ def test_cli_range_reads_git_diff(tmp_path, monkeypatch, capsys) -> None:
 def test_cli_needs_exactly_one_input(capsys) -> None:
     assert workflow_cmd.main(["risk"]) == 1
     assert "one of --pr, --range or --diff" in capsys.readouterr().err
+
+
+def test_cli_risk_survives_a_bad_risk_config(tmp_path, monkeypatch, capsys) -> None:
+    lore_root = tmp_path / "root"
+    (lore_root / ".lore").mkdir(parents=True)
+    (lore_root / ".lore" / "config.yml").write_text(
+        "workflow:\n  risk:\n    max_files: x\n    sensitive_paths: '**/billing/**'\n"
+    )
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+    diff_file = tmp_path / "pr.diff"
+    diff_file.write_text(_file_diff("README.md", ["hello"]))
+    monkeypatch.chdir(tmp_path)
+    rc = workflow_cmd.main(["risk", "--diff", str(diff_file)])
+    assert rc == 0
+    assert capsys.readouterr().out.splitlines()[0] == "low"
