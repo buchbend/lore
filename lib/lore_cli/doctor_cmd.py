@@ -261,6 +261,19 @@ def _check_claude_plugin_cache_drift(cwd: str) -> Check:
     if cache_version == installed:
         return True, f"Claude plugin cache {cache_version} matches pip"
 
+    from lore_cli.install_cmd import _version_tuple
+
+    try:
+        plugin_behind = _version_tuple(cache_version) < _version_tuple(installed)
+    except ValueError:
+        plugin_behind = False
+    if plugin_behind:
+        return False, (
+            f"Claude plugin cache is {cache_version} but pip-installed lore is "
+            f"{installed}. The plugin is behind. Run: claude plugin marketplace "
+            "update lore && claude plugin update lore@lore, then restart Claude Code."
+        )
+
     return False, (
         f"Claude plugin cache is {cache_version} but pip-installed lore is "
         f"{installed}. SessionStart's banner will report `{installed}` "

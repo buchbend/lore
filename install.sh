@@ -75,7 +75,13 @@ run_install() {
         pipx)
             if already_installed; then
                 say "Upgrading lore via pipx (source: $LORE_FROM)"
-                pipx install --force "$LORE_FROM"
+                # No `--force` reinstall: when pipx builds venvs with uv,
+                # uv refuses to create one over the existing venv and the
+                # upgrade dies. Uninstall + install is what `pipx reinstall`
+                # does and works with both venv backends.
+                pipx uninstall lore >/dev/null
+                pipx install "$LORE_FROM" \
+                    || die "pipx install failed after removing the old lore. Re-run: pipx install \"$LORE_FROM\""
             else
                 say "Installing lore via pipx (source: $LORE_FROM)"
                 pipx install "$LORE_FROM"
@@ -135,6 +141,9 @@ fi
 if [ "$HAS_PLUGIN" -eq 1 ]; then
     say "Refreshing Claude plugin cache (integrations already configured)..."
     if command -v claude >/dev/null 2>&1; then
+        # `plugin update` resolves against the local marketplace catalog;
+        # refresh it first or the update can report the old version as latest.
+        claude plugin marketplace update lore || warn "claude plugin marketplace update lore failed"
         claude plugin update lore@lore || warn "claude plugin update failed; run it manually"
         # lore-workflow versions independently; without its own refresh the
         # installed skills silently stay on the old version.
@@ -144,7 +153,9 @@ if [ "$HAS_PLUGIN" -eq 1 ]; then
     else
         warn "claude CLI not found; run: claude plugin update lore@lore (and lore-workflow@lore if installed)"
     fi
-    say "Done. Restart Claude Code to load the refreshed plugin."
+    say "Done. The lore CLI is live now."
+    say "Running Claude Code sessions keep the old plugin (skills, hooks, MCP server) until restarted:"
+    say "  /exit, then 'claude --continue' to resume the same conversation."
 else
     say "Starting the lore init wizard..."
     exec lore init
