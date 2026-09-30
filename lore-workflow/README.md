@@ -29,5 +29,6 @@ The chain: `orient → grilling → to-epic → build → document`, with `hando
 | `document` | Bring the Diátaxis docs in line with the code: pre-merge, catch-up, or a plan-approved consolidation of a docs tree. Marks a shipped PRD at the epic tail. |
 | `handover` | Write the handover section for work that stops early, and turn follow-up work into a seed issue. |
 | `file-issue` | Writes issue text and files it: resolve the writing rules, draft, Vale-lint, then post the issue or PR body. |
+| `triage` | Reviews every open issue and PR of a repo against the code, gives each a verdict, and presents one filterable page for discussion. Review only until the user decides. |
 
 Onboard a repo with `lore attach --scaffold-workflow`.
