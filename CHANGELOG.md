@@ -8,6 +8,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.80.0] - 2026-09-30
+
+Ships `lore-workflow` 0.12.0.
+
+### Added
+
+- **`lore-workflow:triage <owner>/<repo>`** reviews every open issue and
+  open PR against the code at HEAD. Lens subagents (security, architect,
+  ops) give each issue one of six verdicts with evidence. The skill
+  re-checks the high-impact claims, confirms each open issue appears once,
+  and builds one filterable page with the repo state, a `Critical` list,
+  untracked risks, PR recommendations and open questions. It changes
+  nothing on GitHub until the user decides.
+- **The triage page takes decisions.** Each issue, PR and risk gets decision
+  buttons and a comment field; `j`/`k` step through the entries. A panel at
+  the bottom builds a `triage answer` prompt with a Copy button. Pasted back
+  into the session, each line approves its own action.
+
 ## [0.79.0] - 2026-09-30
 
 Ships `lore-workflow` 0.11.0.
