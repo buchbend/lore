@@ -8,6 +8,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.79.0] - 2026-09-30
+
+Ships `lore-workflow` 0.11.0.
+
+### Changed
+
+- **`build` merges after the user approves.** At the finish point of an
+  `issue` run, a `loop` wrap-up or a human-present epic, the agent posts the
+  PR link, the changed files, the review verdict, the checks and the ledger
+  outcomes, and asks whether to merge. On a clear yes it merges and reports
+  the merge SHA. Silence is not a yes. The user can still merge on GitHub.
+
 ## [0.78.0] - 2026-09-30
 
 Deletes the owner-approved candidates from `docs/code-sweep.md` (#423).
