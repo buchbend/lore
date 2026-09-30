@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Parser for the supervision-board comment (peer of ``roadmap_validator.py``).
 
-``/orchestrate-epic`` keeps one durable status comment on the epic issue and
+``build`` (epic mode) keeps one durable status comment on the epic issue and
 edits it in place across a run — the supervision trail. On resume the run must
 read prior per-feature state *structurally*, not by re-reading the Markdown
 with the model (scraping is exactly the re-derivation this epic removes).
 
 This module is the machine reader, and — because feature #228 will rewire
-orchestrate-epic to EMIT the shape this reads — it is also the contract. The
+the build skill to EMIT the shape this reads — it is also the contract. The
 contract is three things, all explicit here so the emitter can target them:
 
 - **Marker** — the comment is identified by the exact HTML comment

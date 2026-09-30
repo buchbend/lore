@@ -326,16 +326,16 @@ def test_read_spine_skips_malformed_lines(tmp_path: Path) -> None:
 def test_read_spine_path_override_reads_a_different_file(tmp_path: Path) -> None:
     """``path=`` lets a caller point read_spine at the rotated cold sibling
     (or any other JSONL file) with the same malformed-line tolerance,
-    instead of the default live spine.jsonl — used by flag_metrics to
+    instead of the default live spine.jsonl — used by a reader to
     widen its window past one hot-spine rotation (#360 fix round 2).
     """
     cold = tmp_path / ".lore" / "spine.jsonl.1"
     cold.parent.mkdir(parents=True)
-    cold.write_text('{"source":"flag","event":"flag-write"}\n')
-    recs = read_spine(tmp_path, source="flag", path=cold)
-    assert [r["event"] for r in recs] == ["flag-write"]
+    cold.write_text('{"source":"drain","event":"transcript-synced"}\n')
+    recs = read_spine(tmp_path, source="drain", path=cold)
+    assert [r["event"] for r in recs] == ["transcript-synced"]
     # Default behaviour (no path=) is unchanged — still the live spine.
-    assert read_spine(tmp_path, source="flag") == []
+    assert read_spine(tmp_path, source="drain") == []
 
 
 # ---------------------------------------------------------------------------

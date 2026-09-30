@@ -106,6 +106,12 @@ def resolve_vale_config_path(wiki_dir: Path | None = None) -> Path:
 GLOSSARY_IGNORE_FILE = "glossary.txt"
 _CHECK_OFF = "WritingRules.UnknownShortName = NO"
 _CHECK_ON = "WritingRules.UnknownShortName = YES"
+# The hyphenated half of rule 20. Vale's dictionary accepts `C-ext` segment by
+# segment, so an existence rule flags it, and the glossary reaches that rule as
+# its `exceptions` list rather than as an ignore file.
+_HYPHEN_CHECK_OFF = "WritingRules.HyphenatedShortName = NO"
+_HYPHEN_CHECK_ON = "WritingRules.HyphenatedShortName = YES"
+_HYPHEN_RULE = Path("WritingRules") / "HyphenatedShortName.yml"
 
 # A glossary entry names its term in bold — `- **Vault** — ...` in this repo,
 # `**Order**:` in the format spec. Both shapes are one bold span.
@@ -182,14 +188,21 @@ def vale_config_for(repo_dir: Path | None, wiki_dir: Path | None = None) -> Path
         shutil.rmtree(staging, ignore_errors=True)
         shutil.copytree(base.parent, staging)
         (staging / GLOSSARY_IGNORE_FILE).write_text("\n".join(terms) + "\n", encoding="utf-8")
+        hyphen_rule = staging / _HYPHEN_RULE
+        if hyphen_rule.is_file():
+            # Single-quoted YAML scalars: a quote inside one is doubled.
+            quoted = [term.replace("'", "''") for term in terms]
+            exceptions = "".join(f"  - '{term}'\n" for term in quoted)
+            with hyphen_rule.open("a", encoding="utf-8") as rule:
+                rule.write("exceptions:\n" + exceptions)
         ini = staging / base.name
         # The switch line is what the packaged config carries to keep the check
         # off. A hand-rolled wiki override may not carry it, and there `replace`
         # does nothing — Vale runs every rule under `BasedOnStyles` by default,
         # so that override runs the check against the glossary copied here.
-        ini.write_text(
-            ini.read_text(encoding="utf-8").replace(_CHECK_OFF, _CHECK_ON), encoding="utf-8"
-        )
+        text = ini.read_text(encoding="utf-8")
+        text = text.replace(_CHECK_OFF, _CHECK_ON).replace(_HYPHEN_CHECK_OFF, _HYPHEN_CHECK_ON)
+        ini.write_text(text, encoding="utf-8")
         try:
             os.replace(staging, out)
         except OSError:

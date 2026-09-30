@@ -15,6 +15,20 @@ def test_defaults_when_file_absent(tmp_path: Path):
     assert cfg.observability.runs.keep_trace == 30
 
 
+def test_feedback_defaults_when_file_absent(tmp_path: Path):
+    cfg = load_root_config(tmp_path)
+    assert cfg.feedback.retrieval_misses is False
+    assert cfg.feedback.retrieval_misses_repo == "buchbend/lore"
+
+
+def test_schema_tree_lists_feedback_keys_with_defaults():
+    from lore_core.root_config import schema_tree
+
+    defaults = {path: default for path, _type, default, _doc in schema_tree()}
+    assert defaults["feedback.retrieval_misses"] is False
+    assert defaults["feedback.retrieval_misses_repo"] == "buchbend/lore"
+
+
 def test_retention_defaults_when_file_absent(tmp_path: Path):
     cfg = load_root_config(tmp_path)
     assert cfg.observability.retention.hot_days == 7
@@ -82,9 +96,9 @@ def test_walk_fields_marks_file_vs_default(tmp_path: Path) -> None:
 
     assert fields_by_path["journal.enabled"].source == "file"
     assert fields_by_path["journal.enabled"].value is False
-    # backend was not set in YAML — should be default "auto"
-    assert fields_by_path["curator.backend"].source == "default"
-    assert fields_by_path["curator.backend"].value == "auto"
+    # display_name was not set in YAML — should be the empty default
+    assert fields_by_path["user.display_name"].source == "default"
+    assert fields_by_path["user.display_name"].value == ""
 
 
 def test_get_field_returns_leaf_info(tmp_path: Path) -> None:
@@ -103,7 +117,7 @@ def test_get_field_unknown_path_raises(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(KeyError, match="unknown config path"):
-        get_field(root, "curator.no_such_field")
+        get_field(root, "user.no_such_field")
 
 
 def test_get_field_on_group_raises(tmp_path: Path) -> None:
@@ -111,19 +125,19 @@ def test_get_field_on_group_raises(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(KeyError, match="config group"):
-        get_field(root, "curator")
+        get_field(root, "observability")
 
 
 def test_set_field_persists_and_round_trips(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, set_field
 
-    root = _fresh_root(tmp_path, "curator:\n  backend: openai\njournal:\n  enabled: false\n")
+    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\njournal:\n  enabled: false\n")
     fi = set_field(root, "journal.enabled", "true")
     assert fi.value is True
     assert fi.source == "file"
     # Re-read; siblings preserved.
     assert get_field(root, "journal.enabled").value is True
-    assert get_field(root, "curator.backend").value == "openai"
+    assert get_field(root, "user.display_name").value == "Ada"
 
 
 def test_set_field_creates_missing_parents(tmp_path: Path) -> None:
@@ -148,7 +162,7 @@ def test_set_field_rejects_unknown_path(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(KeyError, match="unknown config path"):
-        set_field(root, "curator.no_such_field", "true")
+        set_field(root, "user.no_such_field", "true")
 
 
 def test_set_field_bool_accepts_common_spellings(tmp_path: Path) -> None:
@@ -169,12 +183,11 @@ def test_schema_tree_covers_all_leaves() -> None:
     rows = schema_tree()
     paths = {p for p, _, _, _ in rows}
     # Spot-check leaves we ship today.
-    assert "curator.backend" in paths
     assert "journal.enabled" in paths
     assert "observability.runs.keep" in paths
     assert "user.display_name" in paths
     # No group should appear (only leaves).
-    assert "curator" not in paths
+    assert "user" not in paths
     assert "observability" not in paths
 
 
@@ -213,10 +226,10 @@ def test_unset_field_reverts_to_default(tmp_path: Path) -> None:
 def test_unset_field_preserves_siblings(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, unset_field
 
-    root = _fresh_root(tmp_path, "curator:\n  backend: openai\njournal:\n  enabled: true\n")
+    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\njournal:\n  enabled: true\n")
     unset_field(root, "journal.enabled")
     assert get_field(root, "journal.enabled").value is False
-    assert get_field(root, "curator.backend").value == "openai"  # untouched
+    assert get_field(root, "user.display_name").value == "Ada"  # untouched
 
 
 def test_unset_field_noop_when_not_set(tmp_path: Path) -> None:
@@ -266,13 +279,82 @@ def test_get_field_unknown_path_suggests_nearest(tmp_path: Path) -> None:
     from lore_core.root_config import get_field
 
     root = _fresh_root(tmp_path, "")
-    with pytest.raises(KeyError, match="did you mean.*curator.backend"):
-        get_field(root, "curator.backand")
+    with pytest.raises(KeyError, match="did you mean.*user.display_name"):
+        get_field(root, "user.display_nam")
 
 
 def test_set_field_unknown_path_suggests_nearest(tmp_path: Path) -> None:
     from lore_core.root_config import set_field
 
     root = _fresh_root(tmp_path, "")
-    with pytest.raises(KeyError, match="did you mean.*curator.backend"):
-        set_field(root, "curator.backand", "openai")
+    with pytest.raises(KeyError, match="did you mean.*user.display_name"):
+        set_field(root, "user.display_nam", "Ada")
+
+
+def test_workflow_risk_defaults_and_override(tmp_path: Path):
+    cfg = load_root_config(tmp_path)
+    assert cfg.workflow.risk.max_lines == 400
+    assert cfg.workflow.risk.max_files == 10
+    assert cfg.workflow.risk.fanin_top_fraction == 0.1
+    assert "**/auth/**" in cfg.workflow.risk.sensitive_paths
+
+    (tmp_path / ".lore").mkdir()
+    (tmp_path / ".lore" / "config.yml").write_text(
+        "workflow:\n  risk:\n    max_lines: 50\n    sensitive_paths: ['billing/**']\n"
+    )
+    cfg = load_root_config(tmp_path)
+    assert cfg.workflow.risk.max_lines == 50
+    assert cfg.workflow.risk.sensitive_paths == ["billing/**"]
+
+
+def test_config_get_workflow_risk_max_lines(tmp_path: Path, monkeypatch):
+    from lore_cli.config_cmd import app
+    from typer.testing import CliRunner
+
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    result = CliRunner().invoke(app, ["get", "workflow.risk.max_lines"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert "400" in result.output
+
+
+def _risk_cfg(tmp_path: Path, risk: dict):
+    (tmp_path / ".lore").mkdir(exist_ok=True)
+    (tmp_path / ".lore" / "config.yml").write_text(yaml.safe_dump({"workflow": {"risk": risk}}))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg = load_root_config(tmp_path)
+    return cfg.workflow.risk, [str(w.message) for w in caught]
+
+
+def test_risk_sensitive_paths_string_becomes_one_element_list(tmp_path: Path) -> None:
+    risk, msgs = _risk_cfg(tmp_path, {"sensitive_paths": "**/billing/**"})
+    assert risk.sensitive_paths == ["**/billing/**"]
+    assert any("sensitive_paths" in m for m in msgs)
+
+
+@pytest.mark.parametrize("key", ["max_lines", "max_files", "fanin_top_fraction"])
+@pytest.mark.parametrize("bad", ["x", 0, -3, True, None])
+def test_risk_bad_thresholds_fall_back_to_default_with_warning(
+    tmp_path: Path, key: str, bad
+) -> None:
+    from lore_core.root_config import RiskConfig
+
+    risk, msgs = _risk_cfg(tmp_path, {key: bad})
+    assert getattr(risk, key) == getattr(RiskConfig(), key)
+    assert any(key in m for m in msgs)
+
+
+def test_risk_valid_values_load_without_warning(tmp_path: Path) -> None:
+    risk, msgs = _risk_cfg(tmp_path, {"max_lines": 50, "fanin_top_fraction": 0.25})
+    assert (risk.max_lines, risk.fanin_top_fraction) == (50, 0.25)
+    assert msgs == []
+
+
+def test_risk_section_that_is_not_a_mapping_keeps_defaults(tmp_path: Path) -> None:
+    from lore_core.root_config import RiskConfig
+
+    (tmp_path / ".lore").mkdir()
+    (tmp_path / ".lore" / "config.yml").write_text("workflow:\n  risk: 5\n")
+    with pytest.warns(UserWarning, match="risk"):
+        cfg = load_root_config(tmp_path)
+    assert cfg.workflow.risk == RiskConfig()

@@ -7,7 +7,7 @@ from pathlib import Path
 from textwrap import dedent
 
 from lore_core.freshness import compute_freshness, load_orphan_set
-from lore_mcp.server import handle_read, handle_search
+from lore_mcp.server import _wiki_hits, handle_read
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ def test_lint_writes_orphan_set_into_catalog(tmp_path, monkeypatch):
     assert "concepts/good.md" not in catalog["orphan_set"]
 
 
-def test_handle_search_flags_orphan_after_lint(tmp_path, monkeypatch):
+def test__wiki_hits_flags_orphan_after_lint(tmp_path, monkeypatch):
     files = {
         "broken.md": dedent("""\
             ---
@@ -140,7 +140,7 @@ def test_handle_search_flags_orphan_after_lint(tmp_path, monkeypatch):
 
     run_lint()
 
-    hits = handle_search("alpha", wiki="demo", k=5)
+    hits = _wiki_hits("alpha", wiki="demo", k=5)
     by_path = {h["path"]: h for h in hits}
     if "concepts/broken.md" in by_path:
         h = by_path["concepts/broken.md"]

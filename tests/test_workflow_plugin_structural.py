@@ -33,31 +33,28 @@ KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 # Every ported skill must carry the plugin's slash-command prefix.
 EXPECTED_SKILL_NAMES = {
-    "brief",
-    "ccat-workflow-init",
-    "consolidate-docs",
+    "build",
     "debug",
-    "document-epic",
-    "domain-modeling",
+    "document",
     "file-issue",
     "grilling",
-    "implement-issue",
-    "orchestrate-epic",
+    "handover",
     "orient",
-    "quick-feedback-loop",
-    "quick-orchestrate",
-    "seed-epic",
-    "super-orchestrate",
     "tdd",
     "to-epic",
 }
 
 GRILLING_SKILL_FILES = {
-    "grilling": ("SKILL.md",),
-    "domain-modeling": ("SKILL.md", "CONTEXT-FORMAT.md", "ADR-FORMAT.md"),
+    "grilling": ("SKILL.md", "CONTEXT-FORMAT.md", "ADR-FORMAT.md"),
 }
 
-DOCUMENT_EPIC_SKILL = SKILLS_ROOT / "document-epic" / "SKILL.md"
+DOCUMENT_SKILL = SKILLS_ROOT / "document" / "SKILL.md"
+
+# `build` keeps its core loop in SKILL.md and loads these when a run reaches
+# them (PRD 0015 § Build, "Skill size").
+BUILD_SIBLING_FILES = ("review.md", "teammate-brief.md", "epic-tail.md", "loop-wrap-up.md")
+# The old orchestrate-epic/SKILL.md alone was 17,350 bytes and loaded on every run.
+BUILD_SKILL_BYTE_BUDGET = 13_000
 
 # No skill under lore-workflow may name a concrete model — tiers are resolved
 # via `lore tier resolve`, never hardcoded.
@@ -86,8 +83,9 @@ BANNED_SCRIPT_REFERENCES = (
 
 SKILL_LINE_BUDGET = 150
 SKILL_LINE_BUDGET_WAIVERS: dict[str, int] = {
-    "orchestrate-epic": 300,
+    "build": 225,
     "to-epic": 220,
+    "file-issue": 160,
 }
 
 _MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
@@ -194,15 +192,30 @@ def test_skill_relative_references_resolve() -> None:
     assert not failures, "broken relative references:\n  " + "\n  ".join(failures)
 
 
-def test_document_epic_skill_contract() -> None:
-    text = DOCUMENT_EPIC_SKILL.read_text().lower()
+def test_document_skill_contract() -> None:
+    text = DOCUMENT_SKILL.read_text().lower()
     for quadrant in ("tutorial", "how-to", "reference", "explanation"):
-        assert quadrant in text, f"document-epic must mention Diátaxis quadrant '{quadrant}'"
+        assert quadrant in text, f"document must mention Diátaxis quadrant '{quadrant}'"
     for protected in ("docs/prd", "docs/adr"):
-        assert protected in text, f"document-epic must state the never-edit rule for '{protected}'"
-    assert "docstring" in text, "document-epic reference handling must mention docstrings"
+        assert protected in text, f"document must state the never-edit rule for '{protected}'"
+    assert "docstring" in text, "document reference handling must mention docstrings"
     assert "autosummary" in text or "toctree" in text, (
-        "document-epic reference handling must mention autosummary/toctree wiring"
+        "document reference handling must mention autosummary/toctree wiring"
+    )
+    for mode in ("pre-merge", "catch-up", "consolidate"):
+        assert mode in text, f"document must carry its '{mode}' mode"
+
+
+def test_build_loads_its_sibling_files_and_stays_small() -> None:
+    skill = SKILLS_ROOT / "build" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+    for name in BUILD_SIBLING_FILES:
+        assert (skill.parent / name).is_file(), f"build/{name} is missing"
+        assert f"]({name})" in text, f"build/SKILL.md never tells the agent to read {name}"
+    size = len(skill.read_bytes())
+    assert size <= BUILD_SKILL_BYTE_BUDGET, (
+        f"build/SKILL.md is {size} bytes; keep it under {BUILD_SKILL_BYTE_BUDGET} and move "
+        "a step that only some runs reach into a sibling file"
     )
 
 
@@ -216,9 +229,8 @@ def test_grilling_subsystem_cohesion() -> None:
     description = frontmatter["description"].lower()
     for phrase in ("grill me", "grill with docs", "grill"):
         assert phrase in description, f"grilling description must carry trigger phrase '{phrase}'"
-    assert "domain-modeling" in grilling_text, (
-        "grilling must reference 'domain-modeling' for its doc-context mode"
-    )
+    for spec in ("ADR-FORMAT.md", "CONTEXT-FORMAT.md"):
+        assert f"]({spec})" in grilling_text, f"grilling must link its sibling {spec}"
 
 
 def test_no_hardcoded_model_names() -> None:

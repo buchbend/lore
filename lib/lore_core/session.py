@@ -7,7 +7,7 @@ still need:
 * :func:`_resolve_attach_block` — attach lookup used by hooks/doctor
 * :func:`slugify` — slug derivation
 * :func:`commit_note` — used by ``lore session commit`` (also called by
-  the inbox + briefing skills to commit non-session files inside a wiki)
+  the inbox skill to commit non-session files inside a wiki)
 """
 
 from __future__ import annotations
@@ -73,8 +73,8 @@ def commit_note(
     state (``"nothing to commit"`` returns ``True`` with empty sha).
 
     The commit carries a pathspec, so only ``note_path`` lands in it. A
-    flag write calls this on every write, and a wiki is a directory a
-    human also edits — whatever else they staged stays staged.
+    wiki is a directory a human also edits, so whatever else they staged
+    stays staged.
     """
     rel = note_path.resolve().relative_to(wiki_path.resolve())
     add = subprocess.run(

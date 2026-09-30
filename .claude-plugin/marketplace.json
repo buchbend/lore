@@ -10,12 +10,12 @@
     {
       "name": "lore",
       "source": "./",
-      "description": "LLM-optimized knowledge graph: transcripts captured and archived, facts filed as reviewable flags, repo-scoped context injected at session start, pluggable briefings."
+      "description": "LLM-optimized knowledge graph: transcripts captured and archived, facts filed as repo artifacts, repo-scoped context injected at session start."
     },
     {
       "name": "lore-workflow",
       "source": "./lore-workflow",
-      "description": "Deterministic epic/PRD/TDD workflow skills for AI-coding teams (17 skills: orient, grilling, to-epic, orchestrate-epic, quick-orchestrate, quick-feedback-loop, super-orchestrate, tdd, debug, document-epic, \u2026). Depends on lore."
+      "description": "Deterministic epic/PRD/TDD workflow skills for AI-coding teams (9 skills: orient, grilling, to-epic, build, tdd, debug, document, handover, file-issue). Depends on lore."
     }
   ]
 }

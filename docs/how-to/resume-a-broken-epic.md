@@ -1,59 +1,43 @@
-# Resume a broken epic
+# Resume a build run
 
-**Goal:** pick up an `orchestrate-epic` run that was interrupted — a crash, a
-closed laptop, a killed session — without redoing merged work or colliding
-with half-merged state.
+**Goal:** continue a `build` run after a crash, a closed laptop, `/clear` or
+a compaction, without redoing merged work.
 
-You do not need a special command. **Resume is the front door:** re-running
-`/lore-workflow:orchestrate-epic` on the same epic issue *is* the resume
-path. The skill reaches the resume step first — before it validates the
-roadmap, before it creates the epic branch, before it opens a status
-comment — precisely so a second run heals rather than duplicates.
+Each `build` mode writes a resume line after every merged round or feature.
+A resume line holds the state of the run and the next ask. The run continues
+from the last one.
 
-## Before you start
+## Resume an epic
 
-- The epic issue number or URL from the interrupted run.
-- `gh auth status` green (the resume logic reads the epic's comments and
-  branch state through the GitHub API).
+1. **Run `/lore-workflow:build` in `epic` mode on the same epic issue.** Use a
+   fresh session.
+2. **The skill reads the board.** It finds the status comment on the epic
+   issue and pipes it to `lore workflow parse-board`. The parser reads the
+   feature table and the `## Ledger` section. A malformed board fails with an
+   error; the parser does not guess.
+3. **The skill compares the board with the epic branch:**
+   - a `merged` feature is done and does not run again;
+   - a `queued` or `blocked` feature runs again;
+   - an existing `epic/<issue>` branch is reused.
+4. **The skill edits the same comment.** A resumed run opens no second status
+   comment.
 
-## Steps
+With no status comment on the epic, the run starts fresh.
 
-1. **Re-run `/lore-workflow:orchestrate-epic` on the same epic issue.** Point
-   a fresh session at the epic and run it exactly as you did the first time.
-2. **It finds the prior run's supervision trail.** It lists the epic issue's
-   comments and looks for the status comment carrying its per-feature state
-   table from the earlier run. That table is written in a machine-readable
-   format (a marked table with fixed columns), so the resume reads it
-   deterministically with `lore workflow parse-board` rather than
-   re-interpreting it by eye — a malformed board is reported as an error,
-   never silently misread.
-3. **It reconciles against reality.** It compares that table's
-   merged / queued / blocked rows against the epic branch's actual state:
-   - a feature already merged into `epic/<issue>` is **done** — it is
-     skipped, never redispatched;
-   - a feature still queued or blocked is **redispatched** from where it
-     left off;
-   - the `epic/<issue>` branch, if it already exists, is **reused, never
-     re-created**, so the resumed run never collides with half-merged state.
-4. **It continues in the same status comment.** It edits that one existing
-   comment in place for every further update; a resumed run never opens a
-   second status comment.
+## Resume a loop or an issue
 
-The board comment carries the durable per-feature state in its table, and
-the orchestrator's own working context — tier decisions, crosscheck
-verdicts, in-flight markers — in a `## Notes` section below that same
-table. A resumed run reads both from the one comment, so its reasoning
-survives the interruption too, not just the feature checklist.
+The `loop` and `issue` modes keep the ledger in the worktree:
+`$(git rev-parse --git-dir)/lore-ledger.md`.
 
-## If no prior run is found
+1. **Open a session in the worktree.** `lore hook session-start` finds the
+   ledger and offers to resume from its last resume line.
+2. **Accept the offer**, or run `/lore-workflow:build` in the same mode. The
+   skill reads the last resume line and continues from its next ask.
 
-If there is no earlier status comment on the epic, the skill treats this as
-a **fresh run**: it proceeds to the roadmap-validator gate and creates the
-status comment as normal. So running it on an epic that never started is
-safe — it just starts.
+The hook makes no offer for a finished run. `build` archives the ledger at
+the finish point with `lore workflow ledger-archive`.
 
 ## Done when
 
-The run reaches the same completion state a first-pass run would: the epic
-pull request merged, every sub-issue closed, the status comment finalized
-with no stale queued or running rows.
+The run reaches the same finish point a first pass reaches, with no feature
+built twice.

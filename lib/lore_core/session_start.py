@@ -1,7 +1,7 @@
 """SessionStart context assembly — what Lore injects when a session opens.
 
-Gathers the facts (project note, last-active-day recap, pending verdicts and
-flags) and renders the banner. Deliberately cheap: reads cached files the
+Gathers the facts (project note, last-active-day recap, pending freshness
+verdicts) and renders the banner. Deliberately cheap: reads cached files the
 linter regenerates (``_index.txt``, ``_catalog.json``) and the transcript
 ledger, no LLM, no network. The banner is ambient-minimal — status line,
 optional Focus block, the recap, one directive. Depth is a pull (MCP), not
@@ -119,6 +119,24 @@ def load_directive_lines() -> list[str]:
     return [*text.rstrip("\n").split("\n"), ""]
 
 
+#: The directive line that carries ADR 0015's reading rule starts with this.
+_READING_RULE_PREFIX = "- ADRs and PRDs explain"
+
+
+def reading_rule() -> str:
+    """ADR 0015's reading rule, read from the directive template.
+
+    The template is the one source: SessionStart injects the line, and
+    ``lore attach --scaffold-workflow`` writes the same text into AGENTS.md.
+    Returns an empty string when the template can't be read, like
+    :func:`load_directive_lines`.
+    """
+    for line in load_directive_lines():
+        if line.startswith(_READING_RULE_PREFIX):
+            return line[2:]
+    return ""
+
+
 PRECOMPACT_DIRECTIVE = (
     "lore: vault-first — call `lore_search` MCP before asking the user "
     "about wikilinked terms."
@@ -164,24 +182,6 @@ def pending_verdict_chip(wiki: Path) -> str:
     label = "verdict" if count == 1 else "verdicts"
     rendered = f"{count}+" if capped else str(count)
     return f"{rendered} pending {label}"
-
-
-def pending_flag_chip(wiki: Path) -> str:
-    """`· N pending flag(s)` chip text, or empty.
-
-    Count only — ADR 0008 forbids the banner from carrying flag content,
-    so a teammate's unreviewed text can never be pulled into a context
-    window by the banner alone. Zero-state suppressed entirely.
-    """
-    try:
-        from lore_core.flag import count_pending
-
-        count = count_pending(wiki)
-    except Exception:
-        return ""
-    if count <= 0:
-        return ""
-    return f"{count} pending flag" + ("" if count == 1 else "s")
 
 
 def last_active_day_recap(lore_root: Path) -> tuple[str, ...]:
@@ -290,7 +290,6 @@ class SessionFacts:
     scope: str = ""
     project_entry: dict | None = None
     pending_chip: str | None = None
-    flag_chip: str | None = None
     #: Last-active-day recap off the transcript ledger (≤3 lines).
     recap: tuple[str, ...] = ()
 
@@ -308,7 +307,6 @@ def collect_session_facts(
     """
     project_entry = project_note_for_repo(wiki, repo) if repo else None
     pending_chip = pending_verdict_chip(wiki) or None
-    flag_chip = pending_flag_chip(wiki) or None
     # ``<lore_root>/wiki/<name>`` is the fixed vault layout, so the ledger
     # is reachable without threading lore_root through every caller.
     recap = last_active_day_recap(wiki.parent.parent)
@@ -318,7 +316,6 @@ def collect_session_facts(
         scope=scope,
         project_entry=project_entry,
         pending_chip=pending_chip,
-        flag_chip=flag_chip,
         recap=recap,
     )
 
@@ -346,8 +343,6 @@ def render_session_banner(facts: SessionFacts) -> str:
         injected_bits.append(facts.recap[0].split(" — ")[0].lower())
     if facts.pending_chip:
         injected_bits.append(facts.pending_chip)
-    if facts.flag_chip:
-        injected_bits.append(facts.flag_chip)
     status_line = f"lore {lore_version()}: active" + (
         " · " + " · ".join(injected_bits) if injected_bits else ""
     )
@@ -585,13 +580,18 @@ def maybe_auto_pull_for_scope(scope: Scope, lore_root: Path) -> str | None:
     Returns a one-line user-facing warning when the pull was skipped for
     a reason the user should know about (dirty tree, diverged history),
     or ``None`` for clean / silent outcomes (already in sync, no remote,
-    pull succeeded). The caller renders the warning into the SessionStart
-    banner so divergence is surfaced; auto-pull is otherwise transparent.
+    pull succeeded). The fetch needs the network, so the SessionStart hook
+    never calls this inline: :func:`record_auto_pull` runs it in a detached
+    child and the next banner shows the recorded warning.
     """
+    return _auto_pull_wiki(scope.wiki, lore_root)
+
+
+def _auto_pull_wiki(wiki: str, lore_root: Path) -> str | None:
     from lore_core.git_sync import SyncStatus, auto_pull
     from lore_core.wiki_config import load_wiki_config
 
-    wiki_dir = lore_root / "wiki" / scope.wiki
+    wiki_dir = lore_root / "wiki" / wiki
     if not wiki_dir.exists():
         return None
     cfg = load_wiki_config(wiki_dir)
@@ -600,10 +600,44 @@ def maybe_auto_pull_for_scope(scope: Scope, lore_root: Path) -> str | None:
 
     result = auto_pull(wiki_dir)
     if result.status is SyncStatus.SKIPPED_DIRTY:
-        return f"› wiki [[{scope.wiki}]] has uncommitted changes — auto-pull skipped"
+        return f"› wiki [[{wiki}]] has uncommitted changes — auto-pull skipped"
     if result.status is SyncStatus.SKIPPED_DIVERGED:
-        return f"› wiki [[{scope.wiki}]] diverged from origin — `git pull` manually"
+        return f"› wiki [[{wiki}]] diverged from origin — `git pull` manually"
     return None
+
+
+def _auto_pull_record_path(lore_root: Path, wiki: str) -> Path:
+    return lore_root / ".lore" / "auto-pull" / f"{wiki}.json"
+
+
+def record_auto_pull(lore_root: Path, wiki: str) -> None:
+    """Pull *wiki* from origin and record the banner warning the pull earned.
+
+    Runs in the detached child the SessionStart hook spawns, so a slow or
+    dead remote never holds up the banner. The next session start reads the
+    record back through :func:`recorded_auto_pull_warning`.
+    """
+    from lore_core.io import atomic_write_text
+
+    warning: str | None = None
+    try:
+        warning = _auto_pull_wiki(wiki, lore_root)
+    finally:
+        # A pull that raised records no warning, so a stale one from an
+        # earlier session does not outlive the attempt.
+        path = _auto_pull_record_path(lore_root, wiki)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, json.dumps({"warning": warning}))
+
+
+def recorded_auto_pull_warning(lore_root: Path, wiki: str) -> str | None:
+    """Return the warning the last background pull of *wiki* recorded, if any."""
+    try:
+        data = json.loads(_auto_pull_record_path(lore_root, wiki).read_text())
+    except (OSError, ValueError):
+        return None
+    warning = data.get("warning") if isinstance(data, dict) else None
+    return warning if isinstance(warning, str) else None
 
 
 def maybe_auto_push_for_scope(scope: Scope, lore_root: Path) -> SyncResult | None:

@@ -12,9 +12,9 @@ that no real symbol grounds does not belong here.
 - **Wiki** — a mounted knowledge store at `<vault>/wiki/<name>/`. Each
   wiki is its own git repo; a vault can host several. `lore wiki new`
   scaffolds `projects/`, `concepts/`, `decisions/`, `sessions/`,
-  `inbox/`. Lore writes nothing into a wiki automatically. A human, an
-  agent's flag, or `/lore:inbox` writes it, when something is worth
-  keeping.
+  `inbox/`. Lore writes nothing into a wiki automatically. A human,
+  `/lore:inbox`, or an agent's pull request writes it, when something is
+  worth keeping.
 - **Scope** — a colon-separated namespace inside a wiki
   (`ccat:data-center:data-transfer`), resolved from a working
   directory by longest-prefix match against `.lore/attachments.json`.
@@ -25,8 +25,9 @@ var / wiki config / root config / code default: `docs/architecture/config.md`.
 
 ## What a session leaves behind
 
-A Claude Code session leaves two things, and lore writes neither with a
-model.
+A Claude Code session leaves a transcript-ledger entry in the vault, and
+lore writes it without a model. Every fact worth keeping leaves as a repo
+artifact instead (see the **filing rule** in the glossary).
 
 **A transcript-ledger entry.** Capture registers every transcript it sees
 for the session's directory (`lore_curator/capture_routing.py`) and
@@ -37,63 +38,17 @@ git state and — at a session boundary — one read of the transcript. No LLM
 call, no prose. The entry is the durable record that the session happened
 and what it touched.
 
-**Zero or more flags.** A **flag** is one team-relevant fact an agent
-files *during* the session, deliberately (`lore_core/flag.py`). Retired by ADR 0012:
-the flag code leaves with the PRD 0014 retirement slice. Until then a
-session that files no flag leaves nothing in the wiki but its transcript
-index entry.
-
 Lore writes no session note. There is no compose pipeline, no buffer, no
 segmentation, no typed-fact extraction, no note render, and no LLM call at
 a session boundary. Retired in `#361`; decisions in `docs/adr/0007`–`0009`,
 spec in `docs/prd/0011`.
 
-## The flag
-
-> Retired by ADR 0012. Agents file facts as repo artifacts (see
-> "Filing and retrieval" in the glossary). This section describes the
-> code as it ships until the PRD 0014 retirement slice removes it.
-
-A flag is appended to the **owning topic note** at write time, not queued.
-It carries:
-
-- **Lead** — one self-sufficient sentence. No pronoun reaches out of it.
-- **Body** — optional short prose saying why the fact matters.
-- **Origin line** — author, date, refs, transcript pointer, and the
-  `unreviewed` marker until a human resolves it.
-
-Ref verdicts are **code-stamped**, never model-phrased
-(`lore_core/ref_verify.py`, `docs/adr/0004`). A ref reads `✓`,
-`(unchecked)` or `(not found)` because code checked it. An agent cannot
-claim authority it does not have.
-
-**Pending state is derived, never stored** (`docs/adr/0008`). There is no
-queue file. `lore flag list` and the SessionStart chip find pending flags
-by scanning notes for the unreviewed marker. A flag accepted by hand in an
-editor is simply no longer pending.
-
-The review walk is `lore flag review`: accept, retarget, decline, skip. It
-opens a local browser page by default, colouring each flag by its ref
-verdict (`docs/adr/0011`); `--tty` keeps the terminal prompts. A flag a
-human writes lands without the marker and keeps its own words — the
-code-stamped phrasing rule constrains what a *model* may claim.
-
-### The limit worth knowing
-
-The unreviewed marker lives in the wiki note, and the wiki is a git repo.
-The transcript a flag points at is **private and local** — it is not
-pushed. The same person on a second machine sees the flag and its pending
-state, but cannot open the transcript behind it. The pointer resolves only
-on the machine that captured the session (`docs/adr/0009`).
-Review the flag on its own text; treat the transcript pointer as a local
-convenience, not a shared reference.
-
 ## The publish gate + quarantine
 
-Every flag passes `lore_core/publish_gate.py:evaluate` before it joins
-its topic note. The gate is the last check between a session's output and
-the shared vault, and now its only caller is the flag writer. The gate
-**fails closed**: any error anywhere in the gate withholds rather than
+`lore_core/publish_gate.py:evaluate` scans text a session is about to
+publish outside the machine — an issue body, a comment, a note edit. It
+is the last check between a session's output and a shared surface. The
+gate **fails closed**: any error anywhere in it withholds rather than
 passes.
 
 Cheapest-first, short-circuiting on the first hit:
@@ -106,7 +61,7 @@ Cheapest-first, short-circuiting on the first hit:
    exempt from the no-LLM-judges-LLM rule. The call is a tripwire, not
    a guarantee. This file and the module docstring both say so.
 
-On a withhold, `apply_withhold` puts the flag's text into the private
+On a withhold, `apply_withhold` puts the withheld text into the private
 **quarantine** sidecar
 (`lore_core/quarantine.py`), one JSON file per entry under
 `.lore/quarantine/`. That path sits inside the already-private
@@ -129,21 +84,6 @@ Findings land in
 `wiki/<name>/_review.md`; writes are mtime-guarded so a note open in
 Obsidian is skipped rather than clobbered. `--apply` is required to
 write; the default is a dry-run.
-
-## Briefings
-
-`lore_core/briefing/gather.py:gather()` is the read-only half of
-`lore briefing`. It reports the wiki's briefing ledger and its sink
-config. Briefing publish is manual (`lore briefing publish`, `lore
-briefing mark`); there is no automatic daily trigger.
-
-**Briefings are parked** (PRD 0011). `gather()` used to collect notes
-filed under `<wiki>/sessions/` since the last briefing and hand their
-bodies to the prose composer. PRD 0013 removed that walk, so
-`new_sessions` always comes back empty and a one-shot gather yields
-nothing. What a briefing should read now that the session note is gone
-is an open question, deliberately left open rather than guessed. See
-`docs/how-to/matrix-bot.md` for the Matrix sink walkthrough.
 
 ## Ambient banner vs. MCP pull
 
@@ -172,10 +112,6 @@ not from anything injected ambiently:
   (`docs/architecture/lore-drill.md`).
 - `lore_inbox_classify` — read-only gather that a skill turns into
   prose, then commits via a CLI verb.
-- `lore_flag` — file one team-relevant fact into its owning topic note,
-  marked unreviewed (`lore_core/flag.py`). The only wiki write an agent
-  makes from a session. Retired by ADR 0012; removed with the PRD 0014
-  retirement slice.
 - `lore_journal_write` — the AI/human scratch journal
   (`lore_core/journal.py`); freeform, no LLM abstraction, no
   propagation, never a source for ambient context.
@@ -221,14 +157,12 @@ above:
 
 | Concern | Module |
 |---|---|
-| Publish gate over flag text (scanners, detector, withhold) | `lore_core/publish_gate.py` |
-| Flag write, review walk, pending scan | `lore_core/flag.py` |
+| Publish gate over outbound text (scanners, detector, withhold) | `lore_core/publish_gate.py` |
 | Transcript capture, ledger registration, linkage stamp | `lore_curator/capture_routing.py` |
-| Note reading (used by trace, seed-epic, the gate) | `lore_core/note_document.py` |
+| Note reading (used by trace, seed-lift, the gate) | `lore_core/note_document.py` |
 | Private quarantine sidecar | `lore_core/quarantine.py` |
 | Deterministic ref verification (positive evidence only) | `lore_core/ref_verify.py` |
 | Frontmatter-only hygiene passes | `lore_curator/hygiene.py` |
-| Briefing gather (read-only) | `lore_core/briefing/gather.py` |
 | Repo ADR/PRD pull (filesystem side) | `lore_core/repo_docs.py` |
 | MCP server (tool dispatch) | `lore_mcp/server.py` |
 | Hook dispatch (the seven `lore hook ...` entry points) | `lore_cli/hooks.py` |
@@ -241,38 +175,21 @@ above:
 
 Terms used in the workflow layer and orchestration:
 
-- **Workflow** — a skill-bundled planning chain: `seed-epic → orient →
-  grilling → to-epic → orchestrate-epic → document-epic`. Each step
-  is a callable skill, with checkpoints between shaping (human-controlled)
-  and autonomous build. See `docs/conventions.md` for the stage vocabulary,
-  artifact homes, and tier assignments.
+- **Workflow** — a skill-bundled planning chain: `orient → grilling →
+  to-epic → build → document`, with `handover` at any stop. Each step is a
+  callable skill. The human checkpoint sits between shaping and the build.
+  See `docs/conventions.md` for the stage vocabulary and tier assignments.
 - **Skill** — a callable, namespaced Claude Code automation block (e.g.,
-  `lore-workflow:orient`, `lore:verify`). Skills are registered in
+  `lore-workflow:build`, `lore:verify`). Skills are registered in
   `plugin.json` and dispatched by CLI invocation or intra-skill routing.
   Workflow skills are bundled in the `lore-workflow` plugin.
 - **Lore context pack** — synonym for `lore_context_pack` (see above).
 - **Codemap excerpt** — a bounded, ranked slice of the `lore codemap`
   output, token-budgeted (~1k tokens) and curated for a specific feature
-  or epic. Passed once at `orchestrate-epic` Map time and reused by every
-  teammate, instead of having each teammate discover symbols independently.
+  or epic. Built once at the Map step of `build` in `epic` mode and reused
+  by every teammate, instead of having each teammate discover symbols independently.
   Distinct from a full `lore_context_pack`, which joins ADRs/PRDs and epic
   state; the codemap excerpt is the code-navigation half only.
-- **Epic note** — a single note written for the orchestration
-  of an epic. The note records the roadmap DAG, per-feature tier
-  decisions, crosscheck verdicts, and any escalations. Distinct from the
-  per-feature implementation notes written by teammate agents; the epic
-  note is the orchestrator's record of supervision.
-- **Handover (session)** — a working-context handover from one Claude Code
-  session to a cold session starting fresh. The source session ends with a
-  `/lore:handover` invoke, which drafts a structured note of context
-  (problem framing, attempted paths, current blockers). A cold session
-  resumes with `/lore:continue`, which loads the handover note and carries
-  its facts into the new session's work.
-- **Handover (epic seed)** — a tracker issue linking an epic seed (the
-  source of structured context for the `orient` step). The epic seed
-  differs from a session handover. A team files the seed in the issue
-  tracker. The seed is one-time context for a shaped body of work, not
-  a carry-forward between sessions.
 - **Writing rules** — the prose style an agent uses for issue text, PR
   descriptions, PR review comments, ADR context sections and design
   documents. Session notes stay out. The document holds sentence and
@@ -371,23 +288,15 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
 - **Risk level** — `low` or `high`, from `lore workflow risk <pr>`. The
   level sets the review depth. An agent raises the level and never
   lowers it.
-- **Handover section** — the `## Handover` section of an epic issue, or
-  the wrap-up PR body of a loop. It names what shipped, the decisions,
-  the deviations from the PRD, the follow-ups and the known limits.
+- **Handover section** — the `## Handover` section of an epic issue or of
+  a build PR body. It names what
+  shipped, the decisions, the deviations from the PRD, the follow-ups and
+  the known limits. `build` writes it at the finish point. The `handover`
+  skill writes it for work that stops early.
+- **Seed issue** — a tracker issue labeled `epic-seed` that the `handover`
+  skill writes. It carries intent and findings for a cold session to
+  orient on. It is no spec.
 
-### Flag architecture (retired by ADR 0012)
-
-The terms below name code that ships until the PRD 0014 retirement
-slice removes it. Do not use them in new text.
-
-- **Flag** — one team-relevant fact an agent filed into a wiki topic
-  note: a lead sentence, a short body, and an origin line.
-- **Origin line** — the attribution line closing a flag block: author,
-  date, code-verified refs, transcript pointer.
-- **Unreviewed marker** — the token ending an agent-filed flag's origin
-  line until a human accepted it.
-- **Review walk** — the pass over unreviewed flags (`lore flag review`):
-  accept, retarget, decline, or skip.
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".

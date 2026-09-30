@@ -145,22 +145,34 @@ plan() dispatch — copy that pattern.
    contract change (new subcommand, schema, install behaviour); patch
    for bug fixes and doc-only changes. 1.0 lands when the install
    contract stops moving.
-2. **Run `python3 tools/release.py --part minor`.** The script branches
-   off `origin/main`, bumps `pyproject.toml:version` and
+2. **Run `python3 tools/release.py --in-branch --notes notes.md` on the
+   PR branch.** The bump is the last commit of the PR that ships the
+   change. The script bumps `pyproject.toml:version` and
    `.claude-plugin/plugin.json:version` in lockstep, writes the
    `## [X.Y.Z] - YYYY-MM-DD` section in `CHANGELOG.md`, runs the
-   version-sync guard, commits `chore: release X.Y.Z`, pushes and opens
-   the pull request.
+   version-sync guard and commits `chore: release X.Y.Z` on the current
+   branch. It creates no branch, pushes nothing and opens no PR. Push the
+   branch with the rest of the PR.
 
    Write the section body yourself and pass it as `--notes notes.md`.
-   Without it the section holds the commit subjects that landed since
-   the last release, which is a record rather than a summary. Follow
-   Keep a Changelog headings (Added / Changed / Fixed / Deprecated /
-   Removed / Security). `--dry-run` prints the plan and writes nothing.
-   `--no-pr` stops after the commit.
+   Follow Keep a Changelog headings (Added / Changed / Fixed /
+   Deprecated / Removed / Security). `--part` picks the bump (default
+   `minor`). `--dry-run` prints the plan and writes nothing.
+
+   Two open PRs that both bump conflict on `CHANGELOG.md`. The second PR
+   merges `main`, drops its earlier bump commit and reruns `--in-branch`.
 3. **Merge the pull request.** `main` is branch protected: the `test`
    check has to pass, and direct pushes are blocked for everyone,
-   admins included. The script never merges.
+   admins included.
+
+Run `python3 tools/release.py --notes notes.md` without `--in-branch` to
+cut a separate release PR instead. Use it when a merged change shipped
+without a bump. The script then branches off `origin/main`, pushes and
+opens the PR; `--no-pr` stops after the commit. Without `--notes` the
+section holds the commit subjects since the last release, a record rather
+than a summary. A squash merge of a PR with an in-branch bump loses the
+`chore: release` subject that this mode uses to find its range; after
+such a merge, pass `--notes`.
 
 `tests/test_version_sync.py` enforces all three files in pytest — if any
 one is missing or disagrees, the test suite fails. The script runs that

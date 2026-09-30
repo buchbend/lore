@@ -144,7 +144,7 @@ wiki+scope am I working in?"
 A wiki with no git remote is **private by default** — nothing it holds
 ever leaves the machine. A wiki with a git remote is a **shared
 vault**: every teammate with read access to that remote can see every
-flag committed there.
+note committed there.
 
 Attaching a scope to a shared vault is the moment sharing starts, so
 it's the moment consent is asked. `lore attach accept` / `lore attach
@@ -173,8 +173,7 @@ block — `repo`, `branch`, `prs`, `issues`, `commits`, `files` — written
 by capture with no LLM call. It is what `lore_drill` reads to answer
 "which sessions touched X" and what the SessionStart recap renders from.
 The block is derived and rebuildable, and stays machine-local with the
-rest of the ledger. Only a flag — a fact that already passed the
-publish gate and landed in its owning topic note — is ever pushed.
+rest of the ledger. Only the wiki's notes are ever pushed.
 
 ---
 

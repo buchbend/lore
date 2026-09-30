@@ -1,12 +1,14 @@
 ---
 title: Slim the workflow around one home per fact and decision records that state their strength
-status: accepted
+status: shipped
 epic: https://github.com/buchbend/lore/issues/443
 repos:
   - buchbend/lore
 ---
 
 # PRD 0015: Slim the workflow around one home per fact and decision records that state their strength
+
+> Historical. Current decisions: ADR 0014, ADR 0015.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/443).
 > Decisions recorded in ADR [0014](../adr/0014-one-home-per-fact.md)

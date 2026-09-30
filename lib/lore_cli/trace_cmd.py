@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 import typer
 from lore_core.timefmt import parse_ts
@@ -20,6 +21,7 @@ from lore_core.trace import (
     resolve_selector,
 )
 from rich.console import Console
+from rich.markup import escape
 from rich.tree import Tree
 
 from lore_cli._argv_compat import argv_main
@@ -97,38 +99,44 @@ def _render_plain(trace: FlushTrace) -> str:
     return "\n".join(lines)
 
 
-def _flag_detail(data: dict) -> str:
-    """``outcome=...`` for a write, ``verdict=...`` for a review verdict."""
-    if "outcome" in data:
-        detail = f"outcome={data['outcome']}"
-        if data.get("category"):
-            detail += f" category={data['category']}"
-        return detail
-    return f"verdict={data.get('verdict', '?')}"
+def _tokens(session: str | None, json_out: bool) -> None:
+    from lore_core.config import get_lore_root
+    from lore_core.token_trace import find_transcript, trace_tokens
 
+    if not session:
+        console.print("[red]error:[/red] usage: lore trace tokens <session-id | path.jsonl>")
+        raise typer.Exit(code=2)
+    try:
+        lore_root = get_lore_root()
+    except Exception:
+        lore_root = None
+    path = find_transcript(lore_root, session)
+    if path is None:
+        console.print(f"[red]no transcript found for session {escape(repr(session))}[/red]")
+        raise typer.Exit(code=1)
 
-def _print_flags(*, records: list[dict], json_out: bool) -> None:
-    """Flat, chronological listing of flag-write/flag-review spine events.
-
-    Not one correlated tree (flag events carry no trace_id — a flag is a
-    standing-alone fact) — a flat table. Review latency for one flag is
-    exactly the gap between its ``flag-write`` and ``flag-review`` lines
-    here, both keyed by the same ``flag_id``.
-    """
+    phases = [p.as_dict() for p in trace_tokens(path)]
+    total = sum(p["total"] for p in phases)
     if json_out:
-        for rec in records:
-            sys.stdout.write(json.dumps(rec) + "\n")
+        sys.stdout.write(json.dumps({"session": session, "phases": phases, "total": total}) + "\n")
         return
-    if not records:
-        console.print("[dim]No flag events.[/dim]")
-        return
-    for rec in records:
-        data = rec.get("data") or {}
-        line = (
-            f"{rec.get('ts', '?')}  {rec.get('event', '?')}  {rec.get('wiki') or '-'}  "
-            f"flag_id={data.get('flag_id', '?')}  {_flag_detail(data)}"
+    from rich.table import Table
+
+    table = Table(title=f"tokens {Path(session).name}", box=None, pad_edge=False)
+    # Numbers stay whole; a long phase name folds instead.
+    table.add_column("phase", overflow="fold", min_width=8)
+    for col in ("messages", "input", "output", "cache read", "cache write", "total"):
+        table.add_column(col, justify="right", no_wrap=True, min_width=len(col))
+    for p in phases:
+        table.add_row(
+            p["name"],
+            *(
+                str(p[k])
+                for k in ("messages", "input", "output", "cache_read", "cache_write", "total")
+            ),
         )
-        console.print(line, highlight=False)
+    table.add_row("all", "", "", "", "", "", str(total), style="bold")
+    console.print(table, markup=False, highlight=False)
 
 
 @app.callback(invoke_without_command=True)
@@ -136,30 +144,30 @@ def trace(
     # Argument default is None (not `...`) so this callback-only Typer app
     # collapses to a single command instead of a click Group requiring a
     # subcommand after the argument — same workaround as drill_cmd/search_cmd.
-    selector: str = typer.Argument(
-        None, help="trace-id | session-id | flag | note path or [[wikilink]]"
-    ),
+    selector: str = typer.Argument(None, help="trace-id | session-id | note path or [[wikilink]]"),
     plain: bool = typer.Option(False, "--plain", help="Aligned text, no tree glyphs/color."),
     json_out: bool = typer.Option(False, "--json", help="Raw spine event list (JSONL)."),
+    session: str = typer.Argument(None, help="With `tokens`: session id or .jsonl path."),
 ) -> None:
-    """Chronological drill-down of one story, correlated by trace_id."""
+    """Chronological drill-down of one story, correlated by trace_id.
+
+    `lore trace tokens <session>` prints token totals per skill or agent phase.
+    """
     from lore_core.config import get_lore_root
 
     if not selector:
         console.print("[red]error:[/red] selector is required")
         raise typer.Exit(code=2)
 
+    if selector == "tokens":
+        _tokens(session, json_out)
+        return
+
     try:
         lore_root = get_lore_root()
     except Exception as exc:
         console.print("[red]LORE_ROOT not set.[/red]")
         raise typer.Exit(1) from exc
-
-    if selector == "flag":
-        from lore_core.flag_metrics import flag_events
-
-        _print_flags(records=flag_events(lore_root), json_out=json_out)
-        return
 
     try:
         resolved = resolve_selector(lore_root, selector)

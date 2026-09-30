@@ -90,6 +90,5 @@ escalate to `lore doctor --fix` for repairable state, then check
 alerts, and — after you've actually used Claude Code for a bit in the
 attached repo — `status`'s `Hook` line carries a recent timestamp.
 Capture itself writes only a transcript-ledger entry; nothing lands in
-the wiki until you or the agent files one with `lore flag write` (or
-the `lore_flag` MCP tool). File one and confirm it appended to its
-owning topic note.
+the wiki until you write a note, run `/lore:inbox`, or merge a pull
+request an agent opened on the wiki repo.

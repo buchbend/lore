@@ -1,6 +1,6 @@
 {
   "epic": "ccatobs/widgetlib#8",
-  "comment": "Cumulative epic diff: every path the merged sub-issue PRs touched, with the kind of change. This is the input to the document-epic classification heuristic. 'expected_quadrant' is the assertion target for the unit tests (null = no docs edit / excluded).",
+  "comment": "Cumulative epic diff: every path the merged sub-issue PRs touched, with the kind of change. This is the input to the document classification heuristic. 'expected_quadrant' is the assertion target for the unit tests (null = no docs edit / excluded).",
   "changes": [
     {
       "path": "src/widgetlib/export.py",
@@ -50,13 +50,13 @@
     {
       "path": "docs/prd/0001-widget-export.md",
       "kind": "modified",
-      "summary": "PRD marked implemented. document-epic MUST NOT touch this.",
+      "summary": "PRD marked implemented. document MUST NOT touch this.",
       "expected_quadrant": null
     },
     {
       "path": "docs/adr/0002-export-format.md",
       "kind": "added",
-      "summary": "ADR for the format decision. document-epic MUST NOT touch this.",
+      "summary": "ADR for the format decision. document MUST NOT touch this.",
       "expected_quadrant": null
     },
     {

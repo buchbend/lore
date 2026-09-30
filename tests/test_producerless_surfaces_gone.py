@@ -379,16 +379,6 @@ def _repo_text(rel: str) -> str:
     return (REPO / rel).read_text(errors="replace")
 
 
-def test_briefing_cmd_docstring_marks_the_one_shot_parked() -> None:
-    """`gather()` yields no sessions, so `_run_oneshot` returns before compose,
-    publish and mark on every real call. PRD 0011 parks that path rather than
-    reviving it; the module docstring has to say so."""
-    import lore_cli.briefing_cmd as mod
-
-    doc = (mod.__doc__ or "").lower()
-    assert "parked" in doc, "briefing_cmd's docstring must name the parked one-shot path"
-
-
 def test_run_log_declares_no_session_note_record_type() -> None:
     from lore_core.run_log import RunLogger
 
@@ -425,15 +415,16 @@ def test_context_format_names_no_absent_note_document_symbol() -> None:
     assert missing == [], f"CONTEXT-FORMAT.md names absent note_document symbols: {missing}"
 
 
-def test_the_brief_skill_claims_no_session_note() -> None:
-    """The skill justified having no brief file by pointing at session notes.
-    No code writes one, so the justification names a surface that is gone.
+def test_the_orient_skill_claims_no_session_note() -> None:
+    """The retired brief skill justified having no brief file by pointing at
+    session notes. Its light mode now lives in orient; no code writes a
+    session note, so orient must not claim one either.
 
     Scoped to this one file on purpose: widening
     ``test_no_skill_claims_lore_writes_a_session_note`` to the whole
     ``lore-workflow/skills/`` tree is a separate change, and a blanket scan
     here would also flag the *correct* negative claims other skills make."""
-    text = _repo_text("lore-workflow/skills/brief/SKILL.md")
+    text = _repo_text("lore-workflow/skills/orient/SKILL.md")
     assert not re.search(r"(?<!no )session notes? (do|does)\b", text)
     assert not re.search(r"(?<!Nothing )writes a session note", text)
 

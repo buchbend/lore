@@ -10,12 +10,11 @@
 
 - **Default:** each kind of fact has one home, per the table below. Other
   artifacts link to the home and do not restate the fact.
-- **Default:** a build run ends at a finish point only after the ledger
-  check passes. Promote to invariant when the `ledger-check` test lands
-  (PRD 0015).
+- **Invariant** (test: `tests/test_workflow_ledger_cmd.py::test_ledger_add_then_check_names_the_open_line`):
+  a build run ends at a finish point only after the ledger check passes.
 - **Default:** a decision that meets the three ADR criteria of
-  `domain-modeling` becomes an ADR. A new domain term enters `CONTEXT.md`.
-- **Incidental:** PR bodies and PRDs carry no fixed section skeleton. Each
+  `grilling` becomes an ADR. A new domain term enters `CONTEXT.md`.
+- **Incidental:** PR bodies and PRDs carry no set section skeleton. Each
   takes the shape its task needs.
 - **Incidental:** the table names GitHub as the tracker. ADR 0012 keeps
   other backends out of scope.
@@ -35,7 +34,7 @@ the same problem and solution. The board notes, the PR body and the epic
 issue each carried parts of the narrative. An agent that read all of them
 saw a constraint twice and gave it double weight.
 
-PRD 0014 fixed the write side for facts that agents find during a session.
+PRD 0014 solved the write side for facts that agents find during a session.
 Planned work still had no single map.
 
 ## Decision
@@ -77,7 +76,7 @@ dropped, or filed as an issue.
 
 ## Alternatives considered
 
-- **Fixed PR body with `Why`, `Decisions` and `Follow-ups` sections,
+- **A set PR body with `Why`, `Decisions` and `Follow-ups` sections,
   checked in CI.** Rejected: most changes need no stated reason, and a
   forced section fills with filler. The valuable part is the ADR and the
   glossary entry, not the heading.
@@ -89,4 +88,6 @@ dropped, or filed as an issue.
 
 ## Amendments
 
-None.
+- 2026-09-29: `domain-modeling` merged into `grilling` (PRD 0015). The three ADR criteria now live in `grilling`.
+- 2026-09-29: the ledger-check line becomes an invariant. The `ledger-check`
+  test landed with PRD 0015.

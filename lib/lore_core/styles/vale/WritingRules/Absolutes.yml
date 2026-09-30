@@ -1,0 +1,26 @@
+# Rule 22 (ADR 0015): no absolutes in ADR and PRD text outside an invariant
+# line. Generated text sounds final, and a reader of English as a second
+# language takes `never` at face value, so an agent obeys background prose as
+# law. Only an invariant line binds, and a test enforces it.
+#
+# Scope lives in vale.ini, not here: the `[*.md]` section switches the rule
+# off, and the `[**/docs/{adr,prd}/*.md]` section switches it back on and
+# ignores invariant lines through `TokenIgnores`. Vale already skips code
+# spans and fenced blocks.
+#
+# Warning, not error. `fixed` is also a past-tense verb and `must` appears in
+# quoted text, so the rule reports and a human judges. The CI docs step fails
+# on error level only.
+#
+# The token list repeats rule 22's `Absolutes:` list in writing-rules.md;
+# tests/test_vale_style.py keeps the two in step.
+extends: existence
+message: "Rule 22 (absolutes): '%s' reads as a hard rule. Only an invariant line binds; state the strength in Holds."
+level: warning
+ignorecase: true
+tokens:
+  - always
+  - never
+  - no exceptions
+  - fixed
+  - must

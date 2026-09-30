@@ -8,12 +8,12 @@
 
 ## Holds
 
-- **Default:** every ADR from 0014 onward carries `Holds`, `Revisit if` and
-  `Amendments` sections. Promote to invariant when `lore lint adr` lands
-  (PRD 0015).
-- **Default:** an invariant line names the test that enforces it, as
-  `test: <path>::<name>`. A line without a test is a default. Promote to
-  invariant when `lore lint adr` checks that the test exists.
+- **Invariant** (test: `tests/test_lint_adr.py::test_an_adr_without_holds_fails_and_names_the_file`):
+  every ADR from 0014 onward carries a `Holds` section. `Revisit if` and
+  `Amendments` stay defaults.
+- **Invariant** (test: `tests/test_lint_adr.py::test_an_invariant_naming_a_missing_test_function_fails_and_names_the_line`):
+  an invariant line names the test that enforces it, as
+  `test: <path>::<name>`. A line without a test is a default.
 - **Default:** agents read ADRs and PRDs as context. Only invariants bind.
   An agent that deviates from a default names the deviation and the reason
   in the PR.
@@ -119,4 +119,7 @@ A Vale rule flags them and skips code spans.
 
 ## Amendments
 
-None.
+- 2026-09-29: `domain-modeling` merged into `grilling` (PRD 0015). The ADR template is `grilling/ADR-FORMAT.md`.
+- 2026-09-29: two defaults become invariants. `lore lint adr` and its tests
+  landed with PRD 0015. `Revisit if` and `Amendments` stay defaults, because
+  the lint checks only `Holds`.

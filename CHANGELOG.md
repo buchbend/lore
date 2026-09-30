@@ -8,6 +8,105 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.77.0] - 2026-09-30
+
+Ships epic #443 (PRD 0015): one home per fact, decision records that state
+their strength, and one `build` skill. Ships `lore-workflow` 0.10.0.
+
+### Added
+
+- **ADRs state their strength.** The ADR template gains `Holds` (invariant,
+  default, incidental), `Revisit if` and `Amendments`. `lore lint adr`
+  fails an ADR from 0014 onward without `Holds`, and an invariant that names
+  a missing test. CI runs the lint. See `docs/how-to/record-a-decision.md`.
+- **Agents read ADRs and PRDs as context.** SessionStart injects the
+  reading rule; `lore attach --scaffold-workflow` writes it into `AGENTS.md`.
+- **Writing rule 22** flags absolutes in ADR and PRD text. CI runs Vale over
+  `docs/` against a per-file baseline.
+- **`lore workflow prd-ship`** marks a PRD shipped. Retrieval ranks a shipped
+  PRD below ADRs.
+- **Build ledger.** `lore workflow ledger-add`, `ledger-set` (also
+  `--board -`), `ledger-check` and `ledger-archive`. `pre-compact` names the
+  ledger; SessionStart offers to resume from its last resume line.
+- **`lore workflow risk`** prints `low` or `high` with reasons. The level
+  sets the review depth.
+- **`lore trace tokens`** sums tokens per skill and agent phase, subagent
+  transcripts included. See `docs/how-to/measure-token-use.md`.
+- **`tools/release.py --in-branch`** puts the version bump in the shipping
+  PR.
+
+### Changed
+
+- **`lore-workflow` ships nine skills instead of 17:** `orient`, `grilling`,
+  `to-epic`, `build`, `tdd`, `debug`, `document`, `handover`, `file-issue`.
+  `build` has the modes `loop`, `issue` and `epic`, and replaces
+  `orchestrate-epic`, `quick-orchestrate`, `super-orchestrate`,
+  `implement-issue` and `quick-feedback-loop`. The skills folder shrinks from
+  122 KB to 80 KB.
+- **Review depth follows the risk level:** `low` gets a `mid` reviewer,
+  `high` a `strong` one. CI and ruff status come from `gh pr checks`, not
+  from the model.
+- **Each build run ends with a handover section** and a passing
+  `ledger-check`.
+
+### Fixed
+
+- **`tools/release.py --in-branch` refuses a stale branch.** When
+  `origin/main` carries a newer version, the script stops and asks for a
+  merge of `main` first.
+- **`tools/vale_docs.py --write-baseline` keeps other files' entries** and
+  never raises a count.
+- **CI checks the Vale tarball's sha256** and installs Vale before pytest, so
+  the Vale style tests run in CI. Two rules follow Vale 3.22: headings leave
+  rule 9, and a new check catches hyphenated short names such as `C-ext`
+  (one letter or two capitals in a segment; `follow-up` stays out).
+- **`lore lint adr` reads a test reference wrapped onto a second line.**
+- **`workflow.risk` config values are type-checked**; a bad value falls back
+  to the default with a warning.
+- **`lore workflow risk --repo other/repo` skips fan-in** instead of measuring
+  the local checkout.
+
+## [0.76.0] - 2026-09-29
+
+Ships epic #419 (PRD 0014): flags retire, agents file facts as repo
+artifacts, and search reaches GitHub. Ships `lore-workflow` 0.9.0.
+
+### Removed
+
+- **Flags, the flag review page and the flag metrics.** ADR 0012 retires the
+  flag. `lore status` and `lore trace` show no flag section. The MCP tool
+  `lore_flag` is gone.
+- **Briefings and the LLM client.** Nothing in Lore calls a model any more.
+  The `models.*` wiki config keys are accepted and unread.
+
+### Added
+
+- **Agents file each fact as a repo artifact.** A docs-versus-code gap
+  becomes an issue with the label `agent-filed`. A fact about an issue or PR
+  becomes a comment. A decision outside a grilling session becomes a PR a
+  human merges. See `docs/how-to/file-facts-as-artifacts.md`.
+- **The session directive states the filing rule.** It also says: close only
+  issues you opened, and list every artifact you filed in your final message.
+- **`lore_search` is federated.** One call returns wiki notes from the local
+  index, then issues and PRs from a live GitHub search. When `gh` fails, the
+  result holds the wiki list and a `note`. See
+  `docs/how-to/search-notes-and-issues.md`.
+- **The context pack carries the body of every focus issue.**
+- **`lore migrate flag-blocks [--apply]`** removes old flag blocks from wiki
+  notes. The command skips and names a note it cannot parse safely.
+- **Opt-in retrieval-miss check.** With `feedback.retrieval_misses: true`,
+  the orient, implement-issue and tdd skills file a missed fact as an issue
+  on the Lore repo.
+- **`docs/code-sweep.md`** lists every module, CLI verb, MCP tool and config
+  key with its last caller. It names 12 deletion candidates for the owner.
+
+### Changed
+
+- **SessionStart finishes in about 0.2 s.** It took 1.2–1.8 s on a warm
+  cache, and 21 s with an unreachable wiki remote. The wiki pull and the
+  CODEMAP refresh now run as detached children. A dirty or diverged wiki
+  warning appears one session later than before.
+
 ## [0.75.0] - 2026-09-29
 
 Ships `lore-workflow` 0.8.0 with the new skill `quick-feedback-loop`.

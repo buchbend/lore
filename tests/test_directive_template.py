@@ -24,19 +24,38 @@ EXPECTED_DIRECTIVE_LINES = [
         "tried, never a decision or a directive to follow."
     ),
     (
-        "- Before writing or editing an issue, a PR body or a flag, follow "
-        "`lore style show writing-rules` and the glossary `CONTEXT.md`."
+        "- Before writing or editing an issue, a PR body or a comment, "
+        "follow `lore style show writing-rules` and the glossary "
+        "`CONTEXT.md`."
     ),
     (
-        "- File a flag (`lore_flag`) the moment one team-relevant fact "
-        "appears that no artifact records: a trap, a dead end and its "
-        "reason, reasoning nobody wrote down, a gap between the docs and "
-        "the code. One fact per flag, with the refs behind it. Never "
-        "interrupt the user to ask."
+        "- File every team-relevant fact as a repo artifact the moment "
+        "it appears, with the refs behind it. Never interrupt the user "
+        "to ask."
     ),
     (
-        "- At session end, check once whether anything flag-worthy went "
-        "unflagged, and file it."
+        "- A gap between the docs and the code, a trap or a missing "
+        "fact becomes an issue on the owning repo."
+    ),
+    "- A fact about an existing issue or PR becomes a comment on it.",
+    (
+        "- A dead end becomes an issue you opened, closed as not "
+        "planned, with the reason in the close comment."
+    ),
+    ("- A fact for a wiki topic note becomes a pull request on the wiki repo."),
+    (
+        "- An ADR, a PRD or a wiki topic-note edit outside a grilling "
+        "session is a pull request. A human merges it; never merge it "
+        "yourself."
+    ),
+    "- Close only issues you opened; never change the state of a human's issue or PR.",
+    ("- At session end, list every artifact the session opened or commented on."),
+    (
+        "- ADRs and PRDs explain where the code comes from. Read them as "
+        "context. Only `Invariant` lines bind, and a test enforces each one. "
+        "When a task conflicts with a default or with an ADR's reasoning, "
+        "deviate and name the deviation in the PR. Propose an amendment when "
+        "a rule looks out of date."
     ),
     "",
 ]
@@ -52,6 +71,21 @@ def test_module_level_attribute_still_resolves():
     from lore_cli import hooks
 
     assert hooks.LORE_DIRECTIVE_LINES == EXPECTED_DIRECTIVE_LINES
+
+
+def test_directive_states_the_filing_rule_and_names_no_flag():
+    """The filing rule is the directive's write path: issue, comment, PR.
+
+    A flag was the former crossing and no longer exists, so the text
+    must not send an agent looking for one.
+    """
+    joined = "\n".join(_load_directive_lines()).lower()
+
+    assert "flag" not in joined
+    assert "becomes an issue" in joined
+    assert "becomes a comment" in joined
+    assert "pull request" in joined
+    assert "closed as not planned" in joined
 
 
 def test_directive_is_a_single_block_with_the_genre_rule():
@@ -124,3 +158,36 @@ def test_session_start_shield_catches_unexpected_exception(monkeypatch, capsys):
     # Actionable hints are the whole point of the shield.
     assert "lore install --upgrade" in full
     assert "lore doctor" in full
+
+
+# --- the ADR 0015 reading rule -------------------------------------------
+
+#: ADR 0015's reading rule, word for word.
+READING_RULE = (
+    "ADRs and PRDs explain where the code comes from. Read them as context. "
+    "Only `Invariant` lines bind, and a test enforces each one. When a task "
+    "conflicts with a default or with an ADR's reasoning, deviate and name the "
+    "deviation in the PR. Propose an amendment when a rule looks out of date."
+)
+
+
+def test_reading_rule_is_read_from_the_directive_template():
+    from lore_core.session_start import reading_rule
+
+    assert reading_rule() == READING_RULE
+    assert f"- {READING_RULE}" in _load_directive_lines()
+
+
+def test_session_start_in_an_attached_repo_carries_the_reading_rule(monkeypatch, tmp_path):
+    from lore_core import session_start
+
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
+    block = {"wiki": wiki.name, "scope": wiki.name, "backend": None, "issues": None, "prs": None}
+    out = session_start.session_start_from_lore(
+        str(tmp_path), (tmp_path / "CLAUDE.md", block), tmp_path
+    )
+
+    assert out is not None
+    assert READING_RULE in out

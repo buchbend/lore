@@ -23,6 +23,7 @@ Exposed via `lore_cli.__main__` dispatch (see subcommand wiring there).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -37,10 +38,11 @@ from lore_core.scopes import (
 )
 from lore_core.session_start import MAX_CONTEXT_CHARS
 from lore_core.session_start import load_directive_lines as _load_directive_lines
-from lore_core.session_start import maybe_auto_pull_for_scope as _maybe_auto_pull_for_scope
 from lore_core.session_start import maybe_auto_push_for_scope as _maybe_auto_push_for_scope
 from lore_core.session_start import offer_notice_line as _offer_notice_line
 from lore_core.session_start import pre_compact_text as _pre_compact
+from lore_core.session_start import record_auto_pull as _record_auto_pull
+from lore_core.session_start import recorded_auto_pull_warning as _recorded_auto_pull_warning
 from lore_core.session_start import render_capture_state_block as _render_capture_state_block
 from lore_core.session_start import render_project_orientation as _render_project_orientation
 from lore_core.session_start import session_start_text as _session_start
@@ -322,8 +324,10 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _prior_spawn_runaway,
     _process_is_ours,
     _rotate_meta_sidecar,
+    _spawn_codemap_refresh,
     _spawn_detached,
     _spawn_detached_transcript_sync,
+    _spawn_detached_wiki_pull,
     _stamp_within_cooldown,
     _write_stamp,
 )
@@ -494,17 +498,15 @@ def _read_hook_payload() -> dict:
 def _refresh_codemap(cwd: Path) -> None:
     """Refresh the local, gitignored CODEMAP.md for the repo at *cwd*.
 
-    Deterministic, no LLM, no network; the fingerprint no-op fast path makes
-    an unchanged tree cheap, so it runs inline. Never allowed to crash
-    SessionStart.
+    Deterministic, no LLM, no network, but it parses every Python file
+    before the fingerprint check, so SessionStart runs it in a detached
+    child (``lore hook codemap-refresh``) rather than inline (#424). Never
+    allowed to crash SessionStart.
 
     Only inside a git work tree. Outside git the codemap falls back to a full
     filesystem walk plus a content hash of every file; a session started in a
     home directory would walk the whole home tree on every start and pin a CPU
     core until Claude Code kills the hook.
-    ponytail: inline generate; if a very large repo's first-run parse adds
-    perceptible startup latency, move this to a detached spawn like the
-    transcript mirror.
     """
     try:
         from lore_core import codemap as _codemap
@@ -514,6 +516,27 @@ def _refresh_codemap(cwd: Path) -> None:
         _codemap.generate(cwd, quiet=True)
     except Exception:  # noqa: BLE001 - codemap must never crash SessionStart
         pass
+
+
+def _codemap_lock_path(cwd: Path) -> Path:
+    """Per-repo lock so back-to-back session starts share one refresh."""
+    import hashlib
+
+    key = hashlib.sha256(str(Path(cwd).resolve()).encode()).hexdigest()[:16]
+    return _cache_dir() / "codemap" / f"{key}.lock"
+
+
+@hook_app.command("codemap-refresh", hidden=True)
+def cmd_codemap_refresh(
+    cwd: str = typer.Option(..., "--cwd", help="Repository to map."),
+) -> None:
+    """Background child: refresh CODEMAP.md unless a refresh already runs."""
+    from lore_core.lockfile import flocked
+
+    target = Path(cwd)
+    with flocked(_codemap_lock_path(target), blocking=False) as held:
+        if held:
+            _refresh_codemap(target)
 
 
 @hook_app.command("session-start")
@@ -542,7 +565,8 @@ def cmd_session_start(
     out = _session_start(str(cwd_resolved))
 
     if not probe:
-        _refresh_codemap(cwd_resolved)
+        with contextlib.suppress(Exception):  # codemap must never crash SessionStart
+            _spawn_codemap_refresh(cwd_resolved)
 
     # Surface pending `.lore.yml` offers at the top of the banner.
     # Defensive: offer rendering reads multiple files and classifies state;
@@ -562,16 +586,17 @@ def cmd_session_start(
     if scope is None and not probe:
         _nudge_unattached(cwd_resolved, out)
 
-    # Cross-host auto-pull (Phase 10 / 0.11.0).
-    # Fast-forward this scope's wiki repo from origin if the wiki opted in
-    # via .lore-wiki.yml's git.auto_pull (default true). Strictly read-only
-    # on dirty/diverged trees — never disrupts the user's in-flight work.
-    # Warning rendered into the banner footer so the user sees diverged
-    # state surfaced; otherwise silent.
+    # Cross-host auto-pull (Phase 10 / 0.11.0). A detached child
+    # fast-forwards this scope's wiki from origin if the wiki opted in via
+    # .lore-wiki.yml's git.auto_pull (default true); the fetch needs the
+    # network, so it never blocks the banner (#424). The banner footer shows
+    # the dirty/diverged warning the previous background pull recorded.
     auto_pull_warning: str | None = None
     if scope is not None and lore_root is not None and not probe:
         try:
-            auto_pull_warning = _maybe_auto_pull_for_scope(scope, lore_root)
+            auto_pull_warning = _recorded_auto_pull_warning(lore_root, scope.wiki)
+            if (lore_root / "wiki" / scope.wiki / ".git").exists():
+                _spawn_detached_wiki_pull(lore_root, scope.wiki)
         except Exception:  # noqa: BLE001 — pull must never crash SessionStart
             auto_pull_warning = None
 
@@ -624,7 +649,25 @@ def cmd_session_start(
         except Exception:  # noqa: BLE001 - orientation must never crash SessionStart
             pass
 
+    try:  # PRD 0015 breakpoint: offer to resume a build run from its ledger
+        from lore_workflow.ledger import resume_offer
+
+        offer = resume_offer(cwd_resolved)
+        if offer:
+            out = out + "\n\n" + offer
+    except Exception:  # noqa: BLE001 - ledger must never crash SessionStart
+        pass
+
     _emit("SessionStart", out, plain=plain)
+
+
+@hook_app.command("wiki-pull", hidden=True)
+def cmd_wiki_pull(
+    wiki: str = typer.Option(..., "--wiki", help="Wiki to pull from origin."),
+) -> None:
+    """Background child: pull a wiki and record the banner warning (#424)."""
+    lore_root = get_lore_root()
+    _record_auto_pull(lore_root, wiki)
 
 
 @hook_app.command("pre-compact")
@@ -643,7 +686,16 @@ def cmd_pre_compact(
     _read_hook_payload()
     if _session_off_all():
         return
-    out = _pre_compact(_resolve_cwd(cwd))
+    cwd_resolved = _resolve_cwd(cwd)
+    out = _pre_compact(cwd_resolved)
+    try:  # PRD 0015 breakpoint: name the build ledger so it survives compaction
+        from lore_workflow.ledger import precompact_note
+
+        note = precompact_note(Path(cwd_resolved))
+        if note:
+            out = f"{out}\n{note}" if out else note
+    except Exception:  # noqa: BLE001 - ledger must never crash PreCompact
+        pass
     _emit("PreCompact", out, plain=plain)
 
 
@@ -963,10 +1015,10 @@ def capture(
         )
         raise
 
-    # Session boundary: hand the wiki's commits to the remote. Every flag
-    # filed this session is already committed, so this is the step that
-    # puts them on a teammate's machine. It costs one network round trip
-    # at the end of a session, which is why it runs here and not per turn.
+    # Session boundary: hand the wiki's commits to the remote. Whatever
+    # landed in the wiki this session is already committed, so this is the
+    # step that puts it on a teammate's machine. It costs one network round
+    # trip at the end of a session, which is why it runs here and not per turn.
     boundary: dict[str, object] = {}
     if event == "session-end":
         try:

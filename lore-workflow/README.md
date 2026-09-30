@@ -16,22 +16,18 @@ delegation conventions shared across skills live in
 
 ## Bundled skills
 
+The chain: `orient → grilling → to-epic → build → document`, with `handover` at any stop.
+
 | Skill | What it's for |
 |-------|----------------|
-| `ccat-workflow-init` | Onboard a repo — a thin pointer at `lore attach --scaffold-workflow`. |
-| `orient` | First step of a task — homework, then reflect understanding back before planning. |
-| `grilling` | Interview the user relentlessly to stress-test a plan or design — "grill with docs" mode also drives `domain-modeling`. |
-| `domain-modeling` | Build and sharpen a project's domain model (CONTEXT.md, ADRs). |
-| `to-epic` | Turn a plan/PRD into a PRD file plus an epic tracker issue with a roadmap DAG. |
-| `orchestrate-epic` | Supervise parallel TDD implementation of an epic — plan, dispatch, crosscheck, land. |
-| `quick-orchestrate` | Light `orchestrate-epic` for a small epic built fast with the human present — lead builds the shared slices, local merges, one epic PR, one independent review. |
-| `super-orchestrate` | Supervise several epics — map dependencies between them, one `orchestrate-epic` lead per epic, frontier tier by default. |
-| `quick-feedback-loop` | Hone a feature in fast rounds — test-first in a worktree, only new tests in the loop, full suite in the background, merged each round into the branch the live dev stack runs; advises design for big asks; ADR and term candidates approved and written at wrap-up, then docs and an optional architect/web-design pass. |
-| `implement-issue` | Fast path for one well-understood GitHub issue, outside the epic chain. |
-| `brief` | Middle rung — pack-only orientation + one reflected brief, then handoff to `implement-issue` or `tdd`. |
-| `consolidate-docs` | Sweep a wild-grown docs tree — plan-approved merge/move/delete back into Diátaxis shape. |
+| `orient` | First step of a task: homework, then reflect understanding back. A light mode ("brief me") pulls only the context pack and hands one change to `build`. |
+| `grilling` | Interview the user to stress-test a plan, and sharpen the domain model: `CONTEXT.md` terms and ADRs with `Holds` and `Revisit if`. |
+| `to-epic` | Turn a plan into a PRD file plus an epic tracker issue with a roadmap table. |
+| `build` | Build code in three modes: `loop` (fast rounds, local merges, one wrap-up PR), `issue` (one issue, one PR), `epic` (a roadmap, teammates, review by risk level). Keeps a ledger and writes a handover section. |
 | `tdd` | Test-driven red-green-refactor loop. |
 | `debug` | Systematic root-cause debugging with a hard circuit breaker. |
-| `document-epic` | After an epic merges, update Diátaxis docs to match the implemented state. |
-| `seed-epic` | End a session by turning follow-up context into an epic-seed tracker issue. |
-| `file-issue` | Writes issue text and files it — resolve the writing rules, draft, Vale-lint, then post the issue or PR body. |
+| `document` | Bring the Diátaxis docs in line with the code: pre-merge, catch-up, or a plan-approved consolidation of a docs tree. Marks a shipped PRD at the epic tail. |
+| `handover` | Write the handover section for work that stops early, and turn follow-up work into a seed issue. |
+| `file-issue` | Writes issue text and files it: resolve the writing rules, draft, Vale-lint, then post the issue or PR body. |
+
+Onboard a repo with `lore attach --scaffold-workflow`.

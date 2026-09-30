@@ -77,52 +77,6 @@ class ObservabilityConfig:
 
 
 @dataclass
-class OpenAIBackendConfig:
-    """Settings for an OpenAI-compatible curator backend (e.g. local model gateways).
-
-    ``base_url`` is the OpenAI-compatible API root (e.g. ``https://chat.kiconnect.nrw/api/v1``).
-    ``api_key_env`` names the env var holding the API key — this stays out of
-    config files. The recommended persistent home for the key itself is
-    ``$LORE_ROOT/.lore/secrets.env`` (see :mod:`lore_core.secrets_env`); that
-    file is auto-loaded into ``os.environ`` at curator startup, lives inside
-    the gitignored ``.lore/`` directory, and never appears in diffs.
-    ``model_{simple,middle,high}`` override the Anthropic tier names; leave empty to fall
-    back to the env var ``LORE_OPENAI_MODEL_{SIMPLE,MIDDLE,HIGH}`` or pass-through.
-
-    ``reasoning_effort_{simple,middle,high}`` opt the corresponding tier into a
-    reasoning-capable model's effort knob (``"low" | "medium" | "high"``).
-    Empty string means "unset" (no reasoning_effort forwarded). The empty-
-    string-means-unset convention lets the typed CLI set path (``lore config
-    set ...``) and the existing schema walker keep working without learning
-    about ``None`` as a YAML/CLI value. Validated and forwarded to the wire
-    by ``lore_curator.llm_client._resolve_openai_settings``; values from env
-    var ``LORE_OPENAI_REASONING_EFFORT_{SIMPLE,MIDDLE,HIGH}`` win over config.
-    """
-
-    base_url: str = ""
-    api_key_env: str = "LORE_OPENAI_API_KEY"
-    model_simple: str = ""
-    model_middle: str = ""
-    model_high: str = ""
-    reasoning_effort_simple: str = ""
-    reasoning_effort_middle: str = ""
-    reasoning_effort_high: str = ""
-
-
-@dataclass
-class CuratorBackendConfig:
-    """Curator LLM backend selection.
-
-    ``backend`` is one of: ``"auto"`` | ``"subscription"`` | ``"api"`` | ``"openai"``.
-    ``auto`` prefers claude-on-PATH → ANTHROPIC_API_KEY → OpenAI (if configured) → None.
-    Env var ``LORE_LLM_BACKEND`` and CLI ``--backend`` override this config value.
-    """
-
-    backend: str = "auto"
-    openai: OpenAIBackendConfig = field(default_factory=OpenAIBackendConfig)
-
-
-@dataclass
 class JournalConfig:
     """AI + human freeform journal feature flag.
 
@@ -149,29 +103,89 @@ class TierConfig:
 
 
 @dataclass
+class FeedbackConfig:
+    """Session-end retrieval-miss reporting, opt-in per user.
+
+    A retrieval miss is a fact a Lore tool did not return, found instead by
+    reading files or running commands. When ``retrieval_misses`` is true,
+    the orient, build and tdd skills file one issue per miss on
+    ``retrieval_misses_repo``, naming the fact, the tools tried, and the
+    turn count. Off by default: the check never runs unasked.
+    """
+
+    retrieval_misses: bool = False
+    retrieval_misses_repo: str = "buchbend/lore"
+
+
+@dataclass
 class UserConfig:
     """Personal identity, used when a wiki has no team-mode `_users.yml`.
 
-    ``display_name`` names the person in authored session notes and
-    briefings instead of falling back to the OS `$USER` login name.
+    ``display_name`` names the person instead of falling back to the OS
+    `$USER` login name.
     """
 
     display_name: str = ""
 
 
 @dataclass
+class RiskConfig:
+    """Thresholds for ``lore workflow risk`` (PRD 0015 § Build).
+
+    The risk level is ``high`` when a diff changes more than ``max_lines``
+    lines or more than ``max_files`` files, touches a file in the top
+    ``fanin_top_fraction`` of Python import fan-in, or touches a path that
+    matches one of ``sensitive_paths``. The globs match the repo-relative
+    path with ``fnmatch`` (``*`` crosses ``/``); a leading ``**/`` also
+    matches at the repo root.
+    """
+
+    max_lines: int = 400
+    max_files: int = 10
+    fanin_top_fraction: float = 0.1
+    sensitive_paths: list[str] = field(
+        default_factory=lambda: [
+            "**/auth/**",
+            "**/*permission*",
+            "**/*secret*",
+            "**/*credential*",
+        ]
+    )
+
+
+@dataclass
+class WorkflowConfig:
+    """Settings for the ``lore workflow`` verbs."""
+
+    risk: RiskConfig = field(default_factory=RiskConfig)
+
+
+@dataclass
 class RootConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
-    curator: CuratorBackendConfig = field(default_factory=CuratorBackendConfig)
     journal: JournalConfig = field(default_factory=JournalConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
     user: UserConfig = field(default_factory=UserConfig)
+    feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+    workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
+
+
+#: Config blocks lore used to honour and no longer does. Named explicitly so a
+#: stale file gets one warning for the block that says what happened, rather
+#: than the generic unknown-key notice once per knob inside it.
+RETIRED_BLOCKS = frozenset({"curator"})
 
 
 def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:
     """Merge raw into target dataclass in place; warn on unknown keys."""
     valid = {f.name for f in fields(target)}
     for key, value in raw.items():
+        if not path and key in RETIRED_BLOCKS:
+            warnings.warn(
+                f"root_config: '{key}' is retired and is ignored; remove it from {source}",
+                stacklevel=3,
+            )
+            continue
         if key not in valid:
             qualified = f"{path}.{key}" if path else key
             warnings.warn(f"root_config: unknown key {qualified!r} in {source}", stacklevel=3)
@@ -179,8 +193,36 @@ def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:
         current = getattr(target, key)
         if is_dataclass(current) and isinstance(value, dict):
             _merge(current, value, f"{path}.{key}" if path else key, source)
+        elif is_dataclass(current):
+            qualified = f"{path}.{key}" if path else key
+            warnings.warn(
+                f"root_config: {qualified!r} must be a mapping in {source}; using defaults",
+                stacklevel=3,
+            )
         else:
             setattr(target, key, value)
+
+
+def _validate_risk(risk: RiskConfig, source: Path) -> None:
+    """Repair ``workflow.risk`` values of the wrong type, warning for each."""
+    defaults = RiskConfig()
+
+    def warn(key: str, why: str) -> None:
+        warnings.warn(f"root_config: workflow.risk.{key} {why} in {source}", stacklevel=3)
+
+    for key in ("max_lines", "max_files", "fanin_top_fraction"):
+        value = getattr(risk, key)
+        number = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if not number or value <= 0:
+            warn(key, f"must be a positive number, got {value!r}; using {getattr(defaults, key)}")
+            setattr(risk, key, getattr(defaults, key))
+    paths = risk.sensitive_paths
+    if isinstance(paths, str):
+        warn("sensitive_paths", "must be a list of globs, got a string; treating it as one glob")
+        risk.sensitive_paths = [paths]
+    elif not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+        warn("sensitive_paths", f"must be a list of globs, got {paths!r}; using the defaults")
+        risk.sensitive_paths = list(defaults.sensitive_paths)
 
 
 def load_root_config(lore_root: Path) -> RootConfig:
@@ -202,6 +244,7 @@ def load_root_config(lore_root: Path) -> RootConfig:
         warnings.warn(f"root_config: top-level must be a mapping at {path}", stacklevel=2)
         return cfg
     _merge(cfg, raw, "", path)
+    _validate_risk(cfg.workflow.risk, path)
     return cfg
 
 

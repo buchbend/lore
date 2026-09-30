@@ -22,6 +22,9 @@ HOMES: dict[str, str] = {"adr": "docs/adr", "prd": "docs/prd"}
 
 _INDEX_NAMES = {"index.md", "readme.md"}
 
+#: The front-matter status `lore workflow prd-ship` writes (ADR 0015).
+SHIPPED = "shipped"
+
 
 def home_dir(repo_root: Path, kind: str) -> Path:
     """Return the conventional home directory for `kind` under `repo_root`."""
@@ -54,14 +57,33 @@ def list_docs(repo_root: Path, kind: str) -> list[dict[str, Any]]:
 
     Empty list (not an error) when the home dir doesn't exist — most
     repos have no ADRs yet, or don't use PRDs at all. Index files
-    (``README.md``/``index.md``) are included and sorted first.
+    (``README.md``/``index.md``) are included and sorted first. A shipped
+    PRD sorts last: its epic merged and the ADRs hold the current
+    decisions (ADR 0015).
     """
     d = home_dir(repo_root, kind)
     if not d.is_dir():
         return []
     entries = [_entry_for(p, repo_root) for p in sorted(d.glob("*.md"))]
-    entries.sort(key=lambda e: (not e["is_index"], e["path"]))
+    entries.sort(key=lambda e: (not e["is_index"], is_shipped(e), e["path"]))
     return entries
+
+
+def is_shipped(entry: dict[str, Any]) -> bool:
+    """True for a PRD whose front-matter says ``status: shipped``."""
+    return str(entry.get("status") or "").strip().lower() == SHIPPED
+
+
+def rank_docs(adrs: list[dict[str, Any]], prds: list[dict[str, Any]]) -> list[str]:
+    """Paths in reading order: ADRs, then current PRDs, then shipped PRDs.
+
+    A shipped PRD ranks below every ADR, so a reader meets the current
+    decision before the plan it came from. Only the paths: the entries
+    themselves sit in the ``adr`` and ``prd`` lists already.
+    """
+    current = [p["path"] for p in prds if not is_shipped(p)]
+    shipped = [p["path"] for p in prds if is_shipped(p)]
+    return [*(e["path"] for e in adrs), *current, *shipped]
 
 
 def resolve_doc(repo_root: Path, kind: str, path: str) -> Path | None:

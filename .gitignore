@@ -9,6 +9,8 @@ __pycache__/
 venv/
 dist/
 build/
+# The lore-workflow `build` skill is source, not a build artefact.
+!lore-workflow/skills/build/
 *.egg
 .coverage
 htmlcov/
