@@ -51,7 +51,7 @@ def test_file_issue_closes_only_own_issues() -> None:
 
 # --- decision gate ---------------------------------------------------------
 
-DECISION_GATE = "outside a grilling session is a PR. A human merges it."
+DECISION_GATE = "outside a grilling session is a PR. A human approves its merge."
 
 
 @pytest.mark.parametrize("skill", ["build", "tdd"])

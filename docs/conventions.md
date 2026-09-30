@@ -41,7 +41,7 @@ workflow uses it but does not ship it.
 | Mode | Use when | Finish point |
 |------|----------|--------------|
 | `loop` | The user reacts to a running feature in fast rounds. | One wrap-up PR from `loop/<slug>`. Rounds merge locally; nothing else reaches the remote. |
-| `issue` | One written, clear issue. | One PR. The user merges it. |
+| `issue` | One written, clear issue. | One PR. The agent merges it after the user approves in the conversation. |
 | `epic` | An epic tracker issue with a roadmap. | The epic PR, then the handover section in the epic issue. |
 
 Every mode keeps a ledger of ADR candidates, term candidates and

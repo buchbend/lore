@@ -162,7 +162,7 @@ def test_every_lore_workflow_verb_in_the_skills_exists() -> None:
 PASS_ACTIONS = (
     "**PASS and green checks, `epic` feature PR:** merge it into `epic/<issue>`.",
     "**PASS and green checks, the epic PR:** go back to [epic-tail.md](epic-tail.md) § 4.",
-    "**PASS and green checks, `issue` mode:** go on to the finish point. The user merges.",
+    "**PASS and green checks, `issue` mode:** go on to the finish point. Merge after the merge approval.",
 )
 
 
@@ -173,13 +173,20 @@ def test_a_pass_names_its_mode_before_any_merge() -> None:
     assert "PASS and green checks: merge" not in review
 
 
-def test_issue_mode_never_tells_the_agent_to_merge() -> None:
-    """Issue mode ends at the finish point; the user merges its PR."""
+def test_issue_mode_merges_only_after_the_merge_approval() -> None:
+    """Issue mode asks at the finish point; the agent merges on a yes."""
     issue = _section("Mode `issue`")
     # "pre-merge" names a mode of `document`, not a merge.
     merges = re.findall(r"(?<!pre-)\bmerg\w*", issue, re.I)
-    assert merges == ["merges"], merges
-    assert "The user merges." in issue
+    assert merges == ["merge", "merge"], merges
+    assert "Ask for the merge approval and merge on a yes." in issue
+
+
+def test_the_merge_approval_needs_a_clear_yes() -> None:
+    rules = _section("Rules for every mode")
+    assert "**Merge approval.**" in rules
+    assert "Silence or a reply about something else is not a yes." in rules
+    assert "The user can merge on GitHub instead" in rules
 
 
 def test_epic_outcomes_go_through_ledger_set_on_the_board() -> None:

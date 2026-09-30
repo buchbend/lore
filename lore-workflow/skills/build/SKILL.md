@@ -15,7 +15,7 @@ Then follow its section. Read a sibling file only when the run reaches it.
 | Mode | Use when | Finish point |
 |---|---|---|
 | `loop` | The user reacts to a running feature: screenshots, "make this red", "quick fix". | Wrap-up PR from `loop/<slug>` |
-| `issue` | One written, clear issue. | One PR, merged by the user |
+| `issue` | One written, clear issue. | One PR, merged after the user approves |
 | `epic` | An epic tracker issue with a roadmap table from [`to-epic`](../to-epic/SKILL.md). | Epic PR, then the handover section |
 
 Work that is several features, or still unshaped, goes back to [`orient`](../orient/SKILL.md).
@@ -27,7 +27,13 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
 - **Never merge on red.** CI status and ruff come from `gh pr checks <n>`, never from a model.
   Where CI has no ruff job, run `ruff check` and `ruff format --check` and read the exit codes.
 - **Decision gate.** An ADR, a PRD or a wiki topic-note edit outside a grilling session is a PR.
-  A human merges it. Draft an ADR only after the user approved its ledger line.
+  A human approves its merge. Draft an ADR only after the user approved its ledger line.
+- **Merge approval.** A PR that ends a `loop` or `issue` run, or an epic PR, merges only after
+  the user approves it in the conversation. Post one message: the PR link, `gh pr diff <n>
+  --name-only`, the review verdict, `gh pr checks <n>`, the ledger outcomes. Ask whether to
+  merge. On a clear yes, merge with the repo's usual method and report the merge SHA. Silence or
+  a reply about something else is not a yes. The user can merge on GitHub instead; then go on
+  from the merged state.
 - **Tiers.** Every spawn names a tier and passes `lore tier resolve <tier>` as its model. See
   [TIER-DELEGATION.md](../../TIER-DELEGATION.md).
 - **Writing rules.** Run `lore style show writing-rules` before you write a PR body, an ADR, a
@@ -125,7 +131,8 @@ On "wrap up", read [loop-wrap-up.md](loop-wrap-up.md) and follow it.
    [loop-wrap-up.md](loop-wrap-up.md) steps 3 and 4 do. Push the approved ADRs and terms to the
    same PR. `lore workflow ledger-check` passes, or you go back to the user. Add the handover
    section to the PR body (`gh pr edit <n> --body-file …`). Add the version bump as the last
-   commit if the repo needs one. Run `lore workflow ledger-archive`. The user merges.
+   commit if the repo needs one. Run `lore workflow ledger-archive`. Ask for the merge
+   approval and merge on a yes.
 
 ## Mode `epic`
 
@@ -201,7 +208,7 @@ and stays present. Every row is AFK. One repo without a deploy gate holds all ro
 - Your own slices may write tests beside the code. Then break two or three pieces of key logic,
   confirm the tests fail, restore, and note the check on the board.
 - Then run the epic tail. Its whole-epic review is the one review of this run, for any number
-  of features. The user merges instead of you.
+  of features. The epic PR merges only after the merge approval.
 
 **Epic tail.** When every row is merged and CI is green, read [epic-tail.md](epic-tail.md) and
 follow it.

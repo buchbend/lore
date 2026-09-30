@@ -15,7 +15,8 @@ List the open lines of the board's `## Ledger` section with `lore workflow ledge
   step 3 does. Write what the user approves onto `epic/<issue>`. An ADR fills `Holds` and
   `Revisit if` per [ADR-FORMAT.md](../grilling/ADR-FORMAT.md).
 - **User not reachable:** file each open line through `file-issue`, then set it `filed`.
-- An epic PR that carries a new ADR waits for a human merge (decision gate).
+- An epic PR that carries a new ADR merges only after the merge approval in `SKILL.md`
+  (decision gate). An unreachable user leaves it open.
 
 Set each outcome on the board: pipe the comment body through `ledger-set`, then write the output
 back to the comment.
@@ -50,7 +51,8 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
    .body | lore workflow ledger-check -`. Do not merge while it exits 1.
 3. When `epic-policy` returned `deploy_gate: true`, get one human confirmation and note it on
    the board.
-4. Merge on green checks. Exception: in the human-present option in `SKILL.md`, the user merges.
+4. Merge on green checks. Exception: in the human-present option in `SKILL.md`, merge only
+   after the merge approval.
 
 ## 5. Handover section
 
