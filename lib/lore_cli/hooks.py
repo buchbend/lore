@@ -129,7 +129,7 @@ def _first_line(text: str) -> str:
     return ""
 
 
-def _emit(hook_event: str, text: str, *, plain: bool) -> None:
+def _emit(hook_event: str, text: str, *, plain: bool, notice: str | None = None) -> None:
     """Emit hook output in the format Claude Code expects.
 
     The authoritative schema (docs.claude.com, 2026-04) differs per event:
@@ -150,6 +150,8 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
       Stop — `hookSpecificOutput` is NOT allowed. Only top-level fields.
         We emit the hint via `systemMessage`.
 
+    *notice* is an extra SessionStart banner line for the user only.
+
     `--plain` dumps raw text to stdout — used by the /lore:context skill and
     for manual inspection.
     """
@@ -163,6 +165,8 @@ def _emit(hook_event: str, text: str, *, plain: bool) -> None:
         return
 
     one_liner = _first_line(text)
+    if notice:
+        one_liner = f"{one_liner}\n{notice}"
     envelope: dict
 
     if hook_event == "SessionStart":
@@ -658,16 +662,18 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - ledger must never crash SessionStart
         pass
 
+    handover_notice: str | None = None
     try:  # the payload's source tells a /clear or compaction from a fresh start
-        from lore_core.handover import session_start_block
+        from lore_core.handover import session_start_block, status_line
 
+        handover_notice = status_line(cwd_resolved, payload.get("source"))
         block = session_start_block(cwd_resolved, payload.get("source"), probe=probe)
         if block:
             out = out + "\n\n" + block
     except Exception:  # noqa: BLE001 - handover must never crash SessionStart
         pass
 
-    _emit("SessionStart", out, plain=plain)
+    _emit("SessionStart", out, plain=plain, notice=handover_notice)
 
 
 @hook_app.command("wiki-pull", hidden=True)
