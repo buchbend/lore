@@ -8,6 +8,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.81.0] - 2026-10-02
+
+### Added
+
+- **Handover notes survive `/clear` and compaction (#462).** `/lore:handover`
+  writes the session's state with `lore handover write`. SessionStart injects
+  the full note after `/clear` (then archives it) or compaction (and keeps
+  it), and offers it in one line on a fresh start.
+- **The SessionStart banner shows the handover status.** After `/clear` or
+  compaction it reads `lore: handover loaded (<time>) — <goal>` or
+  `lore: no handover note for this directory`; on a fresh start with a note
+  it reads `lore: handover available (…)`.
+
+### Fixed
+
+- **`lore update` upgrades the CLI and both plugins in one run (#461).**
+
 ## [0.80.0] - 2026-09-30
 
 Ships `lore-workflow` 0.12.0.
