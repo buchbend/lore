@@ -54,11 +54,15 @@ fact.
 ### Short names
 
 20. A short name for a thing belongs in the glossary. Where the glossary holds no entry, write the meaning out. `L0` means a data level.
-21. A short name for a piece of work never enters a title, a description, a document or a commit message. A phase, a group and a priority code are such names. Cite the issue number instead. Not "the G4 group" but "issue 412".
+21. A short name for a piece of work never enters a title, a description, a document or a commit message. A phase, a group and a priority code are such names. Cite the issue number instead. Not "the G4 group" but "issue 412 (ingest retry)".
 
 ### ADRs and PRDs
 
 22. No absolutes in ADR and PRD text outside an invariant line. Absolutes: always, never, no exceptions, fixed, must. State the strength in the `Holds` section instead.
+
+### References
+
+23. Give every numbered issue, PR, ADR or PRD reference its title in a few words. Not "ADR 0015" but "ADR 0015 (decision records state their strength)".
 
 Enforcement differs per rule. Vale lints rules 3 and 6 everywhere and rule 22
 in ADRs and PRDs. Rules 9 and 12 run as regex heuristics that catch the
@@ -116,8 +120,8 @@ A flag holds one lead sentence and a short body. A teammate reads it months
 later, on a wiki page, without the session that filed it. That reader is the
 reader these rules are written for.
 
-Apply the vocabulary rules, the sentence rules, and rules 13, 14, 17, 19, 20
-and 21.
+Apply the vocabulary rules, the sentence rules, and rules 13, 14, 17, 19, 20,
+21 and 23.
 
 Three parts do not apply to a flag:
 
@@ -155,6 +159,7 @@ team pasted below). In short:
 - A short name for a piece of work never enters a title, a description, a
   document or a commit message. A phase, a group and a priority code are such
   names. Cite the issue number.
+- Give every issue, PR, ADR or PRD number its title in a few words.
 - Maximum 20 words per instruction, 25 per description. One instruction per
   sentence.
 - Active voice with a named actor. No participial clause openers. No noun
@@ -176,6 +181,6 @@ team pasted below). In short:
 
 - The glossary's own contents. Separate artifact, separate problem.
 - Code comments, chat, session notes and commit messages, which already have a
-  convention. Rule 21 still covers a commit message.
+  convention. Rules 21 and 23 still cover a commit message.
 - Machine-read text: roadmap tables, board comments, reviewer verdict blocks.
 - Vocabulary size in "Context", where domain precision beats simplicity.

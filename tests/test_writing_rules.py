@@ -224,8 +224,9 @@ def test_paste_block_carries_both_short_name_rules() -> None:
 def test_rules_stay_under_the_line_budget() -> None:
     """An over-specified instruction file is a known failure mode. The document
     was compacted from 245 lines to 139; every addition replaces text. Rule 22
-    (ADR 0015) raised the ceiling by five lines for its own subsection."""
-    assert len(_default_text().splitlines()) < 185
+    (ADR 0015) raised the ceiling by five lines for its own subsection, rule 23
+    (titled references) by four."""
+    assert len(_default_text().splitlines()) < 189
 
 
 # --- the writing rules and the deprecated alias --------------------------
@@ -320,3 +321,12 @@ def test_no_tracked_file_names_the_retired_style() -> None:
         if RETIRED_TERM.search(joined):
             offenders.append(rel)
     assert not offenders, f"these files still name the retired style: {offenders}"
+
+
+def test_numbered_references_carry_a_title() -> None:
+    """A bare `#412` means nothing to a reader outside the session that wrote it."""
+    rule = _rule(23)
+    for kind in ("issue", "PR", "ADR", "PRD", "title"):
+        assert kind in rule, rule
+    paste = _default_text().split("## Block for CLAUDE.md and AGENTS.md", 1)[1]
+    assert any("number" in b and "title" in b for b in paste.split("\n- ")), paste
