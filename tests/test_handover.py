@@ -112,6 +112,28 @@ def test_no_note_no_mention(env: Path) -> None:
         assert "handover" not in _session_start(env, source).lower()
 
 
+def _banner(cwd: Path, source: str) -> str:
+    out = _hook("session-start", "--cwd", str(cwd), "--probe", source=source)
+    return json.loads(out)["systemMessage"]
+
+
+def test_banner_shows_the_note_was_found_and_its_goal(env: Path) -> None:
+    handover.write(env, NOTE)
+    assert "handover loaded" in _banner(env, "clear")
+    assert "Ship the handover hook." in _banner(env, "clear")
+    assert "handover available" in _banner(env, "startup")
+
+
+def test_banner_says_when_no_note_was_found_after_clear(env: Path) -> None:
+    assert "no handover note" in _banner(env, "clear")
+    assert "handover" not in _banner(env, "startup")
+
+
+def test_gist_falls_back_to_the_first_prose_line_and_clips() -> None:
+    assert handover._gist("# Title\nplain line\n") == "plain line"
+    assert len(handover._gist("## Goal\n" + "x" * 200)) == 80
+
+
 # --- PreCompact --------------------------------------------------------------
 
 

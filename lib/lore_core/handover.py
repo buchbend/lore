@@ -102,6 +102,33 @@ def session_start_block(cwd: Path, source: str | None, *, probe: bool = False) -
     return f"lore: handover from {written} — run `lore handover show` to load it."
 
 
+def _gist(text: str, limit: int = 80) -> str:
+    """The first line under ``## Goal``, else the first prose line, clipped."""
+    lines = [ln.strip() for ln in text.splitlines()]
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.lower() == "## goal") + 1
+    except StopIteration:
+        start = 0
+    gist = next((ln for ln in lines[start:] if ln and not ln.startswith("#")), "")
+    return gist if len(gist) <= limit else gist[: limit - 1].rstrip() + "…"
+
+
+def status_line(cwd: Path, source: str | None) -> str | None:
+    """The user-visible banner line: whether a note was found, and its gist.
+
+    Call before :func:`session_start_block`, which archives after a clear.
+    """
+    text = read(cwd)
+    if text is None:
+        if source in ("clear", "compact"):
+            return "lore: no handover note for this directory"
+        return None
+    verb = "loaded" if source in ("clear", "compact") else "available"
+    gist = _gist(text)
+    tail = f" — {gist}" if gist else ""
+    return f"lore: handover {verb} ({_written_at(handover_path(cwd))}){tail}"
+
+
 def precompact_note(cwd: Path) -> str | None:
     if read(cwd) is None:
         return None
