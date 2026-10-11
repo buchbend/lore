@@ -25,6 +25,7 @@ _CODE_DEFAULTS: dict[str, object] = {
     "sinks": ("file",),
     "sources": (),
 }
+_WIKI_NAME = re.compile(r"[A-Za-z0-9][\w.-]*")
 _ENV = {"scope": "LORE_SCOPE", "wiki": "LORE_WIKI", "tracker": "LORE_TRACKER"}
 
 
@@ -82,7 +83,9 @@ def _as_list(v: object) -> list[str]:
     return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
 
 
-def _match_scope(cwd: Path, scopes: dict) -> tuple[str | None, str, list[str]]:
+def _match_scope(
+    cwd: Path, repo_root: Path | None, scopes: dict
+) -> tuple[str | None, str, list[str]]:
     """Longest scope folder containing ``cwd``, else a unique remote match."""
     by_path = [
         (len(_expand(s["path"]).parts), name, s["path"])
@@ -93,10 +96,13 @@ def _match_scope(cwd: Path, scopes: dict) -> tuple[str | None, str, list[str]]:
         _, name, path = max(by_path)
         return name, f"path {path}", []
     with_remote = {n: _as_list(s.get("remote")) for n, s in scopes.items() if s.get("remote")}
-    rid = _remote_id(cwd) if with_remote and cwd.is_dir() else None
+    rid = _remote_id(cwd) if with_remote and repo_root is not None else None
     if rid is None:
         return None, "", []
-    hits = [n for n, pats in with_remote.items() if any(fnmatch(rid, p) for p in pats)]
+    # GitHub owners and names are case-insensitive.
+    hits = [
+        n for n, pats in with_remote.items() if any(fnmatch(rid.lower(), p.lower()) for p in pats)
+    ]
     if len(hits) > 1:
         names = ", ".join(repr(h) for h in sorted(hits))
         return None, "", [f"scopes {names} all match remote {rid}; no scope applies"]
@@ -170,10 +176,17 @@ def _resolve(
     notes: list[str] = []
     if os.environ.get(_ENV["scope"]):
         scope, origins["scope"] = os.environ[_ENV["scope"]], f"env {_ENV['scope']}"
-    elif isinstance(lore_yml.get("scope"), str):
+    elif isinstance(lore_yml.get("scope"), str) and lore_yml["scope"] in scopes:
         scope, origins["scope"] = lore_yml["scope"], ".lore.yml"
     else:
-        scope, origin, notes = _match_scope(cwd, scopes)
+        # An old offer file names a scope the person never defined: match by folder.
+        if isinstance(lore_yml.get("scope"), str):
+            notes.append(
+                f".lore.yml names scope {lore_yml['scope']!r}, which {cfg_path} "
+                "does not define; matching by folder"
+            )
+        scope, origin, match_notes = _match_scope(cwd, repo_root, scopes)
+        notes.extend(match_notes)
         if scope:
             origins["scope"] = origin
     scope_cfg = scopes.get(scope or "", {})
@@ -192,6 +205,13 @@ def _resolve(
                 values[key] = tuple(_as_list(value)) if key in ("sinks", "sources") else str(value)
                 origins[key] = origin
                 break
+
+    # A wiki name becomes a path under wiki/; a committed file must not
+    # point outside it.
+    wiki = values["wiki"]
+    if wiki is not None and not _WIKI_NAME.fullmatch(str(wiki)):
+        notes.append(f"wiki {wiki!r} from {origins['wiki']} is not a wiki name; ignored")
+        values["wiki"], origins["wiki"] = None, "rejected"
 
     # Reporting boundary (ADR 0016 invariant): only the person's own config
     # defines a sink. A name it does not define falls back to `file`.

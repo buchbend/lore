@@ -4,7 +4,7 @@ Lore writes no session note automatically; the compose pipeline that once
 filed one was retired. This module keeps only the pieces other modules
 still need:
 
-* :func:`_resolve_attach_block` — attach lookup used by hooks/doctor
+* :func:`_resolve_attach_block` — route lookup used by hooks/doctor
 * :func:`slugify` — slug derivation
 """
 
@@ -15,14 +15,13 @@ from pathlib import Path
 
 
 def _resolve_attach_block(cwd: Path) -> tuple[Path, dict] | None:
-    """Registry-backed lookup for the attachment covering ``cwd``.
+    """Route-backed lookup for ``cwd`` (see :func:`lore_core.route.resolve_route`).
 
     Returns:
-      * ``(synthetic_claude_md_path, {"wiki": ..., "scope": ..., ...})``
-        for attached cwds (the block dict merges the attachment + any
-        ``.lore.yml`` at the repo root, so fields like ``backend``,
-        ``issues``, ``prs`` surface to callers that need them), or
-      * ``None`` for unattached cwds.
+      * ``(synthetic <repo>/CLAUDE.md path, {"wiki": ..., "scope": ..., ...})``
+        when a wiki routes ``cwd`` (the block dict also takes ``backend`` and
+        ``wiki_source`` from a ``.lore.yml`` at the repo root), or
+      * ``None`` when no wiki routes ``cwd``.
     """
     from lore_core.offer import parse_lore_yml, FILENAME as LORE_YML
     from lore_core.route import resolve_route
@@ -32,7 +31,7 @@ def _resolve_attach_block(cwd: Path) -> tuple[Path, dict] | None:
         return None
     block = {"wiki": scope.wiki, "scope": scope.scope, "backend": "none"}
 
-    # Attachment paths store the repo root; look for a `.lore.yml` there
+    # The synthetic path sits at the repo root; look for a `.lore.yml` there
     # and merge its non-routing fields (backend, wiki_source) into the
     # block dict. This keeps downstream callers
     # (`_session_start_from_lore`, etc.) working unchanged.

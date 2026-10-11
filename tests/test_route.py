@@ -243,3 +243,84 @@ def test_route_is_cached_per_process_until_a_config_file_changes(
     assert resolve_route(repo).wiki == "private"
     (repo / ".lore.yml").write_text("wiki: scratch\n")
     assert resolve_route(repo).wiki == "scratch"
+
+
+# ---------------------------------------------------------------------------
+# Review round 1 (PR #477)
+# ---------------------------------------------------------------------------
+
+
+def test_lore_yml_scope_unknown_to_person_config_falls_back_to_folder_match(
+    tmp_path: Path,
+) -> None:
+    cfg = _person(
+        {
+            "scopes": {
+                "org": {"path": str(tmp_path / "git"), "wiki": "ccat", "logbook": ["file", "pm"]}
+            },
+            "sinks": {"pm": {"kind": "command"}},
+        }
+    )
+    repo = _repo(tmp_path / "git" / "dc")
+    (repo / ".lore.yml").write_text("wiki: private\nscope: lore\nbackend: github\n")
+
+    route = resolve_route(repo)
+
+    assert route.scope == "org"
+    assert route.sinks == ("file", "pm")
+    assert (route.wiki, route.origins["wiki"]) == ("private", ".lore.yml")
+    assert any("'lore'" in n and str(cfg) in n for n in route.notes)
+
+
+def test_lore_yml_wiki_that_is_not_a_wiki_name_is_rejected(tmp_path: Path) -> None:
+    repo = _repo(tmp_path / "dc")
+    (repo / ".lore.yml").write_text("wiki: ../../x\n")
+
+    route = resolve_route(repo)
+
+    assert route.wiki is None
+    assert route.origins["wiki"] == "rejected"
+    assert any("../../x" in n for n in route.notes)
+
+
+def test_no_git_call_outside_a_repo(tmp_path: Path, monkeypatch) -> None:
+    from lore_core import route as route_mod
+
+    _person({"scopes": {"a": {"remote": ["github.com/ccatobs/*"], "wiki": "ccat"}}})
+    calls: list[Path] = []
+    monkeypatch.setattr(route_mod, "_remote_id", lambda cwd: calls.append(cwd))
+
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    assert resolve_route(plain).scope is None
+    assert calls == []
+
+
+def test_remote_match_ignores_case(tmp_path: Path) -> None:
+    _person({"scopes": {"ccatobs": {"remote": ["github.com/ccatobs/*"], "wiki": "ccat"}}})
+    repo = _repo(tmp_path / "dc", remote="git@github.com:CCATObs/data-center.git")
+
+    assert resolve_route(repo).scope == "ccatobs"
+
+
+def test_scope_list_keys_accept_a_plain_string(tmp_path: Path) -> None:
+    """The route and the schema agree: a string is a one-item list."""
+    from lore_core.config_schema import validate_raw
+    from lore_core.root_config import RootConfig
+
+    raw = {
+        "scopes": {
+            "ccatobs": {
+                "path": str(tmp_path / "git"),
+                "remote": "github.com/ccatobs/*",
+                "logbook": "file",
+                "sources": "ccatwiki",
+                "wiki": "ccat",
+            }
+        }
+    }
+    assert validate_raw(RootConfig, raw) == []
+    _person(raw)
+    route = resolve_route(_repo(tmp_path / "git" / "dc"))
+    assert (route.sinks, route.sources) == (("file",), ("ccatwiki",))

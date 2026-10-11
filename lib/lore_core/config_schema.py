@@ -355,6 +355,8 @@ def validate_raw(dataclass_type: type, raw: Any, source: Path | None = None) -> 
                         got = type(entry).__name__
                         errors.append(f"'{path}.{name}' expects a mapping, got {got}")
                 continue
+            if field_map[key].metadata.get("one_or_many") and isinstance(value, str):
+                continue  # a plain string is a one-item list
             errors.extend(_type_errors(path, type(default_value), value))
 
     walk(raw, "", default_root)

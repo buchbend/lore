@@ -261,6 +261,10 @@ def sync_transcripts(
             continue
 
         wiki_dir = lore_root / "wiki" / scope.wiki
+        if not wiki_dir.is_dir():
+            # The route names a wiki this vault lacks: create no folder.
+            result.skipped += 1
+            continue
         try:
             _ensure_transcripts_gitignored(wiki_dir)
         except GitignoreNegationError as exc:

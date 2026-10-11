@@ -161,14 +161,19 @@ class WorkflowConfig:
     risk: RiskConfig = field(default_factory=RiskConfig)
 
 
+def _names() -> Any:
+    """A list of names; the YAML may also hold one plain string."""
+    return field(default_factory=list, metadata={"one_or_many": True})
+
+
 @dataclass
 class DefaultsConfig:
     """Values a repo gets when no scope and no `.lore.yml` sets them."""
 
     wiki: str = ""
     tracker: str = "auto"
-    logbook: list[str] = field(default_factory=list)
-    sources: list[str] = field(default_factory=list)
+    logbook: list[str] = _names()
+    sources: list[str] = _names()
 
 
 @dataclass
@@ -180,11 +185,11 @@ class ScopeConfig:
     """
 
     path: str = ""
-    remote: list[str] = field(default_factory=list)
+    remote: list[str] = _names()
     wiki: str = ""
     tracker: str = ""
-    logbook: list[str] = field(default_factory=list)
-    sources: list[str] = field(default_factory=list)
+    logbook: list[str] = _names()
+    sources: list[str] = _names()
 
 
 @dataclass

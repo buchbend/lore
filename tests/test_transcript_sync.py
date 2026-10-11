@@ -319,3 +319,21 @@ def test_sync_collects_errors_instead_of_aborting(tmp_path):
     assert result.copied == 0
     assert len(result.errors) >= 1
     assert "negation" in result.errors[0].lower() or "transcripts" in result.errors[0].lower()
+
+
+def test_sync_skips_a_route_to_a_wiki_the_vault_lacks(tmp_path):
+    """A route names a wiki with no folder under wiki/: sync creates nothing."""
+    lore_root = tmp_path / "vault"
+    (lore_root / ".lore").mkdir(parents=True)
+    (lore_root / "wiki").mkdir()
+    cwd = tmp_path / "proj"
+    cwd.mkdir()
+    _attach(lore_root, cwd, wiki="typo")
+    src = tmp_path / "projects" / "a.jsonl"
+    _write_jsonl(src, [{"x": 1}])
+    _seed_ledger_entry(lore_root, transcript_id="a", src_path=src, directory=cwd)
+
+    result = sync_transcripts(lore_root)
+
+    assert (result.copied, result.skipped) == (0, 1)
+    assert not (lore_root / "wiki" / "typo").exists()

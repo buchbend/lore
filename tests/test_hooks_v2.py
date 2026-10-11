@@ -173,17 +173,11 @@ def fake_vault(tmp_path, monkeypatch):
 
 
 def _register_attachment(lore_root: Path, repo: Path, *, wiki: str, scope: str) -> None:
-    """Register ``repo`` in ``lore_root/.lore/attachments.json``."""
-    from datetime import UTC, datetime
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+    """Route ``repo`` to ``wiki`` with a scope in the person config (PRD 0016)."""
+    from conftest import seed_scope
 
     (lore_root / ".lore").mkdir(exist_ok=True)
-    af = AttachmentsFile(lore_root); af.load()
-    af.add(Attachment(
-        path=repo, wiki=wiki, scope=scope,
-        attached_at=datetime(2026, 4, 22, 9, 0, tzinfo=UTC), source="manual",
-    ))
-    af.save()
+    seed_scope(repo, wiki, name=scope)
 
 
 def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
