@@ -57,16 +57,15 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
   `--board -` as [epic-tail.md](epic-tail.md) § 2 shows.
 - **Handover section.** Each finish point writes `## Handover` in the shape
   [`handover`](../handover/SKILL.md) gives. Work that stops early runs `handover` instead.
-- **Logbook entry.** After the handover section and before the merge approval, run `lore log
-  add` per [logbook.md](logbook.md).
+- **Logbook.** After the handover section, before the merge approval: `lore log add`, [logbook.md](logbook.md).
 - **Version bump.** If the repo's `AGENTS.md` or `CLAUDE.md` requires a version bump per release,
-  the shipping PR carries it as its last commit. Lore runs
+  the shipping PR carries it as its last commit. Follow that file. Lore itself runs
   `python3 tools/release.py --in-branch --notes notes.md`.
 - **Follow-ups** go through [`file-issue`](../file-issue/SKILL.md) and get a `filed` ledger line.
 - **Session end.** Read `lore config get feedback.retrieval_misses`. When true, file one issue per
   retrieval miss on `feedback.retrieval_misses_repo` through `file-issue`: the fact, the tools
-  tried, the turn count. List every issue and PR the session created or commented on in your
-  final message.
+  tried, the turn count. When false, skip the check. List every issue and PR the session
+  created or commented on in your final message.
 
 ## Mode `loop`
 
@@ -131,7 +130,7 @@ On "wrap up", read [loop-wrap-up.md](loop-wrap-up.md) and follow it.
 7. **Finish point.** Present the open ledger lines to the user in one message, as
    [loop-wrap-up.md](loop-wrap-up.md) steps 3 and 4 do. Push the approved ADRs and terms to the
    same PR. `lore workflow ledger-check` passes, or you go back to the user. Add the handover
-   section to the PR body (`gh pr edit <n> --body-file …`). Run `lore log add`. Add the
+   section to the PR body. Run `lore log add`. Add the
    version bump as the last commit if the repo needs one. Run `lore workflow ledger-archive`.
    Ask for the merge approval and merge on a yes.
 

@@ -89,7 +89,7 @@ def test_every_finish_point_writes_a_logbook_entry() -> None:
     """PRD 0017 § Build rule: after the handover section, before the merge approval."""
     rules = _section("Rules for every mode")
     assert "lore log add" in rules
-    assert "After the handover section and before the merge approval" in rules
+    assert "After the handover section, before the merge approval" in rules
     assert "before the version bump" in _text("build/logbook.md")
     assert "lore log add" in _section("Mode `issue`")
     for rel in (

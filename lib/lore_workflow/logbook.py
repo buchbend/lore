@@ -168,7 +168,12 @@ def _file_sink(entry: Entry, repo_root: Path) -> bool:
 
 
 def _command_sink(entry: Entry, spec: dict, repo_root: Path) -> bool:
-    env = {k: v for k, v in os.environ.items() if k != "LORE_SECRET"}
+    from lore_core.secrets import SecretsError, secret_env
+
+    try:
+        env = secret_env(str(spec["secret"]) if spec.get("secret") else None)
+    except SecretsError:
+        return False
     env.update(
         LORE_ENTRY_KEY=entry.key,
         LORE_ENTRY_AT=entry.at,
@@ -176,13 +181,6 @@ def _command_sink(entry: Entry, spec: dict, repo_root: Path) -> bool:
         LORE_ENTRY_SCOPE=entry.scope,
         LORE_ENTRY_REF=entry.ref,
     )
-    if spec.get("secret"):
-        from lore_core.secrets import read_secrets
-
-        value = read_secrets().get(str(spec["secret"]))
-        if value is None:
-            return False
-        env["LORE_SECRET"] = value
     done = subprocess.run(
         str(spec["run"]),
         shell=True,  # the person's own config defines `run`, as a shell line
