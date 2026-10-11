@@ -84,7 +84,7 @@ This is the conflict class two hosts editing the same topic note hit.
 
 `_catalog.json`, `_index.txt`, `threads.md` are all
 regenerated from the corpus. On conflict, accept either side
-(`git checkout --ours <path>`), then run `lore lint` after the merge
+(`git checkout --ours <path>`), then run `lore wiki lint` after the merge
 to truth them up. They'll converge to the same byte-for-byte output
 on either host's next regen.
 
@@ -180,7 +180,7 @@ regardless of this setting.
 | Clean tree, fast-forwardable | Fetch + ff | `lore status` (silent unless new commits pulled) |
 | Clean tree, diverged (we have local commits, remote has different commits) | Skip pull, surface to user | `lore status` `· wiki diverged — git pull manually` |
 | Push: remote ahead, FF possible | Fetch + ff + push | (silent) |
-| Push: regenerable-artifact conflict | ours wins, `lore lint` reconciles | (silent) |
+| Push: regenerable-artifact conflict | ours wins, `lore wiki lint` reconciles | (silent) |
 | Push: typed-note or session-note conflict | `MERGE_BLOCKED` — `git merge --abort` runs and the tree returns clean | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
 | Push: unknown-path conflict | abort merge, surface to user | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
 | `watchdog` not installed | Reindex throttle = 5s natural decay | (silent — same as 0.10.x) |

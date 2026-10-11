@@ -32,7 +32,7 @@ def _adr(repo: Path, name: str, holds: str | None) -> Path:
 
 
 def _lint(repo: Path, *extra: str):
-    return runner.invoke(app, ["lint", "adr", str(repo), *extra])
+    return runner.invoke(app, ["wiki", "lint", "adr", str(repo), *extra])
 
 
 def test_an_adr_without_holds_fails_and_names_the_file(tmp_path: Path) -> None:
@@ -140,7 +140,7 @@ def test_this_repos_adrs_pass() -> None:
 
 def test_bare_lint_still_runs_the_vault_lint_not_the_adr_check() -> None:
     """The `adr` sub-verb must not swallow the vault lint's own help."""
-    result = runner.invoke(app, ["lint", "--help"])
+    result = runner.invoke(app, ["wiki", "lint", "--help"])
     assert result.exit_code == 0
     # CI renders Rich help with colour codes that split option names.
     output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)

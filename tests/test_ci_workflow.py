@@ -45,10 +45,10 @@ def _steps() -> list[dict]:
 
 
 def test_workflow_runs_the_adr_lint_after_pytest_and_blocks_on_it():
-    """ADR 0015: `lore lint adr` gates every PR. A failing step fails the job."""
+    """ADR 0015: `lore wiki lint adr` gates every PR. A failing step fails the job."""
     runs = [step.get("run", "") for step in _steps()]
     pytest_at = next(i for i, run in enumerate(runs) if run.startswith("pytest"))
-    lint_at = next(i for i, run in enumerate(runs) if "lore lint adr" in run)
+    lint_at = next(i for i, run in enumerate(runs) if "lore wiki lint adr" in run)
     assert lint_at > pytest_at
     assert not _steps()[lint_at].get("continue-on-error", False)
 

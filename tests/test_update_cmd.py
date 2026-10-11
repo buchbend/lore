@@ -58,7 +58,7 @@ def test_fetch_failure_exits_nonzero_with_helpful_message(capsys):
             install_cmd.update_command(check=False, quiet=False)
         mock_upgrade.assert_not_called()
     assert exc.value.exit_code == 1
-    assert "lore install --upgrade" in capsys.readouterr().out
+    assert "install.sh" in capsys.readouterr().out
 
 
 def test_version_tuple_compare_avoids_lexicographic_bug():

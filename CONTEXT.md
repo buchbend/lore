@@ -85,7 +85,6 @@ not from anything injected ambiently:
   (`docs/architecture/lore-drill.md`).
 - `lore_inbox_classify` — read-only gather that a skill turns into
   prose, then commits via a CLI verb.
-- `lore_journal_write` — the AI/human scratch journal
   (`lore_core/journal.py`); freeform, no LLM abstraction, no
   propagation, never a source for ambient context.
 - `lore_pending_verdicts` / `lore_verdict` — list and record freshness

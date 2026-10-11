@@ -43,7 +43,7 @@ having been written to a wiki.
 
 ## "My wiki still holds session notes under `sessions/`"
 
-Those files are inert markdown. No Lore code reads them: `lore lint`
+Those files are inert markdown. No Lore code reads them: `lore wiki lint`
 no longer walks the `sessions/` tree, `lore_context_pack` returns no
 `sessions` key, and nothing else reads the directory.
 Keep the files, move them, or delete them — Lore behaves the same either
@@ -51,12 +51,12 @@ way. Delete them with `git rm` if you want the tree quiet; the wiki's git
 history keeps a copy.
 
 A wiki that ran an older Lore also holds `sessions/_recent.txt`, the index
-`lore lint` used to regenerate over those notes. Nothing writes or reads it
+`lore wiki lint` used to regenerate over those notes. Nothing writes or reads it
 now, and nothing removes it. Delete it with the notes.
 
 The three migration verbs that used to help here are gone:
 `lore migrate retire-session-notes`, `lore migrate open-items`, and the
-older `lore curator --migrate-open-items`. The transcript-ledger backfill
+older `lore wiki curate --migrate-open-items`. The transcript-ledger backfill
 that `retire-session-notes` ran has no replacement. A ledger entry that
 carries no linkage block keeps none.
 
@@ -97,8 +97,9 @@ Other verbs that moved rather than vanished:
 in that table — both were removed outright, with nothing to move to. See
 ["My wiki still holds session notes under `sessions/`"](#my-wiki-still-holds-session-notes-under-sessions).
 
-`lore journal` still works; it is only hidden from `lore --help` while the
-feature stays parked.
+`lore journal`, `lore session`, `lore project`, `lore migrate flag-blocks`,
+`lore drill`, `lore curator` and `lore lint` are gone. `lore read` replaces
+`drill`; `lore wiki curate` and `lore wiki lint` replace `curator` and `lint`.
 
 ## "No such command: completions" — shell completion
 

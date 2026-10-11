@@ -1,8 +1,8 @@
-"""`lore drill` — composite multi-stage retrieval.
+"""`lore read` — composite multi-stage retrieval.
 
-    lore drill "transaction buffer"
-    lore drill "retry semantics" --wiki private --k 3 --expand-limit 4
-    lore drill "x" --json
+    lore read "transaction buffer"
+    lore read "retry semantics" --wiki private --k 3 --expand-limit 4
+    lore read "x" --json
 
 Calls the same handler as the `lore_drill` MCP tool: search → read top
 hits → expand wikilinks → read expanded set, all in one round-trip.

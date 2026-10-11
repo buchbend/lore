@@ -55,7 +55,7 @@ appended to `$LORE_ROOT/.lore/spine.jsonl` through one writer,
 | `source` | Module(s) | What it emits |
 |---|---|---|
 | `hook` | `lore_cli/hooks.py`, `lore_core/spine.py:emit_hook_event` | SessionStart/PreCompact/Stop/UserPromptSubmit/SessionEnd/Capture hook fires and their outcomes |
-| `curator` | `lore_core/run_log.py`, `lore_curator/hygiene.py` | `run-start` / `run-end` and per-action decision records for a `lore curator` hygiene run (role `c`) — the only curator that still runs |
+| `curator` | `lore_core/run_log.py`, `lore_curator/hygiene.py` | `run-start` / `run-end` and per-action decision records for a `lore wiki curate` hygiene run (role `c`) — the only curator that still runs |
 | `drain` | `lore_core/drain.py` | `transcript-synced` — the one event kind with a live producer; read by `lore status`'s news section |
 | `janitor` | `lore_core/janitor.py`, `lore_core/run_retention.py`, `lore_cli/_crash_log.py` | Retention deletions/downgrades and their failures |
 | `install` | *(reserved, no producer yet)* | Onboarding-wizard events (PRD 0005 pillar C); not wired as of this writing — `lore init` doesn't emit to the spine today |

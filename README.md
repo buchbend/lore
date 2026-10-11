@@ -101,7 +101,7 @@ The bootstrap script picks `pipx` / `uv tool` / `pip --user` (in that
 preference order), installs the `lore` CLI, then chains into
 `lore install` to wire up Claude Code + Cursor integrations and refresh
 Claude's plugin cache. Re-running it is the canonical upgrade path —
-or use `lore install --upgrade` once the binary is on your PATH.
+or use `lore update` once the binary is on your PATH.
 
 ### Manual install
 
@@ -201,7 +201,7 @@ One command — upgrades the binary, refreshes integrations, and pokes
 Claude's plugin cache:
 
 ```bash
-lore install --upgrade
+lore update
 ```
 
 `--upgrade` (or `-u`) delegates to `install.sh upgrade`, which picks
@@ -286,15 +286,13 @@ needs no search.
 
 - `lore ingest --from <file.jsonl> --integration cursor --directory <cwd>` —
   ingest a transcript from any integration lore doesn't auto-capture.
-- `lore curator [--wiki <name>] [--apply]` — the frontmatter-only
+- `lore wiki curate [--wiki <name>] [--apply]` — the frontmatter-only
   hygiene pass (supersession, `implements:` back-links, git-date
   backfill, team-mode hint); dry-run by default.
 - `lore scopes wikis` / `lore scopes doctor` —
   list configured wikis and validate them. (For looking up the
   attachment covering a specific path, use `lore attach attachments show
   <path>`.)
-- `lore migrate flag-blocks [--apply]` — remove the blocks the retired
-  flag crossing left in wiki notes. Dry-run by default.
 
 ### Per-wiki configuration
 

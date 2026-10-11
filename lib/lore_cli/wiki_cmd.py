@@ -1,8 +1,7 @@
 """`lore wiki ...` — manage individual wikis under $LORE_ROOT/wiki/.
 
-The canonical home for wiki-lifecycle verbs going forward. Today it
-hosts ``new`` (scaffold a new wiki); future work can land alongside
-without inventing more top-level CLI verbs.
+The canonical home for wiki-lifecycle verbs going forward. It hosts
+``new`` (scaffold), ``lint`` and ``curate``.
 """
 
 from __future__ import annotations
@@ -96,7 +95,7 @@ def scaffold_wiki(
 
         (target / "_index.txt").write_text(
             f"# {name.upper()} Knowledge Index\n\n"
-            f"(Newly created wiki — run `lore lint --wiki {name}` to populate.)\n"
+            f"(Newly created wiki — run `lore wiki lint --wiki {name}` to populate.)\n"
         )
 
     if mode == "team":
@@ -115,7 +114,7 @@ def scaffold_wiki(
         )
 
     console.print(f"[green]Created {target}[/green]")
-    console.print(f"Next: run [cyan]lore lint --wiki {name}[/cyan] to regenerate catalogs.")
+    console.print(f"Next: run [cyan]lore wiki lint --wiki {name}[/cyan] to regenerate catalogs.")
     return target
 
 
@@ -133,6 +132,12 @@ def cmd_new(
     """Scaffold a new wiki under $LORE_ROOT/wiki/."""
     scaffold_wiki(name, mode=mode.value, remote=remote, force=force)
 
+
+# `lint` (was `lore lint`) and `curate` (was `lore curator`) live under `wiki`.
+from lore_cli import curator_cmd, lint_cmd  # noqa: E402
+
+app.add_typer(lint_cmd.app, name="lint", help="Health-check the vault, regenerate catalogs.")
+app.add_typer(curator_cmd.app, name="curate", help=curator_cmd.app.info.help)
 
 main = argv_main(app)
 
