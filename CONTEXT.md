@@ -45,7 +45,7 @@ spec in `docs/prd/0011`.
 
 ## Hygiene — the retained frontmatter-only curator
 
-`lore curator [--wiki] [--apply]` takes no subcommand — `run`, `flush`,
+`lore wiki curate [--wiki] [--apply]` takes no subcommand — `run`, `flush`,
 `reap` and `sweep` retired with the compose pipeline. The bare
 form runs deterministic, frontmatter-only passes over every wiki
 (`lore_curator/hygiene.py`). The passes are supersession propagation
@@ -85,9 +85,6 @@ not from anything injected ambiently:
   (`docs/architecture/lore-drill.md`).
 - `lore_inbox_classify` — read-only gather that a skill turns into
   prose, then commits via a CLI verb.
-- `lore_journal_write` — the AI/human scratch journal
-  (`lore_core/journal.py`); freeform, no LLM abstraction, no
-  propagation, never a source for ambient context.
 - `lore_pending_verdicts` / `lore_verdict` — list and record freshness
   verdicts; backs `/lore:verify` and the in-passing verdict nudge.
 - `lore_repo_docs_list` / `lore_repo_docs_fetch`

@@ -252,7 +252,7 @@ used by ``lore_core.lockfile.try_acquire_spawn_lock`` to serialise a
 detached background-process launch — transcript sync at SessionStart
 today. The curator's own turn-threshold auto-spawn read this same lock
 before the heartbeat that decided when to take it retired with the
-compose pipeline; `lore curator` now runs only on demand, taking no
+compose pipeline; `lore wiki curate` now runs only on demand, taking no
 lock itself. See those modules for the implementation details — it's
 the canonical lockfile pattern used across the codebase.
 

@@ -497,9 +497,8 @@ def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
                 check="agent_guidance_drift",
                 message=(
                     f"`## Agent guidance` in orientation differs from "
-                    f"repo's AGENTS.md/CLAUDE.md. Run "
-                    f"`lore project sync {slug} --to-repo` "
-                    f"or `--from-repo` to reconcile."
+                    f"repo's AGENTS.md/CLAUDE.md. Copy the section across "
+                    f"by hand to reconcile."
                 ),
             )
         )

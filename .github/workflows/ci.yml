@@ -43,8 +43,8 @@ jobs:
 
       # ADR 0015: each ADR from 0014 on carries `## Holds`, and each
       # invariant line names a test that exists. Blocking.
-      - name: lore lint adr
-        run: lore lint adr
+      - name: lore wiki lint adr
+        run: lore wiki lint adr
 
       # Fails on error level only. tools/vale-docs-baseline.json holds the
       # error count of docs older than this step; a file fails above it.

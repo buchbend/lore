@@ -1,4 +1,4 @@
-"""`lore drill` CLI verb — wraps handle_drill, renders trace + result."""
+"""`lore read` CLI verb (was `lore drill`) — wraps handle_drill, renders trace + result."""
 
 from __future__ import annotations
 

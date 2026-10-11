@@ -62,7 +62,7 @@ def test_lint_reports_drift(tmp_path, monkeypatch):
     drift = [i for i in issues if i.check == "agent_guidance_drift"]
     assert len(drift) == 1
     assert drift[0].severity == "WARNING"
-    assert "lore project sync lore" in drift[0].message
+    assert "lore project sync" not in drift[0].message
 
 
 def test_lint_silent_when_in_sync(tmp_path, monkeypatch):

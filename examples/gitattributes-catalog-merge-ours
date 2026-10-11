@@ -2,7 +2,7 @@
 #
 # Generated files (the linter regenerates them on every run) — conflicts
 # on these are always safe to resolve by taking the current branch's
-# version, because `lore lint` will regenerate them immediately after.
+# version, because `lore wiki lint` will regenerate them immediately after.
 
 _catalog.json  merge=ours
 _index.txt     merge=ours

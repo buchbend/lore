@@ -245,7 +245,7 @@ def _hook_failure_banner(
         "\n"
         "Likely causes + fixes:\n"
         "  • Stale install (e.g. templates not bundled): "
-        "[bold]lore install --upgrade[/bold] (or re-run install.sh).\n"
+        "[bold]lore update[/bold] (or re-run install.sh).\n"
         "  • Binary vs plugin-cache drift: "
         "[bold]lore doctor[/bold] flags it and prints the exact command.\n"
         "  • If the error persists, file an issue: "
@@ -399,34 +399,6 @@ def _session_off_all() -> bool:
         return False
     from lore_core.toggles import is_off
     return is_off("all", sid)
-
-
-def _journal_directive_lines() -> list[str]:
-    """Invitation directive for the AI journal when the feature flag is on.
-
-    Returns the lines appended to the SessionStart additionalContext
-    directive cluster when ``journal.enabled`` is set in the root
-    config. Trigger-moment framing rather than passive permission:
-    names concrete moments where a gut-check ("anything to save?")
-    is worth pausing for, and points the lens both inward (about
-    self) and outward (about the user, the work, the conversation).
-    Off by default; enable with ``lore journal enable``.
-    """
-    try:
-        from lore_core import journal
-        if not journal.enabled():
-            return []
-    except Exception:  # noqa: BLE001 — never break SessionStart
-        return []
-    return [
-        "- **AI Journal active.** Pause and ask *anything to save?* "
-        "when you spot a smell/pattern bigger than the task, get "
-        "corrected substantively, notice an unpredictable user pivot, "
-        "or hit an unusually sharp/leaky framing. Append via "
-        "`lore_journal_write` (kind=`ai`). Reader is future-you — "
-        "candid, not sycophantic.",
-        "",
-    ]
 
 
 def _citation_directive_lines() -> list[str]:

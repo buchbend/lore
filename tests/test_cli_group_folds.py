@@ -46,17 +46,6 @@ def test_retired_group_invocation_fails(group: str) -> None:
     assert result.exit_code != 0
 
 
-def test_journal_hidden_but_registered() -> None:
-    """Parked feature: code stays, help listing doesn't."""
-    journal = _root().commands["journal"]
-    assert journal.hidden is True
-
-
-def test_journal_still_invocable() -> None:
-    result = runner.invoke(app, ["journal", "--help"])
-    assert result.exit_code == 0
-
-
 # ---- `lore attach remove` (was `lore detach`) ----
 
 def _claude_md_with_section(tmp_path: Path) -> Path:

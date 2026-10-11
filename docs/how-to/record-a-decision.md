@@ -1,7 +1,7 @@
 # Record a decision
 
 **Goal:** write an ADR that says how strong each part of the decision is. Check
-it with `lore lint adr`. Change it later without a new record.
+it with `lore wiki lint adr`. Change it later without a new record.
 
 ## Before you start
 
@@ -40,7 +40,7 @@ it with `lore lint adr`. Change it later without a new record.
 5. **Run the check.**
 
    ```
-   lore lint adr
+   lore wiki lint adr
    ```
 
    The command reads `docs/adr/` under the current directory, or under the

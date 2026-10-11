@@ -5,7 +5,6 @@ Subcommands:
   lore install --integration claude         one integration
   lore install --integration all            every integration where the binary is on PATH
   lore install check [--integration …]      plan-only, never writes
-  lore install upgrade [--integration …]    re-install: no-op if matching schema
   lore install uninstall [--integration …]  symmetric semantic remove
   lore uninstall                            alias for `lore install uninstall`
 
@@ -734,16 +733,6 @@ _FORCE = typer.Option(
 _LORE_REPO = typer.Option(
     None, "--lore-repo", help="Path to a lore source checkout (for editable / dev installs)."
 )
-_UPGRADE = typer.Option(
-    False,
-    "--upgrade",
-    "-u",
-    help=(
-        "Upgrade the lore binary via install.sh before configuring "
-        "integrations. install.sh chains back into `lore install` once "
-        "the new binary is in place — single command, full roundtrip."
-    ),
-)
 _CHECK = typer.Option(
     False, "--check", help="Only report whether an update is available; never upgrades."
 )
@@ -763,8 +752,7 @@ def update_command(check: bool = _CHECK, quiet: bool = _QUIET) -> None:
     if remote is None:
         console.print(
             "[red]Could not reach GitHub to check the latest lore version.[/red]\n"
-            "  Force the upgrade path directly instead: "
-            "[cyan]lore install --upgrade[/cyan]",
+            "  Re-run the install.sh one-liner from the README instead.",
             markup=True,
         )
         raise typer.Exit(code=1)
@@ -835,11 +823,6 @@ class _Verb:
 
 _INSTALL_VERBS: tuple[_Verb, ...] = (
     _Verb("check", "check", "Plan-only — never writes."),
-    _Verb(
-        "upgrade",
-        "upgrade",
-        "Re-install — no-op if managed schema is current.",
-    ),
     _Verb("uninstall", "uninstall", "Symmetric semantic remove."),
     _Verb(
         "reinstall",
@@ -878,17 +861,10 @@ def root(
     json_out: bool = _JSON,
     force: bool = _FORCE,
     lore_repo: str = _LORE_REPO,
-    upgrade: bool = _UPGRADE,
 ) -> None:
     """Default action — install Lore for one or more integrations."""
     if ctx.invoked_subcommand is not None:
         return  # the subcommand handles its own work
-    if upgrade:
-        # Hand off to install.sh; it will exec the new `lore install`
-        # after the binary is upgraded, so we never touch _cmd_install
-        # in the old process.
-        _exit_with(_run_self_upgrade(quiet=quiet))
-        return
     args = _make_args(
         integration=integration,
         yes=yes,

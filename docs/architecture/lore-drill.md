@@ -1,10 +1,10 @@
 # `lore drill` — composite multi-stage retrieval
 
-**Audience:** contributors implementing or extending the `lore drill`
-MCP tool and the `lore drill` CLI presenter.
+**Audience:** contributors implementing or extending the `lore_drill`
+MCP tool and the `lore read` CLI presenter.
 
 This document settles **P3.2** from the 2026-04-27 multi-agent review.
-`lore drill` is implemented (`lore_mcp/server.py:handle_drill`); this
+`lore_drill` is implemented (`lore_mcp/server.py:handle_drill`); this
 is the design it was built against — check the handler for the current
 behavior of any detail this doc doesn't cover.
 
@@ -16,7 +16,7 @@ wikilinks → read the linked notes`. Today every step is a separate
 MCP call: more round-trips, more token overhead in tool envelopes,
 more places to drop the thread.
 
-`lore drill <query>` collapses the chain into one call.
+`lore read <query>` collapses the chain into one call.
 
 ## The composite-with-trace shape (settled)
 
@@ -83,7 +83,7 @@ truncates and records the truncation in the trace
 
 ## CLI presentation
 
-`lore drill <query>` (Typer command, mounted via the cli-contract
+`lore read <query>` (Typer command, mounted via the cli-contract
 pattern) calls the same handler as the MCP tool, then renders the
 trace as a tree (rich) and the result as a paginated note list. No
 special-casing — the trace ships in the response either way; the CLI

@@ -14,7 +14,6 @@ Exposed tools:
     lore_inbox_classify     — read-only inbox walk (file list with type +
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
-    lore_journal_write      — append a freeform entry to the AI or human journal
     lore_pending_verdicts   — enumerate wiki-wide pending freshness verdicts
     lore_verdict            — record a freshness verdict (confirm/stale/clear-stale)
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
@@ -37,8 +36,6 @@ from typing import Any
 
 from lore_core.config import get_lore_root, get_wiki_root
 from lore_core.errors import (
-    EMPTY_ENTRY,
-    INVALID_ENTRY,
     INVALID_KIND,
     NOTE_NOT_FOUND,
     PATH_ESCAPE,
@@ -534,33 +531,6 @@ def handle_inbox_classify() -> dict[str, Any]:
     from lore_core.inbox import classify
 
     return classify()
-
-
-def handle_journal_write(
-    kind: str,
-    text: str,
-    author: str | None = None,
-) -> dict[str, Any]:
-    """Append a freeform entry to the AI or human journal."""
-    from lore_core import journal
-
-    if kind not in journal.VALID_KINDS:
-        return _mcp_error(
-            INVALID_KIND,
-            f"journal kind must be one of {journal.VALID_KINDS!r}, got {kind!r}",
-        )
-    text = (text or "").strip()
-    if not text:
-        return _mcp_error(
-            EMPTY_ENTRY,
-            "journal entry text must be non-empty",
-            next_="Pass a non-empty `text` arg.",
-        )
-    try:
-        result = journal.write(kind, text, author=author)  # type: ignore[arg-type]
-    except ValueError as e:
-        return _mcp_error(INVALID_ENTRY, str(e))
-    return {"schema": "lore.journal.write/1", "data": result}
 
 
 def handle_drill(
@@ -1211,37 +1181,6 @@ def _tool_schema() -> list[dict]:
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
-            "name": "lore_journal_write",
-            "description": (
-                "Append a freeform entry to the AI or human journal "
-                "(newest-first). The AI journal is YOUR space — write "
-                "observations about workflow, criticism, half-formed "
-                "ideas, jokes, weather, anything that would otherwise "
-                "be lost. The bar is *would this be lost otherwise*, "
-                "not *does this serve the user*. Don't write filler. "
-                "Available iff `journal.enabled` in the root config."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "kind": {
-                        "type": "string",
-                        "enum": ["ai", "human"],
-                        "description": "Which journal to write to.",
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "The entry body (plain markdown).",
-                    },
-                    "author": {
-                        "type": "string",
-                        "description": "Override the auto-resolved author tag.",
-                    },
-                },
-                "required": ["kind", "text"],
-            },
-        },
-        {
             "name": "lore_pending_verdicts",
             "description": (
                 "Enumerate wiki-wide pending freshness verdicts as "
@@ -1487,8 +1426,6 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_drill(**args)
         case "lore_inbox_classify":
             return handle_inbox_classify(**args)
-        case "lore_journal_write":
-            return handle_journal_write(**args)
         case "lore_verdict":
             return handle_verdict(**args)
         case "lore_pending_verdicts":

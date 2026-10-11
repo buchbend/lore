@@ -3,7 +3,7 @@
 #
 # Usage:
 #   First install:     curl -fsSL https://raw.githubusercontent.com/buchbend/lore/main/install.sh | sh
-#   Upgrade:           re-run the same one-liner, OR `lore install --upgrade`
+#   Upgrade:           re-run the same one-liner, OR `lore update`
 #   Editable/dev:      LORE_FROM=/path/to/repo ./install.sh
 #   Skip integrations: ./install.sh --no-configure
 #   Uninstall:         ./install.sh uninstall
@@ -14,8 +14,8 @@
 # integrations. Safe to re-run while a previous `lore` is loaded — we
 # exec the new binary at the end, never modifying the running one.
 #
-# This file is the source of truth for installation; the `lore install
-# --upgrade` flag fetches and runs it via curl.
+# This file is the source of truth for installation; the `lore
+# update` command fetches and runs it via curl.
 #
 # Note for legacy users: a previous `install.sh` (predating the Python
 # CLI) wrote skill symlinks directly into ~/.claude. If you ran that

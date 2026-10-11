@@ -70,13 +70,13 @@ revisited.
 
 ## Holds: how strong each part is
 
-ADR 0015 adds `Holds`, `Revisit if` and `Amendments`. `lore lint adr` checks
+ADR 0015 adds `Holds`, `Revisit if` and `Amendments`. `lore wiki lint adr` checks
 every ADR from 0014 onward, and CI runs the check.
 
 - `Holds` sits after the header block. Sort each part of the decision into one
   of three kinds:
   - **Invariant:** a hard line. The line names the test that enforces it, as
-    `(test: <path>::<name>)`. No test, no invariant. `lore lint adr` fails when
+    `(test: <path>::<name>)`. No test, no invariant. `lore wiki lint adr` fails when
     the test file or the test name does not exist.
   - **Default:** what an agent does unless the task gives a reason. An agent
     that deviates names the deviation and the reason in the PR.

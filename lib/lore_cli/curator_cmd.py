@@ -1,6 +1,6 @@
-"""`lore curator` — the deterministic hygiene pass.
+"""`lore wiki curate` — the deterministic hygiene pass.
 
-Bare `lore curator [--wiki] [--apply]` runs the hygiene passes
+Bare `lore wiki curate [--wiki] [--apply]` runs the hygiene passes
 (supersession, `implements:` back-links, git-backfill of dates, team-mode
 hint) and writes `_review.md` per wiki.
 

@@ -3,7 +3,7 @@ name: lore:curator
 description: Propagate `supersedes:` and `implements:` relations, backfill
   missing dates from git, and hint when a wiki has outgrown solo mode.
   Frontmatter-only judgement calls — never edits note bodies. Use for
-  routine vault hygiene; pair with `lore lint` when indexes are also
+  routine vault hygiene; pair with `lore wiki lint` when indexes are also
   stale. Run with "/lore:curator <wiki>".
 user_invocable: true
 ---
@@ -40,8 +40,8 @@ staleness pass is a deliberate no-op.
 
 ```bash
 git -C $LORE_ROOT/wiki/<wiki> pull --ff-only
-lore curator --wiki <wiki>            # dry run; review the diff
-lore curator --wiki <wiki> --apply    # write
+lore wiki curate --wiki <wiki>       # dry run; review the diff
+lore wiki curate --wiki <wiki> --apply # write
 git -C $LORE_ROOT/wiki/<wiki> commit -am "lore: curator pass YYYY-MM-DD"
 ```
 

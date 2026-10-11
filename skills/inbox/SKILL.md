@@ -35,7 +35,7 @@ LLM reads files, composes notes, and archives originals.
 5. **Write + commit** — write the note via the Write tool following
    the wiki's CLAUDE.md conventions (`schema_version: 2`,
    `provenance: extracted` + `source:` for non-text). Commit with
-   `lore session commit <path>`.
+   `git -C <wiki-dir> add <path> && git -C <wiki-dir> commit -m "lore: <slug>" -- <path>`.
 
 6. **Archive** — `lore inbox archive <path>` moves the source to
    `.processed/<YYYY-MM-DD>_<filename>`. Never delete.
