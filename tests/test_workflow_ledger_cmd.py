@@ -230,6 +230,31 @@ def test_ledger_archive_without_ledger_passes_with_note(tmp_path, capsys) -> Non
     assert "no ledger" in capsys.readouterr().out
 
 
+# --- [logbook] lines (PRD 0017 § Pending entries) ----------------------------
+
+UNDELIVERED = '- [logbook] file=delivered pm=undelivered — {"key":"lore:acme/widget:#7"}'
+DELIVERED = '- [logbook] file=delivered — {"key":"lore:acme/widget:#6"}'
+
+
+def test_ledger_check_passes_with_a_logbook_line(tmp_path, capsys) -> None:
+    ledger = tmp_path / "lore-ledger.md"
+    ledger.write_text(f"- [adr] approved — a\n{UNDELIVERED}\n")
+    assert workflow_cmd.main(["ledger-check", str(ledger)]) == 0
+    assert "none open" in capsys.readouterr().out
+
+
+def test_ledger_archive_carries_an_undelivered_logbook_line_forward(tmp_path, monkeypatch) -> None:
+    ledger = tmp_path / "lore-ledger.md"
+    ledger.write_text(f"# Lore ledger\n\n- [adr] approved — a\n{DELIVERED}\n{UNDELIVERED}\n")
+    monkeypatch.setattr("lore_workflow.ledger.utc_date", lambda: "2026-09-29")
+    assert workflow_cmd.main(["ledger-archive", "--path", str(ledger)]) == 0
+    archived = (tmp_path / "lore-ledger.2026-09-29.done.md").read_text()
+    assert UNDELIVERED in archived and DELIVERED in archived
+    carried = ledger.read_text()
+    assert UNDELIVERED in carried
+    assert DELIVERED not in carried and "[adr]" not in carried
+
+
 # --- ledger-set on a board comment (epic mode) ------------------------------
 
 

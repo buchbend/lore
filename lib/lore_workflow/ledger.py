@@ -15,12 +15,17 @@ ledger file may carry a heading or prose::
     - [left] filed buchbend/lore#123 — Retry the flaky capture test
     - [left] dropped — Rename the board marker
     - [resume] 2026-09-29T10:00:00Z — round 2 merged; next: wire the hook
+    - [logbook] file=delivered pm=undelivered — {"key":"lore:acme/widget:#7",...}
 
-- ``kind`` sits in brackets: ``adr``, ``term``, ``left`` or ``resume``.
-- A non-resume line carries its outcome next: ``open``, ``approved``,
-  ``dropped`` or ``filed <owner/repo#n>``.
+- ``kind`` sits in brackets: ``adr``, ``term``, ``left``, ``resume`` or ``logbook``.
+- An ``adr``, ``term`` or ``left`` line carries its outcome next: ``open``,
+  ``approved``, ``dropped`` or ``filed <owner/repo#n>``.
 - A resume line carries an ISO 8601 UTC timestamp instead of an outcome.
   Its text is the state, then ``; next:`` and the next ask.
+- A logbook line (PRD 0017) carries ``<sink>=delivered|undelivered`` per sink
+  and the entry as JSON (:mod:`lore_workflow.logbook`). It is never open, so
+  it never blocks the check. :func:`archive_ledger` carries an undelivered
+  one into the new ledger.
 - An em dash with a space on each side (`` — ``) separates the text.
   The text runs to the end of the line.
 
@@ -49,7 +54,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-KINDS: tuple[str, ...] = ("adr", "term", "left", "resume")
+KINDS: tuple[str, ...] = ("adr", "term", "left", "resume", "logbook")
 
 #: File name of the loop/issue ledger inside the git dir.
 LEDGER_FILENAME = "lore-ledger.md"
@@ -61,6 +66,7 @@ SEP = " — "
 
 _OUTCOME_RE = re.compile(r"^(open|approved|dropped|filed [\w.-]+/[\w.-]+#\d+)$")
 _TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?$")
+_DELIVERY_RE = re.compile(r"^[\w.-]+=(un)?delivered( [\w.-]+=(un)?delivered)*$")
 _LINE_RE = re.compile(r"^- \[(?P<kind>[a-z]+)\] (?P<status>.+?) — (?P<text>.*)$")
 
 
@@ -119,6 +125,12 @@ def format_entry(entry: LedgerEntry) -> str:
     text = " ".join(entry.text.split())
     if entry.kind == "resume":
         status = entry.timestamp or utc_now()
+    elif entry.kind == "logbook":
+        status = entry.outcome or ""
+        if not _DELIVERY_RE.match(status):
+            raise ValueError(
+                f"invalid logbook delivery {status!r}: use '<sink>=delivered|undelivered'"
+            )
     else:
         status = validate_outcome(entry.outcome or "open")
     return f"- [{entry.kind}] {status}{SEP}{text}"
@@ -140,7 +152,7 @@ def parse_line(raw: str, lineno: int = 0) -> LedgerEntry | None:
         if not _TIMESTAMP_RE.match(status):
             raise LedgerParseError(f"{where}resume line needs an ISO timestamp: {stripped}")
         return LedgerEntry(kind=kind, text=text, timestamp=status, line=lineno)
-    if not _OUTCOME_RE.match(status):
+    if not (_DELIVERY_RE if kind == "logbook" else _OUTCOME_RE).match(status):
         raise LedgerParseError(f"{where}invalid outcome {status!r}: {stripped}")
     return LedgerEntry(kind=kind, text=text, outcome=status, line=lineno)
 
@@ -184,7 +196,9 @@ def _select(entries: list[LedgerEntry], selector: str) -> LedgerEntry:
             raise ValueError(f"no ledger line {index}: the ledger has {len(entries)}")
         return entries[index - 1]
     needle = selector.casefold()
-    hits = [e for e in entries if e.kind != "resume" and needle in e.text.casefold()]
+    hits = [
+        e for e in entries if e.kind not in ("resume", "logbook") and needle in e.text.casefold()
+    ]
     if len(hits) != 1:
         raise ValueError(f"{len(hits)} ledger lines match {selector!r}; expected exactly one")
     return hits[0]
@@ -220,8 +234,8 @@ def _rewrite_outcome(
     """Rewrite the source line of the selected entry; return (text, new line)."""
     validate_outcome(outcome)
     target = _select(entries, selector)
-    if target.kind == "resume":
-        raise ValueError("a resume line carries no outcome")
+    if target.kind in ("resume", "logbook"):
+        raise ValueError(f"a {target.kind} line carries no outcome")
     new_line = format_entry(LedgerEntry(kind=target.kind, text=target.text, outcome=outcome))
     lines = text.splitlines(keepends=True)
     ending = "\n" if lines[target.line - 1].endswith("\n") else ""
@@ -236,9 +250,12 @@ def archive_ledger(path: Path) -> Path:
     passes, so the SessionStart resume offer stops firing for it. Raises
     ValueError while a line is still open. A second archive on the same day
     gets a ``-2``, ``-3`` … suffix and leaves the earlier one in place.
-    Returns the archive path.
+    Each ``[logbook]`` line with an undelivered sink is carried into a new
+    ledger at *path*, so ``lore log flush`` still finds it. Returns the
+    archive path.
     """
-    still_open = open_entries(parse_ledger(path.read_text(encoding="utf-8")))
+    entries = parse_ledger(path.read_text(encoding="utf-8"))
+    still_open = open_entries(entries)
     if still_open:
         raise ValueError(
             f"{len(still_open)} open line(s); run `lore workflow ledger-check` and set each outcome"
@@ -251,6 +268,13 @@ def archive_ledger(path: Path) -> Path:
         target = path.with_name(f"{stem}.{date}-{n}.done.md")
         n += 1
     path.rename(target)
+    undelivered = [
+        format_entry(e)
+        for e in entries
+        if e.kind == "logbook" and "=undelivered" in (e.outcome or "")
+    ]
+    if undelivered:
+        path.write_text(_FILE_HEADING + "\n" + "\n".join(undelivered) + "\n", encoding="utf-8")
     return target
 
 
