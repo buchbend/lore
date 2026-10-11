@@ -121,13 +121,14 @@ def test_migrates_attachments_and_scopes_json(tmp_path, agents, no_prompt, monke
     (vault / "wiki" / "team").mkdir(parents=True)
     old = vault / ".lore"
     old.mkdir()
-    a, b = tmp_path / "git" / "a", tmp_path / "other" / "a"
+    a, b, c = tmp_path / "git" / "a", tmp_path / "other" / "a", tmp_path / "git" / "repo-c"
     (old / "attachments.json").write_text(
         json.dumps(
             {
                 "attachments": [
                     {"path": str(a), "wiki": "team", "scope": "ccat:a", "attached_at": "x"},
                     {"path": str(b), "wiki": "team", "scope": "ccat:b", "attached_at": "x"},
+                    {"path": str(c), "wiki": "team", "scope": "ccat:c", "attached_at": "x"},
                 ],
                 "declined": [],
             }
@@ -138,7 +139,8 @@ def test_migrates_attachments_and_scopes_json(tmp_path, agents, no_prompt, monke
     result = _setup("--yes", "--vault", str(vault))
     assert result.exit_code == 0, result.output
     scopes = _person()["scopes"]
-    assert {s["path"] for s in scopes.values()} == {str(a), str(b)}
+    # Named after the old scope's leaf: the project slug orientation and lint match on.
+    assert {n: s["path"] for n, s in scopes.items()} == {"a": str(a), "b": str(b), "c": str(c)}
     assert all(s["wiki"] == "team" for s in scopes.values())
     assert not (old / "attachments.json").exists() and not (old / "scopes.json").exists()
 
@@ -149,6 +151,8 @@ def test_moves_old_root_config_into_person_config(tmp_path, agents, no_prompt, m
     (vault / ".lore").mkdir()
     (vault / ".lore" / "config.yml").write_text(
         "user:\n  display_name: Old Name\nfeedback:\n  retrieval_misses: true\n"
+        "tiers:\n  overrides:\n    claude:\n      frontier: x\n"
+        "workflow:\n  risk:\n    max_files: 7\n"
     )
     user_config_path().parent.mkdir(parents=True)
     user_config_path().write_text("user:\n  display_name: New Name\n")
@@ -158,6 +162,8 @@ def test_moves_old_root_config_into_person_config(tmp_path, agents, no_prompt, m
     person = _person()
     assert person["user"]["display_name"] == "New Name"  # the person file wins
     assert person["feedback"]["retrieval_misses"] is True
+    assert person["tiers"]["overrides"]["claude"]["frontier"] == "x"
+    assert person["workflow"]["risk"]["max_files"] == 7
     assert not (vault / ".lore" / "config.yml").exists()
 
 
@@ -284,3 +290,111 @@ def test_no_retired_phrase_in_cli_help():
 
     hits = [p for p, text in walk(typer.main.get_command(app), "lore") if _RETIRED.search(text)]
     assert not hits, hits
+
+
+def test_migrate_skips_bad_rows_and_reports_bad_files(tmp_path, agents, no_prompt, monkeypatch):
+    vault = tmp_path / "lore"
+    (vault / "wiki" / "team").mkdir(parents=True)
+    (vault / ".lore").mkdir()
+    row = {"path": str(tmp_path / "git" / "a"), "wiki": "team", "scope": "a"}
+    (vault / ".lore" / "attachments.json").write_text(json.dumps({"attachments": ["x", row]}))
+    (vault / ".lore" / "config.yml").write_text("- a list\n")
+    monkeypatch.chdir(tmp_path)
+    result = _setup("--yes", "--vault", str(vault))
+    assert set(_person()["scopes"]) == {"a"}
+    assert "must hold a mapping, left in place" in result.output
+    assert (vault / ".lore" / "config.yml").exists()
+    # A file left in place must not make every run rewrite the person file.
+    before = user_config_path().stat().st_mtime_ns
+    _setup("--yes")
+    assert user_config_path().stat().st_mtime_ns == before
+
+
+def test_migrate_reports_non_list_attachments(tmp_path, agents, no_prompt, monkeypatch):
+    vault = tmp_path / "lore"
+    (vault / "wiki" / "team").mkdir(parents=True)
+    (vault / ".lore").mkdir()
+    (vault / ".lore" / "attachments.json").write_text(json.dumps({"attachments": {"a": 1}}))
+    monkeypatch.chdir(tmp_path)
+    result = _setup("--yes", "--vault", str(vault))
+    assert "left in place" in result.output
+    assert (vault / ".lore" / "attachments.json").exists()
+
+
+def test_report_pads_the_migrate_label(tmp_path, agents, no_prompt, monkeypatch):
+    vault = tmp_path / "lore"
+    (vault / "wiki" / "team").mkdir(parents=True)
+    (vault / ".lore").mkdir()
+    (vault / ".lore" / "scopes.json").write_text("{}")
+    monkeypatch.chdir(tmp_path)
+    result = _setup("--yes", "--vault", str(vault))
+    assert "✓ migrate " in result.output
+
+
+def test_scope_refuses_a_folder_that_holds_home(tmp_path, agents, no_prompt, monkeypatch):
+    (tmp_path / "lore" / "wiki" / "team").mkdir(parents=True)
+    repo = _repo(Path.home() / "proj")
+    monkeypatch.chdir(repo)
+    result = _setup("--yes", "--vault", str(tmp_path / "lore"))
+    assert "scopes" not in _person()
+    assert "too broad" in result.output
+
+
+def test_scope_refuses_an_unknown_wiki(tmp_path, agents, no_prompt, monkeypatch):
+    (tmp_path / "lore" / "wiki" / "team").mkdir(parents=True)
+    user_config_path().parent.mkdir(parents=True)
+    user_config_path().write_text(f"lore_root: {tmp_path / 'lore'}\n")
+    monkeypatch.chdir(_repo(tmp_path / "git" / "proj"))
+    result = _setup("scope", "--yes", "--wiki", "nope")
+    assert result.exit_code == 1
+    assert "known: team" in result.output
+    assert "scopes" not in _person()
+
+
+def test_check_names_failed_advisory_checks(tmp_path, agents, no_prompt, monkeypatch):
+    monkeypatch.setattr(
+        setup_cmd.checks,
+        "_CHECKS",
+        [("good", lambda cwd: (True, "ok"), True), ("vale", lambda cwd: (False, "absent"), False)],
+    )
+    summary, events = setup_cmd.step_check(tmp_path)
+    assert "2 checks passed" not in summary
+    assert "1 of 2" in summary and "vale" in summary
+
+
+def test_refresh_survives_a_hung_claude_and_refreshes_lore_workflow(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        if "marketplace" in argv:
+            raise subprocess.TimeoutExpired(argv, 60)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    _plugin_index(PIP)
+    idx = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+    data = json.loads(idx.read_text())
+    data["plugins"]["lore-workflow@lore"] = [{"scope": "user", "version": "1.0.0"}]
+    idx.write_text(json.dumps(data))
+    monkeypatch.setattr(setup_cmd.shutil, "which", lambda name: "/fake/claude")
+    monkeypatch.setattr(setup_cmd.subprocess, "run", fake_run)
+    monkeypatch.setattr(setup_cmd.integrations, "_refresh_claude_plugin_cache", lambda quiet: True)
+    assert setup_cmd._refresh_plugin_cache() is True
+    assert ["/fake/claude", "plugin", "update", "lore-workflow@lore"] in calls
+
+
+def test_no_retired_phrase_in_skill_text():
+    hits = [
+        f"{p.relative_to(REPO)}:{n}"
+        for root in ("skills", "lore-workflow/skills")
+        for p in sorted((REPO / root).rglob("*.md"))
+        for n, line in enumerate(p.read_text().splitlines(), 1)
+        if _RETIRED.search(line)
+    ]
+    assert not hits, hits
+
+
+def test_mcp_wiki_not_found_names_lore_setup_scope():
+    text = (REPO / "lib" / "lore_mcp" / "server.py").read_text()
+    assert "attach the cwd" not in text
+    assert "lore setup scope" in text

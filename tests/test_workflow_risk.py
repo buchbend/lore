@@ -210,7 +210,10 @@ def test_cli_needs_exactly_one_input(capsys) -> None:
 def test_cli_risk_survives_a_bad_risk_config(tmp_path, monkeypatch, capsys) -> None:
     lore_root = tmp_path / "root"
     (lore_root / ".lore").mkdir(parents=True)
-    (lore_root / ".lore" / "config.yml").write_text(
+    from lore_core.config import user_config_path
+
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text(
         "workflow:\n  risk:\n    max_files: x\n    sensitive_paths: '**/billing/**'\n"
     )
     monkeypatch.setenv("LORE_ROOT", str(lore_root))

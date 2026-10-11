@@ -207,3 +207,24 @@ def test_refresh_claude_plugin_cache_quiet_suppresses_output(monkeypatch, capsys
     integrations._refresh_claude_plugin_cache(quiet=True)
     out = capsys.readouterr().out
     assert out == ""
+
+
+def test_replace_without_a_terminal_is_skipped_not_crashed(monkeypatch):
+    """`curl | sh` and `lore setup --yes` have no TTY: a kind=replace action
+    is declined with a message instead of raising EOFError."""
+    from lore_core.install.base import KIND_REPLACE, Action
+
+    def _no_input(*a, **kw):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", _no_input)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
+    action = Action(
+        kind=KIND_REPLACE,
+        description="replace",
+        target="/tmp/x.json",
+        summary="replace a key",
+        payload={"path": "/tmp/x.json", "key_path": ["a"], "reason": "test"},
+    )
+    _results, fail_count = integrations._execute_actions([action], yes=True, quiet=True)
+    assert fail_count == 1
