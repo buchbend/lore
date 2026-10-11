@@ -376,7 +376,12 @@ def _route_lines(cwd: Path) -> list[str]:
         _line(_HEALTHY, f"{key:<8} {value or 'none'} · {route.origins.get(key, 'none')}")
         for key, value in rows.items()
     ]
-    return ["route", *lines, *(_line(_WARN, n) for n in route.notes)]
+    from lore_cli.checks import OLD_SETTINGS_HINT, old_settings_files, person_config_errors
+
+    notes = [*route.notes, *person_config_errors()]
+    if old_settings_files():
+        notes.append(OLD_SETTINGS_HINT)
+    return ["route", *lines, *(_line(_WARN, n) for n in notes)]
 
 
 # ---------------------------------------------------------------------------

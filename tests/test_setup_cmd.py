@@ -437,3 +437,49 @@ def test_migrate_drops_retired_blocks(tmp_path, agents, no_prompt, monkeypatch):
     assert person["user"] == {"display_name": "Ada"}
     out = result.output.replace("\n", "")
     assert "curator" in out and "journal" in out and "dropped" in out
+
+
+def test_check_step_fails_on_a_token_in_the_person_config_and_names_the_file():
+    from lore_cli import checks
+
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text("sinks:\n  pm:\n    password: hunter2\n")
+
+    ok, msg = checks._check_person_config(".")
+
+    assert not ok
+    assert str(user_config_path()) in msg and "password" in msg
+    assert ("person config", checks._check_person_config, True) in checks._CHECKS
+
+
+def test_check_step_names_leftover_old_settings_files(tmp_path, monkeypatch):
+    from lore_cli import checks
+
+    (tmp_path / ".lore").mkdir()
+    (tmp_path / ".lore" / "scopes.json").write_text("{}")
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+
+    ok, msg = checks._check_old_settings(".")
+
+    assert not ok and "run `lore setup` to migrate them" in msg
+
+
+def test_setup_wiki_yes_does_not_pin_a_default_vault_that_does_not_exist(
+    tmp_path, agents, no_prompt, monkeypatch
+):
+    """install.sh's upgrade path: LORE_ROOT may live only in Claude's env, so
+    `lore setup wiki --yes` must not invent ~/lore (#479 review)."""
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["setup", "wiki", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "lore_root" not in _person()
+    assert not (Path.home() / "lore").exists()
+    assert "--vault" in result.output
+
+
+def test_setup_wiki_yes_pins_a_default_vault_that_exists(tmp_path, agents, no_prompt, monkeypatch):
+    (Path.home() / "lore" / "wiki" / "team").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["setup", "wiki", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert _person()["lore_root"] == str((Path.home() / "lore").resolve())

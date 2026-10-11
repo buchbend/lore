@@ -490,11 +490,59 @@ def _check_cursor_hooks_config(cwd: str) -> Check:
     return True, f"{len(hooks)} event(s) wired: {', '.join(sorted(hooks))}"
 
 
+def person_config_errors() -> list[str]:
+    """Validate the person's config as `lore config edit` does (secrets rule included)."""
+    import yaml
+    from lore_core.config import user_config_path
+    from lore_core.config_schema import validate_raw
+    from lore_core.root_config import RootConfig
+
+    path = user_config_path()
+    if not path.exists():
+        return []
+    try:
+        raw = yaml.safe_load(path.read_text()) or {}
+    except (OSError, yaml.YAMLError) as e:
+        return [f"cannot read {path}: {e}"]
+    return validate_raw(RootConfig, raw, source=path)
+
+
+def old_settings_files() -> list[Path]:
+    """Settings files `lore setup` migrates and deletes (PRD 0016)."""
+    from lore_core.config import get_lore_root
+
+    old = get_lore_root() / ".lore"
+    return [p for p in (old / n for n in ("attachments.json", "scopes.json", "config.yml")) if p.exists()]
+
+
+OLD_SETTINGS_HINT = "old settings files found; run `lore setup` to migrate them"
+
+
+def _check_person_config(cwd: str) -> Check:
+    from lore_core.config import user_config_path
+
+    errors = person_config_errors()
+    if errors:
+        return False, f"{user_config_path()}: " + "; ".join(errors)
+    return True, f"{user_config_path()} is valid"
+
+
+def _check_old_settings(cwd: str) -> Check:
+    files = old_settings_files()
+    if files:
+        return False, f"{OLD_SETTINGS_HINT}: {', '.join(map(str, files))}"
+    return True, "no old settings files"
+
+
 # (name, check_fn, fails_run). `fails_run=False` means the check is
 # informational — its `ok=False` is rendered as ✗ but does not set the
 # overall non-zero exit.
 _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     ("LORE_ROOT", _check_lore_root, True),
+    # The secrets rule (ADR 0016) at load time, not only in `lore config edit`.
+    ("person config", _check_person_config, True),
+    # Advisory: `pipx upgrade` skips install.sh, so nothing else migrates.
+    ("old settings", _check_old_settings, False),
     ("wikis", _check_wikis, True),
     ("cache", _check_cache_writable, True),
     ("MCP server", _check_mcp_imports, True),

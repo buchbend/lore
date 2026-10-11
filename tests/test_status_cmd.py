@@ -368,3 +368,30 @@ def test_help_mentions_status() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "status" in result.output.lower() or "health" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Epic review round 1 (#479): leftover old files, secrets rule at load time
+# ---------------------------------------------------------------------------
+
+
+def test_status_names_leftover_old_settings_files(tmp_path: Path, monkeypatch) -> None:
+    lore_root, project = _seed_vault(tmp_path)
+    (lore_root / ".lore" / "attachments.json").write_text("{}")
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
+
+    assert "old settings files found; run `lore setup` to migrate them" in out
+
+
+def test_status_names_the_file_holding_a_token(tmp_path: Path, monkeypatch) -> None:
+    from lore_core.config import user_config_path
+
+    lore_root, project = _seed_vault(tmp_path)
+    with user_config_path().open("a") as f:
+        f.write("sinks:\n  pm:\n    token: abc\n")
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch).output.replace("\n", "")
+
+    assert "'sinks.pm.token' holds a secret value" in out
+    assert str(user_config_path()) in out

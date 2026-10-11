@@ -182,8 +182,14 @@ def step_wiki(
     wiki_clone: str | None,
     wiki_link: str | None,
     interactive: bool,
+    invent_vault: bool = True,
 ) -> tuple[str, list[Event]]:
-    """Make sure a vault and at least one wiki exist; create, clone or link one."""
+    """Make sure a vault and at least one wiki exist; create, clone or link one.
+
+    ``invent_vault=False`` (``lore setup wiki``, which install.sh's upgrade
+    path runs) never creates a vault at the default path when nothing names
+    one: ``LORE_ROOT`` may live only in Claude's environment.
+    """
     if len([t for t in (wiki_new, wiki_clone, wiki_link) if t]) > 1:
         raise typer.BadParameter("Pass at most one of --wiki-new / --wiki-clone / --wiki-link.")
     events: list[Event] = []
@@ -197,6 +203,11 @@ def step_wiki(
         root = root.resolve()
     else:
         root = get_lore_root()
+        if not invent_vault and not root.is_dir():
+            return f"no vault at {root}", [
+                (None, f"no vault configured and none at {root}; skipped. "
+                 "Run `lore setup --vault <path>` to name one.")
+            ]
 
     person = _read_person()
     current = person.get("lore_root")
@@ -533,6 +544,7 @@ def setup_wiki(
             wiki_clone=wiki_clone,
             wiki_link=wiki_link,
             interactive=_interactive(yes),
+            invent_vault=bool(vault or wiki_new or wiki_clone or wiki_link),
         ),
     )
     _finish(ok & _migrate_report())
