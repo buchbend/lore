@@ -20,8 +20,10 @@
   sinks, sources or a tracker by name, or it opts out of a sink.
 - **Default:** the reporting boundary. A repo file names a sink and does not
   define one. Only the person's own config defines a sink's command or
-  host. When a repo names a sink the person has not defined, Lore uses the
-  `file` sink and `lore status` says why.
+  host. When a route names a sink the person has not defined, Lore uses the
+  `file` sink and `lore status` says why. The rule holds for a sink name
+  from any origin: `.lore.yml`, a scope, the defaults or an environment
+  variable.
 - **Default:** config files hold the names of secrets, not their values. The
   values live in a `0600` secrets file outside any git worktree, or in an
   environment variable.
