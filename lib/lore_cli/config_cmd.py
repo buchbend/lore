@@ -9,7 +9,6 @@ import click
 import typer
 from lore_core.config import get_lore_root, get_wiki_root
 from lore_core.config_schema import ConfigSchema
-from lore_core.timefmt import relative_time
 from rich.console import Console
 
 app = typer.Typer(
@@ -37,15 +36,11 @@ def config(ctx: typer.Context) -> None:
     """Show vault layout (no subcommand) or dispatch to show / get / set / schema."""
     if ctx.invoked_subcommand is not None:
         return
-    from datetime import UTC, datetime
-
     try:
         lore_root = get_lore_root()
     except Exception:
-        console.print("[red]LORE_ROOT not set.[/red] Run `lore init` or export $LORE_ROOT.")
+        console.print("[red]LORE_ROOT not set.[/red] Run `lore setup` or export $LORE_ROOT.")
         raise typer.Exit(1) from None
-
-    now = datetime.now(UTC)
 
     console.print(f"  Vault: {_format_path(lore_root)}")
 
@@ -64,38 +59,29 @@ def config(ctx: typer.Context) -> None:
 
     console.print()
 
-    from lore_core.state.attachments import AttachmentsFile
+    from lore_core.config import user_config_path
+    from lore_core.root_config import load_root_config
 
-    af = AttachmentsFile(lore_root)
-    af.load()
-    attachments = af.all()
-
-    if attachments:
-        console.print(f"  Attachments ({len(attachments)}):")
-        for a in attachments:
-            rel = relative_time(a.attached_at, now=now)
-            console.print(
-                f"    {_format_path(a.path):40s} -> {a.wiki}:{a.scope}  ({a.source}, {rel})"
-            )
+    scopes = load_root_config(lore_root).scopes
+    if scopes:
+        console.print(f"  Scopes ({len(scopes)}):")
+        for name, sc in scopes.items():
+            sc = sc if isinstance(sc, dict) else {}
+            console.print(f"    {name:20s} {sc.get('path')} -> {sc.get('wiki') or 'default wiki'}")
     else:
-        console.print("  Attachments: [dim]none[/dim]")
+        console.print("  Scopes: [dim]none[/dim] (add one with [cyan]lore setup scope[/cyan])")
 
     console.print()
     console.print("  [dim]Files you edit:[/dim]")
+    console.print(f"    {_format_path(user_config_path()):50s} your config")
     for wiki in wikis:
         wiki_cfg = lore_root / "wiki" / wiki / ".lore-wiki.yml"
         if wiki_cfg.exists():
             console.print(f"    {_format_path(wiki_cfg):50s} wiki config")
-    for a in attachments:
-        lore_yml = a.path / ".lore.yml"
-        if lore_yml.exists():
-            console.print(f"    {_format_path(lore_yml):50s} repo offer")
 
     console.print()
     console.print("  [dim]Files Lore manages (do not edit):[/dim]")
     for name, desc in [
-        ("attachments.json", "attachment state"),
-        ("scopes.json", "scope hierarchy"),
         ("transcript-ledger.json", "transcript tracking"),
     ]:
         p = lore_root / ".lore" / name
@@ -103,7 +89,7 @@ def config(ctx: typer.Context) -> None:
             console.print(f"    {_format_path(p):50s} {desc}")
 
     console.print()
-    console.print("  For health checks: [cyan]lore doctor[/cyan]")
+    console.print("  For health checks: [cyan]lore setup[/cyan]")
     console.print("  For live activity: [cyan]lore status[/cyan]")
     console.print(
         "  For typed config: [cyan]lore config show[/cyan] · [cyan]get[/cyan] · "
@@ -133,7 +119,7 @@ def _resolve_target(wiki: str | None) -> tuple[Path, Any, Path, ConfigSchema]:
         try:
             lore_root = get_lore_root()
         except Exception:
-            console.print("[red]LORE_ROOT not set.[/red] Run `lore init` or export $LORE_ROOT.")
+            console.print("[red]LORE_ROOT not set.[/red] Run `lore setup` or export $LORE_ROOT.")
             raise typer.Exit(1) from None
         return lore_root, mod, mod.ROOT_SCHEMA.config_path_fn(lore_root), mod.ROOT_SCHEMA
 
@@ -183,7 +169,7 @@ def cmd_show(
     try:
         lore_root = get_lore_root()
     except Exception:
-        console.print("[red]LORE_ROOT not set.[/red] Run `lore init` or export $LORE_ROOT.")
+        console.print("[red]LORE_ROOT not set.[/red] Run `lore setup` or export $LORE_ROOT.")
         raise typer.Exit(1) from None
 
     rows = walk_fields(lore_root)

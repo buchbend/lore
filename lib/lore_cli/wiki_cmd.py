@@ -6,7 +6,6 @@ The canonical home for wiki-lifecycle verbs going forward. It hosts
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from enum import Enum
@@ -33,7 +32,7 @@ class WikiMode(str, Enum):
     team = "team"
 
 
-SUBDIRS = ("projects", "concepts", "decisions", "sessions", "inbox")
+SUBDIRS = ("projects", "concepts", "decisions", "inbox")
 
 # Seeded on wiki creation. Fully commented so `load_scopes_yml` parses it
 # to an empty tree — a starting point, never a phantom scope. The shape
@@ -83,8 +82,6 @@ def scaffold_wiki(
         templates_src = _plugin_templates_dir()
         claude_md = target / "CLAUDE.md"
         claude_md.write_text((templates_src / "wiki-CLAUDE.md").read_text())
-        (target / "templates").mkdir(exist_ok=True)
-        shutil.copy(templates_src / "session.md", target / "templates" / "session.md")
 
         # Seed a commented `_scopes.yml` so the scope registry has an
         # obvious home the moment the wiki exists (never overwrite one a

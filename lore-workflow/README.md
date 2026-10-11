@@ -6,7 +6,7 @@ workflow skills, ported from `ccatobs/ccat-agent-workflow` (see PRD 0003).
 **Dependency direction: `lore-workflow` depends on `lore`; `lore` never
 depends on `lore-workflow`.** Workflow skills call `lore`'s CLI/MCP surface
 (`lore codemap` / `lore_codemap`, `lore tier resolve`, `lore workflow
-validate-roadmap` / `create-prd`, `lore attach --scaffold-workflow`); nothing
+validate-roadmap` / `create-prd`, `lore setup scope --scaffold-workflow`); nothing
 in `lore` core imports or requires this plugin. This keeps `lore` installable
 standalone and lets `lore-workflow` stay opt-in.
 
@@ -31,4 +31,4 @@ The chain: `orient → grilling → to-epic → build → document`, with `hando
 | `file-issue` | Writes issue text and files it: resolve the writing rules, draft, Vale-lint, then post the issue or PR body. |
 | `triage` | Reviews every open issue and PR of a repo against the code, gives each a verdict, and presents one filterable page for discussion. Review only until the user decides. |
 
-Onboard a repo with `lore attach --scaffold-workflow`.
+Onboard a repo with `lore setup scope --scaffold-workflow`.

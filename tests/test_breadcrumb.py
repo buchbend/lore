@@ -51,7 +51,6 @@ def scope(tmp_path: Path) -> Scope:
     return Scope(
         wiki="private",
         scope="private:root",
-        backend="none",
         claude_md_path=tmp_path / "CLAUDE.md",
     )
 
@@ -281,7 +280,6 @@ def test_banner_all_skips_is_silent(tmp_path: Path) -> None:
     scope = Scope(
         wiki="private",
         scope="private:root",
-        backend="none",
         claude_md_path=tmp_path / "CLAUDE.md",
     )
     ctx = BannerContext(
@@ -324,7 +322,6 @@ def test_banner_last_run_error_prefix(tmp_path: Path) -> None:
     scope = Scope(
         wiki="private",
         scope="private:root",
-        backend="none",
         claude_md_path=tmp_path / "CLAUDE.md",
     )
     ctx = BannerContext(
@@ -338,7 +335,7 @@ def test_banner_last_run_error_prefix(tmp_path: Path) -> None:
     assert banner is not None
     assert banner.startswith("lore!:")
     assert "2 errors" in banner
-    assert "lore doctor" in banner
+    assert "lore setup" in banner
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +363,6 @@ def test_banner_hook_error_trailing_segment(tmp_path: Path) -> None:
     scope = Scope(
         wiki="private",
         scope="private:root",
-        backend="none",
         claude_md_path=tmp_path / "CLAUDE.md",
     )
     ctx = BannerContext(
@@ -469,7 +465,6 @@ def test_render_banner_prepends_session_end_error(tmp_path: Path) -> None:
     scope = Scope(
         wiki="private",
         scope="private:root",
-        backend="none",
         claude_md_path=tmp_path / "CLAUDE.md",
     )
     ctx = BannerContext(
@@ -495,7 +490,7 @@ def test_banner_no_scope_drift_when_offer_matches(
     """Checked-in offer's scope agrees with the registry — silent."""
     (lore_root / ".lore.yml").write_text("wiki: private\nscope: private:root\n")
     scope = Scope(
-        wiki="private", scope="private:root", backend="none",
+        wiki="private", scope="private:root",
         claude_md_path=lore_root / "CLAUDE.md",
     )
     now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
@@ -512,42 +507,6 @@ def test_banner_no_scope_drift_when_no_checked_in_file(
     assert render_banner(ctx) is None
 
 
-def test_banner_warns_on_scope_drift_after_rename(
-    lore_root: Path, wiki_config_normal: WikiConfig,
-) -> None:
-    """`lore scopes rename` moved this attachment to a new scope, but the
-    checked-in `.lore.yml` (this repo's attachment root == lore_root in
-    this fixture) still declares the old one — the exact residue a
-    rename leaves behind since it never edits attached repos' files."""
-    (lore_root / ".lore.yml").write_text("wiki: private\nscope: old:scope\n")
-    scope = Scope(
-        wiki="private", scope="new:scope", backend="none",
-        claude_md_path=lore_root / "CLAUDE.md",
-    )
-    now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
-    ctx = BannerContext(lore_root=lore_root, scope=scope, wiki_config=wiki_config_normal, now=now)
-    banner = render_banner(ctx)
-    assert banner is not None
-    assert "old:scope" in banner
-    assert "new:scope" in banner
-    assert "lore attach accept" in banner
-
-
-def test_banner_scope_drift_suppressed_in_quiet_mode(
-    lore_root: Path, wiki_config_quiet: WikiConfig,
-) -> None:
-    """Same tier as the hook-error count: quiet mode suppresses it too —
-    only the last-run-error prefix bypasses quiet."""
-    (lore_root / ".lore.yml").write_text("wiki: private\nscope: old:scope\n")
-    scope = Scope(
-        wiki="private", scope="new:scope", backend="none",
-        claude_md_path=lore_root / "CLAUDE.md",
-    )
-    now = datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC)
-    ctx = BannerContext(lore_root=lore_root, scope=scope, wiki_config=wiki_config_quiet, now=now)
-    assert render_banner(ctx) is None
-
-
 def test_render_banner_quiet_with_session_end_error(tmp_path: Path) -> None:
     """Quiet mode still surfaces error breadcrumbs."""
     lore_dir = tmp_path / ".lore"
@@ -558,7 +517,6 @@ def test_render_banner_quiet_with_session_end_error(tmp_path: Path) -> None:
     scope = Scope(
         wiki="private",
         scope="private:root",
-        backend="none",
         claude_md_path=tmp_path / "CLAUDE.md",
     )
     ctx = BannerContext(

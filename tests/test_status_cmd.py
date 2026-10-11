@@ -302,8 +302,8 @@ def test_unattached_cwd(tmp_path: Path, monkeypatch) -> None:
     unrelated.mkdir()
 
     result = _invoke(lore_root, unrelated, monkeypatch=monkeypatch)
-    assert "not attached here" in result.output
-    assert "/lore:attach" in result.output
+    assert "no scope here" in result.output
+    assert "lore setup scope" in result.output
     assert result.exit_code == 0
 
 

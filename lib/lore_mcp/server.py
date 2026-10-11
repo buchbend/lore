@@ -890,7 +890,7 @@ def handle_pending_verdicts(wiki: str | None = None) -> dict[str, Any]:
                 "could not resolve active wiki (no explicit `wiki`, no "
                 "single-wiki fallback, no cwd attachment)"
             ),
-            next_="pass `wiki` explicitly or attach the cwd to a wiki",
+            next_="pass `wiki` explicitly or run `lore setup scope` in the repo",
         )
 
     handle = _resolve_current_handle(wiki_path)

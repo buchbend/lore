@@ -1,8 +1,8 @@
-"""Root-level Lore config at $LORE_ROOT/.lore/config.yml.
+"""The person's Lore config at ``~/.config/lore/config.yml`` (PRD 0016).
 
-Observability settings are global (not per-wiki) because the log
-streams they govern live at $LORE_ROOT/.lore/ and are shared across
-wikis.
+One settings file per person: vault location, scopes, sinks, sources and
+the global (not per-wiki) observability settings. ``lore setup`` migrates
+the old ``$LORE_ROOT/.lore/config.yml`` into it.
 """
 
 from __future__ import annotations
@@ -278,33 +278,31 @@ def _read_mapping(path: Path) -> dict[str, Any] | None:
 
 
 def load_root_config(lore_root: Path) -> RootConfig:
-    """Load the old ``$LORE_ROOT/.lore/config.yml``, then the person's
-    ``~/.config/lore/config.yml`` over it (PRD 0016: one settings file).
+    """Load the person's ``~/.config/lore/config.yml`` (PRD 0016).
 
+    ``lore_root`` is unused; callers pass it for the shared schema signature.
     Missing file / missing section / unknown keys → defaults + warning.
     Malformed YAML → defaults + warning (no crash).
     """
     cfg = RootConfig()
-    for path in (lore_root / ".lore" / "config.yml", _user_config_path()):
-        raw = _read_mapping(path)
-        if raw is not None:
-            _merge(cfg, raw, "", path)
-            _validate_risk(cfg.workflow.risk, path)
+    path = _user_config_path()
+    raw = _read_mapping(path)
+    if raw is not None:
+        _merge(cfg, raw, "", path)
+        _validate_risk(cfg.workflow.risk, path)
     return cfg
 
 
 # ---------------------------------------------------------------------------
 # Introspection helpers — backing `lore config show / get / set / unset /
 # schema`. Thin bindings over lore_core.config_schema's generic dataclass
-# walker; see that module's docstring for why it's generic (wiki config and
-# a future `.lore.yml` offer-validation slice share the same plumbing).
+# walker; see that module's docstring for why it's generic (the wiki config
+# shares the same plumbing).
 # ---------------------------------------------------------------------------
 
 ROOT_SCHEMA = ConfigSchema(
     default_factory=RootConfig,
     load_fn=load_root_config,
-    # Writes go to the person's file; the old root file is read until
-    # `lore setup` migrates it (PRD 0016).
     config_path_fn=lambda _lore_root: _user_config_path(),
 )
 

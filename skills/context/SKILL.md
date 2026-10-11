@@ -17,7 +17,7 @@ One Bash call, then one text message:
    default, so echoing it as text is what makes the timeline visible.
 
 If the log is empty, the command prints a message; relay it as-is.
-Mention `lore doctor` only if the user asks why.
+Mention `lore setup` only if the user asks why.
 
 ## Do not
 

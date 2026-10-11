@@ -2,7 +2,7 @@
 
 Ported from ccat-agent-workflow's `scripts/ccat_workflow_init.py`, which used
 to be a separate `ccat-workflow-init` onboarding entry point. Lore has exactly
-one onboarding command per repo (`lore attach`); this module supplies the
+one onboarding command per repo (`lore setup scope`); this module supplies the
 step that command calls, it is never a subcommand of its own.
 
 Idempotent: safe to re-run. Creates only what is missing; never overwrites

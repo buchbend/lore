@@ -15,7 +15,6 @@ from pathlib import Path
 
 from lore_core.config import user_config_path
 from lore_core.config_schema import _read_raw
-from lore_core.offer import find_lore_yml_raw
 
 #: Route field -> key in a scope, ``defaults`` or ``.lore.yml``.
 _KEYS = {"wiki": "wiki", "tracker": "tracker", "sinks": "logbook", "sources": "sources"}
@@ -115,11 +114,12 @@ def _repo_root(cwd: Path) -> Path | None:
 
 def _nearest_lore_yml(cwd: Path, repo_root: Path | None) -> Path | None:
     """The nearest ``.lore.yml`` between ``cwd`` and the repo root."""
-    found = find_lore_yml_raw(cwd)
-    if found is None:
-        return None
-    if found.parent == cwd or (repo_root and found.parent.is_relative_to(repo_root)):
-        return found
+    stop = repo_root or cwd
+    for d in (cwd, *cwd.parents):
+        if (d / ".lore.yml").is_file():
+            return d / ".lore.yml"
+        if d == stop:
+            return None
     return None
 
 

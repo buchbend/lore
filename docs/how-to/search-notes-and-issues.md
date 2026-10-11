@@ -12,7 +12,7 @@ lists. It never merges them into one ranking.
 ## Before you start
 
 - `gh` is installed and signed in, so the `artifacts` list can fill.
-- The repo is attached (`lore attach`), or the wiki has a git remote. The GitHub search targets the attached repo and the wiki's own remote.
+- A scope routes the repo to the wiki (`lore setup scope`), or the wiki has a git remote. The GitHub search targets the current repo and the wiki's own remote.
 
 ## Search
 

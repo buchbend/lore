@@ -82,7 +82,7 @@ def classify(*, vault_root: Path | None = None) -> dict[str, Any]:
             return mcp_error(
                 NO_VAULT,
                 f"no vault at {wiki_root}",
-                next_="run `lore init` or set $LORE_ROOT",
+                next_="run `lore setup` or set $LORE_ROOT",
             )
         vault_root = wiki_root.parent
     vault_root = vault_root.resolve()

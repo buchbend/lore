@@ -10,8 +10,8 @@
 #
 # The script is intentionally thin and never imports the `lore` Python
 # package. It picks an installer (pipx / uv / pip), installs or
-# upgrades the binary, then chains into `lore install` to wire up
-# integrations. Safe to re-run while a previous `lore` is loaded — we
+# upgrades the binary, then chains into `lore setup` to create a wiki and
+# wire up integrations. Safe to re-run while a previous `lore` is loaded — we
 # exec the new binary at the end, never modifying the running one.
 #
 # This file is the source of truth for installation; the `lore
@@ -20,7 +20,7 @@
 # Note for legacy users: a previous `install.sh` (predating the Python
 # CLI) wrote skill symlinks directly into ~/.claude. If you ran that
 # old script, run `python3 tools/undo_install_sh.py` to clean up before
-# proceeding. The chained `lore install` step refuses to run otherwise.
+# proceeding. The chained `lore setup` step refuses to run otherwise.
 
 set -euo pipefail
 
@@ -57,7 +57,7 @@ pick_installer() {
 INSTALLER="$(pick_installer)"
 
 if [ "$INSTALLER" = "none" ]; then
-    die "lore install requires one of pipx / uv / pip on PATH.
+    die "installing lore requires one of pipx / uv / pip on PATH.
         Install pipx first: https://pipx.pypa.io/stable/installation/"
 fi
 
@@ -153,10 +153,13 @@ if [ "$HAS_PLUGIN" -eq 1 ]; then
     else
         warn "claude CLI not found; run: claude plugin update lore@lore (and lore-workflow@lore if installed)"
     fi
+    # Migrate old vault-local state (root config, attachments, scopes) into
+    # ~/.config/lore/config.yml; the new lore reads only that file.
+    lore setup wiki --yes </dev/null || warn "lore setup wiki failed; run: lore setup"
     say "Done. The lore CLI is live now."
     say "Running Claude Code sessions keep the old plugin (skills, hooks, MCP server) until restarted:"
     say "  /exit, then 'claude --continue' to resume the same conversation."
 else
-    say "Starting the lore init wizard..."
-    exec lore init
+    say "Running lore setup..."
+    exec lore setup
 fi

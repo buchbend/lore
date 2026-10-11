@@ -106,7 +106,7 @@ def test_doctor_check_finds_repo_via_walk_up() -> None:
     """The doctor check resolves the source tree by walking up from
     its own __file__ — the running pyproject.toml in this checkout
     should always be the one it finds."""
-    from lore_cli.doctor_cmd import _check_lore_version_drift
+    from lore_cli.checks import _check_lore_version_drift
 
     ok, msg = _check_lore_version_drift(cwd=".")
     # Either ok (versions match in this dev checkout) or a clear

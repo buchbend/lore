@@ -37,7 +37,7 @@ def lore_root_or_die(err_console: Console) -> Path:
     except LoreRootNotConfigured:
         err_console.print(
             "[red]LORE_ROOT is not configured.[/red] "
-            "Set $LORE_ROOT, write ~/.config/lore/config.yml, or run `lore init`."
+            "Set $LORE_ROOT, write ~/.config/lore/config.yml, or run `lore setup`."
         )
         raise typer.Exit(code=2)
     except LoreRootMissing as exc:

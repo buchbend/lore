@@ -89,7 +89,7 @@ command -v vale
 ```
 
 Empty output means Vale is absent. **Post the draft unlinted** and say so in one line
-when you report back. The linter never blocks filing. (`lore doctor` also reports
+when you report back. The linter never blocks filing. (`lore setup` also reports
 whether Vale is on PATH.)
 
 With Vale present:

@@ -1,11 +1,3 @@
-## Lore
-
-<!-- Managed by /lore:attach. Safe to edit — changes are preserved on re-run. -->
-
-- wiki: private
-- scope: lore
-- backend: github
-
 ## Releasing
 
 Every merge to `main` that ships plugin-relevant behavior (hooks, MCP server,

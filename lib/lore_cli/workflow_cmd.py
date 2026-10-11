@@ -166,12 +166,12 @@ def epic_policy_cmd(
 
 @app.command("seed-lift")
 def seed_lift_cmd(
-    note_path: Path = typer.Argument(..., help="Path to the session note to lift from."),
+    note_path: Path = typer.Argument(..., help="Path to the wiki note to lift from."),
     wiki_root: Path | None = typer.Option(
         None, "--wiki-root", help="Wiki root; when given, source_note is recorded wiki-relative."
     ),
 ) -> None:
-    """Lift Origin/Findings for a seed issue from a session note.
+    """Lift Origin/Findings for a seed issue from a wiki note.
 
     Prints `{origin, findings, source_note}` as JSON on success. Exits 1
     when the note is missing or too thin to say anything a freehand pass

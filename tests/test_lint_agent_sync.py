@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
+from conftest import seed_scope
 from lore_core.lint import check_agent_guidance_sync
 
 
@@ -29,23 +28,9 @@ def _setup_attached_project(
     repo.mkdir()
     (repo / "AGENTS.md").write_text(repo_content)
 
-    # attachments.json
+    # a scope named after the project slug
     (lore_root / ".lore").mkdir(parents=True)
-    import json
-    (lore_root / ".lore" / "attachments.json").write_text(
-        json.dumps({
-            "attachments": [
-                {
-                    "path": str(repo),
-                    "wiki": "private",
-                    "scope": slug,
-                    "attached_at": "2026-05-01T00:00:00+00:00",
-                    "source": "manual",
-                },
-            ],
-            "declined": [],
-        })
-    )
+    seed_scope(str(repo), "private", name=slug)
     return lore_root, wiki_path
 
 
@@ -97,21 +82,7 @@ def test_lint_silent_when_no_section(tmp_path, monkeypatch):
     (repo / "AGENTS.md").write_text("# repo\n\nrepo content.\n")
 
     (lore_root / ".lore").mkdir(parents=True)
-    import json
-    (lore_root / ".lore" / "attachments.json").write_text(
-        json.dumps({
-            "attachments": [
-                {
-                    "path": str(repo),
-                    "wiki": "private",
-                    "scope": "lore",
-                    "attached_at": "2026-05-01T00:00:00+00:00",
-                    "source": "manual",
-                },
-            ],
-            "declined": [],
-        })
-    )
+    seed_scope(str(repo), "private", name="lore")
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
 
     issues = check_agent_guidance_sync(wiki_path, "private")
@@ -132,21 +103,7 @@ def test_lint_silent_when_repo_path_missing(tmp_path, monkeypatch):
     )
 
     (lore_root / ".lore").mkdir(parents=True)
-    import json
-    (lore_root / ".lore" / "attachments.json").write_text(
-        json.dumps({
-            "attachments": [
-                {
-                    "path": str(tmp_path / "nonexistent"),
-                    "wiki": "private",
-                    "scope": "lore",
-                    "attached_at": "2026-05-01T00:00:00+00:00",
-                    "source": "manual",
-                },
-            ],
-            "declined": [],
-        })
-    )
+    seed_scope(str(tmp_path / "nonexistent"), "private", name="lore")
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
 
     issues = check_agent_guidance_sync(wiki_path, "private")
@@ -170,21 +127,7 @@ def test_lint_handles_legacy_flat_orientation(tmp_path, monkeypatch):
     (repo / "AGENTS.md").write_text("# repo\n\nGuidance v2 (different).\n")
 
     (lore_root / ".lore").mkdir(parents=True)
-    import json
-    (lore_root / ".lore" / "attachments.json").write_text(
-        json.dumps({
-            "attachments": [
-                {
-                    "path": str(repo),
-                    "wiki": "private",
-                    "scope": "lore",
-                    "attached_at": "2026-05-01T00:00:00+00:00",
-                    "source": "manual",
-                },
-            ],
-            "declined": [],
-        })
-    )
+    seed_scope(str(repo), "private", name="lore")
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
 
     issues = check_agent_guidance_sync(wiki_path, "private")

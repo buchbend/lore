@@ -1,26 +1,10 @@
-"""`lore install` — multi-integration installer dispatcher.
+"""Agent integrations: install, uninstall and update Lore's Claude Code and Cursor wiring.
 
-Subcommands:
-  lore install                              interactive — install for every detected integration
-  lore install --integration claude         one integration
-  lore install --integration all            every integration where the binary is on PATH
-  lore install check [--integration …]      plan-only, never writes
-  lore install uninstall [--integration …]  symmetric semantic remove
-  lore uninstall                            alias for `lore install uninstall`
+The engine behind the Agents step of ``lore setup``, ``lore uninstall`` and
+``lore update``. Each integration (``lore_core.install.REGISTRY``) returns a
+plan of Actions; this module prints, confirms and executes them.
 
-Flags:
-  --yes      non-interactive (kind=replace still prompts)
-  --quiet    suppress per-action lines; just the final ✓/✗ summary
-  --json     structured output on stdout (best-effort, no schema commitment in v1)
-  --force    proceed despite legacy install.sh artifacts (rejected with --yes)
-
-UX contract (per the four-pass plan review):
-  • One prompt per integration with inline action list (apt-style, not npm-style)
-  • [d] keypress expands the diffs
-  • kind=replace always prompts even with --yes
-  • Pre-pipx latency hint before subprocess'ing installers
-  • Success sentence names the verification step + next-plan handoff
-  • Failure cross-links to `lore doctor`
+  • kind=replace always prompts, even with --yes
   • markup=False on Rich for any user-derived string (path, settings content)
 """
 
@@ -33,8 +17,6 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -55,8 +37,6 @@ from lore_core.install.base import (
 )
 from rich.console import Console
 from rich.markup import escape as rich_escape
-
-from lore_cli._argv_compat import argv_main
 
 console = Console()
 
@@ -102,7 +82,7 @@ def _select_integrations(arg: str | None, *, interactive: bool = False) -> list[
     if arg is not None and arg != "all":
         if arg not in all_integrations:
             raise SystemExit(
-                f"lore install: unknown integration '{arg}' "
+                f"lore: unknown integration '{arg}' "
                 f"(known: {', '.join(all_integrations)})"
             )
         return [arg]
@@ -209,7 +189,7 @@ def _print_legacy_warning(artifacts: list[LegacyArtifact]) -> None:
     console.print()
     console.print(
         "  Run [cyan]python3 tools/undo_install_sh.py[/cyan] first, "
-        "then re-run [cyan]lore install[/cyan].",
+        "then re-run [cyan]lore setup[/cyan].",
         markup=True,
     )
     console.print(
@@ -269,6 +249,11 @@ def _prompt_integration(integration_name: str, actions: list[Action], yes: bool)
 
 def _prompt_replace(action: Action) -> bool:
     """Per-action confirm for kind=replace. Returns True to proceed."""
+    if not sys.stdin.isatty():
+        console.print(
+            "  [yellow]skipped: replacing needs a terminal to confirm[/yellow]", markup=True
+        )
+        return False
     console.print(
         f"\n  [yellow]⚠ replace[/yellow] {action.target} — "
         f"{action.summary}",
@@ -360,8 +345,7 @@ def _print_integration_summary(integration_name: str, fail_count: int, mode: str
     else:
         console.print(
             f"\n  [red]✗[/red] {integration_name}: {fail_count} action(s) "
-            "failed. Run [cyan]lore doctor[/cyan] to diagnose. Capture "
-            "state with: [cyan]lore doctor --json > lore-debug.json[/cyan]",
+            "failed. Run [cyan]lore setup[/cyan] to check and repair.",
             markup=True,
         )
 
@@ -395,8 +379,8 @@ def _run_self_upgrade(*, quiet: bool) -> int:
     """Hand off to ``install.sh upgrade`` for a binary self-upgrade.
 
     The bash script is the source of truth for installation: it picks
-    pipx / uv / pip, runs the upgrade, then chains into ``lore install``
-    (the freshly-installed binary) to refresh integrations. Doing this
+    pipx / uv / pip, runs the upgrade, then refreshes the Claude plugin
+    cache (or chains into ``lore setup`` when no plugin is installed yet). Doing this
     via a subprocess — instead of mutating the running Python process —
     sidesteps the self-replacement problem (a process can't reliably
     upgrade the binary it's currently executing from).
@@ -413,7 +397,7 @@ def _run_self_upgrade(*, quiet: bool) -> int:
         )
 
     # Prefer a local checkout if one is on disk (the source layout puts
-    # install.sh two levels above this module: lib/lore_cli/install_cmd.py).
+    # install.sh two levels above this module: lib/lore_cli/integrations.py).
     local = Path(__file__).resolve().parents[2] / "install.sh"
     if local.is_file():
         cmd = ["bash", str(local), "upgrade"]
@@ -507,18 +491,19 @@ def _loud_plugin_cache_failure(detail: str) -> None:
     )
 
 
-def _refresh_claude_plugin_cache(*, quiet: bool) -> None:
+def _refresh_claude_plugin_cache(*, quiet: bool) -> bool:
     """Run `claude plugin update lore@lore` so Claude re-fetches the manifest.
 
     The Claude plugin cache is keyed on the `version` in
     `.claude-plugin/plugin.json`; without this refresh, installed plugins
     keep serving the previous manifest (skills, hooks config, MCP server
     registration) until the user runs the update by hand. We invoke it as
-    part of `lore install` so the Claude-side install is one step.
+    part of the Agents step of `lore setup` so the Claude-side install is one step.
 
     Failures are non-fatal: `claude` may not be on PATH (Code-only setup),
     the plugin may not yet be installed via `/plugin add`, or the update
     may report up-to-date. In each case we print a short hint and return.
+    Returns True when the update ran and succeeded.
     """
     claude_bin = shutil.which("claude")
     if claude_bin is None:
@@ -529,7 +514,7 @@ def _refresh_claude_plugin_cache(*, quiet: bool) -> None:
                 "once Claude Code is installed.",
                 markup=True,
             )
-        return
+        return False
 
     if not quiet:
         console.print(
@@ -547,13 +532,13 @@ def _refresh_claude_plugin_cache(*, quiet: bool) -> None:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         _loud_plugin_cache_failure(str(exc))
-        return
+        return False
 
     if result.returncode != 0:
         stderr = (result.stderr or result.stdout or "").strip().splitlines()
         tail = stderr[-1] if stderr else f"exit {result.returncode}"
         _loud_plugin_cache_failure(tail)
-        return
+        return False
 
     if not quiet:
         # Claude prints its own success line on stdout; relay it so the
@@ -565,6 +550,7 @@ def _refresh_claude_plugin_cache(*, quiet: bool) -> None:
             "  [dim]Restart Claude Code to load the refreshed plugin.[/dim]",
             markup=True,
         )
+    return True
 
 
 def _cmd_install(args: SimpleNamespace, mode: str) -> int:
@@ -580,7 +566,7 @@ def _cmd_install(args: SimpleNamespace, mode: str) -> int:
             "[red]Combining --force with --yes is not allowed.[/red]\n"
             "If you want CI to bulldoze legacy state, run:\n"
             "  [cyan]python3 tools/undo_install_sh.py --yes && "
-            "lore install --yes[/cyan]",
+            "lore setup --yes[/cyan]",
             markup=True,
         )
         return 2
@@ -667,17 +653,12 @@ def _cmd_install(args: SimpleNamespace, mode: str) -> int:
         _print_integration_summary(name, fail_count, mode)
 
     # Final handoff
-    if mode == "install" and overall_failures == 0:
-        # Refresh Claude's plugin manifest cache so hooks/skills/MCP land
-        # without a manual `claude plugin update lore@lore`. Only when the
-        # Claude integration was actually part of the run.
-        if any(name == "claude" for name, _ in plans) and not args.json:
-            _refresh_claude_plugin_cache(quiet=args.quiet)
-        console.print(
-            "\n[bold]Next:[/bold] run [cyan]lore init[/cyan] to scaffold "
-            "your vault and finish onboarding.",
-            markup=True,
-        )
+    # Refresh Claude's plugin manifest cache so hooks/skills/MCP land
+    # without a manual `claude plugin update lore@lore`. Only when the
+    # Claude integration was actually part of the run.
+    claude_ran = any(name == "claude" for name, _ in plans)
+    if mode == "install" and overall_failures == 0 and claude_ran and not args.json:
+        _refresh_claude_plugin_cache(quiet=args.quiet)
     return 0 if overall_failures == 0 else 1
 
 
@@ -743,9 +724,8 @@ def update_command(check: bool = _CHECK, quiet: bool = _QUIET) -> None:
     has landed on `main`.
 
     Delegates to `_run_self_upgrade`, which runs `install.sh upgrade`: that
-    script upgrades the pipx/uv/pip package and then chains into `lore
-    install`, which refreshes the Claude plugin cache. So this one command
-    covers both halves of the install.
+    script upgrades the pipx/uv/pip package and then refreshes the Claude
+    plugin cache. So this one command covers both halves of the install.
     """
     local = _local_version()
     remote = _fetch_remote_version()
@@ -772,89 +752,7 @@ def update_command(check: bool = _CHECK, quiet: bool = _QUIET) -> None:
     raise typer.Exit(code=_run_self_upgrade(quiet=quiet))
 
 
-def build_install_command(
-    modes: str | tuple[str, ...], docstring: str
-) -> Callable[..., None]:
-    """Build a typer-compatible function that runs `_cmd_install` for one
-    or more sequential modes.
-
-    Single-mode entries (``"check"``, ``"upgrade"``, ``"uninstall"``)
-    drive `_cmd_install` once; the chained form ``("uninstall",
-    "install")`` powers the ``reinstall`` verb. Reused by the top-level
-    ``lore uninstall`` alias in `lore_cli.__main__`.
-    """
-    seq = (modes,) if isinstance(modes, str) else modes
-
-    def _cmd(
-        integration: str = _INTEGRATION,
-        yes: bool = _YES,
-        quiet: bool = _QUIET,
-        json_out: bool = _JSON,
-        force: bool = _FORCE,
-        lore_repo: str = _LORE_REPO,
-    ) -> None:
-        for i, mode in enumerate(seq):
-            args = _make_args(
-                integration=integration,
-                yes=yes,
-                quiet=quiet,
-                json_out=json_out,
-                force=force,
-                lore_repo=lore_repo,
-            )
-            rc = _cmd_install(args, mode=mode)
-            # Abort a chained run (reinstall) on the first failing step.
-            if rc != 0 or i == len(seq) - 1:
-                _exit_with(rc)
-                return
-
-    _cmd.__doc__ = docstring
-    return _cmd
-
-
-@dataclass(frozen=True)
-class _Verb:
-    """One row in the install-verb registry."""
-
-    name: str
-    modes: str | tuple[str, ...]
-    docstring: str
-
-
-_INSTALL_VERBS: tuple[_Verb, ...] = (
-    _Verb("check", "check", "Plan-only — never writes."),
-    _Verb("uninstall", "uninstall", "Symmetric semantic remove."),
-    _Verb(
-        "reinstall",
-        ("uninstall", "install"),
-        (
-            "Uninstall then install — useful after upgrading the Lore package.\n"
-            "\n"
-            "Equivalent to:\n"
-            "\n"
-            "    lore install uninstall && lore install\n"
-            "\n"
-            "The install pass automatically runs ``claude plugin update lore@lore``\n"
-            "when the Claude integration is part of the run, so the plugin manifest\n"
-            "cache stays in sync. The ``.claude-plugin/plugin.json`` version still\n"
-            "has to be bumped in the source for Claude's update to do anything —\n"
-            "see CHANGELOG.md."
-        ),
-    ),
-)
-
-
-app = typer.Typer(
-    add_completion=False,
-    help=__doc__,
-    no_args_is_help=False,
-    rich_markup_mode="rich",
-)
-
-
-@app.callback(invoke_without_command=True)
-def root(
-    ctx: typer.Context,
+def uninstall_command(
     integration: str = _INTEGRATION,
     yes: bool = _YES,
     quiet: bool = _QUIET,
@@ -862,9 +760,7 @@ def root(
     force: bool = _FORCE,
     lore_repo: str = _LORE_REPO,
 ) -> None:
-    """Default action — install Lore for one or more integrations."""
-    if ctx.invoked_subcommand is not None:
-        return  # the subcommand handles its own work
+    """Remove Lore's Claude Code and Cursor wiring (the inverse of `lore setup`'s Agents step)."""
     args = _make_args(
         integration=integration,
         yes=yes,
@@ -873,27 +769,4 @@ def root(
         force=force,
         lore_repo=lore_repo,
     )
-    _exit_with(_cmd_install(args, mode="install"))
-
-
-for _verb in _INSTALL_VERBS:
-    app.command(_verb.name)(build_install_command(_verb.modes, _verb.docstring))
-
-
-main = argv_main(app)
-
-
-# ---------------------------------------------------------------------------
-# `lore uninstall` shim — uses the same dispatcher with mode=uninstall
-# ---------------------------------------------------------------------------
-
-
-def uninstall_main(argv: list[str] | None = None) -> int:
-    """Entry point for the `lore uninstall` alias."""
-    if argv is None:
-        argv = sys.argv[1:]
-    return main(["uninstall", *argv])
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    _exit_with(_cmd_install(args, mode="uninstall"))

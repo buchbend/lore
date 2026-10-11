@@ -102,7 +102,6 @@ def test_types_are_frozen():
     s = Scope(
         wiki="test",
         scope="a:b",
-        backend="github",
         claude_md_path=Path("/tmp/CLAUDE.md"),
     )
     with pytest.raises(dataclasses.FrozenInstanceError):

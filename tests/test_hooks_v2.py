@@ -273,10 +273,9 @@ def test_session_start_never_shows_issue_or_pr_counts(fake_vault, tmp_path, monk
     assert "PR" not in status_line
 
 
-def test_session_start_no_lore_config_emits_attach_hint(fake_vault, tmp_path, monkeypatch):
-    """Repo without a `## Lore` block surfaces a clear install/attach
-    instruction instead of guessing a wiki (PR 5 of #80 deleted the
-    legacy repo→wiki resolver + single-wiki fallback)."""
+def test_session_start_no_scope_emits_setup_scope_hint(fake_vault, tmp_path, monkeypatch):
+    """A repo no scope covers surfaces `lore setup scope` instead of
+    guessing a wiki (PR 5 of #80 deleted the single-wiki fallback)."""
     vault, wiki = fake_vault
     repo_dir = tmp_path / "no-lore"
     repo_dir.mkdir()
@@ -284,8 +283,8 @@ def test_session_start_no_lore_config_emits_attach_hint(fake_vault, tmp_path, mo
     monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
 
     out = hooks._session_start(str(repo_dir))
-    assert "no `## Lore` attach block" in out
-    assert "lore install" in out
+    assert "no scope routes this repo" in out
+    assert "lore setup scope" in out
     # AC2 regression guard: an unattached repo's banner must not gain
     # the writing-rules directive — only attached repos get it.
     assert "## Directive" not in out
@@ -305,20 +304,20 @@ def test_session_start_no_vault_emits_no_vault_hint(tmp_path, monkeypatch):
     assert "writing-rules" not in out
 
 
-def test_session_start_from_lore_missing_wiki_emits_attach_hint(
+def test_session_start_missing_wiki_emits_setup_scope_hint(
     fake_vault, tmp_path, monkeypatch,
 ):
-    """`## Lore` block names a wiki that doesn't exist → renderer
-    returns None → caller emits the attach hint (no legacy fallback)."""
+    """A scope names a wiki that doesn't exist → renderer returns None →
+    caller emits the setup hint (no legacy fallback)."""
+    from conftest import seed_scope
+
     vault, wiki = fake_vault
     repo_dir = tmp_path / "bogus"
     repo_dir.mkdir()
-    (repo_dir / "CLAUDE.md").write_text(
-        "## Lore\n\n- wiki: does-not-exist\n- scope: foo\n"
-    )
+    seed_scope(repo_dir, "does-not-exist")
     monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
 
     out = hooks._session_start(str(repo_dir))
-    assert "no `## Lore` attach block" in out
+    assert "lore setup scope" in out
     assert "## Directive" not in out
     assert "writing-rules" not in out
