@@ -6,7 +6,7 @@ new spine producer, or wondering why `lore log`/`lore news`/`lore runs`/
 
 Before PRD 0005's epic, debugging one background flush meant walking
 seven uncorrelated surfaces — `lore log`, `lore proc`, `lore runs`,
-`lore status`, `lore news`, `lore doctor`, and a crash-log directory —
+`lore status`, `lore news`, the checks of `lore setup`, and a crash-log directory —
 over three different ad-hoc file schemas, with no identifier tying a
 hook fire to the curator run it spawned to the note it published.
 Failure handling leaned on "availability over debuggability" past the
@@ -20,7 +20,7 @@ background producer writes to, a **trace_id** field correlating records
 into one story, and **three** read commands instead of seven. Issue
 #361 later retired the compose pipeline these mechanisms correlated —
 the flush state machine and the trace_id's one minter went with it (see
-below) — but the spine, `lore status`, `lore trace` and `lore doctor`
+below) — but the spine, `lore status`, `lore trace` and the checks of `lore setup`
 stayed, now correlating the surviving producers: hooks, the hygiene
 curator, transcript sync, and the retention janitor.
 
@@ -55,10 +55,10 @@ appended to `$LORE_ROOT/.lore/spine.jsonl` through one writer,
 | `source` | Module(s) | What it emits |
 |---|---|---|
 | `hook` | `lore_cli/hooks.py`, `lore_core/spine.py:emit_hook_event` | SessionStart/PreCompact/Stop/UserPromptSubmit/SessionEnd/Capture hook fires and their outcomes |
-| `curator` | `lore_core/run_log.py`, `lore_curator/hygiene.py` | `run-start` / `run-end` and per-action decision records for a `lore curator` hygiene run (role `c`) — the only curator that still runs |
+| `curator` | `lore_core/run_log.py`, `lore_curator/hygiene.py` | `run-start` / `run-end` and per-action decision records for a `lore wiki curate` hygiene run (role `c`) — the only curator that still runs |
 | `drain` | `lore_core/drain.py` | `transcript-synced` — the one event kind with a live producer; read by `lore status`'s news section |
 | `janitor` | `lore_core/janitor.py`, `lore_core/run_retention.py`, `lore_cli/_crash_log.py` | Retention deletions/downgrades and their failures |
-| `install` | *(reserved, no producer yet)* | Onboarding-wizard events (PRD 0005 pillar C); not wired as of this writing — `lore init` doesn't emit to the spine today |
+| `install` | *(reserved, no producer yet)* | Onboarding-wizard events (PRD 0005 pillar C); not wired as of this writing — `lore setup` doesn't emit to the spine today |
 | `mcp` | `lore_core/ledger.py` | `ledger-query` — one per `lore_drill` call whose query names an issue, a PR, an epic or a file path; a query that names none of those returns without emitting |
 
 A drain event kind or a spine `ErrorCode` value is added only together
@@ -80,7 +80,7 @@ Linux), so concurrent sessions append lock-free. Rotation (hot spine
 crossing its size cap) takes a non-blocking `flock` on a sibling
 `spine.rotate.lock`; a losing writer just skips rotation this cycle and
 retries on its next emit. A write failure never raises — it touches
-`spine-failed.marker` so `lore doctor`/`lore status` can surface "spine
+`spine-failed.marker` so `lore setup`/`lore status` can surface "spine
 writes are failing" without crashing the hot path. Full guarantee list:
 [`docs/architecture/state.md`, "Concurrency-safety guarantees"](state.md#concurrency-safety-guarantees).
 
@@ -196,26 +196,17 @@ note path / `[[wikilink]]` (reverse-resolved through the note's own
 they resolved through; either now raises the same "no trace, session,
 or note matches" error as any other unknown selector.
 
-### `lore doctor [--fix]`
+### The Check step of `lore setup`
 
-**Module:** `lore_cli/doctor_cmd.py`. Deep install-integrity diagnostics
-— `LORE_ROOT` resolution, wiki presence, cache writability, the
+**Module:** `lore_cli/checks.py`. Deep install-integrity checks —
+`LORE_ROOT` resolution, wiki presence, cache writability, the
 SessionStart hook path, MCP/search-backend imports, the Claude Code
 plugin-cache version (a *failing* check, not advisory), Cursor
-integration checks, and more — one line per check, exit nonzero on any
-failure. `--fix` additionally repairs: rebuilds `scopes.json` from
-accepted attachments, re-stamps drifted `.lore.yml` offer fingerprints,
-and migrates attachment path prefixes after a vault/repo move. Every
-repair is individually declinable (prompted unless `--yes`); plain
-`doctor` (no `--fix`) never writes state.
-
-**Known rendering quirk:** `--fix` repairs run and print their
-human-readable confirmation prompts/receipts *before* the `--json`
-envelope is emitted (`_run_repairs` runs ahead of the `if json_out`
-branch in the callback) — `lore doctor --fix --json` therefore
-interleaves plain text ahead of the JSON on stdout. Script against
-`lore doctor --json` (no `--fix`) instead, or pass `--yes` and parse only
-the trailing JSON line.
+integration checks, and more. `lore setup` prints one line for the step
+and one line per failing check, and exits nonzero on a failing
+non-advisory check. The checks write nothing; repairs (a stale plugin
+cache, Cursor wiring, the migration of old state files) belong to the
+other setup steps, which name each repair.
 
 ### Removed: `log`, `news`, `runs`, `proc`, `drain`
 
@@ -237,8 +228,7 @@ automatically as part of every opportunistic janitor pass.
 - [PRD 0005](../prd/0005-onboarding-config-observability.md) — the full
   problem statement and every implementation decision.
 - [`state.md`](state.md) — concurrency guarantees shared with the spine,
-  and the three state files this doc doesn't cover (`_scopes.yml`,
-  `scopes.json`, `attachments.json`).
+  and the state files this doc doesn't cover.
 - [`cli-contract.md`](cli-contract.md) — the shape every `lore <verb>`
   command follows, including these three and the deprecating-a-verb
   pattern the now-removed aliases used.

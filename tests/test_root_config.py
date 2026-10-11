@@ -38,18 +38,14 @@ def test_retention_defaults_when_file_absent(tmp_path: Path):
 
 
 def test_retention_partial_override(tmp_path: Path):
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text("observability:\n  retention:\n    hot_days: 3\n")
+    _person_file("observability:\n  retention:\n    hot_days: 3\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.retention.hot_days == 3  # overridden
     assert cfg.observability.retention.cold_days == 30  # default preserved
 
 
 def test_partial_override(tmp_path: Path):
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text("observability:\n  runs:\n    keep: 50\n")
+    _person_file("observability:\n  runs:\n    keep: 50\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.runs.keep == 50  # overridden
     assert cfg.observability.runs.max_total_mb == 100  # default preserved
@@ -58,9 +54,7 @@ def test_partial_override(tmp_path: Path):
 
 def test_malformed_yaml_warns(tmp_path: Path, recwarn):
     warnings.simplefilter("always")
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text("this: is: not: valid\n")
+    _person_file("this: is: not: valid\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.runs.keep == 200
     assert any("malformed YAML" in str(w.message) for w in recwarn)
@@ -68,9 +62,7 @@ def test_malformed_yaml_warns(tmp_path: Path, recwarn):
 
 def test_unknown_key_warns(tmp_path: Path, recwarn):
     warnings.simplefilter("always")
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text("observability:\n  bogus_section: 42\n")
+    _person_file("observability:\n  bogus_section: 42\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.runs.keep == 200  # still defaults
     assert any("bogus_section" in str(w.message) for w in recwarn), "should warn about unknown key"
@@ -82,20 +74,22 @@ def test_unknown_key_warns(tmp_path: Path, recwarn):
 
 
 def _fresh_root(tmp_path: Path, body: str) -> Path:
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir(parents=True, exist_ok=True)
-    (lore_dir / "config.yml").write_text(body)
+    """Seed the file `lore config set` writes: the person's config (PRD 0016)."""
+    from lore_core.config import user_config_path
+
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text(body)
     return tmp_path
 
 
 def test_walk_fields_marks_file_vs_default(tmp_path: Path) -> None:
     from lore_core.root_config import walk_fields
 
-    root = _fresh_root(tmp_path, "journal:\n  enabled: false\n")
+    root = _fresh_root(tmp_path, "feedback:\n  retrieval_misses: false\n")
     fields_by_path = {fi.path: fi for fi in walk_fields(root)}
 
-    assert fields_by_path["journal.enabled"].source == "file"
-    assert fields_by_path["journal.enabled"].value is False
+    assert fields_by_path["feedback.retrieval_misses"].source == "file"
+    assert fields_by_path["feedback.retrieval_misses"].value is False
     # display_name was not set in YAML — should be the empty default
     assert fields_by_path["user.display_name"].source == "default"
     assert fields_by_path["user.display_name"].value == ""
@@ -105,7 +99,7 @@ def test_get_field_returns_leaf_info(tmp_path: Path) -> None:
     from lore_core.root_config import get_field
 
     root = _fresh_root(tmp_path, "")
-    fi = get_field(root, "journal.enabled")
+    fi = get_field(root, "feedback.retrieval_misses")
     assert fi.value is False
     assert fi.default is False
     assert fi.source == "default"
@@ -131,12 +125,14 @@ def test_get_field_on_group_raises(tmp_path: Path) -> None:
 def test_set_field_persists_and_round_trips(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, set_field
 
-    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\njournal:\n  enabled: false\n")
-    fi = set_field(root, "journal.enabled", "true")
+    root = _fresh_root(
+        tmp_path, "user:\n  display_name: Ada\nfeedback:\n  retrieval_misses: false\n"
+    )
+    fi = set_field(root, "feedback.retrieval_misses", "true")
     assert fi.value is True
     assert fi.source == "file"
     # Re-read; siblings preserved.
-    assert get_field(root, "journal.enabled").value is True
+    assert get_field(root, "feedback.retrieval_misses").value is True
     assert get_field(root, "user.display_name").value == "Ada"
 
 
@@ -145,8 +141,8 @@ def test_set_field_creates_missing_parents(tmp_path: Path) -> None:
 
     # Empty config file: setting a nested path should add the parent map.
     root = _fresh_root(tmp_path, "")
-    set_field(root, "journal.enabled", "true")
-    assert get_field(root, "journal.enabled").value is True
+    set_field(root, "feedback.retrieval_misses", "true")
+    assert get_field(root, "feedback.retrieval_misses").value is True
 
 
 def test_set_field_rejects_bad_type(tmp_path: Path) -> None:
@@ -154,7 +150,7 @@ def test_set_field_rejects_bad_type(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(ValueError, match="cannot parse"):
-        set_field(root, "journal.enabled", "notabool")
+        set_field(root, "feedback.retrieval_misses", "notabool")
 
 
 def test_set_field_rejects_unknown_path(tmp_path: Path) -> None:
@@ -170,11 +166,11 @@ def test_set_field_bool_accepts_common_spellings(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     for spelling in ("true", "TRUE", "yes", "on", "1"):
-        set_field(root, "journal.enabled", spelling)
-        assert get_field(root, "journal.enabled").value is True
+        set_field(root, "feedback.retrieval_misses", spelling)
+        assert get_field(root, "feedback.retrieval_misses").value is True
     for spelling in ("false", "FALSE", "no", "off", "0"):
-        set_field(root, "journal.enabled", spelling)
-        assert get_field(root, "journal.enabled").value is False
+        set_field(root, "feedback.retrieval_misses", spelling)
+        assert get_field(root, "feedback.retrieval_misses").value is False
 
 
 def test_schema_tree_covers_all_leaves() -> None:
@@ -183,7 +179,7 @@ def test_schema_tree_covers_all_leaves() -> None:
     rows = schema_tree()
     paths = {p for p, _, _, _ in rows}
     # Spot-check leaves we ship today.
-    assert "journal.enabled" in paths
+    assert "feedback.retrieval_misses" in paths
     assert "observability.runs.keep" in paths
     assert "user.display_name" in paths
     # No group should appear (only leaves).
@@ -214,21 +210,23 @@ def test_unset_field_reverts_to_default(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, set_field, unset_field
 
     root = _fresh_root(tmp_path, "")
-    set_field(root, "journal.enabled", "true")
-    assert get_field(root, "journal.enabled").value is True
+    set_field(root, "feedback.retrieval_misses", "true")
+    assert get_field(root, "feedback.retrieval_misses").value is True
 
-    fi = unset_field(root, "journal.enabled")
+    fi = unset_field(root, "feedback.retrieval_misses")
     assert fi.value is False
     assert fi.source == "default"
-    assert get_field(root, "journal.enabled").value is False
+    assert get_field(root, "feedback.retrieval_misses").value is False
 
 
 def test_unset_field_preserves_siblings(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, unset_field
 
-    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\njournal:\n  enabled: true\n")
-    unset_field(root, "journal.enabled")
-    assert get_field(root, "journal.enabled").value is False
+    root = _fresh_root(
+        tmp_path, "user:\n  display_name: Ada\nfeedback:\n  retrieval_misses: true\n"
+    )
+    unset_field(root, "feedback.retrieval_misses")
+    assert get_field(root, "feedback.retrieval_misses").value is False
     assert get_field(root, "user.display_name").value == "Ada"  # untouched
 
 
@@ -236,7 +234,7 @@ def test_unset_field_noop_when_not_set(tmp_path: Path) -> None:
     from lore_core.root_config import unset_field
 
     root = _fresh_root(tmp_path, "")
-    fi = unset_field(root, "journal.enabled")
+    fi = unset_field(root, "feedback.retrieval_misses")
     assert fi.value is False
     assert fi.source == "default"
 
@@ -245,29 +243,33 @@ def test_unset_field_noop_when_file_absent(tmp_path: Path) -> None:
     from lore_core.root_config import unset_field
 
     # No .lore/config.yml at all.
-    fi = unset_field(tmp_path, "journal.enabled")
+    fi = unset_field(tmp_path, "feedback.retrieval_misses")
     assert fi.value is False
 
 
 def test_unset_field_unknown_path_raises_and_leaves_file_unchanged(tmp_path: Path) -> None:
     from lore_core.root_config import unset_field
 
-    root = _fresh_root(tmp_path, "journal:\n  enabled: true\n")
-    cfg_path = root / ".lore" / "config.yml"
+    root = _fresh_root(tmp_path, "feedback:\n  retrieval_misses: true\n")
+    from lore_core.config import user_config_path
+
+    cfg_path = user_config_path()
     before = cfg_path.read_text()
     with pytest.raises(KeyError, match="unknown config path"):
-        unset_field(root, "journal.no_such_field")
+        unset_field(root, "feedback.no_such_field")
     assert cfg_path.read_text() == before
 
 
 def test_unset_field_prunes_empty_parent_mapping(tmp_path: Path) -> None:
     from lore_core.root_config import unset_field
 
-    root = _fresh_root(tmp_path, "journal:\n  enabled: true\n")
-    unset_field(root, "journal.enabled")
-    cfg_path = root / ".lore" / "config.yml"
+    root = _fresh_root(tmp_path, "feedback:\n  retrieval_misses: true\n")
+    unset_field(root, "feedback.retrieval_misses")
+    from lore_core.config import user_config_path
+
+    cfg_path = user_config_path()
     raw = yaml.safe_load(cfg_path.read_text()) or {}
-    assert "journal" not in raw
+    assert "feedback" not in raw
 
 
 # ---------------------------------------------------------------------------
@@ -299,10 +301,7 @@ def test_workflow_risk_defaults_and_override(tmp_path: Path):
     assert "**/auth/**" in cfg.workflow.risk.sensitive_paths
     assert cfg.workflow.pages == "artifact"
 
-    (tmp_path / ".lore").mkdir()
-    (tmp_path / ".lore" / "config.yml").write_text(
-        "workflow:\n  risk:\n    max_lines: 50\n    sensitive_paths: ['billing/**']\n"
-    )
+    _person_file("workflow:\n  risk:\n    max_lines: 50\n    sensitive_paths: ['billing/**']\n")
     cfg = load_root_config(tmp_path)
     assert cfg.workflow.risk.max_lines == 50
     assert cfg.workflow.risk.sensitive_paths == ["billing/**"]
@@ -319,8 +318,7 @@ def test_config_get_workflow_risk_max_lines(tmp_path: Path, monkeypatch):
 
 
 def _risk_cfg(tmp_path: Path, risk: dict):
-    (tmp_path / ".lore").mkdir(exist_ok=True)
-    (tmp_path / ".lore" / "config.yml").write_text(yaml.safe_dump({"workflow": {"risk": risk}}))
+    _person_file(yaml.safe_dump({"workflow": {"risk": risk}}))
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         cfg = load_root_config(tmp_path)
@@ -354,8 +352,7 @@ def test_risk_valid_values_load_without_warning(tmp_path: Path) -> None:
 def test_risk_section_that_is_not_a_mapping_keeps_defaults(tmp_path: Path) -> None:
     from lore_core.root_config import RiskConfig
 
-    (tmp_path / ".lore").mkdir()
-    (tmp_path / ".lore" / "config.yml").write_text("workflow:\n  risk: 5\n")
+    _person_file("workflow:\n  risk: 5\n")
     with pytest.warns(UserWarning, match="risk"):
         cfg = load_root_config(tmp_path)
     assert cfg.workflow.risk == RiskConfig()
@@ -367,11 +364,9 @@ def test_a_retired_curator_block_warns_once_and_keeps_loading(tmp_path: Path):
     from lore_core.root_config import RootConfig
 
     assert not hasattr(RootConfig(), "curator")
-    cfg_dir = tmp_path / ".lore"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.yml").write_text(
+    _person_file(
         "curator:\n  backend: openai\n  openai:\n    base_url: https://example.invalid\n"
-        "journal:\n  enabled: true\n",
+        "feedback:\n  retrieval_misses: true\n",
         encoding="utf-8",
     )
 
@@ -381,4 +376,45 @@ def test_a_retired_curator_block_warns_once_and_keeps_loading(tmp_path: Path):
 
     curator_warnings = [w for w in caught if "curator" in str(w.message)]
     assert len(curator_warnings) == 1, [str(w.message) for w in caught]
-    assert cfg.journal.enabled is True
+    assert cfg.feedback.retrieval_misses is True
+
+
+# ---------------------------------------------------------------------------
+# One settings file (PRD 0016): the person's ~/.config/lore/config.yml holds
+# every key; `lore setup` migrates the old $LORE_ROOT/.lore/config.yml into it.
+# ---------------------------------------------------------------------------
+
+
+def _person_file(content: str, **_kw) -> Path:
+    from lore_core.config import user_config_path
+
+    path = user_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return path
+
+
+def test_person_config_is_the_one_settings_file(tmp_path: Path) -> None:
+    (tmp_path / ".lore").mkdir()
+    (tmp_path / ".lore" / "config.yml").write_text("feedback:\n  retrieval_misses: true\n")
+    _person_file(
+        "lore_root: ~/lore\nuser:\n  display_name: Christof\n"
+        "scopes:\n  ccatobs:\n    path: ~/git/ccatobs\n    wiki: ccat\n"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        cfg = load_root_config(tmp_path)
+    assert cfg.user.display_name == "Christof"
+    assert (
+        cfg.feedback.retrieval_misses is False
+    )  # the old root config is `lore setup`'s to migrate
+    assert cfg.scopes["ccatobs"]["wiki"] == "ccat"
+
+
+def test_set_field_writes_the_person_config(tmp_path: Path) -> None:
+    from lore_core.config import user_config_path
+    from lore_core.root_config import set_field
+
+    set_field(tmp_path, "user.display_name", "Ada")
+    assert yaml.safe_load(user_config_path().read_text()) == {"user": {"display_name": "Ada"}}
+    assert not (tmp_path / ".lore" / "config.yml").exists()

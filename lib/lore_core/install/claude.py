@@ -4,7 +4,7 @@ Strategy: subprocess `claude plugin install lore@lore` (which wires
 hooks/skills/agents/MCP via the manifest in `.claude-plugin/plugin.json`)
 plus an optional permissions-merge into `~/.claude/settings.json`.
 
-If `lore` is not on PATH (i.e. the user ran `lore install` from a
+If `lore` is not on PATH (i.e. the user ran `lore setup` from a
 fresh clone without first running `pipx install lore`), bootstrap
 the Python install via the pipx → uv → pip cascade lifted from
 install.sh.

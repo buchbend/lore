@@ -6,7 +6,7 @@ so there are no merge semantics — merging a rules essay is ill-defined, and on
 lookup leaves no cascade to debug. Customizing means copying the default into
 the wiki and editing it. There is no per-repo layer.
 
-The defaults live outside `templates/` on purpose: `lore init` copies the whole
+The defaults live outside `templates/` on purpose: older vaults copied the whole
 templates tree into the vault, and a copy of the rules sitting at
 `<lore_root>/templates/` would look editable while the resolver ignores it.
 

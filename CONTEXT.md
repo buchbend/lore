@@ -11,13 +11,28 @@ that no real symbol grounds does not belong here.
   `wiki/` subdirectory plus `.lore/` for derived, host-local state.
 - **Wiki** — a mounted knowledge store at `<vault>/wiki/<name>/`. Each
   wiki is its own git repo; a vault can host several. `lore wiki new`
-  scaffolds `projects/`, `concepts/`, `decisions/`, `sessions/`,
-  `inbox/`. Lore writes nothing into a wiki automatically. A human,
+  scaffolds `projects/`, `concepts/`, `decisions/` and `inbox/`. Lore writes nothing into a wiki automatically. A human,
   `/lore:inbox`, or an agent's pull request writes it, when something is
   worth keeping.
-- **Scope** — a colon-separated namespace inside a wiki
-  (`ccat:data-center:data-transfer`), resolved from a working
-  directory by longest-prefix match against `.lore/attachments.json`.
+- **Scope** — a folder named in the person's lore config, such as
+  `~/git/ccatobs`. A scope sets the wiki, sinks, sources and tracker for
+  every repo below the folder. The longest matching folder wins. A scope
+  can also list git remotes. Lore then matches a repo by its remote as
+  well, and a path match wins over a remote match. _Avoid_: attachment,
+  namespace. Decision in ADR 0016.
+- **Route** — the values that apply in one working directory: repo, wiki,
+  scope, tracker, sinks and sources, each with its origin.
+  `resolve_route` computes it and `lore status` shows it. _Avoid_:
+  attachment, resolution.
+- **Origin** — where a route value came from: an environment variable,
+  `.lore.yml`, a scope, the person's defaults, or a code default.
+  _Avoid_: source.
+- **Setup step** — one of the four steps of `lore setup`: wiki, agents,
+  scope and check. Each step writes only when its target differs.
+  _Avoid_: phase, stage.
+- **Hidden command** — a command registered at its path but left out of
+  `lore --help`, because only hooks or skills call it. _Avoid_: internal,
+  private command.
 
 Full model (three state files, resolution order, failure modes):
 `docs/architecture/state.md`. Config precedence across CLI flag / env
@@ -45,7 +60,7 @@ spec in `docs/prd/0011`.
 
 ## Hygiene — the retained frontmatter-only curator
 
-`lore curator [--wiki] [--apply]` takes no subcommand — `run`, `flush`,
+`lore wiki curate [--wiki] [--apply]` takes no subcommand — `run`, `flush`,
 `reap` and `sweep` retired with the compose pipeline. The bare
 form runs deterministic, frontmatter-only passes over every wiki
 (`lore_curator/hygiene.py`). The passes are supersession propagation
@@ -85,9 +100,6 @@ not from anything injected ambiently:
   (`docs/architecture/lore-drill.md`).
 - `lore_inbox_classify` — read-only gather that a skill turns into
   prose, then commits via a CLI verb.
-- `lore_journal_write` — the AI/human scratch journal
-  (`lore_core/journal.py`); freeform, no LLM abstraction, no
-  propagation, never a source for ambient context.
 - `lore_pending_verdicts` / `lore_verdict` — list and record freshness
   verdicts; backs `/lore:verify` and the in-passing verdict nudge.
 - `lore_repo_docs_list` / `lore_repo_docs_fetch`
@@ -139,7 +151,7 @@ above:
 | SessionStart context assembly + banner | `lore_core/session_start.py` |
 | Capture routing (transcripts, flush, spawn gate) | `lore_curator/capture_routing.py` |
 | Freshness classification | `lore_core/freshness.py` |
-| Vault/wiki/scope resolution | `lore_core/scope_resolver.py`, `lore_core/state/` |
+| Vault/wiki/scope resolution | `lore_core/route.py`, `lore_core/config.py` |
 
 ## Glossary
 

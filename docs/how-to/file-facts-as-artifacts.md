@@ -56,7 +56,7 @@ The next SessionStart does not replay the list. Find the artifacts with
 
 A retrieval miss is a fact a Lore tool did not return. The agent found the fact
 reading files or running commands. Reporting is off by default.
-To turn it on, set these keys in `$LORE_ROOT/.lore/config.yml`:
+To turn it on, set these keys in `~/.config/lore/config.yml`:
 
 ```yaml
 feedback:
@@ -68,16 +68,3 @@ While `retrieval_misses` is true, the `orient`, `build` and `tdd`
 skills run one check at session end. The agent files one issue per miss on
 `retrieval_misses_repo`. The issue names the fact, the tools tried and the
 turn count. While the key is false, no skill files on that repo.
-
-## Clean up flag blocks from an older install
-
-Earlier versions wrote flag blocks into wiki notes. Lore no longer reads or
-writes them. To remove them from every wiki note:
-
-```bash
-lore migrate flag-blocks           # dry run: lists what would change
-lore migrate flag-blocks --apply   # removes the blocks
-```
-
-The command leaves the rest of each note untouched. Git history keeps the
-removed blocks.

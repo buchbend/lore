@@ -2,7 +2,7 @@
 """Undo legacy install.sh — reverse every mutation it made.
 
 Lets the maintainer wipe install.sh-era state from `~/.claude` so the
-new `lore install` flow can be tested on a clean slate. Runs on any
+new `lore setup` flow can be tested on a clean slate. Runs on any
 system with Python 3.11+ — no `lore_core` imports, no third-party
 deps, no lore CLI required (works on a borked install).
 
@@ -340,9 +340,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(
             "\nDone. To re-install with the new flow:\n"
-            "  pipx install lore   (or: lore install --dev "
+            "  pipx install lore   (or an editable install "
             "from a checkout — see CONTRIBUTING.md)\n"
-            "  lore install"
+            "  lore setup"
         )
     return 0
 

@@ -3,7 +3,7 @@
 The plugin (skills, hooks, MCP wiring) and the Python `lore` binary are on
 separate update channels: `claude plugin update` refreshes one, `pipx
 install` the other. Anything that needs to answer "which Lore is actually
-running here?" — the SessionStart banner, `lore doctor`, the Cursor
+running here?" — the SessionStart banner, `lore setup`, the Cursor
 installer — resolves the on-disk source root through this module and
 compares it against the installed distribution.
 
@@ -22,7 +22,7 @@ def resolve_lore_source_root(lore_repo: Path | None = None) -> Path | None:
     """Locate the lore source-of-truth root containing skills/ + .claude-plugin/.
 
     Resolution order:
-      1. ``lore_repo`` (passed by ``lore install --lore-repo`` for dev installs)
+      1. ``lore_repo`` (a source checkout passed in for dev installs)
       2. Walk up from this file looking for a directory containing both
          ``skills/`` and ``.claude-plugin/plugin.json`` (editable pip install)
       3. ``~/.claude/plugins/cache/lore/lore/<version>/`` (Claude Code

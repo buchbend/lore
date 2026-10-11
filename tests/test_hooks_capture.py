@@ -40,23 +40,14 @@ def _make_attached_project(root: Path) -> Path:
     ``_infer_lore_root`` walks up from the scope's path looking for a
     ``wiki/`` subdirectory).
     """
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+    from conftest import seed_scope
 
     project = root / "project"
     project.mkdir()
     # Wiki directory so _infer_lore_root walks up correctly (project is the lore_root)
     (project / "wiki" / "testwiki").mkdir(parents=True)
     (project / ".lore").mkdir()
-    af = AttachmentsFile(project)
-    af.load()
-    af.add(Attachment(
-        path=project,
-        wiki="testwiki",
-        scope="testscope",
-        attached_at=_now(),
-        source="manual",
-    ))
-    af.save()
+    seed_scope(project, "testwiki", name="testscope")
     return project
 
 
@@ -457,25 +448,11 @@ def test_capture_respects_lore_root_env(tmp_path: Path, fake_adapter_factory) ->
     Registry-era: the attachment must live in the custom lore root for
     the capture to route there.
     """
-    from lore_core.state.attachments import Attachment, AttachmentsFile
-
-    _make_attached_project(tmp_path)  # sets up wiki/
+    _make_attached_project(tmp_path)  # sets up wiki/ and the scope
     project = tmp_path / "project"
     custom_lore_root = tmp_path / "custom_lore_root"
     (custom_lore_root / ".lore").mkdir(parents=True)
     (custom_lore_root / "wiki" / "testwiki").mkdir(parents=True)
-
-    # Register attachment in the CUSTOM lore root
-    af = AttachmentsFile(custom_lore_root)
-    af.load()
-    af.add(Attachment(
-        path=project,
-        wiki="testwiki",
-        scope="testscope",
-        attached_at=_now(),
-        source="manual",
-    ))
-    af.save()
 
     handle = _make_handle(project)
     fake_adapter_factory([handle])
@@ -860,20 +837,11 @@ def _make_two_wiki_lore_root(
     proj_b = lore_root / "proj_b"
     proj_b.mkdir()
 
-    # Register both projects in the lore_root's attachments.json
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+    # Route both projects with scopes in the person config
+    from conftest import seed_scope
     (lore_root / ".lore").mkdir(exist_ok=True)
-    af = AttachmentsFile(lore_root)
-    af.load()
-    af.add(Attachment(
-        path=proj_a, wiki="alpha", scope="proj:a",
-        attached_at=_now(), source="manual",
-    ))
-    af.add(Attachment(
-        path=proj_b, wiki="beta", scope="proj:b",
-        attached_at=_now(), source="manual",
-    ))
-    af.save()
+    seed_scope(proj_a, "alpha", name="proj:a")
+    seed_scope(proj_b, "beta", name="proj:b")
 
     return lore_root, proj_a, proj_b
 def test_capture_emits_the_registered_count_in_the_hook_event(

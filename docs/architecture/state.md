@@ -1,7 +1,7 @@
 # Lore State Map
 
-**Audience:** contributors who see three files named `_scopes.yml`,
-`scopes.json`, and `attachments.json` and wonder which one wins.
+**Audience:** contributors who need to know which file answers "given this
+cwd, which wiki applies?" and what Lore keeps on the local machine.
 
 ## Vocabulary
 
@@ -14,156 +14,42 @@ distinct:
   derived state.
 - **Wiki** — a mounted knowledge store at `vault/wiki/<name>/`. Each
   wiki is an independent git repo. A vault may host one or many.
-- **Scope** — a colon-separated namespace inside a wiki
-  (`ccat:data-center:data-transfer`). Hierarchical; routing is by
-  longest-prefix.
+- **Scope** — a folder named in the person's config, such as
+  `~/git/ccatobs`. Every repo below it gets the scope's wiki; the longest
+  matching folder wins (ADR 0016).
 
 When in doubt: vault is *the place*, wiki is *a store inside the
-place*, scope is *a slot inside a store*.
-
-The short answer: **none of them wins, because they don't conflict.**
-Each file is a different layer of the same domain model. This document
-explains what each one owns, who writes it, and how they collaborate
-to answer the question "given this cwd, where do I write notes?"
+place*, scope is *a folder of repos that share a store*.
 
 ---
 
-## TL;DR — three files, three roles
+## TL;DR — what routes a repo
 
-| File | Owner | Regenerable? | Question it answers |
-|------|-------|--------------|---------------------|
-| `<wiki>/_scopes.yml` | wiki maintainer | yes (manually) | "What scopes does *this wiki* define?" |
-| `$LORE_ROOT/.lore/scopes.json` | `lore attach accept` | yes (from accepted offers) | "What scopes are active in *this vault*?" |
-| `$LORE_ROOT/.lore/attachments.json` | `lore attach accept` | **no** | "On *this host*, where does cwd X route to?" |
+| File | Owner | Question it answers |
+|------|-------|---------------------|
+| `~/.config/lore/config.yml` | the person (`lore setup scope`, `lore config`) | "Which scope covers this folder, and which wiki does it use?" |
+| `<repo>/.lore.yml` | the repo, committed | "Which exceptions does this repo carry?" |
+| `<wiki>/_scopes.yml` | wiki maintainer | "Which repos does this wiki's taxonomy name?" (a tag catalog; nothing routes on it) |
 
-The three together answer: starting from a directory on disk → which
-host attached it (`attachments.json`) → which scope chain it lives in
-(`scopes.json`) → which catalog of scopes the chosen wiki defines
-(`_scopes.yml`).
+`resolve_route(cwd)` (`lib/lore_core/route.py`) answers the question in
+this order: a flag or environment variable, the nearest `.lore.yml`
+between the working directory and the repo root, the scope with the
+longest matching folder, a scope whose `remote` list matches the repo's
+git remote, then the person's `defaults`. It is a pure lookup with a
+per-process cache; it writes nothing.
 
----
-
-## 1. `<wiki>/_scopes.yml` — wiki's scope catalog
-
-**Path:** `<lore_root>/wiki/<wiki>/_scopes.yml`
-**Loaded by:** `lore_core/scopes.py:load_scopes_yml`
-**Mutated by:** wiki maintainer (manual edit + commit)
-
-A declarative tree of scope IDs the wiki recognizes, with optional
-`repo:` annotations at leaves. Example:
-
-```yaml
-scopes:
-  ccat:
-    label: CCAT-prime
-    children:
-      data-center:
-        label: Data Center
-        children:
-          data-transfer:
-            repo: ccatobs/data-transfer
-          computers:
-            repo: ccatobs/system-integration
-```
-
-Walked by `walk_scope_leaves()` to produce `(scope_path, repo_slug)`
-pairs for use in offer-suggestions and breadcrumb routing. Pure I/O,
-no side effects.
-
-This file is the **wiki's own statement** about its taxonomy. It is
-checked into the wiki's git repo and travels with it.
+The old `$LORE_ROOT/.lore/attachments.json` and `scopes.json` are gone.
+`lore setup` writes one scope per old attachment into the person's config
+and deletes both files.
 
 ---
 
-## 2. `$LORE_ROOT/.lore/scopes.json` — vault scope registry
-
-**Path:** `<lore_root>/.lore/scopes.json`
-**Loaded by:** `lore_core/state/scopes.py:ScopesFile`
-**Mutated by:** `lore attach accept` (when the user accepts a
-`.lore.yml` offer)
-
-A flat dict `{scope_id: ScopeEntry}` representing the **union of
-accepted offers' scope chains** across all wikis on this vault.
-`ScopeEntry` carries `label`, `wiki` (assigned at root, inherited),
-and `description`.
-
-Why JSON (not YAML)? Because it's regenerable, machine-written, and
-needs fast round-trip — not human-edited.
-
-**Regenerable** from the accepted offers: deleting `scopes.json` and
-re-running `lore attach accept` for each attachment rebuilds it. This
-is the Phase 5 rebuild pass mentioned in the docstring; in practice
-you don't need it day-to-day.
-
-This file answers: "in this vault, what's the active scope tree, and
-which scope belongs to which wiki?"
-
----
-
-## 3. `$LORE_ROOT/.lore/attachments.json` — host consent record
-
-**Path:** `<lore_root>/.lore/attachments.json`
-**Loaded by:** `lore_core/state/attachments.py:AttachmentsFile`
-**Mutated by:** `lore attach accept`, `lore attach manual`,
-`lore attach decline`
-
-A list of records mapping an absolute filesystem path on **this host**
-to a `(wiki, scope)` pair. The record of "did the user actually
-consent to attach this directory?"
-
-```json
-{
-  "attachments": [
-    {
-      "path": "/home/user/git/data-transfer",
-      "wiki": "ccat",
-      "scope": "ccat:data-center:data-transfer",
-      "attached_at": "2026-04-22T10:33:00Z",
-      "source": "offer",
-      "offer_fingerprint": "..."
-    }
-  ],
-  "declined": [...]
-}
-```
-
-**Not portable** between hosts (paths are absolute) and **not
-regenerable** from any other artifact. This is the audit trail of user
-decisions — losing it means asking the user to re-confirm every
-attachment.
-
-**Resolution is by longest-prefix match** on the `path` field — no
-filesystem walk-up. `AttachmentsFile.longest_prefix_match(cwd)` runs
-in O(n log n) over registered attachments.
-
-This file answers: "on this host, when I'm in directory X, which
-wiki+scope am I working in?"
-
-### Shared-vault consent & leak semantics
+## The transcript ledger stays local
 
 A wiki with no git remote is **private by default** — nothing it holds
 ever leaves the machine. A wiki with a git remote is a **shared
 vault**: every teammate with read access to that remote can see every
-note committed there.
-
-Attaching a scope to a shared vault is the moment sharing starts, so
-it's the moment consent is asked. `lore attach accept` / `lore attach
-manual` route through `_confirm_shared_vault()`
-(`lore_cli/attach_cmd.py`), which checks `git_sync.has_remote()` on the
-target wiki before writing the attachment row:
-
-- **No remote** — no-op, nothing to consent to.
-- **Remote, interactive terminal** — a y/N prompt, printed before the
-  row is written.
-- **Remote, non-interactive** — refused (exit 1) unless the caller
-  passes `--confirm-shared`; non-interactive callers never get routed
-  to a shared vault silently.
-
-**The gate reduces but cannot eliminate leaks.** It stops accidental
-first-time routing to a shared vault; it does not scan note content.
-If a secret ends up in a composed note, git history retains it even
-after the note is edited or deleted — the remedy is **rotating the
-credential**, not scrubbing history.
+note committed there. Lore writes to a wiki only on purpose (ADR 0012).
 
 **The transcript ledger never leaves local state.** It lives at
 `<lore_root>/.lore/transcript-ledger.json`, a sibling of `wiki/` —
@@ -177,61 +63,9 @@ rest of the ledger. Only the wiki's notes are ever pushed.
 
 ---
 
-## How they collaborate
-
-When a Claude Code session starts in `~/git/data-transfer`:
-
-```
-session_start.py:session_start_text
-  ↓
-scope_resolver.py:resolve_scope(cwd)
-  ↓
-attachments.json  →  (wiki=ccat, scope=ccat:data-center:data-transfer)
-                     [host-local cwd → wiki+scope routing]
-  ↓ if scope is unfamiliar:
-scopes.json       →  ScopeEntry(label="Data Transfer", wiki="ccat")
-                     [resolve scope metadata + wiki assignment]
-  ↓ if a new offer is being suggested:
-_scopes.yml       →  walk leaves to find a repo match
-                     [check the wiki's catalog for a known slot]
-```
-
-In normal operation only `attachments.json` is consulted — the cheap
-common path. The other two come into play during onboarding (`lore
-attach`) and offer evaluation.
-
----
-
-## Diagram
-
-```
-                        +----------------------+
-                        |  <wiki>/_scopes.yml  |   wiki's declared
-                        |  (per-wiki catalog)  |   taxonomy (manual)
-                        +-----------+----------+
-                                    |
-                                    v  consulted during
-                                       offer evaluation
-+--------------------+        +----------+----------+
-| Claude Code starts |        |  scopes.json        |   active scope tree
-| in a cwd           |        |  (vault registry)   |   (regenerable)
-+---------+----------+        +----------+----------+
-          |                              ^
-          v                              |
-+----------+---------+      union of    |
-|  attachments.json  +------------------+
-|  (host-local)      |   accepted offers
-+--------------------+
-          |
-          v
-   wiki + scope for this cwd
-```
-
----
-
 ## Concurrency-safety guarantees
 
-Two state files outside the scope/attachments triple are written from
+Two state files are written from
 hot paths and need to survive multiple concurrent Claude sessions:
 
 - **`$LORE_ROOT/.lore/spine.jsonl`** — the append-only event spine.
@@ -252,22 +86,15 @@ used by ``lore_core.lockfile.try_acquire_spawn_lock`` to serialise a
 detached background-process launch — transcript sync at SessionStart
 today. The curator's own turn-threshold auto-spawn read this same lock
 before the heartbeat that decided when to take it retired with the
-compose pipeline; `lore curator` now runs only on demand, taking no
+compose pipeline; `lore wiki curate` now runs only on demand, taking no
 lock itself. See those modules for the implementation details — it's
 the canonical lockfile pattern used across the codebase.
 
 ## Failure modes
 
-- **`attachments.json` deleted** → cwd → wiki resolution fails;
-  SessionStart status line shows "no wiki resolved." User must
-  re-`lore attach` per directory. (Worst case — ask the user.)
-- **`scopes.json` deleted** → Lore continues, but new offers can't
-  resolve `wiki` from a scope chain that wasn't seen before. Run
-  `lore attach accept` over each attachment to rebuild.
-- **`_scopes.yml` missing/broken** → offer-suggestion is degraded
-  (no repo-aware routing) but Lore still works for accepted
-  attachments. Fix in the wiki repo.
-
-The asymmetry is intentional: **accepted-attachment information must
-survive everything else.** That's why it lives in its own file with
-explicit consent records, not derived state.
+- **`~/.config/lore/config.yml` lost** → no scope routes any repo; the
+  SessionStart banner names `lore setup scope`. Re-run it per folder.
+- **`<repo>/.lore.yml` malformed** → its keys are ignored; the scope and
+  defaults still apply.
+- **`_scopes.yml` missing/broken** → only the tag catalog degrades;
+  routing is unaffected.

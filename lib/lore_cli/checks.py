@@ -1,26 +1,8 @@
-"""`lore doctor` — smoke-test the Lore install.
+"""Install checks — the Check step of `lore setup`.
 
-Onboarding silent-failure is the real adoption killer (per the UX
-agent's review). This subcommand walks the most common breakage
-points and prints exactly one line per check (✓ or ✗). Exits
-non-zero on any failure.
-
-Checks:
-  1. LORE_ROOT resolves and exists
-  2. wiki/ subdir exists with at least one wiki
-  3. cache dir is writable (~/.cache/lore/ or $LORE_CACHE)
-  4. SessionStart hook is reachable (`lore hook session-start --plain`)
-  5. MCP server module imports (`lore mcp` would start it)
-  6. lore_search index responds (FtsBackend.stats() succeeds)
-  7. Current cwd's `## Lore` block parses (if attached; else skipped)
-  8. Vale is on PATH (advisory — absence degrades the writing-rules lint
-     to instruction-only, per ADR 0006, and never fails this run)
-
-`--fix` additionally repairs: rebuilds scopes.json from attachments.json,
-re-stamps drifted offer fingerprints, and migrates attachment path
-prefixes. Every repair prints what it will change and is individually
-declinable (prompt per repair, `--yes` to skip). Plain `doctor` (no
-`--fix`) never writes state — see docs/architecture/state.md.
+Walks the most common breakage points; each check returns ``(ok, message)``
+and writes nothing (the cache probe is reverted at once). Advisory checks
+(``fails_run=False``) never fail setup.
 """
 
 from __future__ import annotations
@@ -33,39 +15,10 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-import typer
-from rich.console import Console
-
-from lore_cli._argv_compat import argv_main
-
-# emoji=False: scope IDs are colon-separated (`lore:a:b`) and Rich's emoji
-# shortcode parser reads `:a:` as the letter-A emoji, silently corrupting
-# any scope chain with a single-character segment when printed. Markup
-# ([green]/[bold]/etc.) still works — only :shortcode: substitution is off.
-console = Console(emoji=False)
-
-app = typer.Typer(
-    add_completion=False,
-    help="Smoke-test the Lore install.",
-    no_args_is_help=False,
-    rich_markup_mode="rich",
-)
-
-
 # A check takes the current cwd (most ignore it) and returns
 # (ok: bool, message: str). Side-effect-free except for the
 # cache-write probe which is reverted immediately.
 Check = tuple[bool, str]
-
-
-def _issue_summary(label: str, issues: list[str], ok_msg: str) -> Check:
-    """Format a check result from an item label and a list of issue strings."""
-    if issues:
-        summary = issues[0]
-        if len(issues) > 1:
-            summary += f" (+ {len(issues) - 1} more)"
-        return False, f"{label} — {len(issues)} issue(s): {summary}"
-    return True, ok_msg
 
 
 def _check_lore_root(cwd: str) -> Check:
@@ -81,7 +34,7 @@ def _check_lore_root(cwd: str) -> Check:
         return (
             False,
             f"LORE_ROOT={root} [{label}] — does not exist "
-            "(set $LORE_ROOT, write ~/.config/lore/config.yml, or run `lore init`)",
+            "(set $LORE_ROOT, write ~/.config/lore/config.yml, or run `lore setup`)",
         )
     return True, f"LORE_ROOT={root} [{label}]"
 
@@ -91,7 +44,7 @@ def _check_wikis(cwd: str) -> Check:
 
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
-        return False, f"{wiki_root} missing (run `lore init` or `lore wiki new <name>`)"
+        return False, f"{wiki_root} missing (run `lore setup` or `lore wiki new <name>`)"
     wikis = [p for p in sorted(wiki_root.iterdir()) if p.resolve().is_dir()]
     if not wikis:
         return False, f"no wikis under {wiki_root} (run `lore wiki new <name>`)"
@@ -200,6 +153,24 @@ def _check_plugin_manifest_sync(cwd: str) -> Check:
     )
 
 
+def _plugin_index() -> Path:
+    return Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+
+
+def claude_cache_version() -> str | None:
+    """Version of ``lore@lore`` in Claude Code's plugin cache, or None if absent.
+
+    Prefers the user-scope entry, which SessionStart hooks bind to. Raises
+    ``OSError``/``ValueError`` on an unreadable index.
+    """
+    index = _plugin_index()
+    if not index.exists():
+        return None
+    entries = json.loads(index.read_text()).get("plugins", {}).get("lore@lore") or []
+    entry = next((e for e in entries if e.get("scope") == "user"), entries[0] if entries else None)
+    return None if entry is None else str(entry.get("version") or "").strip()
+
+
 def _check_claude_plugin_cache_drift(cwd: str) -> Check:
     """Compare the Claude Code plugin cache version to the installed pip version.
 
@@ -218,39 +189,26 @@ def _check_claude_plugin_cache_drift(cwd: str) -> Check:
     Cache state lives in ``~/.claude/plugins/installed_plugins.json`` —
     plain JSON; opaque is too strong a word.
     """
-    import json as _json
     from importlib.metadata import PackageNotFoundError, version
 
-    cache_index = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+    cache_index = _plugin_index()
     if not cache_index.exists():
         return True, (
-            "skipped: no Claude plugin cache at "
-            f"{cache_index} (Claude Code not installed?)"
+            f"skipped: no Claude plugin cache at {cache_index} (Claude Code not installed?)"
         )
-
     try:
-        index = _json.loads(cache_index.read_text())
+        cache_version = claude_cache_version()
     except (OSError, ValueError) as exc:
         return False, f"plugin cache index unreadable: {exc}"
-
-    entries = index.get("plugins", {}).get("lore@lore") or []
-    # Pick the most recently updated entry; multiple scopes (user/project)
-    # can coexist but the user-scope is what SessionStart hooks bind to.
-    user_entry = next(
-        (e for e in entries if e.get("scope") == "user"),
-        entries[0] if entries else None,
-    )
-    if user_entry is None:
+    if cache_version is None:
         return True, (
             "skipped: lore@lore not present in Claude plugin cache "
             "(install via `/plugin` in Claude Code)"
         )
 
-    cache_version = str(user_entry.get("version") or "").strip()
     if not cache_version or cache_version == "unknown":
         return True, (
-            f"Claude plugin cache version is `{cache_version or 'missing'}` — "
-            "skipping comparison"
+            f"Claude plugin cache version is `{cache_version or 'missing'}` — skipping comparison"
         )
 
     try:
@@ -261,7 +219,7 @@ def _check_claude_plugin_cache_drift(cwd: str) -> Check:
     if cache_version == installed:
         return True, f"Claude plugin cache {cache_version} matches pip"
 
-    from lore_cli.install_cmd import _version_tuple
+    from lore_cli.integrations import _version_tuple
 
     try:
         plugin_behind = _version_tuple(cache_version) < _version_tuple(installed)
@@ -301,9 +259,7 @@ def _check_recent_crashes(cwd: str) -> Check:
     if not crashes:
         return True, "no hook crashes in last 7 days"
     latest = crashes[0]
-    return False, (
-        f"{len(crashes)} hook crash(es) in last 7 days; latest: {latest}"
-    )
+    return False, (f"{len(crashes)} hook crash(es) in last 7 days; latest: {latest}")
 
 
 def _check_spine_writable(cwd: str) -> Check:
@@ -341,11 +297,21 @@ def _check_hook_runnable(cwd: str) -> Check:
     `--probe` suppresses side-effects (curator spawns, stamp/lock writes, ledger
     mutations) so the diagnostic doesn't mutate the thing it's diagnosing.
     """
-    cmd = [sys.executable, "-m", "lore_cli", "hook", "session-start", "--plain", "--probe",
-           "--cwd", cwd]
+    cmd = [
+        sys.executable,
+        "-m",
+        "lore_cli",
+        "hook",
+        "session-start",
+        "--plain",
+        "--probe",
+        "--cwd",
+        cwd,
+    ]
     try:
         result = subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=15,
@@ -408,297 +374,6 @@ def _check_vale(cwd: str) -> Check:
     return True, f"vale found at {path}"
 
 
-def _check_attach(cwd: str) -> Check:
-    from lore_core.session import _resolve_attach_block
-
-    cfg = _resolve_attach_block(Path(cwd))
-    if cfg is None:
-        return True, f"no attachment covers {cwd} (skipped)"
-    path, block = cfg
-    return True, f"attached at {path.parent}: wiki={block.get('wiki')}"
-
-
-def _check_attachments(cwd: str) -> Check:
-    """Validate every attachments.json row: path exists, wiki dir exists,
-    scope in scopes.json (and its registered wiki matches the attachment's),
-    fingerprint matches current `.lore.yml` if one exists at the
-    attachment path.
-    """
-    from lore_core.config import get_lore_root, get_wiki_root
-    from lore_core.offer import FILENAME as LORE_YML
-    from lore_core.offer import offer_fingerprint, parse_lore_yml
-    from lore_core.state.attachments import AttachmentsFile
-    from lore_core.state.scopes import ScopesFile
-
-    lore_root = get_lore_root()
-    if not (lore_root / ".lore" / "attachments.json").exists():
-        return True, "no attachments.json (run `lore attach accept` to register)"
-
-    af = AttachmentsFile(lore_root)
-    af.load()
-    sf = ScopesFile(lore_root)
-    sf.load()
-    wiki_root = get_wiki_root()
-
-    issues: list[str] = []
-    total = 0
-    for a in af.all():
-        total += 1
-        if not a.path.exists():
-            issues.append(f"{a.path}: missing on disk")
-            continue
-        wiki_dir = wiki_root / a.wiki
-        if not wiki_dir.exists():
-            issues.append(f"{a.path}: wiki `{a.wiki}` does not exist in {wiki_root}")
-        if sf.get(a.scope) is None:
-            issues.append(f"{a.path}: scope `{a.scope}` not in scopes.json")
-        else:
-            resolved_wiki = sf.resolve_wiki(a.scope)
-            if resolved_wiki != a.wiki:
-                issues.append(
-                    f"{a.path}: wiki `{a.wiki}` doesn't match scope registry "
-                    f"(scope `{a.scope}` resolves to wiki `{resolved_wiki}`)"
-                )
-        # Fingerprint check — only when a .lore.yml is present at the attachment root
-        if a.offer_fingerprint is not None:
-            lore_yml = a.path / LORE_YML
-            if lore_yml.exists():
-                offer = parse_lore_yml(lore_yml)
-                if offer is not None and offer_fingerprint(offer) != a.offer_fingerprint:
-                    issues.append(f"{a.path}: .lore.yml fingerprint drift (run `lore attach accept`)")
-
-    return _issue_summary(f"{total} attachment(s)", issues, f"{total} attachment(s), all valid")
-
-
-def _check_scope_tree(cwd: str) -> Check:
-    """Scope-tree integrity: every scope's ID-derived parent exists, every
-    root has a wiki, and flag scopes whose resolved wiki doesn't match a
-    real wiki dir.
-    """
-    from lore_core.config import get_lore_root, get_wiki_root
-    from lore_core.state.scopes import ScopesFile, parent_of
-
-    lore_root = get_lore_root()
-    if not (lore_root / ".lore" / "scopes.json").exists():
-        return True, "no scopes.json (builds on first attach)"
-
-    sf = ScopesFile(lore_root)
-    sf.load()
-    ids = sf.all_ids()
-    wiki_root = get_wiki_root()
-
-    issues: list[str] = []
-    for sid in ids:
-        parent = parent_of(sid)
-        if parent is not None and sf.get(parent) is None:
-            issues.append(f"{sid}: parent `{parent}` missing")
-        resolved_wiki = sf.resolve_wiki(sid)
-        if resolved_wiki is None:
-            issues.append(f"{sid}: no resolved wiki")
-        elif not (wiki_root / resolved_wiki).exists():
-            issues.append(f"{sid}: resolved wiki `{resolved_wiki}` does not exist")
-
-    return _issue_summary(f"{len(ids)} scope(s)", issues, f"{len(ids)} scope(s), tree healthy")
-
-
-# ---------------------------------------------------------------------------
-# `--fix` repairs.
-#
-# Each repair is self-contained: it reads state, prints what it would
-# change, asks for consent (`typer.confirm`, skippable with `--yes`), and
-# only writes after consent. attachments.json is the non-regenerable
-# consent record (docs/architecture/state.md) — no repair here may ever
-# drop a row, only rebuild scopes.json or update fields on an existing
-# row in place.
-# ---------------------------------------------------------------------------
-
-
-def _fix_rebuild_scopes(lore_root: Path, *, yes: bool) -> bool:
-    """Rebuild scopes.json from every accepted attachment.
-
-    scopes.json is regenerable; re-derives each attachment's scope chain
-    via the same `ingest_chain` `lore attach accept` uses, additively
-    repairing missing or corrupt entries (a corrupt file parses to empty,
-    so this also self-heals a corrupt scopes.json). Mutation stays
-    in-memory until confirmed — a decline leaves the file untouched.
-
-    ponytail: additive only, doesn't prune scope entries whose attachment
-    was later removed. Add a prune pass if orphaned scopes become a
-    problem in practice.
-    """
-    from lore_core.state.attachments import AttachmentsFile
-    from lore_core.state.scopes import ScopeConflict, ScopesFile
-
-    af = AttachmentsFile(lore_root)
-    af.load()
-    attachments = af.all()
-    if not attachments:
-        return False
-
-    sf = ScopesFile(lore_root)
-    sf.load()
-    before_ids = set(sf.all_ids())
-
-    conflicts: list[str] = []
-    for a in attachments:
-        try:
-            sf.ingest_chain(a.scope, a.wiki)
-        except ScopeConflict as exc:
-            conflicts.append(str(exc))
-
-    added = sorted(set(sf.all_ids()) - before_ids)
-    if not added and not conflicts:
-        return False
-
-    console.print("\n[bold]Repair: rebuild scopes.json[/bold] from attachments.json")
-    for sid in added:
-        console.print(f"  [green]+ {sid}[/green]")
-    for c in conflicts:
-        console.print(f"  [yellow]! {c} (skipped)[/yellow]")
-
-    if not yes and not typer.confirm("Apply?", default=False):
-        console.print("  [yellow]declined — no changes written[/yellow]")
-        return False
-
-    sf.save()
-    console.print("  [green]written[/green]")
-    return True
-
-
-def _fix_restamp_fingerprints(lore_root: Path, *, yes: bool) -> bool:
-    """Re-stamp offer_fingerprint for attachments whose `.lore.yml` has
-    drifted, after showing what would change and getting consent.
-
-    Mirrors `lore attach accept`'s re-acceptance: re-parses the current
-    offer and updates wiki/scope/offer_fingerprint to match it. Never
-    drops the attachment row — only updates fields in place.
-    """
-    from lore_core.offer import FILENAME as LORE_YML
-    from lore_core.offer import offer_fingerprint, parse_lore_yml
-    from lore_core.state.attachments import Attachment, AttachmentsFile
-    from lore_core.state.scopes import ScopeConflict, ScopesFile
-
-    af = AttachmentsFile(lore_root)
-    af.load()
-    sf = ScopesFile(lore_root)
-    sf.load()
-
-    changed = False
-    for a in af.all():
-        if a.offer_fingerprint is None:
-            continue
-        lore_yml = a.path / LORE_YML
-        if not lore_yml.exists():
-            continue
-        offer = parse_lore_yml(lore_yml)
-        if offer is None:
-            continue
-        new_fp = offer_fingerprint(offer)
-        if new_fp == a.offer_fingerprint:
-            continue
-
-        console.print(f"\n[bold]Repair: re-stamp offer fingerprint[/bold] for {a.path}")
-        console.print(f"  wiki:        {a.wiki} -> {offer.wiki}")
-        console.print(f"  scope:       {a.scope} -> {offer.scope}")
-        console.print(f"  fingerprint: {a.offer_fingerprint} -> {new_fp}")
-
-        if not yes and not typer.confirm("Apply?", default=False):
-            console.print("  [yellow]declined — no changes written[/yellow]")
-            continue
-
-        try:
-            sf.ingest_chain(offer.scope, offer.wiki)
-        except ScopeConflict as exc:
-            console.print(f"  [red]scope conflict: {exc} — skipped[/red]")
-            continue
-
-        af.add(
-            Attachment(
-                path=a.path,
-                wiki=offer.wiki,
-                scope=offer.scope,
-                attached_at=a.attached_at,
-                source=a.source,
-                offer_fingerprint=new_fp,
-            )
-        )
-        changed = True
-        console.print("  [green]re-stamped[/green]")
-
-    if changed:
-        af.save()
-        sf.save()
-    return changed
-
-
-def _fix_migrate_paths(lore_root: Path, old_prefix: str, new_prefix: str, *, yes: bool) -> bool:
-    """Rewrite attachment paths after a vault/repo move.
-
-    Any attachment path under `old_prefix` is rewritten to the same
-    relative path under `new_prefix`. attachments.json is host-local and
-    not portable (docs/architecture/state.md) — this is the explicit
-    migration path when a host's paths changed but its consent records
-    should carry over.
-    """
-    from lore_core.state.attachments import Attachment, AttachmentsFile
-
-    old_path = Path(old_prefix)
-    new_path = Path(new_prefix)
-
-    af = AttachmentsFile(lore_root)
-    af.load()
-
-    rewrites: list[tuple[Attachment, Path]] = []
-    for a in af.all():
-        try:
-            rel = a.path.relative_to(old_path)
-        except ValueError:
-            continue
-        rewrites.append((a, new_path / rel))
-
-    if not rewrites:
-        return False
-
-    console.print(f"\n[bold]Repair: migrate attachment paths[/bold] {old_prefix} -> {new_prefix}")
-    for a, new in rewrites:
-        console.print(f"  {a.path} -> {new}")
-
-    if not yes and not typer.confirm("Apply?", default=False):
-        console.print("  [yellow]declined — no changes written[/yellow]")
-        return False
-
-    for a, new in rewrites:
-        af.remove(a.path)
-        af.add(
-            Attachment(
-                path=new,
-                wiki=a.wiki,
-                scope=a.scope,
-                attached_at=a.attached_at,
-                source=a.source,
-                offer_fingerprint=a.offer_fingerprint,
-            )
-        )
-    af.save()
-    console.print("  [green]migrated[/green]")
-    return True
-
-
-def _run_repairs(*, yes: bool, migrate_path_from: str | None, migrate_path_to: str | None) -> None:
-    """Entry point for `--fix`. Runs before the check pass so a single
-    invocation both repairs and reports the post-repair state."""
-    from lore_core.config import get_lore_root
-
-    lore_root = get_lore_root()
-    if not lore_root.exists():
-        return
-
-    _fix_rebuild_scopes(lore_root, yes=yes)
-    _fix_restamp_fingerprints(lore_root, yes=yes)
-    if migrate_path_from and migrate_path_to:
-        _fix_migrate_paths(lore_root, migrate_path_from, migrate_path_to, yes=yes)
-
-
 # ---------------------------------------------------------------------------
 # Cursor integration checks (advisory — `fails_run=False`)
 #
@@ -726,10 +401,7 @@ def _check_cursor_plugin_dir(cwd: str) -> Check:
 
     plugin_dir = cursor_plugin_dir()
     if not plugin_dir.exists():
-        return False, (
-            f"{plugin_dir} not present — run `lore install --integration cursor` "
-            "to materialize the plugin"
-        )
+        return False, (f"{plugin_dir} not present — run `lore setup` to materialize the plugin")
     if not (plugin_dir / PLUGIN_SENTINEL).exists():
         return False, (
             f"{plugin_dir} missing {PLUGIN_SENTINEL} sentinel — directory may "
@@ -752,7 +424,7 @@ def _check_cursor_plugin_dir(cwd: str) -> Check:
     if plugin_version != installed:
         return False, (
             f"plugin manifest {plugin_version} != installed pip {installed} — "
-            "run `lore install --integration cursor` after each pip upgrade"
+            "run `lore setup` after each pip upgrade"
         )
     return True, f"plugin {plugin_version} matches pip"
 
@@ -791,7 +463,7 @@ def _check_cursor_mcp_command_resolves(cwd: str) -> Check:
     if not cmd_path.exists():
         return False, (
             f"command points to {cmd} which no longer exists — "
-            "after `pipx upgrade lore`, run `lore install --integration cursor`"
+            "after `pipx upgrade lore`, run `lore setup`"
         )
     if not os.access(cmd_path, os.X_OK):
         return False, f"command {cmd} is not executable"
@@ -821,17 +493,94 @@ def _check_cursor_hooks_config(cwd: str) -> Check:
     return True, f"{len(hooks)} event(s) wired: {', '.join(sorted(hooks))}"
 
 
+def _person_raw() -> tuple[Path, dict | None, str | None]:
+    """(path, parsed mapping or None, read error or None) for the person config."""
+    import yaml
+    from lore_core.config import user_config_path
+
+    path = user_config_path()
+    if not path.exists():
+        return path, {}, None
+    try:
+        raw = yaml.safe_load(path.read_text()) or {}
+    except (OSError, yaml.YAMLError) as e:
+        return path, None, f"cannot read {path}: {e}"
+    return path, raw, None
+
+
+def person_config_errors() -> list[str]:
+    """Validate the person's config as `lore config edit` does (secrets rule included)."""
+    from lore_core.config_schema import validate_raw
+    from lore_core.root_config import RootConfig
+
+    path, raw, err = _person_raw()
+    return [err] if err else validate_raw(RootConfig, raw, source=path)
+
+
+def old_settings_files() -> list[Path]:
+    """Settings files `lore setup` migrates and deletes (PRD 0016)."""
+    from lore_core.config import get_lore_root
+
+    old = get_lore_root() / ".lore"
+    names = ("attachments.json", "scopes.json", "config.yml")
+    return [old / n for n in names if (old / n).exists()]
+
+
+OLD_SETTINGS_HINT = "old settings files found; run `lore setup` to migrate them"
+
+
+def _check_person_config(cwd: str) -> Check:
+    """The ADR 0016 secrets rule: a `token` or `password` key fails the run."""
+    from lore_core.config_schema import secret_key_errors
+
+    path, raw, err = _person_raw()
+    if err:
+        return False, err
+    errors = secret_key_errors(raw, path)
+    if errors:
+        return False, "; ".join(errors)
+    return True, f"{path} holds no secret values"
+
+
+def _check_config_keys(cwd: str) -> Check:
+    """Advisory: keys the loader warns about and ignores, named one by one."""
+    from lore_core.config_schema import secret_key_errors, validate_raw
+    from lore_core.root_config import RETIRED_BLOCKS, RootConfig
+
+    path, raw, err = _person_raw()
+    if err or not isinstance(raw, dict):
+        return True, "see the person config check"
+    retired = [f"{k!r} is retired; delete it" for k in raw if k in RETIRED_BLOCKS]
+    rest = {k: v for k, v in raw.items() if k not in RETIRED_BLOCKS}
+    secrets = set(secret_key_errors(raw, path))
+    errors = retired + [e for e in validate_raw(RootConfig, rest, source=path) if e not in secrets]
+    if errors:
+        return False, f"{path}: " + "; ".join(errors)
+    return True, f"{path} is valid"
+
+
+def _check_old_settings(cwd: str) -> Check:
+    files = old_settings_files()
+    if files:
+        return False, f"{OLD_SETTINGS_HINT}: {', '.join(map(str, files))}"
+    return True, "no old settings files"
+
+
 # (name, check_fn, fails_run). `fails_run=False` means the check is
 # informational — its `ok=False` is rendered as ✗ but does not set the
 # overall non-zero exit.
 _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     ("LORE_ROOT", _check_lore_root, True),
+    # The secrets rule (ADR 0016) at load time, not only in `lore config edit`.
+    ("person config", _check_person_config, True),
+    # Advisory: keys the loader only warns about (retired, unknown, wrong type).
+    ("config keys", _check_config_keys, False),
+    # Advisory: `pipx upgrade` skips install.sh, so nothing else migrates.
+    ("old settings", _check_old_settings, False),
     ("wikis", _check_wikis, True),
     ("cache", _check_cache_writable, True),
     ("MCP server", _check_mcp_imports, True),
     ("FTS backend", _check_search_backend, True),
-    ("attachments", _check_attachments, True),
-    ("scope tree", _check_scope_tree, True),
     ("SessionStart hook", _check_hook_runnable, True),
     # Advisory: surfaces a past event-spine write failure via its degrade
     # marker so a telemetry blackout is not itself silent.
@@ -857,89 +606,5 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     ("cursor plugin", _check_cursor_plugin_dir, False),
     ("cursor mcp", _check_cursor_mcp_command_resolves, False),
     ("cursor hooks", _check_cursor_hooks_config, False),
-    ("attach", _check_attach, False),
     ("vale", _check_vale, False),
 ]
-
-
-@app.callback(invoke_without_command=True)
-def doctor(
-    cwd: str = typer.Option(
-        None,
-        "--cwd",
-        help="Working directory for hook + attach checks (default: $PWD)",
-    ),
-    json_out: bool = typer.Option(
-        False,
-        "--json",
-        help="Emit JSON envelope on stdout (lore.doctor/1).",
-    ),
-    fix: bool = typer.Option(
-        False,
-        "--fix",
-        help="Repair fixable issues: rebuild scopes.json, re-stamp drifted "
-        "offer fingerprints, migrate attachment paths. Prompts per repair "
-        "unless --yes.",
-    ),
-    yes: bool = typer.Option(
-        False,
-        "--yes",
-        help="Skip repair confirmation prompts (non-interactive --fix).",
-    ),
-    migrate_path_from: str = typer.Option(
-        None,
-        "--migrate-path-from",
-        help="Old absolute path prefix to rewrite in attachments.json (used with --fix).",
-    ),
-    migrate_path_to: str = typer.Option(
-        None,
-        "--migrate-path-to",
-        help="New absolute path prefix (used with --fix).",
-    ),
-) -> None:
-    """Walk the most common breakage points and print one line per check."""
-    cwd = cwd or os.getcwd()
-
-    if fix:
-        _run_repairs(yes=yes, migrate_path_from=migrate_path_from, migrate_path_to=migrate_path_to)
-
-    results: list[dict] = []
-    all_ok = True
-    for name, check, fails_run in _CHECKS:
-        ok, msg = check(cwd)
-        results.append({"check": name, "ok": ok, "message": msg})
-        if not ok and fails_run:
-            all_ok = False
-
-    if json_out:
-        print(
-            json.dumps(
-                {
-                    "schema": "lore.doctor/1",
-                    "data": {"ok": all_ok, "checks": results},
-                },
-                indent=2,
-            )
-        )
-    else:
-        for r in results:
-            mark = "[green]✓[/green]" if r["ok"] else "[red]✗[/red]"
-            console.print(f"{mark} [bold]{r['check']:<20}[/bold] {r['message']}")
-
-        # Doctor is install-integrity only; `lore status` is the
-        # activity panel — point there so users know where to look.
-        if all_ok:
-            console.print("\n[green]Install looks good.[/green] For activity: [bold]lore status[/bold]")
-        else:
-            console.print("\n[red]Some checks failed — see above.[/red] For activity: [bold]lore status[/bold]")
-
-    if not all_ok:
-        raise typer.Exit(code=1)
-
-
-# Backwards-compat shim for tests + the legacy SUBCOMMANDS dispatcher.
-main = argv_main(app)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -1,67 +1,29 @@
-"""Task 1: `lore doctor` must not have side-effects.
+"""The Check step of `lore setup` must not have side-effects.
 
-The hook probe used by `lore doctor` to verify the SessionStart hook is
-reachable was unconditionally running the calendar-rollover Curator B
-spawn. A diagnostic that mutates the thing it diagnoses is a bug.
-
-Plan A / Task 1: add a hidden `--probe` flag to `lore hook session-start`
-that suppresses ALL spawn side-effects. `lore doctor` invokes with
-`--probe`.
+The hook probe the checks use to verify the SessionStart hook is reachable
+once ran the calendar-rollover Curator B spawn. A diagnostic that mutates
+the thing it diagnoses is a bug: `lore hook session-start --probe`
+suppresses every spawn side-effect.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
 
-from lore_cli import doctor_cmd
 from lore_cli.hooks import hook_app
+from lore_cli.setup_cmd import step_check
 from typer.testing import CliRunner
 
 runner = CliRunner()
 
 
-LORE_BLOCK = """\
-# Project
-
-## Lore
-
-<!-- managed by /lore:attach -->
-
-- wiki: testwiki
-- scope: testscope
-- backend: none
-"""
-
-
 def _make_attached_project(root: Path) -> Path:
-    from lore_core.state.attachments import Attachment, AttachmentsFile
-    from lore_core.state.scopes import ScopesFile
+    from conftest import seed_scope
 
     project = root / "project"
-    project.mkdir()
     (project / "wiki" / "testwiki").mkdir(parents=True)
     (project / ".lore").mkdir(parents=True, exist_ok=True)
-
-    af = AttachmentsFile(project)
-    af.load()
-    af.add(
-        Attachment(
-            path=project,
-            wiki="testwiki",
-            scope="testscope",
-            attached_at=datetime.now(tz=UTC),
-            source="manual",
-        )
-    )
-    af.save()
-
-    sf = ScopesFile(project)
-    sf.load()
-    sf.ingest_chain("testscope", "testwiki")
-    sf.save()
-
+    seed_scope(project, "testwiki", name="testscope")
     return project
 
 
@@ -83,8 +45,8 @@ def _snapshot_dir(path: Path) -> dict[str, tuple[int, bytes]]:
 # ---------------------------------------------------------------------------
 # Hook-level: --probe suppresses spawns
 # ---------------------------------------------------------------------------
-def test_doctor_probe_writes_no_state_files(tmp_path, monkeypatch) -> None:
-    """`lore doctor` must not write any files under $LORE_ROOT/.lore/.
+def test_check_step_writes_no_state_files(tmp_path, monkeypatch) -> None:
+    """The Check step must not write any files under $LORE_ROOT/.lore/.
 
     Byte-for-byte snapshot of the .lore/ directory before and after a doctor
     invocation. Any spawn, stamp, lock, or ledger write would change the
@@ -103,12 +65,12 @@ def test_doctor_probe_writes_no_state_files(tmp_path, monkeypatch) -> None:
     before = _snapshot_dir(lore_root / ".lore")
     assert before, "precondition: .lore/ has the file we just wrote"
 
-    rc = doctor_cmd.main(["--cwd", str(project), "--json"])
-    assert rc == 0
+    _, events = step_check(project)
+    assert not [msg for ok, msg in events if ok is False]
 
     after = _snapshot_dir(lore_root / ".lore")
     assert before == after, (
-        "doctor must not mutate .lore/. Diff:\n"
+        "the checks must not mutate .lore/. Diff:\n"
         f"  added:   {set(after) - set(before)}\n"
         f"  removed: {set(before) - set(after)}\n"
         f"  changed: {[k for k in before if k in after and before[k] != after[k]]}"

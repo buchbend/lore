@@ -54,7 +54,7 @@ agent writes a resume line, and `/clear` is then safe. See
 Several epics take one `build` run each. Start a downstream epic after its
 upstream epic merged.
 
-Onboard a repo once with `lore attach --scaffold-workflow`. See
+Onboard a repo once with `lore setup scope --scaffold-workflow`. See
 [Onboard a repo](how-to/onboard-a-repo.md).
 
 ---
@@ -73,7 +73,7 @@ Placement details the table leaves out:
   is zero-padded (`0001`, `0002`).
 - An ADR is `docs/adr/NNNN-kebab.md` in the format of the ADR template in the
   `grilling` skill. [Record a decision](how-to/record-a-decision.md) walks
-  through `Holds` and `lore lint adr`.
+  through `Holds` and `lore wiki lint adr`.
 - The epic issue links the PRD and does not embed it. See
   [Why the PRD lives in the repo](explanation/why-prd-in-repo.md).
 - Cross-references run both ways: PRD, epic issue, ADR and sub-issue each
@@ -88,7 +88,7 @@ is a one-line shim that imports it:
 @AGENTS.md
 ```
 
-Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore attach
+Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore setup scope
 --scaffold-workflow` moves an existing `CLAUDE.md` into this shape.
 
 ### The epic issue as tracker

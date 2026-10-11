@@ -57,7 +57,6 @@ def _route(lore_root: Path, repo: Path, *, event: str):
     scope = Scope(
         wiki="demo",
         scope="demo:proj",
-        backend="none",
         claude_md_path=repo / "CLAUDE.md",
     )
     (lore_root / "wiki" / "demo").mkdir(parents=True, exist_ok=True)

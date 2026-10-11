@@ -18,8 +18,8 @@ For any single setting, the resolution order is:
    override)
 3. **Per-wiki config** — `<wiki>/.lore-wiki.yml` (per-vault-mount
    policy)
-4. **Root config** — `$LORE_ROOT/.lore/config.yml` (per-vault
-   policy)
+4. **Person config** — `~/.config/lore/config.yml` (one settings
+   file per person, PRD 0016)
 5. **Code default** — dataclass field default in `root_config.py` /
    `wiki_config.py`
 
@@ -47,7 +47,7 @@ above is unchanged.
 - `lore config schema` — list the settable keys and their expected types.
 
 All accept `--wiki <name>` to target that wiki's `<wiki>/.lore-wiki.yml` instead
-of the vault-root `$LORE_ROOT/.lore/config.yml`. On a rejected write the file on
+of the person's `~/.config/lore/config.yml`. On a rejected write the file on
 disk is left unchanged: an unknown key is rejected naming the nearest valid keys,
 and an invalid value is rejected naming the expected type/choices.
 
@@ -72,7 +72,7 @@ and an invalid value is rejected naming the expected type/choices.
 
 | Var | Type | Read in | Resolved by |
 |-----|------|---------|-------------|
-| `LORE_ROOT` | path (default: `~/lore`) | many CLI commands + `lore_core/scope_resolver.py` | `lore_core.config.get_lore_root()` |
+| `LORE_ROOT` | path (default: `~/lore`) | many CLI commands + `lore_core/route.py` | `lore_core.config.get_lore_root()` |
 
 `get_lore_root()` returns env-or-default. CLI commands that *require*
 the user to have explicitly set `LORE_ROOT` should call
@@ -95,10 +95,19 @@ rather than silently falling back to `~/lore`.
 | `NO_COLOR` | Standard convention; `run_render.should_use_color()` honours it |
 | `LORE_CACHE` | Override the search-index cache dir (default: `~/.cache/lore/`) |
 
-### 3. `$LORE_ROOT/.lore/config.yml` — root config
+### 3. `~/.config/lore/config.yml` — person config
 
-Vault-wide policy. Schema lives in
-`lib/lore_core/root_config.py:RootConfig`. Subsections:
+One settings file per person (PRD 0016). Schema lives in
+`lib/lore_core/root_config.py:RootConfig`. `lore setup` migrates the old
+`$LORE_ROOT/.lore/config.yml`, `attachments.json` and `scopes.json` into
+it and deletes them. Subsections:
+
+- `lore_root` — the vault location.
+- `scopes.<name>.{path, remote, wiki, tracker, logbook, sources}` — a folder
+  (and optional git remotes) whose repos share a wiki; `lore setup scope`
+  adds one. `defaults` holds the values a repo gets when no scope sets them.
+- `sinks`, `sources` — definitions PRD 0017 gives behaviour.
+- `user.display_name`
 
 - `observability.hook_events.{max_size_mb, keep_rotations}`
 - `observability.runs.{keep, max_total_mb, keep_trace}`
@@ -110,7 +119,6 @@ Vault-wide policy. Schema lives in
   `docs/architecture/observability.md`.
   `dead_letter_hard_cap` was removed with the flush store. A `config.yml` that
   still sets it loads normally; the loader warns and names the key to delete.
-- `journal.enabled`
 - `feedback.{retrieval_misses, retrieval_misses_repo}` — opt-in session-end
   reporting of retrieval misses; `retrieval_misses` defaults to `false`,
   `retrieval_misses_repo` to `buchbend/lore`. See
@@ -126,13 +134,23 @@ Vault-wide policy. Schema lives in
   (`lib/lore_core/tiers/table.py`) for one host/tier cell; see
   `docs/model-tiers.md`.
 
-A `curator:` block is a retired key here too — the LLM-backend selector
-left with the LLM client, and `load_root_config` warns by name
-(`RETIRED_BLOCKS`).
+A `curator:` or `journal:` block is a retired key here too. The LLM-backend
+selector left with the LLM client, and the journal left with its commands.
+`load_root_config` warns by name (`RETIRED_BLOCKS`), and `lore setup` drops
+both blocks when it migrates an old root config.
 
-Loader: `load_root_config(lore_root) -> RootConfig`. Missing file →
+Loader: `load_root_config(lore_root) -> RootConfig` (reads only the
+person file; `lore_root` keeps the shared schema signature). Missing file →
 all defaults. Unknown keys → `warnings.warn` (not fatal). Malformed
 YAML → defaults + warning.
+
+#### Secrets: `~/.config/lore/secrets.yml`
+
+Beside the person config. Config files name a secret; this file holds the
+value. Mode 0600; Lore refuses it inside a git worktree. A `token` or
+`password` key anywhere in the person config fails validation. Manage it with
+`lore config secret set|unset|list` (`list` prints names only). See
+`docs/how-to/route-repos-to-a-wiki.md`.
 
 ### 4. `<wiki>/.lore-wiki.yml` — per-wiki config
 
@@ -157,13 +175,15 @@ notice. The rest of the file still applies.
 Loader: `load_wiki_config(wiki_dir) -> WikiConfig`. Same fault-tolerant
 behaviour as root config.
 
-### 5. `<repo>/CLAUDE.md ## Lore` block — attachment metadata
+### 5. `<repo>/.lore.yml` — repo exceptions
 
-Records the wiki/scope binding for a working directory and any GH
-filter overrides. Read by hooks at SessionStart for status-line
-context. Not a settings file in the configuration sense — more like
-"this repo's identity card." Schema documented in
-`docs/architecture/state.md`.
+Optional and committed. Holds exceptions only: `tracker`, `logbook` (sinks)
+and `sources`, by name, such as an opt-out from a sink. `resolve_route(cwd)`
+(`lib/lore_core/route.py`) reads the nearest one between the working
+directory and the repo root, ahead of the scope that matches the folder
+(ADR 0016). A `.lore.yml` does not choose the wiki or the scope: the route
+ignores a `wiki:` or `scope:` key there and adds a note that `lore status`
+prints.
 
 ### 6. `.claude-plugin/plugin.json`
 
@@ -185,8 +205,8 @@ Each source has a justified role:
 
 - **Env vars** — single-process overrides, the cheapest way to flip
   one knob without editing files.
-- **Root config** (`config.yml`) — vault-wide policy that's per-user,
-  not per-wiki: observability budgets and retention.
+- **Person config** (`~/.config/lore/config.yml`) — per-person policy,
+  not per-wiki: vault location, scopes, observability budgets and retention.
 - **Wiki config** (`.lore-wiki.yml`) — per-mount policy: this wiki
   uses this git sync policy, this breadcrumb mode.
 - **Plugin manifest** — Claude Code's contract; we don't own the

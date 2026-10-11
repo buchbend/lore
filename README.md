@@ -94,14 +94,14 @@ tracked as a known gap):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/buchbend/lore/main/install.sh | sh
-lore init                                               # scaffold a vault + set $LORE_ROOT
 ```
 
 The bootstrap script picks `pipx` / `uv tool` / `pip --user` (in that
 preference order), installs the `lore` CLI, then chains into
-`lore install` to wire up Claude Code + Cursor integrations and refresh
-Claude's plugin cache. Re-running it is the canonical upgrade path —
-or use `lore install --upgrade` once the binary is on your PATH.
+`lore setup`: it creates or links a wiki, installs the Claude Code
+plugins (and Cursor's wiring where present), offers a scope for the
+current repo, and runs the checks. Re-running it is the canonical upgrade path —
+or use `lore update` once the binary is on your PATH.
 
 ### Manual install
 
@@ -109,8 +109,7 @@ If you'd rather skip the bootstrap script and install by hand:
 
 ```bash
 pipx install "git+https://github.com/buchbend/lore.git#egg=lore"  # the CLI
-lore install                                            # detect installed integrations, wire each
-lore init                                               # scaffold a vault + set $LORE_ROOT
+lore setup                                              # wiki, agents, scope, check
 ```
 
 > **Note:** the bare `pipx install lore` form will *not* work — the
@@ -118,13 +117,14 @@ lore init                                               # scaffold a vault + set
 > `git+https://...` form above. We'll switch to a clean PyPI name
 > once one is picked (tracked in an issue).
 
-`lore install` walks every detected integration (Claude Code, Cursor in v1)
-and shows what it'll change before doing anything. One prompt per
-integration; `--yes` for non-interactive use. The hooks, MCP server, skills,
+`lore setup` is also the repair command: a second run on a healthy setup
+writes nothing and prints one check mark per step. Every prompt has a
+flag, so `lore setup --yes` runs without a terminal. `lore setup wiki`
+and `lore setup scope` run one step. The hooks, MCP server, skills,
 and subagents come from `.claude-plugin/plugin.json` — Claude Code's
 plugin system does the wiring; Lore stays out of `~/.claude/settings.json`.
 
-For Cursor, `lore install` writes `mcpServers.lore` into the per-platform
+For Cursor, `lore setup` writes `mcpServers.lore` into the per-platform
 mcp.json (`~/Library/Application Support/Cursor/User/` on macOS,
 `${XDG_CONFIG_HOME:-~/.config}/Cursor/User/` or `~/.cursor/` on Linux)
 and a `lore-managed` block to your Cursor rules dir.
@@ -146,7 +146,7 @@ markers stay put.
 > current `install.sh` is the thin bootstrap installer documented in
 > § Install above; it never writes those symlinks.
 
-If you ran the pre-v0.10 bash installer, `lore install` will refuse
+If you ran the pre-v0.10 bash installer, `lore setup` will refuse
 with a clear warning until you reset:
 
 ```bash
@@ -174,8 +174,8 @@ That alone gives you the `lore` plugin (hooks, skills, subagents, MCP); add
 [§ Two plugins](#two-plugins-lore--lore-workflow). Installing `lore` alone
 does not install the `lore` CLI itself. Run
 `pipx install "git+https://github.com/buchbend/lore.git#egg=lore"`
-separately, or use `lore install --integration claude` once `lore` is on
-your PATH (it'll subprocess `claude plugin install lore@lore` for you).
+separately, or run `lore setup` once `lore` is on your PATH (it'll
+subprocess `claude plugin install lore@lore` for you).
 
 ### Dev install (editable, also the offline / air-gapped path)
 
@@ -201,12 +201,12 @@ One command — upgrades the binary, refreshes integrations, and pokes
 Claude's plugin cache:
 
 ```bash
-lore install --upgrade
+lore update
 ```
 
-`--upgrade` (or `-u`) delegates to `install.sh upgrade`, which picks
-your installer (pipx / uv / pip), pulls the latest `lore`, then
-re-enters `lore install` so hooks/skills/MCP stay in sync. Re-running
+It delegates to `install.sh upgrade`, which picks your installer
+(pipx / uv / pip), pulls the latest `lore`, then refreshes the Claude
+plugin cache so hooks/skills/MCP stay in sync. Re-running
 the curl one-liner from § Install does the same thing if you don't
 have `lore` on PATH for any reason.
 
@@ -216,33 +216,28 @@ For an editable dev checkout:
 cd /path/to/your/lore-checkout
 git pull origin main
 pip install -e .
-lore install
+lore setup
 ```
 
 (Fresh installs follow [§ Install](#install) above.)
 
-### Attach a repo — one step per repo you work in
+### Route repos to a wiki — one scope per folder
 
-Each repo needs a `## Lore` block in its root `CLAUDE.md` so the
-capture path knows which wiki / scope to file notes under:
+A **scope** is a folder in your `~/.config/lore/config.yml`. Every repo
+below it gets the scope's wiki; a new repo there needs no step. From a
+repo, `lore setup scope` offers the folder above it:
 
 ```bash
-cd /path/to/your/repo
+cd ~/git/ccatobs/some-repo
+lore setup scope            # or: --name ccat --wiki ccat --remote 'github.com/ccatobs/*'
 ```
 
-Then in a Claude Code session in that repo, ask Claude to run
-`lore attach` (or run it from a shell):
-
-```
-lore attach
-```
-
-Interactive — asks for wiki + scope, writes the managed block to
-`CLAUDE.md`. Idempotent; safe to re-run.
+A committed `.lore.yml` in a repo holds exceptions only, such as a
+different wiki.
 
 ### What runs automatically
 
-Once attached with a wiki present:
+Once a scope routes the repo to a wiki:
 
 - **Claude Code hooks register every transcript into the ledger.**
   SessionStart, PreCompact, SessionEnd, and a mid-session
@@ -253,14 +248,14 @@ Once attached with a wiki present:
   call; registration is the end of the capture path, not a step toward
   composing anything.
 - **SessionStart also spawns a detached transcript sync**, mirroring
-  every attached transcript into its wiki's `.transcripts/` and
+  every routed transcript into its wiki's `.transcripts/` and
   emitting the one live drain event, `transcript-synced`. An
   opportunistic, flock-guarded retention sweep runs in-process
   alongside it, short enough not to block SessionStart. The transcript
   sync, the wiki pull and the codemap refresh run as detached children.
 - **SessionStart also spawns two more detached children**, so a slow
   remote or a large repo never delays the banner. `lore hook wiki-pull`
-  fetches and fast-forwards the attached wiki. `lore hook codemap-refresh`
+  fetches and fast-forwards the routed wiki. `lore hook codemap-refresh`
   refreshes `CODEMAP.md`. Both are hidden verbs that run in the
   background. A dirty-tree or diverged-history warning from the pull
   shows in the banner one session later, because the child records it
@@ -286,15 +281,11 @@ needs no search.
 
 - `lore ingest --from <file.jsonl> --integration cursor --directory <cwd>` —
   ingest a transcript from any integration lore doesn't auto-capture.
-- `lore curator [--wiki <name>] [--apply]` — the frontmatter-only
+- `lore wiki curate [--wiki <name>] [--apply]` — the frontmatter-only
   hygiene pass (supersession, `implements:` back-links, git-date
   backfill, team-mode hint); dry-run by default.
-- `lore scopes wikis` / `lore scopes doctor` —
-  list configured wikis and validate them. (For looking up the
-  attachment covering a specific path, use `lore attach attachments show
-  <path>`.)
-- `lore migrate flag-blocks [--apply]` — remove the blocks the retired
-  flag crossing left in wiki notes. Dry-run by default.
+- `lore status` — what applies in the current repo (wiki, scope,
+  sinks) and where each value comes from.
 
 ### Per-wiki configuration
 
@@ -323,8 +314,8 @@ Three commands cover the common scenarios:
 | Scenario | Command |
 |---|---|
 | **"Is Lore healthy right now?"** | **`lore status`** |
-| "I had a session and nothing was captured" | `lore status` / `lore doctor` |
-| "Hook plumbing feels off" | `lore doctor` (`--fix` repairs what it can) |
+| "I had a session and nothing was captured" | `lore status` / `lore setup` |
+| "Hook plumbing feels off" | `lore setup` (repairs what it can) |
 
 `lore status` is the first thing to run when you're wondering whether Lore is
 alive: capture liveness, per-wiki connection health, retention
@@ -343,7 +334,7 @@ their debugging role is fully absorbed by `lore trace` / `lore status`
 above (see `CHANGELOG.md` for the removal).
 
 Structured logs live under `$LORE_ROOT/.lore/spine.jsonl`, tiered
-hot → cold → deleted; configure retention at `$LORE_ROOT/.lore/config.yml`:
+hot → cold → deleted; configure retention in `~/.config/lore/config.yml`:
 
 ~~~yaml
 observability:
@@ -356,6 +347,7 @@ Full envelope schema, producer list, trace_id lifecycle, and retention
 tiers: [`docs/architecture/observability.md`](docs/architecture/observability.md).
 Onboarding and troubleshooting walkthroughs:
 [`docs/how-to/onboarding.md`](docs/how-to/onboarding.md),
+[`docs/how-to/route-repos-to-a-wiki.md`](docs/how-to/route-repos-to-a-wiki.md),
 [`docs/how-to/troubleshooting.md`](docs/how-to/troubleshooting.md).
 
 ## Two onboarding recipes
@@ -373,7 +365,7 @@ ln -s ~/git/research/knowledge research
 # personal wiki lives inline at ~/lore/wiki/personal/
 ```
 
-Then run `lore init` to write the root CLAUDE.md and you're set.
+Then run `lore setup` to write the root CLAUDE.md and you're set.
 
 ### 2. Single-wiki — one team's knowledge only
 
@@ -417,7 +409,7 @@ LORE_ROOT=/path/to/your/vault lore migrate frontmatter --add-schema-version --ap
 ```
 
 No files move. If your vault does not yet match the canonical shape,
-`lore init` scaffolds it without touching your notes.
+`lore setup` scaffolds it without touching your notes.
 
 ## Design principles
 

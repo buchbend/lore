@@ -8,6 +8,59 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.82.0] - 2026-10-11
+
+Ships `lore-workflow` 0.13.0. Epic #466 (route by folder scope, one settings
+file, `lore setup`) and PR #476 (orient pages and named subagents).
+
+### Added
+
+- **`lore setup` sets up and repairs Lore (#470).** Four steps: wiki, agents,
+  scope and check. Each step writes only when its target differs, so a second
+  run on a healthy setup writes no file. `lore setup wiki` and
+  `lore setup scope` run one step. The check step reports; the other
+  steps repair.
+- **Routing by folder scope (#468).** A scope is a folder in
+  `~/.config/lore/config.yml`, such as `~/git/ccatobs`. It sets the wiki,
+  sinks, sources and tracker for every repo below it; the longest folder
+  wins, and a scope can also match repos by git remote. `lore status` shows
+  each route value with its origin.
+- **One person settings file.** `~/.config/lore/config.yml` holds
+  `lore_root`, `defaults`, `scopes`, `sinks`, `sources` and `user`.
+  `lore config secret set|unset|list` keeps secret values in
+  `~/.config/lore/secrets.yml` (mode `0600`, refused inside a git worktree).
+- **orient: the brief can go out as a page (#476).** "orient … as an
+  artifact" renders the brief as a page. The new key `workflow.pages`
+  (`artifact` by default, `html` for a local file) picks the target; triage
+  reads the same key.
+- **orient: named subagents (#476).** "orient with science-pm-counselor"
+  has each named subagent review the intent through its own lens. The brief
+  credits each one.
+
+### Changed
+
+- **`lore setup` moves old state into the settings file.** It moves
+  `attachments.json`, `scopes.json` and `$LORE_ROOT/.lore/config.yml` into
+  `~/.config/lore/config.yml`, then deletes them. `install.sh` runs it on
+  every install and upgrade.
+- **A repo's `.lore.yml` holds exceptions only.** It names a tracker, sinks
+  and sources. Lore ignores its `wiki` and `scope` keys and says so in
+  `lore status`; `LORE_WIKI` and `LORE_SCOPE` still override.
+- **Reporting boundary.** A sink name that the person config does not define
+  falls back to the `file` sink, from any origin.
+- **`lore --help` lists the commands a person runs (#469):** `setup`,
+  `status`, `config`, `search`, `read`, `wiki`, `update` and `uninstall`.
+  Commands that only hooks and skills call stay at their paths, hidden.
+  `lore read` replaces `lore drill`; `lore wiki lint` and `lore wiki curate`
+  replace `lore lint` and `lore curator`.
+
+### Removed
+
+- `lore attach`, `install`, `init`, `scopes`, `doctor`, `session`,
+  `project`, `journal` and `migrate flag-blocks`; offers, consent, the
+  `## Lore` block, the `backend` key and the `lore_journal_write` MCP tool.
+  Run `lore setup` instead of `install`, `init`, `attach` or `doctor`.
+
 ## [0.81.0] - 2026-10-02
 
 ### Added

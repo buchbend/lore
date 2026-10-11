@@ -53,8 +53,8 @@ Also exposed as the `lore_tier_resolve` MCP tool (`tier`, optional
 
 ## User overrides
 
-Any table cell can be overridden per vault, without touching the
-shipped table, via `$LORE_ROOT/.lore/config.yml`:
+Any table cell can be overridden per person, without touching the
+shipped table, via `~/.config/lore/config.yml`:
 
 ```yaml
 tiers:

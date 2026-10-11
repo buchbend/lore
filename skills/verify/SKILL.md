@@ -23,7 +23,7 @@ clear the backlog on their own schedule.
 ## Workflow
 
 1. **Discover.** Call `mcp__lore__lore_pending_verdicts` (no args —
-   the tool auto-resolves the active wiki from the cwd attachment).
+   the tool auto-resolves the active wiki from the cwd route).
    The response carries every picker field per entry; no further reads
    are needed.
 

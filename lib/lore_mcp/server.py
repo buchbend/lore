@@ -14,7 +14,6 @@ Exposed tools:
     lore_inbox_classify     — read-only inbox walk (file list with type +
                               routing hint); skill composes notes, then shells
                               out to `lore inbox archive`
-    lore_journal_write      — append a freeform entry to the AI or human journal
     lore_pending_verdicts   — enumerate wiki-wide pending freshness verdicts
     lore_verdict            — record a freshness verdict (confirm/stale/clear-stale)
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
@@ -37,8 +36,6 @@ from typing import Any
 
 from lore_core.config import get_lore_root, get_wiki_root
 from lore_core.errors import (
-    EMPTY_ENTRY,
-    INVALID_ENTRY,
     INVALID_KIND,
     NOTE_NOT_FOUND,
     PATH_ESCAPE,
@@ -179,7 +176,7 @@ def _freshness_block_for(
 #
 # 5s is conservative — fresh edits made by the user mid-conversation
 # show up on the next search after the throttle expires. For explicit
-# re-index, use ``lore lint`` (which writes the catalog that
+# re-index, use ``lore wiki lint`` (which writes the catalog that
 # ``reindex_one`` is based on).
 #
 # When the optional ``watchdog`` dependency is installed, the fs-watch
@@ -365,10 +362,10 @@ def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
     Three-tier lookup, fast → safe → last-resort:
 
     1. ``_catalog.json``'s top-level ``slug_index`` (O(1)) — populated
-       by ``lore lint`` since Phase 1.2.
+       by ``lore wiki lint`` since Phase 1.2.
     2. Section iteration (O(n)) — fallback for catalogs written by
        pre-Phase-1.2 lint runs that don't have ``slug_index`` yet.
-       Removed in v0.31.0 once every active wiki has rerun ``lore lint``.
+       Removed in v0.31.0 once every active wiki has rerun ``lore wiki lint``.
     3. ``rglob`` walk — last resort for notes the catalog doesn't cover:
        freshly-written mid-session, drafts outside ``KNOWLEDGE_DIRS``,
        or files in ``inbox/`` (deliberately skipped by ``discover_notes``).
@@ -534,33 +531,6 @@ def handle_inbox_classify() -> dict[str, Any]:
     from lore_core.inbox import classify
 
     return classify()
-
-
-def handle_journal_write(
-    kind: str,
-    text: str,
-    author: str | None = None,
-) -> dict[str, Any]:
-    """Append a freeform entry to the AI or human journal."""
-    from lore_core import journal
-
-    if kind not in journal.VALID_KINDS:
-        return _mcp_error(
-            INVALID_KIND,
-            f"journal kind must be one of {journal.VALID_KINDS!r}, got {kind!r}",
-        )
-    text = (text or "").strip()
-    if not text:
-        return _mcp_error(
-            EMPTY_ENTRY,
-            "journal entry text must be non-empty",
-            next_="Pass a non-empty `text` arg.",
-        )
-    try:
-        result = journal.write(kind, text, author=author)  # type: ignore[arg-type]
-    except ValueError as e:
-        return _mcp_error(INVALID_ENTRY, str(e))
-    return {"schema": "lore.journal.write/1", "data": result}
 
 
 def handle_drill(
@@ -860,27 +830,25 @@ def handle_verdict(
 
 
 def _resolve_wiki_with_active_scope_fallback(wiki: str | None) -> Path | None:
-    """Like :func:`_resolve_wiki` but auto-resolves from the active
-    cwd attachment when ``wiki`` is omitted and there's no single-wiki
+    """Like :func:`_resolve_wiki` but auto-resolves from the cwd's
+    route when ``wiki`` is omitted and there's no single-wiki
     fallback to lean on.
 
     Order:
       1. Explicit ``wiki`` argument → :func:`_resolve_wiki`.
       2. No argument, single-wiki vault → :func:`_resolve_wiki(None)`.
-      3. No argument, multi-wiki vault → :func:`resolve_scope(cwd)` →
-         the wiki named by the active attachment.
+      3. No argument, multi-wiki vault → :func:`resolve_route(cwd)` →
+         the wiki the cwd's route names.
     """
     if wiki:
         return _resolve_wiki(wiki)
     direct = _resolve_wiki(None)
     if direct is not None:
         return direct
-    from lore_core.scope_resolver import resolve_scope
+    from lore_core.route import resolve_route
 
-    scope = resolve_scope(Path.cwd())
-    if scope is None or not scope.wiki:
-        return None
-    return _resolve_wiki(scope.wiki)
+    wiki = resolve_route(Path.cwd()).wiki
+    return _resolve_wiki(wiki) if wiki else None
 
 
 def handle_pending_verdicts(wiki: str | None = None) -> dict[str, Any]:
@@ -920,9 +888,9 @@ def handle_pending_verdicts(wiki: str | None = None) -> dict[str, Any]:
             (
                 f"wiki not found: {wiki}" if wiki else
                 "could not resolve active wiki (no explicit `wiki`, no "
-                "single-wiki fallback, no cwd attachment)"
+                "single-wiki fallback, no route for the cwd)"
             ),
-            next_="pass `wiki` explicitly or attach the cwd to a wiki",
+            next_="pass `wiki` explicitly or run `lore setup scope` in the repo",
         )
 
     handle = _resolve_current_handle(wiki_path)
@@ -1211,37 +1179,6 @@ def _tool_schema() -> list[dict]:
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
-            "name": "lore_journal_write",
-            "description": (
-                "Append a freeform entry to the AI or human journal "
-                "(newest-first). The AI journal is YOUR space — write "
-                "observations about workflow, criticism, half-formed "
-                "ideas, jokes, weather, anything that would otherwise "
-                "be lost. The bar is *would this be lost otherwise*, "
-                "not *does this serve the user*. Don't write filler. "
-                "Available iff `journal.enabled` in the root config."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "kind": {
-                        "type": "string",
-                        "enum": ["ai", "human"],
-                        "description": "Which journal to write to.",
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "The entry body (plain markdown).",
-                    },
-                    "author": {
-                        "type": "string",
-                        "description": "Override the auto-resolved author tag.",
-                    },
-                },
-                "required": ["kind", "text"],
-            },
-        },
-        {
             "name": "lore_pending_verdicts",
             "description": (
                 "Enumerate wiki-wide pending freshness verdicts as "
@@ -1253,8 +1190,8 @@ def _tool_schema() -> list[dict]:
                 "confirmed_at, optional disagreement block). The "
                 "skill then loops one `AskUserQuestion` per row and "
                 "calls `lore_verdict` for each user choice. `wiki` "
-                "is optional — auto-resolves from the active cwd "
-                "attachment when omitted."
+                "is optional — auto-resolves from the cwd's route "
+                "(its scope's wiki) when omitted."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1263,7 +1200,7 @@ def _tool_schema() -> list[dict]:
                         "type": "string",
                         "description": (
                             "Wiki name. Optional; auto-resolves from "
-                            "the active attachment when omitted."
+                            "the cwd's route when omitted."
                         ),
                     },
                 },
@@ -1487,8 +1424,6 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_drill(**args)
         case "lore_inbox_classify":
             return handle_inbox_classify(**args)
-        case "lore_journal_write":
-            return handle_journal_write(**args)
         case "lore_verdict":
             return handle_verdict(**args)
         case "lore_pending_verdicts":

@@ -39,7 +39,7 @@ see ``docs/architecture/state.md`` "Concurrency-safety guarantees"):
   ``flock`` on a sibling ``spine.rotate.lock``; losers skip rotation this
   cycle (the next emit retries) so two writers can't both ``os.replace``.
 * **Failures are observable.** Any ``OSError`` in ``emit()`` touches
-  ``spine-failed.marker`` so ``lore doctor`` / ``lore status`` surface
+  ``spine-failed.marker`` so ``lore setup`` / ``lore status`` surface
   "spine writes are failing" without crashing the hot path.
 """
 

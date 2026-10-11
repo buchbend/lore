@@ -17,7 +17,7 @@ Concurrency design mirrors :mod:`lore_core.spine` (audited 2026-04-26):
   non-blocking ``LOCK_EX`` on a sibling lock file at 10 MB; losers
   skip the cycle.
 * **Failures are observable.** Any ``OSError`` in ``emit()`` touches
-  ``query-log-failed.marker`` so future ``lore status`` /``lore doctor``
+  ``query-log-failed.marker`` so future ``lore status`` /``lore setup``
   surfacing can flag broken logging without crashing the query.
 """
 

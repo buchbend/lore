@@ -103,11 +103,10 @@ class TranscriptHandle:
 
 @dataclass(frozen=True)
 class Scope:
-    """A wiki scope with backend and local path configuration."""
+    """A wiki scope and the repo's synthetic CLAUDE.md path."""
 
     wiki: str
-    scope: str  # colon-separated, e.g. "ccat:data-center:data-transfer"
-    backend: str  # "github" | "none"
+    scope: str
     claude_md_path: Path
 
 

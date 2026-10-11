@@ -92,3 +92,51 @@ def test_validate_raw_group_value_must_be_mapping():
     errors = validate_raw(_Dummy, raw)
     assert len(errors) == 1
     assert "sub" in errors[0]
+
+
+# ---------------------------------------------------------------------------
+# The person's config (PRD 0016) and the secrets rule (ADR 0016 invariant)
+# ---------------------------------------------------------------------------
+
+_PERSON = {
+    "lore_root": "~/lore",
+    "defaults": {"tracker": "auto"},
+    "scopes": {
+        "ccatobs": {
+            "path": "~/git/ccatobs",
+            "remote": ["github.com/ccatobs/*"],
+            "wiki": "ccat",
+            "logbook": ["file", "pm-ccat"],
+            "sources": ["ccatwiki"],
+        }
+    },
+    "sinks": {},
+    "sources": {},
+    "user": {"display_name": "Christof Buchbender"},
+}
+
+
+def test_person_config_from_prd_0016_validates():
+    from lore_core.root_config import RootConfig
+
+    assert validate_raw(RootConfig, _PERSON) == []
+
+
+def test_unknown_scope_key_is_named():
+    from lore_core.root_config import RootConfig
+
+    raw = {"scopes": {"ccatobs": {"path": "~/git/ccatobs", "wikki": "ccat"}}}
+    errors = validate_raw(RootConfig, raw)
+    assert any("scopes.ccatobs.wikki" in e for e in errors), errors
+
+
+def test_invariant_secrets_rule_token_or_password_key_fails_and_names_the_file(tmp_path):
+    from lore_core.root_config import RootConfig
+
+    cfg = tmp_path / "config.yml"
+    for raw in (
+        {"sinks": {"pm-ccat": {"kind": "command", "token": "abc"}}},
+        {"sources": {"ccatwiki": {"password": "hunter2"}}},
+    ):
+        errors = validate_raw(RootConfig, raw, source=cfg)
+        assert any(str(cfg) in e and ("token" in e or "password" in e) for e in errors), errors

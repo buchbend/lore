@@ -97,23 +97,10 @@ def test_clean_pull_fast_forwards_the_wiki(tmp_path: Path) -> None:
 
 
 def _attach(lore_root: Path, project: Path, wiki: str = "demo") -> None:
-    from datetime import UTC, datetime
-
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+    from conftest import seed_scope
 
     project.mkdir(parents=True, exist_ok=True)
-    af = AttachmentsFile(lore_root)
-    af.load()
-    af.add(
-        Attachment(
-            path=project,
-            wiki=wiki,
-            scope=f"{wiki}:proj",
-            attached_at=datetime.now(UTC),
-            source="manual",
-        )
-    )
-    af.save()
+    seed_scope(project, wiki, name=f"{wiki}:proj")
 
 
 def test_session_start_shows_recorded_warning_and_pulls_in_background(

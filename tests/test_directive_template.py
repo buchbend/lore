@@ -156,8 +156,8 @@ def test_session_start_shield_catches_unexpected_exception(monkeypatch, capsys):
     full = envelope["hookSpecificOutput"]["additionalContext"]
     assert "RuntimeError" in full
     # Actionable hints are the whole point of the shield.
-    assert "lore install --upgrade" in full
-    assert "lore doctor" in full
+    assert "lore update" in full
+    assert "lore setup" in full
 
 
 # --- the ADR 0015 reading rule -------------------------------------------

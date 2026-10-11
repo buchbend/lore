@@ -277,7 +277,7 @@ def count_pending_verdicts(
     raw count when ``capped`` is True.
 
     Cache miss (no catalog) returns ``(0, False)`` — the chip
-    suppresses entirely until the next ``lore lint`` run.
+    suppresses entirely until the next ``lore wiki lint`` run.
     """
     data = _load_catalog(wiki_path)
     if data is None:
@@ -468,7 +468,7 @@ def pending_entry_to_dict(entry: PendingEntry) -> dict:
 def load_orphan_set(wiki_path: Path) -> set[Path]:
     """Load the cached orphan set for a wiki.
 
-    Slice 4 of PRD #65: ``lore lint`` writes a list of wiki-relative
+    Slice 4 of PRD #65: ``lore wiki lint`` writes a list of wiki-relative
     paths under ``_catalog.json`` → ``orphan_set``. Computing orphans
     on every retrieval would be too expensive (rglob over the wiki +
     one frontmatter parse per note). The cache is refreshed on each

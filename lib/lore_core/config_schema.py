@@ -3,9 +3,7 @@
 Shared plumbing behind `lore config get/set/unset/edit` for both
 `RootConfig` (`root_config.py`) and `WikiConfig` (`wiki_config.py`).
 Everything here is generic over "some dataclass tree, loaded from
-some YAML file under some base dir" via :class:`ConfigSchema` — a
-future slice reuses `validate_raw`/`suggest` for `.lore.yml` offer
-validation without needing a third copy of this logic.
+some YAML file under some base dir" via :class:`ConfigSchema`.
 """
 
 from __future__ import annotations
@@ -280,7 +278,31 @@ def schema_tree(schema: ConfigSchema) -> list[tuple[str, str, Any, str]]:
     return rows
 
 
-def validate_raw(dataclass_type: type, raw: Any) -> list[str]:
+#: Keys that hold a secret value. Config files name secrets; the values live
+#: in ``secrets.yml`` (ADR 0016 secrets rule).
+SECRET_KEYS = frozenset({"token", "password"})
+
+
+def secret_key_errors(raw: Any, source: Path | None = None, prefix: str = "") -> list[str]:
+    """Name every ``token``/``password`` key anywhere in ``raw``."""
+    errors: list[str] = []
+    if isinstance(raw, dict):
+        items = raw.items()
+    else:
+        items = enumerate(raw) if isinstance(raw, list) else ()
+    for key, value in items:
+        path = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(key, str) and key.lower() in SECRET_KEYS:
+            where = f" in {source}" if source else ""
+            errors.append(
+                f"{path!r} holds a secret value{where}; store it with "
+                f"`lore config secret set NAME` and name it here instead"
+            )
+        errors.extend(secret_key_errors(value, source, path))
+    return errors
+
+
+def validate_raw(dataclass_type: type, raw: Any, source: Path | None = None) -> list[str]:
     """Strict validation for a parsed-YAML mapping against a dataclass tree.
 
     Unlike the lenient loaders (which warn and fall back to defaults),
@@ -300,10 +322,11 @@ def validate_raw(dataclass_type: type, raw: Any) -> list[str]:
 
     default_root = dataclass_type()
     valid_paths = _all_leaf_paths(default_root)
-    errors: list[str] = []
+    errors: list[str] = secret_key_errors(raw, source)
 
     def walk(obj: dict, prefix: str, default_node: Any) -> None:
-        field_names = {f.name for f in fields(default_node)}
+        field_map = {f.name: f for f in fields(default_node)}
+        field_names = set(field_map)
         for key, value in obj.items():
             path = f"{prefix}.{key}" if prefix else key
             if key not in field_names:
@@ -320,6 +343,18 @@ def validate_raw(dataclass_type: type, raw: Any) -> list[str]:
                 else:
                     errors.append(f"{path!r} expects a mapping, got {type(value).__name__}")
                 continue
+            item_type = field_map[key].metadata.get("item")
+            if item_type is not None and isinstance(value, dict):
+                # A mapping of named entries, each one an ``item_type``.
+                for name, entry in value.items():
+                    if isinstance(entry, dict):
+                        walk(entry, f"{path}.{name}", item_type())
+                    else:
+                        got = type(entry).__name__
+                        errors.append(f"'{path}.{name}' expects a mapping, got {got}")
+                continue
+            if field_map[key].metadata.get("one_or_many") and isinstance(value, str):
+                continue  # a plain string is a one-item list
             errors.extend(_type_errors(path, type(default_value), value))
 
     walk(raw, "", default_root)

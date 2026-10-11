@@ -3,7 +3,7 @@
 install.sh is bash — exercising a full pipx round-trip in pytest is not
 worth it. These read the script and assert the two behaviours the epic
 requires: it fails loudly when `lore` is not runnable on PATH afterwards,
-and a first install chains into the unified `lore init` wizard.
+and a first install chains into `lore setup`.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ def test_install_sh_fails_when_lore_not_on_path():
     )
 
 
-def test_install_sh_first_install_chains_into_lore_init():
-    assert "exec lore init" in INSTALL_SH.read_text()
+def test_install_sh_first_install_runs_lore_setup():
+    assert "exec lore setup" in INSTALL_SH.read_text()
 
 
 def test_install_sh_upgrade_refreshes_both_plugin_caches():
@@ -61,3 +61,11 @@ def test_install_sh_upgrade_refreshes_the_marketplace_before_the_plugins():
 def test_install_sh_upgrade_says_how_to_load_the_new_plugin():
     text = INSTALL_SH.read_text()
     assert "claude --continue" in text
+
+
+def test_install_sh_upgrade_runs_setup_wiki_so_old_state_migrates():
+    """`lore update` with the plugin present must still migrate the old root
+    config, attachments and scopes into the person's config (#470)."""
+    branch = INSTALL_SH.read_text().split('if [ "$HAS_PLUGIN" -eq 1 ]; then', 1)[1]
+    upgrade = branch.split("\nelse\n", 1)[0]
+    assert "lore setup wiki --yes </dev/null" in upgrade

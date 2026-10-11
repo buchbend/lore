@@ -30,3 +30,21 @@ def _isolate_user_config(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     yield
+
+
+def seed_scope(path, wiki: str, name: str | None = None) -> None:
+    """Route ``path`` to ``wiki`` with a scope in the person's config (PRD 0016).
+
+    Merges into ``~/.config/lore/config.yml`` under the fake ``$HOME``.
+    Import with ``from conftest import seed_scope``.
+    """
+    from pathlib import Path
+
+    import yaml
+    from lore_core.config import user_config_path
+
+    cfg_path = user_config_path()
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg = (yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else None) or {}
+    cfg.setdefault("scopes", {})[name or Path(path).name] = {"path": str(path), "wiki": wiki}
+    cfg_path.write_text(yaml.safe_dump(cfg))

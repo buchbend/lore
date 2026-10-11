@@ -1,6 +1,6 @@
-"""`lore lint` — health-check the vault, regenerate catalogs.
+"""`lore wiki lint` — health-check the vault, regenerate catalogs.
 
-`lore lint adr` is the one sub-verb: it checks a repo's decision records
+`lore wiki lint adr` is the one sub-verb: it checks a repo's decision records
 (ADR 0015), not the vault.
 """
 

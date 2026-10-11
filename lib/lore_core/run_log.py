@@ -97,7 +97,7 @@ class RunLogger:
             "reaper-scanned",
             "reaper-force-flushed",
             "dangling-ref",
-            # Hygiene pass (lore curator [--wiki] [--apply])
+            # Hygiene pass (lore wiki curate [--wiki] [--apply])
             "action-applied",
             "action-skipped",
             "wiki-start",

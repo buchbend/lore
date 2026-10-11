@@ -6,10 +6,7 @@ independent git repo.
 
 ## Structure
 
-- `sessions/` — cross-cutting personal session logs (optional)
 - `inbox/` — triage inbox — `/lore:inbox` routes items to the right wiki
-- `drafts/` — WIP notes not ready for a wiki
-- `templates/` — note templates
 - `wiki/` — mounted wikis (symlinks or inline dirs)
 - `CLAUDE.md` — this file
 
@@ -26,12 +23,11 @@ Add a new wiki:
 ln -s /path/to/team-knowledge $LORE_ROOT/wiki/<name>
 
 # Or scaffold a new one
-/lore:new-wiki <name>
+lore setup wiki --wiki-new <name>
 ```
 
 ## Rules
 
-- Session notes follow `templates/session.md`
 - Personal notes can `[[wikilink]]` freely to any wiki note
 - Wiki notes should not link to personal content
 - Filenames are kebab-case, globally unique across all wikis

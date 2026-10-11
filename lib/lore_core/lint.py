@@ -6,7 +6,7 @@ Generates per-wiki:
                     extension keeps it out of Obsidian's graph view)
 
 Invoke programmatically via `run_lint()` or from the CLI:
-    lore lint [--wiki NAME] [--check-only] [--json]
+    lore wiki lint [--wiki NAME] [--check-only] [--json]
 """
 
 from __future__ import annotations
@@ -409,31 +409,21 @@ def check_hierarchy(
 
 
 def _repo_by_project_slug(wiki_name: str) -> dict[str, Path]:
-    """Map each project slug in this wiki to the repo path attached to it.
+    """Map each scope routed to this wiki (by name) to its folder.
 
-    Empty when nothing is attached, or when the attachment machinery isn't
-    importable — a drift check is advisory and never fails the lint.
+    ``lore setup`` names a migrated scope after the old scope's last segment,
+    which is the project slug. A folder scope's repos sit below its folder.
+    Advisory: an unreadable config gives an empty map.
     """
-    try:
-        from lore_core.config import resolve_lore_root
-        from lore_core.state.attachments import AttachmentsFile
-    except ImportError:
-        return {}
+    from lore_core.config import get_lore_root
+    from lore_core.root_config import load_root_config
 
-    lore_root = resolve_lore_root()
-    if lore_root is None or not lore_root.exists():
-        return {}
-    af = AttachmentsFile(lore_root)
-    af.load()
-
-    repos: dict[str, Path] = {}
-    for a in af.all():
-        if a.wiki != wiki_name or not a.scope:
-            continue
-        slug = a.scope.rsplit(":", 1)[-1]
-        if slug:
-            repos[slug] = a.path
-    return repos
+    scopes = load_root_config(get_lore_root()).scopes
+    return {
+        name: Path(sc["path"]).expanduser()
+        for name, sc in scopes.items()
+        if isinstance(sc, dict) and sc.get("wiki") == wiki_name and isinstance(sc.get("path"), str)
+    }
 
 
 def _orientation_notes(projects_dir: Path) -> list[tuple[Path, str]]:
@@ -460,10 +450,10 @@ def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
     """Surface drift between a project's orientation note and its repo.
 
     For each project orientation note carrying a ``## Agent guidance``
-    H2 section, locate the attached repo via ``attachments.json`` and
+    H2 section, locate the repo via the scope of the same name and
     compare normalised content against its AGENTS.md / CLAUDE.md.
 
-    Best-effort: a missing attachments file, missing repo, or malformed
+    Best-effort: a missing scope, missing repo, or malformed
     note skips silently rather than failing the lint. The check targets
     the user-visible action ("here's a drift, run sync"), not consistency
     enforcement.
@@ -480,7 +470,11 @@ def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
     repo_by_slug = _repo_by_project_slug(wiki_name)
     issues: list[Issue] = []
     for orientation, slug in _orientation_notes(projects_dir):
-        repo_root = repo_by_slug.get(slug)
+        # A scope named after the slug, else the slug's folder below a
+        # folder scope (PRD 0016: one scope covers many repos).
+        repo_root = repo_by_slug.get(slug) or next(
+            (p / slug for p in repo_by_slug.values() if (p / slug).is_dir()), None
+        )
         if repo_root is None or not repo_root.exists():
             continue
         try:
@@ -497,9 +491,8 @@ def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
                 check="agent_guidance_drift",
                 message=(
                     f"`## Agent guidance` in orientation differs from "
-                    f"repo's AGENTS.md/CLAUDE.md. Run "
-                    f"`lore project sync {slug} --to-repo` "
-                    f"or `--from-repo` to reconcile."
+                    f"repo's AGENTS.md/CLAUDE.md. Copy the section across "
+                    f"by hand to reconcile."
                 ),
             )
         )
@@ -988,7 +981,7 @@ def run_lint(
         return mcp_error(
             NO_WIKIS,
             "no wikis found",
-            next_=f"create a wiki under {get_wiki_root()} or run `lore init`",
+            next_=f"create a wiki under {get_wiki_root()} or run `lore setup`",
         )
 
     all_notes, notes_by_wiki = _scan_notes(discover_wikis(None))

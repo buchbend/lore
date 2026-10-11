@@ -30,21 +30,21 @@ produces — without producing temp artifacts or losing content.
 
 | Trigger | Where | What |
 |---|---|---|
-| **SessionStart** | `lore_cli/hooks.py` spawns a detached `lore hook wiki-pull` child | Fetch + fast-forward the attached wiki on a clean tree, off the banner's critical path: a slow or unreachable remote never delays the banner. The child records a dirty-tree or diverged-history warning, and the next banner shows it. Silent when no remote exists. |
+| **SessionStart** | `lore_cli/hooks.py` spawns a detached `lore hook wiki-pull` child | Fetch + fast-forward the routed wiki on a clean tree, off the banner's critical path: a slow or unreachable remote never delays the banner. The child records a dirty-tree or diverged-history warning, and the next banner shows it. Silent when no remote exists. |
 | Manual | `lore status` shows divergence; user runs `git pull` themselves | When auto-pull bailed (dirty/diverged), the user is the next line of defence. |
 
 ### When auto_push fires
 
 | Trigger | Where | What |
 |---|---|---|
-| **Session boundary (SessionEnd hook)** | `lib/lore_cli/hooks.py` → `lib/lore_core/session_start.py:maybe_auto_push_for_scope` | Pushes the attached wiki once, after whatever landed in it this session is already committed. |
+| **Session boundary (SessionEnd hook)** | `lib/lore_cli/hooks.py` → `lib/lore_core/session_start.py:maybe_auto_push_for_scope` | Pushes the routed wiki once, after whatever landed in it this session is already committed. |
 
 `auto_push` is `auto_pull` + `git push`, with conflict-resolution baked
 in — see "Conflict policy" below for what "resolution" means today.
 
 ### What never gets pushed
 
-- `.lore/` directory (host-local state — `attachments.json`, `transcript-ledger.json`, lockfiles, hook events)
+- `.lore/` directory (host-local state — `transcript-ledger.json`, lockfiles, hook events)
 - `.transcripts/` directory (raw conversation logs; gitignored on purpose, see `transcript_sync.py:42-50`)
 
 ---
@@ -84,7 +84,7 @@ This is the conflict class two hosts editing the same topic note hit.
 
 `_catalog.json`, `_index.txt`, `threads.md` are all
 regenerated from the corpus. On conflict, accept either side
-(`git checkout --ours <path>`), then run `lore lint` after the merge
+(`git checkout --ours <path>`), then run `lore wiki lint` after the merge
 to truth them up. They'll converge to the same byte-for-byte output
 on either host's next regen.
 
@@ -164,9 +164,7 @@ shared vault, where an edit reaches a teammate only after a push), false
 for a solo wiki with nowhere to push. A value written in the file
 always wins over that default.
 
-`git.auto_commit` is a schema field with no reader — a caller that wants
-a note committed calls `lore_core/session.py:commit_note` directly,
-regardless of this setting.
+`git.auto_commit` is a schema field with no reader.
 
 ---
 
@@ -180,7 +178,7 @@ regardless of this setting.
 | Clean tree, fast-forwardable | Fetch + ff | `lore status` (silent unless new commits pulled) |
 | Clean tree, diverged (we have local commits, remote has different commits) | Skip pull, surface to user | `lore status` `· wiki diverged — git pull manually` |
 | Push: remote ahead, FF possible | Fetch + ff + push | (silent) |
-| Push: regenerable-artifact conflict | ours wins, `lore lint` reconciles | (silent) |
+| Push: regenerable-artifact conflict | ours wins, `lore wiki lint` reconciles | (silent) |
 | Push: typed-note or session-note conflict | `MERGE_BLOCKED` — `git merge --abort` runs and the tree returns clean | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
 | Push: unknown-path conflict | abort merge, surface to user | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
 | `watchdog` not installed | Reindex throttle = 5s natural decay | (silent — same as 0.10.x) |
