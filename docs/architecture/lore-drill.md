@@ -1,10 +1,10 @@
-# `lore read` — composite multi-stage retrieval
+# `lore drill` — composite multi-stage retrieval
 
-**Audience:** contributors implementing or extending the `lore read`
+**Audience:** contributors implementing or extending the `lore_drill`
 MCP tool and the `lore read` CLI presenter.
 
 This document settles **P3.2** from the 2026-04-27 multi-agent review.
-`lore read` is implemented (`lore_mcp/server.py:handle_drill`); this
+`lore_drill` is implemented (`lore_mcp/server.py:handle_drill`); this
 is the design it was built against — check the handler for the current
 behavior of any detail this doc doesn't cover.
 

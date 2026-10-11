@@ -56,7 +56,7 @@ now, and nothing removes it. Delete it with the notes.
 
 The three migration verbs that used to help here are gone:
 `lore migrate retire-session-notes`, `lore migrate open-items`, and the
-older `lore wiki curate --migrate-open-items`. The transcript-ledger backfill
+older `lore curator --migrate-open-items`. The transcript-ledger backfill
 that `retire-session-notes` ran has no replacement. A ledger entry that
 carries no linkage block keeps none.
 

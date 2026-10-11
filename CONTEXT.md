@@ -45,7 +45,7 @@ spec in `docs/prd/0011`.
 
 ## Hygiene — the retained frontmatter-only curator
 
-`lore curator [--wiki] [--apply]` takes no subcommand — `run`, `flush`,
+`lore wiki curate [--wiki] [--apply]` takes no subcommand — `run`, `flush`,
 `reap` and `sweep` retired with the compose pipeline. The bare
 form runs deterministic, frontmatter-only passes over every wiki
 (`lore_curator/hygiene.py`). The passes are supersession propagation

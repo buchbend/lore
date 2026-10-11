@@ -34,7 +34,7 @@ app = typer.Typer(
     no_args_is_help=False,
     rich_markup_mode="rich",
     # Allow options after the positional `query` arg so users can write
-    # `lore drill "foo" --json` as well as `lore drill --json "foo"`.
+    # `lore read "foo" --json` as well as `lore read --json "foo"`.
     context_settings={"allow_interspersed_args": True},
 )
 

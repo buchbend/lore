@@ -1,8 +1,8 @@
-# Reference GitHub Actions workflow: run `lore curator` incrementally
+# Reference GitHub Actions workflow: run `lore wiki curate` incrementally
 # on every push to a wiki repo's main branch. Flags stale notes, detects
 # supersession, backfills dates from git log.
 #
-# COST: This workflow invokes `lore curator` (frontmatter-only; no LLM
+# COST: This workflow invokes `lore wiki curate` (frontmatter-only; no LLM
 # calls in the current implementation) so the per-run cost is $0. If you
 # later wire in an LLM-backed review pass, add a cost note here.
 
@@ -41,7 +41,7 @@ jobs:
         run: |
           mkdir -p "$LORE_ROOT/wiki"
           ln -s "$GITHUB_WORKSPACE" "$LORE_ROOT/wiki/this"
-          lore curator --wiki this --apply
+          lore wiki curate --wiki this --apply
 
       - name: Commit curator patches
         run: |

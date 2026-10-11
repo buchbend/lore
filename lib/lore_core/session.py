@@ -1,4 +1,4 @@
-"""Session-note helpers — slug, attach lookup, commit.
+"""Session-note helpers — slug and attach lookup.
 
 Lore writes no session note automatically; the compose pipeline that once
 filed one was retired. This module keeps only the pieces other modules
@@ -6,14 +6,11 @@ still need:
 
 * :func:`_resolve_attach_block` — attach lookup used by hooks/doctor
 * :func:`slugify` — slug derivation
-* :func:`commit_note` — used by ``lore session commit`` (also called by
-  the inbox skill to commit non-session files inside a wiki)
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 
@@ -59,52 +56,3 @@ def slugify(text: str) -> str:
     s = _SLUG_NONWORD.sub("", text.lower())
     s = _SLUG_DASH.sub("-", s).strip("-")
     return s[:60]
-
-
-def commit_note(
-    *,
-    wiki_path: Path,
-    note_path: Path,
-    message: str | None = None,
-) -> tuple[bool, str]:
-    """``git add`` + ``git commit`` in the wiki repo.
-
-    Returns ``(success, sha-or-error)``. Idempotent for already-committed
-    state (``"nothing to commit"`` returns ``True`` with empty sha).
-
-    The commit carries a pathspec, so only ``note_path`` lands in it. A
-    wiki is a directory a human also edits, so whatever else they staged
-    stays staged.
-    """
-    rel = note_path.resolve().relative_to(wiki_path.resolve())
-    add = subprocess.run(
-        ["git", "add", str(rel)],
-        cwd=str(wiki_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if add.returncode != 0:
-        return False, add.stderr.strip() or "git add failed"
-    if message is None:
-        slug = note_path.stem
-        message = f"lore: session {slug}"
-    commit = subprocess.run(
-        ["git", "commit", "-m", message, "--", str(rel)],
-        cwd=str(wiki_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if commit.returncode != 0:
-        if "nothing to commit" in commit.stdout or "nothing to commit" in commit.stderr:
-            return True, ""
-        return False, commit.stderr.strip() or commit.stdout.strip()
-    head = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        cwd=str(wiki_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return True, head.stdout.strip() if head.returncode == 0 else ""

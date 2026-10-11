@@ -1,4 +1,4 @@
-# Reference GitHub Actions workflow: run `lore lint` on every PR to a
+# Reference GitHub Actions workflow: run `lore wiki lint` on every PR to a
 # wiki repo. Drop into `.github/workflows/lore-lint.yml` inside any wiki
 # repository.
 #
@@ -30,14 +30,14 @@ jobs:
           # Pin to a release tag once published.
           pip install git+https://github.com/buchbend/lore.git@main
 
-      - name: Run lore lint (check-only)
+      - name: Run lore wiki lint (check-only)
         env:
           # Treat the PR repo itself as a single-wiki vault
           LORE_ROOT: ${{ github.workspace }}/.lore-root
         run: |
           mkdir -p "$LORE_ROOT/wiki"
           ln -s "$GITHUB_WORKSPACE" "$LORE_ROOT/wiki/this"
-          lore lint --check-only --json > lint-report.json || true
+          lore wiki lint --check-only --json > lint-report.json || true
           python -c "
           import json, sys
           r = json.load(open('lint-report.json'))
