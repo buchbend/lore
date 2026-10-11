@@ -21,4 +21,6 @@ PRDs are the source of truth for decisions. Each PRD lives at
 0013-retire-the-session-note-lifecycle
 0014-retire-flags-attach-facts-to-artifacts
 0015-slim-workflow-around-homes-and-holds
+0016-routing-settings-and-setup
+0017-logbook-and-search-sources
 ```

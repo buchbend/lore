@@ -279,6 +279,25 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
   skill writes. It carries intent and findings for a cold session to
   orient on. It is no spec.
 
+### Routing, logbook, sources and trackers
+
+Decisions in ADR 0016 and 0017. Epics A to C build them; until each
+ships, the term names the planned behavior.
+
+- **Sink** — a destination for logbook entries. A scope lists its sinks,
+  and Lore delivers each entry to every sink in the list. The kinds are
+  `file` and `command`. _Avoid_: target, output.
+- **Logbook entry** — one paragraph that the agent writes at a finish
+  point. It says what the build did and links to the homes of the facts.
+  _Avoid_: log, post, summary.
+- **Source** — a system that `lore_search` queries live, next to the
+  wiki index. Each source returns its own list of hits. _Avoid_: backend,
+  provider.
+- **Tracker** — the system that holds a repo's issues: GitHub, or an
+  issues folder inside the repo. _Avoid_: backend.
+- **Hosting** — the system that runs a repo's pull requests and CI.
+  Hosting is separate from the tracker.
+
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".
