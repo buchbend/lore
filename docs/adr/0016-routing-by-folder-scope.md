@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-10-11
 - **Deciders:** Christof Buchbender
-- **Relates to:** design round "Lore Full Circle" (2026-10-11);
+- **Relates to:** PRD [0016](../prd/0016-routing-settings-and-setup.md), epic [#466](https://github.com/buchbend/lore/issues/466);
+  design round "Lore Full Circle" (2026-10-11);
   ADR [0009](0009-privacy-boundary-is-locality.md) (locality),
   ADR [0017](0017-the-logbook.md) (the sinks this routing selects)
 

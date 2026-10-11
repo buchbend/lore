@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-10-11
 - **Deciders:** Christof Buchbender
-- **Relates to:** design round "Lore Full Circle" (2026-10-11);
+- **Relates to:** PRD [0017](../prd/0017-logbook-and-search-sources.md), epic [#467](https://github.com/buchbend/lore/issues/467);
+  design round "Lore Full Circle" (2026-10-11);
   ADR [0014](0014-one-home-per-fact.md) (homes; amended with the logbook row),
   ADR [0016](0016-routing-by-folder-scope.md) (the scope that selects the sinks)
 
