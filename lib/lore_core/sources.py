@@ -14,7 +14,9 @@ times out yields ``hits: []`` and a ``note``; the others still return.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -131,6 +133,14 @@ def _run(cfg: dict, payload: dict) -> str:
     if not run:
         raise SourceError("no `run` command configured")
     timeout = _timeout(cfg)
+    env = None
+    if cfg.get("secret"):
+        from lore_core.secrets import read_secrets
+
+        value = read_secrets().get(cfg["secret"])
+        if not value:
+            raise SourceError(f"secret {cfg['secret']!r} is not set")
+        env = {**os.environ, "LORE_SECRET": value}
     try:
         proc = subprocess.run(
             run,
@@ -139,6 +149,7 @@ def _run(cfg: dict, payload: dict) -> str:
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         raise SourceError(f"timed out after {timeout:g}s") from None
@@ -192,8 +203,13 @@ def _selected(cwd: Path, defined: dict[str, dict]) -> list[str]:
     """The route's sources; every defined source while the route names none."""
     from lore_core.route import resolve_route
 
-    named = resolve_route(cwd).sources
-    return [n for n in named if n in defined] if named else list(defined)
+    route = resolve_route(cwd)
+    if not route.sources:
+        return list(defined)
+    # PRD 0017: the tracker's source plus the named sources.
+    names = ["github"] if route.tracker in ("auto", "github") else []
+    names += route.sources
+    return [n for n in dict.fromkeys(names) if n in defined]
 
 
 def search_sources(
@@ -205,6 +221,7 @@ def search_sources(
     """
     defined = defined_sources(github_repos)
     names = [only] if only in defined else _selected(cwd, defined)
+    start = time.monotonic()
     pool = ThreadPoolExecutor(max_workers=max(1, len(names)))
     jobs = {}
     for n in names:
@@ -218,7 +235,9 @@ def search_sources(
             entry["note"] = f"unknown kind {cfg.get('kind')!r}"
         else:
             try:
-                entry["hits"] = job.result(timeout=_timeout(cfg))
+                entry["hits"] = job.result(
+                    timeout=max(0.0, start + _timeout(cfg) - time.monotonic())
+                )
             except FutureTimeout:
                 entry["note"] = f"timed out after {_timeout(cfg):g}s"
             except SourceError as e:

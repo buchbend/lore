@@ -156,6 +156,10 @@ def test_route_sources_limit_the_lists_and_no_route_queries_all(cfg_home):
     one = {"kind": "command", "run": "echo '[]'"}
     cfg_home({"sources": {"a": one, "b": one}, "defaults": {"sources": ["a"]}})
     names = [s["name"] for s in sources.search_sources("q", 5, Path.cwd(), [])]
+    assert names == ["github", "a"]
+
+    cfg_home({"sources": {"a": one, "b": one}, "defaults": {"sources": ["a"], "tracker": "gitlab"}})
+    names = [s["name"] for s in sources.search_sources("q", 5, Path.cwd(), [])]
     assert names == ["a"]
 
     cfg_home({"sources": {"a": one, "b": one}})
@@ -168,3 +172,51 @@ def test_source_definition_holding_a_secret_value_fails_validation():
     errors = secret_key_errors(raw)
     assert errors and "sources.team.token" in errors[0]
     assert secret_key_errors({"sources": {"team": DOKU}}) == []
+
+
+def test_timeout_bounds_wall_time_across_all_hung_sources(cfg_home, monkeypatch):
+    # A kind that ignores its own timeout, so only the fan-out can cut it off.
+    monkeypatch.setitem(sources._SEARCH, "command", lambda *a: time.sleep(2))
+    hung = {"kind": "command", "run": "x", "timeout": 0.4}
+    cfg_home({"sources": {"h1": hung, "h2": hung, "h3": hung}})
+
+    start = time.monotonic()
+    result = sources.search_sources("q", k=5, cwd=Path.cwd(), github_repos=[])
+
+    assert time.monotonic() - start < 1.0
+    for name in ("h1", "h2", "h3"):
+        entry = next(s for s in result if s["name"] == name)
+        assert entry["hits"] == [] and "timed out" in entry["note"]
+
+
+def test_command_source_gets_its_secret_in_env_and_leaks_nowhere(cfg_home, tmp_path):
+    seen = tmp_path / "env.txt"
+    script = tmp_path / "src.py"
+    script.write_text(
+        "import os, json\n"
+        f"open({str(seen)!r}, 'w').write(os.environ.get('LORE_SECRET', ''))\n"
+        "print(json.dumps([{'ref': 'x:1', 'title': 'T'}]))\n"
+    )
+    cfg_home(
+        {
+            "sources": {
+                "mine": {"kind": "command", "run": f"{sys.executable} {script}", "secret": "k"}
+            }
+        },
+        {"k": "hunter2"},
+    )
+
+    result = sources.search_sources("q", k=3, cwd=Path.cwd(), github_repos=[])
+
+    mine = next(s for s in result if s["name"] == "mine")
+    assert seen.read_text() == "hunter2"
+    assert "hunter2" not in json.dumps(mine)
+
+
+def test_command_source_with_unset_secret_gives_a_note(cfg_home):
+    cfg_home({"sources": {"mine": {"kind": "command", "run": "echo '[]'", "secret": "nope"}}}, {})
+
+    result = sources.search_sources("q", k=3, cwd=Path.cwd(), github_repos=[])
+
+    mine = next(s for s in result if s["name"] == "mine")
+    assert mine["hits"] == [] and "nope" in mine["note"]

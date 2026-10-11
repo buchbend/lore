@@ -31,13 +31,9 @@ app = typer.Typer(
 
 @app.callback(invoke_without_command=True)
 def search(
-    query: str = typer.Argument(
-        None, help="Search query (required unless --reindex or --stats)."
-    ),
+    query: str = typer.Argument(None, help="Search query (required unless --reindex or --stats)."),
     wiki: str = typer.Option(None, "--wiki", help="Scope to one wiki."),
-    for_repo: str = typer.Option(
-        None, "--for-repo", help="Boost notes tagged with this repo."
-    ),
+    for_repo: str = typer.Option(None, "--for-repo", help="Boost notes tagged with this repo."),
     k: int = typer.Option(5, "--k", help="Number of hits to return."),
     reindex: bool = typer.Option(False, "--reindex", help="Full reindex, then exit."),
     stats: bool = typer.Option(False, "--stats", help="Show index stats and exit."),
@@ -55,16 +51,12 @@ def search(
         )
         return
 
-    # Always refresh incrementally before searching (fast due to SHA256 cache)
-    indexed = backend.reindex(wiki=wiki)
     if reindex:
-        console.print(f"Reindexed {indexed} notes")
+        console.print(f"Reindexed {backend.reindex(wiki=wiki)} notes")
         return
 
     if not query:
-        console.print(
-            "[red]error:[/red] query is required (or use --reindex / --stats)"
-        )
+        console.print("[red]error:[/red] query is required (or use --reindex / --stats)")
         raise typer.Exit(code=2)
 
     from lore_mcp.server import handle_search
@@ -92,8 +84,7 @@ def search(
 
     for h in result["wiki"]:
         console.print(
-            f"[bold cyan]{h['wiki']}[/bold cyan]/{h['path']}  "
-            f"[dim]{h.get('score', 0):.2f}[/dim]"
+            f"[bold cyan]{h['wiki']}[/bold cyan]/{h['path']}  [dim]{h.get('score', 0):.2f}[/dim]"
         )
         if h.get("description"):
             console.print(f"  {h['description']}")
