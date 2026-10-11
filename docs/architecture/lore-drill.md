@@ -1,4 +1,4 @@
-# `lore drill` — composite multi-stage retrieval
+# `lore_drill` and `lore read` — composite multi-stage retrieval
 
 **Audience:** contributors implementing or extending the `lore_drill`
 MCP tool and the `lore read` CLI presenter.

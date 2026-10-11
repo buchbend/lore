@@ -119,7 +119,7 @@ it and deletes them. Subsections:
   `docs/architecture/observability.md`.
   `dead_letter_hard_cap` was removed with the flush store. A `config.yml` that
   still sets it loads normally; the loader warns and names the key to delete.
-- `journal.enabled`
+- `journal.enabled` — inert: the journal commands and `lore_journal_write` tool are gone. The key still loads and does nothing.
 - `feedback.{retrieval_misses, retrieval_misses_repo}` — opt-in session-end
   reporting of retrieval misses; `retrieval_misses` defaults to `false`,
   `retrieval_misses_repo` to `buchbend/lore`. See
@@ -140,6 +140,14 @@ Loader: `load_root_config(lore_root) -> RootConfig` (reads only the
 person file; `lore_root` keeps the shared schema signature). Missing file →
 all defaults. Unknown keys → `warnings.warn` (not fatal). Malformed
 YAML → defaults + warning.
+
+#### Secrets: `~/.config/lore/secrets.yml`
+
+Beside the person config. Config files name a secret; this file holds the
+value. Mode 0600; Lore refuses it inside a git worktree. A `token` or
+`password` key anywhere in the person config fails validation. Manage it with
+`lore config secret set|unset|list` (`list` prints names only). See
+`docs/how-to/route-repos-to-a-wiki.md`.
 
 ### 4. `<wiki>/.lore-wiki.yml` — per-wiki config
 

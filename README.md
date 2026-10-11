@@ -248,14 +248,14 @@ Once a scope routes the repo to a wiki:
   call; registration is the end of the capture path, not a step toward
   composing anything.
 - **SessionStart also spawns a detached transcript sync**, mirroring
-  every attached transcript into its wiki's `.transcripts/` and
+  every routed transcript into its wiki's `.transcripts/` and
   emitting the one live drain event, `transcript-synced`. An
   opportunistic, flock-guarded retention sweep runs in-process
   alongside it, short enough not to block SessionStart. The transcript
   sync, the wiki pull and the codemap refresh run as detached children.
 - **SessionStart also spawns two more detached children**, so a slow
   remote or a large repo never delays the banner. `lore hook wiki-pull`
-  fetches and fast-forwards the attached wiki. `lore hook codemap-refresh`
+  fetches and fast-forwards the routed wiki. `lore hook codemap-refresh`
   refreshes `CODEMAP.md`. Both are hidden verbs that run in the
   background. A dirty-tree or diverged-history warning from the pull
   shows in the banner one session later, because the child records it
@@ -334,7 +334,7 @@ their debugging role is fully absorbed by `lore trace` / `lore status`
 above (see `CHANGELOG.md` for the removal).
 
 Structured logs live under `$LORE_ROOT/.lore/spine.jsonl`, tiered
-hot → cold → deleted; configure retention at `$LORE_ROOT/.lore/config.yml`:
+hot → cold → deleted; configure retention in `~/.config/lore/config.yml`:
 
 ~~~yaml
 observability:
@@ -347,6 +347,7 @@ Full envelope schema, producer list, trace_id lifecycle, and retention
 tiers: [`docs/architecture/observability.md`](docs/architecture/observability.md).
 Onboarding and troubleshooting walkthroughs:
 [`docs/how-to/onboarding.md`](docs/how-to/onboarding.md),
+[`docs/how-to/route-repos-to-a-wiki.md`](docs/how-to/route-repos-to-a-wiki.md),
 [`docs/how-to/troubleshooting.md`](docs/how-to/troubleshooting.md).
 
 ## Two onboarding recipes

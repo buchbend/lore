@@ -56,7 +56,7 @@ The next SessionStart does not replay the list. Find the artifacts with
 
 A retrieval miss is a fact a Lore tool did not return. The agent found the fact
 reading files or running commands. Reporting is off by default.
-To turn it on, set these keys in `$LORE_ROOT/.lore/config.yml`:
+To turn it on, set these keys in `~/.config/lore/config.yml`:
 
 ```yaml
 feedback:

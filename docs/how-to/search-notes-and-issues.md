@@ -24,7 +24,7 @@ wiki.
 
 ## When GitHub cannot answer
 
-If no repo is attached, `gh` fails, or the machine is offline, the result
+If no scope routes the repo, `gh` fails, or the machine is offline, the result
 holds the `wiki` list and a `note` field. The note names the omission. An
 empty `artifacts` list with no note means GitHub answered and found nothing.
 

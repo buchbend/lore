@@ -30,14 +30,14 @@ produces — without producing temp artifacts or losing content.
 
 | Trigger | Where | What |
 |---|---|---|
-| **SessionStart** | `lore_cli/hooks.py` spawns a detached `lore hook wiki-pull` child | Fetch + fast-forward the attached wiki on a clean tree, off the banner's critical path: a slow or unreachable remote never delays the banner. The child records a dirty-tree or diverged-history warning, and the next banner shows it. Silent when no remote exists. |
+| **SessionStart** | `lore_cli/hooks.py` spawns a detached `lore hook wiki-pull` child | Fetch + fast-forward the routed wiki on a clean tree, off the banner's critical path: a slow or unreachable remote never delays the banner. The child records a dirty-tree or diverged-history warning, and the next banner shows it. Silent when no remote exists. |
 | Manual | `lore status` shows divergence; user runs `git pull` themselves | When auto-pull bailed (dirty/diverged), the user is the next line of defence. |
 
 ### When auto_push fires
 
 | Trigger | Where | What |
 |---|---|---|
-| **Session boundary (SessionEnd hook)** | `lib/lore_cli/hooks.py` → `lib/lore_core/session_start.py:maybe_auto_push_for_scope` | Pushes the attached wiki once, after whatever landed in it this session is already committed. |
+| **Session boundary (SessionEnd hook)** | `lib/lore_cli/hooks.py` → `lib/lore_core/session_start.py:maybe_auto_push_for_scope` | Pushes the routed wiki once, after whatever landed in it this session is already committed. |
 
 `auto_push` is `auto_pull` + `git push`, with conflict-resolution baked
 in — see "Conflict policy" below for what "resolution" means today.

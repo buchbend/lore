@@ -33,7 +33,7 @@ default does. There is no merge and no per-repo layer.
    ```
 
    Create the `style/` directory first if it does not exist. Edit the copy.
-   Re-run `lore style show writing-rules` from a repo attached to that wiki
+   Re-run `lore style show writing-rules` from a repo routed to that wiki
    and confirm your text comes back.
 
 3. **Override the Vale rules, if you lint.**
@@ -57,7 +57,7 @@ default does. There is no merge and no per-repo layer.
 
    `--packaged` is what makes the copy safe. Without it the command prints a
    generated copy carrying the current repository's glossary. Every repository
-   attached to your wiki would then lint against that one glossary. Step 4
+   routed to your wiki would then lint against that one glossary. Step 4
    drops the option, because linting is where you want the glossary.
 
 4. **Check the rules fire.**
