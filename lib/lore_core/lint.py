@@ -6,7 +6,7 @@ Generates per-wiki:
                     extension keeps it out of Obsidian's graph view)
 
 Invoke programmatically via `run_lint()` or from the CLI:
-    lore lint [--wiki NAME] [--check-only] [--json]
+    lore wiki lint [--wiki NAME] [--check-only] [--json]
 """
 
 from __future__ import annotations

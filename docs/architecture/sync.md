@@ -164,9 +164,7 @@ shared vault, where an edit reaches a teammate only after a push), false
 for a solo wiki with nowhere to push. A value written in the file
 always wins over that default.
 
-`git.auto_commit` is a schema field with no reader — a caller that wants
-a note committed calls `lore_core/session.py:commit_note` directly,
-regardless of this setting.
+`git.auto_commit` is a schema field with no reader.
 
 ---
 

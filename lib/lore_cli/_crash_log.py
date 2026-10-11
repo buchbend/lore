@@ -39,7 +39,7 @@ def _is_dev_invocation() -> bool:
       Those simulated tracebacks land in the user's real ``~/.cache/lore/crashes/``
       and inflate the doctor count.
     * **manual --dry-run debugging** — when a user runs
-      ``lore curator run --dry-run`` to investigate a backend, any
+      ``lore wiki curate run --dry-run`` to investigate a backend, any
       transient failure (missing dep, bad config) writes a crash entry
       that's not actually a hook bug.
 

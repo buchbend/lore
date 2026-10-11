@@ -8,7 +8,7 @@ ported from ccat-agent-workflow's ``MODEL-TIERS.md``.
 
 ``resolve_tier`` is the single entry point: detect the current host
 (unless given), look up the tier in ``TABLE`` for that host, and let a
-user config override (``.lore/config.yml`` -> ``tiers.overrides``) win
+user config override (``~/.config/lore/config.yml`` -> ``tiers.overrides``) win
 if present. Unknown tier or unknown host raises ``TierResolutionError``
 loudly rather than silently falling back.
 """

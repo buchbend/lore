@@ -4,13 +4,11 @@ The project orientation note's ``## Agent guidance`` H2 section is the
 canonical source for project-level agent instructions. The attached
 repo's ``AGENTS.md`` (or ``CLAUDE.md``) is a projection of that section.
 
-When the two diverge, lint surfaces the drift and the user runs
-``lore project sync --to-repo`` (orientation → repo) or
-``lore project sync --from-repo`` (repo → orientation).
+When the two diverge, lint surfaces the drift and the user copies the
+section across by hand.
 
 This module exposes the read / write / compare primitives. Lint
-integration lives in ``lore_core.lint``; CLI verb in
-``lore_cli.project_cmd``.
+integration lives in ``lore_core.lint``.
 
 v1 contract:
   - Source/sink: a ``## Agent guidance`` section in the orientation.

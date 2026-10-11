@@ -1,6 +1,6 @@
 """Curator hygiene passes — frontmatter-only, deterministic vault upkeep.
 
-Runs on the retained ``lore curator [--wiki] [--apply]`` command (and the
+Runs on the retained ``lore wiki curate [--wiki] [--apply]`` command (and the
 ``/lore:curator`` skill). Never touches note bodies. Passes:
 
   - **supersession** — ``A supersedes [[B]]`` → write ``superseded_by: [[A]]``
@@ -409,7 +409,7 @@ def _apply_safely(action: CuratorAction) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# Orchestrator — the retained `lore curator` hygiene run
+# Orchestrator — the retained `lore wiki curate` hygiene run
 # ---------------------------------------------------------------------------
 
 

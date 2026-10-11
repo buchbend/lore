@@ -176,7 +176,7 @@ def _freshness_block_for(
 #
 # 5s is conservative — fresh edits made by the user mid-conversation
 # show up on the next search after the throttle expires. For explicit
-# re-index, use ``lore lint`` (which writes the catalog that
+# re-index, use ``lore wiki lint`` (which writes the catalog that
 # ``reindex_one`` is based on).
 #
 # When the optional ``watchdog`` dependency is installed, the fs-watch
@@ -362,10 +362,10 @@ def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
     Three-tier lookup, fast → safe → last-resort:
 
     1. ``_catalog.json``'s top-level ``slug_index`` (O(1)) — populated
-       by ``lore lint`` since Phase 1.2.
+       by ``lore wiki lint`` since Phase 1.2.
     2. Section iteration (O(n)) — fallback for catalogs written by
        pre-Phase-1.2 lint runs that don't have ``slug_index`` yet.
-       Removed in v0.31.0 once every active wiki has rerun ``lore lint``.
+       Removed in v0.31.0 once every active wiki has rerun ``lore wiki lint``.
     3. ``rglob`` walk — last resort for notes the catalog doesn't cover:
        freshly-written mid-session, drafts outside ``KNOWLEDGE_DIRS``,
        or files in ``inbox/`` (deliberately skipped by ``discover_notes``).
