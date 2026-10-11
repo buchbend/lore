@@ -456,32 +456,29 @@ def render_project_orientation(scope: Scope, wiki_root: Path) -> str | None:
       1. ``projects/<slug>/<slug>.md`` (folder layout, post-migration)
       2. ``projects/<slug>.md``        (legacy flat)
 
-    Slug = scope's last colon-separated segment (e.g.
-    ``ccat:data-center:ops-db`` → ``ops-db``). Frontmatter is stripped.
+    Slug = the repo's folder name (a folder scope covers many repos), then
+    the scope's last colon-separated segment (``ccat:data-center:ops-db``
+    → ``ops-db``). The first slug with a note wins. Frontmatter is stripped.
     Body is capped at :data:`ORIENTATION_BUDGET_CHARS`.
 
     Only the short orientation auto-loads; concepts/decisions/plans/sessions
     stay pull-on-demand.
 
-    Returns None when no orientation note exists, the scope chain has
-    no last segment, or the wiki root is missing.
+    Returns None when no orientation note exists or the wiki root is missing.
     """
-    if not wiki_root.exists():
+    if not wiki_root.exists() or not scope:
         return None
-    if not scope or not scope.scope:
-        return None
-    slug = scope.scope.rsplit(":", 1)[-1]
-    # Defense-in-depth: only allow conservative slug shapes. The scope
-    # value should already come from a curated source (`_scopes.yml`
-    # via the registry), but a malformed entry could otherwise put
-    # path-traversal segments into the slug we feed straight into a
-    # ``Path()`` join.
-    if not slug or not re.fullmatch(r"[A-Za-z0-9._-]+", slug):
-        return None
+    slugs = [scope.claude_md_path.parent.name]
+    if scope.scope:
+        slugs.append(scope.scope.rsplit(":", 1)[-1])
+    # Defense-in-depth: only allow conservative slug shapes, so no
+    # path-traversal segment reaches the ``Path()`` join below.
+    slugs = [s for s in dict.fromkeys(slugs) if s and re.fullmatch(r"[A-Za-z0-9._-]+", s)]
     wiki_path = wiki_root / scope.wiki
     candidates = [
-        wiki_path / "projects" / slug / f"{slug}.md",
-        wiki_path / "projects" / f"{slug}.md",
+        path
+        for slug in slugs
+        for path in (wiki_path / "projects" / slug / f"{slug}.md", wiki_path / "projects" / f"{slug}.md")
     ]
     for path in candidates:
         if path.is_file():
@@ -497,7 +494,7 @@ def render_project_orientation(scope: Scope, wiki_root: Path) -> str | None:
             if len(body) > ORIENTATION_BUDGET_CHARS:
                 suffix = "\n... (orientation truncated — /lore:context for full)"
                 body = body[: ORIENTATION_BUDGET_CHARS - len(suffix)] + suffix
-            header = f"## Project: [[{slug}]]\n"
+            header = f"## Project: [[{path.stem}]]\n"
             return header + body
     return None
 

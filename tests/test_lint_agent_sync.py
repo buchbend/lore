@@ -133,3 +133,26 @@ def test_lint_handles_legacy_flat_orientation(tmp_path, monkeypatch):
     issues = check_agent_guidance_sync(wiki_path, "private")
     drift = [i for i in issues if i.check == "agent_guidance_drift"]
     assert len(drift) == 1
+
+
+def test_lint_finds_the_repo_below_a_folder_scope(tmp_path, monkeypatch):
+    """A folder scope covers many repos: slug ``ops-db`` maps to
+    ``<scope path>/ops-db`` (#479 review)."""
+    lore_root, wiki_path = _setup_attached_project(
+        tmp_path,
+        slug="ops-db",
+        repo_content="# repo\n\nDifferent content.\n",
+        orientation_section="Use TDD.\n",
+    )
+    folder = tmp_path / "data-center"
+    (folder / "ops-db").mkdir(parents=True)
+    (folder / "ops-db" / "AGENTS.md").write_text("# repo\n\nDifferent content.\n")
+    from lore_core.config import user_config_path
+
+    user_config_path().write_text(
+        f"scopes:\n  data-center:\n    path: {folder}\n    wiki: private\n"
+    )
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+
+    issues = check_agent_guidance_sync(wiki_path, "private")
+    assert [i.check for i in issues] == ["agent_guidance_drift"]

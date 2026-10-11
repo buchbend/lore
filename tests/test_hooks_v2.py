@@ -321,3 +321,32 @@ def test_session_start_missing_wiki_emits_setup_scope_hint(
     assert "lore setup scope" in out
     assert "## Directive" not in out
     assert "writing-rules" not in out
+
+
+def test_folder_scope_banner_holds_the_repo_project_orientation(
+    fake_vault, tmp_path, monkeypatch, capsys,
+) -> None:
+    """A folder scope (PRD 0016) covers many repos: the project slug is the
+    repo's folder name, not the scope name (#479 review)."""
+    import subprocess
+
+    from conftest import seed_scope
+
+    vault, wiki = fake_vault
+    root = tmp_path / "data-center"
+    repo = root / "ops-db"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    seed_scope(root, "ccat", name="data-center")
+    note = wiki / "projects" / "ops-db" / "ops-db.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("---\ntype: project\n---\n\n# Project: ops-db\n\nOps DB orientation body.\n")
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: "ccatobs/ops-db")
+    for name in dir(hooks):  # no detached children from this test
+        if name.startswith("_spawn_"):
+            monkeypatch.setattr(hooks, name, lambda *a, **k: None)
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(""))
+
+    hooks.cmd_session_start(cwd=str(repo), plain=True, probe=False)
+
+    assert "Ops DB orientation body." in capsys.readouterr().out

@@ -412,7 +412,7 @@ def _repo_by_project_slug(wiki_name: str) -> dict[str, Path]:
     """Map each scope routed to this wiki (by name) to its folder.
 
     ``lore setup`` names a migrated scope after the old scope's last segment,
-    which is the project slug. Advisory: an unreadable config gives an empty map.
+    which is the project slug. A folder scope's repos sit below its folder. Advisory: an unreadable config gives an empty map.
     """
     from lore_core.config import get_lore_root
     from lore_core.root_config import load_root_config
@@ -469,7 +469,11 @@ def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
     repo_by_slug = _repo_by_project_slug(wiki_name)
     issues: list[Issue] = []
     for orientation, slug in _orientation_notes(projects_dir):
-        repo_root = repo_by_slug.get(slug)
+        # A scope named after the slug, else the slug's folder below a
+        # folder scope (PRD 0016: one scope covers many repos).
+        repo_root = repo_by_slug.get(slug) or next(
+            (p / slug for p in repo_by_slug.values() if (p / slug).is_dir()), None
+        )
         if repo_root is None or not repo_root.exists():
             continue
         try:
