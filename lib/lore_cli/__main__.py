@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import sys
 
-import click
 import typer
+
+from lore_cli._argv_compat import ABORTS, CLICK_ERRORS
 
 _HOOK_TYPER_EVENT = {
     "session-start": "SessionStart",
@@ -163,10 +164,10 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(result, int):
             return result
         return 0
-    except click.exceptions.ClickException as e:
+    except CLICK_ERRORS as e:
         e.show()
         return e.exit_code
-    except click.exceptions.Abort:
+    except ABORTS:
         print("Aborted.", file=sys.stderr)
         return 130
     except typer.Exit as e:
