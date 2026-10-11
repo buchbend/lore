@@ -15,9 +15,13 @@ that no real symbol grounds does not belong here.
   `inbox/`. Lore writes nothing into a wiki automatically. A human,
   `/lore:inbox`, or an agent's pull request writes it, when something is
   worth keeping.
-- **Scope** — a colon-separated namespace inside a wiki
-  (`ccat:data-center:data-transfer`), resolved from a working
-  directory by longest-prefix match against `.lore/attachments.json`.
+- **Scope** — a folder named in the person's lore config, such as
+  `~/git/ccatobs`. A scope sets the wiki, sinks, sources and tracker for
+  every repo below the folder. The longest matching folder wins. A scope
+  can also list git remotes. Lore then matches a repo by its remote as
+  well, and a path match wins over a remote match. _Avoid_: attachment,
+  namespace. Decision in ADR 0016. Until epic A ships, the code still
+  resolves the old colon namespace from `.lore/attachments.json`.
 
 Full model (three state files, resolution order, failure modes):
 `docs/architecture/state.md`. Config precedence across CLI flag / env
@@ -266,6 +270,25 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
 - **Seed issue** — a tracker issue labeled `epic-seed` that the `handover`
   skill writes. It carries intent and findings for a cold session to
   orient on. It is no spec.
+
+### Routing, logbook, sources and trackers
+
+Decisions in ADR 0016 and 0017. Epics A to C build them; until each
+ships, the term names the planned behavior.
+
+- **Sink** — a destination for logbook entries. A scope lists its sinks,
+  and Lore delivers each entry to every sink in the list. The kinds are
+  `file` and `command`. _Avoid_: target, output.
+- **Logbook entry** — one paragraph that the agent writes at a finish
+  point. It says what the build did and links to the homes of the facts.
+  _Avoid_: log, post, summary.
+- **Source** — a system that `lore_search` queries live, next to the
+  wiki index. Each source returns its own list of hits. _Avoid_: backend,
+  provider.
+- **Tracker** — the system that holds a repo's issues: GitHub, or an
+  issues folder inside the repo. _Avoid_: backend.
+- **Hosting** — the system that runs a repo's pull requests and CI.
+  Hosting is separate from the tracker.
 
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context

@@ -52,6 +52,7 @@ Lore routes each kind of fact to one home:
 | What does a domain term mean? | `CONTEXT.md`, or the context `CONTEXT-MAP.md` names | `grilling` or a ledger outcome |
 | What spans several repos? | wiki topic note, edited through a PR | human merges |
 | What shipped, what changed, what is left? | handover section | `build` at its finish point |
+| Who worked on what, and when? | logbook entry in the scope's sinks | `build` at its finish point (ADR 0017) |
 | What was said in the session? | transcript copy (personal) | Lore capture |
 
 The trail from code back to intent is a chain of links. `git blame` leads to
@@ -91,3 +92,6 @@ dropped, or filed as an issue.
 - 2026-09-29: `domain-modeling` merged into `grilling` (PRD 0015). The three ADR criteria now live in `grilling`.
 - 2026-09-29: the ledger-check line becomes an invariant. The `ledger-check`
   test landed with PRD 0015.
+- 2026-10-11: new row "Who worked on what, and when?" with the logbook
+  entry as its home (ADR 0017). The entry links to the other homes and
+  restates none of their facts.
