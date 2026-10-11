@@ -111,20 +111,13 @@ def test_doctor_reports_source_even_on_missing_root(tmp_path, monkeypatch, capsy
 
 
 def test_doctor_attach_check_finds_lore_block(healthy_vault, tmp_path, monkeypatch, capsys):
-    """The `attach` check reads the synthesised block from the
-    attachments registry."""
-    from datetime import UTC, datetime
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+    """The `attach` check reads the block the route synthesises."""
+    from conftest import seed_scope
     from lore_core.state.scopes import ScopesFile
 
     project = tmp_path / "proj"
     project.mkdir()
-    af = AttachmentsFile(healthy_vault); af.load()
-    af.add(Attachment(
-        path=project, wiki="ccat", scope="ccat",
-        attached_at=datetime.now(UTC), source="manual",
-    ))
-    af.save()
+    seed_scope(project, "ccat", name="ccat")
     sf = ScopesFile(healthy_vault); sf.load()
     sf.ingest_chain("ccat", "ccat")
     sf.save()

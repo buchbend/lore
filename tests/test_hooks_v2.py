@@ -107,26 +107,21 @@ def test_load_scopes_yml_malformed(tmp_path):
 
 
 def test_resolve_attach_block_returns_scope_and_merged_block(tmp_path, monkeypatch):
-    """_resolve_attach_block is a thin wrapper over the registry resolver.
-    It returns the synthetic claude_md_path sentinel and a block dict
-    derived from the attachment."""
-    from datetime import UTC, datetime
+    """_resolve_attach_block is a thin wrapper over the route. It returns
+    the synthetic <repo>/CLAUDE.md sentinel and a block dict."""
+    import subprocess
 
+    from conftest import seed_scope
     from lore_core.session import _resolve_attach_block
-    from lore_core.state.attachments import Attachment, AttachmentsFile
 
     parent = tmp_path / "repo"
     child = parent / "sub" / "deep"
     child.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(parent)], check=True)
 
     (tmp_path / ".lore").mkdir()
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
-    af = AttachmentsFile(tmp_path); af.load()
-    af.add(Attachment(
-        path=parent, wiki="ccat", scope="ccat:data-center:data-transfer",
-        attached_at=datetime(2026, 4, 22, 9, 0, tzinfo=UTC), source="manual",
-    ))
-    af.save()
+    seed_scope(parent, "ccat", name="ccat:data-center:data-transfer")
 
     result = _resolve_attach_block(child)
     assert result is not None
@@ -178,17 +173,11 @@ def fake_vault(tmp_path, monkeypatch):
 
 
 def _register_attachment(lore_root: Path, repo: Path, *, wiki: str, scope: str) -> None:
-    """Register ``repo`` in ``lore_root/.lore/attachments.json``."""
-    from datetime import UTC, datetime
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+    """Route ``repo`` to ``wiki`` with a scope in the person config (PRD 0016)."""
+    from conftest import seed_scope
 
     (lore_root / ".lore").mkdir(exist_ok=True)
-    af = AttachmentsFile(lore_root); af.load()
-    af.add(Attachment(
-        path=repo, wiki=wiki, scope=scope,
-        attached_at=datetime(2026, 4, 22, 9, 0, tzinfo=UTC), source="manual",
-    ))
-    af.save()
+    seed_scope(repo, wiki, name=scope)
 
 
 def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):

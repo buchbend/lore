@@ -20,7 +20,7 @@ from pathlib import Path
 import typer
 from lore_core.config import get_wiki_root
 from lore_core.git import git_repo_root
-from lore_core.scope_resolver import resolve_scope
+from lore_core.route import resolve_route
 from lore_core.style import (
     DEPRECATED_ALIASES,
     UnknownStyle,
@@ -44,10 +44,9 @@ app = typer.Typer(
 def _wiki_dir(wiki: str | None) -> Path | None:
     """Directory of the named wiki, or of the wiki attached to the cwd."""
     if wiki is None:
-        scope = resolve_scope(Path.cwd())
-        if scope is None:
+        wiki = resolve_route(Path.cwd()).wiki
+        if not wiki:
             return None
-        wiki = scope.wiki
     return get_wiki_root() / wiki
 
 

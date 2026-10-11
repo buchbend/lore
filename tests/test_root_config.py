@@ -82,9 +82,11 @@ def test_unknown_key_warns(tmp_path: Path, recwarn):
 
 
 def _fresh_root(tmp_path: Path, body: str) -> Path:
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir(parents=True, exist_ok=True)
-    (lore_dir / "config.yml").write_text(body)
+    """Seed the file `lore config set` writes: the person's config (PRD 0016)."""
+    from lore_core.config import user_config_path
+
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text(body)
     return tmp_path
 
 
@@ -253,7 +255,9 @@ def test_unset_field_unknown_path_raises_and_leaves_file_unchanged(tmp_path: Pat
     from lore_core.root_config import unset_field
 
     root = _fresh_root(tmp_path, "journal:\n  enabled: true\n")
-    cfg_path = root / ".lore" / "config.yml"
+    from lore_core.config import user_config_path
+
+    cfg_path = user_config_path()
     before = cfg_path.read_text()
     with pytest.raises(KeyError, match="unknown config path"):
         unset_field(root, "journal.no_such_field")
@@ -265,7 +269,9 @@ def test_unset_field_prunes_empty_parent_mapping(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "journal:\n  enabled: true\n")
     unset_field(root, "journal.enabled")
-    cfg_path = root / ".lore" / "config.yml"
+    from lore_core.config import user_config_path
+
+    cfg_path = user_config_path()
     raw = yaml.safe_load(cfg_path.read_text()) or {}
     assert "journal" not in raw
 
@@ -381,3 +387,44 @@ def test_a_retired_curator_block_warns_once_and_keeps_loading(tmp_path: Path):
     curator_warnings = [w for w in caught if "curator" in str(w.message)]
     assert len(curator_warnings) == 1, [str(w.message) for w in caught]
     assert cfg.journal.enabled is True
+
+
+# ---------------------------------------------------------------------------
+# One settings file (PRD 0016): the person's ~/.config/lore/config.yml holds
+# the keys of the old root config and wins over $LORE_ROOT/.lore/config.yml.
+# ---------------------------------------------------------------------------
+
+
+def _person_file(content: str) -> Path:
+    from lore_core.config import user_config_path
+
+    path = user_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return path
+
+
+def test_person_config_keys_load_and_win_over_the_old_root_config(tmp_path: Path) -> None:
+    (tmp_path / ".lore").mkdir()
+    (tmp_path / ".lore" / "config.yml").write_text(
+        "user:\n  display_name: Old\njournal:\n  enabled: true\n"
+    )
+    _person_file(
+        "lore_root: ~/lore\nuser:\n  display_name: Christof\n"
+        "scopes:\n  ccatobs:\n    path: ~/git/ccatobs\n    wiki: ccat\n"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        cfg = load_root_config(tmp_path)
+    assert cfg.user.display_name == "Christof"
+    assert cfg.journal.enabled is True  # old root config still read until migrated
+    assert cfg.scopes["ccatobs"]["wiki"] == "ccat"
+
+
+def test_set_field_writes_the_person_config(tmp_path: Path) -> None:
+    from lore_core.config import user_config_path
+    from lore_core.root_config import set_field
+
+    set_field(tmp_path, "user.display_name", "Ada")
+    assert yaml.safe_load(user_config_path().read_text()) == {"user": {"display_name": "Ada"}}
+    assert not (tmp_path / ".lore" / "config.yml").exists()

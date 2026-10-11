@@ -195,8 +195,9 @@ def cmd_show(
         console.print("[dim]no matching fields[/dim]")
         return
 
-    cfg_path = lore_root / ".lore" / "config.yml"
-    console.print(f"  [dim]Source:[/dim] {_format_path(cfg_path)}")
+    from lore_core.config import user_config_path
+
+    console.print(f"  [dim]Source:[/dim] {_format_path(user_config_path())}")
     console.print()
     console.print(_build_resolved_table(rows))
     console.print()
@@ -319,7 +320,7 @@ def cmd_edit(wiki: str | None = _WIKI_OPTION) -> None:
         except yaml.YAMLError as e:
             errors = [f"malformed YAML: {e}"]
         else:
-            errors = validate_raw(schema.default_factory, raw)
+            errors = validate_raw(schema.default_factory, raw, source=cfg_path)
 
         if not errors:
             console.print(f"  [green]✓[/green] saved [dim]→ {_format_path(cfg_path)}[/dim]")
@@ -351,5 +352,53 @@ def cmd_schema() -> None:
     console.print()
     console.print(
         "  [dim]This is the full set of typed fields stored in[/dim] "
-        "[cyan]$LORE_ROOT/.lore/config.yml[/cyan]."
+        "[cyan]~/.config/lore/config.yml[/cyan]."
     )
+
+
+secret_app = typer.Typer(
+    add_completion=False,
+    help="Manage secret values in ~/.config/lore/secrets.yml (mode 0600).",
+    no_args_is_help=True,
+)
+app.add_typer(secret_app, name="secret")
+
+
+def _secrets_or_exit(fn, *args):
+    from lore_core.secrets import SecretsError
+
+    try:
+        return fn(*args)
+    except SecretsError as e:
+        console.print(f"[red]{e}[/red]", soft_wrap=True)
+        raise typer.Exit(1) from None
+
+
+@secret_app.command("set")
+def cmd_secret_set(name: str = typer.Argument(..., help="Secret name, e.g. PM_TOKEN.")) -> None:
+    """Prompt for a value and store it under NAME."""
+    from lore_core.secrets import secrets_path, set_secret
+
+    value = typer.prompt(f"Value for {name}", hide_input=True)
+    _secrets_or_exit(set_secret, name, value)
+    console.print(f"  [green]✓[/green] {name} [dim]→ {_format_path(secrets_path())}[/dim]")
+
+
+@secret_app.command("unset")
+def cmd_secret_unset(name: str = typer.Argument(..., help="Secret name.")) -> None:
+    """Remove NAME from the secrets file."""
+    from lore_core.secrets import unset_secret
+
+    if not _secrets_or_exit(unset_secret, name):
+        console.print(f"[dim]{name} is not set[/dim]")
+        return
+    console.print(f"  [green]✓[/green] {name} removed")
+
+
+@secret_app.command("list")
+def cmd_secret_list() -> None:
+    """Print the names of stored secrets, never their values."""
+    from lore_core.secrets import read_secrets
+
+    for name in sorted(_secrets_or_exit(read_secrets)):
+        print(name)

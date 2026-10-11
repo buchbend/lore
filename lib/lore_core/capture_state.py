@@ -50,15 +50,15 @@ def _resolve_scope(cwd: Path | None) -> tuple[bool, str | None, Path | None]:
     """Return (attached, "wiki/scope", scope_root_path)."""
     if cwd is None:
         return (False, None, None)
-    from lore_core.scope_resolver import resolve_scope
+    from lore_core.route import resolve_route
     try:
-        scope = resolve_scope(cwd)
+        route = resolve_route(cwd)
     except Exception:
         return (False, None, None)
-    if scope is None:
+    if not route.wiki:
         return (False, None, None)
-    name = f"{scope.wiki}/{scope.scope}"
-    return (True, name, scope.claude_md_path.parent)
+    name = f"{route.wiki}/{route.scope}" if route.scope else route.wiki
+    return (True, name, route.claude_md_path.parent)
 
 
 @dataclass(frozen=True)

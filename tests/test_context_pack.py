@@ -10,12 +10,10 @@ degrades to a well-formed empty pack, never an error.
 from __future__ import annotations
 
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from lore_core.context_pack import gather
-from lore_core.state.attachments import Attachment, AttachmentsFile
 
 
 def _init_repo(repo_root: Path, *, branch: str = "main", remote_url: str | None = None) -> None:
@@ -138,7 +136,7 @@ def test_gather_returns_all_adr_prd_when_no_focus(
 
 
 # ---------------------------------------------------------------------------
-# scope join (via attachments-backed scope_resolver)
+# scope join (via the route: a scope in the person config)
 # ---------------------------------------------------------------------------
 
 
@@ -146,14 +144,11 @@ def test_gather_joins_by_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     repo = tmp_path / "repo"
     _init_repo(repo)  # no remote — repo string is empty
 
+    from conftest import seed_scope
+
     vault = tmp_path / "vault"
     (vault / ".lore").mkdir(parents=True)
-    af = AttachmentsFile(vault)
-    af.load()
-    af.add(
-        Attachment(path=repo, wiki="w", scope="w:s", attached_at=datetime(2026, 1, 1, tzinfo=UTC))
-    )
-    af.save()
+    seed_scope(repo, "w", name="w:s")
     monkeypatch.setenv("LORE_ROOT", str(vault))
 
     result = gather(cwd=repo, repo_path=str(repo))

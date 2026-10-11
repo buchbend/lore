@@ -314,7 +314,7 @@ def _shield_hook(typer_event: str):
 
 import typer  # noqa: E402
 from lore_adapters import get_adapter  # noqa: E402
-from lore_core.scope_resolver import resolve_scope  # noqa: E402
+from lore_core.route import resolve_route  # noqa: E402
 from lore_core.spawn_gate import check_spawn  # noqa: E402
 from lore_core.spine import ErrorCode, emit_hook_event  # noqa: E402
 
@@ -554,9 +554,10 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - hook must never crash SessionStart
         pass
 
-    # Resolve scope once — reused by the banner, curator spawns, and
-    # transcript sync below. None means "unattached cwd."
-    scope = resolve_scope(cwd_resolved)
+    # Resolve the route once — reused by the banner, curator spawns, and
+    # transcript sync below. None means "no wiki routes this cwd."
+    route = resolve_route(cwd_resolved)
+    scope = route if route.wiki else None
     lore_root = _infer_lore_root(scope.claude_md_path) if scope is not None else None
 
     if scope is None and not probe:
@@ -761,10 +762,10 @@ def cmd_user_prompt_submit(
     if _session_off_all():
         return
     cwd_resolved = Path(_resolve_cwd(cwd))
-    scope = resolve_scope(cwd_resolved)
-    if scope is None:
+    route = resolve_route(cwd_resolved)
+    if not route.wiki:
         return
-    lore_root = _infer_lore_root(scope.claude_md_path)
+    lore_root = _infer_lore_root(route.claude_md_path)
 
     # Mid-session transcript discovery + mtime refresh. Closes the
     # SessionStart-vs-transcript-creation race (sub-second; SessionStart
@@ -931,14 +932,15 @@ def capture(
     # vault root would still be captured).
     try:
         _vault = get_lore_root().resolve()
-        if Path(cwd).resolve() == _vault and resolve_scope(cwd) is None:
+        if Path(cwd).resolve() == _vault and not resolve_route(cwd).wiki:
             return
     except OSError:
         # Path resolution failed (broken symlink, permission, etc.); fall
         # through so the calling capture path still runs.
         pass
 
-    scope = resolve_scope(cwd)
+    route = resolve_route(cwd)
+    scope = route if route.wiki else None
     if scope is None:
         # Unattached cwd — no ledger work to do, but we still emit a hook
         # event so "hook fired but declined" is distinguishable from "hook

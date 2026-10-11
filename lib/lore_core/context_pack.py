@@ -20,7 +20,7 @@ from lore_core.gh import gh_issue_view
 from lore_core.git import git_repo_root
 from lore_core.linkage import Linkage, classify_refs, extract_linkage
 from lore_core.repo_docs import list_docs, rank_docs
-from lore_core.scope_resolver import resolve_scope
+from lore_core.route import resolve_route
 
 
 def _repo_root(cwd: Path, repo_path: str | None) -> Path | None:
@@ -88,9 +88,9 @@ def gather(
     repo_root = _repo_root(cwd_path, repo_path)
     focus = _focus_issues(linkage, branch, issue)
 
-    scope_obj = resolve_scope(cwd_path)
-    scope = scope_obj.scope if scope_obj else ""
-    wiki = scope_obj.wiki if scope_obj else ""
+    route = resolve_route(cwd_path)
+    scope = route.scope or ""
+    wiki = route.wiki or ""
 
     adrs = _matching_docs(repo_root, "adr", focus)
     prds = _matching_docs(repo_root, "prd", focus)

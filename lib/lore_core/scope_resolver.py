@@ -1,56 +1,28 @@
-"""Scope resolver — registry-backed longest-prefix match.
+"""``resolve_scope``: a thin shim over :func:`lore_core.route.resolve_route`.
 
-Single path: ``resolve_scope(cwd)`` consults the host's
-``attachments.json`` via :class:`AttachmentsFile`. No filesystem walk-up,
-no CLAUDE.md parsing. Returns None if the cwd isn't covered.
-
-When callers have an existing :class:`AttachmentsFile` instance, pass it
-via the ``attachments`` kwarg to avoid re-loading per call (curator A
-does this once per pass).
+Kept only for the attach and project commands, which PRD 0016 deletes.
+New code calls ``resolve_route``.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-from lore_core.state.attachments import AttachmentsFile
+from lore_core.route import resolve_route
 from lore_core.types import Scope
 
 
-def resolve_scope(
-    cwd: Path,
-    attachments: AttachmentsFile | None = None,
-) -> Scope | None:
-    """Resolve ``cwd`` to a :class:`Scope`, or ``None`` if unattached.
+def resolve_scope(cwd: Path, attachments: object = None) -> Scope | None:
+    """The route at ``cwd`` as a :class:`Scope`, or ``None`` when no wiki routes it.
 
-    When ``attachments`` is omitted, loads one from ``$LORE_ROOT`` on
-    demand. Returns None if ``$LORE_ROOT`` is unset or missing.
+    ``attachments`` is ignored; ``attachments.json`` no longer routes.
     """
-    if attachments is None:
-        attachments = _load_default_attachments()
-        if attachments is None:
-            return None
-
-    match = attachments.longest_prefix_match(cwd)
-    if match is None:
+    route = resolve_route(cwd)
+    if not route.wiki:
         return None
     return Scope(
-        wiki=match.wiki,
-        scope=match.scope,
+        wiki=route.wiki,
+        scope=route.scope or "",
         backend="none",
-        # Synthetic sentinel so callers that walk up from this path to
-        # infer $LORE_ROOT still work (see lore_cli.hooks._infer_lore_root).
-        claude_md_path=match.path / "CLAUDE.md",
+        claude_md_path=route.claude_md_path,
     )
-
-
-def _load_default_attachments() -> AttachmentsFile | None:
-    from lore_core.config import resolve_lore_root
-
-    lore_root = resolve_lore_root()
-    if lore_root is None or not lore_root.exists():
-        return None
-    af = AttachmentsFile(lore_root)
-    af.load()
-    return af

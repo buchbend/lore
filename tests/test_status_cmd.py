@@ -34,28 +34,23 @@ def _iso(dt: datetime) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _seed_vault(tmp_path: Path) -> tuple[Path, Path]:
-    """Returns (lore_root, attached_project_dir)."""
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+def _person(cfg: dict) -> None:
+    import yaml
+    from lore_core.config import user_config_path
 
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text(yaml.safe_dump(cfg))
+
+
+def _seed_vault(tmp_path: Path) -> tuple[Path, Path]:
+    """Returns (lore_root, project_dir); a scope in the person's config routes it."""
     lore_root = tmp_path / "vault"
     (lore_root / ".lore").mkdir(parents=True)
     (lore_root / "wiki" / "private" / "sessions").mkdir(parents=True)
 
     project = tmp_path / "project"
     project.mkdir()
-    af = AttachmentsFile(lore_root)
-    af.load()
-    af.add(
-        Attachment(
-            path=project,
-            wiki="private",
-            scope="proj:test",
-            attached_at=datetime.now(UTC),
-            source="manual",
-        )
-    )
-    af.save()
+    _person({"scopes": {"proj:test": {"path": str(project), "wiki": "private"}}})
     return lore_root, project
 
 
@@ -310,6 +305,45 @@ def test_unattached_cwd(tmp_path: Path, monkeypatch) -> None:
     assert "not attached here" in result.output
     assert "/lore:attach" in result.output
     assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# Route section (PRD 0016): each value with its origin
+# ---------------------------------------------------------------------------
+
+
+def test_route_section_prints_each_value_with_its_origin(tmp_path: Path, monkeypatch) -> None:
+    lore_root, project = _seed_vault(tmp_path)
+    (project / ".lore.yml").write_text("sources: [ccatwiki]\n")
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
+
+    route = out.split("route\n", 1)[1].split("\n\n", 1)[0]
+    assert "wiki     private · scopes.proj:test" in route
+    assert "scope    proj:test · path " in route
+    assert "tracker  auto · code default" in route
+    assert "sinks    file · code default" in route
+    assert "sources  ccatwiki · .lore.yml" in route
+
+
+def test_route_conflict_names_both_scopes(tmp_path: Path, monkeypatch) -> None:
+    lore_root = tmp_path / "vault"
+    (lore_root / "wiki" / "private").mkdir(parents=True)
+    repo = tmp_path / "dc"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    _git(repo, "remote", "add", "origin", "git@github.com:ccatobs/dc.git")
+    _person(
+        {
+            "scopes": {
+                "alpha": {"remote": ["github.com/ccatobs/*"], "wiki": "private"},
+                "beta": {"remote": ["github.com/ccatobs/dc"], "wiki": "private"},
+            }
+        }
+    )
+
+    out = _invoke(lore_root, repo, monkeypatch=monkeypatch).output
+
+    assert "'alpha'" in out and "'beta'" in out
 
 
 # ---------------------------------------------------------------------------
