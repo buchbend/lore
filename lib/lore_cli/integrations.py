@@ -249,6 +249,11 @@ def _prompt_integration(integration_name: str, actions: list[Action], yes: bool)
 
 def _prompt_replace(action: Action) -> bool:
     """Per-action confirm for kind=replace. Returns True to proceed."""
+    if not sys.stdin.isatty():
+        console.print(
+            "  [yellow]skipped: replacing needs a terminal to confirm[/yellow]", markup=True
+        )
+        return False
     console.print(
         f"\n  [yellow]⚠ replace[/yellow] {action.target} — "
         f"{action.summary}",

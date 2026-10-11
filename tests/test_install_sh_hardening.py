@@ -66,5 +66,6 @@ def test_install_sh_upgrade_says_how_to_load_the_new_plugin():
 def test_install_sh_upgrade_runs_setup_wiki_so_old_state_migrates():
     """`lore update` with the plugin present must still migrate the old root
     config, attachments and scopes into the person's config (#470)."""
-    upgrade = INSTALL_SH.read_text().split('if [ "$HAS_PLUGIN" -eq 1 ]; then', 1)[1].split("else", 1)[0]
+    branch = INSTALL_SH.read_text().split('if [ "$HAS_PLUGIN" -eq 1 ]; then', 1)[1]
+    upgrade = branch.split("\nelse\n", 1)[0]
     assert "lore setup wiki --yes </dev/null" in upgrade

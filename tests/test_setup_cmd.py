@@ -358,7 +358,7 @@ def test_check_names_failed_advisory_checks(tmp_path, agents, no_prompt, monkeyp
         [("good", lambda cwd: (True, "ok"), True), ("vale", lambda cwd: (False, "absent"), False)],
     )
     summary, events = setup_cmd.step_check(tmp_path)
-    assert "2 checks passed" not in summary
+    assert summary != "2 checks passed"
     assert "1 of 2" in summary and "vale" in summary
 
 

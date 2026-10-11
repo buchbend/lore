@@ -12,8 +12,10 @@ Each run also migrates the old vault-local state (``attachments.json``,
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from importlib.metadata import version
@@ -102,10 +104,14 @@ def migrate(lore_root: Path) -> list[Event]:
             _merge_under(person, raw)
             events.append((True, f"moved the keys of {cfg} into {user_config_path()}"))
             done.append(cfg)
+        elif raw is not None:
+            events.append((False, f"{cfg} must hold a mapping, left in place"))
 
     if att.exists():
         try:
             rows = json.loads(att.read_text()).get("attachments", [])
+            if not isinstance(rows, list):
+                raise ValueError("`attachments` must be a list")
         except (OSError, ValueError, AttributeError) as exc:
             rows = None
             events.append((False, f"{att} is unreadable, left in place: {exc}"))
@@ -113,11 +119,17 @@ def migrate(lore_root: Path) -> list[Event]:
             scopes = person.setdefault("scopes", {})
             known = {s.get("path") for s in scopes.values() if isinstance(s, dict)}
             added = 0
+            skipped = 0
             for row in rows:
+                if not isinstance(row, dict):
+                    skipped += 1
+                    continue
                 path, wiki = str(row.get("path") or ""), row.get("wiki")
                 if not path or not wiki or path in known:
                     continue
-                base = Path(path).name or "scope"
+                # The old scope's leaf is the project slug that SessionStart's
+                # orientation and `lint._repo_by_project_slug` match on.
+                base = str(row.get("scope") or "").rsplit(":", 1)[-1] or Path(path).name or "scope"
                 name, n = base, 2
                 while name in scopes:
                     name, n = f"{base}-{n}", n + 1
@@ -125,13 +137,16 @@ def migrate(lore_root: Path) -> list[Event]:
                 known.add(path)
                 added += 1
             events.append((True, f"wrote {added} scope(s) from {att}"))
+            if skipped:
+                events.append((None, f"skipped {skipped} malformed row(s) in {att}"))
             done.append(att)
 
     if scp.exists():
         events.append((True, f"dropped {scp}; scopes live in {user_config_path()} now"))
         done.append(scp)
 
-    _write_person(person)
+    if done:
+        _write_person(person)
     for path in done:
         path.unlink(missing_ok=True)
     return events
@@ -240,18 +255,27 @@ def _install_integration(name: str) -> int:
 
 
 def _refresh_plugin_cache() -> bool:
-    """Refresh the marketplace catalog, then the plugin (as ``install.sh upgrade`` does)."""
-    import shutil
-
+    """Refresh the marketplace catalog, then the plugins (as ``install.sh upgrade`` does)."""
     claude = shutil.which("claude")
-    if claude:
-        subprocess.run(
-            [claude, "plugin", "marketplace", "update", "lore"],
-            check=False,
-            capture_output=True,
-            timeout=60,
-        )
-    return integrations._refresh_claude_plugin_cache(quiet=True)
+
+    def run(*args: str) -> None:
+        if claude:
+            with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+                subprocess.run(
+                    [claude, "plugin", *args], check=False, capture_output=True, timeout=60
+                )
+
+    run("marketplace", "update", "lore")
+    ok = integrations._refresh_claude_plugin_cache(quiet=True)
+    # lore-workflow versions on its own axis; without its own refresh its
+    # skills silently stay on the old version (#311).
+    try:
+        index = json.loads(checks._plugin_index().read_text())
+    except (OSError, ValueError):
+        index = {}
+    if index.get("plugins", {}).get("lore-workflow@lore"):
+        run("update", "lore-workflow@lore")
+    return ok
 
 
 def step_agents(cwd: Path) -> tuple[str, list[Event]]:
@@ -324,6 +348,15 @@ def step_scope(
         return "not in a git repo; no scope to offer", events
 
     folder = route.repo_root.parent
+    home, vault = Path.home().resolve(), get_lore_root().resolve()
+    if home.is_relative_to(folder) or folder.is_relative_to(vault):
+        return f"not offering {folder}", [
+            (
+                None,
+                f"{folder} is too broad for a scope (or inside the vault); "
+                f"add one under `scopes:` in {user_config_path()}",
+            )
+        ]
     wikis = [p.name for p in list_wikis(get_lore_root())]
     name = name or folder.name
     wiki = wiki or route.wiki or (wikis[0] if wikis else "")
@@ -335,8 +368,15 @@ def step_scope(
         wiki = typer.prompt(f"Wiki ({', '.join(wikis)})", default=wiki)
         extra = typer.prompt("Git remote pattern (optional)", default="", show_default=False)
         remotes += [extra] if extra else []
-    if not wiki:
-        return "no wiki", [(False, "no wiki to route to; run `lore setup wiki` first")]
+    if wiki not in wikis:
+        known = ", ".join(wikis) or "none"
+        return "unknown wiki", [
+            (
+                False,
+                f"no wiki {wiki!r} under {get_lore_root() / 'wiki'}; known: {known}"
+                " — run `lore setup wiki`",
+            )
+        ]
 
     person = _read_person()
     scopes = person.setdefault("scopes", {})
@@ -361,11 +401,17 @@ def step_scope(
 def step_check(cwd: Path) -> tuple[str, list[Event]]:
     """Run the install checks; a failing advisory check does not fail setup."""
     events: list[Event] = []
+    advisory: list[str] = []
     for name, fn, fails_run in checks._CHECKS:
         ok, msg = fn(str(cwd))
         if not ok:
             events.append((False if fails_run else None, f"{name}: {msg}"))
-    return f"{len(checks._CHECKS)} checks passed", events
+            advisory += [] if fails_run else [name]
+    total = len(checks._CHECKS)
+    if not events:
+        return f"{total} checks passed", events
+    summary = f"{total - len(events)} of {total} checks passed"
+    return summary + (f"; advisory failed: {', '.join(advisory)}" if advisory else ""), events
 
 
 # ---------------------------------------------------------------------------
@@ -378,9 +424,9 @@ _MARK = {True: "[green]✓[/green]", False: "[red]✗[/red]", None: "[yellow]![/
 def _report(step: str, summary: str, events: list[Event]) -> bool:
     """One ✓ line when nothing changed; else one line per change. False on a failure."""
     if all(ok is None for ok, _ in events):
-        console.print(f"{_MARK[True]} {step:<7}{escape(summary)}")
+        console.print(f"{_MARK[True]} {step:<8}{escape(summary)}")
     for ok, msg in events:
-        console.print(f"{_MARK[ok]} {step:<7}{escape(msg)}")
+        console.print(f"{_MARK[ok]} {step:<8}{escape(msg)}")
     return all(ok is not False for ok, _ in events)
 
 

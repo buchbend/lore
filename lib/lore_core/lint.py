@@ -411,8 +411,8 @@ def check_hierarchy(
 def _repo_by_project_slug(wiki_name: str) -> dict[str, Path]:
     """Map each scope routed to this wiki (by name) to its folder.
 
-    ``lore setup`` names a migrated scope after its repo folder, which is the
-    project slug. Advisory: an unreadable config gives an empty map.
+    ``lore setup`` names a migrated scope after the old scope's last segment,
+    which is the project slug. Advisory: an unreadable config gives an empty map.
     """
     from lore_core.config import get_lore_root
     from lore_core.root_config import load_root_config

@@ -153,6 +153,9 @@ if [ "$HAS_PLUGIN" -eq 1 ]; then
     else
         warn "claude CLI not found; run: claude plugin update lore@lore (and lore-workflow@lore if installed)"
     fi
+    # Migrate old vault-local state (root config, attachments, scopes) into
+    # ~/.config/lore/config.yml; the new lore reads only that file.
+    lore setup wiki --yes </dev/null || warn "lore setup wiki failed; run: lore setup"
     say "Done. The lore CLI is live now."
     say "Running Claude Code sessions keep the old plugin (skills, hooks, MCP server) until restarted:"
     say "  /exit, then 'claude --continue' to resume the same conversation."
