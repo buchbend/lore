@@ -438,3 +438,18 @@ def test_list_wikis_returns_empty_for_a_vault_with_no_wiki(tmp_path: Path) -> No
     from lore_core.config import list_wikis
 
     assert list_wikis(tmp_path) == []
+
+
+def test_config_file_with_person_keys_does_not_warn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PRD 0016: the person config also holds scopes, defaults, sinks, sources."""
+    monkeypatch.delenv("LORE_ROOT", raising=False)
+    vault = Path.home() / "v"
+    vault.mkdir()
+    _write_config(
+        Path.home(),
+        f"lore_root: {vault}\nscopes: {{}}\ndefaults: {{tracker: auto}}\nsinks: {{}}\n"
+        "sources: {}\nuser: {display_name: X}\n",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert get_lore_root() == vault.resolve()

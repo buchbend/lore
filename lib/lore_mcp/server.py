@@ -837,20 +837,18 @@ def _resolve_wiki_with_active_scope_fallback(wiki: str | None) -> Path | None:
     Order:
       1. Explicit ``wiki`` argument → :func:`_resolve_wiki`.
       2. No argument, single-wiki vault → :func:`_resolve_wiki(None)`.
-      3. No argument, multi-wiki vault → :func:`resolve_scope(cwd)` →
-         the wiki named by the active attachment.
+      3. No argument, multi-wiki vault → :func:`resolve_route(cwd)` →
+         the wiki the cwd's route names.
     """
     if wiki:
         return _resolve_wiki(wiki)
     direct = _resolve_wiki(None)
     if direct is not None:
         return direct
-    from lore_core.scope_resolver import resolve_scope
+    from lore_core.route import resolve_route
 
-    scope = resolve_scope(Path.cwd())
-    if scope is None or not scope.wiki:
-        return None
-    return _resolve_wiki(scope.wiki)
+    wiki = resolve_route(Path.cwd()).wiki
+    return _resolve_wiki(wiki) if wiki else None
 
 
 def handle_pending_verdicts(wiki: str | None = None) -> dict[str, Any]:

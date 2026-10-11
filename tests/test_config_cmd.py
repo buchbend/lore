@@ -4,11 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 from lore_cli.config_cmd import app
+from lore_core.config import user_config_path
 from typer.testing import CliRunner
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _person_config_dir() -> None:
+    """`lore config set|unset|edit` write the person's config (PRD 0016)."""
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
 
 
 def _wiki_dir(lore_root: Path, name: str = "private") -> Path:
@@ -31,7 +39,7 @@ def test_get_single_key_root(tmp_path: Path, monkeypatch):
 
 def test_get_no_path_shows_resolved_with_provenance(tmp_path: Path, monkeypatch):
     (tmp_path / ".lore").mkdir()
-    (tmp_path / ".lore" / "config.yml").write_text("journal:\n  enabled: true\n")
+    user_config_path().write_text("journal:\n  enabled: true\n")
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     result = runner.invoke(app, ["get"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
@@ -66,7 +74,7 @@ def test_set_root_persists(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     result = runner.invoke(app, ["set", "journal.enabled", "true"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
-    cfg = yaml.safe_load((tmp_path / ".lore" / "config.yml").read_text())
+    cfg = yaml.safe_load(user_config_path().read_text())
     assert cfg["journal"]["enabled"] is True
 
 
@@ -85,7 +93,7 @@ def test_set_unknown_key_rejected_names_suggestion_and_leaves_file_unchanged(
     tmp_path: Path, monkeypatch
 ):
     (tmp_path / ".lore").mkdir()
-    cfg_path = tmp_path / ".lore" / "config.yml"
+    cfg_path = user_config_path()
     cfg_path.write_text("journal:\n  enabled: true\n")
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     before = cfg_path.read_text()
@@ -99,7 +107,7 @@ def test_set_invalid_value_rejected_names_type_and_leaves_file_unchanged(
     tmp_path: Path, monkeypatch
 ):
     (tmp_path / ".lore").mkdir()
-    cfg_path = tmp_path / ".lore" / "config.yml"
+    cfg_path = user_config_path()
     cfg_path.write_text("journal:\n  enabled: true\n")
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     before = cfg_path.read_text()
@@ -116,7 +124,7 @@ def test_set_invalid_value_rejected_names_type_and_leaves_file_unchanged(
 
 def test_unset_root_reverts_to_default(tmp_path: Path, monkeypatch):
     (tmp_path / ".lore").mkdir()
-    cfg_path = tmp_path / ".lore" / "config.yml"
+    cfg_path = user_config_path()
     cfg_path.write_text("journal:\n  enabled: true\n")
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     result = runner.invoke(app, ["unset", "journal.enabled"], catch_exceptions=False)
@@ -165,13 +173,13 @@ def test_edit_valid_change_saves(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("click.edit", fake_edit)
     result = runner.invoke(app, ["edit"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
-    cfg = yaml.safe_load((tmp_path / ".lore" / "config.yml").read_text())
+    cfg = yaml.safe_load(user_config_path().read_text())
     assert cfg["journal"]["enabled"] is True
 
 
 def test_edit_invalid_change_abort_reverts_file(tmp_path: Path, monkeypatch):
     (tmp_path / ".lore").mkdir()
-    cfg_path = tmp_path / ".lore" / "config.yml"
+    cfg_path = user_config_path()
     cfg_path.write_text("journal:\n  enabled: true\n")
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
 
@@ -201,7 +209,7 @@ def test_edit_invalid_then_reedit_to_valid_saves(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("typer.confirm", lambda *a, **k: True)  # accept re-edit
     result = runner.invoke(app, ["edit"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
-    cfg = yaml.safe_load((tmp_path / ".lore" / "config.yml").read_text())
+    cfg = yaml.safe_load(user_config_path().read_text())
     assert cfg["journal"]["enabled"] is True
 
 

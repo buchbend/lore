@@ -100,7 +100,7 @@ def test_user_prompt_submit_noop_when_off(monkeypatch: pytest.MonkeyPatch) -> No
 
     # If the short-circuit fails, scope resolution runs on a real Path.
     mock_resolve = MagicMock(return_value=None)
-    with patch("lore_cli.hooks.resolve_scope", mock_resolve):
+    with patch("lore_cli.hooks.resolve_route", mock_resolve):
         from lore_cli.hooks import cmd_user_prompt_submit
         cmd_user_prompt_submit(cwd="/tmp", plain=True)
 

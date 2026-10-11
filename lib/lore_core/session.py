@@ -25,12 +25,12 @@ def _resolve_attach_block(cwd: Path) -> tuple[Path, dict] | None:
       * ``None`` for unattached cwds.
     """
     from lore_core.offer import parse_lore_yml, FILENAME as LORE_YML
-    from lore_core.scope_resolver import resolve_scope
+    from lore_core.route import resolve_route
 
-    scope = resolve_scope(cwd)
-    if scope is None:
+    scope = resolve_route(cwd)
+    if not scope.wiki:
         return None
-    block = {"wiki": scope.wiki, "scope": scope.scope, "backend": scope.backend}
+    block = {"wiki": scope.wiki, "scope": scope.scope, "backend": "none"}
 
     # Attachment paths store the repo root; look for a `.lore.yml` there
     # and merge its non-routing fields (backend, wiki_source) into the

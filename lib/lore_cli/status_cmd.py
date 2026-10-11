@@ -356,6 +356,30 @@ def _compute_alerts(state: CaptureState, now: datetime, lore_root: Path) -> list
 
 
 # ---------------------------------------------------------------------------
+# route (PRD 0016)
+# ---------------------------------------------------------------------------
+
+
+def _route_lines(cwd: Path) -> list[str]:
+    """The current repo's route, one value per line with its origin."""
+    from lore_core.route import resolve_route
+
+    route = resolve_route(cwd)
+    rows = {
+        "wiki": route.wiki,
+        "scope": route.scope,
+        "tracker": route.tracker,
+        "sinks": ", ".join(route.sinks),
+        "sources": ", ".join(route.sources),
+    }
+    lines = [
+        _line(_HEALTHY, f"{key:<8} {value or 'none'} · {route.origins.get(key, 'none')}")
+        for key, value in rows.items()
+    ]
+    return ["route", *lines, *(_line(_WARN, n) for n in route.notes)]
+
+
+# ---------------------------------------------------------------------------
 # unattached copy + json
 # ---------------------------------------------------------------------------
 
@@ -457,12 +481,15 @@ def status(
 
     if not state.scope_attached:
         print(_render_unattached(lore_root, resolved_cwd))
+        print("\n" + "\n".join(_route_lines(resolved_cwd)))
         return
 
     alerts = _compute_alerts(state, now, lore_root)
 
     lines: list[str] = [
         f"lore: active · {state.scope_name} · attached at {_format_scope_root(state.scope_root)}",
+        "",
+        *_route_lines(resolved_cwd),
         "",
         "capture",
         *_capture_lines(state, now),

@@ -69,20 +69,15 @@ def test_show_falls_back_to_default_when_the_wiki_has_no_override(lore_root: Pat
 
 
 def test_show_uses_the_wiki_resolved_from_cwd(lore_root: Path, monkeypatch) -> None:
-    """No `--wiki`: the wiki comes from the attached scope of the cwd."""
-    from lore_core.types import Scope
+    """No `--wiki`: the wiki comes from the route of the cwd."""
+    from lore_core.route import Route
 
     override = lore_root / "wiki" / "notes" / "style" / "writing-rules.md"
     override.parent.mkdir(parents=True)
     override.write_text("# Scope-resolved rules\n")
     monkeypatch.setattr(
-        "lore_cli.style_cmd.resolve_scope",
-        lambda cwd: Scope(
-            wiki="notes",
-            scope="notes:x",
-            backend="none",
-            claude_md_path=Path("/nowhere/CLAUDE.md"),
-        ),
+        "lore_cli.style_cmd.resolve_route",
+        lambda cwd: Route(cwd=Path("/nowhere"), wiki="notes"),
     )
     result = runner.invoke(app, ["style", "show", "writing-rules"])
     assert result.exit_code == 0, result.output

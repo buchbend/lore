@@ -107,26 +107,21 @@ def test_load_scopes_yml_malformed(tmp_path):
 
 
 def test_resolve_attach_block_returns_scope_and_merged_block(tmp_path, monkeypatch):
-    """_resolve_attach_block is a thin wrapper over the registry resolver.
-    It returns the synthetic claude_md_path sentinel and a block dict
-    derived from the attachment."""
-    from datetime import UTC, datetime
+    """_resolve_attach_block is a thin wrapper over the route. It returns
+    the synthetic <repo>/CLAUDE.md sentinel and a block dict."""
+    import subprocess
 
+    from conftest import seed_scope
     from lore_core.session import _resolve_attach_block
-    from lore_core.state.attachments import Attachment, AttachmentsFile
 
     parent = tmp_path / "repo"
     child = parent / "sub" / "deep"
     child.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(parent)], check=True)
 
     (tmp_path / ".lore").mkdir()
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
-    af = AttachmentsFile(tmp_path); af.load()
-    af.add(Attachment(
-        path=parent, wiki="ccat", scope="ccat:data-center:data-transfer",
-        attached_at=datetime(2026, 4, 22, 9, 0, tzinfo=UTC), source="manual",
-    ))
-    af.save()
+    seed_scope(parent, "ccat", name="ccat:data-center:data-transfer")
 
     result = _resolve_attach_block(child)
     assert result is not None

@@ -14,6 +14,7 @@ from typing import Any
 
 import yaml
 
+from lore_core.config import user_config_path as _user_config_path
 from lore_core.config_schema import ConfigSchema, FieldInfo
 from lore_core.config_schema import get_field as _cs_get_field
 from lore_core.config_schema import schema_tree as _cs_schema_tree
@@ -161,7 +162,38 @@ class WorkflowConfig:
 
 
 @dataclass
+class DefaultsConfig:
+    """Values a repo gets when no scope and no `.lore.yml` sets them."""
+
+    wiki: str = ""
+    tracker: str = "auto"
+    logbook: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ScopeConfig:
+    """A folder (and optional git remotes) whose repos share a wiki, sinks and sources.
+
+    ``logbook`` and ``sources`` hold names defined under the top-level
+    ``sinks`` and ``sources`` sections (PRD 0017 gives them behaviour).
+    """
+
+    path: str = ""
+    remote: list[str] = field(default_factory=list)
+    wiki: str = ""
+    tracker: str = ""
+    logbook: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
+
+
+@dataclass
 class RootConfig:
+    lore_root: str = ""
+    defaults: DefaultsConfig = field(default_factory=DefaultsConfig)
+    scopes: dict[str, ScopeConfig] = field(default_factory=dict, metadata={"item": ScopeConfig})
+    sinks: dict[str, dict] = field(default_factory=dict)
+    sources: dict[str, dict] = field(default_factory=dict)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     journal: JournalConfig = field(default_factory=JournalConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
@@ -225,26 +257,34 @@ def _validate_risk(risk: RiskConfig, source: Path) -> None:
         risk.sensitive_paths = list(defaults.sensitive_paths)
 
 
+def _read_mapping(path: Path) -> dict[str, Any] | None:
+    """Parse ``path`` as a YAML mapping; warn and return None when unusable."""
+    if not path.exists():
+        return None
+    try:
+        raw = yaml.safe_load(path.read_text()) or {}
+    except yaml.YAMLError as e:
+        warnings.warn(f"root_config: malformed YAML at {path}: {e}", stacklevel=3)
+        return None
+    if not isinstance(raw, dict):
+        warnings.warn(f"root_config: top-level must be a mapping at {path}", stacklevel=3)
+        return None
+    return raw
+
+
 def load_root_config(lore_root: Path) -> RootConfig:
-    """Load $LORE_ROOT/.lore/config.yml over defaults.
+    """Load the old ``$LORE_ROOT/.lore/config.yml``, then the person's
+    ``~/.config/lore/config.yml`` over it (PRD 0016: one settings file).
 
     Missing file / missing section / unknown keys → defaults + warning.
     Malformed YAML → defaults + warning (no crash).
     """
     cfg = RootConfig()
-    path = lore_root / ".lore" / "config.yml"
-    if not path.exists():
-        return cfg
-    try:
-        raw = yaml.safe_load(path.read_text()) or {}
-    except yaml.YAMLError as e:
-        warnings.warn(f"root_config: malformed YAML at {path}: {e}", stacklevel=2)
-        return cfg
-    if not isinstance(raw, dict):
-        warnings.warn(f"root_config: top-level must be a mapping at {path}", stacklevel=2)
-        return cfg
-    _merge(cfg, raw, "", path)
-    _validate_risk(cfg.workflow.risk, path)
+    for path in (lore_root / ".lore" / "config.yml", _user_config_path()):
+        raw = _read_mapping(path)
+        if raw is not None:
+            _merge(cfg, raw, "", path)
+            _validate_risk(cfg.workflow.risk, path)
     return cfg
 
 
@@ -258,7 +298,9 @@ def load_root_config(lore_root: Path) -> RootConfig:
 ROOT_SCHEMA = ConfigSchema(
     default_factory=RootConfig,
     load_fn=load_root_config,
-    config_path_fn=lambda lore_root: lore_root / ".lore" / "config.yml",
+    # Writes go to the person's file; the old root file is read until
+    # `lore setup` migrates it (PRD 0016).
+    config_path_fn=lambda _lore_root: _user_config_path(),
 )
 
 
@@ -273,7 +315,7 @@ def get_field(lore_root: Path, dotted_path: str) -> FieldInfo:
 
 
 def set_field(lore_root: Path, dotted_path: str, raw_value: str) -> FieldInfo:
-    """Persist a value to ``$LORE_ROOT/.lore/config.yml``.
+    """Persist a value to the person's ``~/.config/lore/config.yml``.
 
     Validates ``dotted_path`` against the schema and coerces
     ``raw_value`` to the field's declared type before writing — an

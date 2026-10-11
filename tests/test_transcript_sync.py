@@ -6,9 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from lore_core.ledger import TranscriptLedger, TranscriptLedgerEntry
-from lore_core.state.attachments import Attachment, AttachmentsFile
 from lore_core.transcript_sync import (
     GitignoreNegationError,
     SyncResult,
@@ -17,22 +15,15 @@ from lore_core.transcript_sync import (
     sync_transcripts,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-def _attach(lore_root: Path, cwd: Path, wiki: str = "mywiki", scope: str = "mywiki:lore"):
-    af = AttachmentsFile(lore_root)
-    af.load()
-    af.add(
-        Attachment(
-            path=cwd, wiki=wiki, scope=scope,
-            attached_at=datetime.now(UTC), source="manual",
-        )
-    )
-    af.save()
+def _attach(lore_root: Path, cwd: Path, wiki: str = "mywiki"):
+    from conftest import seed_scope
+
+    seed_scope(cwd, wiki)
 
 
 def _seed_ledger_entry(
