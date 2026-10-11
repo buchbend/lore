@@ -155,9 +155,16 @@ class RiskConfig:
 
 @dataclass
 class WorkflowConfig:
-    """Settings for the ``lore workflow`` verbs."""
+    """Settings for the ``lore workflow`` verbs and skills.
+
+    ``pages`` picks where a workflow skill (orient, triage) renders a page:
+    ``artifact`` publishes a claude.ai artifact and falls back to a local
+    HTML file when the session has no Artifact tool; ``html`` always writes
+    the local file.
+    """
 
     risk: RiskConfig = field(default_factory=RiskConfig)
+    pages: str = "artifact"
 
 
 @dataclass
