@@ -299,6 +299,7 @@ def test_workflow_risk_defaults_and_override(tmp_path: Path):
     assert cfg.workflow.risk.max_files == 10
     assert cfg.workflow.risk.fanin_top_fraction == 0.1
     assert "**/auth/**" in cfg.workflow.risk.sensitive_paths
+    assert cfg.workflow.pages == "artifact"
 
     _person_file("workflow:\n  risk:\n    max_lines: 50\n    sensitive_paths: ['billing/**']\n")
     cfg = load_root_config(tmp_path)
