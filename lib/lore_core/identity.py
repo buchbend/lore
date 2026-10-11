@@ -72,7 +72,7 @@ def resolve_display_name(wiki_path: Path, handle: str) -> str:
     `_users.yml` first (team mode); when that yields nothing (solo
     wikis, or a team wiki with no matching user), falls back to the
     personal `user.display_name` set via `lore config set` at the
-    vault root (`<lore_root>/.lore/config.yml`), derived from
+    person config (`~/.config/lore/config.yml`); `lore_root` comes from
     `wiki_path` as `<lore_root>/wiki/<name>`. Empty/missing handle
     returns `""`.
     """

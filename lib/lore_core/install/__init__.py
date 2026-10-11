@@ -7,7 +7,7 @@ Each `<integration>` Python module in this package exposes:
     detect_legacy(ctx)            # install.sh-era artifacts this integration left behind
                                   #   (typed as list[LegacyArtifact])
 
-The dispatcher (`lib/lore_cli/install_cmd.py`) imports REGISTRY here
+The dispatcher (`lib/lore_cli/integrations.py`) imports REGISTRY here
 to discover available integrations, then calls per-integration `plan()` and
 `detect_legacy()` and renders the actions through the print-and-confirm
 UI.

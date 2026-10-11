@@ -1,8 +1,8 @@
-"""`lore drill` — composite multi-stage retrieval.
+"""`lore read` — composite multi-stage retrieval.
 
-    lore drill "transaction buffer"
-    lore drill "retry semantics" --wiki private --k 3 --expand-limit 4
-    lore drill "x" --json
+    lore read "transaction buffer"
+    lore read "retry semantics" --wiki private --k 3 --expand-limit 4
+    lore read "x" --json
 
 Calls the same handler as the `lore_drill` MCP tool: search → read top
 hits → expand wikilinks → read expanded set, all in one round-trip.
@@ -34,13 +34,13 @@ app = typer.Typer(
     no_args_is_help=False,
     rich_markup_mode="rich",
     # Allow options after the positional `query` arg so users can write
-    # `lore drill "foo" --json` as well as `lore drill --json "foo"`.
+    # `lore read "foo" --json` as well as `lore read --json "foo"`.
     context_settings={"allow_interspersed_args": True},
 )
 
 
 def _render_trace(trace: list[dict]) -> Tree:
-    tree = Tree("[bold]drill trace[/bold]")
+    tree = Tree("[bold]read trace[/bold]")
     for step in trace:
         stage = step.get("stage", "?")
         elapsed = step.get("elapsed_ms", 0)

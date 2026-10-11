@@ -12,7 +12,7 @@ lists. It never merges them into one ranking.
 ## Before you start
 
 - `gh` is installed and signed in, so the `artifacts` list can fill.
-- The repo is attached (`lore attach`), or the wiki has a git remote. The GitHub search targets the attached repo and the wiki's own remote.
+- A scope routes the repo to the wiki (`lore setup scope`), or the wiki has a git remote. The GitHub search targets the current repo and the wiki's own remote.
 
 ## Search
 
@@ -24,7 +24,7 @@ wiki.
 
 ## When GitHub cannot answer
 
-If no repo is attached, `gh` fails, or the machine is offline, the result
+If no scope routes the repo, `gh` fails, or the machine is offline, the result
 holds the `wiki` list and a `note` field. The note names the omission. An
 empty `artifacts` list with no note means GitHub answered and found nothing.
 

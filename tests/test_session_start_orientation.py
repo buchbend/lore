@@ -23,7 +23,6 @@ def _scope(wiki: str, scope_str: str) -> Scope:
     return Scope(
         wiki=wiki,
         scope=scope_str,
-        backend="none",
         claude_md_path=Path("/tmp/dummy/CLAUDE.md"),
     )
 

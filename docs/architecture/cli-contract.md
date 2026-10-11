@@ -86,9 +86,9 @@ a function.
 No `@app.command(...)` or `@app.callback(...)` decorators in
 `__main__.py`. Verbs live in their own files; `__main__.py` only ties
 them together with `app.add_typer(...)`. The grandfathered exceptions are
-the top-level `uninstall` and `update` aliases — documented shims for
-`lore install uninstall` and the remote-version-check-then-upgrade
-roundtrip, both implemented in `install_cmd.py`.
+the top-level `uninstall` and `update` commands — the inverse of
+`lore setup`'s Agents step and the remote-version-check-then-upgrade
+roundtrip, both implemented in `lore_cli/integrations.py`.
 
 **4. Import business logic, don't reimplement it.**
 The verb file contains only argument parsing, output formatting, and

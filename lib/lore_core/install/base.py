@@ -1,10 +1,10 @@
 """Action / ApplyResult / InstallContext / LegacyArtifact dataclasses.
 
 Action is a pure data container — no closures, no module-local state.
-The dispatcher in `install_cmd.py` knows how to `preview_action()` and
+The dispatcher in `lore_cli/integrations.py` knows how to `preview_action()` and
 `execute_action()` (in `_helpers.py`) by switching on `Action.kind`.
 
-This shape is what makes `lore install plan --json` trivially
+This shape is what makes the JSON plan envelope trivially
 serialisable: dump the list of Actions to JSON, ship to an editor
 extension, the consumer reconstructs without needing to import any
 Lore Python.
@@ -80,7 +80,7 @@ class Action:
             )
 
     def to_dict(self) -> dict[str, Any]:
-        """Plain-dict form for `lore install plan --json`."""
+        """Plain-dict form for the JSON plan envelope."""
         return {
             "kind": self.kind,
             "description": self.description,

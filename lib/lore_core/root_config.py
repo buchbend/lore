@@ -1,8 +1,8 @@
-"""Root-level Lore config at $LORE_ROOT/.lore/config.yml.
+"""The person's Lore config at ``~/.config/lore/config.yml`` (PRD 0016).
 
-Observability settings are global (not per-wiki) because the log
-streams they govern live at $LORE_ROOT/.lore/ and are shared across
-wikis.
+One settings file per person: vault location, scopes, sinks, sources and
+the global (not per-wiki) observability settings. ``lore setup`` migrates
+the old ``$LORE_ROOT/.lore/config.yml`` into it.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import Any
 
 import yaml
 
+from lore_core.config import user_config_path as _user_config_path
 from lore_core.config_schema import ConfigSchema, FieldInfo
 from lore_core.config_schema import get_field as _cs_get_field
 from lore_core.config_schema import schema_tree as _cs_schema_tree
@@ -74,20 +75,6 @@ class ObservabilityConfig:
     runs: RunsConfig = field(default_factory=RunsConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     proc: ProcConfig = field(default_factory=ProcConfig)
-
-
-@dataclass
-class JournalConfig:
-    """AI + human freeform journal feature flag.
-
-    Off by default. Enabling injects a SessionStart prompt fragment
-    inviting the model to append to ``journals/ai.md`` when it has
-    something noteworthy, and exposes ``lore_journal_{read,write}``
-    MCP tools. Distinct from the per-day journal *surface* (auto-
-    extracted by Curator B) — see ``project_lore_journal_idea``.
-    """
-
-    enabled: bool = False
 
 
 @dataclass
@@ -155,15 +142,57 @@ class RiskConfig:
 
 @dataclass
 class WorkflowConfig:
-    """Settings for the ``lore workflow`` verbs."""
+    """Settings for the ``lore workflow`` verbs and skills.
+
+    ``pages`` picks where a workflow skill (orient, triage) renders a page:
+    ``artifact`` publishes a claude.ai artifact and falls back to a local
+    HTML file when the session has no Artifact tool; ``html`` always writes
+    the local file.
+    """
 
     risk: RiskConfig = field(default_factory=RiskConfig)
+    pages: str = "artifact"
+
+
+def _names() -> Any:
+    """A list of names; the YAML may also hold one plain string."""
+    return field(default_factory=list, metadata={"one_or_many": True})
+
+
+@dataclass
+class DefaultsConfig:
+    """Values a repo gets when no scope and no `.lore.yml` sets them."""
+
+    wiki: str = ""
+    tracker: str = "auto"
+    logbook: list[str] = _names()
+    sources: list[str] = _names()
+
+
+@dataclass
+class ScopeConfig:
+    """A folder (and optional git remotes) whose repos share a wiki, sinks and sources.
+
+    ``logbook`` and ``sources`` hold names defined under the top-level
+    ``sinks`` and ``sources`` sections (PRD 0017 gives them behaviour).
+    """
+
+    path: str = ""
+    remote: list[str] = _names()
+    wiki: str = ""
+    tracker: str = ""
+    logbook: list[str] = _names()
+    sources: list[str] = _names()
 
 
 @dataclass
 class RootConfig:
+    lore_root: str = ""
+    defaults: DefaultsConfig = field(default_factory=DefaultsConfig)
+    scopes: dict[str, ScopeConfig] = field(default_factory=dict, metadata={"item": ScopeConfig})
+    sinks: dict[str, dict] = field(default_factory=dict)
+    sources: dict[str, dict] = field(default_factory=dict)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
-    journal: JournalConfig = field(default_factory=JournalConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
     user: UserConfig = field(default_factory=UserConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
@@ -173,7 +202,7 @@ class RootConfig:
 #: Config blocks lore used to honour and no longer does. Named explicitly so a
 #: stale file gets one warning for the block that says what happened, rather
 #: than the generic unknown-key notice once per knob inside it.
-RETIRED_BLOCKS = frozenset({"curator"})
+RETIRED_BLOCKS = frozenset({"curator", "journal"})
 
 
 def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:
@@ -225,40 +254,48 @@ def _validate_risk(risk: RiskConfig, source: Path) -> None:
         risk.sensitive_paths = list(defaults.sensitive_paths)
 
 
-def load_root_config(lore_root: Path) -> RootConfig:
-    """Load $LORE_ROOT/.lore/config.yml over defaults.
+def _read_mapping(path: Path) -> dict[str, Any] | None:
+    """Parse ``path`` as a YAML mapping; warn and return None when unusable."""
+    if not path.exists():
+        return None
+    try:
+        raw = yaml.safe_load(path.read_text()) or {}
+    except yaml.YAMLError as e:
+        warnings.warn(f"root_config: malformed YAML at {path}: {e}", stacklevel=3)
+        return None
+    if not isinstance(raw, dict):
+        warnings.warn(f"root_config: top-level must be a mapping at {path}", stacklevel=3)
+        return None
+    return raw
 
+
+def load_root_config(lore_root: Path) -> RootConfig:
+    """Load the person's ``~/.config/lore/config.yml`` (PRD 0016).
+
+    ``lore_root`` is unused; callers pass it for the shared schema signature.
     Missing file / missing section / unknown keys → defaults + warning.
     Malformed YAML → defaults + warning (no crash).
     """
     cfg = RootConfig()
-    path = lore_root / ".lore" / "config.yml"
-    if not path.exists():
-        return cfg
-    try:
-        raw = yaml.safe_load(path.read_text()) or {}
-    except yaml.YAMLError as e:
-        warnings.warn(f"root_config: malformed YAML at {path}: {e}", stacklevel=2)
-        return cfg
-    if not isinstance(raw, dict):
-        warnings.warn(f"root_config: top-level must be a mapping at {path}", stacklevel=2)
-        return cfg
-    _merge(cfg, raw, "", path)
-    _validate_risk(cfg.workflow.risk, path)
+    path = _user_config_path()
+    raw = _read_mapping(path)
+    if raw is not None:
+        _merge(cfg, raw, "", path)
+        _validate_risk(cfg.workflow.risk, path)
     return cfg
 
 
 # ---------------------------------------------------------------------------
 # Introspection helpers — backing `lore config show / get / set / unset /
 # schema`. Thin bindings over lore_core.config_schema's generic dataclass
-# walker; see that module's docstring for why it's generic (wiki config and
-# a future `.lore.yml` offer-validation slice share the same plumbing).
+# walker; see that module's docstring for why it's generic (the wiki config
+# shares the same plumbing).
 # ---------------------------------------------------------------------------
 
 ROOT_SCHEMA = ConfigSchema(
     default_factory=RootConfig,
     load_fn=load_root_config,
-    config_path_fn=lambda lore_root: lore_root / ".lore" / "config.yml",
+    config_path_fn=lambda _lore_root: _user_config_path(),
 )
 
 
@@ -273,7 +310,7 @@ def get_field(lore_root: Path, dotted_path: str) -> FieldInfo:
 
 
 def set_field(lore_root: Path, dotted_path: str, raw_value: str) -> FieldInfo:
-    """Persist a value to ``$LORE_ROOT/.lore/config.yml``.
+    """Persist a value to the person's ``~/.config/lore/config.yml``.
 
     Validates ``dotted_path`` against the schema and coerces
     ``raw_value`` to the field's declared type before writing — an

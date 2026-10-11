@@ -36,8 +36,6 @@ PATH_ESCAPE = "path_escape"
 SESSION_OFF = "session_off"
 UNKNOWN_TOOL = "unknown_tool"
 INVALID_KIND = "invalid_kind"
-INVALID_ENTRY = "invalid_entry"
-EMPTY_ENTRY = "empty_entry"
 
 
 def mcp_error(

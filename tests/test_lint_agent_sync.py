@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
+from conftest import seed_scope
 from lore_core.lint import check_agent_guidance_sync
 
 
@@ -29,23 +28,9 @@ def _setup_attached_project(
     repo.mkdir()
     (repo / "AGENTS.md").write_text(repo_content)
 
-    # attachments.json
+    # a scope named after the project slug
     (lore_root / ".lore").mkdir(parents=True)
-    import json
-    (lore_root / ".lore" / "attachments.json").write_text(
-        json.dumps({
-            "attachments": [
-                {
-                    "path": str(repo),
-                    "wiki": "private",
-                    "scope": slug,
-                    "attached_at": "2026-05-01T00:00:00+00:00",
-                    "source": "manual",
-                },
-            ],
-            "declined": [],
-        })
-    )
+    seed_scope(str(repo), "private", name=slug)
     return lore_root, wiki_path
 
 
@@ -62,7 +47,7 @@ def test_lint_reports_drift(tmp_path, monkeypatch):
     drift = [i for i in issues if i.check == "agent_guidance_drift"]
     assert len(drift) == 1
     assert drift[0].severity == "WARNING"
-    assert "lore project sync lore" in drift[0].message
+    assert "lore project sync" not in drift[0].message
 
 
 def test_lint_silent_when_in_sync(tmp_path, monkeypatch):
@@ -97,21 +82,7 @@ def test_lint_silent_when_no_section(tmp_path, monkeypatch):
     (repo / "AGENTS.md").write_text("# repo\n\nrepo content.\n")
 
     (lore_root / ".lore").mkdir(parents=True)
-    import json
-    (lore_root / ".lore" / "attachments.json").write_text(
-        json.dumps({
-            "attachments": [
-                {
-                    "path": str(repo),
-                    "wiki": "private",
-                    "scope": "lore",
-                    "attached_at": "2026-05-01T00:00:00+00:00",
-                    "source": "manual",
-                },
-            ],
-            "declined": [],
-        })
-    )
+    seed_scope(str(repo), "private", name="lore")
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
 
     issues = check_agent_guidance_sync(wiki_path, "private")
@@ -132,21 +103,7 @@ def test_lint_silent_when_repo_path_missing(tmp_path, monkeypatch):
     )
 
     (lore_root / ".lore").mkdir(parents=True)
-    import json
-    (lore_root / ".lore" / "attachments.json").write_text(
-        json.dumps({
-            "attachments": [
-                {
-                    "path": str(tmp_path / "nonexistent"),
-                    "wiki": "private",
-                    "scope": "lore",
-                    "attached_at": "2026-05-01T00:00:00+00:00",
-                    "source": "manual",
-                },
-            ],
-            "declined": [],
-        })
-    )
+    seed_scope(str(tmp_path / "nonexistent"), "private", name="lore")
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
 
     issues = check_agent_guidance_sync(wiki_path, "private")
@@ -170,23 +127,32 @@ def test_lint_handles_legacy_flat_orientation(tmp_path, monkeypatch):
     (repo / "AGENTS.md").write_text("# repo\n\nGuidance v2 (different).\n")
 
     (lore_root / ".lore").mkdir(parents=True)
-    import json
-    (lore_root / ".lore" / "attachments.json").write_text(
-        json.dumps({
-            "attachments": [
-                {
-                    "path": str(repo),
-                    "wiki": "private",
-                    "scope": "lore",
-                    "attached_at": "2026-05-01T00:00:00+00:00",
-                    "source": "manual",
-                },
-            ],
-            "declined": [],
-        })
-    )
+    seed_scope(str(repo), "private", name="lore")
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
 
     issues = check_agent_guidance_sync(wiki_path, "private")
     drift = [i for i in issues if i.check == "agent_guidance_drift"]
     assert len(drift) == 1
+
+
+def test_lint_finds_the_repo_below_a_folder_scope(tmp_path, monkeypatch):
+    """A folder scope covers many repos: slug ``ops-db`` maps to
+    ``<scope path>/ops-db`` (#479 review)."""
+    lore_root, wiki_path = _setup_attached_project(
+        tmp_path,
+        slug="ops-db",
+        repo_content="# repo\n\nDifferent content.\n",
+        orientation_section="Use TDD.\n",
+    )
+    folder = tmp_path / "data-center"
+    (folder / "ops-db").mkdir(parents=True)
+    (folder / "ops-db" / "AGENTS.md").write_text("# repo\n\nDifferent content.\n")
+    from lore_core.config import user_config_path
+
+    user_config_path().write_text(
+        f"scopes:\n  data-center:\n    path: {folder}\n    wiki: private\n"
+    )
+    monkeypatch.setenv("LORE_ROOT", str(lore_root))
+
+    issues = check_agent_guidance_sync(wiki_path, "private")
+    assert [i.check for i in issues] == ["agent_guidance_drift"]

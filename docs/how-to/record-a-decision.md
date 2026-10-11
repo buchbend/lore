@@ -1,7 +1,7 @@
 # Record a decision
 
 **Goal:** write an ADR that says how strong each part of the decision is. Check
-it with `lore lint adr`. Change it later without a new record.
+it with `lore wiki lint adr`. Change it later without a new record.
 
 ## Before you start
 
@@ -14,7 +14,7 @@ it with `lore lint adr`. Change it later without a new record.
 1. **Copy the template.** The template lives in
    `lore-workflow/skills/grilling/ADR-FORMAT.md`. Number the file one above the
    highest in `docs/adr/`: `docs/adr/NNNN-slug.md`. In a repo scaffolded by
-   `lore attach --scaffold-workflow`, add the stem `NNNN-slug` to the first
+   `lore setup scope --scaffold-workflow`, add the stem `NNNN-slug` to the first
    `{toctree}` block in `docs/adr/index.md`.
 
 2. **Fill in `Holds`.** Sort each part of the decision into one of three kinds:
@@ -40,7 +40,7 @@ it with `lore lint adr`. Change it later without a new record.
 5. **Run the check.**
 
    ```
-   lore lint adr
+   lore wiki lint adr
    ```
 
    The command reads `docs/adr/` under the current directory, or under the

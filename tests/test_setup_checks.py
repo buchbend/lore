@@ -1,156 +1,86 @@
-"""Tests for `lore doctor`."""
+"""The install checks behind the Check step of `lore setup`."""
 
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from lore_cli import doctor_cmd
+from lore_cli import checks
 
 
 @pytest.fixture
 def healthy_vault(tmp_path, monkeypatch):
     vault_root = tmp_path / "vault"
-    (vault_root / "wiki" / "ccat" / "sessions").mkdir(parents=True)
+    (vault_root / "wiki" / "ccat").mkdir(parents=True)
     monkeypatch.setenv("LORE_ROOT", str(vault_root))
     monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
     return vault_root
 
 
-def test_doctor_healthy(healthy_vault, capsys):
-    rc = doctor_cmd.main(["--cwd", str(healthy_vault), "--json"])
-    assert rc == 0
-    envelope = json.loads(capsys.readouterr().out)
-    assert envelope["schema"] == "lore.doctor/1"
-    assert envelope["data"]["ok"] is True
-    checks = {c["check"]: c for c in envelope["data"]["checks"]}
-    assert checks["LORE_ROOT"]["ok"] is True
-    assert checks["wikis"]["ok"] is True
-    assert checks["cache"]["ok"] is True
-    assert checks["MCP server"]["ok"] is True
+def _run(cwd: Path) -> dict[str, tuple[bool, str]]:
+    return {name: fn(str(cwd)) for name, fn, _ in checks._CHECKS}
 
 
-def test_doctor_no_wikis_fails(tmp_path, monkeypatch, capsys):
+def test_healthy_vault_passes_the_core_checks(healthy_vault):
+    results = _run(healthy_vault)
+    for name in ("LORE_ROOT", "wikis", "cache", "MCP server"):
+        assert results[name][0] is True, results[name]
+
+
+def test_no_wikis_fails(tmp_path, monkeypatch):
     vault_root = tmp_path / "vault"
     (vault_root / "wiki").mkdir(parents=True)
     monkeypatch.setenv("LORE_ROOT", str(vault_root))
-    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
-    rc = doctor_cmd.main(["--cwd", str(vault_root), "--json"])
-    assert rc == 1
-    envelope = json.loads(capsys.readouterr().out)
-    assert envelope["data"]["ok"] is False
-    checks = {c["check"]: c for c in envelope["data"]["checks"]}
-    assert checks["wikis"]["ok"] is False
-    assert "no wikis" in checks["wikis"]["message"]
+    ok, msg = checks._check_wikis(str(vault_root))
+    assert ok is False
+    assert "no wikis" in msg
 
 
-def test_doctor_lore_root_missing_fails(tmp_path, monkeypatch, capsys):
+def test_lore_root_missing_fails(tmp_path, monkeypatch):
     monkeypatch.setenv("LORE_ROOT", str(tmp_path / "does-not-exist"))
-    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
-    rc = doctor_cmd.main(["--cwd", str(tmp_path), "--json"])
-    assert rc == 1
-    envelope = json.loads(capsys.readouterr().out)
-    assert envelope["data"]["ok"] is False
+    ok, _ = checks._check_lore_root(str(tmp_path))
+    assert ok is False
 
 
 # ----- LORE_ROOT source label (issue #6) -----
 
 
-def test_doctor_reports_source_env(healthy_vault, capsys):
-    """When $LORE_ROOT is set, doctor labels the source ``$LORE_ROOT``."""
-    rc = doctor_cmd.main(["--cwd", str(healthy_vault), "--json"])
-    assert rc == 0
-    envelope = json.loads(capsys.readouterr().out)
-    msg = next(c for c in envelope["data"]["checks"] if c["check"] == "LORE_ROOT")["message"]
+def test_reports_source_env(healthy_vault):
+    """When $LORE_ROOT is set, the check labels the source ``$LORE_ROOT``."""
+    ok, msg = checks._check_lore_root(str(healthy_vault))
+    assert ok is True
     assert "[$LORE_ROOT]" in msg
 
 
-def test_doctor_reports_source_config(tmp_path, monkeypatch, capsys):
-    """When config-file is set (env unset), doctor labels source ``config-file``."""
+def test_reports_source_config(tmp_path, monkeypatch):
+    """When config-file is set (env unset), the check labels source ``config-file``."""
     vault = tmp_path / "vault"
     (vault / "wiki" / "ccat").mkdir(parents=True)
     cfg_dir = Path.home() / ".config" / "lore"
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "config.yml").write_text(f"lore_root: {vault}\n")
     monkeypatch.delenv("LORE_ROOT", raising=False)
-    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
-    rc = doctor_cmd.main(["--cwd", str(vault), "--json"])
-    assert rc == 0
-    envelope = json.loads(capsys.readouterr().out)
-    msg = next(c for c in envelope["data"]["checks"] if c["check"] == "LORE_ROOT")["message"]
+    ok, msg = checks._check_lore_root(str(vault))
+    assert ok is True
     assert "[config-file]" in msg
 
 
-def test_doctor_reports_source_default_when_unconfigured(tmp_path, monkeypatch, capsys):
-    """When neither env nor config-file is set, doctor labels source ``unconfigured (fallback)``."""
+def test_reports_source_default_when_unconfigured(monkeypatch):
+    """Neither env nor config-file: the label is ``unconfigured (fallback)``."""
     monkeypatch.delenv("LORE_ROOT", raising=False)
-    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
-    # Create the default ~/lore so the check itself passes existence,
-    # which lets us verify the label without conflating with the missing
-    # path failure mode.
     (Path.home() / "lore" / "wiki").mkdir(parents=True)
-    rc = doctor_cmd.main(["--cwd", str(Path.home() / "lore"), "--json"])
-    envelope = json.loads(capsys.readouterr().out)
-    msg = next(c for c in envelope["data"]["checks"] if c["check"] == "LORE_ROOT")["message"]
+    _, msg = checks._check_lore_root(str(Path.home() / "lore"))
     assert "[unconfigured (fallback)]" in msg
 
 
-def test_doctor_reports_source_even_on_missing_root(tmp_path, monkeypatch, capsys):
+def test_reports_source_even_on_missing_root(tmp_path, monkeypatch):
     """Missing path failure case still includes the source label."""
-    ghost = tmp_path / "ghost-vault"
-    monkeypatch.setenv("LORE_ROOT", str(ghost))
-    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
-    rc = doctor_cmd.main(["--cwd", str(tmp_path), "--json"])
-    assert rc == 1
-    envelope = json.loads(capsys.readouterr().out)
-    msg = next(c for c in envelope["data"]["checks"] if c["check"] == "LORE_ROOT")["message"]
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path / "ghost-vault"))
+    ok, msg = checks._check_lore_root(str(tmp_path))
+    assert ok is False
     assert "[$LORE_ROOT]" in msg
     assert "does not exist" in msg
-
-
-def test_doctor_attach_check_finds_lore_block(healthy_vault, tmp_path, monkeypatch, capsys):
-    """The `attach` check reads the synthesised block from the
-    attachments registry."""
-    from datetime import UTC, datetime
-    from lore_core.state.attachments import Attachment, AttachmentsFile
-    from lore_core.state.scopes import ScopesFile
-
-    project = tmp_path / "proj"
-    project.mkdir()
-    af = AttachmentsFile(healthy_vault); af.load()
-    af.add(Attachment(
-        path=project, wiki="ccat", scope="ccat",
-        attached_at=datetime.now(UTC), source="manual",
-    ))
-    af.save()
-    sf = ScopesFile(healthy_vault); sf.load()
-    sf.ingest_chain("ccat", "ccat")
-    sf.save()
-
-    rc = doctor_cmd.main(["--cwd", str(project), "--json"])
-    assert rc == 0
-    envelope = json.loads(capsys.readouterr().out)
-    checks = {c["check"]: c for c in envelope["data"]["checks"]}
-    assert "wiki=ccat" in checks["attach"]["message"]
-
-
-def test_doctor_has_no_capture_pipeline_panel(healthy_vault, capsys):
-    """Doctor is install-integrity only; capture activity lives in
-    `lore status`. The 'Capture pipeline' header must be absent.
-    """
-    rc = doctor_cmd.main(["--cwd", str(healthy_vault)])
-    out = capsys.readouterr().out
-    assert "Capture pipeline" not in out
-    assert rc == 0
-
-
-def test_doctor_footer_points_to_status(healthy_vault, capsys):
-    """Doctor's footer points the user at `lore status` for activity."""
-    doctor_cmd.main(["--cwd", str(healthy_vault)])
-    out = capsys.readouterr().out
-    assert "lore status" in out
 
 
 # ---------------------------------------------------------------------------
@@ -173,27 +103,27 @@ def _write_plugin_index(home: Path, *, version: str | None, scope: str = "user")
 
 
 def test_plugin_cache_drift_skips_when_no_cache(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
-    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    monkeypatch.setattr(checks.Path, "home", classmethod(lambda cls: tmp_path))
+    ok, msg = checks._check_claude_plugin_cache_drift(str(tmp_path))
     assert ok is True
     assert "no Claude plugin cache" in msg
 
 
 def test_plugin_cache_drift_skips_when_lore_not_installed_in_claude(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(checks.Path, "home", classmethod(lambda cls: tmp_path))
     _write_plugin_index(tmp_path, version=None)
-    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    ok, msg = checks._check_claude_plugin_cache_drift(str(tmp_path))
     assert ok is True
     assert "not present" in msg
 
 
 def test_plugin_cache_drift_passes_when_versions_match(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(checks.Path, "home", classmethod(lambda cls: tmp_path))
     _write_plugin_index(tmp_path, version="0.13.1")
     # Stub importlib.metadata.version to return the matching string.
     import importlib.metadata as _md
     monkeypatch.setattr(_md, "version", lambda _name: "0.13.1")
-    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    ok, msg = checks._check_claude_plugin_cache_drift(str(tmp_path))
     assert ok is True
     assert "0.13.1 matches pip" in msg
 
@@ -201,11 +131,11 @@ def test_plugin_cache_drift_passes_when_versions_match(tmp_path, monkeypatch):
 def test_plugin_cache_drift_fails_when_pip_lags_behind_cache(tmp_path, monkeypatch):
     """The headline footgun: `claude plugin update` advanced the cache,
     pipx wasn't upgraded, banner silently shows the old version."""
-    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(checks.Path, "home", classmethod(lambda cls: tmp_path))
     _write_plugin_index(tmp_path, version="0.13.1")
     import importlib.metadata as _md
     monkeypatch.setattr(_md, "version", lambda _name: "0.10.0")
-    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    ok, msg = checks._check_claude_plugin_cache_drift(str(tmp_path))
     assert ok is False
     assert "0.13.1" in msg
     assert "0.10.0" in msg
@@ -216,11 +146,11 @@ def test_plugin_cache_drift_fails_when_pip_lags_behind_cache(tmp_path, monkeypat
 def test_plugin_cache_drift_points_at_the_plugin_when_cache_lags_behind_pip(tmp_path, monkeypatch):
     """The binary was upgraded but the plugin was not: the fix is a plugin
     update and a restart, not another binary upgrade."""
-    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(checks.Path, "home", classmethod(lambda cls: tmp_path))
     _write_plugin_index(tmp_path, version="0.74.2")
     import importlib.metadata as _md
     monkeypatch.setattr(_md, "version", lambda _name: "0.75.0")
-    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    ok, msg = checks._check_claude_plugin_cache_drift(str(tmp_path))
     assert ok is False
     assert "claude plugin update lore@lore" in msg
     assert "restart Claude Code" in msg
@@ -228,30 +158,27 @@ def test_plugin_cache_drift_points_at_the_plugin_when_cache_lags_behind_pip(tmp_
 
 
 def test_plugin_cache_drift_unreadable_index_fails(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(checks.Path, "home", classmethod(lambda cls: tmp_path))
     plugins_dir = tmp_path / ".claude" / "plugins"
     plugins_dir.mkdir(parents=True)
     (plugins_dir / "installed_plugins.json").write_text("{not json")
-    ok, msg = doctor_cmd._check_claude_plugin_cache_drift(str(tmp_path))
+    ok, msg = checks._check_claude_plugin_cache_drift(str(tmp_path))
     assert ok is False
     assert "unreadable" in msg
 
 
-def test_plugin_cache_drift_fails_the_overall_run(healthy_vault, tmp_path, monkeypatch, capsys):
-    """Plugin-cache drift is a *failing* check, not advisory:
-    `lore doctor`'s overall exit code must go non-zero on drift, unlike the
-    old advisory behaviour."""
-    monkeypatch.setattr(doctor_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+def test_plugin_cache_drift_fails_the_overall_run(healthy_vault, tmp_path, monkeypatch):
+    """Plugin-cache drift is a *failing* check, not advisory: the Check step
+    of `lore setup` reports it as a failure."""
+    monkeypatch.setattr(checks.Path, "home", classmethod(lambda cls: tmp_path))
     _write_plugin_index(tmp_path, version="0.13.1")
     import importlib.metadata as _md
     monkeypatch.setattr(_md, "version", lambda _name: "0.10.0")
 
-    rc = doctor_cmd.main(["--cwd", str(healthy_vault), "--json"])
-    assert rc == 1
-    envelope = json.loads(capsys.readouterr().out)
-    assert envelope["data"]["ok"] is False
-    checks = {c["check"]: c for c in envelope["data"]["checks"]}
-    assert checks["plugin cache"]["ok"] is False
+    from lore_cli.setup_cmd import step_check
+
+    _, events = step_check(healthy_vault)
+    assert any(ok is False and msg.startswith("plugin cache:") for ok, msg in events)
 
 
 def test_doctor_capture_panel_lock_free_removed_smoke(tmp_path):
@@ -280,12 +207,12 @@ def test_check_spine_writable_reports_degrade_marker(tmp_path, monkeypatch):
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     (tmp_path / ".lore").mkdir(parents=True, exist_ok=True)
 
-    ok, msg = doctor_cmd._check_spine_writable(str(tmp_path))
+    ok, msg = checks._check_spine_writable(str(tmp_path))
     assert ok is True
     assert "spine" in msg.lower()
 
     (tmp_path / ".lore" / "spine-failed.marker").touch()
-    ok, msg = doctor_cmd._check_spine_writable(str(tmp_path))
+    ok, msg = checks._check_spine_writable(str(tmp_path))
     assert ok is False
     assert "spine write failed" in msg.lower()
 
@@ -293,19 +220,19 @@ def test_check_spine_writable_reports_degrade_marker(tmp_path, monkeypatch):
 def test_check_vale_reports_absence_without_failing(monkeypatch):
     """AC: `lore doctor` reports Vale's absence but never fails the run —
     the check is registered advisory (fails_run=False)."""
-    monkeypatch.setattr(doctor_cmd.shutil, "which", lambda name: None)
-    ok, msg = doctor_cmd._check_vale(".")
+    monkeypatch.setattr(checks.shutil, "which", lambda name: None)
+    ok, msg = checks._check_vale(".")
     assert ok is False
     assert "vale" in msg.lower()
     assert "not on path" in msg.lower()
 
-    entry = next(c for c in doctor_cmd._CHECKS if c[0] == "vale")
+    entry = next(c for c in checks._CHECKS if c[0] == "vale")
     assert entry[2] is False, "vale check must not fail the overall doctor run"
 
 
 def test_check_vale_reports_presence(monkeypatch):
-    monkeypatch.setattr(doctor_cmd.shutil, "which", lambda name: "/usr/local/bin/vale")
-    ok, msg = doctor_cmd._check_vale(".")
+    monkeypatch.setattr(checks.shutil, "which", lambda name: "/usr/local/bin/vale")
+    ok, msg = checks._check_vale(".")
     assert ok is True
     assert "/usr/local/bin/vale" in msg
 
@@ -328,13 +255,13 @@ def test_check_mcp_imports_rejects_an_mcp_release_without_the_decorators(monkeyp
 
     monkeypatch.setattr(mcp.server, "Server", _ServerWithoutDecorators)
 
-    ok, msg = doctor_cmd._check_mcp_imports(".")
+    ok, msg = checks._check_mcp_imports(".")
     assert ok is False
     assert "list_tools" in msg
     assert "mcp" in msg.lower()
 
 
 def test_check_mcp_imports_passes_against_the_supported_line():
-    ok, msg = doctor_cmd._check_mcp_imports(".")
+    ok, msg = checks._check_mcp_imports(".")
     assert ok is True
     assert "tools" in msg

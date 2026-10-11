@@ -1,13 +1,11 @@
 """`lore wiki ...` — manage individual wikis under $LORE_ROOT/wiki/.
 
-The canonical home for wiki-lifecycle verbs going forward. Today it
-hosts ``new`` (scaffold a new wiki); future work can land alongside
-without inventing more top-level CLI verbs.
+The canonical home for wiki-lifecycle verbs going forward. It hosts
+``new`` (scaffold), ``lint`` and ``curate``.
 """
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from enum import Enum
@@ -34,7 +32,7 @@ class WikiMode(str, Enum):
     team = "team"
 
 
-SUBDIRS = ("projects", "concepts", "decisions", "sessions", "inbox")
+SUBDIRS = ("projects", "concepts", "decisions", "inbox")
 
 # Seeded on wiki creation. Fully commented so `load_scopes_yml` parses it
 # to an empty tree — a starting point, never a phantom scope. The shape
@@ -84,8 +82,6 @@ def scaffold_wiki(
         templates_src = _plugin_templates_dir()
         claude_md = target / "CLAUDE.md"
         claude_md.write_text((templates_src / "wiki-CLAUDE.md").read_text())
-        (target / "templates").mkdir(exist_ok=True)
-        shutil.copy(templates_src / "session.md", target / "templates" / "session.md")
 
         # Seed a commented `_scopes.yml` so the scope registry has an
         # obvious home the moment the wiki exists (never overwrite one a
@@ -96,7 +92,7 @@ def scaffold_wiki(
 
         (target / "_index.txt").write_text(
             f"# {name.upper()} Knowledge Index\n\n"
-            f"(Newly created wiki — run `lore lint --wiki {name}` to populate.)\n"
+            f"(Newly created wiki — run `lore wiki lint --wiki {name}` to populate.)\n"
         )
 
     if mode == "team":
@@ -115,7 +111,7 @@ def scaffold_wiki(
         )
 
     console.print(f"[green]Created {target}[/green]")
-    console.print(f"Next: run [cyan]lore lint --wiki {name}[/cyan] to regenerate catalogs.")
+    console.print(f"Next: run [cyan]lore wiki lint --wiki {name}[/cyan] to regenerate catalogs.")
     return target
 
 
@@ -133,6 +129,12 @@ def cmd_new(
     """Scaffold a new wiki under $LORE_ROOT/wiki/."""
     scaffold_wiki(name, mode=mode.value, remote=remote, force=force)
 
+
+# `lint` (was `lore lint`) and `curate` (was `lore curator`) live under `wiki`.
+from lore_cli import curator_cmd, lint_cmd  # noqa: E402
+
+app.add_typer(lint_cmd.app, name="lint", help="Health-check the vault, regenerate catalogs.")
+app.add_typer(curator_cmd.app, name="curate", help=curator_cmd.app.info.help)
 
 main = argv_main(app)
 

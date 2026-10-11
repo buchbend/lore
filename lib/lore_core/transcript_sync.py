@@ -34,8 +34,7 @@ from pathlib import Path
 
 from lore_core.io import atomic_write_text
 from lore_core.ledger import TranscriptLedger
-from lore_core.scope_resolver import resolve_scope
-from lore_core.state.attachments import AttachmentsFile
+from lore_core.route import resolve_route
 from lore_core.types import TranscriptHandle
 
 
@@ -212,7 +211,7 @@ def sync_transcripts(
     """Mirror each ledger transcript into its wiki's ``.transcripts/``.
 
     Walks the ``TranscriptLedger`` entries, resolves each entry's source
-    cwd to a wiki via ``resolve_scope``, and copies the transcript file
+    cwd to a wiki via ``resolve_route``, and copies the transcript file
     into ``<lore_root>/wiki/<wiki>/.transcripts/<uuid>.jsonl``. Ensures
     the wiki has ``.transcripts/`` in its ``.gitignore`` before any
     copy so raw transcripts can never race into a staged commit.
@@ -226,9 +225,6 @@ def sync_transcripts(
     one bad source shouldn't block the rest).
     """
     ledger = TranscriptLedger(lore_root)
-    attachments = AttachmentsFile(lore_root)
-    attachments.load()
-
     result = SyncResult()
 
     for raw in ledger._load().values():
@@ -255,8 +251,8 @@ def sync_transcripts(
             result.skipped += 1
             continue
 
-        scope = resolve_scope(entry.directory, attachments=attachments)
-        if scope is None:
+        scope = resolve_route(entry.directory)
+        if not scope.wiki:
             result.skipped += 1
             continue
 
@@ -265,6 +261,10 @@ def sync_transcripts(
             continue
 
         wiki_dir = lore_root / "wiki" / scope.wiki
+        if not wiki_dir.is_dir():
+            # The route names a wiki this vault lacks: create no folder.
+            result.skipped += 1
+            continue
         try:
             _ensure_transcripts_gitignored(wiki_dir)
         except GitignoreNegationError as exc:

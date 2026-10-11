@@ -5,7 +5,7 @@
 file, or hook instructs a model to call them). The underlying core they
 wrapped stays reachable through other paths: `lore_core/wikilinks.py` backs
 `lore_drill`'s expand stage, `lore briefing gather` is a CLI command, and
-`lore_core.journal` is still written via `lore_journal_write`.
+`lore_journal_write` is gone with the journal (#469).
 
 `lore_resume` joins the removed set on its own count: telemetry over 307
 sessions recorded zero calls (ADR 0007, issue #359). Its gather logic that
@@ -23,12 +23,13 @@ REMOVED_TOOLS = {
     "lore_journal_read",
     "lore_briefing_gather",
     "lore_resume",
+    "lore_journal_write",
 }
 
 
-def test_tool_schema_has_exactly_twelve_tools() -> None:
+def test_tool_schema_has_exactly_eleven_tools() -> None:
     names = [t["name"] for t in _tool_schema()]
-    assert len(names) == 12, names
+    assert len(names) == 11, names
 
 
 def test_tool_schema_excludes_removed_tools() -> None:
@@ -52,5 +53,13 @@ def test_removed_handlers_no_longer_defined() -> None:
         "handle_journal_read",
         "handle_briefing_gather",
         "handle_resume",
+        "handle_journal_write",
     ):
         assert not hasattr(server, handler), handler
+
+
+def test_tool_texts_name_the_route_not_attachments() -> None:
+    """Attach is gone (PRD 0016); tool texts must not send agents to it."""
+    import json
+
+    assert "attachment" not in json.dumps(_tool_schema()).lower()

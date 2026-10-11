@@ -56,26 +56,18 @@ def _build_app() -> typer.Typer:
     # its own commands / callback. Registering them via add_typer gives a
     # unified `lore --help` listing.
     from lore_cli import (
-        attach_cmd,
         codemap_cmd,
         config_cmd,
-        curator_cmd,
-        doctor_cmd,
         drill_cmd,
         handover_cmd,
         hooks,
         inbox_cmd,
         ingest_cmd,
-        init_cmd,
-        install_cmd,
-        journal_cmd,
-        lint_cmd,
+        integrations,
         mcp_cmd,
         migrate_cmd,
-        project_cmd,
-        scopes_cmd,
         search_cmd,
-        session_cmd,
+        setup_cmd,
         status_cmd,
         style_cmd,
         tier_cmd,
@@ -99,53 +91,39 @@ def _build_app() -> typer.Typer:
     _KN = "Knowledge"
     _ADV = "Advanced"
 
-    app.add_typer(install_cmd.app, name="install", rich_help_panel=_GS)
-    app.add_typer(init_cmd.app, name="init", rich_help_panel=_GS)
-    app.add_typer(attach_cmd.app, name="attach", rich_help_panel=_GS)
+    app.add_typer(setup_cmd.app, name="setup", rich_help_panel=_GS)
     app.add_typer(status_cmd.app, name="status", rich_help_panel=_GS)
-    app.add_typer(doctor_cmd.app, name="doctor", rich_help_panel=_GS)
     app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
 
     app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
-    app.add_typer(drill_cmd.app, name="drill", rich_help_panel=_KN)
-    app.add_typer(session_cmd.app, name="session", rich_help_panel=_KN)
-    app.add_typer(handover_cmd.app, name="handover", rich_help_panel=_KN)
-    app.add_typer(project_cmd.app, name="project", rich_help_panel=_KN)
+    app.add_typer(drill_cmd.app, name="read", rich_help_panel=_KN)
+    app.add_typer(handover_cmd.app, name="handover", hidden=True)
     app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
-    app.add_typer(lint_cmd.app, name="lint", rich_help_panel=_KN)
-    app.add_typer(curator_cmd.app, name="curator", rich_help_panel=_KN)
-    app.add_typer(toggle_cmd.on_app, name="on", rich_help_panel=_KN)
-    app.add_typer(toggle_cmd.off_app, name="off", rich_help_panel=_KN)
+    app.add_typer(toggle_cmd.on_app, name="on", hidden=True)
+    app.add_typer(toggle_cmd.off_app, name="off", hidden=True)
 
-    app.add_typer(tier_cmd.app, name="tier", rich_help_panel=_ADV)
-    app.add_typer(style_cmd.app, name="style", rich_help_panel=_ADV)
-    app.add_typer(codemap_cmd.app, name="codemap", rich_help_panel=_ADV)
-    app.add_typer(hooks.hook_app, name="hook", rich_help_panel=_ADV)
-    app.add_typer(inbox_cmd.app, name="inbox", rich_help_panel=_ADV)
-    # Parked feature — off by default, so it stays out of `lore --help`.
-    # The verbs keep working for anyone who already turned it on.
-    app.add_typer(journal_cmd.app, name="journal", hidden=True)
-    app.add_typer(ingest_cmd.app, name="ingest", rich_help_panel=_ADV)
-    app.add_typer(mcp_cmd.app, name="mcp", rich_help_panel=_ADV)
-    app.add_typer(migrate_cmd.app, name="migrate", rich_help_panel=_ADV)
-    app.add_typer(scopes_cmd.app, name="scopes", rich_help_panel=_ADV)
-    app.add_typer(trace_cmd.app, name="trace", rich_help_panel=_ADV)
-    app.add_typer(transcripts_cmd.app, name="transcripts", rich_help_panel=_ADV)
-    app.add_typer(workflow_cmd.app, name="workflow", rich_help_panel=_ADV)
+    app.add_typer(tier_cmd.app, name="tier", hidden=True)
+    app.add_typer(style_cmd.app, name="style", hidden=True)
+    app.add_typer(codemap_cmd.app, name="codemap", hidden=True)
+    app.add_typer(hooks.hook_app, name="hook", hidden=True)
+    app.add_typer(inbox_cmd.app, name="inbox", hidden=True)
+    app.add_typer(ingest_cmd.app, name="ingest", hidden=True)
+    app.add_typer(mcp_cmd.app, name="mcp", hidden=True)
+    app.add_typer(migrate_cmd.app, name="migrate", hidden=True)
+    app.add_typer(trace_cmd.app, name="trace", hidden=True)
+    app.add_typer(transcripts_cmd.app, name="transcripts", hidden=True)
+    app.add_typer(workflow_cmd.app, name="workflow", hidden=True)
 
     app.command(
         "uninstall",
-        help="Symmetric semantic remove (alias for `install uninstall`).",
-    )(install_cmd.build_install_command(
-        "uninstall",
-        "Top-level `lore uninstall` — same flags as `lore install uninstall`.",
-    ))
+        help="Remove Lore's Claude Code and Cursor wiring.",
+    )(integrations.uninstall_command)
 
     app.command(
         "update",
         help="Update Lore (Python package + Claude plugin) if a new release is on main.",
         rich_help_panel=_GS,
-    )(install_cmd.update_command)
+    )(integrations.update_command)
 
     return app
 

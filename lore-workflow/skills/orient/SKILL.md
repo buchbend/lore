@@ -22,6 +22,12 @@ Pick the weight:
 
 A written, clear issue skips this skill: run `build` in `issue` mode.
 
+Two options combine with either mode:
+
+- **Page** ("as an artifact", "as a page"): the brief also goes out as a page. See step 3.
+- **Named agents** ("orient with `science-pm-counselor`"): each named subagent reviews the intent
+  through its own lens. See step 2.
+
 ## 1. Capture intent
 
 Take the user's stated goal as the seed, verbatim. Do not expand it or jump to solutions. When
@@ -49,6 +55,12 @@ missed, one for the code map, one for cross-repo consumers when the intent spans
 them in one message at the `mid` tier (required): pass `lore tier resolve mid` as each model; see
 [TIER-DELEGATION.md](../../TIER-DELEGATION.md). Scale the fan-out to the ask.
 
+**Named agents** run in both modes, after the pack, in the same message as any explorers. Spawn
+each one as its own `subagent_type` and keep its own model; set no tier. Give it the verbatim
+intent and the pack facts that bear on its lens. Ask for the constraints, risks and questions it
+sees, each with its evidence. A name that is not an available agent type: say so in the brief and
+go on without it. Fold each return into the brief and credit the agent by name.
+
 ## 3. Reflect back
 
 **Full mode.** One screen, about 300 words, hard cap. Put what the user must react to first:
@@ -65,6 +77,13 @@ scope, and three to five questions, each with your recommended answer filled in.
 once ("yes to your recs except #3"). Ask a second round only when an answer forks the design.
 
 The cap governs the printed brief, never the homework behind it.
+
+**Page.** Read `lore config get workflow.pages`. On `artifact`, publish the page as an artifact.
+On `html`, or when the session has no Artifact tool, write `<skill>-<slug>.html` in the scratchpad.
+The page holds the brief's sections in the same order, then the long version under them: every
+relevant-context fact with its source, the named agents' returns, and the code map excerpt. The
+chat still carries the printed brief and the page link. The loop stays in the chat; republish the
+same page after each correction.
 
 ## 4. Loop
 

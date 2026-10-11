@@ -123,19 +123,14 @@ def test_capture_state_unattached_cwd(tmp_path: Path) -> None:
 
 
 def test_capture_state_scope_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+    from conftest import seed_scope
 
     lore_root = _seed_lore_root(tmp_path)
     project = tmp_path / "proj"
     project.mkdir()
 
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
-    af = AttachmentsFile(lore_root); af.load()
-    af.add(Attachment(
-        path=project, wiki="private", scope="proj:test",
-        attached_at=_NOW, source="manual",
-    ))
-    af.save()
+    seed_scope(project, "private", name="proj:test")
 
     state = query_capture_state(lore_root, cwd=project, now=_NOW)
     assert state.scope_attached is True

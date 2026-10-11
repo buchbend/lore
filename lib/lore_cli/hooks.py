@@ -39,7 +39,6 @@ from lore_core.scopes import (
 from lore_core.session_start import MAX_CONTEXT_CHARS
 from lore_core.session_start import load_directive_lines as _load_directive_lines
 from lore_core.session_start import maybe_auto_push_for_scope as _maybe_auto_push_for_scope
-from lore_core.session_start import offer_notice_line as _offer_notice_line
 from lore_core.session_start import pre_compact_text as _pre_compact
 from lore_core.session_start import record_auto_pull as _record_auto_pull
 from lore_core.session_start import recorded_auto_pull_warning as _recorded_auto_pull_warning
@@ -101,7 +100,7 @@ def _context_log() -> str:
                 "Claude Code session may not have written one yet)_\n\n"
                 + body
             )
-    return "lore: no context log found. SessionStart may not have fired. Run `lore doctor`.\n"
+    return "lore: no context log found. SessionStart may not have fired. Run `lore setup`.\n"
 
 
 # ---------------------------------------------------------------------------
@@ -245,9 +244,9 @@ def _hook_failure_banner(
         "\n"
         "Likely causes + fixes:\n"
         "  • Stale install (e.g. templates not bundled): "
-        "[bold]lore install --upgrade[/bold] (or re-run install.sh).\n"
+        "[bold]lore update[/bold] (or re-run install.sh).\n"
         "  • Binary vs plugin-cache drift: "
-        "[bold]lore doctor[/bold] flags it and prints the exact command.\n"
+        "[bold]lore setup[/bold] checks and repairs it.\n"
         "  • If the error persists, file an issue: "
         "https://github.com/buchbend/lore/issues\n"
     )
@@ -314,7 +313,7 @@ def _shield_hook(typer_event: str):
 
 import typer  # noqa: E402
 from lore_adapters import get_adapter  # noqa: E402
-from lore_core.scope_resolver import resolve_scope  # noqa: E402
+from lore_core.route import resolve_route  # noqa: E402
 from lore_core.spawn_gate import check_spawn  # noqa: E402
 from lore_core.spine import ErrorCode, emit_hook_event  # noqa: E402
 
@@ -399,34 +398,6 @@ def _session_off_all() -> bool:
         return False
     from lore_core.toggles import is_off
     return is_off("all", sid)
-
-
-def _journal_directive_lines() -> list[str]:
-    """Invitation directive for the AI journal when the feature flag is on.
-
-    Returns the lines appended to the SessionStart additionalContext
-    directive cluster when ``journal.enabled`` is set in the root
-    config. Trigger-moment framing rather than passive permission:
-    names concrete moments where a gut-check ("anything to save?")
-    is worth pausing for, and points the lens both inward (about
-    self) and outward (about the user, the work, the conversation).
-    Off by default; enable with ``lore journal enable``.
-    """
-    try:
-        from lore_core import journal
-        if not journal.enabled():
-            return []
-    except Exception:  # noqa: BLE001 — never break SessionStart
-        return []
-    return [
-        "- **AI Journal active.** Pause and ask *anything to save?* "
-        "when you spot a smell/pattern bigger than the task, get "
-        "corrected substantively, notice an unpredictable user pivot, "
-        "or hit an unusually sharp/leaky framing. Append via "
-        "`lore_journal_write` (kind=`ai`). Reader is future-you — "
-        "candid, not sycophantic.",
-        "",
-    ]
 
 
 def _citation_directive_lines() -> list[str]:
@@ -556,7 +527,7 @@ def cmd_session_start(
         False,
         "--probe",
         hidden=True,
-        help="Suppress all side-effects; used by lore doctor.",
+        help="Suppress all side-effects; used by lore setup's checks.",
     ),
 ) -> None:
     """Inject vault context at session start."""
@@ -572,19 +543,10 @@ def cmd_session_start(
         with contextlib.suppress(Exception):  # codemap must never crash SessionStart
             _spawn_codemap_refresh(cwd_resolved)
 
-    # Surface pending `.lore.yml` offers at the top of the banner.
-    # Defensive: offer rendering reads multiple files and classifies state;
-    # we explicitly never let any failure here crash the SessionStart hook.
-    try:
-        notice = _offer_notice_line(cwd_resolved)
-        if notice:
-            out = notice + "\n\n" + out
-    except Exception:  # noqa: BLE001 - hook must never crash SessionStart
-        pass
-
-    # Resolve scope once — reused by the banner, curator spawns, and
-    # transcript sync below. None means "unattached cwd."
-    scope = resolve_scope(cwd_resolved)
+    # Resolve the route once — reused by the banner, curator spawns, and
+    # transcript sync below. None means "no wiki routes this cwd."
+    route = resolve_route(cwd_resolved)
+    scope = route if route.wiki else None
     lore_root = _infer_lore_root(scope.claude_md_path) if scope is not None else None
 
     if scope is None and not probe:
@@ -731,7 +693,7 @@ def cmd_stop(
         help="Print raw text instead of Claude Code JSON envelope.",
     ),
 ) -> None:
-    """Hint to capture a session note."""
+    """Stop hook: a no-op; capture is automatic."""
     if _in_curator_mode():
         return
     _read_hook_payload()
@@ -789,10 +751,10 @@ def cmd_user_prompt_submit(
     if _session_off_all():
         return
     cwd_resolved = Path(_resolve_cwd(cwd))
-    scope = resolve_scope(cwd_resolved)
-    if scope is None:
+    route = resolve_route(cwd_resolved)
+    if not route.wiki:
         return
-    lore_root = _infer_lore_root(scope.claude_md_path)
+    lore_root = _infer_lore_root(route.claude_md_path)
 
     # Mid-session transcript discovery + mtime refresh. Closes the
     # SessionStart-vs-transcript-creation race (sub-second; SessionStart
@@ -848,31 +810,19 @@ def _resolve_cwd_capture() -> Path:
 
 
 def _nudge_unattached(cwd: Path, out: str) -> None:
-    """One-time nudge when session starts in an unattached directory."""
+    """One-time nudge when a session starts where no scope routes the cwd."""
     import hashlib
-    nudge_dir = _cache_dir() / "nudged"
-    cwd_hash = hashlib.sha256(str(cwd).encode()).hexdigest()[:16]
-    marker = nudge_dir / cwd_hash
+
+    marker = _cache_dir() / "nudged" / hashlib.sha256(str(cwd).encode()).hexdigest()[:16]
     if marker.exists():
         return
     try:
-        lore_root = get_lore_root()
-        from lore_core.state.attachments import AttachmentsFile
-        af = AttachmentsFile(lore_root)
-        af.load()
-        if any(d.path == cwd for d in af._declined):
-            return
-    except (OSError, json.JSONDecodeError):
-        # Couldn't read the declined list — fall through and consider nudging.
-        pass
-    try:
-        nudge_dir.mkdir(parents=True, exist_ok=True)
+        marker.parent.mkdir(parents=True, exist_ok=True)
         marker.touch()
     except OSError:
         pass
     print(
-        "lore: this directory is not attached — sessions won't be captured. "
-        "Run /lore:attach to connect it.",
+        "lore: no scope covers this folder. Run `lore setup scope` to add one.",
         file=sys.stderr,
     )
 
@@ -959,14 +909,15 @@ def capture(
     # vault root would still be captured).
     try:
         _vault = get_lore_root().resolve()
-        if Path(cwd).resolve() == _vault and resolve_scope(cwd) is None:
+        if Path(cwd).resolve() == _vault and not resolve_route(cwd).wiki:
             return
     except OSError:
         # Path resolution failed (broken symlink, permission, etc.); fall
         # through so the calling capture path still runs.
         pass
 
-    scope = resolve_scope(cwd)
+    route = resolve_route(cwd)
+    scope = route if route.wiki else None
     if scope is None:
         # Unattached cwd — no ledger work to do, but we still emit a hook
         # event so "hook fired but declined" is distinguishable from "hook

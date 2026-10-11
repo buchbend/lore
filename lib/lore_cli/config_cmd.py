@@ -9,7 +9,6 @@ import click
 import typer
 from lore_core.config import get_lore_root, get_wiki_root
 from lore_core.config_schema import ConfigSchema
-from lore_core.timefmt import relative_time
 from rich.console import Console
 
 app = typer.Typer(
@@ -37,15 +36,11 @@ def config(ctx: typer.Context) -> None:
     """Show vault layout (no subcommand) or dispatch to show / get / set / schema."""
     if ctx.invoked_subcommand is not None:
         return
-    from datetime import UTC, datetime
-
     try:
         lore_root = get_lore_root()
     except Exception:
-        console.print("[red]LORE_ROOT not set.[/red] Run `lore init` or export $LORE_ROOT.")
+        console.print("[red]LORE_ROOT not set.[/red] Run `lore setup` or export $LORE_ROOT.")
         raise typer.Exit(1) from None
-
-    now = datetime.now(UTC)
 
     console.print(f"  Vault: {_format_path(lore_root)}")
 
@@ -64,38 +59,29 @@ def config(ctx: typer.Context) -> None:
 
     console.print()
 
-    from lore_core.state.attachments import AttachmentsFile
+    from lore_core.config import user_config_path
+    from lore_core.root_config import load_root_config
 
-    af = AttachmentsFile(lore_root)
-    af.load()
-    attachments = af.all()
-
-    if attachments:
-        console.print(f"  Attachments ({len(attachments)}):")
-        for a in attachments:
-            rel = relative_time(a.attached_at, now=now)
-            console.print(
-                f"    {_format_path(a.path):40s} -> {a.wiki}:{a.scope}  ({a.source}, {rel})"
-            )
+    scopes = load_root_config(lore_root).scopes
+    if scopes:
+        console.print(f"  Scopes ({len(scopes)}):")
+        for name, sc in scopes.items():
+            sc = sc if isinstance(sc, dict) else {}
+            console.print(f"    {name:20s} {sc.get('path')} -> {sc.get('wiki') or 'default wiki'}")
     else:
-        console.print("  Attachments: [dim]none[/dim]")
+        console.print("  Scopes: [dim]none[/dim] (add one with [cyan]lore setup scope[/cyan])")
 
     console.print()
     console.print("  [dim]Files you edit:[/dim]")
+    console.print(f"    {_format_path(user_config_path()):50s} your config")
     for wiki in wikis:
         wiki_cfg = lore_root / "wiki" / wiki / ".lore-wiki.yml"
         if wiki_cfg.exists():
             console.print(f"    {_format_path(wiki_cfg):50s} wiki config")
-    for a in attachments:
-        lore_yml = a.path / ".lore.yml"
-        if lore_yml.exists():
-            console.print(f"    {_format_path(lore_yml):50s} repo offer")
 
     console.print()
     console.print("  [dim]Files Lore manages (do not edit):[/dim]")
     for name, desc in [
-        ("attachments.json", "attachment state"),
-        ("scopes.json", "scope hierarchy"),
         ("transcript-ledger.json", "transcript tracking"),
     ]:
         p = lore_root / ".lore" / name
@@ -103,7 +89,7 @@ def config(ctx: typer.Context) -> None:
             console.print(f"    {_format_path(p):50s} {desc}")
 
     console.print()
-    console.print("  For health checks: [cyan]lore doctor[/cyan]")
+    console.print("  For health checks: [cyan]lore setup[/cyan]")
     console.print("  For live activity: [cyan]lore status[/cyan]")
     console.print(
         "  For typed config: [cyan]lore config show[/cyan] · [cyan]get[/cyan] · "
@@ -133,7 +119,7 @@ def _resolve_target(wiki: str | None) -> tuple[Path, Any, Path, ConfigSchema]:
         try:
             lore_root = get_lore_root()
         except Exception:
-            console.print("[red]LORE_ROOT not set.[/red] Run `lore init` or export $LORE_ROOT.")
+            console.print("[red]LORE_ROOT not set.[/red] Run `lore setup` or export $LORE_ROOT.")
             raise typer.Exit(1) from None
         return lore_root, mod, mod.ROOT_SCHEMA.config_path_fn(lore_root), mod.ROOT_SCHEMA
 
@@ -183,7 +169,7 @@ def cmd_show(
     try:
         lore_root = get_lore_root()
     except Exception:
-        console.print("[red]LORE_ROOT not set.[/red] Run `lore init` or export $LORE_ROOT.")
+        console.print("[red]LORE_ROOT not set.[/red] Run `lore setup` or export $LORE_ROOT.")
         raise typer.Exit(1) from None
 
     rows = walk_fields(lore_root)
@@ -195,8 +181,9 @@ def cmd_show(
         console.print("[dim]no matching fields[/dim]")
         return
 
-    cfg_path = lore_root / ".lore" / "config.yml"
-    console.print(f"  [dim]Source:[/dim] {_format_path(cfg_path)}")
+    from lore_core.config import user_config_path
+
+    console.print(f"  [dim]Source:[/dim] {_format_path(user_config_path())}")
     console.print()
     console.print(_build_resolved_table(rows))
     console.print()
@@ -205,7 +192,7 @@ def cmd_show(
 
 
 _WIKI_OPTION = typer.Option(
-    None, "--wiki", help="Target a wiki's .lore-wiki.yml instead of the root config."
+    None, "--wiki", help="Target a wiki's .lore-wiki.yml instead of the person config."
 )
 
 
@@ -319,7 +306,7 @@ def cmd_edit(wiki: str | None = _WIKI_OPTION) -> None:
         except yaml.YAMLError as e:
             errors = [f"malformed YAML: {e}"]
         else:
-            errors = validate_raw(schema.default_factory, raw)
+            errors = validate_raw(schema.default_factory, raw, source=cfg_path)
 
         if not errors:
             console.print(f"  [green]✓[/green] saved [dim]→ {_format_path(cfg_path)}[/dim]")
@@ -351,5 +338,53 @@ def cmd_schema() -> None:
     console.print()
     console.print(
         "  [dim]This is the full set of typed fields stored in[/dim] "
-        "[cyan]$LORE_ROOT/.lore/config.yml[/cyan]."
+        "[cyan]~/.config/lore/config.yml[/cyan]."
     )
+
+
+secret_app = typer.Typer(
+    add_completion=False,
+    help="Manage secret values in ~/.config/lore/secrets.yml (mode 0600).",
+    no_args_is_help=True,
+)
+app.add_typer(secret_app, name="secret")
+
+
+def _secrets_or_exit(fn, *args):
+    from lore_core.secrets import SecretsError
+
+    try:
+        return fn(*args)
+    except SecretsError as e:
+        console.print(f"[red]{e}[/red]", soft_wrap=True)
+        raise typer.Exit(1) from None
+
+
+@secret_app.command("set")
+def cmd_secret_set(name: str = typer.Argument(..., help="Secret name, e.g. PM_TOKEN.")) -> None:
+    """Prompt for a value and store it under NAME."""
+    from lore_core.secrets import secrets_path, set_secret
+
+    value = typer.prompt(f"Value for {name}", hide_input=True)
+    _secrets_or_exit(set_secret, name, value)
+    console.print(f"  [green]✓[/green] {name} [dim]→ {_format_path(secrets_path())}[/dim]")
+
+
+@secret_app.command("unset")
+def cmd_secret_unset(name: str = typer.Argument(..., help="Secret name.")) -> None:
+    """Remove NAME from the secrets file."""
+    from lore_core.secrets import unset_secret
+
+    if not _secrets_or_exit(unset_secret, name):
+        console.print(f"[dim]{name} is not set[/dim]")
+        return
+    console.print(f"  [green]✓[/green] {name} removed")
+
+
+@secret_app.command("list")
+def cmd_secret_list() -> None:
+    """Print the names of stored secrets, never their values."""
+    from lore_core.secrets import read_secrets
+
+    for name in sorted(_secrets_or_exit(read_secrets)):
+        print(name)

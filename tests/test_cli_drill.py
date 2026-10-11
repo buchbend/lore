@@ -1,4 +1,4 @@
-"""`lore drill` CLI verb — wraps handle_drill, renders trace + result."""
+"""`lore read` CLI verb (was `lore drill`) — wraps handle_drill, renders trace + result."""
 
 from __future__ import annotations
 
@@ -97,3 +97,13 @@ def test_drill_renders_skipped_stages(runner):
     assert "skipped" in result.output
     assert "search_returned_zero" in result.output
     assert "No notes" in result.output
+
+
+def test_read_output_says_read_trace_not_drill(runner):
+    from lore_cli.drill_cmd import app
+
+    with patch("lore_cli.drill_cmd.handle_drill", return_value=_envelope()):
+        result = runner.invoke(app, ["foo"])
+
+    assert "drill trace" not in result.output
+    assert "read trace" in result.output

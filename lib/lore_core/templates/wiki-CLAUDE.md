@@ -27,9 +27,7 @@ hook.
 - `projects/` — project knowledge, organized by repo or subsystem
 - `concepts/` — cross-cutting patterns that span multiple repos
 - `decisions/` — ADRs: context, decision, consequences, alternatives
-- `sessions/` — work session logs routed to this wiki
 - `inbox/` — drop files here for processing with `/lore:inbox`
-- `templates/` — note templates
 
 Typically mounted at `$LORE_ROOT/wiki/<name>/` in a Lore root vault.
 

@@ -107,26 +107,21 @@ def test_load_scopes_yml_malformed(tmp_path):
 
 
 def test_resolve_attach_block_returns_scope_and_merged_block(tmp_path, monkeypatch):
-    """_resolve_attach_block is a thin wrapper over the registry resolver.
-    It returns the synthetic claude_md_path sentinel and a block dict
-    derived from the attachment."""
-    from datetime import UTC, datetime
+    """_resolve_attach_block is a thin wrapper over the route. It returns
+    the synthetic <repo>/CLAUDE.md sentinel and a block dict."""
+    import subprocess
 
+    from conftest import seed_scope
     from lore_core.session import _resolve_attach_block
-    from lore_core.state.attachments import Attachment, AttachmentsFile
 
     parent = tmp_path / "repo"
     child = parent / "sub" / "deep"
     child.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(parent)], check=True)
 
     (tmp_path / ".lore").mkdir()
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
-    af = AttachmentsFile(tmp_path); af.load()
-    af.add(Attachment(
-        path=parent, wiki="ccat", scope="ccat:data-center:data-transfer",
-        attached_at=datetime(2026, 4, 22, 9, 0, tzinfo=UTC), source="manual",
-    ))
-    af.save()
+    seed_scope(parent, "ccat", name="ccat:data-center:data-transfer")
 
     result = _resolve_attach_block(child)
     assert result is not None
@@ -178,17 +173,11 @@ def fake_vault(tmp_path, monkeypatch):
 
 
 def _register_attachment(lore_root: Path, repo: Path, *, wiki: str, scope: str) -> None:
-    """Register ``repo`` in ``lore_root/.lore/attachments.json``."""
-    from datetime import UTC, datetime
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+    """Route ``repo`` to ``wiki`` with a scope in the person config (PRD 0016)."""
+    from conftest import seed_scope
 
     (lore_root / ".lore").mkdir(exist_ok=True)
-    af = AttachmentsFile(lore_root); af.load()
-    af.add(Attachment(
-        path=repo, wiki=wiki, scope=scope,
-        attached_at=datetime(2026, 4, 22, 9, 0, tzinfo=UTC), source="manual",
-    ))
-    af.save()
+    seed_scope(repo, wiki, name=scope)
 
 
 def test_session_start_from_lore_happy_path(fake_vault, tmp_path, monkeypatch):
@@ -284,10 +273,9 @@ def test_session_start_never_shows_issue_or_pr_counts(fake_vault, tmp_path, monk
     assert "PR" not in status_line
 
 
-def test_session_start_no_lore_config_emits_attach_hint(fake_vault, tmp_path, monkeypatch):
-    """Repo without a `## Lore` block surfaces a clear install/attach
-    instruction instead of guessing a wiki (PR 5 of #80 deleted the
-    legacy repo→wiki resolver + single-wiki fallback)."""
+def test_session_start_no_scope_emits_setup_scope_hint(fake_vault, tmp_path, monkeypatch):
+    """A repo no scope covers surfaces `lore setup scope` instead of
+    guessing a wiki (PR 5 of #80 deleted the single-wiki fallback)."""
     vault, wiki = fake_vault
     repo_dir = tmp_path / "no-lore"
     repo_dir.mkdir()
@@ -295,8 +283,8 @@ def test_session_start_no_lore_config_emits_attach_hint(fake_vault, tmp_path, mo
     monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
 
     out = hooks._session_start(str(repo_dir))
-    assert "no `## Lore` attach block" in out
-    assert "lore install" in out
+    assert "no scope routes this repo" in out
+    assert "lore setup scope" in out
     # AC2 regression guard: an unattached repo's banner must not gain
     # the writing-rules directive — only attached repos get it.
     assert "## Directive" not in out
@@ -316,20 +304,49 @@ def test_session_start_no_vault_emits_no_vault_hint(tmp_path, monkeypatch):
     assert "writing-rules" not in out
 
 
-def test_session_start_from_lore_missing_wiki_emits_attach_hint(
+def test_session_start_missing_wiki_emits_setup_scope_hint(
     fake_vault, tmp_path, monkeypatch,
 ):
-    """`## Lore` block names a wiki that doesn't exist → renderer
-    returns None → caller emits the attach hint (no legacy fallback)."""
+    """A scope names a wiki that doesn't exist → renderer returns None →
+    caller emits the setup hint (no legacy fallback)."""
+    from conftest import seed_scope
+
     vault, wiki = fake_vault
     repo_dir = tmp_path / "bogus"
     repo_dir.mkdir()
-    (repo_dir / "CLAUDE.md").write_text(
-        "## Lore\n\n- wiki: does-not-exist\n- scope: foo\n"
-    )
+    seed_scope(repo_dir, "does-not-exist")
     monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
 
     out = hooks._session_start(str(repo_dir))
-    assert "no `## Lore` attach block" in out
+    assert "lore setup scope" in out
     assert "## Directive" not in out
     assert "writing-rules" not in out
+
+
+def test_folder_scope_banner_holds_the_repo_project_orientation(
+    fake_vault, tmp_path, monkeypatch, capsys,
+) -> None:
+    """A folder scope (PRD 0016) covers many repos: the project slug is the
+    repo's folder name, not the scope name (#479 review)."""
+    import subprocess
+
+    from conftest import seed_scope
+
+    vault, wiki = fake_vault
+    root = tmp_path / "data-center"
+    repo = root / "ops-db"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    seed_scope(root, "ccat", name="data-center")
+    note = wiki / "projects" / "ops-db" / "ops-db.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("---\ntype: project\n---\n\n# Project: ops-db\n\nOps DB orientation body.\n")
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: "ccatobs/ops-db")
+    for name in dir(hooks):  # no detached children from this test
+        if name.startswith("_spawn_"):
+            monkeypatch.setattr(hooks, name, lambda *a, **k: None)
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(""))
+
+    hooks.cmd_session_start(cwd=str(repo), plain=True, probe=False)
+
+    assert "Ops DB orientation body." in capsys.readouterr().out

@@ -71,7 +71,7 @@ decide scope here.
 2. **Group** the threads into seeds, one future epic each. A small, clear follow-up needs no
    seed: file it as an issue. Confirm the grouping with the user.
 3. **Write** each seed in the template below. Make **Findings** rich; that is the handover value.
-   When a session note for this session exists, try `lore workflow seed-lift <note> --wiki-root
+   When a wiki note for this session exists, try `lore workflow seed-lift <note> --wiki-root
    <wiki-root>` first. On exit 0, use its `origin` and `findings` fields, and add its
    `source_note` under **Pointers**.
 4. **Publish** each seed through [`file-issue`](../file-issue/SKILL.md) in caller-template mode.

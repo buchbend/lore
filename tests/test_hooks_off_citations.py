@@ -93,7 +93,9 @@ def test_user_prompt_submit_emits_directive_mid_session(
     captured = StringIO()
     monkeypatch.setattr(_sys, "stdout", captured)
 
-    with patch.object(hooks, "resolve_scope", return_value=type("S", (), {"claude_md_path": tmp_path / "CLAUDE.md"})()), \
+    from lore_core.route import Route
+
+    with patch.object(hooks, "resolve_route", return_value=Route(cwd=tmp_path, wiki="w")), \
          patch.object(hooks, "_infer_lore_root", return_value=tmp_path):
         hooks.cmd_user_prompt_submit(cwd=str(tmp_path), plain=False)
 

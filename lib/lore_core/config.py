@@ -107,8 +107,13 @@ def _read_lore_root_from_config() -> Path | None:
             f"config: top-level must be a mapping at {path}", stacklevel=3
         )
         return None
+    from dataclasses import fields
+
+    from lore_core.root_config import RootConfig
+
+    known = {f.name for f in fields(RootConfig)}
     for key in raw:
-        if key != "lore_root":
+        if key not in known:
             warnings.warn(f"config: unknown key {key!r} in {path}", stacklevel=3)
     value = raw.get("lore_root")
     if value is None:

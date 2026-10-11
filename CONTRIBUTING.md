@@ -20,15 +20,15 @@ pipx install --force --editable ~/git/lore
 claude plugin marketplace add file://$(realpath ~/git/lore)/.claude-plugin/marketplace.json
 
 # 3. Wire each host (skills, hooks, MCP, Cursor rules — same as a
-#    fresh install, just pointed at the local plugin source).
-lore install --lore-repo ~/git/lore
+#    fresh install; the editable install resolves the local plugin source).
+lore setup
 ```
 
 **Why not `pipx install lore`?** The name `lore` is squatted on PyPI
 by an unrelated package. Until we publish under a different PyPI name,
 the canonical non-editable install is the git+ URL form
 (`pipx install git+https://github.com/buchbend/lore.git`), which is
-what `lore install`'s self-install bootstrap uses internally too.
+what the self-install bootstrap behind `lore setup` uses internally too.
 
 Edit `~/git/lore/skills/<name>/SKILL.md` → Claude Code picks up the
 change next session. (Skill directories are bare names like
@@ -38,15 +38,14 @@ invocation runs the new code. No reinstall step.
 
 ## Testing the installer on a clean state
 
-The `lore install` flow refuses to run on top of legacy `install.sh`
+The Agents step of `lore setup` refuses to run on top of legacy `install.sh`
 artifacts. To test it from scratch on your own machine without nuking
 your real install, use the undo helper:
 
 ```bash
 python3 tools/undo_install_sh.py --dry-run    # preview
 python3 tools/undo_install_sh.py              # apply
-lore install check                            # plan-only, never writes
-lore install                                  # for real
+lore setup                                    # for real
 ```
 
 After testing, re-install your editable dev setup with the three-command
@@ -229,8 +228,8 @@ README, and verify hooks fire on a real Claude Code session.
 
 - **Closure thunks in `Action.apply`.** Action's `payload: dict` is
   the contract; `kind`-dispatched executors live in `_helpers.py`.
-  Tracebacks stay clean; payloads JSON-serialize for `lore install
-  plan --json`.
+  Tracebacks stay clean; payloads JSON-serialize for the JSON plan
+  envelope.
 - **Per-action prompt logic in host modules.** That belongs entirely
   in the dispatcher so the UX stays consistent across hosts. Host
   modules emit `kind=replace` Actions; the dispatcher decides when

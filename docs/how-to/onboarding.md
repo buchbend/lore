@@ -1,14 +1,11 @@
-# Onboarding: install → wizard → first attach → verify
+# Onboarding: install → setup → verify
 
-**Goal:** go from a fresh machine to "notes are being written" in one
-guided pass, and know how to tell it worked.
+**Goal:** go from a fresh machine to "Lore routes this repo to a wiki" in
+one guided pass, and know how to tell it worked.
 
-`lore init` is the single onboarding wizard (PRD 0005, pillar C) — it
-replaced the old five-loosely-chained-steps flow (installer → integration
-wiring → vault init → wiki creation → repo attach) with one idempotent,
-resumable command. Re-running it is safe: each step detects already-done
-state and collapses to a `✓` skip line, so `lore init` doubles as the
-repair path for a partial install.
+`lore setup` is the one command for first run, for adding a wiki or a
+scope, and for repair (PRD 0016). A second run on a healthy setup writes
+no file and prints one check mark per step.
 
 ## Before you start
 
@@ -25,70 +22,68 @@ repair path for a partial install.
    ```
 
    The installer exits non-zero if the installed `lore` isn't actually
-   runnable on `PATH` afterward — don't treat a silent-looking finish as
-   success without checking the exit code.
+   runnable on `PATH` afterward. On a first install it runs `lore setup`.
 
    Later on, run `lore update` to pick up a new release (checks the
    version on `main`, then upgrades the package and refreshes the Claude
    plugin cache in one step; `--check` reports without upgrading).
 
-2. **Run the wizard.**
+2. **Run setup** (the installer already did, on a first install).
 
    ```
-   lore init
+   lore setup
    ```
 
-   Six steps, each collapsing to a `✓` receipt line as it completes:
+   Four steps, each one line:
 
    | Step | What it does |
    |---|---|
-   | 1 · Vault | Picks the vault location (`$LORE_ROOT`, or `~/lore` by default). |
-   | 2 · Wiki | New personal wiki, clone a team remote, or link an existing directory — scaffolds `_scopes.yml` with a commented example. |
-   | 3 · Integrations | Detects Claude Code / Cursor and wires them in (reuses `lore install`'s plumbing); a plugin-cache refresh failure is loud, not swallowed. |
-   | 4 · First attach | If `cwd` is a git repo, runs the attach wizard inline (skip with no flag if you'd rather attach later). |
-   | 5 · Doctor | Runs `lore doctor` automatically; the wizard's own exit code mirrors its verdict. |
-   | 6 · Handoff | Prints the summary panel, doctor results, and next steps — including "restart Claude Code", which is required for hook/skill changes to take effect. |
+   | wiki | Picks the vault (`$LORE_ROOT`, the configured `lore_root`, or `~/lore`), then creates a personal wiki, clones a team wiki or links a folder. |
+   | agents | Installs the Claude Code plugin, or refreshes a stale plugin cache, and repairs Cursor's wiring where Cursor is present. |
+   | scope | In a repo no scope covers, offers the folder above the repo as a scope: every repo below it routes to the scope's wiki. |
+   | check | Runs the install checks; a failing advisory check does not fail setup. |
 
-   Every step has a non-interactive flag, so the whole wizard scripts:
+   Setup also migrates the old `attachments.json`, `scopes.json` and
+   `$LORE_ROOT/.lore/config.yml` into `~/.config/lore/config.yml`, then
+   deletes them.
+
+   Every prompt has a flag; without a terminal, or with `--yes`, every
+   answer comes from flags and defaults:
 
    ```
-   lore init --wiki-new personal --attach --yes
-   lore init --wiki-clone git@github.com:you/team-wiki.git --yes
-   lore init --vault ~/lore --wiki-link ~/existing-wiki --yes
+   lore setup --yes --wiki-new personal
+   lore setup --yes --wiki-clone git@github.com:you/team-wiki.git
+   lore setup --yes --vault ~/lore --wiki-link ~/existing-wiki
+   lore setup scope --yes --name ccat --wiki ccat --remote 'github.com/ccatobs/*'
    ```
 
-   `--plain` degrades every prompt to plain stdin (no Rich panels) for
-   terminals that don't render them well; `--force` overwrites an
-   existing `CLAUDE.md`/`templates/` if you're deliberately re-scaffolding.
+   `lore setup wiki` and `lore setup scope` run one step.
 
 3. **Restart Claude Code.** Hooks and skills are picked up at session
-   start — the handoff step (6) tells you this explicitly; don't skip it.
+   start.
 
-4. **Verify.** From the repo you attached (or any repo, to check the
-   install broadly):
+4. **Verify.** From a repo inside a scope folder:
 
    ```
-   lore doctor
+   lore setup
    lore status
    ```
 
-   `doctor` re-confirms install integrity (nonzero exit on any failure);
-   `status` shows whether a session has actually captured anything yet
-   (capture liveness, last hook fire). A fresh install with no session
-   activity yet is expected to show "no activity" lines, not errors —
-   errors there mean something in step 2 needs a re-run.
+   `setup` re-runs the checks (nonzero exit on any failure); `status`
+   shows what applies in this repo and whether a session has captured
+   anything yet. A fresh install with no session activity yet shows
+   "no activity" lines, not errors.
 
 ## If something's wrong
 
 See [troubleshooting.md](troubleshooting.md) — start with `lore status`,
-escalate to `lore doctor --fix` for repairable state, then check
-`lore status`'s news section for a recent `transcript-synced` entry.
+then re-run `lore setup`, which repairs what it can and names each repair.
 
 ## Done when
 
-`lore doctor` exits 0, `lore status` shows the attached wiki with no
-alerts, and — after you've actually used Claude Code for a bit in the
-attached repo — `status`'s `Hook` line carries a recent timestamp.
-Capture itself writes only a transcript-ledger entry; nothing lands in
-the wiki until you write a note, run `/lore:inbox`, or merge a pull
-request an agent opened on the wiki repo.
+`lore setup` prints only check marks, `lore status` shows the routed wiki
+with no alerts, and — after you've used Claude Code for a bit in the repo —
+`status`'s `Hook` line carries a recent timestamp. Capture itself writes
+only a transcript-ledger entry; nothing lands in the wiki until you write a
+note, run `/lore:inbox`, or merge a pull request an agent opened on the wiki
+repo.
