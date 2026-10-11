@@ -7,9 +7,6 @@ Rich's terminal rendering.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 import typer
 from lore_cli.__main__ import app
@@ -44,45 +41,6 @@ def test_retired_group_not_registered(group: str) -> None:
 def test_retired_group_invocation_fails(group: str) -> None:
     result = runner.invoke(app, [group, "--help"])
     assert result.exit_code != 0
-
-
-# ---- `lore attach remove` (was `lore detach`) ----
-
-def _claude_md_with_section(tmp_path: Path) -> Path:
-    target = tmp_path / "CLAUDE.md"
-    target.write_text("# Repo\n\nIntro.\n\n## Lore\n\nManaged block.\n\n## Other\n\nKeep me.\n")
-    return target
-
-
-def test_attach_remove_strips_lore_section(tmp_path: Path) -> None:
-    target = _claude_md_with_section(tmp_path)
-
-    result = runner.invoke(app, ["attach", "remove", "--path", str(tmp_path)])
-
-    assert result.exit_code == 0, result.output
-    text = target.read_text()
-    assert "## Lore" not in text
-    assert "## Other" in text
-
-
-def test_attach_remove_json_envelope(tmp_path: Path) -> None:
-    _claude_md_with_section(tmp_path)
-
-    result = runner.invoke(app, ["attach", "remove", "--path", str(tmp_path), "--json"])
-
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert payload["schema"] == "lore.attach.remove/1"
-    assert payload["data"]["removed"] is True
-
-
-def test_attach_remove_is_noop_without_section(tmp_path: Path) -> None:
-    (tmp_path / "CLAUDE.md").write_text("# Repo\n\nNo managed block.\n")
-
-    result = runner.invoke(app, ["attach", "remove", "--path", str(tmp_path), "--json"])
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["data"]["removed"] is False
 
 
 # ---- `lore migrate` one-shot upgrade verbs ----

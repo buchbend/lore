@@ -44,7 +44,7 @@ in — see "Conflict policy" below for what "resolution" means today.
 
 ### What never gets pushed
 
-- `.lore/` directory (host-local state — `attachments.json`, `transcript-ledger.json`, lockfiles, hook events)
+- `.lore/` directory (host-local state — `transcript-ledger.json`, lockfiles, hook events)
 - `.transcripts/` directory (raw conversation logs; gitignored on purpose, see `transcript_sync.py:42-50`)
 
 ---

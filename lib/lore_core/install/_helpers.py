@@ -164,7 +164,7 @@ def check_lore_on_path() -> tuple[bool, str]:
         return True, "lore CLI on PATH"
     return False, (
         "lore not on PATH. Run: pipx ensurepath; then reopen your shell "
-        "and re-run lore install. (If pipx isn't installed, the "
+        "and re-run lore setup. (If pipx isn't installed, the "
         "claude integration self-install bootstrap will offer to add it.)"
     )
 

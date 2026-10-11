@@ -21,7 +21,6 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 
 import lore_cli
@@ -58,7 +57,7 @@ def _ssh_script(path: Path, body: str) -> Path:
 
 def _build_vault(tmp_path: Path, ssh_body: str) -> tuple[Path, Path]:
     """Return ``(lore_root, project)`` for an attached project and a pulled wiki."""
-    from lore_core.state.attachments import Attachment, AttachmentsFile
+    from conftest import seed_scope
 
     project = tmp_path / "project"
     shutil.copytree(LIB_DIR, project / "lib", ignore=shutil.ignore_patterns("__pycache__"))
@@ -83,18 +82,7 @@ def _build_vault(tmp_path: Path, ssh_body: str) -> tuple[Path, Path]:
     ssh = _ssh_script(tmp_path / "ssh.sh", ssh_body)
     _git(wiki, "config", "core.sshCommand", str(ssh))
 
-    af = AttachmentsFile(lore_root)
-    af.load()
-    af.add(
-        Attachment(
-            path=project,
-            wiki="demo",
-            scope="demo:proj",
-            attached_at=datetime.now(UTC),
-            source="manual",
-        )
-    )
-    af.save()
+    seed_scope(project, "demo", name="proj")
     return lore_root, project
 
 

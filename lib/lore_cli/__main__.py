@@ -56,21 +56,18 @@ def _build_app() -> typer.Typer:
     # its own commands / callback. Registering them via add_typer gives a
     # unified `lore --help` listing.
     from lore_cli import (
-        attach_cmd,
         codemap_cmd,
         config_cmd,
-        doctor_cmd,
         drill_cmd,
         handover_cmd,
         hooks,
         inbox_cmd,
         ingest_cmd,
-        init_cmd,
-        install_cmd,
+        integrations,
         mcp_cmd,
         migrate_cmd,
-        scopes_cmd,
         search_cmd,
+        setup_cmd,
         status_cmd,
         style_cmd,
         tier_cmd,
@@ -94,11 +91,8 @@ def _build_app() -> typer.Typer:
     _KN = "Knowledge"
     _ADV = "Advanced"
 
-    app.add_typer(install_cmd.app, name="install", hidden=True)
-    app.add_typer(init_cmd.app, name="init", hidden=True)
-    app.add_typer(attach_cmd.app, name="attach", hidden=True)
+    app.add_typer(setup_cmd.app, name="setup", rich_help_panel=_GS)
     app.add_typer(status_cmd.app, name="status", rich_help_panel=_GS)
-    app.add_typer(doctor_cmd.app, name="doctor", hidden=True)
     app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
 
     app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)
@@ -116,24 +110,20 @@ def _build_app() -> typer.Typer:
     app.add_typer(ingest_cmd.app, name="ingest", hidden=True)
     app.add_typer(mcp_cmd.app, name="mcp", hidden=True)
     app.add_typer(migrate_cmd.app, name="migrate", hidden=True)
-    app.add_typer(scopes_cmd.app, name="scopes", hidden=True)
     app.add_typer(trace_cmd.app, name="trace", hidden=True)
     app.add_typer(transcripts_cmd.app, name="transcripts", hidden=True)
     app.add_typer(workflow_cmd.app, name="workflow", hidden=True)
 
     app.command(
         "uninstall",
-        help="Symmetric semantic remove (alias for `install uninstall`).",
-    )(install_cmd.build_install_command(
-        "uninstall",
-        "Top-level `lore uninstall` — same flags as `lore install uninstall`.",
-    ))
+        help="Remove Lore's Claude Code and Cursor wiring.",
+    )(integrations.uninstall_command)
 
     app.command(
         "update",
         help="Update Lore (Python package + Claude plugin) if a new release is on main.",
         rich_help_panel=_GS,
-    )(install_cmd.update_command)
+    )(integrations.update_command)
 
     return app
 

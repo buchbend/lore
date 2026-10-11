@@ -54,7 +54,7 @@ agent writes a resume line, and `/clear` is then safe. See
 Several epics take one `build` run each. Start a downstream epic after its
 upstream epic merged.
 
-Onboard a repo once with `lore attach --scaffold-workflow`. See
+Onboard a repo once with `lore setup scope --scaffold-workflow`. See
 [Onboard a repo](how-to/onboard-a-repo.md).
 
 ---
@@ -88,7 +88,7 @@ is a one-line shim that imports it:
 @AGENTS.md
 ```
 
-Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore attach
+Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore setup scope
 --scaffold-workflow` moves an existing `CLAUDE.md` into this shape.
 
 ### The epic issue as tracker

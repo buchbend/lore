@@ -277,7 +277,6 @@ def _run_route(tmp_path: Path, capture_routing, *, event: str) -> None:
     scope = Scope(
         wiki="demo",
         scope="demo:proj",
-        backend="none",
         claude_md_path=tmp_path / "CLAUDE.md",
     )
     (tmp_path / "wiki" / "demo").mkdir(parents=True, exist_ok=True)

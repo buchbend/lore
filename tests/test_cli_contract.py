@@ -47,7 +47,7 @@ INLINE_HANDLER_RE = re.compile(
 )
 
 # Documented exception in __main__.py — the symmetric `lore uninstall`
-# alias that wraps `install_cmd`. Listed by the function name we expect
+# alias that wraps `integrations`. Listed by the function name we expect
 # the decorator to sit on.
 ALLOWED_INLINE_HANDLERS = {"cmd_uninstall_alias"}
 

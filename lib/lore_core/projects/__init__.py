@@ -1,4 +1,4 @@
-"""Project notes — harness-agnostic glue auto-stubbed on ``/lore:attach``.
+"""Project notes — harness-agnostic glue stubbed per project.
 
 A project note unifies a repo's CLAUDE.md / AGENTS.md / .cursorrules /
 README / pyproject metadata into one Lore-shaped document at

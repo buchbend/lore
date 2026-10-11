@@ -4,7 +4,7 @@
 that everything user-facing can render against:
 
 - ``lore status`` — activity-first CLI
-- ``lore doctor``'s capture panel (install-mode footer pointer only —
+- ``lore setup``'s capture panel (install-mode footer pointer only —
   doctor itself doesn't render it)
 - SessionStart banner
 - ``/lore:context`` live-state section

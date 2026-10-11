@@ -4,7 +4,7 @@ The single glanceable "is Lore healthy right now?" surface. One line per
 concern across six sections, every alert paired with the exact drill-down
 command (PRD 0005, "Dashboard grammar"):
 
-    lore: active · private/proj:test · attached at ~/project
+    lore: active · private/proj:test · routed at ~/project
 
     capture
       · Hook         12m ago · session-start · captured
@@ -305,11 +305,11 @@ def _compute_alerts(state: CaptureState, now: datetime, lore_root: Path) -> list
             now - timedelta(seconds=state.spine_write_failed_marker_age_s), now=now
         )
         alerts.append(
-            f"{_ERROR} spine write failed {when} — check disk / permissions (lore doctor)"
+            f"{_ERROR} spine write failed {when} — check disk / permissions (lore setup)"
         )
 
     if state.simple_tier_fallback_active:
-        alerts.append(f"{_WARN} simple-tier fallback active — high tier unavailable (lore doctor)")
+        alerts.append(f"{_WARN} simple-tier fallback active — high tier unavailable (lore setup)")
 
     # Subprocess role logs with error tails. The drill-down is the log
     # itself: `lore trace` correlates a flush, and no flush produced this.
@@ -334,7 +334,7 @@ def _compute_alerts(state: CaptureState, now: datetime, lore_root: Path) -> list
     js = read_janitor_status(lore_root)
     if js and (js.get("failed", 0) or 0) > 0:
         alerts.append(
-            f"{_WARN} retention janitor had {js['failed']} failed deletion(s) — lore doctor"
+            f"{_WARN} retention janitor had {js['failed']} failed deletion(s) — lore setup"
         )
 
     # Cross-host divergence — auto_pull skips diverged trees silently.
@@ -344,11 +344,11 @@ def _compute_alerts(state: CaptureState, now: datetime, lore_root: Path) -> list
     # Plugin-cache drift — reuse doctor's canonical check (guarded: it is a
     # sibling-owned private, and this alert is best-effort). Drill-down: doctor.
     try:
-        from lore_cli.doctor_cmd import _check_claude_plugin_cache_drift
+        from lore_cli.checks import _check_claude_plugin_cache_drift
 
         ok, _msg = _check_claude_plugin_cache_drift(str(lore_root))
         if not ok:
-            alerts.append(f"{_WARN} plugin cache drift — lore doctor")
+            alerts.append(f"{_WARN} plugin cache drift — lore setup")
     except Exception:  # noqa: BLE001 — never fail status on the drift probe
         pass
 
@@ -398,10 +398,10 @@ def _render_unattached(lore_root: Path, cwd: Path) -> str:
     vaults_str = ", ".join(vault_names) if vault_names else f"none found in {lore_root}"
     cwd_str = _format_scope_root(cwd)
     return (
-        "lore: not attached here\n"
+        "lore: no scope here\n"
         "\n"
-        f"  cwd {cwd_str} is not inside a configured wiki.\n"
-        "  Run /lore:attach to bind this folder, or cd into an attached vault.\n"
+        f"  cwd {cwd_str} is not inside a scope folder.\n"
+        "  Run `lore setup scope` to add one.\n"
         f"  (Configured vaults: {vaults_str})"
     )
 
@@ -467,7 +467,7 @@ def status(
     try:
         lore_root = get_lore_root()
     except Exception:  # noqa: BLE001
-        console.print("[red]LORE_ROOT not set.[/red] Run `lore init` or export $LORE_ROOT.")
+        console.print("[red]LORE_ROOT not set.[/red] Run `lore setup` or export $LORE_ROOT.")
         raise typer.Exit(1) from None
 
     state = query_capture_state(lore_root, cwd=resolved_cwd, now=now)
@@ -487,7 +487,7 @@ def status(
     alerts = _compute_alerts(state, now, lore_root)
 
     lines: list[str] = [
-        f"lore: active · {state.scope_name} · attached at {_format_scope_root(state.scope_root)}",
+        f"lore: active · {state.scope_name} · routed at {_format_scope_root(state.scope_root)}",
         "",
         *_route_lines(resolved_cwd),
         "",

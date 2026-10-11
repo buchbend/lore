@@ -38,18 +38,14 @@ def test_retention_defaults_when_file_absent(tmp_path: Path):
 
 
 def test_retention_partial_override(tmp_path: Path):
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text("observability:\n  retention:\n    hot_days: 3\n")
+    _person_file("observability:\n  retention:\n    hot_days: 3\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.retention.hot_days == 3  # overridden
     assert cfg.observability.retention.cold_days == 30  # default preserved
 
 
 def test_partial_override(tmp_path: Path):
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text("observability:\n  runs:\n    keep: 50\n")
+    _person_file("observability:\n  runs:\n    keep: 50\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.runs.keep == 50  # overridden
     assert cfg.observability.runs.max_total_mb == 100  # default preserved
@@ -58,9 +54,7 @@ def test_partial_override(tmp_path: Path):
 
 def test_malformed_yaml_warns(tmp_path: Path, recwarn):
     warnings.simplefilter("always")
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text("this: is: not: valid\n")
+    _person_file("this: is: not: valid\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.runs.keep == 200
     assert any("malformed YAML" in str(w.message) for w in recwarn)
@@ -68,9 +62,7 @@ def test_malformed_yaml_warns(tmp_path: Path, recwarn):
 
 def test_unknown_key_warns(tmp_path: Path, recwarn):
     warnings.simplefilter("always")
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir()
-    (lore_dir / "config.yml").write_text("observability:\n  bogus_section: 42\n")
+    _person_file("observability:\n  bogus_section: 42\n")
     cfg = load_root_config(tmp_path)
     assert cfg.observability.runs.keep == 200  # still defaults
     assert any("bogus_section" in str(w.message) for w in recwarn), "should warn about unknown key"
@@ -304,10 +296,7 @@ def test_workflow_risk_defaults_and_override(tmp_path: Path):
     assert cfg.workflow.risk.fanin_top_fraction == 0.1
     assert "**/auth/**" in cfg.workflow.risk.sensitive_paths
 
-    (tmp_path / ".lore").mkdir()
-    (tmp_path / ".lore" / "config.yml").write_text(
-        "workflow:\n  risk:\n    max_lines: 50\n    sensitive_paths: ['billing/**']\n"
-    )
+    _person_file("workflow:\n  risk:\n    max_lines: 50\n    sensitive_paths: ['billing/**']\n")
     cfg = load_root_config(tmp_path)
     assert cfg.workflow.risk.max_lines == 50
     assert cfg.workflow.risk.sensitive_paths == ["billing/**"]
@@ -324,8 +313,7 @@ def test_config_get_workflow_risk_max_lines(tmp_path: Path, monkeypatch):
 
 
 def _risk_cfg(tmp_path: Path, risk: dict):
-    (tmp_path / ".lore").mkdir(exist_ok=True)
-    (tmp_path / ".lore" / "config.yml").write_text(yaml.safe_dump({"workflow": {"risk": risk}}))
+    _person_file(yaml.safe_dump({"workflow": {"risk": risk}}))
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         cfg = load_root_config(tmp_path)
@@ -359,8 +347,7 @@ def test_risk_valid_values_load_without_warning(tmp_path: Path) -> None:
 def test_risk_section_that_is_not_a_mapping_keeps_defaults(tmp_path: Path) -> None:
     from lore_core.root_config import RiskConfig
 
-    (tmp_path / ".lore").mkdir()
-    (tmp_path / ".lore" / "config.yml").write_text("workflow:\n  risk: 5\n")
+    _person_file("workflow:\n  risk: 5\n")
     with pytest.warns(UserWarning, match="risk"):
         cfg = load_root_config(tmp_path)
     assert cfg.workflow.risk == RiskConfig()
@@ -372,9 +359,7 @@ def test_a_retired_curator_block_warns_once_and_keeps_loading(tmp_path: Path):
     from lore_core.root_config import RootConfig
 
     assert not hasattr(RootConfig(), "curator")
-    cfg_dir = tmp_path / ".lore"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.yml").write_text(
+    _person_file(
         "curator:\n  backend: openai\n  openai:\n    base_url: https://example.invalid\n"
         "journal:\n  enabled: true\n",
         encoding="utf-8",
@@ -391,11 +376,11 @@ def test_a_retired_curator_block_warns_once_and_keeps_loading(tmp_path: Path):
 
 # ---------------------------------------------------------------------------
 # One settings file (PRD 0016): the person's ~/.config/lore/config.yml holds
-# the keys of the old root config and wins over $LORE_ROOT/.lore/config.yml.
+# every key; `lore setup` migrates the old $LORE_ROOT/.lore/config.yml into it.
 # ---------------------------------------------------------------------------
 
 
-def _person_file(content: str) -> Path:
+def _person_file(content: str, **_kw) -> Path:
     from lore_core.config import user_config_path
 
     path = user_config_path()
@@ -404,11 +389,9 @@ def _person_file(content: str) -> Path:
     return path
 
 
-def test_person_config_keys_load_and_win_over_the_old_root_config(tmp_path: Path) -> None:
+def test_person_config_is_the_one_settings_file(tmp_path: Path) -> None:
     (tmp_path / ".lore").mkdir()
-    (tmp_path / ".lore" / "config.yml").write_text(
-        "user:\n  display_name: Old\njournal:\n  enabled: true\n"
-    )
+    (tmp_path / ".lore" / "config.yml").write_text("journal:\n  enabled: true\n")
     _person_file(
         "lore_root: ~/lore\nuser:\n  display_name: Christof\n"
         "scopes:\n  ccatobs:\n    path: ~/git/ccatobs\n    wiki: ccat\n"
@@ -417,7 +400,7 @@ def test_person_config_keys_load_and_win_over_the_old_root_config(tmp_path: Path
         warnings.simplefilter("error")
         cfg = load_root_config(tmp_path)
     assert cfg.user.display_name == "Christof"
-    assert cfg.journal.enabled is True  # old root config still read until migrated
+    assert cfg.journal.enabled is False  # the old root config is `lore setup`'s to migrate
     assert cfg.scopes["ccatobs"]["wiki"] == "ccat"
 
 

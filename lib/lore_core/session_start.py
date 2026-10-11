@@ -7,14 +7,12 @@ ledger, no LLM, no network. The banner is ambient-minimal — status line,
 optional Focus block, the recap, one directive. Depth is a pull (MCP), not
 a push.
 
-Also holds the two SessionStart-adjacent decisions that read the world before
-the banner is built: the pending-``.lore.yml``-offer notice and the wiki
-auto-pull.
+Also holds the wiki auto-pull, a SessionStart-adjacent decision that reads
+the world before the banner is built.
 """
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import re
@@ -24,7 +22,6 @@ from typing import TYPE_CHECKING
 
 from lore_core.config import get_lore_root, get_wiki_root
 from lore_core.git import current_repo
-from lore_core.spine import emit_hook_event
 
 if TYPE_CHECKING:
     from lore_core.git_sync import SyncResult
@@ -127,7 +124,7 @@ def reading_rule() -> str:
     """ADR 0015's reading rule, read from the directive template.
 
     The template is the one source: SessionStart injects the line, and
-    ``lore attach --scaffold-workflow`` writes the same text into AGENTS.md.
+    ``lore setup scope --scaffold-workflow`` writes the same text into AGENTS.md.
     Returns an empty string when the template can't be read, like
     :func:`load_directive_lines`.
     """
@@ -375,10 +372,10 @@ def session_start_from_lore(
     config: tuple[Path, dict],
     wiki_root: Path,
 ) -> str | None:
-    """Build SessionStart output from a `## Lore` config block.
+    """Build SessionStart output from a route block (wiki + scope).
 
     Returns ``None`` if the config is unusable (wiki missing) so the
-    caller can fall through to a clear "no attach" error message.
+    caller can fall through to a clear "no scope" message.
     Thin wrapper around :func:`collect_session_facts` +
     :func:`render_session_banner`.
     """
@@ -397,11 +394,10 @@ def session_start_from_lore(
 
 
 def session_start_text(cwd: str | None) -> str:
-    """Build the SessionStart context block from a `## Lore` attach block.
+    """Build the SessionStart context block for the route at ``cwd``.
 
-    Repos opt into Lore by running ``lore install`` or ``lore attach`` — both
-    write the ``## Lore`` block this resolver reads. Without it, the banner
-    surfaces a clear "no attach" instruction instead of guessing.
+    A repo gets a wiki from a scope in the person's config (ADR 0016). Without
+    one, the banner names ``lore setup scope`` instead of guessing.
     """
     wiki_root = get_wiki_root()
     if not wiki_root.exists():
@@ -420,7 +416,7 @@ def session_start_text(cwd: str | None) -> str:
             hint = f"(unset, fallback {get_lore_root()})"
         return (
             f"lore: no vault at {hint}. "
-            "Set $LORE_ROOT, write ~/.config/lore/config.yml, or run `lore init`."
+            "Run `lore setup`, or set $LORE_ROOT."
         )
 
     if cwd:
@@ -432,8 +428,8 @@ def session_start_text(cwd: str | None) -> str:
                 return v2
 
     return (
-        "lore: this repo has no `## Lore` attach block. "
-        "Run `lore install` (inside the repo) or `lore attach` to add one."
+        "lore: no scope routes this repo to a wiki. "
+        "Run `lore setup scope` to add one."
     )
 
 
@@ -509,69 +505,6 @@ def render_project_orientation(scope: Scope, wiki_root: Path) -> str | None:
 # ---------------------------------------------------------------------------
 # Pre-banner world reads
 # ---------------------------------------------------------------------------
-
-
-def offer_notice_line(cwd: Path) -> str | None:
-    """Return a one-line notice when a ``.lore.yml`` offer is pending acceptance.
-
-    Returns ``None`` if:
-      - no ``.lore.yml`` covers ``cwd``;
-      - an attachment with the matching fingerprint already exists
-        (state=ATTACHED);
-      - the offer was previously declined (state=DORMANT);
-      - ``$LORE_ROOT`` cannot be located on this host.
-
-    Logs a ``lore-yml-offered`` event when it does emit (OFFERED, DRIFT)
-    so telemetry captures the prompt even if the user ignores it.
-    """
-    from lore_core.config import resolve_lore_root
-    lore_root = resolve_lore_root()
-    # Use resolve_lore_root (not get_lore_root) so a stale ~/lore from a
-    # previous install does NOT trigger offer logic when the user has
-    # neither $LORE_ROOT exported nor ~/.config/lore/config.yml set.
-    if lore_root is None:
-        return None
-
-    try:
-        from lore_core.consent import ConsentState, classify_state
-        from lore_core.state.attachments import AttachmentsFile
-
-        attachments = AttachmentsFile(lore_root)
-        attachments.load()
-        result = classify_state(cwd, attachments)
-    except Exception:
-        return None
-
-    if result.state not in (ConsentState.OFFERED, ConsentState.DRIFT):
-        return None
-
-    with contextlib.suppress(Exception):
-        emit_hook_event(
-            lore_root,
-            event="lore-yml-offered",
-            outcome=result.state.value,
-            detail={
-                "wiki": result.offer.wiki if result.offer else None,
-                "scope": result.offer.scope if result.offer else None,
-                "repo_root": str(result.repo_root) if result.repo_root else None,
-                "offer_fingerprint": result.offer_fingerprint,
-            },
-        )
-
-    offer = result.offer
-    assert offer is not None  # OFFERED/DRIFT imply offer present
-    if result.state is ConsentState.OFFERED:
-        return (
-            f"lore: this repo offers attachment to wiki `{offer.wiki}` "
-            f"(scope `{offer.scope}`). Run `/lore:attach` to accept or "
-            f"`/lore:attach --decline` to dismiss."
-        )
-    # DRIFT
-    return (
-        f"lore: the `.lore.yml` offer for this repo has changed since you "
-        f"attached (wiki `{offer.wiki}`, scope `{offer.scope}`). Run "
-        f"`/lore:attach` to re-accept."
-    )
 
 
 def maybe_auto_pull_for_scope(scope: Scope, lore_root: Path) -> str | None:

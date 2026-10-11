@@ -4,7 +4,7 @@ Hook failures surface to the user as a friendly banner via `_emit`, but
 the actual traceback is what the maintainer needs to fix the bug. This
 module writes one file per crash under ``$LORE_CACHE/crashes/`` so:
 
-  * `lore doctor` can tell the user "N crashes in last 7 days" + path
+  * `lore setup` can tell the user "N crashes in last 7 days" + path
   * the user can attach the file to a GitHub issue
   * the agent itself can read it when the user asks "what crashed?"
 
@@ -32,7 +32,7 @@ def _is_dev_invocation() -> bool:
     pollute the real crash log.
 
     Two cases produce noise that masks real production hook crashes from
-    `lore doctor` and the maintainer's signal:
+    `lore setup` and the maintainer's signal:
 
     * **pytest test runs** — tests intentionally simulate hook failures
       to verify the crash-handling pipeline (see ``test_directive_template.py``).

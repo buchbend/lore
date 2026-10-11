@@ -3,22 +3,22 @@
 **Goal:** prepare a repository to adopt `lore-workflow`, once, before you run
 any of the chain in it.
 
-Onboarding is one command, `lore attach --scaffold-workflow`. The command
+Onboarding is one command, `lore setup scope --scaffold-workflow`. The command
 is idempotent: run it again at any time. It never overwrites an existing
 file.
 
 ## Before you start
 
 - The target repo checked out locally, ideally a git repository.
-- `lore` installed and the repo already `lore attach`ed (a plain `lore
-  attach` without the flag also works — the workflow scaffold layers on top).
+- `lore` installed (`lore setup` has run once). Without a scope over the
+  repo, the same command offers the folder above it as one.
 
 ## Steps
 
 1. **Run the scaffold in the repo.**
 
    ```
-   lore attach --scaffold-workflow
+   lore setup scope --scaffold-workflow
    ```
 
 2. **Read what it reports.** It tells you which files it created and which

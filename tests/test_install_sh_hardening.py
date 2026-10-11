@@ -3,7 +3,7 @@
 install.sh is bash — exercising a full pipx round-trip in pytest is not
 worth it. These read the script and assert the two behaviours the epic
 requires: it fails loudly when `lore` is not runnable on PATH afterwards,
-and a first install chains into the unified `lore init` wizard.
+and a first install chains into `lore setup`.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ def test_install_sh_fails_when_lore_not_on_path():
     )
 
 
-def test_install_sh_first_install_chains_into_lore_init():
-    assert "exec lore init" in INSTALL_SH.read_text()
+def test_install_sh_first_install_runs_lore_setup():
+    assert "exec lore setup" in INSTALL_SH.read_text()
 
 
 def test_install_sh_upgrade_refreshes_both_plugin_caches():

@@ -36,7 +36,7 @@ def _disable_dev_filter(monkeypatch):
     """Bypass the pytest/--dry-run skip in write_crash for this test module.
 
     The skip exists so simulated test failures don't land in
-    ``~/.cache/lore/crashes/`` and inflate ``lore doctor``'s count.
+    ``~/.cache/lore/crashes/`` and inflate the Check step's count.
     But these tests are exactly the ones that exercise the write
     path, so they need to opt out.
     """
@@ -68,7 +68,7 @@ def test_write_crash_skipped_when_pytest_in_argv(tmp_path, monkeypatch):
     """pytest test runs intentionally simulate hook failures (see
     ``test_directive_template.py``). Their tracebacks must NOT land in
     the user's real ``~/.cache/lore/crashes/`` and inflate
-    ``lore doctor``'s reported crash count.
+    the Check step's reported crash count.
     """
     # Override the autouse fixture for THIS test only — we want the
     # dev-invocation filter active here.
@@ -337,7 +337,7 @@ def test_doctor_check_recent_crashes_advisory(tmp_path, monkeypatch):
     """The doctor check is advisory — present crashes flip ok=False
     but do not fail the install."""
     monkeypatch.setenv("LORE_CACHE", str(tmp_path))
-    from lore_cli.doctor_cmd import _check_recent_crashes
+    from lore_cli.checks import _check_recent_crashes
 
     # Empty cache → green.
     ok, msg = _check_recent_crashes(str(tmp_path))

@@ -3,7 +3,7 @@
 **Goal:** find the cause of a specific symptom using the three
 observability commands, without reading source. Background on *why*
 these three commands exist and what they read: `lore trace`, `lore
-status`, `lore doctor` are all covered in
+status` and the checks of `lore setup` are all covered in
 [`docs/architecture/observability.md`](../architecture/observability.md).
 
 ## "Hooks aren't firing"
@@ -13,21 +13,20 @@ Escalate through these steps, each one level deeper:
 1. **`lore status`** — check the `capture` section's `Hook` line. A
    timestamp within the last few minutes means hooks *are* firing; "no
    hook events" or a stale timestamp means they aren't.
-2. **`lore doctor`** — the `hook_runnable` check actually invokes `lore
+2. **`lore setup`** — its `SessionStart hook` check actually invokes `lore
    hook session-start --plain` and reports whether it succeeds. If this
    fails, the problem is the `lore` binary or its environment, not
-   Claude Code. Also check the plugin-cache-drift checks here — a stale
-   Claude Code plugin cache silently keeps running old hook code even
-   though `main` (or your installed version) has moved on; `--fix` can't
-   repair this one, but the check names the exact drift.
-3. **`lore status`'s news section** — if `doctor` passes but the ledger
+   Claude Code. A stale Claude Code plugin cache silently keeps running
+   old hook code even though `main` (or your installed version) has moved
+   on; setup refreshes a cache that is behind and names the repair.
+3. **`lore status`'s news section** — if the checks pass but the ledger
    still doesn't grow, check for a recent `transcript-synced` entry there.
    Transcript sync's drain event lands on the shared system stream, not a
    per-session one, so this confirms sync ran at all rather than for one
    session in particular. Nothing there and a recent `Hook` timestamp
    means the hook fired but the detached sync never spawned — check
    `$CLAUDE_PROJECT_DIR` and that the plugin hooks are actually installed
-   (`lore install`). `lore trace <session-id>` cannot help here: no
+   (`lore setup`). `lore trace <session-id>` cannot help here: no
    current producer mints a `trace_id`, so it always reports no match.
 
 ## "Nothing appeared in the wiki after my session"
@@ -38,7 +37,7 @@ keeping leaves the session as a repo artifact — an issue, a comment, or a
 pull request on the wiki repo.
 
 To confirm capture itself ran, `lore status` shows the last hook fire.
-`lore doctor` checks the hook wiring. Neither depends on anything
+`lore setup` checks the hook wiring. Neither depends on anything
 having been written to a wiki.
 
 ## "My wiki still holds session notes under `sessions/`"
@@ -69,14 +68,6 @@ whole `.lore/flushes/` directory on its next opportunistic pass, so a
 `queued` or `running` record there is a leftover, not a flush stuck
 mid-flight. Delete the directory by hand if you want it gone sooner.
 
-## Known rough edges (honest, not yet fixed)
-
-- **`lore doctor --fix --json` interleaves human-readable repair
-  prompts/receipts before the JSON envelope** on stdout — the repairs run
-  and print ahead of the `if json_out` branch. Script against `lore
-  doctor --json` (without `--fix`), or pass `--fix --yes` and parse only
-  the trailing JSON line.
-
 ## "No such command" for `lore log` / `lore news` / `lore runs` / `lore proc`
 
 These are gone, not renamed under a flag — `lore trace` and `lore status`
@@ -88,9 +79,8 @@ Other verbs that moved rather than vanished:
 
 | You typed | Use instead |
 | :--- | :--- |
-| `lore detach` | `lore attach remove` |
-| `lore attachments <sub>` | `lore attach attachments <sub>` |
-| `lore registry ls` / `lore registry doctor` | `lore scopes wikis` / `lore scopes doctor` |
+| `lore init`, `lore install`, `lore doctor` | `lore setup` |
+| `lore attach`, `lore scopes`, `lore detach`, `lore attachments` | `lore setup scope`, or a `scopes:` entry in `~/.config/lore/config.yml` |
 | `lore migrate --add-schema-version` | `lore migrate frontmatter --add-schema-version` |
 
 `lore migrate open-items` and `lore migrate retire-session-notes` are not

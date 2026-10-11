@@ -1,4 +1,4 @@
-"""CLI trim (#469): visible commands, hidden machine commands, deleted commands."""
+"""CLI trim (#469, #470): visible commands, hidden machine commands, deleted commands."""
 
 from __future__ import annotations
 
@@ -9,9 +9,7 @@ from typer.testing import CliRunner
 
 runner = CliRunner()
 
-VISIBLE = {"status", "config", "search", "read", "wiki", "update", "uninstall"}
-# Still exist until #470 deletes them; hidden from help meanwhile.
-PENDING_470 = {"install", "init", "attach", "scopes", "doctor"}
+VISIBLE = {"setup", "status", "config", "search", "read", "wiki", "update", "uninstall"}
 HIDDEN = {
     "hook",
     "mcp",
@@ -28,7 +26,19 @@ HIDDEN = {
     "off",
     "migrate",
 }
-DELETED = ["drill", "curator", "lint", "session", "project", "journal"]
+DELETED = [
+    "drill",
+    "curator",
+    "lint",
+    "session",
+    "project",
+    "journal",
+    "install",
+    "init",
+    "attach",
+    "scopes",
+    "doctor",
+]
 
 
 def _root():
@@ -41,7 +51,7 @@ def test_help_lists_exactly_the_visible_commands() -> None:
     assert listed == VISIBLE
 
 
-@pytest.mark.parametrize("name", sorted(HIDDEN | PENDING_470))
+@pytest.mark.parametrize("name", sorted(HIDDEN))
 def test_machine_commands_hidden_but_registered(name: str) -> None:
     assert _root().commands[name].hidden is True
 
@@ -59,11 +69,6 @@ def test_wiki_holds_new_lint_curate() -> None:
 
 def test_migrate_has_no_flag_blocks() -> None:
     assert "flag-blocks" not in _root().commands["migrate"].commands
-
-
-def test_install_has_no_upgrade_verb() -> None:
-    assert "upgrade" not in _root().commands["install"].commands
-    assert runner.invoke(app, ["install", "--upgrade"]).exit_code != 0
 
 
 def test_no_journal_mcp_tool() -> None:

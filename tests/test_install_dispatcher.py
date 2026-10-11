@@ -1,20 +1,19 @@
-"""Tests for `lore_cli.install_cmd` — argparse + flag combinations +
-legacy artifact gating."""
+"""Tests for `lore_cli.integrations` — flag combinations + legacy artifact gating."""
 
 from __future__ import annotations
 
 import json
-import os
+import sys
 
 import pytest
-from lore_cli import install_cmd
+from lore_cli import integrations
 
 
 @pytest.fixture
 def clean_home(tmp_path, monkeypatch):
     """Empty $HOME so legacy detection finds nothing."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(install_cmd.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(integrations.Path, "home", classmethod(lambda cls: tmp_path))
     # Also reset the helper module's HOME-derived paths
     from lore_core.install import _helpers
 
@@ -22,19 +21,39 @@ def clean_home(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _run(argv: list[str]) -> int:
+    """Drive `_cmd_install` the way `lore setup` and `lore uninstall` do."""
+    mode = "check" if argv[:1] == ["check"] else "install"
+    argv = argv[1:] if mode == "check" else argv
+    integration = argv[argv.index("--integration") + 1] if "--integration" in argv else None
+    args = integrations._make_args(
+        integration=integration,
+        yes="--yes" in argv,
+        quiet=False,
+        json_out="--json" in argv,
+        force="--force" in argv,
+        lore_repo=None,
+    )
+    try:
+        return integrations._cmd_install(args, mode=mode)
+    except SystemExit as exc:
+        print(exc.code, file=sys.stderr)
+        return 1
+
+
 def test_force_yes_combo_refused(clean_home, capsys):
     """--force --yes is the obvious footgun; refuse with a clear error."""
-    rc = install_cmd.main(["--force", "--yes", "--integration", "claude"])
+    rc = _run(["--force", "--yes", "--integration", "claude"])
     assert rc == 2
     err = capsys.readouterr().out + capsys.readouterr().err
     assert "not allowed" in err.lower() or "force" in err.lower()
 
 
 def test_check_does_not_write(clean_home, capsys, tmp_path, monkeypatch):
-    """`lore install check` must never modify the filesystem."""
+    """Check mode must never modify the filesystem."""
     # Snapshot mtimes of HOME tree
     before = {p: p.stat().st_mtime_ns for p in tmp_path.rglob("*") if p.is_file()}
-    install_cmd.main(["check", "--integration", "cursor"])
+    _run(["check", "--integration", "cursor"])
     after = {p: p.stat().st_mtime_ns for p in tmp_path.rglob("*") if p.is_file()}
     # The clean_home fixture starts with no files, but after check
     # there should still be no NEW files, and no modified files.
@@ -42,14 +61,14 @@ def test_check_does_not_write(clean_home, capsys, tmp_path, monkeypatch):
 
 
 def test_unknown_integration_exits_with_error(clean_home, capsys):
-    rc = install_cmd.main(["--integration", "nonexistent"])
+    rc = _run(["--integration", "nonexistent"])
     assert rc != 0
     err = capsys.readouterr().err
     assert "unknown integration" in err
 
 
 def test_json_envelope_for_check_mode(clean_home, capsys):
-    install_cmd.main(["check", "--integration", "cursor", "--json"])
+    _run(["check", "--integration", "cursor", "--json"])
     out = capsys.readouterr().out
     envelope = json.loads(out)
     # `check` is now first-class in the dispatcher (it builds an install
@@ -69,7 +88,7 @@ def test_legacy_artifacts_block_install_without_force(
     target.mkdir(parents=True)
     (skills / "lore:fake").symlink_to(target)
 
-    rc = install_cmd.main(["--integration", "cursor", "--yes"])
+    rc = _run(["--integration", "cursor", "--yes"])
     err = capsys.readouterr().out
     assert rc == 1
     assert "legacy install.sh artifacts" in err.lower()
@@ -85,7 +104,7 @@ def test_legacy_artifacts_show_in_check_but_no_refusal(
     target.mkdir(parents=True)
     (skills / "lore:fake").symlink_to(target)
 
-    rc = install_cmd.main(["check", "--integration", "cursor"])
+    rc = _run(["check", "--integration", "cursor"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "legacy install.sh artifacts" in out.lower()
@@ -101,19 +120,10 @@ def test_force_overrides_legacy_refusal(clean_home, capsys, tmp_path):
     target.mkdir(parents=True)
     (skills / "lore:fake").symlink_to(target)
     # --force without --yes (allowed); use check so no writes happen
-    rc = install_cmd.main(
+    rc = _run(
         ["check", "--integration", "cursor", "--force"]
     )
     assert rc == 0
-
-
-def test_default_subcommand_is_install(clean_home, capsys):
-    """`lore install` with no subcommand defaults to `install`."""
-    # Use --integration with a binary that doesn't exist on PATH so we don't
-    # trigger any real subprocess.
-    install_cmd.main(["check", "--integration", "cursor"])
-    # The fact that it ran without SystemExit on argparse confirms the
-    # default subcommand routing works.
 
 
 # ---------------------------------------------------------------------------
@@ -125,15 +135,15 @@ def test_refresh_claude_plugin_cache_skips_when_claude_missing(
     monkeypatch, capsys
 ):
     """No `claude` on PATH → print a manual hint, don't shell out."""
-    monkeypatch.setattr(install_cmd.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(integrations.shutil, "which", lambda _name: None)
 
     called = []
     monkeypatch.setattr(
-        install_cmd.subprocess,
+        integrations.subprocess,
         "run",
         lambda *a, **kw: called.append((a, kw)),
     )
-    install_cmd._refresh_claude_plugin_cache(quiet=False)
+    integrations._refresh_claude_plugin_cache(quiet=False)
     out = capsys.readouterr().out
     assert called == []
     assert "claude plugin update lore@lore" in out
@@ -143,7 +153,7 @@ def test_refresh_claude_plugin_cache_runs_update_on_success(
     monkeypatch, capsys
 ):
     """`claude` on PATH → run `claude plugin update lore@lore` and relay output."""
-    monkeypatch.setattr(install_cmd.shutil, "which", lambda _name: "/fake/claude")
+    monkeypatch.setattr(integrations.shutil, "which", lambda _name: "/fake/claude")
 
     captured_argv = {}
 
@@ -156,8 +166,8 @@ def test_refresh_claude_plugin_cache_runs_update_on_success(
         captured_argv["argv"] = argv
         return _Result()
 
-    monkeypatch.setattr(install_cmd.subprocess, "run", _fake_run)
-    install_cmd._refresh_claude_plugin_cache(quiet=False)
+    monkeypatch.setattr(integrations.subprocess, "run", _fake_run)
+    integrations._refresh_claude_plugin_cache(quiet=False)
     out = capsys.readouterr().out
     assert captured_argv["argv"] == ["/fake/claude", "plugin", "update", "lore@lore"]
     assert "0.10.0 to 0.13.1" in out
@@ -166,7 +176,7 @@ def test_refresh_claude_plugin_cache_runs_update_on_success(
 
 def test_refresh_claude_plugin_cache_warns_on_nonzero_exit(monkeypatch, capsys):
     """Non-zero exit → print a warning with the last stderr/stdout line."""
-    monkeypatch.setattr(install_cmd.shutil, "which", lambda _name: "/fake/claude")
+    monkeypatch.setattr(integrations.shutil, "which", lambda _name: "/fake/claude")
 
     class _Result:
         returncode = 1
@@ -174,9 +184,9 @@ def test_refresh_claude_plugin_cache_warns_on_nonzero_exit(monkeypatch, capsys):
         stderr = "error: plugin 'lore@lore' is not installed\n"
 
     monkeypatch.setattr(
-        install_cmd.subprocess, "run", lambda *a, **kw: _Result()
+        integrations.subprocess, "run", lambda *a, **kw: _Result()
     )
-    install_cmd._refresh_claude_plugin_cache(quiet=False)
+    integrations._refresh_claude_plugin_cache(quiet=False)
     out = capsys.readouterr().out
     assert "is not installed" in out
     assert "/plugin" in out  # marketplace hint
@@ -184,7 +194,7 @@ def test_refresh_claude_plugin_cache_warns_on_nonzero_exit(monkeypatch, capsys):
 
 def test_refresh_claude_plugin_cache_quiet_suppresses_output(monkeypatch, capsys):
     """`quiet=True` keeps the helper silent on the happy path."""
-    monkeypatch.setattr(install_cmd.shutil, "which", lambda _name: "/fake/claude")
+    monkeypatch.setattr(integrations.shutil, "which", lambda _name: "/fake/claude")
 
     class _Result:
         returncode = 0
@@ -192,8 +202,8 @@ def test_refresh_claude_plugin_cache_quiet_suppresses_output(monkeypatch, capsys
         stderr = ""
 
     monkeypatch.setattr(
-        install_cmd.subprocess, "run", lambda *a, **kw: _Result()
+        integrations.subprocess, "run", lambda *a, **kw: _Result()
     )
-    install_cmd._refresh_claude_plugin_cache(quiet=True)
+    integrations._refresh_claude_plugin_cache(quiet=True)
     out = capsys.readouterr().out
     assert out == ""

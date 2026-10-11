@@ -10,8 +10,8 @@ default does. There is no merge and no per-repo layer.
 
 ## Before you start
 
-- `lore` installed and the repo `lore attach`ed to a wiki.
-- Vale on `PATH`, only if you want the lint step. `lore doctor` reports whether
+- `lore` installed and a scope that routes the repo to a wiki (`lore setup scope`).
+- Vale on `PATH`, only if you want the lint step. `lore setup` reports whether
   Vale is present. Its absence never blocks; the rules still apply as
   instructions.
 

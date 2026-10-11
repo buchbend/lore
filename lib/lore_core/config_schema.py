@@ -3,9 +3,7 @@
 Shared plumbing behind `lore config get/set/unset/edit` for both
 `RootConfig` (`root_config.py`) and `WikiConfig` (`wiki_config.py`).
 Everything here is generic over "some dataclass tree, loaded from
-some YAML file under some base dir" via :class:`ConfigSchema` — a
-future slice reuses `validate_raw`/`suggest` for `.lore.yml` offer
-validation without needing a third copy of this logic.
+some YAML file under some base dir" via :class:`ConfigSchema`.
 """
 
 from __future__ import annotations

@@ -14,7 +14,7 @@ it with `lore wiki lint adr`. Change it later without a new record.
 1. **Copy the template.** The template lives in
    `lore-workflow/skills/grilling/ADR-FORMAT.md`. Number the file one above the
    highest in `docs/adr/`: `docs/adr/NNNN-slug.md`. In a repo scaffolded by
-   `lore attach --scaffold-workflow`, add the stem `NNNN-slug` to the first
+   `lore setup scope --scaffold-workflow`, add the stem `NNNN-slug` to the first
    `{toctree}` block in `docs/adr/index.md`.
 
 2. **Fill in `Holds`.** Sort each part of the decision into one of three kinds:

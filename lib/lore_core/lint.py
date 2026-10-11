@@ -409,31 +409,20 @@ def check_hierarchy(
 
 
 def _repo_by_project_slug(wiki_name: str) -> dict[str, Path]:
-    """Map each project slug in this wiki to the repo path attached to it.
+    """Map each scope routed to this wiki (by name) to its folder.
 
-    Empty when nothing is attached, or when the attachment machinery isn't
-    importable — a drift check is advisory and never fails the lint.
+    ``lore setup`` names a migrated scope after its repo folder, which is the
+    project slug. Advisory: an unreadable config gives an empty map.
     """
-    try:
-        from lore_core.config import resolve_lore_root
-        from lore_core.state.attachments import AttachmentsFile
-    except ImportError:
-        return {}
+    from lore_core.config import get_lore_root
+    from lore_core.root_config import load_root_config
 
-    lore_root = resolve_lore_root()
-    if lore_root is None or not lore_root.exists():
-        return {}
-    af = AttachmentsFile(lore_root)
-    af.load()
-
-    repos: dict[str, Path] = {}
-    for a in af.all():
-        if a.wiki != wiki_name or not a.scope:
-            continue
-        slug = a.scope.rsplit(":", 1)[-1]
-        if slug:
-            repos[slug] = a.path
-    return repos
+    scopes = load_root_config(get_lore_root()).scopes
+    return {
+        name: Path(sc["path"]).expanduser()
+        for name, sc in scopes.items()
+        if isinstance(sc, dict) and sc.get("wiki") == wiki_name and isinstance(sc.get("path"), str)
+    }
 
 
 def _orientation_notes(projects_dir: Path) -> list[tuple[Path, str]]:
@@ -460,10 +449,10 @@ def check_agent_guidance_sync(wiki_path: Path, wiki_name: str) -> list[Issue]:
     """Surface drift between a project's orientation note and its repo.
 
     For each project orientation note carrying a ``## Agent guidance``
-    H2 section, locate the attached repo via ``attachments.json`` and
+    H2 section, locate the repo via the scope of the same name and
     compare normalised content against its AGENTS.md / CLAUDE.md.
 
-    Best-effort: a missing attachments file, missing repo, or malformed
+    Best-effort: a missing scope, missing repo, or malformed
     note skips silently rather than failing the lint. The check targets
     the user-visible action ("here's a drift, run sync"), not consistency
     enforcement.
@@ -987,7 +976,7 @@ def run_lint(
         return mcp_error(
             NO_WIKIS,
             "no wikis found",
-            next_=f"create a wiki under {get_wiki_root()} or run `lore init`",
+            next_=f"create a wiki under {get_wiki_root()} or run `lore setup`",
         )
 
     all_notes, notes_by_wiki = _scan_notes(discover_wikis(None))
