@@ -311,6 +311,7 @@ def _check_hook_runnable(cwd: str) -> Check:
     try:
         result = subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=15,
