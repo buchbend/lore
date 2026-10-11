@@ -225,3 +225,9 @@ def test_edit_wiki_target(tmp_path: Path, monkeypatch):
     assert result.exit_code == 0, result.output
     cfg = yaml.safe_load((wiki_dir / ".lore-wiki.yml").read_text())
     assert cfg["git"]["auto_push"] is True
+
+
+def test_wiki_option_help_names_the_person_config():
+    result = runner.invoke(app, ["get", "--help"], env={"COLUMNS": "200"})
+    assert "root config" not in result.output
+    assert "person config" in result.output

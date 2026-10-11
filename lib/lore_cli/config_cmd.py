@@ -192,7 +192,7 @@ def cmd_show(
 
 
 _WIKI_OPTION = typer.Option(
-    None, "--wiki", help="Target a wiki's .lore-wiki.yml instead of the root config."
+    None, "--wiki", help="Target a wiki's .lore-wiki.yml instead of the person config."
 )
 
 

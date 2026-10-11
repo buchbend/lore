@@ -56,3 +56,10 @@ def test_removed_handlers_no_longer_defined() -> None:
         "handle_journal_write",
     ):
         assert not hasattr(server, handler), handler
+
+
+def test_tool_texts_name_the_route_not_attachments() -> None:
+    """Attach is gone (PRD 0016); tool texts must not send agents to it."""
+    import json
+
+    assert "attachment" not in json.dumps(_tool_schema()).lower()

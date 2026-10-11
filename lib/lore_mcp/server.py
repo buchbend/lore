@@ -830,8 +830,8 @@ def handle_verdict(
 
 
 def _resolve_wiki_with_active_scope_fallback(wiki: str | None) -> Path | None:
-    """Like :func:`_resolve_wiki` but auto-resolves from the active
-    cwd attachment when ``wiki`` is omitted and there's no single-wiki
+    """Like :func:`_resolve_wiki` but auto-resolves from the cwd's
+    route when ``wiki`` is omitted and there's no single-wiki
     fallback to lean on.
 
     Order:
@@ -888,7 +888,7 @@ def handle_pending_verdicts(wiki: str | None = None) -> dict[str, Any]:
             (
                 f"wiki not found: {wiki}" if wiki else
                 "could not resolve active wiki (no explicit `wiki`, no "
-                "single-wiki fallback, no cwd attachment)"
+                "single-wiki fallback, no route for the cwd)"
             ),
             next_="pass `wiki` explicitly or run `lore setup scope` in the repo",
         )
@@ -1190,8 +1190,8 @@ def _tool_schema() -> list[dict]:
                 "confirmed_at, optional disagreement block). The "
                 "skill then loops one `AskUserQuestion` per row and "
                 "calls `lore_verdict` for each user choice. `wiki` "
-                "is optional — auto-resolves from the active cwd "
-                "attachment when omitted."
+                "is optional — auto-resolves from the cwd's route "
+                "(its scope's wiki) when omitted."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1200,7 +1200,7 @@ def _tool_schema() -> list[dict]:
                         "type": "string",
                         "description": (
                             "Wiki name. Optional; auto-resolves from "
-                            "the active attachment when omitted."
+                            "the cwd's route when omitted."
                         ),
                     },
                 },

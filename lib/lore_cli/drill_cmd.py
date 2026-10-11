@@ -40,7 +40,7 @@ app = typer.Typer(
 
 
 def _render_trace(trace: list[dict]) -> Tree:
-    tree = Tree("[bold]drill trace[/bold]")
+    tree = Tree("[bold]read trace[/bold]")
     for step in trace:
         stage = step.get("stage", "?")
         elapsed = step.get("elapsed_ms", 0)
