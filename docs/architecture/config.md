@@ -119,6 +119,9 @@ Vault-wide policy. Schema lives in
   thresholds for `lore workflow risk`. The defaults are 400 lines, 10 files,
   the top 10% of Python import fan-in, and globs for auth, permission,
   secret and credential paths. See `docs/architecture/ledger.md`.
+- `workflow.pages` — where orient and triage render a page: `artifact`
+  (default) publishes a claude.ai artifact, falling back to a local HTML file
+  when the session has no Artifact tool; `html` always writes the local file.
 - `tiers.overrides.<host>.<tier>` — override the shipped model-tier table
   (`lib/lore_core/tiers/table.py`) for one host/tier cell; see
   `docs/model-tiers.md`.

@@ -117,8 +117,8 @@ Fix gaps and repeats before you build the page.
 
 ## 7. The page
 
-Build one page from `triage.json` as [PAGE.md](PAGE.md) describes. Publish it as an artifact,
-or else write `triage-<repo>.html` in the scratchpad.
+Build one page from `triage.json` as [PAGE.md](PAGE.md) and orient's **Page** rule describe:
+an artifact, or `triage-<repo>.html` in the scratchpad when `workflow.pages` is `html`.
 
 ## 8. Report and wait
 

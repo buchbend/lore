@@ -297,6 +297,7 @@ def test_workflow_risk_defaults_and_override(tmp_path: Path):
     assert cfg.workflow.risk.max_files == 10
     assert cfg.workflow.risk.fanin_top_fraction == 0.1
     assert "**/auth/**" in cfg.workflow.risk.sensitive_paths
+    assert cfg.workflow.pages == "artifact"
 
     (tmp_path / ".lore").mkdir()
     (tmp_path / ".lore" / "config.yml").write_text(
