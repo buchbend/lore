@@ -205,8 +205,11 @@ def step_wiki(
         root = get_lore_root()
         if not invent_vault and not root.is_dir():
             return f"no vault at {root}", [
-                (None, f"no vault configured and none at {root}; skipped. "
-                 "Run `lore setup --vault <path>` to name one.")
+                (
+                    None,
+                    f"no vault configured and none at {root}; skipped. "
+                    "Run `lore setup --vault <path>` to name one.",
+                )
             ]
 
     person = _read_person()

@@ -512,7 +512,8 @@ def old_settings_files() -> list[Path]:
     from lore_core.config import get_lore_root
 
     old = get_lore_root() / ".lore"
-    return [p for p in (old / n for n in ("attachments.json", "scopes.json", "config.yml")) if p.exists()]
+    names = ("attachments.json", "scopes.json", "config.yml")
+    return [old / n for n in names if (old / n).exists()]
 
 
 OLD_SETTINGS_HINT = "old settings files found; run `lore setup` to migrate them"

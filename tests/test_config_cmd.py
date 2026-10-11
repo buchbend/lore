@@ -72,7 +72,9 @@ def test_get_unknown_wiki_errors(tmp_path: Path, monkeypatch):
 
 def test_set_root_persists(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
-    result = runner.invoke(app, ["set", "feedback.retrieval_misses", "true"], catch_exceptions=False)
+    result = runner.invoke(
+        app, ["set", "feedback.retrieval_misses", "true"], catch_exceptions=False
+    )
     assert result.exit_code == 0, result.output
     cfg = yaml.safe_load(user_config_path().read_text())
     assert cfg["feedback"]["retrieval_misses"] is True
@@ -111,7 +113,9 @@ def test_set_invalid_value_rejected_names_type_and_leaves_file_unchanged(
     cfg_path.write_text("feedback:\n  retrieval_misses: true\n")
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
     before = cfg_path.read_text()
-    result = runner.invoke(app, ["set", "feedback.retrieval_misses", "notabool"], catch_exceptions=False)
+    result = runner.invoke(
+        app, ["set", "feedback.retrieval_misses", "notabool"], catch_exceptions=False
+    )
     assert result.exit_code != 0
     assert "bool" in result.output
     assert cfg_path.read_text() == before

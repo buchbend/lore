@@ -478,7 +478,10 @@ def render_project_orientation(scope: Scope, wiki_root: Path) -> str | None:
     candidates = [
         path
         for slug in slugs
-        for path in (wiki_path / "projects" / slug / f"{slug}.md", wiki_path / "projects" / f"{slug}.md")
+        for path in (
+            wiki_path / "projects" / slug / f"{slug}.md",
+            wiki_path / "projects" / f"{slug}.md",
+        )
     ]
     for path in candidates:
         if path.is_file():

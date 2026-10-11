@@ -125,7 +125,9 @@ def test_get_field_on_group_raises(tmp_path: Path) -> None:
 def test_set_field_persists_and_round_trips(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, set_field
 
-    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\nfeedback:\n  retrieval_misses: false\n")
+    root = _fresh_root(
+        tmp_path, "user:\n  display_name: Ada\nfeedback:\n  retrieval_misses: false\n"
+    )
     fi = set_field(root, "feedback.retrieval_misses", "true")
     assert fi.value is True
     assert fi.source == "file"
@@ -220,7 +222,9 @@ def test_unset_field_reverts_to_default(tmp_path: Path) -> None:
 def test_unset_field_preserves_siblings(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, unset_field
 
-    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\nfeedback:\n  retrieval_misses: true\n")
+    root = _fresh_root(
+        tmp_path, "user:\n  display_name: Ada\nfeedback:\n  retrieval_misses: true\n"
+    )
     unset_field(root, "feedback.retrieval_misses")
     assert get_field(root, "feedback.retrieval_misses").value is False
     assert get_field(root, "user.display_name").value == "Ada"  # untouched
@@ -400,7 +404,9 @@ def test_person_config_is_the_one_settings_file(tmp_path: Path) -> None:
         warnings.simplefilter("error")
         cfg = load_root_config(tmp_path)
     assert cfg.user.display_name == "Christof"
-    assert cfg.feedback.retrieval_misses is False  # the old root config is `lore setup`'s to migrate
+    assert (
+        cfg.feedback.retrieval_misses is False
+    )  # the old root config is `lore setup`'s to migrate
     assert cfg.scopes["ccatobs"]["wiki"] == "ccat"
 
 
