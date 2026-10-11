@@ -18,23 +18,25 @@
   the path match wins.
 - **Default:** a repo's committed `.lore.yml` holds exceptions only. It names
   sinks, sources or a tracker by name, or it opts out of a sink.
-- **Default:** the reporting boundary. A repo file names a sink and does not
-  define one. Only the person's own config defines a sink's command or
-  host. When a route names a sink the person has not defined, Lore uses the
-  `file` sink and `lore status` says why. The rule holds for a sink name
-  from any origin: `.lore.yml`, a scope, the defaults or an environment
-  variable.
-- **Default:** config files hold the names of secrets, not their values. The
-  values live in a `0600` secrets file outside any git worktree, or in an
-  environment variable.
+- **Invariant** (test: `tests/test_route.py::test_invariant_reporting_boundary_undefined_sink_in_lore_yml_gives_file_sink`):
+  the reporting boundary. A repo file names a sink and does not define one.
+  Only the person's own config defines a sink's command or host. When a
+  route names a sink the person has not defined, Lore uses the `file` sink
+  and `lore status` says why. The rule holds for a sink name from any
+  origin: `.lore.yml`, a scope, the defaults or an environment variable.
+- **Invariant** (test: `tests/test_config_schema.py::test_invariant_secrets_rule_token_or_password_key_fails_and_names_the_file`):
+  config files hold the names of secrets, not their values.
+- **Invariant** (test: `tests/test_secrets.py::test_invariant_secrets_file_inside_a_git_worktree_is_refused`):
+  the secret values live in a `0600` secrets file outside any git worktree,
+  or in an environment variable.
 - **Incidental:** the person's config lives in one file under
   `~/.config/lore/`. It absorbs the root config, `attachments.json` and
   `scopes.json`.
 - **Incidental:** the old commands (`attach`, `install`, `init`, `scopes`)
   go in one hard cut. Lore had one user at the time.
 
-The epic that builds this promotes the reporting boundary and the secrets
-rule to invariants, each with its test.
+Epic #466 promoted the reporting boundary and the secrets rule to
+invariants, each with its test.
 
 ## Revisit if
 
@@ -91,3 +93,9 @@ does not reach a team logbook.
   Rejected: a cloned repo could then send a person's entries to any host.
 - **Match by git remote only.** Rejected as the default: it fails for repos
   without a remote. It stays as an option on each scope.
+
+## Amendments
+
+- 2026-10-11: epic #466 shipped (PR #479). The reporting boundary and the
+  secrets rule become invariants. The boundary covers a sink name from any
+  origin.

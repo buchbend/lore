@@ -1,12 +1,14 @@
 ---
 title: Route by folder scope, one settings file, lore setup
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/466
 repos:
   - buchbend/lore
 ---
 
 # PRD 0016: Route by folder scope, one settings file, lore setup
+
+> Historical. Current decisions: ADR 0016.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/466).
 > The epic links here; this file is not embedded in the issue body.
