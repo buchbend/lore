@@ -585,3 +585,45 @@ def setup_scope(
         ),
     )
     _finish(ok)
+
+
+# ---------------------------------------------------------------------------
+# setup source (PRD 0017): add a search source and run one test query
+# ---------------------------------------------------------------------------
+
+
+@app.command("source")
+def setup_source(
+    kind: str = typer.Argument(..., help="dokuwiki or command."),
+    name: str = typer.Option(..., "--name", help="Name of the source."),
+    url: str = typer.Option("", "--url", help="dokuwiki: base URL of the wiki."),
+    run: str = typer.Option("", "--run", help="command: shell command that speaks JSON."),
+    token: str = typer.Option("", "--token", help="dokuwiki: API token (prompted if omitted)."),
+) -> None:
+    """Add a search source, store its token in the secrets file, run one test query."""
+    from lore_core.secrets import set_secret
+    from lore_core.sources import search_sources
+
+    if kind not in ("dokuwiki", "command"):
+        raise typer.BadParameter("kind must be dokuwiki or command")
+    if kind == "dokuwiki" and not url:
+        raise typer.BadParameter("dokuwiki needs --url")
+    if kind == "command" and not run:
+        raise typer.BadParameter("command needs --run")
+    definition: dict = {"kind": kind}
+    if kind == "dokuwiki":
+        token = token or typer.prompt("API token", hide_input=True)
+        set_secret(name, token)
+        definition |= {"url": url, "secret": name}
+    else:
+        definition["run"] = run
+    cfg = _read_person()
+    cfg.setdefault("sources", {})[name] = definition
+    _write_person(cfg)
+    entry = search_sources("test", 1, Path.cwd(), [], only=name)[0]
+    events: list[Event] = [(True, f"added source {name} ({kind})")]
+    if entry["note"]:
+        events.append((False, f"test query failed: {entry['note']}"))
+    else:
+        events.append((True, f"test query returned {len(entry['hits'])} hit(s)"))
+    _finish(_report("source", f"source {name}", events))

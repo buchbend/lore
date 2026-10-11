@@ -305,55 +305,27 @@ def _artifact_repos(wiki: str | None, for_repo: str | None) -> list[str]:
     return repos
 
 
-def _artifact_ref(url: str, number: Any) -> str:
-    """`owner/repo#number` from a GitHub issue or PR URL."""
-    parts = url.split("github.com/", 1)[-1].split("/")
-    if len(parts) >= 2:
-        return f"{parts[0]}/{parts[1]}#{number}"
-    return f"#{number}"
-
-
 def handle_search(
     query: str,
     wiki: str | None = None,
     for_repo: str | None = None,
     k: int = 5,
 ) -> dict[str, Any]:
-    """Wiki index hits, then live GitHub artifact hits. Two lists, no merge.
+    """`{wiki, sources: [{name, kind, hits, note}]}`: one list per source, no merge.
 
-    GitHub ranks its own list and nothing is stored. When `gh` cannot
-    answer — missing, unauthenticated, offline, non-zero exit — the
-    result holds the wiki list and a `note` naming the omission, so an
-    empty artifact list is never mistaken for "no such issue".
+    Each source ranks its own list and nothing is stored. A source that
+    cannot answer (`gh` missing or offline, a timeout, a bad token) yields
+    `hits: []` and a `note` naming the omission, so an empty list is never
+    mistaken for "no such page". See `lore_core.sources`.
     """
-    from lore_core.gh import gh_search_issues
+    from lore_core.sources import search_sources
 
-    result: dict[str, Any] = {
+    return {
         "wiki": _wiki_hits(query, wiki=wiki, for_repo=for_repo, k=k),
-        "artifacts": [],
+        "sources": search_sources(
+            query, k, Path.cwd(), github_repos=_artifact_repos(wiki, for_repo)
+        ),
     }
-    repos = _artifact_repos(wiki, for_repo)
-    if not repos:
-        result["note"] = "GitHub hits omitted: no repo attached and the wiki has no git remote."
-        return result
-    hits = gh_search_issues(query, repos)
-    if hits is None:
-        result["note"] = (
-            "GitHub hits omitted: `gh search issues` failed or the machine is "
-            f"offline ({', '.join(repos)})."
-        )
-        return result
-    result["artifacts"] = [
-        {
-            "ref": _artifact_ref(h.get("url", ""), h.get("number")),
-            "title": h.get("title", ""),
-            "state": h.get("state", ""),
-            "url": h.get("url", ""),
-            "updated_at": h.get("updatedAt", ""),
-        }
-        for h in hits
-    ]
-    return result
 
 
 def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
@@ -399,6 +371,16 @@ def handle_read(
     section: str | None = None,
     include_human: bool = False,
 ) -> dict[str, Any]:
+    if ":" in path and not path.startswith("[["):
+        from lore_core.sources import SourceError, read_source
+
+        try:
+            text = read_source(path, Path.cwd())
+        except SourceError as e:
+            return _mcp_error("source_error", f"{path}: {e}")
+        if text is not None:
+            return {"source": path.partition(":")[0], "ref": path, "content": text}
+
     wiki_path = _resolve_wiki(wiki)
     if wiki_path is None:
         return _mcp_error(
@@ -1052,15 +1034,18 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_search",
             "description": (
-                "Federated search. Returns two lists, never merged: `wiki` "
-                "holds ranked knowledge-note paths from the local index, "
-                "`artifacts` holds issues and PRs from one live GitHub "
-                "search, each with an `owner/repo#number` ref. A `note` "
-                "field appears when the GitHub side was left out (no repo "
-                "attached, `gh` failed, machine offline). Search is for "
-                "finding. Nothing about an artifact is stored here, so read "
-                "it live through `gh` before you comment on it, close it, "
-                "merge it or poll its state."
+                "Federated search. Returns `wiki` (ranked knowledge-note paths from "
+                "the local index) and `sources`: one list per search source "
+                "of the route, `[{name, kind, hits, note}]`, never merged. "
+                "The `github` source holds issues and PRs from one live "
+                "search, each with an `owner/repo#number` ref; other kinds "
+                "(`dokuwiki`, `command`) hold hits with a `<source>:<id>` "
+                "ref that `lore_read` reads. A `note` on a source explains "
+                "why its list is empty (no repo attached, `gh` failed, "
+                "timeout, offline). Search is for finding. Nothing about a "
+                "hit is stored here, so read an issue or PR live through "
+                "`gh` before you comment on it, close it, merge it or poll "
+                "its state."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1090,7 +1075,9 @@ def _tool_schema() -> list[dict]:
                 "need one heading's content. By default the response strips "
                 "the human-only region (everything after the "
                 "`<!-- lore:human-only -->` marker, if present). Pass "
-                "`include_human=true` to return the full note."
+                "`include_human=true` to return the full note. A "
+                "`<source>:<id>` ref from a `lore_search` source list reads "
+                "that source's page instead."
             ),
             "inputSchema": {
                 "type": "object",
