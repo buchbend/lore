@@ -101,7 +101,13 @@ def migrate(lore_root: Path) -> list[Event]:
             raw = None
             events.append((False, f"{cfg} is not valid YAML, left in place: {exc}"))
         if isinstance(raw, dict):
-            _merge_under(person, raw)
+            from lore_core.root_config import RETIRED_BLOCKS
+
+            retired = sorted(k for k in raw if k in RETIRED_BLOCKS)
+            if retired:
+                names = ", ".join(repr(k) for k in retired)
+                events.append((None, f"dropped retired block(s) {names} from {cfg}"))
+            _merge_under(person, {k: v for k, v in raw.items() if k not in RETIRED_BLOCKS})
             events.append((True, f"moved the keys of {cfg} into {user_config_path()}"))
             done.append(cfg)
         elif raw is not None:
@@ -109,7 +115,9 @@ def migrate(lore_root: Path) -> list[Event]:
 
     if att.exists():
         try:
-            rows = json.loads(att.read_text()).get("attachments", [])
+            data = json.loads(att.read_text())
+            rows = data.get("attachments", [])
+            declined = data.get("declined", [])
             if not isinstance(rows, list):
                 raise ValueError("`attachments` must be a list")
         except (OSError, ValueError, AttributeError) as exc:
@@ -125,6 +133,8 @@ def migrate(lore_root: Path) -> list[Event]:
                     skipped += 1
                     continue
                 path, wiki = str(row.get("path") or ""), row.get("wiki")
+                if path and not wiki:
+                    events.append((None, f"not migrated: {path} (no wiki)"))
                 if not path or not wiki or path in known:
                     continue
                 # The old scope's leaf is the project slug that SessionStart's
@@ -139,6 +149,10 @@ def migrate(lore_root: Path) -> list[Event]:
             events.append((True, f"wrote {added} scope(s) from {att}"))
             if skipped:
                 events.append((None, f"skipped {skipped} malformed row(s) in {att}"))
+            # A declined repo stays unrouted; say so, since consent is gone.
+            for row in declined if isinstance(declined, list) else ():
+                if isinstance(row, dict) and row.get("path"):
+                    events.append((None, f"not migrated: {row['path']} (declined)"))
             done.append(att)
 
     if scp.exists():

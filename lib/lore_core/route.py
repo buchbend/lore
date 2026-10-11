@@ -139,8 +139,9 @@ _CACHE: dict[tuple, Route] = {}
 def resolve_route(cwd: Path | str) -> Route:
     """Resolve the route for ``cwd`` (PRD 0016 order).
 
-    Per key: environment, nearest ``.lore.yml``, the matched scope, the
-    person's ``defaults``, then the code defaults. Cached per process,
+    Per key: environment, nearest ``.lore.yml`` (tracker, sinks and
+    sources only), the matched scope, the person's ``defaults``, then the
+    code defaults. Cached per process,
     keyed on the cwd, the environment overrides and the config files'
     modification times; every prompt hook calls this.
     """
@@ -174,17 +175,19 @@ def _resolve(
 
     origins: dict[str, str] = {}
     notes: list[str] = []
+    # ADR 0016 Holds: a repo's `.lore.yml` names sinks, sources or a tracker.
+    # The wiki and the scope come from the person's own config.
+    ignored = [k for k in ("wiki", "scope") if k in lore_yml]
+    if ignored:
+        keys = " and ".join(repr(k) for k in ignored)
+        notes.append(
+            f".lore.yml sets {keys}; Lore ignores {'them' if len(ignored) > 1 else 'it'}. "
+            "The wiki comes from your scopes (`lore setup scope`). "
+            "Delete the key from .lore.yml to drop this note."
+        )
     if os.environ.get(_ENV["scope"]):
         scope, origins["scope"] = os.environ[_ENV["scope"]], f"env {_ENV['scope']}"
-    elif isinstance(lore_yml.get("scope"), str) and lore_yml["scope"] in scopes:
-        scope, origins["scope"] = lore_yml["scope"], ".lore.yml"
     else:
-        # An old offer file names a scope the person never defined: match by folder.
-        if isinstance(lore_yml.get("scope"), str):
-            notes.append(
-                f".lore.yml names scope {lore_yml['scope']!r}, which {cfg_path} "
-                "does not define; matching by folder"
-            )
         scope, origin, match_notes = _match_scope(cwd, repo_root, scopes)
         notes.extend(match_notes)
         if scope:
@@ -195,7 +198,7 @@ def _resolve(
     for key, cfg_key in _KEYS.items():
         layers = [
             (os.environ.get(_ENV[key]) if key in _ENV else None, f"env {_ENV.get(key)}"),
-            (lore_yml.get(cfg_key), ".lore.yml"),
+            (lore_yml.get(cfg_key) if key != "wiki" else None, ".lore.yml"),
             (scope_cfg.get(cfg_key), f"scopes.{scope}"),
             (defaults.get(cfg_key), "defaults"),
         ]

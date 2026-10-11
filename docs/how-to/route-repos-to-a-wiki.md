@@ -38,14 +38,18 @@ documented in [config](../architecture/config.md).
 ## Give one repo an exception
 
 Commit a `.lore.yml` at the repo root, or in a subfolder for that subtree. It
-holds exceptions only:
+holds exceptions only: the tracker, the sinks (`logbook`) and the sources, by
+name. For example, opt this repo out of a team sink:
 
 ```yaml
-wiki: private
+logbook: [file]
 ```
 
-`.lore.yml` wins over the scope. Environment variables (`LORE_WIKI`,
-`LORE_SCOPE`, `LORE_TRACKER`) win over both.
+These keys in `.lore.yml` win over the scope. A `.lore.yml` does not choose
+the wiki or the scope (ADR 0016). Lore ignores a `wiki:` or `scope:` key there,
+and `lore status` names the key. The wiki comes from your scopes
+(`lore setup scope`). Environment variables (`LORE_WIKI`, `LORE_SCOPE`,
+`LORE_TRACKER`) win over both.
 
 ## See where a value came from
 

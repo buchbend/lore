@@ -78,20 +78,6 @@ class ObservabilityConfig:
 
 
 @dataclass
-class JournalConfig:
-    """AI + human freeform journal feature flag.
-
-    Off by default. Enabling injects a SessionStart prompt fragment
-    inviting the model to append to ``journals/ai.md`` when it has
-    something noteworthy, and exposes ``lore_journal_{read,write}``
-    MCP tools. Distinct from the per-day journal *surface* (auto-
-    extracted by Curator B) — see ``project_lore_journal_idea``.
-    """
-
-    enabled: bool = False
-
-
-@dataclass
 class TierConfig:
     """Model-tier overrides -- user escape hatch over the shipped tier table.
 
@@ -200,7 +186,6 @@ class RootConfig:
     sinks: dict[str, dict] = field(default_factory=dict)
     sources: dict[str, dict] = field(default_factory=dict)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
-    journal: JournalConfig = field(default_factory=JournalConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
     user: UserConfig = field(default_factory=UserConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
@@ -210,7 +195,7 @@ class RootConfig:
 #: Config blocks lore used to honour and no longer does. Named explicitly so a
 #: stale file gets one warning for the block that says what happened, rather
 #: than the generic unknown-key notice once per knob inside it.
-RETIRED_BLOCKS = frozenset({"curator"})
+RETIRED_BLOCKS = frozenset({"curator", "journal"})
 
 
 def _merge(target: Any, raw: dict[str, Any], path: str, source: Path) -> None:

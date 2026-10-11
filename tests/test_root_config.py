@@ -85,11 +85,11 @@ def _fresh_root(tmp_path: Path, body: str) -> Path:
 def test_walk_fields_marks_file_vs_default(tmp_path: Path) -> None:
     from lore_core.root_config import walk_fields
 
-    root = _fresh_root(tmp_path, "journal:\n  enabled: false\n")
+    root = _fresh_root(tmp_path, "feedback:\n  retrieval_misses: false\n")
     fields_by_path = {fi.path: fi for fi in walk_fields(root)}
 
-    assert fields_by_path["journal.enabled"].source == "file"
-    assert fields_by_path["journal.enabled"].value is False
+    assert fields_by_path["feedback.retrieval_misses"].source == "file"
+    assert fields_by_path["feedback.retrieval_misses"].value is False
     # display_name was not set in YAML — should be the empty default
     assert fields_by_path["user.display_name"].source == "default"
     assert fields_by_path["user.display_name"].value == ""
@@ -99,7 +99,7 @@ def test_get_field_returns_leaf_info(tmp_path: Path) -> None:
     from lore_core.root_config import get_field
 
     root = _fresh_root(tmp_path, "")
-    fi = get_field(root, "journal.enabled")
+    fi = get_field(root, "feedback.retrieval_misses")
     assert fi.value is False
     assert fi.default is False
     assert fi.source == "default"
@@ -125,12 +125,12 @@ def test_get_field_on_group_raises(tmp_path: Path) -> None:
 def test_set_field_persists_and_round_trips(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, set_field
 
-    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\njournal:\n  enabled: false\n")
-    fi = set_field(root, "journal.enabled", "true")
+    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\nfeedback:\n  retrieval_misses: false\n")
+    fi = set_field(root, "feedback.retrieval_misses", "true")
     assert fi.value is True
     assert fi.source == "file"
     # Re-read; siblings preserved.
-    assert get_field(root, "journal.enabled").value is True
+    assert get_field(root, "feedback.retrieval_misses").value is True
     assert get_field(root, "user.display_name").value == "Ada"
 
 
@@ -139,8 +139,8 @@ def test_set_field_creates_missing_parents(tmp_path: Path) -> None:
 
     # Empty config file: setting a nested path should add the parent map.
     root = _fresh_root(tmp_path, "")
-    set_field(root, "journal.enabled", "true")
-    assert get_field(root, "journal.enabled").value is True
+    set_field(root, "feedback.retrieval_misses", "true")
+    assert get_field(root, "feedback.retrieval_misses").value is True
 
 
 def test_set_field_rejects_bad_type(tmp_path: Path) -> None:
@@ -148,7 +148,7 @@ def test_set_field_rejects_bad_type(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     with pytest.raises(ValueError, match="cannot parse"):
-        set_field(root, "journal.enabled", "notabool")
+        set_field(root, "feedback.retrieval_misses", "notabool")
 
 
 def test_set_field_rejects_unknown_path(tmp_path: Path) -> None:
@@ -164,11 +164,11 @@ def test_set_field_bool_accepts_common_spellings(tmp_path: Path) -> None:
 
     root = _fresh_root(tmp_path, "")
     for spelling in ("true", "TRUE", "yes", "on", "1"):
-        set_field(root, "journal.enabled", spelling)
-        assert get_field(root, "journal.enabled").value is True
+        set_field(root, "feedback.retrieval_misses", spelling)
+        assert get_field(root, "feedback.retrieval_misses").value is True
     for spelling in ("false", "FALSE", "no", "off", "0"):
-        set_field(root, "journal.enabled", spelling)
-        assert get_field(root, "journal.enabled").value is False
+        set_field(root, "feedback.retrieval_misses", spelling)
+        assert get_field(root, "feedback.retrieval_misses").value is False
 
 
 def test_schema_tree_covers_all_leaves() -> None:
@@ -177,7 +177,7 @@ def test_schema_tree_covers_all_leaves() -> None:
     rows = schema_tree()
     paths = {p for p, _, _, _ in rows}
     # Spot-check leaves we ship today.
-    assert "journal.enabled" in paths
+    assert "feedback.retrieval_misses" in paths
     assert "observability.runs.keep" in paths
     assert "user.display_name" in paths
     # No group should appear (only leaves).
@@ -208,21 +208,21 @@ def test_unset_field_reverts_to_default(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, set_field, unset_field
 
     root = _fresh_root(tmp_path, "")
-    set_field(root, "journal.enabled", "true")
-    assert get_field(root, "journal.enabled").value is True
+    set_field(root, "feedback.retrieval_misses", "true")
+    assert get_field(root, "feedback.retrieval_misses").value is True
 
-    fi = unset_field(root, "journal.enabled")
+    fi = unset_field(root, "feedback.retrieval_misses")
     assert fi.value is False
     assert fi.source == "default"
-    assert get_field(root, "journal.enabled").value is False
+    assert get_field(root, "feedback.retrieval_misses").value is False
 
 
 def test_unset_field_preserves_siblings(tmp_path: Path) -> None:
     from lore_core.root_config import get_field, unset_field
 
-    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\njournal:\n  enabled: true\n")
-    unset_field(root, "journal.enabled")
-    assert get_field(root, "journal.enabled").value is False
+    root = _fresh_root(tmp_path, "user:\n  display_name: Ada\nfeedback:\n  retrieval_misses: true\n")
+    unset_field(root, "feedback.retrieval_misses")
+    assert get_field(root, "feedback.retrieval_misses").value is False
     assert get_field(root, "user.display_name").value == "Ada"  # untouched
 
 
@@ -230,7 +230,7 @@ def test_unset_field_noop_when_not_set(tmp_path: Path) -> None:
     from lore_core.root_config import unset_field
 
     root = _fresh_root(tmp_path, "")
-    fi = unset_field(root, "journal.enabled")
+    fi = unset_field(root, "feedback.retrieval_misses")
     assert fi.value is False
     assert fi.source == "default"
 
@@ -239,33 +239,33 @@ def test_unset_field_noop_when_file_absent(tmp_path: Path) -> None:
     from lore_core.root_config import unset_field
 
     # No .lore/config.yml at all.
-    fi = unset_field(tmp_path, "journal.enabled")
+    fi = unset_field(tmp_path, "feedback.retrieval_misses")
     assert fi.value is False
 
 
 def test_unset_field_unknown_path_raises_and_leaves_file_unchanged(tmp_path: Path) -> None:
     from lore_core.root_config import unset_field
 
-    root = _fresh_root(tmp_path, "journal:\n  enabled: true\n")
+    root = _fresh_root(tmp_path, "feedback:\n  retrieval_misses: true\n")
     from lore_core.config import user_config_path
 
     cfg_path = user_config_path()
     before = cfg_path.read_text()
     with pytest.raises(KeyError, match="unknown config path"):
-        unset_field(root, "journal.no_such_field")
+        unset_field(root, "feedback.no_such_field")
     assert cfg_path.read_text() == before
 
 
 def test_unset_field_prunes_empty_parent_mapping(tmp_path: Path) -> None:
     from lore_core.root_config import unset_field
 
-    root = _fresh_root(tmp_path, "journal:\n  enabled: true\n")
-    unset_field(root, "journal.enabled")
+    root = _fresh_root(tmp_path, "feedback:\n  retrieval_misses: true\n")
+    unset_field(root, "feedback.retrieval_misses")
     from lore_core.config import user_config_path
 
     cfg_path = user_config_path()
     raw = yaml.safe_load(cfg_path.read_text()) or {}
-    assert "journal" not in raw
+    assert "feedback" not in raw
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +361,7 @@ def test_a_retired_curator_block_warns_once_and_keeps_loading(tmp_path: Path):
     assert not hasattr(RootConfig(), "curator")
     _person_file(
         "curator:\n  backend: openai\n  openai:\n    base_url: https://example.invalid\n"
-        "journal:\n  enabled: true\n",
+        "feedback:\n  retrieval_misses: true\n",
         encoding="utf-8",
     )
 
@@ -371,7 +371,7 @@ def test_a_retired_curator_block_warns_once_and_keeps_loading(tmp_path: Path):
 
     curator_warnings = [w for w in caught if "curator" in str(w.message)]
     assert len(curator_warnings) == 1, [str(w.message) for w in caught]
-    assert cfg.journal.enabled is True
+    assert cfg.feedback.retrieval_misses is True
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +391,7 @@ def _person_file(content: str, **_kw) -> Path:
 
 def test_person_config_is_the_one_settings_file(tmp_path: Path) -> None:
     (tmp_path / ".lore").mkdir()
-    (tmp_path / ".lore" / "config.yml").write_text("journal:\n  enabled: true\n")
+    (tmp_path / ".lore" / "config.yml").write_text("feedback:\n  retrieval_misses: true\n")
     _person_file(
         "lore_root: ~/lore\nuser:\n  display_name: Christof\n"
         "scopes:\n  ccatobs:\n    path: ~/git/ccatobs\n    wiki: ccat\n"
@@ -400,7 +400,7 @@ def test_person_config_is_the_one_settings_file(tmp_path: Path) -> None:
         warnings.simplefilter("error")
         cfg = load_root_config(tmp_path)
     assert cfg.user.display_name == "Christof"
-    assert cfg.journal.enabled is False  # the old root config is `lore setup`'s to migrate
+    assert cfg.feedback.retrieval_misses is False  # the old root config is `lore setup`'s to migrate
     assert cfg.scopes["ccatobs"]["wiki"] == "ccat"
 
 

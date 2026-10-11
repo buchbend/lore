@@ -106,7 +106,7 @@ def test_two_scopes_matching_by_remote_only_give_no_scope_and_a_note(tmp_path: P
     assert any("'a'" in n and "'b'" in n for n in route.notes)
 
 
-def test_lore_yml_key_wins_and_is_marked_as_lore_yml(tmp_path: Path) -> None:
+def test_lore_yml_tracker_wins_and_is_marked_as_lore_yml(tmp_path: Path) -> None:
     _person(
         {
             "defaults": {"tracker": "github"},
@@ -121,18 +121,17 @@ def test_lore_yml_key_wins_and_is_marked_as_lore_yml(tmp_path: Path) -> None:
         }
     )
     repo = _repo(tmp_path / "git" / "dc")
-    (repo / ".lore.yml").write_text("wiki: private\n")
+    (repo / ".lore.yml").write_text("tracker: gitlab\n")
     (repo / "src").mkdir()
 
     route = resolve_route(repo / "src")
 
-    assert route.wiki == "private"
-    assert route.origins["wiki"] == ".lore.yml"
+    assert route.tracker == "gitlab"
+    assert route.origins["tracker"] == ".lore.yml"
+    assert (route.wiki, route.origins["wiki"]) == ("ccat", "scopes.ccatobs")
     assert route.scope == "ccatobs"
     assert route.sources == ("ccatwiki",)
     assert route.origins["sources"] == "scopes.ccatobs"
-    assert route.tracker == "github"
-    assert route.origins["tracker"] == "defaults"
     assert route.sinks == ("file",)
     assert route.origins["sinks"] == "code default"
 
@@ -241,8 +240,8 @@ def test_route_is_cached_per_process_until_a_config_file_changes(
 
     _person({"scopes": {"a": {"remote": ["github.com/ccatobs/*"], "wiki": "private"}}})
     assert resolve_route(repo).wiki == "private"
-    (repo / ".lore.yml").write_text("wiki: scratch\n")
-    assert resolve_route(repo).wiki == "scratch"
+    (repo / ".lore.yml").write_text("tracker: gitlab\n")
+    assert resolve_route(repo).tracker == "gitlab"
 
 
 # ---------------------------------------------------------------------------
@@ -250,10 +249,13 @@ def test_route_is_cached_per_process_until_a_config_file_changes(
 # ---------------------------------------------------------------------------
 
 
-def test_lore_yml_scope_unknown_to_person_config_falls_back_to_folder_match(
-    tmp_path: Path,
-) -> None:
-    cfg = _person(
+def test_lore_yml_wiki_and_scope_are_ignored_with_a_note(tmp_path: Path) -> None:
+    """ADR 0016 Holds: a repo's `.lore.yml` names sinks, sources or a tracker.
+
+    An old offer file carries `wiki:` and `scope:`. They must not route the
+    repo, so a person who declined it is not routed by a committed file.
+    """
+    _person(
         {
             "scopes": {
                 "org": {"path": str(tmp_path / "git"), "wiki": "ccat", "logbook": ["file", "pm"]}
@@ -266,15 +268,15 @@ def test_lore_yml_scope_unknown_to_person_config_falls_back_to_folder_match(
 
     route = resolve_route(repo)
 
-    assert route.scope == "org"
+    assert (route.scope, route.origins["scope"]) == ("org", f"path {tmp_path / 'git'}")
     assert route.sinks == ("file", "pm")
-    assert (route.wiki, route.origins["wiki"]) == ("private", ".lore.yml")
-    assert any("'lore'" in n and str(cfg) in n for n in route.notes)
+    assert (route.wiki, route.origins["wiki"]) == ("ccat", "scopes.org")
+    assert any("'wiki'" in n and "'scope'" in n and "lore setup scope" in n for n in route.notes)
 
 
-def test_lore_yml_wiki_that_is_not_a_wiki_name_is_rejected(tmp_path: Path) -> None:
+def test_wiki_that_is_not_a_wiki_name_is_rejected(tmp_path: Path) -> None:
+    _person({"defaults": {"wiki": "../../x"}})
     repo = _repo(tmp_path / "dc")
-    (repo / ".lore.yml").write_text("wiki: ../../x\n")
 
     route = resolve_route(repo)
 

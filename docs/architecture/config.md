@@ -72,7 +72,7 @@ and an invalid value is rejected naming the expected type/choices.
 
 | Var | Type | Read in | Resolved by |
 |-----|------|---------|-------------|
-| `LORE_ROOT` | path (default: `~/lore`) | many CLI commands + `lore_core/scope_resolver.py` | `lore_core.config.get_lore_root()` |
+| `LORE_ROOT` | path (default: `~/lore`) | many CLI commands + `lore_core/route.py` | `lore_core.config.get_lore_root()` |
 
 `get_lore_root()` returns env-or-default. CLI commands that *require*
 the user to have explicitly set `LORE_ROOT` should call
@@ -119,7 +119,6 @@ it and deletes them. Subsections:
   `docs/architecture/observability.md`.
   `dead_letter_hard_cap` was removed with the flush store. A `config.yml` that
   still sets it loads normally; the loader warns and names the key to delete.
-- `journal.enabled` — inert: the journal commands and `lore_journal_write` tool are gone. The key still loads and does nothing.
 - `feedback.{retrieval_misses, retrieval_misses_repo}` — opt-in session-end
   reporting of retrieval misses; `retrieval_misses` defaults to `false`,
   `retrieval_misses_repo` to `buchbend/lore`. See
@@ -132,9 +131,10 @@ it and deletes them. Subsections:
   (`lib/lore_core/tiers/table.py`) for one host/tier cell; see
   `docs/model-tiers.md`.
 
-A `curator:` block is a retired key here too — the LLM-backend selector
-left with the LLM client, and `load_root_config` warns by name
-(`RETIRED_BLOCKS`).
+A `curator:` or `journal:` block is a retired key here too. The LLM-backend
+selector left with the LLM client, and the journal left with its commands.
+`load_root_config` warns by name (`RETIRED_BLOCKS`), and `lore setup` drops
+both blocks when it migrates an old root config.
 
 Loader: `load_root_config(lore_root) -> RootConfig` (reads only the
 person file; `lore_root` keeps the shared schema signature). Missing file →
@@ -174,11 +174,13 @@ behaviour as root config.
 
 ### 5. `<repo>/.lore.yml` — repo exceptions
 
-Optional and committed. Holds exceptions only, such as a different wiki or
-an opt-out from a sink, by name. `resolve_route(cwd)`
+Optional and committed. Holds exceptions only: `tracker`, `logbook` (sinks)
+and `sources`, by name, such as an opt-out from a sink. `resolve_route(cwd)`
 (`lib/lore_core/route.py`) reads the nearest one between the working
 directory and the repo root, ahead of the scope that matches the folder
-(ADR 0016).
+(ADR 0016). A `.lore.yml` does not choose the wiki or the scope: the route
+ignores a `wiki:` or `scope:` key there and adds a note that `lore status`
+prints.
 
 ### 6. `.claude-plugin/plugin.json`
 

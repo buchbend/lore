@@ -136,7 +136,7 @@ above:
 | SessionStart context assembly + banner | `lore_core/session_start.py` |
 | Capture routing (transcripts, flush, spawn gate) | `lore_curator/capture_routing.py` |
 | Freshness classification | `lore_core/freshness.py` |
-| Vault/wiki/scope resolution | `lore_core/scope_resolver.py`, `lore_core/state/` |
+| Vault/wiki/scope resolution | `lore_core/route.py`, `lore_core/config.py` |
 
 ## Glossary
 

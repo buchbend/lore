@@ -398,3 +398,42 @@ def test_mcp_wiki_not_found_names_lore_setup_scope():
     text = (REPO / "lib" / "lore_mcp" / "server.py").read_text()
     assert "attach the cwd" not in text
     assert "lore setup scope" in text
+
+
+# ---------------------------------------------------------------------------
+# Epic review round 1 (#479)
+# ---------------------------------------------------------------------------
+
+
+def test_migrate_names_each_declined_repo_it_does_not_route(
+    tmp_path, agents, no_prompt, monkeypatch
+):
+    vault = tmp_path / "lore"
+    (vault / "wiki" / "team").mkdir(parents=True)
+    (vault / ".lore").mkdir()
+    refused = tmp_path / "git" / "refused"
+    (vault / ".lore" / "attachments.json").write_text(
+        json.dumps({"attachments": [], "declined": [{"path": str(refused), "scope": "x:refused"}]})
+    )
+    monkeypatch.chdir(tmp_path)
+    result = _setup("--yes", "--vault", str(vault))
+    assert result.exit_code == 0, result.output
+    assert f"not migrated: {refused} (declined)" in result.output.replace("\n", "")
+    assert not _person().get("scopes")
+
+
+def test_migrate_drops_retired_blocks(tmp_path, agents, no_prompt, monkeypatch):
+    vault = tmp_path / "lore"
+    (vault / "wiki" / "team").mkdir(parents=True)
+    (vault / ".lore").mkdir()
+    (vault / ".lore" / "config.yml").write_text(
+        "curator:\n  threshold_pending_turns: 3\njournal:\n  enabled: true\n"
+        "user:\n  display_name: Ada\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = _setup("--yes", "--vault", str(vault))
+    person = _person()
+    assert "curator" not in person and "journal" not in person
+    assert person["user"] == {"display_name": "Ada"}
+    out = result.output.replace("\n", "")
+    assert "curator" in out and "journal" in out and "dropped" in out
