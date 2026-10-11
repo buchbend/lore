@@ -14,7 +14,6 @@ times out yields ``hits: []`` and a ``note``; the others still return.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import time
 import urllib.parse
@@ -133,14 +132,12 @@ def _run(cfg: dict, payload: dict) -> str:
     if not run:
         raise SourceError("no `run` command configured")
     timeout = _timeout(cfg)
-    env = None
-    if cfg.get("secret"):
-        from lore_core.secrets import read_secrets
+    from lore_core.secrets import SecretsError, secret_env
 
-        value = read_secrets().get(cfg["secret"])
-        if not value:
-            raise SourceError(f"secret {cfg['secret']!r} is not set")
-        env = {**os.environ, "LORE_SECRET": value}
+    try:
+        env = secret_env(cfg.get("secret"))
+    except SecretsError as e:
+        raise SourceError(str(e)) from None
     try:
         proc = subprocess.run(
             run,

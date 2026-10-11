@@ -56,9 +56,12 @@ question.
    the comment; see [build's epic tail](../build/epic-tail.md) § 2. Leave ADR and term
    candidates open for the next session; name them under **State**.
 2. **Write the handover section** into its home. With no home, write a seed issue.
-3. **Leave the resume line.** `lore workflow ledger-add --kind resume --text "<state>" --next
+3. **Write the logbook entry.** Run `lore log add --ref <ref> --text-file <file>` as
+   [build's logbook.md](../build/logbook.md) says. The ref is the PR, the seed issue or
+   `branch@sha`. The entry may end with a `Waiting on:` line that names the blocker.
+4. **Leave the resume line.** `lore workflow ledger-add --kind resume --text "<state>" --next
    "<next ask>"` (epic: with `--path -`, pasted into the board's `## Ledger`).
-4. Tell the user that `/clear` is safe, and print the next step.
+5. Tell the user that `/clear` is safe, and print the next step.
 
 ## Seed issue
 

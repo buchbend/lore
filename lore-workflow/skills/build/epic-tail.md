@@ -45,13 +45,16 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
 
 ## 4. Merge
 
-1. Add the version bump as the last commit, if the repo's `AGENTS.md` or `CLAUDE.md` requires
+1. Run `lore log add --ref <owner/repo#epic-pr> --text-file <file>` in the epic worktree, as
+   [logbook.md](logbook.md) says. The `[logbook]` line stays in the local ledger of that
+   worktree, not on the board. Commit the change under `docs/logbook/` on `epic/<issue>`.
+2. Add the version bump as the last commit, if the repo's `AGENTS.md` or `CLAUDE.md` requires
    one.
-2. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
+3. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
    .body | lore workflow ledger-check -`. Do not merge while it exits 1.
-3. When `epic-policy` returned `deploy_gate: true`, get one human confirmation and note it on
+4. When `epic-policy` returned `deploy_gate: true`, get one human confirmation and note it on
    the board.
-4. Merge on green checks. Exception: in the human-present option in `SKILL.md`, merge only
+5. Merge on green checks. Exception: in the human-present option in `SKILL.md`, merge only
    after the merge approval.
 
 ## 5. Handover section
@@ -59,6 +62,9 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
 Write `## Handover` into the epic issue body, in the shape [`handover`](../handover/SKILL.md)
 gives. The section names what shipped with the merge SHA, decisions with ADR links, deviations
 from the PRD, follow-up issues and known limits.
+
+Then run `lore log flush` in the epic worktree. The cleanup in § 6 removes the worktree and
+its ledger. Name each entry that is still undelivered under **Known limits**.
 
 ## 6. Cleanup
 

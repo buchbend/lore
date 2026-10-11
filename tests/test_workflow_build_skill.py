@@ -85,6 +85,22 @@ def test_every_finish_point_writes_the_handover_section() -> None:
     assert "Write `## Handover` into the epic issue body" in _text("build/epic-tail.md")
 
 
+def test_every_finish_point_writes_a_logbook_entry() -> None:
+    """PRD 0017 § Build rule: after the handover section, before the merge approval."""
+    rules = _section("Rules for every mode")
+    assert "lore log add" in rules
+    assert "After the handover section, before the merge approval" in rules
+    assert "before the version bump" in _text("build/logbook.md")
+    assert "lore log add" in _section("Mode `issue`")
+    for rel in (
+        "build/logbook.md",
+        "build/loop-wrap-up.md",
+        "build/epic-tail.md",
+        "handover/SKILL.md",
+    ):
+        assert "lore log add" in _text(rel), rel
+
+
 def test_the_shipping_pr_carries_the_version_bump_last() -> None:
     assert "tools/release.py --in-branch" in _text("build/SKILL.md")
     for rel in ("build/loop-wrap-up.md", "build/epic-tail.md"):

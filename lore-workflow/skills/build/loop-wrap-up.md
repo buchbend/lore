@@ -33,10 +33,12 @@ commit in the first resume line of the ledger.
    `<base>..loop/<slug>`.
 6. **Commit, test, merge locally** as in a round.
 7. **Finish point.** `lore workflow ledger-check` passes, or you go back to step 3.
-8. **Wrap-up PR.** The wrap-up PR is the one thing that reaches the remote. Add the version bump as the
-   last commit if the repo's `AGENTS.md` or `CLAUDE.md` requires one. Push `loop/<slug>`. Open
-   one PR `loop/<slug> → <target>`. Its body is the handover section, in the shape
+8. **Wrap-up PR.** The wrap-up PR is the one thing that reaches the remote. Push `loop/<slug>`.
+   Open one PR `loop/<slug> → <target>`. Its body is the handover section, in the shape
    [`handover`](../handover/SKILL.md) gives, written through `file-issue` in PR-body mode.
+   Run `lore log add --ref <owner/repo#pr> --text-file <file>` as [logbook.md](logbook.md) says,
+   and commit the change under `docs/logbook/`. Add the version bump as the last commit if the
+   repo's `AGENTS.md` or `CLAUDE.md` requires one. Push again.
 9. **Archive the ledger:** `lore workflow ledger-archive`.
 10. **Report and ask.** Report the PR, the ADRs and terms written, and the filed issues, in the
     merge approval message of [SKILL.md](SKILL.md). On a yes, merge the PR. After the merge, by
