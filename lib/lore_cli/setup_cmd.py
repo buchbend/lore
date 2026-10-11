@@ -107,6 +107,12 @@ def migrate(lore_root: Path) -> list[Event]:
             if retired:
                 names = ", ".join(repr(k) for k in retired)
                 events.append((None, f"dropped retired block(s) {names} from {cfg}"))
+            obs = raw.get("observability")
+            retention = obs.get("retention") if isinstance(obs, dict) else None
+            if isinstance(retention, dict) and "dead_letter_hard_cap" in retention:
+                retention.pop("dead_letter_hard_cap")  # left with the flush store
+                key = "observability.retention.dead_letter_hard_cap"
+                events.append((None, f"dropped retired key {key} from {cfg}"))
             _merge_under(person, {k: v for k, v in raw.items() if k not in RETIRED_BLOCKS})
             events.append((True, f"moved the keys of {cfg} into {user_config_path()}"))
             done.append(cfg)
@@ -361,6 +367,7 @@ def step_scope(
     interactive: bool,
 ) -> tuple[str, list[Event]]:
     """Offer the repo's parent folder as a scope when no scope covers ``cwd``."""
+    from lore_core.config_schema import _read_raw
     from lore_core.route import resolve_route
 
     route = resolve_route(cwd)
@@ -387,7 +394,10 @@ def step_scope(
         ]
     wikis = [p.name for p in list_wikis(get_lore_root())]
     name = name or folder.name
-    wiki = wiki or route.wiki or (wikis[0] if wikis else "")
+    # The repo's old `.lore.yml` wiki no longer routes, but it is the best default.
+    yml_wiki = _read_raw(route.repo_root / ".lore.yml").get("wiki")
+    yml_wiki = yml_wiki if yml_wiki in wikis else None
+    wiki = wiki or yml_wiki or route.wiki or (wikis[0] if wikis else "")
     remotes = list(remote or [])
     if interactive:
         if not typer.confirm(f"Add a scope for {folder} (every repo below it)?", default=True):

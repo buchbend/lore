@@ -194,8 +194,7 @@ def _check_claude_plugin_cache_drift(cwd: str) -> Check:
     cache_index = _plugin_index()
     if not cache_index.exists():
         return True, (
-            "skipped: no Claude plugin cache at "
-            f"{cache_index} (Claude Code not installed?)"
+            f"skipped: no Claude plugin cache at {cache_index} (Claude Code not installed?)"
         )
     try:
         cache_version = claude_cache_version()
@@ -209,8 +208,7 @@ def _check_claude_plugin_cache_drift(cwd: str) -> Check:
 
     if not cache_version or cache_version == "unknown":
         return True, (
-            f"Claude plugin cache version is `{cache_version or 'missing'}` — "
-            "skipping comparison"
+            f"Claude plugin cache version is `{cache_version or 'missing'}` — skipping comparison"
         )
 
     try:
@@ -261,9 +259,7 @@ def _check_recent_crashes(cwd: str) -> Check:
     if not crashes:
         return True, "no hook crashes in last 7 days"
     latest = crashes[0]
-    return False, (
-        f"{len(crashes)} hook crash(es) in last 7 days; latest: {latest}"
-    )
+    return False, (f"{len(crashes)} hook crash(es) in last 7 days; latest: {latest}")
 
 
 def _check_spine_writable(cwd: str) -> Check:
@@ -301,8 +297,17 @@ def _check_hook_runnable(cwd: str) -> Check:
     `--probe` suppresses side-effects (curator spawns, stamp/lock writes, ledger
     mutations) so the diagnostic doesn't mutate the thing it's diagnosing.
     """
-    cmd = [sys.executable, "-m", "lore_cli", "hook", "session-start", "--plain", "--probe",
-           "--cwd", cwd]
+    cmd = [
+        sys.executable,
+        "-m",
+        "lore_cli",
+        "hook",
+        "session-start",
+        "--plain",
+        "--probe",
+        "--cwd",
+        cwd,
+    ]
     try:
         result = subprocess.run(
             cmd,
@@ -395,10 +400,7 @@ def _check_cursor_plugin_dir(cwd: str) -> Check:
 
     plugin_dir = cursor_plugin_dir()
     if not plugin_dir.exists():
-        return False, (
-            f"{plugin_dir} not present — run `lore setup` "
-            "to materialize the plugin"
-        )
+        return False, (f"{plugin_dir} not present — run `lore setup` to materialize the plugin")
     if not (plugin_dir / PLUGIN_SENTINEL).exists():
         return False, (
             f"{plugin_dir} missing {PLUGIN_SENTINEL} sentinel — directory may "
@@ -490,21 +492,28 @@ def _check_cursor_hooks_config(cwd: str) -> Check:
     return True, f"{len(hooks)} event(s) wired: {', '.join(sorted(hooks))}"
 
 
-def person_config_errors() -> list[str]:
-    """Validate the person's config as `lore config edit` does (secrets rule included)."""
+def _person_raw() -> tuple[Path, dict | None, str | None]:
+    """(path, parsed mapping or None, read error or None) for the person config."""
     import yaml
     from lore_core.config import user_config_path
-    from lore_core.config_schema import validate_raw
-    from lore_core.root_config import RootConfig
 
     path = user_config_path()
     if not path.exists():
-        return []
+        return path, {}, None
     try:
         raw = yaml.safe_load(path.read_text()) or {}
     except (OSError, yaml.YAMLError) as e:
-        return [f"cannot read {path}: {e}"]
-    return validate_raw(RootConfig, raw, source=path)
+        return path, None, f"cannot read {path}: {e}"
+    return path, raw, None
+
+
+def person_config_errors() -> list[str]:
+    """Validate the person's config as `lore config edit` does (secrets rule included)."""
+    from lore_core.config_schema import validate_raw
+    from lore_core.root_config import RootConfig
+
+    path, raw, err = _person_raw()
+    return [err] if err else validate_raw(RootConfig, raw, source=path)
 
 
 def old_settings_files() -> list[Path]:
@@ -520,12 +529,33 @@ OLD_SETTINGS_HINT = "old settings files found; run `lore setup` to migrate them"
 
 
 def _check_person_config(cwd: str) -> Check:
-    from lore_core.config import user_config_path
+    """The ADR 0016 secrets rule: a `token` or `password` key fails the run."""
+    from lore_core.config_schema import secret_key_errors
 
-    errors = person_config_errors()
+    path, raw, err = _person_raw()
+    if err:
+        return False, err
+    errors = secret_key_errors(raw, path)
     if errors:
-        return False, f"{user_config_path()}: " + "; ".join(errors)
-    return True, f"{user_config_path()} is valid"
+        return False, "; ".join(errors)
+    return True, f"{path} holds no secret values"
+
+
+def _check_config_keys(cwd: str) -> Check:
+    """Advisory: keys the loader warns about and ignores, named one by one."""
+    from lore_core.config_schema import secret_key_errors, validate_raw
+    from lore_core.root_config import RETIRED_BLOCKS, RootConfig
+
+    path, raw, err = _person_raw()
+    if err or not isinstance(raw, dict):
+        return True, "see the person config check"
+    retired = [f"{k!r} is retired; delete it" for k in raw if k in RETIRED_BLOCKS]
+    rest = {k: v for k, v in raw.items() if k not in RETIRED_BLOCKS}
+    secrets = set(secret_key_errors(raw, path))
+    errors = retired + [e for e in validate_raw(RootConfig, rest, source=path) if e not in secrets]
+    if errors:
+        return False, f"{path}: " + "; ".join(errors)
+    return True, f"{path} is valid"
 
 
 def _check_old_settings(cwd: str) -> Check:
@@ -542,6 +572,8 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     ("LORE_ROOT", _check_lore_root, True),
     # The secrets rule (ADR 0016) at load time, not only in `lore config edit`.
     ("person config", _check_person_config, True),
+    # Advisory: keys the loader only warns about (retired, unknown, wrong type).
+    ("config keys", _check_config_keys, False),
     # Advisory: `pipx upgrade` skips install.sh, so nothing else migrates.
     ("old settings", _check_old_settings, False),
     ("wikis", _check_wikis, True),

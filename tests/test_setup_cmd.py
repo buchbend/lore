@@ -483,3 +483,81 @@ def test_setup_wiki_yes_pins_a_default_vault_that_exists(tmp_path, agents, no_pr
     result = runner.invoke(app, ["setup", "wiki", "--yes"])
     assert result.exit_code == 0, result.output
     assert _person()["lore_root"] == str((Path.home() / "lore").resolve())
+
+
+# ---------------------------------------------------------------------------
+# Epic review round 2 (#479)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("body", "key"),
+    [
+        ("journal:\n  enabled: true\n", "journal"),
+        ("observability:\n  retention:\n    dead_letter_hard_cap: 5\n", "dead_letter_hard_cap"),
+    ],
+)
+def test_keys_the_loader_only_warns_about_do_not_fail_setup(
+    body, key, tmp_path, agents, no_prompt, monkeypatch
+):
+    from lore_cli import checks
+
+    monkeypatch.setattr(
+        checks,
+        "_CHECKS",
+        [
+            ("person config", checks._check_person_config, True),
+            ("config keys", checks._check_config_keys, False),
+        ],
+    )
+    (tmp_path / "lore" / "wiki" / "team").mkdir(parents=True)
+    user_config_path().parent.mkdir(parents=True)
+    user_config_path().write_text(f"lore_root: {tmp_path / 'lore'}\n{body}")
+    monkeypatch.chdir(tmp_path)
+
+    result = _setup("--yes")
+
+    assert result.exit_code == 0, result.output
+    assert any(line.startswith("!") and key in line for line in result.output.splitlines())
+
+
+def test_a_token_in_the_person_config_still_fails_setup(tmp_path, agents, no_prompt, monkeypatch):
+    from lore_cli import checks
+
+    monkeypatch.setattr(checks, "_CHECKS", [("person config", checks._check_person_config, True)])
+    (tmp_path / "lore" / "wiki" / "team").mkdir(parents=True)
+    user_config_path().parent.mkdir(parents=True)
+    user_config_path().write_text(
+        f"lore_root: {tmp_path / 'lore'}\nsinks:\n  pm:\n    token: abc\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert _setup("--yes").exit_code == 1
+
+
+def test_migrate_drops_dead_letter_hard_cap(tmp_path, agents, no_prompt, monkeypatch):
+    vault = tmp_path / "lore"
+    (vault / "wiki" / "team").mkdir(parents=True)
+    (vault / ".lore").mkdir()
+    (vault / ".lore" / "config.yml").write_text(
+        "observability:\n  retention:\n    dead_letter_hard_cap: 5\n    hot_days: 3\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = _setup("--yes", "--vault", str(vault))
+    assert _person()["observability"] == {"retention": {"hot_days": 3}}
+    assert "dead_letter_hard_cap" in result.output.replace("\n", "")
+
+
+def test_setup_scope_offers_the_lore_yml_wiki_as_default(tmp_path, agents, no_prompt, monkeypatch):
+    for w in ("alpha", "zeta"):
+        (tmp_path / "lore" / "wiki" / w).mkdir(parents=True)
+    user_config_path().parent.mkdir(parents=True)
+    user_config_path().write_text(f"lore_root: {tmp_path / 'lore'}\n")
+    repo = _repo(tmp_path / "git" / "ccatobs" / "proj")
+    (repo / ".lore.yml").write_text("wiki: zeta\nscope: old:proj\n")
+    monkeypatch.chdir(repo)
+
+    result = _setup("scope", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert _person()["scopes"]["ccatobs"]["wiki"] == "zeta"
