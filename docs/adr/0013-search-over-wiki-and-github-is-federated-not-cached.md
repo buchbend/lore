@@ -64,3 +64,12 @@ non-GitHub tracker needs its own live call.
 ## Status
 
 Accepted.
+
+## Amendments
+
+- 2026-10-11: the result holds the wiki list plus one list per source
+  (PRD 0017, epic [#467](https://github.com/buchbend/lore/issues/467)). A
+  source has a name and a kind: `github`, `dokuwiki` or `command`. The
+  route names the sources of a repo. Each source runs in its own thread
+  with its own timeout. A failed source gives no hits and a note. Lore
+  merges no two lists and caches no hit.

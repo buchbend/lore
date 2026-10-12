@@ -326,6 +326,22 @@ def test_route_section_prints_each_value_with_its_origin(tmp_path: Path, monkeyp
     assert "sources  ccatwiki · .lore.yml" in route
 
 
+def test_route_section_counts_undelivered_logbook_entries(tmp_path: Path, monkeypatch) -> None:
+    lore_root, project = _seed_vault(tmp_path)
+    (project / ".git").mkdir()
+    entry = {"key": "lore:a/b:#1", "at": "2026-10-11T10:00:00Z", "repo": "a/b", "scope": ""}
+    entry |= {"ref": "#1", "author": "A", "text": "x"}
+    (project / ".git" / "lore-ledger.md").write_text(
+        f"- [logbook] file=delivered pm=undelivered — {json.dumps(entry)}\n"
+    )
+
+    out = _invoke(lore_root, project, monkeypatch=monkeypatch).output
+
+    route = out.split("route\n", 1)[1].split("\n\n", 1)[0]
+    assert "logbook  1 undelivered entry" in route
+    assert "lore log flush" in route
+
+
 def test_route_conflict_names_both_scopes(tmp_path: Path, monkeypatch) -> None:
     lore_root = tmp_path / "vault"
     (lore_root / "wiki" / "private").mkdir(parents=True)

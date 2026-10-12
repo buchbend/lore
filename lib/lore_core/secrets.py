@@ -43,6 +43,22 @@ def read_secrets() -> dict[str, str]:
     return {str(k): str(v) for k, v in raw.items()}
 
 
+def secret_env(name: str | None) -> dict[str, str]:
+    """A child-process environment: ``os.environ`` without an inherited
+    ``LORE_SECRET``, plus ``LORE_SECRET=<value>`` when *name* is set.
+
+    The one way a sink or a source hands a secret to its command. Raises
+    SecretsError when the named secret is unset.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "LORE_SECRET"}
+    if name:
+        value = read_secrets().get(name)
+        if not value:
+            raise SecretsError(f"secret {name!r} is not set: `lore config secret set {name}`")
+        env["LORE_SECRET"] = value
+    return env
+
+
 def _write(secrets: dict[str, str]) -> None:
     path = secrets_path()
     path.parent.mkdir(parents=True, exist_ok=True)

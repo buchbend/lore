@@ -1,12 +1,14 @@
 ---
 title: Logbook entries at every finish point, and search sources
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/467
 repos:
   - buchbend/lore
 ---
 
 # PRD 0017: Logbook entries at every finish point, and search sources
+
+> Historical. Current decisions: ADR 0017, ADR 0013.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/467).
 > The epic links here; this file is not embedded in the issue body.

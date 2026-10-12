@@ -8,6 +8,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.83.0] - 2026-10-11
+
+Ships `lore-workflow` 0.14.0. Epic #467 (logbook entries at every finish point, and search sources).
+
+### Added
+
+- **Logbook entries (#471).** `lore log add --ref <ref> --text-file <path>` checks one entry against four rules and delivers it to every sink of the scope in parallel. The `file` sink writes `docs/logbook/YYYY-MM.md`, newest first. A `command` sink gets the entry on stdin and the `LORE_ENTRY_*` variables. An undelivered entry waits as a `[logbook]` line in the local ledger. `lore log flush` retries it, and the SessionStart and session-end hooks run the flush. `lore log show` prints the current month. `lore setup sink file|command` adds a sink.
+- **Search sources (#472).** `lore_search` and `lore search` return the wiki list plus one list per source: `{wiki, sources: [{name, kind, hits, note}]}`. Kinds: `github`, `dokuwiki` and `command`. Each source runs in its own thread with its own timeout. `lore_read` sends a `<source>:<id>` ref to its source. `lore setup source dokuwiki|command` adds a source and runs one test query.
+- **`build` and `handover` skills** write a logbook entry at every finish point and at a stop that hands work over.
+
+### Changed
+
+- **`lore search --json` schema is `lore.search/2`.** The `artifacts` key is gone; GitHub hits are in the `github` source list.
+- ADR 0013 carries an amendment for one list per source.
+
 ## [0.82.0] - 2026-10-11
 
 Ships `lore-workflow` 0.13.0. Epic #466 (route by folder scope, one settings
