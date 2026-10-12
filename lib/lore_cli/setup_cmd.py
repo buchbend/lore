@@ -585,3 +585,112 @@ def setup_scope(
         ),
     )
     _finish(ok)
+
+
+# ---------------------------------------------------------------------------
+# setup source (PRD 0017): add a search source and run one test query
+# ---------------------------------------------------------------------------
+
+
+@app.command("source")
+def setup_source(
+    kind: str = typer.Argument(..., help="dokuwiki or command."),
+    name: str = typer.Option(..., "--name", help="Name of the source."),
+    url: str = typer.Option("", "--url", help="dokuwiki: base URL of the wiki."),
+    run: str = typer.Option("", "--run", help="command: shell command that speaks JSON."),
+    token: str = typer.Option("", "--token", help="dokuwiki: API token (prompted if omitted)."),
+) -> None:
+    """Add a search source, store its token in the secrets file, run one test query."""
+    from lore_core.secrets import set_secret
+    from lore_core.sources import search_sources
+
+    if kind not in ("dokuwiki", "command"):
+        raise typer.BadParameter("kind must be dokuwiki or command")
+    if kind == "dokuwiki" and not url:
+        raise typer.BadParameter("dokuwiki needs --url")
+    if kind == "command" and not run:
+        raise typer.BadParameter("command needs --run")
+    definition: dict = {"kind": kind}
+    if kind == "dokuwiki":
+        token = token or typer.prompt("API token", hide_input=True)
+        set_secret(name, token)
+        definition |= {"url": url, "secret": name}
+    else:
+        definition["run"] = run
+    cfg = _read_person()
+    cfg.setdefault("sources", {})[name] = definition
+    _write_person(cfg)
+    entry = search_sources("test", 1, Path.cwd(), [], only=name)[0]
+    events: list[Event] = [(True, f"added source {name} ({kind})")]
+    if entry["note"]:
+        events.append((False, f"test query failed: {entry['note']}"))
+    else:
+        events.append((True, f"test query returned {len(entry['hits'])} hit(s)"))
+    _finish(_report("source", f"source {name}", events))
+
+
+# ---------------------------------------------------------------------------
+# `lore setup sink` (PRD 0017 § Sinks)
+# ---------------------------------------------------------------------------
+
+
+def _test_sink(spec: dict) -> list[Event]:
+    """Check a sink without posting: its command is on PATH, its secret is set."""
+    import shlex
+
+    from lore_core.secrets import SecretsError, read_secrets
+
+    events: list[Event] = []
+    if spec.get("run"):
+        try:
+            exe = shlex.split(spec["run"])[0]
+        except (ValueError, IndexError):
+            exe = None
+        if exe is None or shutil.which(exe) is None:
+            events.append((False, f"command {exe or spec['run']!r} is not on PATH"))
+    if spec.get("secret"):
+        try:
+            known = spec["secret"] in read_secrets()
+        except SecretsError as exc:
+            events.append((False, str(exc)))
+        else:
+            if not known:
+                name = spec["secret"]
+                events.append(
+                    (False, f"secret {name!r} is not set: `lore config secret set {name}`")
+                )
+    return events
+
+
+@app.command("sink")
+def setup_sink(
+    kind: str = typer.Argument(..., help="file | command"),
+    name: str = typer.Option(None, "--name", help="Sink name (default: the kind)."),
+    run: str = typer.Option(
+        None, "--run", help="command: the shell line that reads the entry on stdin."
+    ),
+    secret: str = typer.Option(
+        None, "--secret", help="command: a secret name; its value arrives as $LORE_SECRET."
+    ),
+) -> None:
+    """Add a logbook sink to your config and test it without posting.
+
+    A scope uses the sink once its `logbook:` list names it.
+    """
+    import re
+
+    name = name or kind
+    if kind not in ("file", "command") or (kind == "command") != bool(run):
+        raise typer.BadParameter("use `sink file`, or `sink command --run '<shell line>'`")
+    if not re.fullmatch(r"[\w.-]+", name):
+        raise typer.BadParameter(f"sink name {name!r}: use letters, digits, '.', '_' or '-'")
+    spec = {"kind": kind, **({"run": run} if run else {}), **({"secret": secret} if secret else {})}
+    person = _read_person()
+    sinks = person.get("sinks") if isinstance(person.get("sinks"), dict) else {}
+    events: list[Event] = []
+    if sinks.get(name) != spec:
+        person["sinks"] = {**sinks, name: spec}
+        _write_person(person)
+        events.append((True, f"sink {name!r} written to {user_config_path()}"))
+    events += _test_sink(spec)
+    _finish(_report("sink", f"{name} ({kind}) ready; name it in a scope's logbook list", events))

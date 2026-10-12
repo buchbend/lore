@@ -25,6 +25,15 @@ ISSUE_HIT = {
 }
 
 
+def _gh(result: dict) -> dict:
+    return next(s for s in result["sources"] if s["name"] == "github")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+
 def _wiki(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A one-note wiki the FTS index can answer 'alpha' from."""
     wiki = tmp_path / "wiki" / "demo" / "concepts"
@@ -62,7 +71,7 @@ def test_search_returns_wiki_hits_then_artifact_hits(tmp_path, monkeypatch):
     result = handle_search("alpha", wiki="demo", for_repo="acme/widgets", k=5)
 
     assert [h["path"] for h in result["wiki"]] == ["concepts/note.md"]
-    assert result["artifacts"] == [
+    assert _gh(result)["hits"] == [
         {
             "ref": "acme/widgets#42",
             "title": "alpha regresses on reindex",
@@ -71,7 +80,7 @@ def test_search_returns_wiki_hits_then_artifact_hits(tmp_path, monkeypatch):
             "updated_at": "2026-09-16T10:00:00Z",
         }
     ]
-    assert "note" not in result
+    assert _gh(result)["note"] is None
 
 
 def test_gh_failure_keeps_wiki_hits_and_names_the_omission(tmp_path, monkeypatch):
@@ -81,9 +90,9 @@ def test_gh_failure_keeps_wiki_hits_and_names_the_omission(tmp_path, monkeypatch
     result = handle_search("alpha", wiki="demo", for_repo="acme/widgets", k=5)
 
     assert [h["path"] for h in result["wiki"]] == ["concepts/note.md"]
-    assert result["artifacts"] == []
-    assert "omitted" in result["note"]
-    assert "acme/widgets" in result["note"]
+    assert _gh(result)["hits"] == []
+    assert "omitted" in _gh(result)["note"]
+    assert "acme/widgets" in _gh(result)["note"]
 
 
 def test_offline_machine_without_gh_degrades_to_wiki_hits(tmp_path, monkeypatch):
@@ -95,8 +104,8 @@ def test_offline_machine_without_gh_degrades_to_wiki_hits(tmp_path, monkeypatch)
     result = handle_search("alpha", wiki="demo", for_repo="acme/widgets", k=5)
 
     assert [h["path"] for h in result["wiki"]] == ["concepts/note.md"]
-    assert result["artifacts"] == []
-    assert "omitted" in result["note"]
+    assert _gh(result)["hits"] == []
+    assert "omitted" in _gh(result)["note"]
 
 
 def test_one_gh_call_carries_the_pinned_fields_and_limit(tmp_path, monkeypatch):
@@ -110,6 +119,31 @@ def test_one_gh_call_carries_the_pinned_fields_and_limit(tmp_path, monkeypatch):
         "search issues alpha --include-prs --repo acme/widgets "
         "--json number,title,state,url,updatedAt --limit 5"
     ]
+
+
+def test_search_result_has_no_artifacts_key_and_one_list_per_source(tmp_path, monkeypatch):
+    _wiki(tmp_path, monkeypatch)
+    _stub_gh(tmp_path, monkeypatch, payload=[ISSUE_HIT])
+
+    result = handle_search("alpha", wiki="demo", for_repo="acme/widgets", k=5)
+
+    assert set(result) == {"wiki", "sources"}
+    assert [(s["name"], s["kind"]) for s in result["sources"]] == [("github", "github")]
+
+
+def test_lore_read_routes_a_source_ref_to_that_source(tmp_path, monkeypatch):
+    from lore_mcp.server import handle_read
+
+    _wiki(tmp_path, monkeypatch)
+    cfg = tmp_path / "xdg" / "lore"
+    cfg.mkdir(parents=True)
+    (cfg / "config.yml").write_text(
+        'sources:\n  mine:\n    kind: command\n    run: "echo page text"\n'
+    )
+
+    result = handle_read("mine:some:page", wiki="demo")
+
+    assert result["content"].strip() == "page text"
 
 
 def test_tool_description_sends_state_reads_to_gh():

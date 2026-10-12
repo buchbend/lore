@@ -310,13 +310,26 @@ def _spawn_codemap_refresh(cwd: Path) -> bool:
     inline. The child takes a per-repo lock; no vault is needed, because
     the map belongs to the repo, attached or not.
     """
+    return _spawn_in_repo(cwd, "hook", "codemap-refresh", "--cwd", str(cwd))
+
+
+def _spawn_logbook_flush(cwd: Path) -> bool:
+    """Fire-and-forget ``lore log flush`` in *cwd* (PRD 0017 § Pending entries).
+
+    A remote sink can take its full timeout, so no hook waits for it.
+    """
+    return _spawn_in_repo(cwd, "log", "flush")
+
+
+def _spawn_in_repo(cwd: Path, *args: str) -> bool:
+    """Fire-and-forget ``lore <args>`` in *cwd*, detached, output discarded."""
     import subprocess
 
     env = os.environ.copy()
     env["LORE_CURATOR_MODE"] = "1"
     try:
         subprocess.Popen(
-            [sys.executable, "-m", "lore_cli", "hook", "codemap-refresh", "--cwd", str(cwd)],
+            [sys.executable, "-m", "lore_cli", *args],
             cwd=str(cwd),
             start_new_session=True,
             stdin=subprocess.DEVNULL,

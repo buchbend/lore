@@ -108,3 +108,82 @@ def test_archived_ledger_gets_no_resume_offer(repo: Path) -> None:
     (repo / ".git" / "lore-ledger.2026-09-29.done.md").write_text(LEDGER)
     start = _run("session-start", "--cwd", str(repo), "--plain", "--probe")
     assert "resume" not in start.lower()
+
+
+# --- logbook (PRD 0017 § Pending entries) ------------------------------------
+
+
+def _entry(ref: str) -> str:
+    return json.dumps(
+        {
+            "key": f"lore:a/b:{ref}",
+            "at": "2026-10-11T10:00:00Z",
+            "repo": "a/b",
+            "scope": "",
+            "ref": ref,
+            "author": "A",
+            "text": "x",
+        },
+        separators=(",", ":"),
+    )
+
+
+UNDELIVERED = (
+    f"- [logbook] file=delivered pm=undelivered — {_entry('#1')}\n"
+    f"- [logbook] pm=undelivered — {_entry('#2')}\n"
+)
+
+
+@pytest.fixture
+def spawned(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    from lore_cli import hooks
+
+    calls: list[Path] = []
+    monkeypatch.setattr(hooks, "_spawn_codemap_refresh", lambda cwd: None)
+    monkeypatch.setattr(
+        hooks, "_spawn_logbook_flush", lambda cwd: calls.append(Path(cwd).resolve())
+    )
+    return calls
+
+
+def test_session_start_banner_shows_the_undelivered_count(repo: Path, spawned) -> None:
+    (repo / ".git" / "lore-ledger.md").write_text(UNDELIVERED)
+    out = _run("session-start", "--cwd", str(repo), "--probe")
+    assert "2 logbook entries undelivered" in json.loads(out)["systemMessage"]
+    assert spawned == []
+
+
+def test_session_start_flushes_undelivered_entries_in_the_background(repo: Path, spawned) -> None:
+    (repo / ".git" / "lore-ledger.md").write_text(UNDELIVERED)
+    _run("session-start", "--cwd", str(repo), "--plain")
+    assert spawned == [repo.resolve()]
+
+
+def test_session_start_without_undelivered_entries_spawns_nothing(repo: Path, spawned) -> None:
+    (repo / ".git" / "lore-ledger.md").write_text(f"- [logbook] file=delivered — {_entry('#3')}\n")
+    out = _run("session-start", "--cwd", str(repo), "--plain")
+    assert "logbook" not in out
+    assert spawned == []
+
+
+def test_session_end_flushes_undelivered_entries_in_the_background(
+    repo: Path, spawned, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("LORE_SUPPRESS_CAPTURE", raising=False)
+    (repo / ".git" / "lore-ledger.md").write_text(UNDELIVERED)
+    _run("capture", "--event", "session-end", "--cwd", str(repo))
+    assert spawned == [repo.resolve()]
+
+
+def test_a_failing_flush_spawn_never_breaks_session_end(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lore_cli import hooks
+
+    def boom(cwd):
+        raise OSError("no fork")
+
+    monkeypatch.delenv("LORE_SUPPRESS_CAPTURE", raising=False)
+    monkeypatch.setattr(hooks, "_spawn_logbook_flush", boom)
+    (repo / ".git" / "lore-ledger.md").write_text(UNDELIVERED)
+    _run("capture", "--event", "session-end", "--cwd", str(repo))

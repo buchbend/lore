@@ -106,7 +106,13 @@ it and deletes them. Subsections:
 - `scopes.<name>.{path, remote, wiki, tracker, logbook, sources}` — a folder
   (and optional git remotes) whose repos share a wiki; `lore setup scope`
   adds one. `defaults` holds the values a repo gets when no scope sets them.
-- `sinks`, `sources` — definitions PRD 0017 gives behaviour.
+- `sinks.<name>` — a logbook sink: `kind: file`, or `kind: command` with
+  `run` (a shell line) and an optional `secret` (a secret name). `lore setup
+  sink` writes it. See `docs/how-to/use-the-logbook.md`.
+- `sources.<name>` — a search source. `kind: dokuwiki` takes `url` and
+  `secret`. `kind: command` takes `run`. Each kind takes an optional
+  `timeout` in seconds. `github` is defined without an entry. `lore setup
+  source` writes the entry. See `docs/how-to/search-notes-and-issues.md`.
 - `user.display_name`
 
 - `observability.hook_events.{max_size_mb, keep_rotations}`

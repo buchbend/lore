@@ -331,9 +331,30 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _spawn_detached,
     _spawn_detached_transcript_sync,
     _spawn_detached_wiki_pull,
+    _spawn_logbook_flush,
     _stamp_within_cooldown,
     _write_stamp,
 )
+
+
+def _logbook_line(cwd: Path, *, spawn: bool) -> str | None:
+    """The undelivered-entries banner line; spawn a background flush when asked.
+
+    PRD 0017 § Pending entries. Never raises: a hook must not break on it.
+    """
+    try:
+        from lore_workflow.logbook import undelivered_count
+
+        count = undelivered_count(cwd)
+    except Exception:  # noqa: BLE001 - logbook must never crash a hook
+        return None
+    if not count:
+        return None
+    if spawn:
+        with contextlib.suppress(Exception):
+            _spawn_logbook_flush(cwd)
+    noun = "entry" if count == 1 else "entries"
+    return f"lore: {count} logbook {noun} undelivered; `lore log flush` retries them"
 
 hook_app = typer.Typer(
     add_completion=False,
@@ -624,6 +645,10 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - ledger must never crash SessionStart
         pass
 
+    logbook_notice = _logbook_line(cwd_resolved, spawn=not probe)
+    if logbook_notice:
+        out = out + "\n\n" + logbook_notice
+
     handover_notice: str | None = None
     try:  # the payload's source tells a /clear or compaction from a fresh start
         from lore_core.handover import session_start_block, status_line
@@ -635,7 +660,8 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - handover must never crash SessionStart
         pass
 
-    _emit("SessionStart", out, plain=plain, notice=handover_notice)
+    notice = "\n".join(n for n in (handover_notice, logbook_notice) if n) or None
+    _emit("SessionStart", out, plain=plain, notice=notice)
 
 
 @hook_app.command("wiki-pull", hidden=True)
@@ -893,6 +919,8 @@ def capture(
         # vault content surface from a curator that ran during their
         # "muted" session.
         return
+    if event == "session-end":  # PRD 0017: retry undelivered logbook entries
+        _logbook_line(cwd_override or _resolve_cwd_capture(), spawn=True)
     import time as _time
 
     from lore_adapters import UnknownIntegrationError

@@ -19,6 +19,20 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 
+def test_secret_env_passes_only_the_named_secret_as_lore_secret(monkeypatch) -> None:
+    from lore_core.secrets import secret_env, set_secret
+
+    monkeypatch.setenv("LORE_SECRET", "inherited")
+    set_secret("hookshot", "s3cret")
+
+    assert "LORE_SECRET" not in secret_env(None)
+    env = secret_env("hookshot")
+    assert env["LORE_SECRET"] == "s3cret"
+    assert env["HOME"]  # a copy of the environment, not a bare mapping
+    with pytest.raises(SecretsError, match="nope"):
+        secret_env("nope")
+
+
 def test_secret_set_writes_value_to_secrets_yml_with_mode_0600() -> None:
     result = runner.invoke(app, ["secret", "set", "PM_TOKEN"], input="s3cret\n")
 

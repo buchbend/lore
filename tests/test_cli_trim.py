@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 runner = CliRunner()
 
-VISIBLE = {"setup", "status", "config", "search", "read", "wiki", "update", "uninstall"}
+VISIBLE = {"setup", "status", "config", "search", "read", "wiki", "log", "update", "uninstall"}
 HIDDEN = {
     "hook",
     "mcp",
