@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.83.1] - 2026-10-12
+
+### Fixed
+
+- An unknown `lore` command or option now prints the usage message and exits 2 under typer 0.27. Before, the CLI reported an unexpected `UsageError`, wrote a crash log and exited 1. (#480)
+
 ## [0.83.0] - 2026-10-11
 
 Ships `lore-workflow` 0.14.0. Epic #467 (logbook entries at every finish point, and search sources).

@@ -356,3 +356,22 @@ def test_doctor_check_recent_crashes_advisory(tmp_path, monkeypatch):
     assert ok is False
     assert "1 hook crash" in msg
     assert "SessionStart" in msg
+
+
+@pytest.mark.parametrize("argv", [["nosuchcmd"], ["status", "--no-such-option"]])
+def test_main_usage_error_exits_2_without_crash_log(argv, tmp_path, monkeypatch, capsys):
+    """Typer 0.27 raises its own copy of click's UsageError. It is still a
+    usage error: exit 2, the message on stderr, no crash log (#480)."""
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path))
+    from lore_cli.__main__ import main
+
+    assert main(argv) == 2
+    assert "No such" in capsys.readouterr().err
+    assert not (tmp_path / "crashes").exists()
+
+
+def test_argv_main_usage_error_exits_2(capsys):
+    from lore_cli import status_cmd
+
+    assert status_cmd.main(["--no-such-option"]) == 2
+    assert "No such option" in capsys.readouterr().err

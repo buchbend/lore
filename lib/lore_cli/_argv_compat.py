@@ -27,6 +27,16 @@ from collections.abc import Callable
 import click
 import typer
 
+try:  # typer >= 0.27 raises its own copy of click's exceptions
+    from typer._click.exceptions import ClickException as _TyperClickException
+except ImportError:
+    _TyperClickException = click.exceptions.ClickException
+
+# Catch these, not the bare click classes: a usage error from either copy
+# must print its message and exit 2, never reach the crash backstop.
+CLICK_ERRORS = (click.exceptions.ClickException, _TyperClickException)
+ABORTS = (click.exceptions.Abort, typer.Abort)
+
 
 def argv_main(app: typer.Typer) -> Callable[[list[str] | None], int]:
     """Return a legacy `main(argv) -> int` wrapper around a Typer app.
@@ -47,10 +57,10 @@ def argv_main(app: typer.Typer) -> Callable[[list[str] | None], int]:
             if isinstance(result, int):
                 return result
             return 0
-        except click.exceptions.ClickException as e:
+        except CLICK_ERRORS as e:
             e.show()
             return e.exit_code
-        except click.exceptions.Abort:
+        except ABORTS:
             import sys as _sys
 
             print("Aborted.", file=_sys.stderr)
