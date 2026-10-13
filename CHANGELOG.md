@@ -8,6 +8,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.84.0] - 2026-10-13
+
+### Added
+
+- `lore setup scope PATH` adds a scope for `PATH`. Outside a git repo, `lore setup scope` offers the current folder. Inside a repo, it still offers the folder above the repo. `lore setup` keeps the repo-only rule. (#493)
+
+### Fixed
+
+- `lore setup sink command` accepts a shell line as `run`, such as `(printf …; cat) | pm log X`. Before, the check looked up `(printf` on `PATH` and failed. A shell line now gets a syntax check with `sh -n`. (#495)
+
 ## [0.83.1] - 2026-10-12
 
 ### Fixed
