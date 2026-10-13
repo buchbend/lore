@@ -184,6 +184,37 @@ def test_setup_sink_file_adds_a_file_sink(repo) -> None:
     assert _person()["sinks"]["notes"] == {"kind": "file"}
 
 
+def test_setup_sink_scope_adds_the_sink_to_the_scope_logbook(repo) -> None:
+    """An absent list starts as `[file, <name>]`; a second sink is appended once."""
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text(yaml.safe_dump({"scopes": {"ccat": {"path": str(repo)}}}))
+    assert (
+        main(["setup", "sink", "command", "--name", "pm", "--run", "cat", "--scope", "ccat"]) == 0
+    )
+    assert _person()["scopes"]["ccat"]["logbook"] == ["file", "pm"]
+    for _ in range(2):
+        assert main(["setup", "sink", "file", "--name", "notes", "--scope", "ccat"]) == 0
+    assert _person()["scopes"]["ccat"]["logbook"] == ["file", "pm", "notes"]
+
+
+@pytest.mark.parametrize("inherited", [["hook"], "hook"])
+def test_setup_sink_scope_keeps_the_inherited_default_list(repo, inherited) -> None:
+    cfg = {"defaults": {"logbook": inherited}, "scopes": {"ccat": {"path": str(repo)}}}
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text(yaml.safe_dump(cfg))
+    assert main(["setup", "sink", "file", "--name", "notes", "--scope", "ccat"]) == 0
+    assert _person()["scopes"]["ccat"]["logbook"] == ["hook", "notes"]
+
+
+def test_setup_sink_scope_names_the_known_scopes_for_an_unknown_scope(repo, capsys) -> None:
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text(yaml.safe_dump({"scopes": {"ccat": {"path": str(repo)}}}))
+    assert main(["setup", "sink", "file", "--name", "notes", "--scope", "nope"]) == 1
+    out = capsys.readouterr()
+    assert "ccat" in out.out + out.err
+    assert "notes" not in _person().get("sinks", {})
+
+
 def test_show_prints_this_months_entries(repo, tmp_path, capsys) -> None:
     assert main(["log", "show"]) == 0
     assert "no logbook entries" in capsys.readouterr().out
