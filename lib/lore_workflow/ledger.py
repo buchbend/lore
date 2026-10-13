@@ -366,8 +366,16 @@ def precompact_note(cwd: Path) -> str | None:
     path = default_ledger_path(cwd)
     if path is None or not path.is_file():
         return None
-    lines = path.read_text(encoding="utf-8").splitlines()
-    if not any(ln.lstrip().startswith("- [") and "- [logbook]" not in ln for ln in lines):
+
+    def kind(raw: str) -> str | None:
+        try:
+            parsed = parse_line(raw)
+        except LedgerParseError:
+            return "malformed"
+        return parsed.kind if parsed else None
+
+    kinds = {kind(raw) for raw in path.read_text(encoding="utf-8").splitlines()} - {None}
+    if kinds <= {"logbook"}:
         return None  # only undelivered logbook entries are left (issue #490)
     return (
         f"lore: build ledger at {path} — re-read it after compaction; "

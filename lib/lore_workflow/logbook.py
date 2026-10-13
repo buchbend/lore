@@ -80,7 +80,8 @@ class Entry:
 def _ledger_entry(entry: Entry, status: dict[str, bool]) -> LedgerEntry:
     return LedgerEntry(
         kind="logbook",
-        text=json.dumps(asdict(entry), ensure_ascii=False, separators=(",", ":")),
+        # ASCII JSON: a raw U+2028 would split the line under `splitlines()`.
+        text=json.dumps(asdict(entry), ensure_ascii=True, separators=(",", ":")),
         outcome=" ".join(f"{n}={'delivered' if ok else 'undelivered'}" for n, ok in status.items()),
     )
 
@@ -254,14 +255,17 @@ def _main_checkout_name(repo_root: Path) -> str:
     except (OSError, subprocess.SubprocessError):
         return repo_root.name
     common = Path(out.stdout.strip())
-    return common.parent.name if out.returncode == 0 and common.name == ".git" else repo_root.name
+    if out.returncode != 0 or not common.name:
+        return repo_root.name
+    # `<main>/.git` names the main checkout; a bare `gadget.git` names itself.
+    return common.parent.name if common.name == ".git" else common.name.removesuffix(".git")
 
 
-def _lock(ledger: Path):
+def _lock(ledger: Path, *, blocking: bool = True):
     """Hold the ledger's lock, so two flushes never deliver one entry twice."""
     from lore_core.lockfile import flocked
 
-    return flocked(ledger.with_name(ledger.name + ".lock"))
+    return flocked(ledger.with_name(ledger.name + ".lock"), blocking=blocking)
 
 
 def add(text: str, ref: str, cwd: Path) -> tuple[Entry, dict[str, bool]]:
@@ -304,7 +308,9 @@ def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]]:
     if ledger is None or repo_root is None:
         return []
     results = []
-    with _lock(ledger):
+    with _lock(ledger, blocking=False) as held:
+        if not held:
+            return []  # another flush or `log add` holds the ledger; it delivers
         for entry, status in pending(ledger):
             retry = [name for name, ok in status.items() if not ok]
             status = {**status, **deliver(entry, retry, repo_root)}

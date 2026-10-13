@@ -294,3 +294,34 @@ def test_a_ref_in_the_same_repo_keys_as_the_bare_ref(repo, tmp_path) -> None:
     _sinks(["pm"], pm={"kind": "command", "run": f'printf %s "$LORE_ENTRY_KEY" > {out}'})
     assert _add(tmp_path, GOOD, ref="acme/widget#471") == 0
     assert out.read_text() == "lore:acme/widget:#471"
+
+
+def test_a_line_separator_in_the_text_keeps_the_entry_pending(repo, tmp_path) -> None:
+    """U+2028 in pasted text must not split the ledger line (review of PR #498)."""
+    from lore_workflow.logbook import pending
+
+    text = GOOD.replace(" for ", " for\u2028")
+    out = tmp_path / "stdin"
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, text) == 0
+    assert len(pending(repo / ".git" / "lore-ledger.md")) == 1
+    _sinks(["pm"], pm={"kind": "command", "run": f"cat > {out}"})
+    assert main(["log", "flush"]) == 0
+    assert out.read_text() == text
+
+
+def test_the_key_in_a_worktree_of_a_bare_repo_names_the_bare_repo(tmp_path) -> None:
+    from lore_workflow.logbook import add
+
+    src = tmp_path / "src"
+    src.mkdir()
+    git = ["git", "-c", "user.name=Ada", "-c", "user.email=a@b"]
+    subprocess.run(["git", "init", "-q"], cwd=src, check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "x"], cwd=src, check=True)
+    bare = tmp_path / "gadget.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(src), str(bare)], check=True)
+    subprocess.run(["git", "remote", "remove", "origin"], cwd=bare, check=True)
+    subprocess.run(["git", "worktree", "add", "-q", str(tmp_path / "w1")], cwd=bare, check=True)
+    _sinks([])
+
+    assert add(GOOD, "#7", tmp_path / "w1")[0].key == "lore:gadget:#7"
