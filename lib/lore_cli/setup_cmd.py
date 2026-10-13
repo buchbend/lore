@@ -659,7 +659,15 @@ def _test_sink(spec: dict) -> list[Event]:
     from lore_core.secrets import SecretsError, read_secrets
 
     events: list[Event] = []
-    if spec.get("run"):
+    run = spec.get("run") or ""
+    if set(run) & set("|;&()<>`"):
+        # The sink runs `run` through the shell: check the syntax, not each command.
+        bad = subprocess.run(["sh", "-n", "-c", run], capture_output=True, text=True)
+        if bad.returncode:
+            events.append((False, f"shell syntax error in {run!r}: {bad.stderr.strip()}"))
+        else:
+            events.append((None, "shell line: syntax checked, its commands not looked up"))
+    elif run:
         try:
             exe = shlex.split(spec["run"])[0]
         except (ValueError, IndexError):

@@ -166,6 +166,19 @@ def test_setup_sink_names_a_missing_command_and_a_missing_secret(repo, capsys) -
     assert "nope" in out
 
 
+def test_setup_sink_accepts_a_shell_line(repo, capsys) -> None:
+    """The sink runs `run` through the shell; `(printf` is not a command name."""
+    run = '(printf "%s\\n\\n" "$LORE_ENTRY_REF"; cat) | cat'
+    assert main(["setup", "sink", "command", "--name", "pm", "--run", run]) == 0
+    assert "not on PATH" not in capsys.readouterr().out
+    assert _person()["sinks"]["pm"]["run"] == run
+
+
+def test_setup_sink_names_a_shell_syntax_error(repo, capsys) -> None:
+    assert main(["setup", "sink", "command", "--name", "pm", "--run", "(cat | cat"]) == 1
+    assert "syntax" in capsys.readouterr().out
+
+
 def test_setup_sink_file_adds_a_file_sink(repo) -> None:
     assert main(["setup", "sink", "file", "--name", "notes"]) == 0
     assert _person()["sinks"]["notes"] == {"kind": "file"}
