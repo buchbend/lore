@@ -31,6 +31,15 @@ A scope uses a sink once its `logbook` list names the sink:
 logbook: [file, pm]
 ```
 
+`--scope NAME` writes that list for you. The command adds the sink to the
+list of scope `NAME`. Where the scope has no list yet, the new list keeps the
+sinks the scope used before: your `defaults.logbook`, or else `file`. An
+unknown scope exits 1 and names the known scopes.
+
+```
+lore setup sink command --name pm --run '<shell line>' --scope ccat
+```
+
 ## Write an entry
 
 ```

@@ -698,10 +698,13 @@ def setup_sink(
     secret: str = typer.Option(
         None, "--secret", help="command: a secret name; its value arrives as $LORE_SECRET."
     ),
+    scope: str = typer.Option(
+        None, "--scope", help="Add the sink to this scope's logbook list (default: [file, NAME])."
+    ),
 ) -> None:
     """Add a logbook sink to your config and test it without posting.
 
-    A scope uses the sink once its `logbook:` list names it.
+    A scope uses the sink once its `logbook:` list names it; `--scope` writes that list.
     """
     import re
 
@@ -712,11 +715,24 @@ def setup_sink(
         raise typer.BadParameter(f"sink name {name!r}: use letters, digits, '.', '_' or '-'")
     spec = {"kind": kind, **({"run": run} if run else {}), **({"secret": secret} if secret else {})}
     person = _read_person()
+    scopes = person.get("scopes") if isinstance(person.get("scopes"), dict) else {}
+    if scope and not isinstance(scopes.get(scope), dict):
+        typer.echo(f"no scope {scope!r}; known scopes: {', '.join(scopes) or 'none'}", err=True)
+        raise typer.Exit(1)
     sinks = person.get("sinks") if isinstance(person.get("sinks"), dict) else {}
     events: list[Event] = []
     if sinks.get(name) != spec:
         person["sinks"] = {**sinks, name: spec}
-        _write_person(person)
         events.append((True, f"sink {name!r} written to {user_config_path()}"))
+    if scope:
+        # An absent list inherits `defaults.logbook`, then the file sink; keep those.
+        defaults = person.get("defaults") if isinstance(person.get("defaults"), dict) else {}
+        logbook = list(scopes[scope].get("logbook") or defaults.get("logbook") or ["file"])
+        if name not in logbook:
+            scopes[scope]["logbook"] = [*logbook, name]
+            events.append((True, f"scope {scope!r} logbook: {', '.join(logbook + [name])}"))
+    if events:
+        _write_person(person)
     events += _test_sink(spec)
-    _finish(_report("sink", f"{name} ({kind}) ready; name it in a scope's logbook list", events))
+    hint = f"in scope {scope}" if scope else "name it in a scope's logbook list"
+    _finish(_report("sink", f"{name} ({kind}) ready; {hint}", events))
