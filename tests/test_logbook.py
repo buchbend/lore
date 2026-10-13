@@ -223,3 +223,74 @@ def test_show_prints_this_months_entries(repo, tmp_path, capsys) -> None:
     capsys.readouterr()
     assert main(["log", "show"]) == 0
     assert GOOD in capsys.readouterr().out
+
+
+# --- issue #490: small logbook defects ---------------------------------------
+
+
+def test_a_retry_sends_the_text_with_its_repeated_spaces(repo, tmp_path) -> None:
+    text = GOOD.replace("logbook sinks", "logbook  sinks")
+    out = tmp_path / "stdin"
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, text) == 0
+    _sinks(["pm"], pm={"kind": "command", "run": f"cat > {out}"})
+    assert main(["log", "flush"]) == 0
+    assert out.read_text() == text
+
+
+def test_the_key_without_a_remote_is_the_same_in_a_linked_worktree(tmp_path, monkeypatch) -> None:
+    from lore_workflow.logbook import add
+
+    main_repo = tmp_path / "gadget"
+    main_repo.mkdir()
+    git = ["git", "-c", "user.name=Ada", "-c", "user.email=a@b"]
+    subprocess.run(["git", "init", "-q"], cwd=main_repo, check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "x"], cwd=main_repo, check=True)
+    linked = tmp_path / "gadget-wt"
+    subprocess.run(["git", "worktree", "add", "-q", str(linked)], cwd=main_repo, check=True)
+    _sinks([])
+
+    keys = {add(GOOD, "#7", where)[0].key for where in (main_repo, linked)}
+    assert keys == {"lore:gadget:#7"}
+
+
+def test_the_file_sink_header_drops_an_empty_author(repo) -> None:
+    from lore_workflow.logbook import Entry, _file_sink
+
+    at = "2026-10-13T10:00:00Z"
+    _file_sink(Entry("lore:acme/widget:#1", at, "acme/widget", "", "#1", "", GOOD), repo)
+    assert "**2026-10-13** · #1\n" in _month_file(repo).read_text()
+
+
+def test_two_concurrent_flushes_run_a_command_sink_once(repo, tmp_path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from lore_workflow.logbook import flush
+
+    count = tmp_path / "count"
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    _sinks(["pm"], pm={"kind": "command", "run": f"echo x >> {count}; sleep 0.5"})
+    with ThreadPoolExecutor(2) as pool:
+        list(pool.map(lambda _: flush(repo), range(2)))
+    assert count.read_text() == "x\n"
+
+
+def test_precompact_note_skips_a_ledger_with_only_logbook_lines(repo, tmp_path) -> None:
+    from lore_workflow.ledger import precompact_note
+
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    assert precompact_note(repo) is None
+
+
+def test_log_add_help_shows_the_logbook_tag(repo, capsys) -> None:
+    main(["log", "add", "--help"])
+    assert "`[logbook]`" in capsys.readouterr().out
+
+
+def test_a_ref_in_the_same_repo_keys_as_the_bare_ref(repo, tmp_path) -> None:
+    out = tmp_path / "key"
+    _sinks(["pm"], pm={"kind": "command", "run": f'printf %s "$LORE_ENTRY_KEY" > {out}'})
+    assert _add(tmp_path, GOOD, ref="acme/widget#471") == 0
+    assert out.read_text() == "lore:acme/widget:#471"

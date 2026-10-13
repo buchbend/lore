@@ -119,10 +119,14 @@ def utc_date() -> str:
 
 
 def format_entry(entry: LedgerEntry) -> str:
-    """Render *entry* as one ledger line. Newlines in the text become spaces."""
+    """Render *entry* as one ledger line. Newlines in the text become spaces.
+
+    A ``[logbook]`` line keeps its text verbatim: it is one line of JSON, and a
+    retried delivery must send the entry text unchanged (issue #490).
+    """
     if entry.kind not in KINDS:
         raise ValueError(f"invalid kind {entry.kind!r}: use one of {', '.join(KINDS)}")
-    text = " ".join(entry.text.split())
+    text = entry.text if entry.kind == "logbook" else " ".join(entry.text.split())
     if entry.kind == "resume":
         status = entry.timestamp or utc_now()
     elif entry.kind == "logbook":
@@ -362,6 +366,9 @@ def precompact_note(cwd: Path) -> str | None:
     path = default_ledger_path(cwd)
     if path is None or not path.is_file():
         return None
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not any(ln.lstrip().startswith("- [") and "- [logbook]" not in ln for ln in lines):
+        return None  # only undelivered logbook entries are left (issue #490)
     return (
         f"lore: build ledger at {path} — re-read it after compaction; "
         "`lore workflow ledger-check` gates the finish point."
