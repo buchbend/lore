@@ -8,16 +8,17 @@ routes to the scope's wiki. A new repo there needs no step (ADR 0016).
 
 ## Add a scope
 
-From a repo no scope covers:
+Name the folder:
 
 ```
-lore setup scope
+lore setup scope ~/git/ccatobs
 ```
 
-Setup offers the folder above the repo. Without a terminal, pass the answers:
+Without a path, setup offers the folder you are in. Inside a repo, it offers
+the folder above the repo. Without a terminal, pass the answers:
 
 ```
-lore setup scope --yes --name ccat --wiki ccat --remote 'github.com/ccatobs/*'
+lore setup scope ~/git/ccatobs --yes --name ccat --wiki ccat --remote 'github.com/ccatobs/*'
 ```
 
 The result is one entry in the person config:

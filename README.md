@@ -224,13 +224,14 @@ lore setup
 ### Route repos to a wiki — one scope per folder
 
 A **scope** is a folder in your `~/.config/lore/config.yml`. Every repo
-below it gets the scope's wiki; a new repo there needs no step. From a
-repo, `lore setup scope` offers the folder above it:
+below it gets the scope's wiki; a new repo there needs no step. Name the
+folder, or run the command in it:
 
 ```bash
-cd ~/git/ccatobs/some-repo
-lore setup scope            # or: --name ccat --wiki ccat --remote 'github.com/ccatobs/*'
+lore setup scope ~/git/ccatobs   # or: --name ccat --wiki ccat --remote 'github.com/ccatobs/*'
 ```
+
+Inside a repo, without a path, `lore setup scope` offers the folder above the repo.
 
 A committed `.lore.yml` in a repo holds exceptions only, such as a
 different wiki.
