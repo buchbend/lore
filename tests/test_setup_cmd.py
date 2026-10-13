@@ -331,6 +331,56 @@ def test_report_pads_the_migrate_label(tmp_path, agents, no_prompt, monkeypatch)
     assert "✓ migrate " in result.output
 
 
+def _team_wiki(tmp_path: Path) -> None:
+    (tmp_path / "lore" / "wiki" / "team").mkdir(parents=True)
+    user_config_path().parent.mkdir(parents=True)
+    user_config_path().write_text(f"lore_root: {tmp_path / 'lore'}\n")
+
+
+def test_setup_scope_outside_a_repo_scopes_the_current_folder(
+    tmp_path, agents, no_prompt, monkeypatch
+):
+    """#493: run in ~/git/ccatobs itself, the folder a person means."""
+    _team_wiki(tmp_path)
+    org = tmp_path / "git" / "ccatobs"
+    org.mkdir(parents=True)
+    monkeypatch.chdir(org)
+    result = _setup("scope", "--yes", "--name", "ccat", "--wiki", "team")
+    assert result.exit_code == 0, result.output
+    assert _person()["scopes"]["ccat"] == {"path": str(org), "wiki": "team"}
+
+
+def test_setup_scope_takes_a_folder_path(tmp_path, agents, no_prompt, monkeypatch):
+    """#493: `lore setup scope PATH` scopes PATH, from any folder, even inside a repo."""
+    _team_wiki(tmp_path)
+    org = tmp_path / "git" / "ccatobs"
+    org.mkdir(parents=True)
+    monkeypatch.chdir(_repo(tmp_path / "elsewhere" / "repo"))
+    result = _setup("scope", str(org), "--yes", "--wiki", "team")
+    assert result.exit_code == 0, result.output
+    assert _person()["scopes"]["ccatobs"] == {"path": str(org), "wiki": "team"}
+
+
+def test_setup_scope_path_refuses_a_folder_that_holds_home(
+    tmp_path, agents, no_prompt, monkeypatch
+):
+    _team_wiki(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    result = _setup("scope", str(Path.home()), "--yes", "--wiki", "team")
+    assert "too broad" in result.output
+    assert "scopes" not in _person()
+
+
+def test_full_setup_outside_a_repo_adds_no_scope(tmp_path, agents, no_prompt, monkeypatch):
+    """`install.sh` runs `lore setup` from any folder; only `setup scope` takes the folder."""
+    (tmp_path / "lore" / "wiki" / "team").mkdir(parents=True)
+    plain = tmp_path / "Downloads"
+    plain.mkdir()
+    monkeypatch.chdir(plain)
+    result = _setup("--yes", "--vault", str(tmp_path / "lore"))
+    assert "scopes" not in _person(), result.output
+
+
 def test_scope_refuses_a_folder_that_holds_home(tmp_path, agents, no_prompt, monkeypatch):
     (tmp_path / "lore" / "wiki" / "team").mkdir(parents=True)
     repo = _repo(Path.home() / "proj")

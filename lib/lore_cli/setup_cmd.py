@@ -365,12 +365,14 @@ def step_scope(
     remote: list[str] | None,
     scaffold_workflow: bool,
     interactive: bool,
+    folder: Path | None = None,
 ) -> tuple[str, list[Event]]:
-    """Offer the repo's parent folder as a scope when no scope covers ``cwd``."""
+    """Offer ``folder`` as a scope, by default the repo's parent folder, when no
+    scope covers it."""
     from lore_core.config_schema import _read_raw
     from lore_core.route import resolve_route
 
-    route = resolve_route(cwd)
+    route = resolve_route(folder or cwd)
     events: list[Event] = []
     if scaffold_workflow and route.repo_root is not None:
         from lore_workflow.scaffold import scaffold
@@ -379,10 +381,10 @@ def step_scope(
             events.append((True, "scaffolded docs/prd, docs/adr and the AGENTS.md shim"))
     if route.scope:
         return f"{route.scope} covers {route.cwd}", events
-    if route.repo_root is None:
-        return "not in a git repo; no scope to offer", events
-
-    folder = route.repo_root.parent
+    if folder is None:
+        if route.repo_root is None:
+            return "not in a git repo; no scope to offer", events
+        folder = route.repo_root.parent
     home, vault = Path.home().resolve(), get_lore_root().resolve()
     if home.is_relative_to(folder) or folder.is_relative_to(vault):
         return f"not offering {folder}", [
@@ -395,7 +397,7 @@ def step_scope(
     wikis = [p.name for p in list_wikis(get_lore_root())]
     name = name or folder.name
     # The repo's old `.lore.yml` wiki no longer routes, but it is the best default.
-    yml_wiki = _read_raw(route.repo_root / ".lore.yml").get("wiki")
+    yml_wiki = _read_raw(route.repo_root / ".lore.yml").get("wiki") if route.repo_root else None
     yml_wiki = yml_wiki if yml_wiki in wikis else None
     wiki = wiki or yml_wiki or route.wiki or (wikis[0] if wikis else "")
     remotes = list(remote or [])
@@ -487,6 +489,13 @@ _VAULT = typer.Option(None, "--vault", help="Vault location (default: configured
 _WIKI_NEW = typer.Option(None, "--wiki-new", help="Create a personal wiki with this name.")
 _WIKI_CLONE = typer.Option(None, "--wiki-clone", help="Clone a team wiki from this git URL.")
 _WIKI_LINK = typer.Option(None, "--wiki-link", help="Link an existing folder as a wiki.")
+_SCOPE_PATH = typer.Argument(
+    None,
+    exists=True,
+    file_okay=False,
+    resolve_path=True,
+    help="Scope folder. Default: the folder above this repo, or this folder outside a repo.",
+)
 _NAME = typer.Option(None, "--name", help="Scope name (default: the folder's name).")
 _WIKI = typer.Option(None, "--wiki", help="Wiki the scope routes to.")
 _REMOTE = typer.Option(None, "--remote", help="Git remote pattern, e.g. github.com/org/*.")
@@ -565,23 +574,32 @@ def setup_wiki(
 
 @app.command("scope")
 def setup_scope(
+    path: Path | None = _SCOPE_PATH,
     yes: bool = _YES,
     name: str = _NAME,
     wiki: str = _WIKI,
     remote: list[str] = _REMOTE,
     scaffold_workflow: bool = _SCAFFOLD,
 ) -> None:
-    """Add a scope for the folder above this repo (the Scope step alone)."""
+    """Add a scope for a folder and every repo below it (the Scope step alone)."""
+    from lore_core.route import resolve_route
+
+    cwd = Path.cwd()
+    # Outside a repo, the folder a person stands in is the one they mean (#493).
+    # `lore setup` keeps the repo-only rule: install.sh runs it from any folder.
+    if path is None and resolve_route(cwd).repo_root is None:
+        path = cwd
     ok = _migrate_report()
     ok &= _report(
         "scope",
         *step_scope(
-            Path.cwd(),
+            cwd,
             name=name,
             wiki=wiki,
             remote=remote,
             scaffold_workflow=scaffold_workflow,
             interactive=_interactive(yes),
+            folder=path,
         ),
     )
     _finish(ok)
