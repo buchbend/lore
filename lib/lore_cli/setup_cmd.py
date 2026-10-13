@@ -708,6 +708,8 @@ def setup_sink(
     """
     import re
 
+    from lore_core.route import _as_list
+
     name = name or kind
     if kind not in ("file", "command") or (kind == "command") != bool(run):
         raise typer.BadParameter("use `sink file`, or `sink command --run '<shell line>'`")
@@ -727,7 +729,7 @@ def setup_sink(
     if scope:
         # An absent list inherits `defaults.logbook`, then the file sink; keep those.
         defaults = person.get("defaults") if isinstance(person.get("defaults"), dict) else {}
-        logbook = list(scopes[scope].get("logbook") or defaults.get("logbook") or ["file"])
+        logbook = _as_list(scopes[scope].get("logbook") or defaults.get("logbook")) or ["file"]
         if name not in logbook:
             scopes[scope]["logbook"] = [*logbook, name]
             events.append((True, f"scope {scope!r} logbook: {', '.join(logbook + [name])}"))

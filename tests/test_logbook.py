@@ -197,8 +197,9 @@ def test_setup_sink_scope_adds_the_sink_to_the_scope_logbook(repo) -> None:
     assert _person()["scopes"]["ccat"]["logbook"] == ["file", "pm", "notes"]
 
 
-def test_setup_sink_scope_keeps_the_inherited_default_list(repo) -> None:
-    cfg = {"defaults": {"logbook": ["hook"]}, "scopes": {"ccat": {"path": str(repo)}}}
+@pytest.mark.parametrize("inherited", [["hook"], "hook"])
+def test_setup_sink_scope_keeps_the_inherited_default_list(repo, inherited) -> None:
+    cfg = {"defaults": {"logbook": inherited}, "scopes": {"ccat": {"path": str(repo)}}}
     user_config_path().parent.mkdir(parents=True, exist_ok=True)
     user_config_path().write_text(yaml.safe_dump(cfg))
     assert main(["setup", "sink", "file", "--name", "notes", "--scope", "ccat"]) == 0
