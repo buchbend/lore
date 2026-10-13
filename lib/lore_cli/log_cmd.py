@@ -25,7 +25,7 @@ def add_cmd(
     """Check an entry, keep it in the ledger and deliver it to every sink.
 
     Exits 2 when the entry breaks a content rule. A failed sink stays
-    undelivered on the `[logbook]` ledger line; `lore log flush` retries it.
+    undelivered on the `\\[logbook]` ledger line; `lore log flush` retries it.
     """
     text = sys.stdin.read() if text_file == "-" else Path(text_file).read_text(encoding="utf-8")
     rule = logbook.broken_rule(text)
@@ -44,6 +44,9 @@ def add_cmd(
 def flush_cmd() -> None:
     """Retry every undelivered sink in this repo's ledger. Always exits 0."""
     results = logbook.flush(Path.cwd())
+    if results is None:
+        print("another flush or `lore log add` is running; try again later")
+        return
     for entry, status in results:
         _print_status(entry, status)
     if not results:

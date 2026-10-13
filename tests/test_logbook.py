@@ -223,3 +223,124 @@ def test_show_prints_this_months_entries(repo, tmp_path, capsys) -> None:
     capsys.readouterr()
     assert main(["log", "show"]) == 0
     assert GOOD in capsys.readouterr().out
+
+
+# --- issue #490: small logbook defects ---------------------------------------
+
+
+def test_a_retry_sends_the_text_with_its_repeated_spaces(repo, tmp_path) -> None:
+    text = GOOD.replace("logbook sinks", "logbook  sinks")
+    out = tmp_path / "stdin"
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, text) == 0
+    _sinks(["pm"], pm={"kind": "command", "run": f"cat > {out}"})
+    assert main(["log", "flush"]) == 0
+    assert out.read_text() == text
+
+
+def test_the_key_without_a_remote_is_the_same_in_a_linked_worktree(tmp_path, monkeypatch) -> None:
+    from lore_workflow.logbook import add
+
+    main_repo = tmp_path / "gadget"
+    main_repo.mkdir()
+    git = ["git", "-c", "user.name=Ada", "-c", "user.email=a@b"]
+    subprocess.run(["git", "init", "-q"], cwd=main_repo, check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "x"], cwd=main_repo, check=True)
+    linked = tmp_path / "gadget-wt"
+    subprocess.run(["git", "worktree", "add", "-q", str(linked)], cwd=main_repo, check=True)
+    _sinks([])
+
+    keys = {add(GOOD, "#7", where)[0].key for where in (main_repo, linked)}
+    assert keys == {"lore:gadget:#7"}
+
+
+def test_the_file_sink_header_drops_an_empty_author(repo) -> None:
+    from lore_workflow.logbook import Entry, _file_sink
+
+    at = "2026-10-13T10:00:00Z"
+    _file_sink(Entry("lore:acme/widget:#1", at, "acme/widget", "", "#1", "", GOOD), repo)
+    assert "**2026-10-13** · #1\n" in _month_file(repo).read_text()
+
+
+def test_two_concurrent_flushes_run_a_command_sink_once(repo, tmp_path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from lore_workflow.logbook import flush
+
+    count = tmp_path / "count"
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    _sinks(["pm"], pm={"kind": "command", "run": f"echo x >> {count}; sleep 0.5"})
+    with ThreadPoolExecutor(2) as pool:
+        list(pool.map(lambda _: flush(repo), range(2)))
+    assert count.read_text() == "x\n"
+
+
+def test_precompact_note_skips_a_ledger_with_only_logbook_lines(repo, tmp_path) -> None:
+    from lore_workflow.ledger import precompact_note
+
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    assert precompact_note(repo) is None
+
+
+def test_log_add_help_shows_the_logbook_tag(repo, capsys) -> None:
+    main(["log", "add", "--help"])
+    assert "`[logbook]`" in capsys.readouterr().out
+
+
+def test_a_ref_in_the_same_repo_keys_as_the_bare_ref(repo, tmp_path) -> None:
+    out = tmp_path / "key"
+    _sinks(["pm"], pm={"kind": "command", "run": f'printf %s "$LORE_ENTRY_KEY" > {out}'})
+    assert _add(tmp_path, GOOD, ref="acme/widget#471") == 0
+    assert out.read_text() == "lore:acme/widget:#471"
+
+
+def test_a_line_separator_in_the_text_keeps_the_entry_pending(repo, tmp_path) -> None:
+    """U+2028 in pasted text must not split the ledger line (review of PR #498)."""
+    from lore_workflow.logbook import pending
+
+    text = GOOD.replace(" for ", " for\u2028")
+    out = tmp_path / "stdin"
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, text) == 0
+    assert len(pending(repo / ".git" / "lore-ledger.md")) == 1
+    _sinks(["pm"], pm={"kind": "command", "run": f"cat > {out}"})
+    assert main(["log", "flush"]) == 0
+    assert out.read_text() == text
+
+
+def test_the_key_in_a_worktree_of_a_bare_repo_names_the_bare_repo(tmp_path) -> None:
+    from lore_workflow.logbook import add
+
+    src = tmp_path / "src"
+    src.mkdir()
+    git = ["git", "-c", "user.name=Ada", "-c", "user.email=a@b"]
+    subprocess.run(["git", "init", "-q"], cwd=src, check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "x"], cwd=src, check=True)
+    bare = tmp_path / "gadget.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(src), str(bare)], check=True)
+    subprocess.run(["git", "remote", "remove", "origin"], cwd=bare, check=True)
+    subprocess.run(["git", "worktree", "add", "-q", str(tmp_path / "w1")], cwd=bare, check=True)
+    _sinks([])
+
+    assert add(GOOD, "#7", tmp_path / "w1")[0].key == "lore:gadget:#7"
+
+
+def test_the_main_checkout_name_reads_a_relative_common_dir(tmp_path, monkeypatch) -> None:
+    """Git < 2.31 has no --path-format; `--git-common-dir` prints `.git` (review of PR #498)."""
+    from lore_workflow import logbook
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, stdout=".git\n", stderr="")
+
+    monkeypatch.setattr(logbook.subprocess, "run", fake_run)
+    assert logbook._main_checkout_name(tmp_path / "gadget") == "gadget"
+
+
+def test_flush_says_so_when_another_flush_holds_the_lock(repo, capsys) -> None:
+    from lore_core.lockfile import flocked
+
+    with flocked(repo / ".git" / "lore-ledger.md.lock"):
+        assert main(["log", "flush"]) == 0
+    assert "another flush" in capsys.readouterr().out

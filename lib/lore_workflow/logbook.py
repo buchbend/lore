@@ -80,7 +80,8 @@ class Entry:
 def _ledger_entry(entry: Entry, status: dict[str, bool]) -> LedgerEntry:
     return LedgerEntry(
         kind="logbook",
-        text=json.dumps(asdict(entry), ensure_ascii=False, separators=(",", ":")),
+        # ASCII JSON: a raw U+2028 would split the line under `splitlines()`.
+        text=json.dumps(asdict(entry), ensure_ascii=True, separators=(",", ":")),
         outcome=" ".join(f"{n}={'delivered' if ok else 'undelivered'}" for n, ok in status.items()),
     )
 
@@ -154,7 +155,8 @@ def _file_sink(entry: Entry, repo_root: Path) -> bool:
     if marker in old:
         return True
     heading, _, rest = old.partition("\n")
-    block = f"{marker}\n**{entry.at[:10]}** · {entry.author} · {entry.ref}\n\n{entry.text}\n"
+    header = " · ".join(p for p in (f"**{entry.at[:10]}**", entry.author, entry.ref) if p)
+    block = f"{marker}\n{header}\n\n{entry.text}\n"
     rest = rest.strip("\n")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"{heading}\n\n{block}" + (f"\n{rest}\n" if rest else ""), encoding="utf-8")
@@ -239,6 +241,33 @@ def _git_user_name(cwd: Path) -> str:
     return out.stdout.strip()
 
 
+def _main_checkout_name(repo_root: Path) -> str:
+    """The folder name of the main checkout, also from a linked worktree."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],  # relative to cwd; git >= 2.5
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return repo_root.name
+    if out.returncode != 0 or not out.stdout.strip():
+        return repo_root.name
+    common = (repo_root / out.stdout.strip()).resolve()
+    # `<main>/.git` names the main checkout; a bare `gadget.git` names itself.
+    return common.parent.name if common.name == ".git" else common.name.removesuffix(".git")
+
+
+def _lock(ledger: Path, *, blocking: bool = True):
+    """Hold the ledger's lock, so two flushes never deliver one entry twice."""
+    from lore_core.lockfile import flocked
+
+    return flocked(ledger.with_name(ledger.name + ".lock"), blocking=blocking)
+
+
 def add(text: str, ref: str, cwd: Path) -> tuple[Entry, dict[str, bool]]:
     """Stamp *text*, keep it in the ledger of *cwd*, deliver it to the route's sinks.
 
@@ -251,9 +280,11 @@ def add(text: str, ref: str, cwd: Path) -> tuple[Entry, dict[str, bool]]:
     ledger = default_ledger_path(cwd)
     if ledger is None or route.repo_root is None:
         raise ValueError(f"{cwd} is not inside a git repository")
-    repo = current_repo(route.repo_root) or route.repo_root.name
+    repo = current_repo(route.repo_root) or _main_checkout_name(route.repo_root)
+    # `owner/repo#n` in its own repo keys as `#n`, so both spellings dedupe.
+    key_ref = ref.removeprefix(repo) if ref.startswith(f"{repo}#") else ref
     entry = Entry(
-        key=f"lore:{repo}:{ref}",
+        key=f"lore:{repo}:{key_ref}",
         at=utc_now(),
         repo=repo,
         scope=route.scope or "",
@@ -261,28 +292,33 @@ def add(text: str, ref: str, cwd: Path) -> tuple[Entry, dict[str, bool]]:
         author=_git_user_name(route.repo_root),
         text=text.strip(),
     )
-    _write_status(ledger, entry, dict.fromkeys(route.sinks, False))
-    status = deliver(entry, list(route.sinks), route.repo_root)
-    _write_status(ledger, entry, status)
+    with _lock(ledger):
+        _write_status(ledger, entry, dict.fromkeys(route.sinks, False))
+        status = deliver(entry, list(route.sinks), route.repo_root)
+        _write_status(ledger, entry, status)
     return entry, status
 
 
-def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]]:
-    """Retry every undelivered sink in the ledger of *cwd*; return the new states."""
+def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]] | None:
+    """Retry every undelivered sink in the ledger of *cwd*; return the new states.
+
+    Returns None when another flush or `log add` holds the ledger's lock.
+    """
     from lore_core.route import resolve_route
 
     ledger = default_ledger_path(cwd)
     repo_root = resolve_route(cwd).repo_root
     if ledger is None or repo_root is None:
         return []
-    # ponytail: no lock against a concurrent `log add`; every sink dedupes on
-    # the entry key, so a race costs at most a repeated no-op delivery.
     results = []
-    for entry, status in pending(ledger):
-        retry = [name for name, ok in status.items() if not ok]
-        status = {**status, **deliver(entry, retry, repo_root)}
-        _write_status(ledger, entry, status)
-        results.append((entry, status))
+    with _lock(ledger, blocking=False) as held:
+        if not held:
+            return None
+        for entry, status in pending(ledger):
+            retry = [name for name, ok in status.items() if not ok]
+            status = {**status, **deliver(entry, retry, repo_root)}
+            _write_status(ledger, entry, status)
+            results.append((entry, status))
     return results
 
 

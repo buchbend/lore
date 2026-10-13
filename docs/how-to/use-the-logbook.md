@@ -49,7 +49,10 @@ lore log add --ref <ref> --text-file entry.md
 - `--ref` is a PR, an issue, an epic or `branch@sha`.
 - `--text-file -` reads the entry from standard input.
 - Lore adds the author, the date, the repo and the scope.
-- The key of the entry is `lore:<owner/repo>:<ref>`.
+- The key of the entry is `lore:<owner/repo>:<ref>`. A ref in the same repo
+  keys as the bare ref: `acme/widget#471` in `acme/widget` gives
+  `lore:acme/widget:#471`. A repo without a remote uses the folder name of
+  its main checkout, also in a linked worktree.
 
 The entry follows four rules. If the entry breaks one, the command exits 2
 and names the rule:

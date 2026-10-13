@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.86.0] - 2026-10-13
+
+- Logbook fixes (#490): a retry sends the entry text unchanged, also with repeated spaces or a U+2028 line separator. A repo without a remote keys entries by its main checkout's folder name, also in a linked worktree. A ref in the same repo keys as the bare ref. The file sink header drops an empty author. `lore log add` and `lore log flush` lock the ledger, so two flushes never deliver one entry twice. The PreCompact note skips a ledger that holds only logbook lines. `lore log add --help` shows `[logbook]`.
+
 ## [0.85.0] - 2026-10-13
 
 - `lore setup sink … --scope NAME` adds the sink to the `logbook` list of scope `NAME`. Where the scope has no list, the new list keeps the inherited sinks (`defaults.logbook`, else `file`). An unknown scope exits 1 and names the known scopes (#496).
