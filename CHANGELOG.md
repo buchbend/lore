@@ -8,10 +8,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
-## [0.85.0] - 2026-10-13
-
-- `lore setup sink … --scope NAME` adds the sink to the `logbook` list of scope `NAME`. Where the scope has no list, the new list keeps the inherited sinks (`defaults.logbook`, else `file`). An unknown scope exits 1 and names the known scopes (#496).
-
 ## [0.84.0] - 2026-10-13
 
 ### Added
