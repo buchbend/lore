@@ -325,3 +325,22 @@ def test_the_key_in_a_worktree_of_a_bare_repo_names_the_bare_repo(tmp_path) -> N
     _sinks([])
 
     assert add(GOOD, "#7", tmp_path / "w1")[0].key == "lore:gadget:#7"
+
+
+def test_the_main_checkout_name_reads_a_relative_common_dir(tmp_path, monkeypatch) -> None:
+    """Git < 2.31 has no --path-format; `--git-common-dir` prints `.git` (review of PR #498)."""
+    from lore_workflow import logbook
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, stdout=".git\n", stderr="")
+
+    monkeypatch.setattr(logbook.subprocess, "run", fake_run)
+    assert logbook._main_checkout_name(tmp_path / "gadget") == "gadget"
+
+
+def test_flush_says_so_when_another_flush_holds_the_lock(repo, capsys) -> None:
+    from lore_core.lockfile import flocked
+
+    with flocked(repo / ".git" / "lore-ledger.md.lock"):
+        assert main(["log", "flush"]) == 0
+    assert "another flush" in capsys.readouterr().out

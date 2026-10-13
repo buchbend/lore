@@ -44,6 +44,9 @@ def add_cmd(
 def flush_cmd() -> None:
     """Retry every undelivered sink in this repo's ledger. Always exits 0."""
     results = logbook.flush(Path.cwd())
+    if results is None:
+        print("another flush or `lore log add` is running; try again later")
+        return
     for entry, status in results:
         _print_status(entry, status)
     if not results:
