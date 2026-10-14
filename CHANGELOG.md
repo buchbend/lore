@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.87.0] - 2026-10-14
+
+Ships `lore-workflow` 0.15.0.
+
+- **`build` offers the next run.** After the merge, `build` runs `handover` § Next run. The step groups the follow-ups the run filed. It offers one next run per group, one line each with its command: `/lore-workflow:build issue`, `/lore-workflow:build epic`, or a seed and then `/lore-workflow:orient`. The user can copy a command and run it after `/clear`, or say yes to start the run in the same session. An unreachable user gets the lines in the report.
+
 ## [0.86.0] - 2026-10-13
 
 - Logbook fixes (#490): a retry sends the entry text unchanged, also with repeated spaces or a U+2028 line separator. A repo without a remote keys entries by its main checkout's folder name, also in a linked worktree. A ref in the same repo keys as the bare ref. The file sink header drops an empty author. `lore log add` and `lore log flush` lock the ledger, so two flushes never deliver one entry twice. The PreCompact note skips a ledger that holds only logbook lines. `lore log add --help` shows `[logbook]`.

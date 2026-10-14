@@ -58,10 +58,11 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
 - **Handover section.** Each finish point writes `## Handover` in the shape
   [`handover`](../handover/SKILL.md) gives. Work that stops early runs `handover` instead.
 - **Logbook.** After the handover section, before the merge approval: `lore log add`, [logbook.md](logbook.md).
-- **Version bump.** If the repo's `AGENTS.md` or `CLAUDE.md` requires a version bump per release,
-  the shipping PR carries it as its last commit. Follow that file. Lore itself runs
+- **Version bump.** If the repo's `AGENTS.md` or `CLAUDE.md` requires a version bump,
+  the shipping PR carries it as its last commit. Lore itself runs
   `python3 tools/release.py --in-branch --notes notes.md`.
-- **Follow-ups** go through [`file-issue`](../file-issue/SKILL.md) and get a `filed` ledger line.
+- **Follow-ups** go through `file-issue` and get a `filed` ledger line. After the merge, run
+  `handover` § Next run.
 - **Session end.** Read `lore config get feedback.retrieval_misses`. When true, file one issue per
   retrieval miss on `feedback.retrieval_misses_repo` through `file-issue`: the fact, the tools
   tried, the turn count. When false, skip the check. List every issue and PR the session
