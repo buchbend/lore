@@ -12,8 +12,8 @@ The ledger line records each sink's delivery, then the entry as JSON::
 
 Sinks:
 
-- ``file`` writes ``docs/logbook/YYYY-MM.md`` in the repo, newest entry first.
-  A hidden ``<!-- <key> -->`` marker makes a repeat a no-op.
+- ``file`` writes one file per entry under ``docs/logbook/YYYY-MM/`` in the repo.
+  A hidden ``<!-- <key> -->`` marker makes a repeat in the same month a no-op.
 - ``command`` runs ``run`` through the shell with the entry text on stdin and
   ``LORE_ENTRY_*`` in the environment. A named ``secret`` arrives as
   ``LORE_SECRET`` and nowhere else. Exit code 0 means delivered.
@@ -41,9 +41,7 @@ from lore_workflow.ledger import (
 #: Seconds each sink may take before it counts as undelivered.
 SINK_TIMEOUT_S = 30
 
-GITATTRIBUTES_LINE = "docs/logbook/*.md merge=union"
-
-#: The labelled parts of an entry, in order (issue #500).
+#: The labelled parts of an entry, in order (issue #500, entries explain the reasoning).
 LABELS = ("Why", "What we did", "Consequences", "Not done yet")
 
 #: (rule name, test). A test returns True when the text breaks the rule.
@@ -155,31 +153,39 @@ def _sink_specs() -> dict[str, dict]:
     )
 
 
-def month_file(repo_root: Path, month: str) -> Path:
-    """The ``file`` sink's page for *month* (``YYYY-MM``)."""
-    return repo_root / "docs" / "logbook" / f"{month}.md"
+def _logbook_dir(repo_root: Path) -> Path:
+    return repo_root / "docs" / "logbook"
 
 
 def _file_sink(entry: Entry, repo_root: Path) -> bool:
-    month = entry.at[:7]
-    path = month_file(repo_root, month)
+    # One file per entry: a union merge of one shared file mixed the lines that two
+    # entries had in common, such as `**Not done yet:**` (review of PR #501).
+    month_dir = _logbook_dir(repo_root) / entry.at[:7]
     marker = f"<!-- {entry.key} -->"
-    old = path.read_text(encoding="utf-8") if path.exists() else f"# Logbook {month}\n"
-    if marker in old:
+    if month_dir.is_dir() and any(
+        marker in f.read_text(encoding="utf-8") for f in month_dir.glob("*.md")
+    ):
         return True
-    heading, _, rest = old.partition("\n")
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", entry.key.removeprefix("lore:")).strip("-")
     header = " · ".join(p for p in (f"**{entry.at[:10]}**", entry.author, entry.ref) if p)
-    block = f"{marker}\n{header}\n\n{entry.text}\n"
-    rest = rest.strip("\n")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"{heading}\n\n{block}" + (f"\n{rest}\n" if rest else ""), encoding="utf-8")
-
-    attrs = repo_root / ".gitattributes"
-    current = attrs.read_text(encoding="utf-8") if attrs.exists() else ""
-    if GITATTRIBUTES_LINE not in current.splitlines():
-        sep = "" if not current or current.endswith("\n") else "\n"
-        attrs.write_text(f"{current}{sep}{GITATTRIBUTES_LINE}\n", encoding="utf-8")
+    month_dir.mkdir(parents=True, exist_ok=True)
+    path = month_dir / f"{entry.at.replace(':', '')}_{slug}.md"
+    path.write_text(f"{marker}\n{header}\n\n{entry.text}\n", encoding="utf-8")
     return True
+
+
+def month_text(repo_root: Path, month: str) -> str:
+    """The entries of *month* (``YYYY-MM``), newest first, or "" when there are none.
+
+    The monthly file that the sink wrote before PR #501 follows the entry files.
+    """
+    root = _logbook_dir(repo_root)
+    parts = [
+        f.read_text(encoding="utf-8") for f in sorted((root / month).glob("*.md"), reverse=True)
+    ]
+    if (root / f"{month}.md").is_file():
+        parts.append((root / f"{month}.md").read_text(encoding="utf-8"))
+    return f"# Logbook {month}\n\n" + "\n".join(parts) if parts else ""
 
 
 def _command_sink(entry: Entry, spec: dict, repo_root: Path) -> bool:

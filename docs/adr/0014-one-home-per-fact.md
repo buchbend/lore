@@ -9,7 +9,8 @@
 ## Holds
 
 - **Default:** each kind of fact has one home, per the table below. Other
-  artifacts link to the home and do not restate the fact.
+  artifacts link to the home and do not restate the fact. A logbook entry
+  may summarise a fact in plain words and links to its home (ADR 0017).
 - **Invariant** (test: `tests/test_workflow_ledger_cmd.py::test_ledger_add_then_check_names_the_open_line`):
   a build run ends at a finish point only after the ledger check passes.
 - **Default:** a decision that meets the three ADR criteria of

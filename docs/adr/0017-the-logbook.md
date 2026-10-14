@@ -32,21 +32,17 @@
   until every sink confirms delivery. The SessionStart hook and the
   session-end hook retry the undelivered lines. A failed delivery does not
   block a merge.
-- **Default:** the `file` sink writes `docs/logbook/YYYY-MM.md`, newest
-  entry first. The agent commits the file on the build branch.
+- **Default:** the `file` sink writes one file per entry under
+  `docs/logbook/YYYY-MM/`. The agent commits the file on the build branch.
 - **Incidental:** two sink kinds ship, `file` and `command`. A `command`
   sink gets the entry text on stdin and the idempotency key, date and repo
   in environment variables. Exit code 0 means delivered.
-- **Incidental:** the `.gitattributes` line `docs/logbook/*.md merge=union`
-  avoids most merge conflicts in the monthly file.
 
 ## Revisit if
 
 - People dismiss many lore entries from their daily reports.
 - The labelled parts fill with filler, such as a `Why` that restates the
   issue title.
-- Web merges of the monthly file conflict twice. Then switch to one file per
-  entry.
 - A target needs more than a command can give, such as structured fields.
   Then add an `http` kind.
 
@@ -113,3 +109,12 @@ with a local repo only.
   against ADR 0014's rejected "set PR body" alternative on purpose. A PR
   body serves a reviewer who reads the diff. A logbook entry serves a reader
   who reads nothing else.
+- 2026-10-14: the `file` sink writes one file per entry under
+  `docs/logbook/YYYY-MM/`, not one monthly file (review of PR #501, logbook
+  entries explain the reasoning). The monthly file merged with the union
+  driver. Two entries with the four labels share lines such as
+  `**Not done yet:**`. A local merge of two branches wrote each shared line
+  once, and one entry lost its last parts without a conflict. One file per
+  entry gives each branch its own file. The sink no longer writes the
+  `.gitattributes` line, and `lore log show` prints an old monthly file
+  after the entry files.

@@ -8,7 +8,7 @@ at the finish point of each build mode and when work stops early.
 
 ## Add a sink
 
-The `file` sink writes `docs/logbook/YYYY-MM.md` in the repo:
+The `file` sink writes one file per entry under `docs/logbook/YYYY-MM/` in the repo:
 
 ```
 lore setup sink file
@@ -80,7 +80,7 @@ command exits 2 and names the rule:
 then delivers the entry to every sink of the route in parallel. Each sink has
 30 seconds. A sink that fails stays `undelivered` on the line.
 
-- The `file` sink puts the newest entry first under a month heading. A repeated key writes nothing. The sink adds `docs/logbook/*.md merge=union` to `.gitattributes` once.
+- The `file` sink writes each entry to its own file, so two branches never change one file. A repeated key in the same month writes nothing.
 - The `command` sink reads the entry on standard input. It gets `LORE_ENTRY_KEY`, `LORE_ENTRY_AT`, `LORE_ENTRY_REPO`, `LORE_ENTRY_SCOPE` and `LORE_ENTRY_REF` in its environment. The secret arrives as `LORE_SECRET`. Exit code 0 means delivered.
 
 ## Retry and read
@@ -91,6 +91,6 @@ lore log show
 ```
 
 - `flush` retries each undelivered sink. It reads the sink definitions again, so a fixed definition works on the next flush.
-- `show` prints the entries of this month from the `file` sink.
+- `show` prints the entries of this month from the `file` sink, newest first. A monthly file from before Lore 0.88 follows them.
 - The SessionStart hook and the session-end hook start `lore log flush` in the background when an undelivered line exists.
 - The SessionStart banner and the `route` block of `lore status` show the count of undelivered entries.
