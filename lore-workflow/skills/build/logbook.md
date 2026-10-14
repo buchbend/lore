@@ -24,6 +24,9 @@ It answers "Why was this work done, and what does it mean for the team?"
    - Name no merge state. The commit on the target branch and the PR link show it.
    - Start no line with `todo:` or `decided:`.
    - At a stop that hands work over, end with a `Waiting on:` line that names the blocker.
+   - Save the entry as a `.md` file. With Vale on `PATH`, run
+     `vale --config "$(lore style vale-config)" <file>` and fix each error. A repo that lints
+     `docs/` in CI rejects the `file` sink's copy otherwise.
 
    An example:
 
