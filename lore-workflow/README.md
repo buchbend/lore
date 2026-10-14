@@ -6,7 +6,7 @@ workflow skills, ported from `ccatobs/ccat-agent-workflow` (see PRD 0003).
 **Dependency direction: `lore-workflow` depends on `lore`; `lore` never
 depends on `lore-workflow`.** Workflow skills call `lore`'s CLI/MCP surface
 (`lore codemap` / `lore_codemap`, `lore tier resolve`, `lore workflow
-validate-roadmap` / `create-prd`, `lore setup scope --scaffold-workflow`); nothing
+validate-build-order` / `create-prd`, `lore setup scope --scaffold-workflow`); nothing
 in `lore` core imports or requires this plugin. This keeps `lore` installable
 standalone and lets `lore-workflow` stay opt-in.
 
@@ -22,8 +22,8 @@ The chain: `orient → grilling → to-epic → build → document`, with `hando
 |-------|----------------|
 | `orient` | First step of a task: homework, then reflect understanding back. A light mode ("brief me") pulls only the context pack and hands one change to `build`. |
 | `grilling` | Interview the user to stress-test a plan, and sharpen the domain model: `CONTEXT.md` terms and ADRs with `Holds` and `Revisit if`. |
-| `to-epic` | Turn a plan into a PRD file plus an epic tracker issue with a roadmap table. |
-| `build` | Build code in three modes: `loop` (fast rounds, local merges, one wrap-up PR), `issue` (one issue, one PR), `epic` (a roadmap, teammates, review by risk level). Keeps a ledger and writes a handover section. |
+| `to-epic` | Turn a plan into a PRD file plus an epic tracker issue with a build-order table. |
+| `build` | Build code in three modes: `loop` (fast rounds, local merges, one wrap-up PR), `issue` (one issue, one PR), `epic` (a build order, teammates, review by risk level). Keeps a ledger and writes a handover section. |
 | `tdd` | Test-driven red-green-refactor loop. |
 | `debug` | Systematic root-cause debugging with a hard circuit breaker. |
 | `document` | Bring the Diátaxis docs in line with the code: pre-merge, catch-up, or a plan-approved consolidation of a docs tree. Marks a shipped PRD at the epic tail. |

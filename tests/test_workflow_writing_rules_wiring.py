@@ -6,7 +6,7 @@ asserts prose. What is asserted is the machine-consumed part:
 - the filing skills point at that skill instead of prescribing filing,
 - `to-epic`'s sub-issue template carries the writing rules' own section skeleton,
 - and an epic body composed from that template's linkage fields still passes
-  the roadmap validator, which is what `build` reads in `epic` mode.
+  the build-order validator, which is what `build` reads in `epic` mode.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 import yaml
 from lore_core.style import default_style_path, default_vale_config_path
-from lore_workflow import roadmap_validator
+from lore_workflow import build_order_validator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_ROOT = REPO_ROOT / "lore-workflow" / "skills"
@@ -32,10 +32,10 @@ FILING_SKILLS = (
     "handover",
 )
 
-# Linkage fields the roadmap table's columns are built from. Losing one of
+# Linkage fields the build-order table's columns are built from. Losing one of
 # these from the sub-issue template leaves `to-epic` without the data the
 # validator requires.
-ROADMAP_FIELDS = ("Repo", "Type", "Blocked by")
+BUILD_ORDER_FIELDS = ("Repo", "Type", "Blocked by")
 
 _SECTION = re.compile(r"^## (.+)$", re.M)
 # The linkage header is one line of bold-labelled fields separated by "·".
@@ -109,14 +109,14 @@ def test_sub_issue_template_carries_the_writing_rules_skeleton() -> None:
 
 def test_sub_issue_template_keeps_the_epic_linkage_header() -> None:
     fields = _linkage(_block(_skill_text("to-epic"), "sub-issue-template"))
-    missing = [f for f in ("Epic", *ROADMAP_FIELDS) if f not in fields]
+    missing = [f for f in ("Epic", *BUILD_ORDER_FIELDS) if f not in fields]
     assert not missing, f"sub-issue template is missing linkage fields: {missing}"
 
 
 def test_the_linkage_header_spends_no_headings() -> None:
     """A reader scans the issue's content, so the linkage costs one line."""
     present = _sections(_block(_skill_text("to-epic"), "sub-issue-template"))
-    stray = [s for s in ("Epic", *ROADMAP_FIELDS) if s in present]
+    stray = [s for s in ("Epic", *BUILD_ORDER_FIELDS) if s in present]
     assert not stray, f"linkage fields belong in the header line, not headings: {stray}"
 
 
@@ -131,7 +131,7 @@ def test_the_collapsed_labels_are_retired_headings() -> None:
 
 
 def test_epic_body_composed_from_the_template_passes_the_validator() -> None:
-    """The acceptance criterion: compose the roadmap table out of what the new
+    """The acceptance criterion: compose the build-order table out of what the new
     sub-issue template carries, and the validator accepts it."""
     subs = [
         _render_sub_issue(
@@ -154,13 +154,13 @@ def test_epic_body_composed_from_the_template_passes_the_validator() -> None:
         )
     epic_body = "\n".join(
         [
-            "## Roadmap",
+            "## Build order",
             "",
             "| # | Feature | Issue | Repo | Type | Blocked by |",
             "|---|---------|-------|------|------|------------|",
             *rows,
         ]
     )
-    result = roadmap_validator.validate_roadmap(epic_body)
+    result = build_order_validator.validate_build_order(epic_body)
     assert result.ok, f"composed epic body must validate; problems={result.problems}"
     assert len(result.rows) == 3

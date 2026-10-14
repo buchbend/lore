@@ -182,5 +182,5 @@ team pasted below). In short:
 - The glossary's own contents. Separate artifact, separate problem.
 - Code comments, chat, session notes and commit messages, which already have a
   convention. Rules 21 and 23 still cover a commit message.
-- Machine-read text: roadmap tables, board comments, reviewer verdict blocks.
+- Machine-read text: build-order tables, board comments, reviewer verdict blocks.
 - Vocabulary size in "Context", where domain precision beats simplicity.

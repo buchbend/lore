@@ -10,7 +10,7 @@ import yaml
 from lore_cli import workflow_cmd
 from lore_core import note_document as nd
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "roadmaps"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "build_orders"
 
 
 def _seed_note_with_chapter(path: Path) -> None:
@@ -47,16 +47,16 @@ def _seed_note_with_chapter(path: Path) -> None:
     path.write_text(f"---\n{dumped}\n---\n\n{body}\n")
 
 
-def test_validate_roadmap_ok(capsys) -> None:
-    rc = workflow_cmd.main(["validate-roadmap", str(FIXTURES / "well-formed.md")])
+def test_validate_build_order_ok(capsys) -> None:
+    rc = workflow_cmd.main(["validate-build-order", str(FIXTURES / "well-formed.md")])
     assert rc == 0
-    assert "roadmap OK" in capsys.readouterr().out
+    assert "build order OK" in capsys.readouterr().out
 
 
-def test_validate_roadmap_invalid(capsys) -> None:
-    rc = workflow_cmd.main(["validate-roadmap", str(FIXTURES / "cyclic.md")])
+def test_validate_build_order_invalid(capsys) -> None:
+    rc = workflow_cmd.main(["validate-build-order", str(FIXTURES / "cyclic.md")])
     assert rc != 0
-    assert "roadmap INVALID" in capsys.readouterr().out
+    assert "build order INVALID" in capsys.readouterr().out
 
 
 def test_create_prd_writes_file(tmp_path: Path) -> None:
@@ -97,3 +97,17 @@ def test_seed_lift_exits_nonzero_when_note_missing(tmp_path: Path, capsys) -> No
 
     assert rc != 0
     assert "fall back to freehand" in capsys.readouterr().out
+
+
+def test_validate_roadmap_alias_still_runs(capsys) -> None:
+    rc = workflow_cmd.main(["validate-roadmap", str(FIXTURES / "well-formed.md")])
+    assert rc == 0
+    assert "build order OK" in capsys.readouterr().out
+
+
+def test_validate_roadmap_alias_hidden_from_help() -> None:
+    from typer.testing import CliRunner
+
+    out = CliRunner().invoke(workflow_cmd.app, ["--help"]).output
+    assert "validate-build-order" in out
+    assert "validate-roadmap" not in out

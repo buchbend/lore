@@ -1,6 +1,6 @@
 # Epic tail
 
-Read this when every roadmap row is `merged` and epic-branch CI is green.
+Read this when every build-order row is `merged` and epic-branch CI is green.
 
 ## 1. Open the epic PR
 
@@ -75,7 +75,7 @@ history of the epic branch.
 
 Verify each item, then report:
 
-- [ ] every roadmap checkbox ticked, every sub-issue closed
+- [ ] every build-order checkbox ticked, every sub-issue closed
 - [ ] the epic PR merged; the handover section names its merge SHA
 - [ ] the ledger check passes on the board
 - [ ] the board shows no `queued` or `running` row

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Roadmap-DAG validator for the epic workflow (peer of ``prd_docs.py``).
+"""Build-order DAG validator for the epic workflow (peer of ``prd_docs.py``).
 
 The ``/to-epic`` skill emits, and ``build`` (epic mode) consumes, a Markdown
-*roadmap table* in the epic issue body: the canonical dependency DAG, one row
+*build-order table* in the epic issue body: the canonical dependency DAG, one row
 per feature/sub-issue. That table drives autonomous dispatch, so a malformed
 table is not a cosmetic problem — it derails the orchestrator. This module is
 the deterministic gate both skills run: ``/to-epic`` before publishing the epic,
@@ -12,7 +12,7 @@ Like the ``prd_docs`` peer it is self-contained — standard library only, so it
 runs in CI with no install step — and does no GitHub I/O: the caller supplies the
 epic body text it already has (``gh issue view <epic> --json body``).
 
-The roadmap table's columns are exactly, in order::
+The build-order table's columns are exactly, in order::
 
     | # | Feature | Issue | Repo | Type | Blocked by |
 
@@ -28,9 +28,9 @@ and the validator checks the four dimensions that make the table a usable DAG:
      blocker";
   4. **acyclic** — the blocked-by graph has no cycle.
 
-``validate_roadmap`` returns a structured :class:`ValidationResult` (never
-raises on invalid input); ``validate_roadmap_or_raise`` raises
-:class:`RoadmapError` carrying the same problems, for callers that prefer
+``validate_build_order`` returns a structured :class:`ValidationResult` (never
+raises on invalid input); ``validate_build_order_or_raise`` raises
+:class:`BuildOrderError` carrying the same problems, for callers that prefer
 exceptions. ``main`` is a thin CLI so a skill can run the file as a script and
 gate on its exit code.
 """
@@ -41,7 +41,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# The roadmap table's required columns, in canonical order. This is the single
+# The build-order table's required columns, in canonical order. This is the single
 # source of truth for both the header check and the column->cell mapping the
 # deeper checks rely on.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -74,8 +74,8 @@ _NO_BLOCKER = {"", "-", "–", "—"}
 
 
 @dataclass(frozen=True)
-class RoadmapRow:
-    """One parsed feature row of the roadmap table."""
+class BuildOrderRow:
+    """One parsed feature row of the build-order table."""
 
     number: str
     feature: str
@@ -100,7 +100,7 @@ class Problem:
 
 @dataclass
 class ValidationResult:
-    """The outcome of validating a roadmap table.
+    """The outcome of validating a build-order table.
 
     ``ok`` is true only when ``problems`` is empty. ``rows`` holds the parsed
     feature rows (empty when no table was found or the columns were wrong).
@@ -108,11 +108,11 @@ class ValidationResult:
 
     ok: bool
     problems: list[Problem] = field(default_factory=list)
-    rows: list[RoadmapRow] = field(default_factory=list)
+    rows: list[BuildOrderRow] = field(default_factory=list)
 
 
-class RoadmapError(ValueError):
-    """Raised by :func:`validate_roadmap_or_raise` for an invalid roadmap.
+class BuildOrderError(ValueError):
+    """Raised by :func:`validate_build_order_or_raise` for an invalid build order.
 
     Carries the full :class:`ValidationResult` (``.result``) and its
     ``.problems`` so a caller catching the exception still gets structured
@@ -123,14 +123,14 @@ class RoadmapError(ValueError):
         self.result = result
         self.problems = result.problems
         summary = "; ".join(f"{p.kind}: {p.message}" for p in result.problems)
-        super().__init__(summary or "roadmap is invalid")
+        super().__init__(summary or "build order is invalid")
 
 
 def _split_cells(line: str) -> list[str]:
     """Split a Markdown table row into stripped cell values.
 
     Leading/trailing pipes are optional (GitHub-flavoured Markdown). Escaped
-    pipes are not handled — roadmap cells never contain them.
+    pipes are not handled — build order cells never contain them.
     """
     s = line.strip()
     if s.startswith("|"):
@@ -195,23 +195,23 @@ def _check_columns(header: list[str]) -> Problem | None:
     if got != want:
         return Problem(
             "columns",
-            "roadmap columns must be exactly "
+            "build-order columns must be exactly "
             f"'{' | '.join(REQUIRED_COLUMNS)}'; got '{' | '.join(header)}'",
         )
     return None
 
 
 def _build_indexes(
-    rows: list[RoadmapRow],
-) -> tuple[dict[str, RoadmapRow], dict[int, list[RoadmapRow]]]:
+    rows: list[BuildOrderRow],
+) -> tuple[dict[str, BuildOrderRow], dict[int, list[BuildOrderRow]]]:
     """Index rows by full Issue ref and by trailing issue number.
 
     ``by_full`` maps ``owner/repo#n`` to its row (first occurrence wins).
     ``by_number`` maps the bare number to every row carrying it — a list,
-    because cross-repo roadmaps can reuse a number across repos.
+    because cross-repo build orders can reuse a number across repos.
     """
-    by_full: dict[str, RoadmapRow] = {}
-    by_number: dict[int, list[RoadmapRow]] = {}
+    by_full: dict[str, BuildOrderRow] = {}
+    by_number: dict[int, list[BuildOrderRow]] = {}
     for row in rows:
         by_full.setdefault(row.issue, row)
         match = _TRAILING_NUM.search(row.issue)
@@ -222,9 +222,9 @@ def _build_indexes(
 
 def _resolve(
     token: str,
-    by_full: dict[str, RoadmapRow],
-    by_number: dict[int, list[RoadmapRow]],
-) -> list[RoadmapRow]:
+    by_full: dict[str, BuildOrderRow],
+    by_number: dict[int, list[BuildOrderRow]],
+) -> list[BuildOrderRow]:
     """Return the rows a single blocked-by *token* resolves to (empty if none).
 
     A fully-qualified token matches one row by exact Issue ref; a short ``#n``
@@ -241,9 +241,9 @@ def _resolve(
 
 
 def _find_cycle(
-    rows: list[RoadmapRow],
-    by_full: dict[str, RoadmapRow],
-    by_number: dict[int, list[RoadmapRow]],
+    rows: list[BuildOrderRow],
+    by_full: dict[str, BuildOrderRow],
+    by_number: dict[int, list[BuildOrderRow]],
 ) -> list[str] | None:
     """Return a blocked-by cycle as a list of Issue refs, or ``None`` if acyclic.
 
@@ -289,8 +289,8 @@ def _find_cycle(
     return None
 
 
-def validate_roadmap(markdown: str) -> ValidationResult:
-    """Validate the roadmap table in *markdown* and return a structured result.
+def validate_build_order(markdown: str) -> ValidationResult:
+    """Validate the build-order table in *markdown* and return a structured result.
 
     Never raises on invalid input — every failure is a :class:`Problem` on the
     returned :class:`ValidationResult`. When the header columns are wrong the
@@ -301,7 +301,7 @@ def validate_roadmap(markdown: str) -> ValidationResult:
     if parsed is None:
         return ValidationResult(
             ok=False,
-            problems=[Problem("missing_table", "no roadmap table found in the text")],
+            problems=[Problem("missing_table", "no build-order table found in the text")],
         )
 
     header, data_lines = parsed
@@ -310,7 +310,7 @@ def validate_roadmap(markdown: str) -> ValidationResult:
         return ValidationResult(ok=False, problems=[column_problem])
 
     problems: list[Problem] = []
-    rows: list[RoadmapRow] = []
+    rows: list[BuildOrderRow] = []
     width = len(REQUIRED_COLUMNS)
     for lineno, raw in data_lines:
         cells = _split_cells(raw)
@@ -318,13 +318,12 @@ def validate_roadmap(markdown: str) -> ValidationResult:
             problems.append(
                 Problem(
                     "columns",
-                    f"roadmap row at line {lineno} has {len(cells)} cells, "
-                    f"expected {width}",
+                    f"build-order row at line {lineno} has {len(cells)} cells, expected {width}",
                 )
             )
             continue
         rows.append(
-            RoadmapRow(
+            BuildOrderRow(
                 number=cells[0],
                 feature=cells[1],
                 issue=cells[2],
@@ -353,22 +352,20 @@ def validate_roadmap(markdown: str) -> ValidationResult:
                     Problem(
                         "dangling_edge",
                         f"row {row.number}: blocked-by '{token}' does not "
-                        "resolve to any roadmap row",
+                        "resolve to any build-order row",
                     )
                 )
 
     cycle = _find_cycle(rows, by_full, by_number)
     if cycle is not None:
-        problems.append(
-            Problem("cycle", "cyclic blocked-by chain: " + " -> ".join(cycle))
-        )
+        problems.append(Problem("cycle", "cyclic blocked-by chain: " + " -> ".join(cycle)))
 
     return ValidationResult(ok=not problems, problems=problems, rows=rows)
 
 
 @dataclass(frozen=True)
-class RoadmapCounts:
-    """Shape of a roadmap for planners: feature rows, distinct repos, and
+class BuildOrderCounts:
+    """Shape of a build order for planners: feature rows, distinct repos, and
     dependency edges (blocked-by tokens). Read off already-parsed rows so
     ``build`` (epic mode) sizes batches from a count, not from prose."""
 
@@ -377,34 +374,34 @@ class RoadmapCounts:
     edges: int
 
 
-def roadmap_counts(result: ValidationResult) -> RoadmapCounts:
+def build_order_counts(result: ValidationResult) -> BuildOrderCounts:
     """Count features, distinct repos, and blocked-by edges of a validated
-    roadmap. Uses ``result.rows`` — no second table parse. On a column-level
+    build order. Uses ``result.rows`` — no second table parse. On a column-level
     failure ``rows`` is empty, so every count is zero."""
     rows = list(result.rows)
-    return RoadmapCounts(
+    return BuildOrderCounts(
         rows=len(rows),
         repos=len({row.repo for row in rows}),
         edges=sum(len(row.blocked_by) for row in rows),
     )
 
 
-def validate_roadmap_or_raise(markdown: str) -> ValidationResult:
-    """Validate *markdown*, raising :class:`RoadmapError` if it is invalid.
+def validate_build_order_or_raise(markdown: str) -> ValidationResult:
+    """Validate *markdown*, raising :class:`BuildOrderError` if it is invalid.
 
     Returns the passing :class:`ValidationResult` on success.
     """
-    result = validate_roadmap(markdown)
+    result = validate_build_order(markdown)
     if not result.ok:
-        raise RoadmapError(result)
+        raise BuildOrderError(result)
     return result
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI: validate a roadmap table, printing problems and returning an exit code.
+    """CLI: validate a build-order table, printing problems and returning an exit code.
 
     Reads the epic body from a file path argument, or from stdin when the path
-    is omitted or ``-``. Returns 0 when the roadmap is valid, 1 otherwise, so a
+    is omitted or ``-``. Returns 0 when the build order is valid, 1 otherwise, so a
     skill can gate on the exit code.
     """
     import argparse
@@ -412,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Validate an epic roadmap table: required columns, fully-qualified "
+            "Validate an epic build-order table: required columns, fully-qualified "
             "owner/repo#n refs, resolvable blocked-by edges, acyclic DAG."
         )
     )
@@ -428,11 +425,11 @@ def main(argv: list[str] | None = None) -> int:
     else:
         text = sys.stdin.read()
 
-    result = validate_roadmap(text)
+    result = validate_build_order(text)
     if result.ok:
-        print(f"roadmap OK: {len(result.rows)} feature(s), dependency DAG is acyclic")
+        print(f"build order OK: {len(result.rows)} feature(s), dependency DAG is acyclic")
         return 0
-    print("roadmap INVALID:", file=sys.stderr)
+    print("build order INVALID:", file=sys.stderr)
     for problem in result.problems:
         print(f"  - {problem.kind}: {problem.message}", file=sys.stderr)
     return 1
