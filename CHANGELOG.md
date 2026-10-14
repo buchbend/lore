@@ -8,6 +8,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.88.0] - 2026-10-14
+
+Ships `lore-workflow` 0.16.0.
+
+- **Logbook entries explain the reasoning (#500).** An entry has four labelled parts: `Why:`, `What we did:`, `Consequences:` and `Not done yet:`, with up to 300 words. `lore log add` exits 2 and names a missing label. An entry may summarise facts from the PR and the ADRs and links to each one. ADR 0017 (the logbook) and ADR 0014 (one home per fact) carry the amendment.
+- **The `file` sink writes one file per entry** under `docs/logbook/YYYY-MM/`. A local union merge of the monthly file dropped the lines that two labelled entries share. The sink no longer adds the `merge=union` line. `lore log show` prints an old monthly file after the new entry files.
+- `lore log add` reads an entry file that starts with a byte order mark.
+- The `build` logbook step lints the entry with Vale when Vale is on `PATH`. A repo that lints `docs/` in CI checks the `file` sink's copy too.
+
 ## [0.87.0] - 2026-10-14
 
 Ships `lore-workflow` 0.15.0.
