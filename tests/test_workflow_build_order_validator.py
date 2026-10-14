@@ -1,6 +1,6 @@
-"""Tests for `lore_workflow.build_order_validator` — the build order-DAG gate.
+"""Tests for `lore_workflow.build_order_validator` — the build-order DAG gate.
 
-Ported from ccat-agent-workflow's `tests/test_build_order_validator.py`. Only the
+Ported from ccat-agent-workflow's `tests/test_roadmap_validator.py`. Only the
 behavioural half is ported: that repo's prose-gate checks against its own
 `SKILL.md` files don't apply here — skills are ported separately (#172).
 """

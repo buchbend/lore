@@ -1,7 +1,7 @@
 ## Summary
 A small, well-formed epic used as the happy-path fixture.
 
-## Roadmap
+## Build order
 Canonical DAG for `build` (epic mode) — one row per feature/sub-issue.
 
 | # | Feature | Issue | Repo | Type | Blocked by |

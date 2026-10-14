@@ -91,7 +91,7 @@ Limits of the method:
 The owner ruled language control core, so `lore style` and the Vale files sit
 under job 1. PRD 0015 plans to merge the workflow skills. This sweep puts the
 `lore_workflow` helpers under job 1, because they read and write ADRs, PRDs,
-epics and build orders.
+epics and roadmaps.
 
 ## Summary
 
@@ -161,7 +161,7 @@ One row per `.py` file under `lib/`. Paths drop the `lib/` prefix.
 | `lore_cli/trace_cmd.py` | 150 | `lib/lore_cli/__main__.py:58` · import | all four | observability |
 | `lore_cli/transcripts_cmd.py` | 166 | `lib/lore_cli/__main__.py:58` · import | 4 capture |  |
 | `lore_cli/wiki_cmd.py` | 141 | `lib/lore_cli/__main__.py:58` (+1) · import | 2 wiki notes |  |
-| `lore_cli/workflow_cmd.py` | 174 | `lib/lore_cli/__main__.py:58` · import | 1 artifact map | epic, PRD and build-order helpers |
+| `lore_cli/workflow_cmd.py` | 174 | `lib/lore_cli/__main__.py:58` · import | 1 artifact map | epic, PRD and roadmap helpers |
 | `lore_core/__init__.py` | 22 | `lib/lore_adapters/claude_code.py:36` (+86) · import | all four | plumbing |
 | `lore_core/attach.py` | 71 | `lib/lore_cli/attach_cmd.py:36` · import | 2 wiki notes | only strips a legacy `## Lore` block |
 | `lore_core/breadcrumb.py` | 194 | `lib/lore_cli/hooks.py:995` (+1) · import | 2 wiki notes | session-start banner |
@@ -255,7 +255,7 @@ One row per `.py` file under `lib/`. Paths drop the `lib/` prefix.
 | `lore_workflow/diataxis.py` | 155 | `lore-workflow/skills/consolidate-docs/SKILL.md:26` (+3) · skill | 1 artifact map | docs quadrant for doc skills |
 | `lore_workflow/epic_policy.py` | 87 | `lib/lore_cli/workflow_cmd.py:16` · import | 1 artifact map |  |
 | `lore_workflow/prd_docs.py` | 181 | `lib/lore_cli/workflow_cmd.py:17` (+1) · import | 1 artifact map | PRD homes |
-| `lore_workflow/build_order_validator.py` | 442 | `lib/lore_cli/workflow_cmd.py:18` (+1) · import | 1 artifact map |  |
+| `lore_workflow/roadmap_validator.py` | 442 | `lib/lore_cli/workflow_cmd.py:18` (+1) · import | 1 artifact map |  |
 | `lore_workflow/scaffold.py` | 135 | `lib/lore_cli/attach_cmd.py:154` · import | 1 artifact map | ADR and PRD index stubs |
 | `lore_workflow/seed_epic.py` | 88 | `lib/lore_cli/workflow_cmd.py:19` · import | 1 artifact map | reads session notes nothing writes |
 
@@ -354,7 +354,7 @@ One row per leaf verb, plus the bare forms of `lore install`, `lore attach` and
 | `lore trace` | `lore_cli/trace_cmd.py` | `README.md:319` (+3) · docs | all four |  |
 | `lore transcripts sync` | `lore_cli/transcripts_cmd.py` | `lib/lore_cli/spawn.py:285` · subprocess | 4 capture |  |
 | `lore transcripts show` | `lore_cli/transcripts_cmd.py` | none | 4 capture |  |
-| `lore workflow validate-build-order` | `lore_cli/workflow_cmd.py` | `lore-workflow/skills/orchestrate-epic/SKILL.md:59` (+4) · skill | 1 artifact map |  |
+| `lore workflow validate-roadmap` | `lore_cli/workflow_cmd.py` | `lore-workflow/skills/orchestrate-epic/SKILL.md:59` (+4) · skill | 1 artifact map |  |
 | `lore workflow create-prd` | `lore_cli/workflow_cmd.py` | `lore-workflow/skills/domain-modeling/ADR-FORMAT.md:70` (+3) · skill | 1 artifact map |  |
 | `lore workflow epic-policy` | `lore_cli/workflow_cmd.py` | `lore-workflow/skills/orchestrate-epic/SKILL.md:20` (+1) · skill | 1 artifact map |  |
 | `lore workflow seed-lift` | `lore_cli/workflow_cmd.py` | `lore-workflow/skills/seed-epic/SKILL.md:43` · skill | 1 artifact map |  |

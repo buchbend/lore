@@ -75,7 +75,7 @@ SEMANTIC_TIERS = ("frontier", "strong", "mid", "cheap")
 # Scripts that used to ship beside a skill; superseded by `lore` CLI/MCP
 # surface. A reference to any of these under skills/ is stale.
 BANNED_SCRIPT_REFERENCES = (
-    "build_order_validator.py",
+    "roadmap_validator.py",
     "prd_docs.py",
     "diataxis.py",
     "code_map.py",
