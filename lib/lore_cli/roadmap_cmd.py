@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 
 import typer
+from lore_core.io import atomic_write_text
+from lore_core.route import _repo_root
 
 app = typer.Typer(
     add_completion=False,
@@ -20,7 +22,7 @@ _HEADING = "## Not placed yet"
 def _find(cwd: Path) -> tuple[Path, bool]:
     """Nearest ROADMAP.md from cwd up to the repo root; else the root's. Raises ValueError."""
     chain = [cwd, *cwd.parents]
-    root = next((p for p in chain if (p / ".git").exists()), None)
+    root = _repo_root(cwd)
     if root is None:
         raise ValueError("not inside a git repository")
     for d in chain[: chain.index(root) + 1]:
@@ -57,7 +59,11 @@ def add_cmd(
     except ValueError as exc:
         typer.echo(f"roadmap add: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+    title = title.strip().removesuffix(".")
+    if not title:
+        typer.echo("roadmap add: the title is empty", err=True)
+        raise typer.Exit(code=1)
     item = f"- **{title}.**" + (f" {paragraph}" if paragraph else "")
     text = path.read_text(encoding="utf-8") if exists else _SKELETON
-    path.write_text(_insert(text, item), encoding="utf-8")
+    atomic_write_text(path, _insert(text, item))
     typer.echo(f"roadmap add: wrote {path}")

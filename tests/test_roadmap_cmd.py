@@ -82,10 +82,24 @@ def test_outside_repo_exits_nonzero(tmp_path, monkeypatch, capsys):
     assert len(capsys.readouterr().err.strip().splitlines()) == 1
 
 
+def _is_pm(name: str) -> bool:
+    top = name.split(".")[0]
+    return top == "pm_cli" or top.startswith("project_manage")
+
+
+def test_title_dot_and_empty(repo, capsys):
+    assert _add("Faster search.") == 0
+    assert "- **Faster search.**" in (repo / "ROADMAP.md").read_text()
+    assert ".." not in (repo / "ROADMAP.md").read_text()
+    assert _add("  ") == 1
+    assert "roadmap add:" in capsys.readouterr().err
+
+
 def test_invariant_lib_imports_no_project_manage_package():
-    """ADR 0018: no module under lib/ imports `project_manage` (backend package of
-    ccatobs/project-manage) or `pm_cli` (its CLI package), nor a submodule of them."""
-    banned = {"project_manage", "pm_cli"}
+    """ADR 0018: no module under lib/ imports `pm_cli` (project-manage CLI) or any
+    top-level package starting with `project_manage` (backend and its plugins such as
+    `project_manage_github`), nor a submodule of them."""
+    assert all(_is_pm(n) for n in ("pm_cli.x", "project_manage", "project_manage_github.a"))
     hits = []
     for py in LIB.rglob("*.py"):
         for node in ast.walk(ast.parse(py.read_text(encoding="utf-8"))):
@@ -95,5 +109,5 @@ def test_invariant_lib_imports_no_project_manage_package():
                 names = [node.module or ""]
             else:
                 continue
-            hits += [f"{py}: {n}" for n in names if n.split(".")[0] in banned]
+            hits += [f"{py}: {n}" for n in names if _is_pm(n)]
     assert not hits, hits
