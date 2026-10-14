@@ -41,14 +41,13 @@ class SearchHit:
     snippet: str | None = None
 
 
-DEFAULT_CACHE = Path.home() / ".cache" / "lore"
 RRF_K = 60
 
 
 def _cache_dir() -> Path:
     """Resolve the on-disk cache directory for the index."""
     env = os.environ.get("LORE_CACHE")
-    return Path(env).expanduser() if env else DEFAULT_CACHE
+    return Path(env).expanduser() if env else Path.home() / ".cache" / "lore"
 
 
 def _db_path() -> Path:

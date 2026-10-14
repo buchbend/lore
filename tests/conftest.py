@@ -10,6 +10,8 @@ out the grandfather track.
 """
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 
@@ -22,14 +24,24 @@ def _isolate_user_config(tmp_path_factory, monkeypatch):
     POSIX-only assumption: ``Path.home()`` reads ``$HOME``, so ``setenv``
     suffices. We deliberately do NOT monkeypatch ``pathlib.Path.home``
     directly — the repo has 20+ unrelated callsites (cache, install,
-    adapters), some of them evaluated at import time where a fixture
-    cannot reach them. Limiting the isolation to env vars keeps the blast
-    radius bounded.
+    adapters). Limiting the isolation to env vars keeps the blast radius
+    bounded. A callsite must read ``Path.home()`` when called, not at
+    import, or this fixture cannot reach it (issue #502).
     """
     fake_home = tmp_path_factory.mktemp("home")
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_reindex_throttle():
+    """Each test gets its own search index under the fake ``$HOME``. The MCP
+    server's process-wide reindex throttle would skip filling it."""
+    server = sys.modules.get("lore_mcp.server")
+    if server is not None:
+        server._reindex_last_seen.clear()
+        server._reindex_dirty._dirty.clear()
 
 
 def seed_scope(path, wiki: str, name: str | None = None) -> None:
