@@ -30,8 +30,14 @@ Two options combine with either mode:
 
 ## 1. Capture intent
 
-Take the user's stated goal as the seed, verbatim. Do not expand it or jump to solutions. When
-the user passes an issue reference, such as a seed issue from
+Read the roadmap first: the `ROADMAP.md` at the repo root, if present. When the work sits in a
+component directory with its own `ROADMAP.md`, read that file too. Where the user names a roadmap
+item, the item is the seed. Follow its links down to the PRD, epic or issue. Read a milestone ref
+in an item, such as `pm:<id>`, with `lore_read` when a source serves the ref. Without a source,
+the ref stays plain text.
+
+Otherwise, take the user's stated goal as the seed, verbatim. Do not expand it or jump to
+solutions. When the user passes an issue reference, such as a seed issue from
 [`handover`](../handover/SKILL.md), read it (`gh issue view <n> --json title,body`). Its Intent
 and Findings are the seed.
 

@@ -61,8 +61,9 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
 - **Version bump.** If the repo's `AGENTS.md` or `CLAUDE.md` requires a version bump,
   the shipping PR carries it as its last commit. Lore itself runs
   `python3 tools/release.py --in-branch --notes notes.md`.
-- **Follow-ups** go through `file-issue` and get a `filed` ledger line. After the merge, run
-  `handover` § Next run.
+- **Follow-ups.** A defect or a concrete change becomes an issue with a `filed` ledger line. A
+  feature idea outside the run's scope goes to the roadmap: `lore roadmap add` on the build
+  branch. Set its `left` line `approved`. After the merge, run `handover` § Next run.
 - **Session end.** Read `lore config get feedback.retrieval_misses`. When true, file one issue per
   retrieval miss on `feedback.retrieval_misses_repo` through `file-issue`: the fact, the tools
   tried, the turn count. When false, skip the check. List every issue and PR the session
@@ -130,19 +131,19 @@ On "wrap up", read [loop-wrap-up.md](loop-wrap-up.md) and follow it.
 6. **Review.** Follow [review.md](review.md). Fix the findings. Keep `gh pr checks` green.
 7. **Finish point.** Present the open ledger lines to the user in one message, as
    [loop-wrap-up.md](loop-wrap-up.md) steps 3 and 4 do. Push the approved ADRs and terms to the
-   same PR. `lore workflow ledger-check` passes, or you go back to the user. Add the handover
-   section to the PR body. Run `lore log add`. Add the
-   version bump as the last commit if the repo needs one. Run `lore workflow ledger-archive`.
-   Ask for the merge approval and merge on a yes.
+   same PR. `lore workflow ledger-check` passes, or you go back to the user. Remove the shipped
+   roadmap item from its `ROADMAP.md`, if the issue ships one: the item that links the issue or
+   that the issue names. Commit the change. Add the handover section to the PR body. Run
+   `lore log add`. Run `lore workflow ledger-archive`. Ask for the merge approval and merge on a yes.
 
 ## Mode `epic`
 
 You plan, dispatch, review and merge. Teammates write the feature code. Run without asking.
 Stop only for completion or a stop condition.
 
-**Map.** Read the epic body and build order. HITL rows are escalation points. Run `lore workflow
-epic-policy <repo_root>` once per repo: `{target_branch, deploy_gate}`. Feature PRs target
-`epic/<issue>`. `epic/<issue>` merges into `target_branch` through one epic PR.
+**Map.** Read the epic body and build order. Run `lore workflow epic-policy <repo_root>` once per
+repo: `{target_branch, deploy_gate}`. Feature PRs target `epic/<issue>`. `epic/<issue>` merges
+into `target_branch` through one epic PR.
 
 **Resume.** Fetch the board comment (marker below) and pipe it to `lore workflow parse-board`.
 A `merged` row is done. A `queued` or `blocked` row is dispatched again. Reuse an existing
@@ -176,7 +177,7 @@ old name. `State` is queued, running, review, merged or blocked. Then create and
 `epic/<issue>` from `target_branch`.
 
 **Codemap excerpt.** Build it once: rank `lore codemap` symbols against the epic's touchpoints
-and keep about 1k tokens. Every teammate gets the same excerpt.
+and keep about 1k tokens.
 
 **Dispatch.** A feature is ready once its blockers merged into `epic/<issue>`. Give each ready
 feature a worktree off `epic/<issue>` and a background teammate with `LORE_SUPPRESS_CAPTURE=1`
@@ -187,10 +188,9 @@ more into the same worktree. A second death blocks the feature.
 **Review.** When a feature PR opens, follow [review.md](review.md). PASS and green checks: merge
 it into `epic/<issue>`.
 
-**Merge.** Merge each passing feature PR into `epic/<issue>`. If the epic branch moved, rebase
-the PR and wait for green checks. A rebase conflict goes back to the teammate. For a cross-repo
-pin, merge the producer and record its SHA before you dispatch the consumer that pins it. After
-each merge:
+**Merge.** If the epic branch moved, rebase the PR and wait for green checks. A rebase conflict
+goes back to the teammate. For a cross-repo pin, merge the producer and record its SHA before you
+dispatch the consumer that pins it. After each merge:
 - tick its build-order box;
 - close the sub-issue (`gh issue close <n> --comment "Merged via PR #<pr>"`);
 - set the row to `merged`;
@@ -208,8 +208,7 @@ and stays present. Every row is AFK. One repo without a deploy gate holds all ro
   branches with `--no-ff`.
 - Your own slices may write tests beside the code. Then break two or three pieces of key logic,
   confirm the tests fail, restore, and note the check on the board.
-- Then run the epic tail. Its whole-epic review is the one review of this run, for any number
-  of features. The epic PR merges only after the merge approval.
+- Then run the epic tail.
 
 **Epic tail.** When every row is merged and CI is green, read [epic-tail.md](epic-tail.md) and
 follow it.
