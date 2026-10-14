@@ -274,6 +274,39 @@ def test_the_adrs_record_the_new_logbook_question(adr) -> None:
     assert "summarise" in amendments
 
 
+def test_a_key_in_the_old_monthly_file_writes_no_entry_file(repo, tmp_path, capsys) -> None:
+    """Review of PR #501 (entries explain the reasoning), round 2: the repeat check
+    also reads the monthly file of the upgrade month."""
+    from lore_workflow.ledger import utc_date
+
+    month = utc_date()[:7]
+    old = repo / "docs" / "logbook" / f"{month}.md"
+    old.parent.mkdir(parents=True)
+    old.write_text(f"# Logbook {month}\n\n<!-- lore:acme/widget:#471 -->\nAn older entry.\n")
+    assert _add(tmp_path, GOOD, ref="#471") == 0
+    assert _entry_files(repo) == []
+    capsys.readouterr()
+    assert main(["log", "show"]) == 0
+    assert capsys.readouterr().out.count("# Logbook") == 1
+
+
+def test_a_long_ref_gives_a_short_file_name(repo) -> None:
+    from lore_workflow.logbook import Entry, _file_sink
+
+    ref = "branch-" + "x" * 300 + "@abc"
+    _file_sink(
+        Entry(f"lore:acme/widget:{ref}", "2026-10-13T10:00:00Z", "a", "", ref, "", GOOD), repo
+    )
+    assert len(_month_file(repo).name) < 120
+
+
+def test_add_reads_stdin_with_a_byte_order_mark(repo, monkeypatch) -> None:
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("\ufeff" + GOOD))
+    assert main(["log", "add", "--ref", "#1", "--text-file", "-"]) == 0
+
+
 def test_show_prints_a_monthly_file_after_the_entry_files(repo, tmp_path, capsys) -> None:
     """A repo keeps the monthly file that the sink wrote before PR #501."""
     from lore_workflow.ledger import utc_date

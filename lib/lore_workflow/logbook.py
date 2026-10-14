@@ -159,14 +159,17 @@ def _logbook_dir(repo_root: Path) -> Path:
 
 def _file_sink(entry: Entry, repo_root: Path) -> bool:
     # One file per entry: a union merge of one shared file mixed the lines that two
-    # entries had in common, such as `**Not done yet:**` (review of PR #501).
-    month_dir = _logbook_dir(repo_root) / entry.at[:7]
+    # entries had in common, such as `**Not done yet:**` (review of PR #501, entries
+    # explain the reasoning).
+    month = entry.at[:7]
+    month_dir = _logbook_dir(repo_root) / month
     marker = f"<!-- {entry.key} -->"
-    if month_dir.is_dir() and any(
-        marker in f.read_text(encoding="utf-8") for f in month_dir.glob("*.md")
-    ):
+    old = _logbook_dir(repo_root) / f"{month}.md"
+    files = [*month_dir.glob("*.md"), *([old] if old.is_file() else [])]
+    if any(marker in f.read_text(encoding="utf-8") for f in files):
         return True
-    slug = re.sub(r"[^A-Za-z0-9]+", "-", entry.key.removeprefix("lore:")).strip("-")
+    # The marker, not the name, identifies the entry, so the cut stays under NAME_MAX.
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", entry.key.removeprefix("lore:")).strip("-")[:80]
     header = " · ".join(p for p in (f"**{entry.at[:10]}**", entry.author, entry.ref) if p)
     month_dir.mkdir(parents=True, exist_ok=True)
     path = month_dir / f"{entry.at.replace(':', '')}_{slug}.md"
@@ -177,14 +180,16 @@ def _file_sink(entry: Entry, repo_root: Path) -> bool:
 def month_text(repo_root: Path, month: str) -> str:
     """The entries of *month* (``YYYY-MM``), newest first, or "" when there are none.
 
-    The monthly file that the sink wrote before PR #501 follows the entry files.
+    The monthly file that the sink wrote before PR #501 (entries explain the
+    reasoning) follows the entry files, without its own heading.
     """
     root = _logbook_dir(repo_root)
     parts = [
         f.read_text(encoding="utf-8") for f in sorted((root / month).glob("*.md"), reverse=True)
     ]
     if (root / f"{month}.md").is_file():
-        parts.append((root / f"{month}.md").read_text(encoding="utf-8"))
+        old = (root / f"{month}.md").read_text(encoding="utf-8")
+        parts.append(old.partition("\n")[2].lstrip("\n") if old.startswith("# ") else old)
     return f"# Logbook {month}\n\n" + "\n".join(parts) if parts else ""
 
 

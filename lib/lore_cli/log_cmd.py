@@ -25,7 +25,8 @@ def add_cmd(
     Exits 2 when the entry breaks a content rule. A failed sink stays
     undelivered on the `\\[logbook]` ledger line; `lore log flush` retries it.
     """
-    text = sys.stdin.read() if text_file == "-" else Path(text_file).read_text(encoding="utf-8-sig")
+    text = sys.stdin.read() if text_file == "-" else Path(text_file).read_text(encoding="utf-8")
+    text = text.removeprefix("\ufeff")
     rule = logbook.broken_rule(text)
     if rule:
         print(f"log add: the entry breaks the rule: {rule}", file=sys.stderr)
