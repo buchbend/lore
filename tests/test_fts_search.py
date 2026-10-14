@@ -166,3 +166,11 @@ def test_empty_query_logs_empty_mode(vault, tmp_path):
     rec = log[-1]
     assert rec["mode_final"] == "empty"
     assert rec["and_hits"] == 0
+
+
+def test_cache_dir_follows_home_at_call_time(monkeypatch):
+    """Issue #502: an import-time home path read the developer's real index."""
+    from lore_search import fts
+
+    monkeypatch.delenv("LORE_CACHE", raising=False)
+    assert fts._cache_dir() == Path.home() / ".cache" / "lore"

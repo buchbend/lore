@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from lore_mcp.server import _wiki_hits, handle_read
+from lore_mcp.server import _reindex_last_seen, _wiki_hits, handle_read
 
 
 def _setup_wiki(
@@ -119,6 +119,8 @@ def _bootstrap_searchable_wiki(
     for name, body in files.items():
         (wiki / "concepts" / name).write_text(body)
     monkeypatch.setenv("LORE_ROOT", str(tmp_path))
+    # Each test has its own index; a throttled reindex would leave it empty.
+    _reindex_last_seen.clear()
     # Populate _catalog.json so reindex/search has metadata.
     from lore_core.lint import run_lint
 

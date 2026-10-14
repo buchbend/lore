@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from lore_core.context_pack import gather
+from lore_mcp import server
 from lore_mcp.server import handle_search
 
 ISSUE_HIT = {
@@ -32,6 +33,8 @@ def _gh(result: dict) -> dict:
 @pytest.fixture(autouse=True)
 def _isolated_config(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    # Each test has its own index; a throttled reindex would leave it empty.
+    server._reindex_last_seen.clear()
 
 
 def _wiki(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
