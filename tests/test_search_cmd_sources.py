@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 def _home(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.setenv("LORE_ROOT", str(tmp_path / "vault"))
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PATH", str(tmp_path))  # no gh
 
