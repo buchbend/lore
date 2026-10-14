@@ -265,8 +265,11 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
   the user that `/clear` or a compaction loses nothing.
 - **Build mode** — one of `loop`, `issue` and `epic`, the three shapes of
   the `build` skill. `loop` is human-present rounds with local merges.
-  `issue` takes one issue to one PR. `epic` runs a roadmap with
+  `issue` takes one issue to one PR. `epic` runs a build order with
   teammates.
+- **Build order** — the feature table in an epic tracker issue. It has
+  one row per feature, with its issue, repo, type and blockers.
+  _Avoid_: roadmap.
 - **Risk level** — `low` or `high`, from `lore workflow risk <pr>`. The
   level sets the review depth. An agent raises the level and never
   lowers it.
@@ -302,3 +305,16 @@ ships, the term names the planned behavior.
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".
+
+### Roadmap
+
+Planned; until it ships, each term names the planned behavior.
+
+- **Roadmap** — the ordered milestones that a scope works toward, up to
+  the final milestone. Its home is outside Lore: project-manage or a wiki
+  note. _Avoid_: goals, vision, direction.
+- **Milestone** — one entry of a roadmap. It is an outcome with an owner
+  and a target date, or with no date yet. Other milestones can depend on
+  it. _Avoid_: goal, roadmap item, GitHub milestone.
+- **Final milestone** — the milestone of a roadmap that no other
+  milestone depends on. _Avoid_: ultimate goal, north star.
