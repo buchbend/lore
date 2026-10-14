@@ -18,9 +18,7 @@ app = typer.Typer(
 @app.command("add")
 def add_cmd(
     ref: str = typer.Option(..., "--ref", help="A PR, an issue, an epic or branch@sha."),
-    text_file: str = typer.Option(
-        ..., "--text-file", help="The entry paragraph, or '-' for stdin."
-    ),
+    text_file: str = typer.Option(..., "--text-file", help="The entry text, or '-' for stdin."),
 ) -> None:
     """Check an entry, keep it in the ledger and deliver it to every sink.
 
@@ -28,6 +26,7 @@ def add_cmd(
     undelivered on the `\\[logbook]` ledger line; `lore log flush` retries it.
     """
     text = sys.stdin.read() if text_file == "-" else Path(text_file).read_text(encoding="utf-8")
+    text = text.removeprefix("\ufeff")
     rule = logbook.broken_rule(text)
     if rule:
         print(f"log add: the entry breaks the rule: {rule}", file=sys.stderr)
@@ -61,11 +60,11 @@ def show_cmd() -> None:
 
     month = utc_date()[:7]
     root = resolve_route(Path.cwd()).repo_root
-    path = logbook.month_file(root, month) if root else None
-    if path is None or not path.is_file():
+    text = logbook.month_text(root, month) if root else ""
+    if not text:
         print(f"no logbook entries for {month}")
         return
-    sys.stdout.write(path.read_text(encoding="utf-8"))
+    sys.stdout.write(text)
 
 
 def _print_status(entry: logbook.Entry, status: dict[str, bool]) -> None:

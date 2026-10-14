@@ -101,6 +101,14 @@ def test_every_finish_point_writes_a_logbook_entry() -> None:
         assert "lore log add" in _text(rel), rel
 
 
+def test_the_logbook_step_names_every_label_lore_log_add_checks() -> None:
+    """Issue #500: the skill and `lore log add` keep the same four labels."""
+    from lore_workflow.logbook import LABELS
+
+    for label in LABELS:
+        assert f"**{label}:**" in _text("build/logbook.md"), label
+
+
 def test_the_shipping_pr_carries_the_version_bump_last() -> None:
     assert "tools/release.py --in-branch" in _text("build/SKILL.md")
     for rel in ("build/loop-wrap-up.md", "build/epic-tail.md"):

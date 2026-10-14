@@ -9,7 +9,8 @@
 ## Holds
 
 - **Default:** each kind of fact has one home, per the table below. Other
-  artifacts link to the home and do not restate the fact.
+  artifacts link to the home and do not restate the fact. A logbook entry
+  may summarise a fact in plain words and links to its home (ADR 0017).
 - **Invariant** (test: `tests/test_workflow_ledger_cmd.py::test_ledger_add_then_check_names_the_open_line`):
   a build run ends at a finish point only after the ledger check passes.
 - **Default:** a decision that meets the three ADR criteria of
@@ -52,7 +53,7 @@ Lore routes each kind of fact to one home:
 | What does a domain term mean? | `CONTEXT.md`, or the context `CONTEXT-MAP.md` names | `grilling` or a ledger outcome |
 | What spans several repos? | wiki topic note, edited through a PR | human merges |
 | What shipped, what changed, what is left? | handover section | `build` at its finish point |
-| Who worked on what, and when? | logbook entry in the scope's sinks | `build` at its finish point (ADR 0017) |
+| Why was this work done, and what does it mean for the team? | logbook entry in the scope's sinks | `build` at its finish point (ADR 0017) |
 | What was said in the session? | transcript copy (personal) | Lore capture |
 
 The trail from code back to intent is a chain of links. `git blame` leads to
@@ -95,3 +96,8 @@ dropped, or filed as an issue.
 - 2026-10-11: new row "Who worked on what, and when?" with the logbook
   entry as its home (ADR 0017). The entry links to the other homes and
   restates none of their facts.
+- 2026-10-14: the logbook row asks "Why was this work done, and what does
+  it mean for the team?" (issue #500, logbook entries explain the
+  reasoning; ADR 0017 amendment). The entry may summarise facts from the
+  other homes in plain words and links to each home. The homes stay the
+  source of each fact.

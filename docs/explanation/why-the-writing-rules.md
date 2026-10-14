@@ -1,7 +1,8 @@
 # Why the writing rules are a document, not config
 
 The **writing rules** fix the prose style for issue text, PR bodies, PR
-review comments, ADRs, PRDs, docs and the handover section. Lore ships
+review comments, ADRs, PRDs, docs, the handover section and logbook
+entries. Lore ships
 one default. A team replaces them with one file in its wiki. This page
 explains the choices behind them. Why the rules are a prose document rather
 than a settings block. Why a team's copy wins whole rather than merging. Why

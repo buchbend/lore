@@ -13,7 +13,18 @@ from lore_cli.__main__ import main
 from lore_core.config import user_config_path
 from lore_core.secrets import set_secret
 
-GOOD = "Built the logbook sinks for [#471](https://github.com/acme/widget/issues/471)."
+
+def _entry(did: str) -> str:
+    """An entry with the four labelled parts (issue #500)."""
+    return (
+        "**Why:** Teams want a logbook without typing.\n\n"
+        f"**What we did:** {did}\n\n"
+        "**Consequences:** Each scope lists its sinks.\n\n"
+        "**Not done yet:**\n- Nothing."
+    )
+
+
+GOOD = _entry("Built the logbook sinks for [#471](https://github.com/acme/widget/issues/471).")
 
 
 @pytest.fixture
@@ -39,11 +50,14 @@ def _add(tmp_path: Path, text: str, ref: str = "#471") -> int:
 @pytest.mark.parametrize(
     ("text", "rule"),
     [
-        (GOOD + "\n\nA second paragraph.", "one paragraph"),
-        (GOOD + " word" * 80, "80 words"),
-        ("Built the logbook sinks.", "link"),
+        (GOOD + " word" * 300, "300 words"),
+        (GOOD.replace("[#471](https://github.com/acme/widget/issues/471)", "#471"), "link"),
         (GOOD + "\ntodo: wire the hook", "todo:"),
         (GOOD + "\nDecided: keep it small", "decided:"),
+        (GOOD.replace("**Why:**", ""), "Why:"),
+        (GOOD.replace("**What we did:**", ""), "What we did:"),
+        (GOOD.replace("**Consequences:**", ""), "Consequences:"),
+        (GOOD.replace("**Not done yet:**", ""), "Not done yet:"),
     ],
 )
 def test_add_rejects_an_entry_that_breaks_a_rule(repo, tmp_path, capsys, text, rule) -> None:
@@ -52,22 +66,41 @@ def test_add_rejects_an_entry_that_breaks_a_rule(repo, tmp_path, capsys, text, r
     assert not (repo / "docs" / "logbook").exists()
 
 
+def test_add_takes_paragraphs_lists_and_plain_labels(repo, tmp_path) -> None:
+    text = GOOD.replace("**Why:**", "Why:").replace(
+        "- Nothing.", "- [#9](u) (a follow-up)\n- a check"
+    )
+    assert _add(tmp_path, text) == 0
+
+
+def _entry_files(repo: Path) -> list[Path]:
+    files = sorted((repo / "docs" / "logbook").glob("*/*.md"))
+    for f in files:
+        assert re.fullmatch(r"\d{4}-\d{2}", f.parent.name), f
+    return files
+
+
 def _month_file(repo: Path) -> Path:
-    files = list((repo / "docs" / "logbook").glob("*.md"))
+    files = _entry_files(repo)
     assert len(files) == 1, files
-    assert re.fullmatch(r"\d{4}-\d{2}\.md", files[0].name)
     return files[0]
 
 
-def test_file_sink_puts_the_newest_entry_on_top(repo, tmp_path) -> None:
-    assert _add(tmp_path, GOOD, ref="#471") == 0
-    assert _add(tmp_path, "Filed [#472](https://github.com/acme/widget/issues/472).", "#472") == 0
+def test_file_sink_writes_one_file_per_entry(repo, tmp_path, capsys) -> None:
+    """Two branches never touch one file, so no merge mixes two entries (review of PR #501)."""
+    from lore_workflow.logbook import Entry, _file_sink
 
-    text = _month_file(repo).read_text()
-    assert text.index("#472") < text.index("Built the logbook sinks")
-    assert "Ada Lovelace" in text
-    attrs = (repo / ".gitattributes").read_text()
-    assert attrs.count("docs/logbook/*.md merge=union") == 1
+    for at, ref in (("2026-10-13T09:00:00Z", "#471"), ("2026-10-14T09:00:00Z", "#472")):
+        text = GOOD.replace("#471", ref)
+        _file_sink(Entry(f"lore:acme/widget:{ref}", at, "acme/widget", "", ref, "Ada", text), repo)
+
+    assert len(_entry_files(repo)) == 2
+    assert not (repo / ".gitattributes").exists()
+    from lore_workflow.logbook import month_text
+
+    shown = month_text(repo, "2026-10")
+    assert shown.index("#472") < shown.index("#471")
+    assert shown.count("**Not done yet:**") == 2
 
 
 def test_file_sink_writes_nothing_for_a_repeated_key(repo, tmp_path) -> None:
@@ -75,6 +108,7 @@ def test_file_sink_writes_nothing_for_a_repeated_key(repo, tmp_path) -> None:
     before = _month_file(repo).read_text()
     assert _add(tmp_path, GOOD.replace("Built", "Rebuilt")) == 0
     assert _month_file(repo).read_text() == before
+    assert "Ada Lovelace" in before
 
 
 def _sinks(logbook: list[str], **sinks: dict) -> None:
@@ -223,6 +257,68 @@ def test_show_prints_this_months_entries(repo, tmp_path, capsys) -> None:
     capsys.readouterr()
     assert main(["log", "show"]) == 0
     assert GOOD in capsys.readouterr().out
+
+
+def test_add_reads_an_entry_file_with_a_byte_order_mark(repo, tmp_path) -> None:
+    entry = tmp_path / "bom.md"
+    entry.write_text("\ufeff" + GOOD, encoding="utf-8")
+    assert main(["log", "add", "--ref", "#1", "--text-file", str(entry)]) == 0
+
+
+@pytest.mark.parametrize("adr", ["0014-one-home-per-fact.md", "0017-the-logbook.md"])
+def test_the_adrs_record_the_new_logbook_question(adr) -> None:
+    """Issue #500, criterion 8: ADR 0014 and ADR 0017 each carry the amendment."""
+    text = (Path(__file__).resolve().parent.parent / "docs" / "adr" / adr).read_text()
+    amendments = " ".join(text.split("## Amendments", 1)[1].split())
+    assert "Why was this work done, and what does it mean for the team?" in amendments
+    assert "summarise" in amendments
+
+
+def test_a_key_in_the_old_monthly_file_writes_no_entry_file(repo, tmp_path, capsys) -> None:
+    """Review of PR #501 (entries explain the reasoning), round 2: the repeat check
+    also reads the monthly file of the upgrade month."""
+    from lore_workflow.ledger import utc_date
+
+    month = utc_date()[:7]
+    old = repo / "docs" / "logbook" / f"{month}.md"
+    old.parent.mkdir(parents=True)
+    old.write_text(f"# Logbook {month}\n\n<!-- lore:acme/widget:#471 -->\nAn older entry.\n")
+    assert _add(tmp_path, GOOD, ref="#471") == 0
+    assert _entry_files(repo) == []
+    capsys.readouterr()
+    assert main(["log", "show"]) == 0
+    assert capsys.readouterr().out.count("# Logbook") == 1
+
+
+def test_a_long_ref_gives_a_short_file_name(repo) -> None:
+    from lore_workflow.logbook import Entry, _file_sink
+
+    ref = "branch-" + "x" * 300 + "@abc"
+    _file_sink(
+        Entry(f"lore:acme/widget:{ref}", "2026-10-13T10:00:00Z", "a", "", ref, "", GOOD), repo
+    )
+    assert len(_month_file(repo).name) < 120
+
+
+def test_add_reads_stdin_with_a_byte_order_mark(repo, monkeypatch) -> None:
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("\ufeff" + GOOD))
+    assert main(["log", "add", "--ref", "#1", "--text-file", "-"]) == 0
+
+
+def test_show_prints_a_monthly_file_after_the_entry_files(repo, tmp_path, capsys) -> None:
+    """A repo keeps the monthly file that the sink wrote before PR #501."""
+    from lore_workflow.ledger import utc_date
+
+    old = repo / "docs" / "logbook" / f"{utc_date()[:7]}.md"
+    old.parent.mkdir(parents=True)
+    old.write_text("# Logbook\n\nAn older entry.\n")
+    assert _add(tmp_path, GOOD) == 0
+    capsys.readouterr()
+    assert main(["log", "show"]) == 0
+    out = capsys.readouterr().out
+    assert out.index("Built the logbook sinks") < out.index("An older entry.")
 
 
 # --- issue #490: small logbook defects ---------------------------------------
