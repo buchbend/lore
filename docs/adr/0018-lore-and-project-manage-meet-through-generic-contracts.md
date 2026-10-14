@@ -11,7 +11,8 @@
 
 ## Holds
 
-- **Default:** Lore holds no code specific to project-manage. Lore reaches
+- **Invariant** (test: `tests/test_roadmap_cmd.py::test_invariant_lib_imports_no_project_manage_package`):
+  Lore holds no code specific to project-manage. Lore reaches
   project-manage through a `command` source and a `command` sink.
 - **Default:** project-manage ships the adapters for Lore's contracts:
   `pm log` for the sink and `pm source` for the source.
