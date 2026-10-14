@@ -1,6 +1,7 @@
 """Logbook entries and their sinks (PRD 0017, ADR 0017).
 
-At a finish point the agent writes one paragraph. ``lore log add`` checks it,
+At a finish point the agent writes an entry in four labelled parts (``LABELS``,
+issue #500). ``lore log add`` checks it,
 stamps it, keeps it as a ``[logbook]`` line in the local ledger and delivers
 it to every sink of the route in parallel. ``lore log flush`` retries the
 sinks that did not confirm.
@@ -42,16 +43,28 @@ SINK_TIMEOUT_S = 30
 
 GITATTRIBUTES_LINE = "docs/logbook/*.md merge=union"
 
+#: The labelled parts of an entry, in order (issue #500).
+LABELS = ("Why", "What we did", "Consequences", "Not done yet")
+
 #: (rule name, test). A test returns True when the text breaks the rule.
 _RULES: tuple[tuple[str, object], ...] = (
-    ("one paragraph", lambda t: re.search(r"\n\s*\n", t.strip()) is not None),
-    ("at most 80 words", lambda t: len(t.split()) > 80),
+    ("at most 300 words", lambda t: len(t.split()) > 300),
     ("at least one Markdown link", lambda t: re.search(r"\[[^\]]+\]\([^)\s]+\)", t) is None),
     (
         "no line starts with todo: or decided:",
         lambda t: any(
             ln.strip().lower().startswith(("todo:", "decided:")) for ln in t.splitlines()
         ),
+    ),
+    *(
+        (
+            f"a line starts with {label}:",
+            # `**Why:**`, `**Why**:` and a plain `Why:` all count.
+            lambda t, label=label: (
+                re.search(rf"^\s*(?:\*\*)?{re.escape(label)}(?:\*\*)?:", t, re.M | re.I) is None
+            ),
+        )
+        for label in LABELS
     ),
 )
 

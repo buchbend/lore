@@ -174,6 +174,7 @@ COVERED_ARTIFACTS = (
     "PRDs",
     "docs",
     "handover section",
+    "logbook entries",
 )
 
 

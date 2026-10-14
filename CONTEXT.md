@@ -287,8 +287,9 @@ ships, the term names the planned behavior.
 - **Sink** — a destination for logbook entries. A scope lists its sinks,
   and Lore delivers each entry to every sink in the list. The kinds are
   `file` and `command`. _Avoid_: target, output.
-- **Logbook entry** — one paragraph that the agent writes at a finish
-  point. It says what the build did and links to the homes of the facts.
+- **Logbook entry** — the text that the agent writes at a finish point,
+  in four labelled parts: why, what we did, consequences, not done yet. It
+  explains the work to a human reader and links to the homes of the facts.
   _Avoid_: log, post, summary.
 - **Source** — a system that `lore_search` queries live, next to the
   wiki index. Each source returns its own list of hits. _Avoid_: backend,

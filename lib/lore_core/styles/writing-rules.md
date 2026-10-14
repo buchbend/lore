@@ -1,7 +1,7 @@
 # Writing Rules
 
 Status: draft
-Scope: issue text, PR bodies, PR review comments, ADRs, PRDs, docs, the handover section and flag text
+Scope: issue text, PR bodies, PR review comments, ADRs, PRDs, docs, the handover section, flag text and logbook entries
 
 ## Why this exists
 
@@ -44,7 +44,7 @@ work needs. Say it so the next reader gets it the first time.
 15. Write acceptance criteria in EARS. See below.
 16. Lists over paragraphs. No section holds more than one paragraph of prose.
 17. No closing summary. Do not restate the text at the end.
-18. Keep out the reasoning that led here unless it constrains the solution. It belongs in the ADR.
+18. Keep out the reasoning that led here unless it constrains the solution. It belongs in the ADR. A flag and a logbook entry carry it: no other text reaches their reader.
 19. When you lack a fact, write the heading and `TODO:` with the specific question. Never write a plausible guess.
 
 Rule 19 carries more weight than the rest. Most text that is hard to decode

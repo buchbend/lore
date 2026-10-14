@@ -13,7 +13,18 @@ from lore_cli.__main__ import main
 from lore_core.config import user_config_path
 from lore_core.secrets import set_secret
 
-GOOD = "Built the logbook sinks for [#471](https://github.com/acme/widget/issues/471)."
+
+def _entry(did: str) -> str:
+    """An entry with the four labelled parts (issue #500)."""
+    return (
+        "**Why:** Teams want a logbook without typing.\n\n"
+        f"**What we did:** {did}\n\n"
+        "**Consequences:** Each scope lists its sinks.\n\n"
+        "**Not done yet:**\n- Nothing."
+    )
+
+
+GOOD = _entry("Built the logbook sinks for [#471](https://github.com/acme/widget/issues/471).")
 
 
 @pytest.fixture
@@ -39,17 +50,27 @@ def _add(tmp_path: Path, text: str, ref: str = "#471") -> int:
 @pytest.mark.parametrize(
     ("text", "rule"),
     [
-        (GOOD + "\n\nA second paragraph.", "one paragraph"),
-        (GOOD + " word" * 80, "80 words"),
-        ("Built the logbook sinks.", "link"),
+        (GOOD + " word" * 300, "300 words"),
+        (GOOD.replace("[#471](https://github.com/acme/widget/issues/471)", "#471"), "link"),
         (GOOD + "\ntodo: wire the hook", "todo:"),
         (GOOD + "\nDecided: keep it small", "decided:"),
+        (GOOD.replace("**Why:**", ""), "Why:"),
+        (GOOD.replace("**What we did:**", ""), "What we did:"),
+        (GOOD.replace("**Consequences:**", ""), "Consequences:"),
+        (GOOD.replace("**Not done yet:**", ""), "Not done yet:"),
     ],
 )
 def test_add_rejects_an_entry_that_breaks_a_rule(repo, tmp_path, capsys, text, rule) -> None:
     assert _add(tmp_path, text) == 2
     assert rule in capsys.readouterr().err
     assert not (repo / "docs" / "logbook").exists()
+
+
+def test_add_takes_paragraphs_lists_and_plain_labels(repo, tmp_path) -> None:
+    text = GOOD.replace("**Why:**", "Why:").replace(
+        "- Nothing.", "- [#9](u) (a follow-up)\n- a check"
+    )
+    assert _add(tmp_path, text) == 0
 
 
 def _month_file(repo: Path) -> Path:
@@ -61,7 +82,10 @@ def _month_file(repo: Path) -> Path:
 
 def test_file_sink_puts_the_newest_entry_on_top(repo, tmp_path) -> None:
     assert _add(tmp_path, GOOD, ref="#471") == 0
-    assert _add(tmp_path, "Filed [#472](https://github.com/acme/widget/issues/472).", "#472") == 0
+    assert (
+        _add(tmp_path, _entry("Filed [#472](https://github.com/acme/widget/issues/472)."), "#472")
+        == 0
+    )
 
     text = _month_file(repo).read_text()
     assert text.index("#472") < text.index("Built the logbook sinks")

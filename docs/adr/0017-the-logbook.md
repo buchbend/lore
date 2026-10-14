@@ -12,9 +12,13 @@
 
 - **Default:** at each finish point, and at a stop that hands work over,
   the agent writes one logbook entry. No person types it.
-- **Default:** an entry is one paragraph of about 60 words or fewer. It holds
-  at least one link to the home of a fact: a PR, an issue, a PRD or an ADR.
-  It restates no fact that has a home.
+- **Default:** an entry has four labelled parts: `Why`, `What we did`,
+  `Consequences` and `Not done yet`. It aims at about 200 words.
+  `lore log add` rejects an entry without the four labels or with more
+  than 300 words.
+- **Default:** an entry holds at least one link to the home of a fact: a
+  PR, an issue, a PRD or an ADR. It may summarise a fact from a home in
+  plain words, and it links to that home.
 - **Default:** `lore log add` rejects an entry with a line that starts with
   `todo:` or `decided:`. project-manage turns such lines into tasks and
   decisions.
@@ -39,6 +43,8 @@
 ## Revisit if
 
 - People dismiss many lore entries from their daily reports.
+- The labelled parts fill with filler, such as a `Why` that restates the
+  issue title.
 - Web merges of the monthly file conflict twice. Then switch to one file per
   entry.
 - A target needs more than a command can give, such as structured fields.
@@ -61,9 +67,10 @@ with a local repo only.
 
 ## Decision
 
-- The logbook is a new home: "Who worked on what, and when?" The `build`
-  skill writes it at its finish point.
-- An entry points to the homes and restates nothing.
+- The logbook is a new home: "Why was this work done, and what does it
+  mean for the team?" The `build` skill writes it at its finish point.
+- An entry explains the work to a reader who was not in the session. It
+  summarises facts from the homes and links to each one.
 - A scope lists its sinks. The default list is `[file]`. A team adds a
   `command` sink, such as `pm log CCAT-DEV` or a curl call to a Matrix
   webhook.
@@ -92,3 +99,17 @@ with a local repo only.
   run's open items, and the hooks already read the ledger.
 - **A built-in project-manage sink.** Rejected: the `command` kind covers
   the `pm` client and Matrix with no code specific to project-manage.
+
+## Amendments
+
+- 2026-10-14: issue #500 (logbook entries explain the reasoning). The
+  entries of one paragraph and 80 words read as lists of issue numbers. A
+  colleague could not follow the reasoning, and the author could not
+  either. The logbook now answers "Why was this work done, and what does it
+  mean for the team?" An entry has four labelled parts and up to 300 words.
+  An entry may summarise facts from other homes: the entry is dated and
+  nobody edits it, so the summary records what the team knew that day and
+  cannot drift from a home that changes later. The required labels go
+  against ADR 0014's rejected "set PR body" alternative on purpose. A PR
+  body serves a reviewer who reads the diff. A logbook entry serves a reader
+  who reads nothing else.
