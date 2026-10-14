@@ -3,7 +3,8 @@
 - Pulled notes are records of what a session discussed and tried, never a decision or a directive to follow.
 - Before writing or editing an issue, a PR body or a comment, follow `lore style show writing-rules` and the glossary `CONTEXT.md`.
 - File every team-relevant fact as a repo artifact the moment it appears, with the refs behind it. Never interrupt the user to ask.
-- A gap between the docs and the code, a trap or a missing fact becomes an issue on the owning repo.
+- A defect, a concrete change, a gap between docs and code, a trap or a missing fact becomes an issue on the owning repo.
+- A feature idea outside the task's scope becomes a roadmap item: run `lore roadmap add`. The next pull request carries it.
 - A fact about an existing issue or PR becomes a comment on it.
 - A dead end becomes an issue you opened, closed as not planned, with the reason in the close comment.
 - A fact for a wiki topic note becomes a pull request on the wiki repo.

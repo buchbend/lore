@@ -16,8 +16,9 @@ Fill the brackets and pass the text to each `epic` teammate.
 > CI runs it after each merge. When stuck, use the `/lore-workflow:debug` circuit breaker, not a
 > fourth blind fix.
 >
-> Scope: change only what this feature needs. Siblings may edit the same files at the same time;
-> keep your edits there small. A rebase conflict comes back to you.
+> Scope: change only what this feature needs. A feature idea outside your scope goes to the
+> roadmap: run `lore roadmap add` and commit the change in your PR. Siblings may edit the same
+> files at the same time; keep your edits there small. A rebase conflict comes back to you.
 >
 > Decisions: do not write an ADR or a `CONTEXT.md` term. Report each ADR candidate and each term
 > candidate in your final report, one line each, with the reason.

@@ -4,7 +4,8 @@
 Then nobody digs the fact out of a chat window later.
 
 Lore writes nothing into a wiki on its own. Agents and people file facts with
-`gh` and the `lore-workflow:file-issue` skill. Lore ships no filing command.
+`gh` and the `lore-workflow:file-issue` skill. Lore ships one filing command:
+`lore roadmap add` files a feature idea in the roadmap.
 The SessionStart directive tells the agent the filing rule below.
 
 ## Before you start
@@ -16,7 +17,8 @@ The SessionStart directive tells the agent the filing rule below.
 
 | The fact is | File it as |
 | :--- | :--- |
-| A gap between the docs and the code, a trap, or a missing fact | An issue on the owning repo |
+| A defect, a concrete change, a gap between the docs and the code, a trap, or a missing fact | An issue on the owning repo |
+| A feature idea outside the scope of the task | A roadmap item: run `lore roadmap add "Title" ["paragraph"]`. The next pull request carries it. |
 | A trivial fix close to the work in hand | A fix on the session branch, named in the PR body |
 | About an existing issue or PR | A comment on that issue or PR |
 | A dead end and its reason | An issue you open, closed as not planned, with the reason in the close comment |

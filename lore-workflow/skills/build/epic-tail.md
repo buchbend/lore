@@ -34,6 +34,8 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
   `<target_branch>...epic/<issue>`. It commits onto `epic/<issue>` and marks the PRD shipped with
   `lore workflow prd-ship`. The docs step may escalate, or stay red after one fix pass. Then drop
   its commit, merge without it, and run `document` in catch-up mode afterwards.
+- **Roadmap.** Remove the shipped roadmap item from its `ROADMAP.md`: the item that links this
+  epic or its PRD. Commit the change on `epic/<issue>`.
 - **Whole-epic review**, only for an epic with three or more features. Follow
   [review.md](review.md) on the epic PR, after the docs commit. The reviewer checks
   cross-feature consistency: naming, duplicate helpers, conflicting edits to shared files. It
@@ -80,4 +82,5 @@ Verify each item, then report:
 - [ ] the ledger check passes on the board
 - [ ] the board shows no `queued` or `running` row
 - [ ] the PRD status is `shipped`, or the catch-up docs PR is open
+- [ ] no roadmap item links the epic or its PRD any more
 - [ ] every feature branch and worktree gone, local and remote

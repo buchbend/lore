@@ -60,6 +60,9 @@ Run `lore style show writing-rules` before you write a term or an ADR.
 List every term you wrote or changed: one line per term, quoting the term and its definition.
 When you wrote none, say so plainly instead of printing an empty list.
 
+When the plan is settled, ask which roadmap item the plan serves. Offer the items from
+`ROADMAP.md`; "none" is a valid answer. Pass the item to the hand-off.
+
 Then hand off: [`to-epic`](../to-epic/SKILL.md) for several features, or
 [`build`](../build/SKILL.md) in `issue` mode for one change. File that issue through
 [`file-issue`](../file-issue/SKILL.md) first.

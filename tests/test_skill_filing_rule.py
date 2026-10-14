@@ -87,3 +87,33 @@ def test_retrieval_miss_check_names_the_skip_condition(skill: str) -> None:
     """AC: while the flag is false, the skills instruct the agent to skip the check."""
     text = _text(skill).lower()
     assert "when false, skip the check" in text
+
+
+# --- the filing rule: an issue or the roadmap -------------------------------
+# PRD 0018 (the roadmap) § Skills: a defect or a concrete change goes to an
+# issue, a feature idea outside the run's scope goes to the roadmap.
+
+
+def _file(rel: str) -> str:
+    """Whitespace-joined text of a file under skills/, blockquote markers dropped."""
+    lines = (SKILLS / rel).read_text(encoding="utf-8").splitlines()
+    return " ".join(" ".join(line.lstrip("> ") for line in lines).split())
+
+
+def test_build_sends_a_defect_to_an_issue_and_a_feature_idea_to_the_roadmap() -> None:
+    text = _text("build")
+    assert "A defect or a concrete change becomes an issue" in text
+    assert "A feature idea outside the run's scope goes to the roadmap" in text
+    assert "`lore roadmap add` on the build branch" in text
+
+
+def test_a_teammate_files_a_feature_idea_through_its_pr() -> None:
+    text = _file("build/teammate-brief.md")
+    assert "A feature idea outside your scope goes to the roadmap" in text
+    assert "`lore roadmap add`" in text
+
+
+def test_loop_wrap_up_sends_a_kept_feature_idea_to_the_roadmap() -> None:
+    text = _file("build/loop-wrap-up.md")
+    assert "add a feature idea to the roadmap" in text
+    assert "`lore roadmap add`" in text

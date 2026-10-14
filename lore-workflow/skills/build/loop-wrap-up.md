@@ -17,11 +17,12 @@ commit in the first resume line of the ledger.
    - per ADR candidate: the decision, the alternatives, your verdict on each of the three
      criteria in [ADR-FORMAT.md](../grilling/ADR-FORMAT.md);
    - per term candidate: a proposed definition and `_Avoid_` words;
-   - per `left` line: file it, or drop it.
+   - per `left` line: file it as an issue, add a feature idea to the roadmap, or drop it.
 
    The user approves, edits or drops each line in one reply. Set each outcome with `lore workflow
    ledger-set`. File each kept `left` line through [`file-issue`](../file-issue/SKILL.md) and set
-   it `filed <owner/repo#n>`.
+   it `filed <owner/repo#n>`. Add a kept feature idea with `lore roadmap add` instead, and set it
+   `approved`.
 4. **Write what was approved.** Run `lore style show writing-rules` first.
    - ADRs: `docs/adr/NNNN-kebab.md` per [ADR-FORMAT.md](../grilling/ADR-FORMAT.md). Fill `Holds`
      and `Revisit if` from the conversation.
@@ -32,7 +33,8 @@ commit in the first resume line of the ledger.
 5. **Docs.** Run the pre-merge mode of [`document`](../document/SKILL.md) on
    `<base>..loop/<slug>`.
 6. **Commit, test, merge locally** as in a round.
-7. **Finish point.** `lore workflow ledger-check` passes, or you go back to step 3.
+7. **Finish point.** Remove the shipped roadmap item from its `ROADMAP.md`, if the loop ships one,
+   and commit the change. `lore workflow ledger-check` passes, or you go back to step 3.
 8. **Wrap-up PR.** The wrap-up PR is the one thing that reaches the remote. Push `loop/<slug>`.
    Open one PR `loop/<slug> → <target>`. Its body is the handover section, in the shape
    [`handover`](../handover/SKILL.md) gives, written through `file-issue` in PR-body mode.

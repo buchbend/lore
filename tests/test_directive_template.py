@@ -34,8 +34,12 @@ EXPECTED_DIRECTIVE_LINES = [
         "to ask."
     ),
     (
-        "- A gap between the docs and the code, a trap or a missing "
-        "fact becomes an issue on the owning repo."
+        "- A defect, a concrete change, a gap between docs and code, a "
+        "trap or a missing fact becomes an issue on the owning repo."
+    ),
+    (
+        "- A feature idea outside the task's scope becomes a roadmap item: "
+        "run `lore roadmap add`. The next pull request carries it."
     ),
     "- A fact about an existing issue or PR becomes a comment on it.",
     (
@@ -83,6 +87,9 @@ def test_directive_states_the_filing_rule_and_names_no_flag():
 
     assert "flag" not in joined
     assert "becomes an issue" in joined
+    assert "a defect, a concrete change" in joined
+    assert "a feature idea outside the task's scope becomes a roadmap item" in joined
+    assert "lore roadmap add" in joined
     assert "becomes a comment" in joined
     assert "pull request" in joined
     assert "closed as not planned" in joined
