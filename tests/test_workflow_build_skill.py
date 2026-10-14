@@ -224,3 +224,5 @@ def test_the_finish_offers_the_next_run_for_filed_follow_ups() -> None:
         "/lore-workflow:orient <owner/repo#seed>",
     ):
         assert command in offer
+    # The offer carries the commands up front, not after the user asks.
+    assert "one line each, with its command" in offer

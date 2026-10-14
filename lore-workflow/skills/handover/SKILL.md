@@ -78,11 +78,12 @@ A `build` run reaches this step after its merge. Skip the step when the run file
    | an epic tracker with a roadmap | `/lore-workflow:build epic <owner/repo#n>` |
    | related issues, or work without a shape | a seed (§ Seed issue), then `/lore-workflow:orient <owner/repo#seed>` |
 
-3. **Offer** the next runs in the final message, one line each. Ask which one to start.
-   - On a yes: start the run in this session. For a seed, write the seed first.
-   - The user wants a fresh session: print the command to run after `/clear`.
-   - Silence or a no: print the commands and stop.
-   - An unreachable user: print the commands in the report. Start nothing.
+3. **Offer** the next runs in the final message, one line each, with its command. The user can
+   copy a command and run it after `/clear`. A seed line says that the seed is written first.
+   Ask which run to start in this session.
+   - On a yes: start that run. For a seed, write the seed first.
+   - Silence or a no: stop. The message already holds the commands.
+   - An unreachable user: put the lines in the report. Start nothing.
 
 ## Seed issue
 
