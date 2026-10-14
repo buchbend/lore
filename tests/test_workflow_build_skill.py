@@ -212,3 +212,15 @@ def test_epic_outcomes_go_through_ledger_set_on_the_board() -> None:
         "build/epic-tail.md"
     )
     assert "`--board -`" in _text("handover/SKILL.md")
+
+
+def test_the_finish_offers_the_next_run_for_filed_follow_ups() -> None:
+    assert "§ Next run" in _section("Rules for every mode")
+    offer = _text("handover/SKILL.md")
+    assert "## Next run" in offer
+    for command in (
+        "/lore-workflow:build issue <owner/repo#n>",
+        "/lore-workflow:build epic <owner/repo#n>",
+        "/lore-workflow:orient <owner/repo#seed>",
+    ):
+        assert command in offer

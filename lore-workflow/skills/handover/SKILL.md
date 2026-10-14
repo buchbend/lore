@@ -2,7 +2,8 @@
 name: lore-workflow:handover
 description: Write the handover section for work that stops before its finish point, and turn
   follow-up work into a seed issue a fresh session can orient on cold. Also holds the shape of
-  the handover section that build writes at every finish point. Use when a session is too long
+  the handover section that build writes at every finish point, and the next-run offer for the
+  follow-ups a build run filed. Use when a session is too long
   to continue, a build run stops early, or follow-up work surfaced and should go to a new session.
 ---
 
@@ -62,6 +63,26 @@ question.
 4. **Leave the resume line.** `lore workflow ledger-add --kind resume --text "<state>" --next
    "<next ask>"` (epic: with `--path -`, pasted into the board's `## Ledger`).
 5. Tell the user that `/clear` is safe, and print the next step.
+
+## Next run
+
+A `build` run reaches this step after its merge. Skip the step when the run filed no follow-ups.
+
+1. **Collect** the follow-ups: the `filed` ledger lines and the **Follow-ups** of the handover
+   section.
+2. **Group** them. Give each group one next run:
+
+   | Group | Next run |
+   |---|---|
+   | one small, clear issue | `/lore-workflow:build issue <owner/repo#n>` |
+   | an epic tracker with a roadmap | `/lore-workflow:build epic <owner/repo#n>` |
+   | related issues, or work without a shape | a seed (§ Seed issue), then `/lore-workflow:orient <owner/repo#seed>` |
+
+3. **Offer** the next runs in the final message, one line each. Ask which one to start.
+   - On a yes: start the run in this session. For a seed, write the seed first.
+   - The user wants a fresh session: print the command to run after `/clear`.
+   - Silence or a no: print the commands and stop.
+   - An unreachable user: print the commands in the report. Start nothing.
 
 ## Seed issue
 
