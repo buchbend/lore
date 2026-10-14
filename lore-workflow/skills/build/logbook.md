@@ -20,7 +20,7 @@ It answers "Why was this work done, and what does it mean for the team?"
    - Write for a reader who was not in the session. Summarise facts from the PR, the ADRs and
      the issues in plain words, and link each one. The entry is dated and nobody edits it, so
      the summary records what the team knew that day.
-   - Give every reference its title in a few words: `[#729](…) (chat agent checks and pin form)`.
+   - Give every reference its title in a few words: `[#12](https://github.com/acme/widget/issues/12) (retry on a 404)`.
    - Name no merge state. The commit on the target branch and the PR link show it.
    - Start no line with `todo:` or `decided:`.
    - At a stop that hands work over, end with a `Waiting on:` line that names the blocker.
