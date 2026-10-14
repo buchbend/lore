@@ -310,11 +310,13 @@ ships, the term names the planned behavior.
 
 Planned; until it ships, each term names the planned behavior.
 
-- **Roadmap** — the ordered milestones that a scope works toward, up to
-  the final milestone. Its home is outside Lore: project-manage or a wiki
-  note. _Avoid_: goals, vision, direction.
-- **Milestone** — one entry of a roadmap. It is an outcome with an owner
-  and a target date, or with no date yet. Other milestones can depend on
-  it. _Avoid_: goal, roadmap item, GitHub milestone.
-- **Final milestone** — the milestone of a roadmap that no other
-  milestone depends on. _Avoid_: ultimate goal, north star.
+- **Roadmap** — the `ROADMAP.md` file of a repo, or of a component
+  directory in a repo. It says where the code is heading and lists
+  roadmap items in order. A roadmap across repos is a wiki topic note.
+  _Avoid_: goals, vision, direction.
+- **Roadmap item** — one bullet paragraph of a roadmap. It names a
+  feature or concept that the repo plans. It can link to a milestone, a
+  PRD or an issue. _Avoid_: goal, milestone.
+- **Milestone** — an outcome that a team tracks in a planning tool, such
+  as project-manage. A roadmap item can name one by its ref.
+  _Avoid_: GitHub milestone.

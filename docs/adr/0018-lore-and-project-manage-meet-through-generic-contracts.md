@@ -17,8 +17,9 @@
   `pm log` for the sink and `pm source` for the source.
 - **Default:** each tool works without the other. A Lore feature that reads
   project-manage data also works with a wiki note or a repo file.
-- **Default:** a scope names its roadmap by one ref that `lore_read` resolves.
-  Lore reads the text behind the ref and does not parse its structure.
+- **Default:** a roadmap item names a milestone by a ref that `lore_read`
+  resolves. Lore reads the text behind the ref and does not parse its
+  structure.
 - **Incidental:** the project-manage adapter speaks the `command` source
   contract: JSON on stdin, hits with `pm:<id>` refs on stdout.
 
@@ -38,8 +39,9 @@
 - Some people use both tools. A solo developer has no project-manage.
 - ADR 0017 (the logbook) rejected a built-in project-manage sink. The
   `command` sink runs `pm log` with no project-manage code in Lore.
-- The roadmap (`CONTEXT.md`) lives in project-manage as milestones. Lore
-  sessions read the roadmap to guide decisions during design and build.
+- A roadmap (`CONTEXT.md`) lives in the repo as `ROADMAP.md`. Its items can
+  name project-manage milestones, which hold the dates. Lore sessions read
+  both to guide decisions during design and build.
 
 ## Decision
 
@@ -64,6 +66,9 @@
 
 - **A project-manage source kind in Lore.** Rejected: Lore would follow the
   project-manage API, and a solo developer would carry unused code.
+- **The roadmap as a view over project-manage milestones.** Rejected: not
+  every roadmap item deserves a milestone, a board per repo costs too much,
+  and a sync between the repo and project-manage needs new infrastructure.
 - **A roadmap file in Lore that copies the milestones.** Rejected: two homes
   for one fact (ADR 0014).
 - **Lore reads the project-manage MCP server.** Rejected as Lore's path: the
