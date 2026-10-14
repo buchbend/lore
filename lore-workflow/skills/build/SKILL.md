@@ -63,7 +63,7 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
   `python3 tools/release.py --in-branch --notes notes.md`.
 - **Follow-ups.** A defect or a concrete change becomes an issue with a `filed` ledger line. A
   feature idea outside the run's scope goes to the roadmap: `lore roadmap add` on the build
-  branch. After the merge, run `handover` § Next run.
+  branch. Set its `left` line `approved`. After the merge, run `handover` § Next run.
 - **Session end.** Read `lore config get feedback.retrieval_misses`. When true, file one issue per
   retrieval miss on `feedback.retrieval_misses_repo` through `file-issue`: the fact, the tools
   tried, the turn count. When false, skip the check. List every issue and PR the session
@@ -132,9 +132,9 @@ On "wrap up", read [loop-wrap-up.md](loop-wrap-up.md) and follow it.
 7. **Finish point.** Present the open ledger lines to the user in one message, as
    [loop-wrap-up.md](loop-wrap-up.md) steps 3 and 4 do. Push the approved ADRs and terms to the
    same PR. `lore workflow ledger-check` passes, or you go back to the user. Remove the shipped
-   roadmap item from its `ROADMAP.md`. Add the handover section to the PR body. Run `lore log add`.
-   Add the version bump as the last commit if the repo needs one. Run
-   `lore workflow ledger-archive`. Ask for the merge approval and merge on a yes.
+   roadmap item from its `ROADMAP.md`, if the issue ships one: the item that links the issue or
+   that the issue names. Commit the change. Add the handover section to the PR body. Run
+   `lore log add`. Run `lore workflow ledger-archive`. Ask for the merge approval and merge on a yes.
 
 ## Mode `epic`
 
@@ -208,8 +208,7 @@ and stays present. Every row is AFK. One repo without a deploy gate holds all ro
   branches with `--no-ff`.
 - Your own slices may write tests beside the code. Then break two or three pieces of key logic,
   confirm the tests fail, restore, and note the check on the board.
-- Then run the epic tail. Its whole-epic review is the one review of this run, for any number
-  of features.
+- Then run the epic tail.
 
 **Epic tail.** When every row is merged and CI is green, read [epic-tail.md](epic-tail.md) and
 follow it.

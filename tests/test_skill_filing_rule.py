@@ -104,13 +104,25 @@ def test_build_sends_a_defect_to_an_issue_and_a_feature_idea_to_the_roadmap() ->
     text = _text("build")
     assert "A defect or a concrete change becomes an issue" in text
     assert "A feature idea outside the run's scope goes to the roadmap" in text
-    assert "`lore roadmap add` on the build branch" in text
+    assert "`lore roadmap add` on the build branch. Set its `left` line `approved`." in text
 
 
 def test_a_teammate_files_a_feature_idea_through_its_pr() -> None:
     text = _file("build/teammate-brief.md")
     assert "A feature idea outside your scope goes to the roadmap" in text
-    assert "`lore roadmap add`" in text
+    assert '`cd <path> && lore roadmap add "Title" ["paragraph"]` in one shell call' in text
+
+
+def test_the_reviewer_counts_a_filed_roadmap_item_in_scope() -> None:
+    text = _file("build/review.md")
+    assert "A roadmap item that `lore roadmap add` filed under `## Not placed yet` is in scope" in (
+        text
+    )
+
+
+def test_an_unreachable_user_sends_a_feature_idea_line_to_the_roadmap() -> None:
+    text = _file("build/epic-tail.md")
+    assert "Send a feature-idea line to `lore roadmap add` instead and set it `approved`" in text
 
 
 def test_loop_wrap_up_sends_a_kept_feature_idea_to_the_roadmap() -> None:

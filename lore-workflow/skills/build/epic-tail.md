@@ -14,7 +14,8 @@ List the open lines of the board's `## Ledger` section with `lore workflow ledge
 - **User reachable:** present the lines in one message, as [loop-wrap-up.md](loop-wrap-up.md)
   step 3 does. Write what the user approves onto `epic/<issue>`. An ADR fills `Holds` and
   `Revisit if` per [ADR-FORMAT.md](../grilling/ADR-FORMAT.md).
-- **User not reachable:** file each open line through `file-issue`, then set it `filed`.
+- **User not reachable:** file each open line through `file-issue`, then set it `filed`. Send a
+  feature-idea line to `lore roadmap add` instead and set it `approved`.
 - An epic PR that carries a new ADR merges only after the merge approval in `SKILL.md`
   (decision gate). An unreachable user leaves it open.
 

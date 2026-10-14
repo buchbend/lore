@@ -61,7 +61,8 @@ List every term you wrote or changed: one line per term, quoting the term and it
 When you wrote none, say so plainly instead of printing an empty list.
 
 When the plan is settled, ask which roadmap item the plan serves. Offer the items from
-`ROADMAP.md`; "none" is a valid answer. Pass the item to the hand-off.
+`ROADMAP.md`; "none" is a valid answer. Pass the item to the hand-off: `to-epic` adds the PRD and
+epic links to the item. For one change, name the item in the issue body.
 
 Then hand off: [`to-epic`](../to-epic/SKILL.md) for several features, or
 [`build`](../build/SKILL.md) in `issue` mode for one change. File that issue through
