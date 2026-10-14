@@ -28,7 +28,7 @@ The division of labour is deliberate:
 - The **PRD** (in the repo) carries the durable spec — the problem, the
   solution, the requirements.
 - The **epic issue** (on GitHub) carries the coordination surface — a
-  one-paragraph summary and a link to the PRD, the roadmap dependency table,
+  one-paragraph summary and a link to the PRD, the build-order dependency table,
   and the sub-issue checklist. `build` reads this tracker to decide the
   order of the features; it does not need the full spec to schedule the
   work.

@@ -2,7 +2,7 @@
 name: lore-workflow:build
 description: Build code in one of three modes. `loop` — fast rounds with the human watching the
   live dev stack, local merges, one wrap-up PR. `issue` — one clear issue to one PR. `epic` — an
-  epic tracker with a roadmap, teammates per feature, review by risk level, one epic PR. Every
+  epic tracker with a build order, teammates per feature, review by risk level, one epic PR. Every
   mode keeps a ledger, writes resume lines, and ends with a handover section. Use when the user
   asks to build, implement, fix, or run an epic, an issue, or quick feedback rounds.
 ---
@@ -16,7 +16,7 @@ Then follow its section. Read a sibling file only when the run reaches it.
 |---|---|---|
 | `loop` | The user reacts to a running feature: screenshots, "make this red", "quick fix". | Wrap-up PR from `loop/<slug>` |
 | `issue` | One written, clear issue. | One PR, merged after the user approves |
-| `epic` | An epic tracker issue with a roadmap table from [`to-epic`](../to-epic/SKILL.md). | Epic PR, then the handover section |
+| `epic` | An epic tracker with a build-order table from [`to-epic`](../to-epic/SKILL.md). | Epic PR, then the handover section |
 
 Work that is several features, or still unshaped, goes back to [`orient`](../orient/SKILL.md).
 Several epics take one `build` run each. Start a downstream epic after its upstream epic merged.
@@ -140,7 +140,7 @@ On "wrap up", read [loop-wrap-up.md](loop-wrap-up.md) and follow it.
 You plan, dispatch, review and merge. Teammates write the feature code. Run without asking.
 Stop only for completion or a stop condition.
 
-**Map.** Read the epic body and its roadmap. HITL rows are escalation points. Run `lore workflow
+**Map.** Read the epic body and build order. HITL rows are escalation points. Run `lore workflow
 epic-policy <repo_root>` once per repo: `{target_branch, deploy_gate}`. Feature PRs target
 `epic/<issue>`. `epic/<issue>` merges into `target_branch` through one epic PR.
 
@@ -148,7 +148,7 @@ epic-policy <repo_root>` once per repo: `{target_branch, deploy_gate}`. Feature 
 A `merged` row is done. A `queued` or `blocked` row is dispatched again. Reuse an existing
 `epic/<issue>`. Read the last resume line in the `ledger` key. No board: fresh run.
 
-**Gate.** `lore workflow validate-roadmap --json` on the epic body. `ok: false`: report the
+**Gate.** `lore workflow validate-build-order --json` on the epic body. `ok: false`: report the
 `problems` and stop. A feature's batch is its depth in the DAG. **Compact** band: one repo,
 every row AFK, one feature per batch. Then one teammate builds the features in order, still one
 branch and one PR each. Otherwise **standard**: up to four teammates at once.
@@ -191,7 +191,7 @@ it into `epic/<issue>`.
 the PR and wait for green checks. A rebase conflict goes back to the teammate. For a cross-repo
 pin, merge the producer and record its SHA before you dispatch the consumer that pins it. After
 each merge:
-- tick the roadmap checkbox;
+- tick its build-order box;
 - close the sub-issue (`gh issue close <n> --comment "Merged via PR #<pr>"`);
 - set the row to `merged`;
 - add the teammate's ADR and term candidates to the ledger;

@@ -52,7 +52,7 @@ orient → grilling → to-epic → build → document
 ```
 
 with `handover` at any stop. `build` runs in three modes: `loop` for fast
-rounds, `issue` for one clear issue, `epic` for a roadmap. `tdd` is the
+rounds, `issue` for one clear issue, `epic` for a build order. `tdd` is the
 discipline every mode follows.
 More reading:
 

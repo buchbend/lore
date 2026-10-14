@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parser for the supervision-board comment (peer of ``roadmap_validator.py``).
+"""Parser for the supervision-board comment (peer of ``build_order_validator.py``).
 
 ``build`` (epic mode) keeps one durable status comment on the epic issue and
 edits it in place across a run — the supervision trail. On resume the run must
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lore_workflow.roadmap_validator import _is_separator, _split_cells
+from lore_workflow.build_order_validator import _is_separator, _split_cells
 
 # The comment is identified by this exact marker. Feature #228 emits it
 # verbatim; a mismatch (including a future version bump) is "not a board".
@@ -38,7 +38,7 @@ BOARD_MARKER = "<!-- lore-orchestrate-epic:status v1 -->"
 REQUIRED_COLUMNS: tuple[str, ...] = ("Feature", "Issue", "Tier", "Batch", "State", "PR")
 
 # PR-cell values that mean "no PR yet" — normalised to "" so a resumed run can
-# test truthiness. Mirrors the roadmap validator's "no blocker" placeholders.
+# test truthiness. Mirrors the build order validator's "no blocker" placeholders.
 _PLACEHOLDER = {"", "-", "–", "—"}
 
 

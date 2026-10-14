@@ -21,11 +21,11 @@ needs work before any code. For one small, clear change, use the
    stress-tests the plan and records terms and ADRs as decisions land.
 2. **Pass the checkpoint.** Run `/lore-workflow:to-epic`. It writes the PRD
    under `docs/prd/`, opens the epic issue and one sub-issue per feature, and
-   writes the roadmap table. Review the PRD and the roadmap. This review is
+   writes the build-order table. Review the PRD and the build order. This review is
    the last human gate before the build.
 3. **Build the epic.** Point a session at the epic issue and run
    `/lore-workflow:build` in `epic` mode. The skill:
-   - validates the roadmap with `lore workflow validate-roadmap`;
+   - validates the build order with `lore workflow validate-build-order`;
    - creates `epic/<issue>` from the target branch;
    - builds the features test-first, one teammate per feature;
    - reviews each PR at the depth `lore workflow risk` sets;
@@ -57,5 +57,5 @@ needs work before any code. For one small, clear change, use the
 ## Done when
 
 - The epic PR, docs included, merged into the target branch.
-- Every sub-issue is closed and every roadmap checkbox is ticked.
+- Every sub-issue is closed and every build-order checkbox is ticked.
 - The epic issue body holds the handover section.

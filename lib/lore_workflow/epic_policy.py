@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Per-repo epic-merge policy: target branch + deploy gate (peer of
-``roadmap_validator.py``).
+``build_order_validator.py``).
 
 ``build`` (epic mode) must resolve two repo facts deterministically at Map
 time — never guess them from prose:

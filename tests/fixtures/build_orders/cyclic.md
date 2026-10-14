@@ -1,4 +1,4 @@
-## Roadmap
+## Build order
 Cyclic: 1 → 3 → 2 → 1. Columns are valid, refs are fully-qualified, and every
 edge resolves, but the blocked-by graph has a cycle.
 

@@ -14,7 +14,7 @@ Produce two coupled artifacts that `build` in `epic` mode consumes:
    truth**, versioned in the repo, reviewable in PRs, and rendered in the docs site. It is
    auto-wired into `docs/prd/index.md`'s toctree.
 2. **The epic tracker issue** — a GitHub issue that **links** the PRD (it does **not embed**
-   it), and carries the **roadmap table** (the canonical dependency DAG) plus one sub-issue
+   it), and carries the **build-order table** (the canonical dependency DAG) plus one sub-issue
    per feature (one feature = one teammate = one branch = one PR).
 
 This skill is the human checkpoint — `build` in `epic` mode runs hands-off afterward, so get the
@@ -53,11 +53,11 @@ Condense a PRD — do NOT interview, synthesize what you already know: Problem, 
 Implementation decisions, Testing decisions, Out of scope. Prefer deep modules testable in
 isolation. This PRD is the **source of truth** and becomes the **file** at
 `docs/prd/NNNN-kebab.md`, **not** the epic body. The epic body links it and carries only the
-one-paragraph summary + roadmap (see Publish). Run `lore style show writing-rules` before you
+one-paragraph summary + build order (see Publish). Run `lore style show writing-rules` before you
 write the PRD and the epic body; both are team-facing text. The PRD sections below are a
 starting shape, not a fixed skeleton: a PRD takes the shape its task needs.
 
-### 4. Draft the roadmap (fewest slices that earn their overhead)
+### 4. Draft the build order (fewest slices that earn their overhead)
 Break the work into **tracer-bullet** features — each a slice cutting end-to-end through all
 layers, sized as one teammate / one branch / one PR. Every row costs fixed downstream
 overhead in `build` in `epic` mode (teammate spawn, review, merge, sibling
@@ -93,7 +93,7 @@ Order matters so every cross-reference resolves:
    [`file-issue`](../file-issue/SKILL.md) in caller-template mode, handing it the sub-issue
    template below (optionally labeled `epic:<n>` for grouping).
 3. **Create the epic tracker issue**, labeled `epic` (create the label if missing). The body
-   **links the PRD file** and carries a one-paragraph summary + the roadmap table + a task list
+   **links the PRD file** and carries a one-paragraph summary + the build-order table + a task list
    of the sub-issues — **no PRD content is duplicated in the epic body** (link only).
 4. **Close the cross-reference loop.** Set the PRD front-matter `epic:` to the epic issue URL,
    and (if an ADR records this decision) cross-link PRD ↔ ADR — **bidirectional
@@ -103,14 +103,14 @@ Order matters so every cross-reference resolves:
    newly formed epic (`gh issue close <seed> --comment "Formed into epic <owner/repo#epic>"`).
    Skip this step when the epic was not formed from a seed.
 
-**Gate publishing on the roadmap validator.** The roadmap table is the dependency DAG
+**Gate publishing on the build-order validator.** The build-order table is the dependency DAG
 `build` in `epic` mode consumes, so it must be well-formed before the epic goes live. Run the
-deterministic, dependency-free `lore workflow validate-roadmap` on the composed epic body —
-e.g. `gh issue view <epic> --json body -q .body | lore workflow validate-roadmap -`, or point
-it at the drafted body file (`lore workflow validate-roadmap <path>`). It checks the required
+deterministic, dependency-free `lore workflow validate-build-order` on the composed epic body —
+e.g. `gh issue view <epic> --json body -q .body | lore workflow validate-build-order -`, or point
+it at the drafted body file (`lore workflow validate-build-order <path>`). It checks the required
 columns (`# | Feature | Issue | Repo | Type | Blocked by`), fully-qualified `owner/repo#n`
 Issue refs, blocked-by edges that resolve to rows in the table, and an acyclic DAG.
-**Publish only a roadmap it accepts** — fix what it reports and re-run until it passes.
+**Publish only a build order it accepts** — fix what it reports and re-run until it passes.
 
 Use fully-qualified refs (`owner/repo#n`) for every cross-repo link. Do not modify unrelated
 parent issues.
@@ -162,7 +162,7 @@ What this epic deliberately does not cover.
 ## Epic body template
 
 The epic is a **tracker, not a spec**: it **links** the PRD (no PRD content duplicated here)
-and carries the roadmap DAG — the table **stays in the epic body**, where `build` in `epic` mode reads it.
+and carries the build-order DAG — the table **stays in the epic body**, where `build` in `epic` mode reads it.
 
 <epic-body-template>
 ## Summary
@@ -170,10 +170,10 @@ One paragraph: problem → solution. Full spec lives in the PRD.
 
 **PRD:** [`docs/prd/NNNN-kebab.md`](../blob/<branch>/docs/prd/NNNN-kebab.md) — the source of truth.
 
-## Roadmap
+## Build order
 Canonical DAG for `build` in `epic` mode — one row per feature/sub-issue. Type is AFK (runs
 autonomously, no human input) or HITL (human-in-the-loop: needs a human decision); the table
-below keeps the literal token, which is what the roadmap validator and `build` in `epic` mode read.
+below keeps the literal token, which is what the build-order validator and `build` in `epic` mode read.
 
 | # | Feature | Issue | Repo | Type | Blocked by |
 |---|---------|-------|------|------|------------|
@@ -198,7 +198,7 @@ The header spends one line on four short values, so content starts above the fol
 each field on that line: **Epic** the tracker issue, fully qualified; **Repo** the repo
 this slice is implemented in; **Type** `AFK` (runs autonomously) or `HITL` (needs a human
 decision); **Blocked by** the blocking issues, or `None`. No parser reads these off the
-sub-issue — `build` builds its DAG from the epic body's roadmap table.
+sub-issue — `build` builds its DAG from the epic body's build-order table.
 
 <sub-issue-template>
 **Epic** owner/repo#<epic> · **Repo** owner/repo · **Type** AFK · **Blocked by** None

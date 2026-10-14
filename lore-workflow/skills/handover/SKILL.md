@@ -75,7 +75,7 @@ A `build` run reaches this step after its merge. Skip the step when the run file
    | Group | Next run |
    |---|---|
    | one small, clear issue | `/lore-workflow:build issue <owner/repo#n>` |
-   | an epic tracker with a roadmap | `/lore-workflow:build epic <owner/repo#n>` |
+   | an epic tracker with a build order | `/lore-workflow:build epic <owner/repo#n>` |
    | related issues, or work without a shape | a seed (§ Seed issue), then `/lore-workflow:orient <owner/repo#seed>` |
 
 3. **Offer** the next runs in the final message, one line each, with its command. The user can
