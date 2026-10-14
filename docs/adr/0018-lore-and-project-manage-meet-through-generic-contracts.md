@@ -4,7 +4,7 @@
 - **Date:** 2026-10-14
 - **Deciders:** Christof Buchbender
 - **Relates to:**
-  - PRD 0018 (the roadmap), in progress
+  - PRD [0018](../prd/0018-the-roadmap.md) (the roadmap), epic [#510](https://github.com/buchbend/lore/issues/510)
   - ADR [0017](0017-the-logbook.md) (the logbook, which rejected a built-in project-manage sink)
   - ADR [0013](0013-search-over-wiki-and-github-is-federated-not-cached.md) (federated search)
   - ADR [0014](0014-one-home-per-fact.md) (one home per fact)

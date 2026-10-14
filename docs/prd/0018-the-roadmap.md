@@ -1,14 +1,14 @@
 ---
 title: The roadmap
 status: draft
-epic: https://github.com/buchbend/lore/issues/TODO
+epic: https://github.com/buchbend/lore/issues/510
 repos:
   - buchbend/lore
 ---
 
 # PRD 0018: The roadmap
 
-> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/TODO).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/510).
 > The epic links here; this file is not embedded in the issue body.
 > Decisions: ADR [0018](../adr/0018-lore-and-project-manage-meet-through-generic-contracts.md)
 > (Lore and project-manage meet only through generic contracts), ADR
