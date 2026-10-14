@@ -52,6 +52,7 @@ Lore routes each kind of fact to one home:
 | How do agents work in this repo? | `AGENTS.md` | human |
 | What does a domain term mean? | `CONTEXT.md`, or the context `CONTEXT-MAP.md` names | `grilling` or a ledger outcome |
 | What spans several repos? | wiki topic note, edited through a PR | human merges |
+| Where is the code heading, and in what order? | roadmap: `ROADMAP.md` in the repo; across repos, a wiki topic note | human; an agent adds an item under "Not placed yet" through its PR |
 | What shipped, what changed, what is left? | handover section | `build` at its finish point |
 | Why was this work done, and what does it mean for the team? | logbook entry in the scope's sinks | `build` at its finish point (ADR 0017) |
 | What was said in the session? | transcript copy (personal) | Lore capture |
@@ -101,3 +102,8 @@ dropped, or filed as an issue.
   reasoning; ADR 0017 amendment). The entry may summarise facts from the
   other homes in plain words and links to each home. The homes stay the
   source of each fact.
+- 2026-10-14: new row "Where is the code heading, and in what order?" with
+  the roadmap as its home (ADR 0018, Lore and project-manage meet only
+  through generic contracts). A roadmap holds direction and order. Dates
+  stay in milestones, and a roadmap item links to its milestone, PRD or
+  issue instead of restating them.
