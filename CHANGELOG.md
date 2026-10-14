@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.88.1] - 2026-10-14
+
+- **The test suite no longer touches the search index of the person who runs it (#502).** `lore_search.fts` reads the home folder when it needs the index path, not at import. The suite fakes the home folder for each test, so a test run no longer reads or writes `~/.cache/lore/search.db`. The suite also resets the reindex throttle of the MCP server before each test. A running Lore process keeps one home folder and finds the same index as before.
+
 ## [0.88.0] - 2026-10-14
 
 Ships `lore-workflow` 0.16.0.
