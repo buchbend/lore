@@ -206,6 +206,22 @@ def test_issue_mode_merges_only_after_the_merge_approval() -> None:
     assert "Ask for the merge approval and merge on a yes." in issue
 
 
+def test_the_epic_pr_merges_only_after_the_merge_approval() -> None:
+    """#518: SKILL.md and epic-tail.md § 4 state one rule for the epic PR.
+
+    Feature PRs into `epic/<issue>` stay AFK; only the epic PR into the
+    target branch waits, and a deploy gate rides in the same message.
+    """
+    rules = _section("Rules for every mode")
+    assert "or an epic PR, merges only after the user approves it" in rules
+    tail = _text("build/epic-tail.md")
+    merge = tail.split("## 4. Merge", 1)[1].split("## 5.", 1)[0]
+    assert "Merge on green checks" not in tail
+    assert "Exception" not in merge
+    assert "merge approval" in merge and "deploy gate" in merge
+    assert "An unreachable user leaves the epic PR open." in merge
+
+
 def test_the_merge_approval_needs_a_clear_yes() -> None:
     rules = _section("Rules for every mode")
     assert "**Merge approval.**" in rules

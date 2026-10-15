@@ -42,7 +42,9 @@ needs work before any code. For one small, clear change, use the
 
 - **The build runs without you.** AFK features run on their own. `build`
   stops for a HITL feature, a review that keeps failing, or a conflict no
-  teammate resolves.
+  teammate resolves. Feature PRs merge into the epic branch without you.
+  The epic PR into the target branch waits for your merge approval in the
+  conversation. Without you, the epic PR stays open.
 - **Read the run on the board.** `build` keeps one status comment on the
   epic issue: the feature table, a `## Ledger` section and a `## Notes`
   section for blockers and escalations.
