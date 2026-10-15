@@ -261,6 +261,9 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
   point while a ledger line has no outcome: approved, dropped or filed.
 - **Finish point** — the step where a build run ends: loop wrap-up, the
   `issue` PR, or the epic tail.
+- **Merge approval** — the user's clear yes in the conversation before the
+  agent merges a PR that ends a build run. Silence is not a yes. _Avoid_:
+  sign-off, merge consent.
 - **Resume line** — a ledger line holding the run's state and the next
   ask. The agent writes one after each merged round or feature.
 - **Breakpoint** — a moment after a resume line where the agent tells

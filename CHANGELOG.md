@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.89.3] - 2026-10-15
+
+Ships `lore-workflow` 0.17.1.
+
+- **One merge rule for the epic PR (#518).** `build` asks for the merge approval before it merges the epic PR into the target branch. An unreachable user leaves the epic PR open. Feature PRs into `epic/<issue>` still merge without the user. With a deploy gate, the approval message names the gate, so the user answers once. `CONTEXT.md` defines merge approval.
+
 ## [0.89.2] - 2026-10-15
 
 - **`lore roadmap add` keeps a closing `?` or `!` of the title (#519).** `lore roadmap add "Why?"` writes `- **Why?**`, not `- **Why?.**`. A title without closing punctuation still gets a closing dot.

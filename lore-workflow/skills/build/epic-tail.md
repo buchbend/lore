@@ -17,8 +17,6 @@ List the open lines of the board's `## Ledger` section with `lore workflow ledge
 - **User not reachable:** file each open line through `file-issue`, then set it `filed`. Send a
   feature-idea line to `lore roadmap add` on `epic/<issue>` instead, commit it there, and set it
   `approved`.
-- An epic PR that carries a new ADR merges only after the merge approval in `SKILL.md`
-  (decision gate). An unreachable user leaves it open.
 
 Set each outcome on the board: pipe the comment body through `ledger-set`, then write the output
 back to the comment.
@@ -56,10 +54,9 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
    one.
 3. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
    .body | lore workflow ledger-check -`. Do not merge while it exits 1.
-4. When `epic-policy` returned `deploy_gate: true`, get one human confirmation and note it on
-   the board.
-5. Merge on green checks. Exception: in the human-present option in `SKILL.md`, merge only
-   after the merge approval.
+4. Ask for the merge approval in `SKILL.md`. When `epic-policy` returned `deploy_gate: true`,
+   name the deploy gate in the same message and note the yes on the board. Merge on a yes.
+   An unreachable user leaves the epic PR open.
 
 ## 5. Handover section
 
