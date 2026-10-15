@@ -152,13 +152,14 @@ def test_handover_sends_a_feature_idea_to_the_roadmap_on_the_work_branch() -> No
 
 def test_a_feature_idea_with_findings_gets_a_seed_the_roadmap_item_links() -> None:
     text = _text("handover")
-    assert "also gets a seed issue. Write the seed first; the roadmap item links it." in text
+    assert "also gets a seed issue. Write the seed before the roadmap item;" in text
+    assert "the roadmap item links it." in text
 
 
 def test_without_a_branch_the_seed_names_the_roadmap_item() -> None:
     text = _text("handover")
     assert "When no branch carries the work, the seed holds the idea alone." in text
-    assert "Its **Next step** names the roadmap item for the next run's PR." in text
+    assert "names the roadmap item for the next run's PR, under the `orient` command." in text
 
 
 def test_next_run_offers_no_run_for_a_roadmap_item() -> None:

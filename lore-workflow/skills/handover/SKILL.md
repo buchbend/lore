@@ -72,9 +72,10 @@ The filing rule sends a feature idea to the roadmap, not to an issue.
 - Run `lore roadmap add` on the branch of the work and commit the item there. Set its `left` line
   `approved`.
 - An idea with findings that a cold session would rediscover also gets a seed issue. Write the
-  seed first; the roadmap item links it.
+  seed before the roadmap item; the roadmap item links it.
 - When no branch carries the work, the seed holds the idea alone. Its **Next step** names the
-  roadmap item for the next run's PR. Set the `left` line `filed <owner/repo#seed>`.
+  roadmap item for the next run's PR, under the `orient` command. Set the `left` line
+  `filed <owner/repo#seed>`.
 
 ## Next run
 
