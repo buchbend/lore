@@ -23,7 +23,7 @@ orient → grilling → to-epic → build → document
 
 | Step | What it does |
 |------|--------------|
-| `orient` | The first step. The session does its own homework, then reflects its understanding back for confirmation. A light mode ("brief me") pulls only the context pack and hands one change to `build`. |
+| `orient` | The first step. The session does its own homework, then reflects its understanding back for confirmation. A light mode ("brief me") pulls only the roadmap and the context pack, and hands one change to `build`. |
 | `grilling` | An interview that stress-tests a plan. It also sharpens the domain model: it writes approved terms into `CONTEXT.md` and ADRs with `Holds` and `Revisit if`. |
 | `to-epic` | The human checkpoint. Writes the PRD under `docs/prd/`, the epic tracker issue and one sub-issue per feature, with the build-order table `build` reads. |
 | `build` | Builds code in one of three modes. See below. |

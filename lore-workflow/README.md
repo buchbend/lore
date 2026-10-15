@@ -20,7 +20,7 @@ The chain: `orient → grilling → to-epic → build → document`, with `hando
 
 | Skill | What it's for |
 |-------|----------------|
-| `orient` | First step of a task: homework, then reflect understanding back. A light mode ("brief me") pulls only the context pack and hands one change to `build`. |
+| `orient` | First step of a task: homework, then reflect understanding back. A light mode ("brief me") pulls only the roadmap and the context pack, and hands one change to `build`. |
 | `grilling` | Interview the user to stress-test a plan, and sharpen the domain model: `CONTEXT.md` terms and ADRs with `Holds` and `Revisit if`. |
 | `to-epic` | Turn a plan into a PRD file plus an epic tracker issue with a build-order table. |
 | `build` | Build code in three modes: `loop` (fast rounds, local merges, one wrap-up PR), `issue` (one issue, one PR), `epic` (a build order, teammates, review by risk level). Keeps a ledger and writes a handover section. |
