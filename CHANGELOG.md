@@ -8,6 +8,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.89.0] - 2026-10-15
+
+Ships `lore-workflow` 0.17.0. Reinstall the CLI together with the plugins: the skills call two new commands.
+
+- **The roadmap (epic #510, PRD 0018).** A `ROADMAP.md` per repo says where the code is heading, in order, with a `## Not placed yet` section for ideas. `lore roadmap add "Title" ["paragraph"]` appends an item there, in the nearest `ROADMAP.md` inside the repo. Without a file, the command creates one at the repo root. The command writes the working tree only (#508). How-to: `docs/how-to/keep-a-roadmap.md`.
+- **The skills keep the roadmap (#509).** `orient` reads the roadmap and takes a named item as its seed. `grilling` asks which item a plan serves. `to-epic` adds the PRD and epic links to the item. `build` removes a shipped item at its finish point. The filing rule sends a feature idea to the roadmap and a defect or a concrete change to an issue.
+- **The epic feature table is the build order (#507).** `to-epic` writes `## Build order`. `lore workflow validate-build-order` checks the table. `validate-roadmap` stays as a hidden alias. The Python module `lore_workflow.roadmap_validator` is now `lore_workflow.build_order_validator`, with no shim for the old import path.
+- ADR 0018 (Lore and project-manage meet only through generic contracts) holds an invariant: a test fails when a module under `lib/` imports a project-manage package.
+
 ## [0.88.1] - 2026-10-14
 
 - **The test suite no longer touches the search index of the person who runs it (#502).** `lore_search.fts` reads the home folder when it needs the index path, not at import. The suite fakes the home folder for each test, so a test run no longer reads or writes `~/.cache/lore/search.db`. The suite also resets the reindex throttle of the MCP server before each test. A running Lore process keeps one home folder and finds the same index as before.
