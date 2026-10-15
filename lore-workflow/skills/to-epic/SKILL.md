@@ -98,9 +98,9 @@ Order matters so every cross-reference resolves:
 4. **Close the cross-reference loop.** Set the PRD front-matter `epic:` to the epic issue URL,
    and (if an ADR records this decision) cross-link PRD ↔ ADR — **bidirectional
    cross-references** PRD ↔ epic ↔ ADR ↔ sub-issue throughout.
-5. **Link the roadmap item.** When the epic serves a roadmap item (`grilling` asks which), add
-   the PRD and epic links to the item in its `ROADMAP.md`. Commit the change on the PRD's branch.
-   The PRD gets no field that points up to the item.
+5. **Link the roadmap item.** `grilling` names the item the epic serves, or the seed names one. Then
+   add the PRD and epic links to it in its `ROADMAP.md`. Add a missing item with `lore roadmap add`.
+   Commit on the PRD's branch. The PRD gets no field that points up to the item.
 6. **Close the consumed seed.** If this epic was formed from an epic-seed issue (labeled
    `epic-seed`, produced by `/lore-workflow:handover`), close the seed issue. The close comment
    links the new epic: `gh issue close <seed> --comment "Formed into epic <owner/repo#epic>"`.

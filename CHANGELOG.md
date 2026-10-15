@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.90.0] - 2026-10-15
+
+Ships `lore-workflow` 0.18.0.
+
+- **`handover` sends a deferred feature idea to the roadmap (#517).** When work stops early, `handover` files a feature idea with `lore roadmap add` in the worktree of the open branch, not as an issue. An idea with findings worth keeping also gets a seed issue, and the roadmap item links the seed. Without an open branch, the seed holds the idea alone, and `to-epic` adds the roadmap item the seed names. "Next run" offers no run for a roadmap item.
+
 ## [0.89.3] - 2026-10-15
 
 Ships `lore-workflow` 0.17.1.
