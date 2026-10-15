@@ -35,7 +35,7 @@ lore roadmap add "Faster search" "Cache the ranked hits per query."
 
 - The command appends `- **Faster search.** Cache the ranked hits per query.` under `## Not placed yet`.
 - The command writes to the nearest `ROADMAP.md` between the working directory and the repo root.
-- Without a `ROADMAP.md`, the command creates the file at the repo root with the shape above.
+- Without a `ROADMAP.md`, the command creates the file at the repo root: the `# Roadmap` heading, a placeholder paragraph and the `## Not placed yet` section.
 - Without a `## Not placed yet` heading, the command adds the heading at the end of the file.
 - The command writes the working tree only. Commit the change on your branch. The next pull request carries it.
 - Outside a git repo, the command exits 1 and prints one line.
@@ -57,7 +57,7 @@ order. Edit the file by hand. A dropped item moves back down to
 ## Name a milestone
 
 Write the milestone as a ref, for example `pm:CCAT-K7QX2M`. Where a source
-serves the ref, the skills read the ref with `lore_read`. Without a source,
+serves the ref, `orient` reads the ref with `lore_read`. Without a source,
 the ref stays plain text. ADR 0018 (Lore and project-manage meet only through
 generic contracts) holds the decision.
 

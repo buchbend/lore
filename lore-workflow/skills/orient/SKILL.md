@@ -103,7 +103,8 @@ switch to full mode; the brief so far seeds step 1.
   against `CONTEXT.md` and ADRs, which `to-epic` depends on. Say "grill me" when there is no
   domain model to align against.
 - **Light mode:** file the agreed intent and acceptance criteria through
-  [`file-issue`](../file-issue/SKILL.md), then run `build` in `issue` mode. When even an issue is
+  [`file-issue`](../file-issue/SKILL.md). When the seed is a roadmap item, name the item in the
+  issue body. Then run `build` in `issue` mode. When even an issue is
   ceremony, run `build` in `loop` mode. Write no brief file: the issue holds what survives.
   **Never write to `CONTEXT.md`** — a term worth adding belongs to `grilling`, not this skill.
   An ADR candidate goes on the build ledger.

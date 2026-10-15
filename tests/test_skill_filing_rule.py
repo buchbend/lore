@@ -122,7 +122,10 @@ def test_the_reviewer_counts_a_filed_roadmap_item_in_scope() -> None:
 
 def test_an_unreachable_user_sends_a_feature_idea_line_to_the_roadmap() -> None:
     text = _file("build/epic-tail.md")
-    assert "Send a feature-idea line to `lore roadmap add` instead and set it `approved`" in text
+    assert (
+        "Send a feature-idea line to `lore roadmap add` on `epic/<issue>` instead, commit it there,"
+        " and set it `approved`"
+    ) in text
 
 
 def test_loop_wrap_up_sends_a_kept_feature_idea_to_the_roadmap() -> None:

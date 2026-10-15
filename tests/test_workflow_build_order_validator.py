@@ -140,5 +140,6 @@ def test_cli_returns_nonzero_on_invalid() -> None:
 
 
 def test_legacy_roadmap_heading_still_accepted() -> None:
-    body = "## Roadmap\n\n" + _fixture("well-formed.md")
+    body = _fixture("well-formed.md").replace("## Build order", "## Roadmap")
+    assert "## Build order" not in body
     assert mod.validate_build_order(body).ok
