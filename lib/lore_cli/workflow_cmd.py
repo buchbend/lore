@@ -58,6 +58,7 @@ app = typer.Typer(
 @app.command("validate-roadmap", hidden=True)  # old name of validate-build-order
 @app.command("validate-build-order")
 def validate_build_order_cmd(
+    ctx: typer.Context,
     path: str = typer.Argument("-", help="Path to the epic body Markdown, or '-' to read stdin."),
     as_json: bool = typer.Option(
         False,
@@ -69,6 +70,9 @@ def validate_build_order_cmd(
     """Validate an epic's build-order table: required columns, fully-qualified
     `owner/repo#n` issue refs, resolvable blocked-by edges, acyclic DAG.
     """
+    if ctx.info_name == "validate-roadmap":
+        # stderr, one line: stdout stays identical to the new name for parsers.
+        typer.echo("note: validate-roadmap is deprecated — use validate-build-order", err=True)
     text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
     result = validate_build_order(text)
     if as_json:

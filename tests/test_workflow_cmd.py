@@ -105,6 +105,25 @@ def test_validate_roadmap_alias_still_runs(capsys) -> None:
     assert "build order OK" in capsys.readouterr().out
 
 
+def test_validate_roadmap_alias_prints_one_deprecation_line(capsys) -> None:
+    """#516: the old name says the new one on stderr; the new name stays quiet."""
+    workflow_cmd.main(["validate-roadmap", str(FIXTURES / "well-formed.md")])
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 1 and "validate-build-order" in err[0]
+    workflow_cmd.main(["validate-build-order", str(FIXTURES / "well-formed.md")])
+    assert capsys.readouterr().err == ""
+
+
+def test_validate_roadmap_alias_json_stdout_and_exit_code_match(capsys) -> None:
+    for fixture in ("well-formed.md", "cyclic.md"):
+        runs = []
+        for name in ("validate-roadmap", "validate-build-order"):
+            rc = workflow_cmd.main([name, "--json", str(FIXTURES / fixture)])
+            runs.append((rc, capsys.readouterr().out))
+        assert runs[0] == runs[1], fixture
+    assert runs[0][0] == 1  # cyclic.md is invalid: the exit code is compared, not just 0
+
+
 def test_validate_roadmap_alias_hidden_from_help() -> None:
     from typer.testing import CliRunner
 
