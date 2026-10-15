@@ -2,8 +2,8 @@
 name: lore-workflow:orient
 description: The first step of a piece of work — the session does its own homework, then
   reflects its understanding back for confirmation before any planning or grilling. A light
-  mode ("brief me") pulls only the context pack and code map and hands one change straight to
-  build. Use at the start of a task, when the user says "orient", "get oriented", "brief me",
+  mode ("brief me") pulls only the roadmap, the context pack and the code map, and hands one
+  change straight to build. Use at the start of a task, when the user says "orient", "get oriented", "brief me",
   "what's your understanding", or wants the session to reflect back before planning.
 ---
 
@@ -30,8 +30,14 @@ Two options combine with either mode:
 
 ## 1. Capture intent
 
-Take the user's stated goal as the seed, verbatim. Do not expand it or jump to solutions. When
-the user passes an issue reference, such as a seed issue from
+Read the roadmap first: the `ROADMAP.md` at the repo root, if present. When the work sits in a
+component directory with its own `ROADMAP.md`, read that file too. Where the user names a roadmap
+item, the item is the seed. Follow its links down to the PRD, epic or issue. Read a milestone ref
+in an item, such as `pm:<id>`, with `lore_read` when a source serves the ref. Without a source,
+the ref stays plain text.
+
+Otherwise, take the user's stated goal as the seed, verbatim. Do not expand it or jump to
+solutions. When the user passes an issue reference, such as a seed issue from
 [`handover`](../handover/SKILL.md), read it (`gh issue view <n> --json title,body`). Its Intent
 and Findings are the seed.
 
@@ -97,7 +103,8 @@ switch to full mode; the brief so far seeds step 1.
   against `CONTEXT.md` and ADRs, which `to-epic` depends on. Say "grill me" when there is no
   domain model to align against.
 - **Light mode:** file the agreed intent and acceptance criteria through
-  [`file-issue`](../file-issue/SKILL.md), then run `build` in `issue` mode. When even an issue is
+  [`file-issue`](../file-issue/SKILL.md). When the seed is a roadmap item, name the item in the
+  issue body. Then run `build` in `issue` mode. When even an issue is
   ceremony, run `build` in `loop` mode. Write no brief file: the issue holds what survives.
   **Never write to `CONTEXT.md`** — a term worth adding belongs to `grilling`, not this skill.
   An ADR candidate goes on the build ledger.

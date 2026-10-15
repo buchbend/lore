@@ -207,8 +207,10 @@ and 0013, spec in PRD 0014.
 
 - **Filing rule** — the rule saying which artifact holds each kind of
   fact. The artifacts are an issue, a comment, a dead end closed as
-  not-planned, an ADR as a PR, and a topic-note edit as a PR. Say
-  "filing rule", not "crossing".
+  not-planned, an ADR as a PR, and a topic-note edit as a PR. A roadmap
+  item goes in through `lore roadmap add` and the next PR. A defect or
+  a concrete change goes to an issue. A feature idea goes to the
+  roadmap. Say "filing rule", not "crossing".
 - **Agent-filed** — an issue, comment or PR an agent created. The
   `agent-filed` label and the opening line carry the mark.
 - **Retrieval miss** — a fact a Lore tool did not return, that the agent

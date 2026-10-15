@@ -1,6 +1,6 @@
-"""Machine-readable counts + `--json` output for the roadmap validator (#223).
+"""Machine-readable counts + `--json` output for the build-order validator (#223).
 
-`build` (epic mode) reads roadmap size (feature rows, distinct repos, dependency
+`build` (epic mode) reads build order size (feature rows, distinct repos, dependency
 edges) to plan batches; deriving it from validator prose is scraping. These
 counts come straight off the already-parsed rows — no second table parse.
 """
@@ -11,13 +11,15 @@ import json
 from pathlib import Path
 
 from lore_cli import workflow_cmd
-from lore_workflow import roadmap_validator as mod
+from lore_workflow import build_order_validator as mod
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "roadmaps"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "build_orders"
 
 
-def _counts(name: str) -> mod.RoadmapCounts:
-    return mod.roadmap_counts(mod.validate_roadmap((FIXTURES / name).read_text(encoding="utf-8")))
+def _counts(name: str) -> mod.BuildOrderCounts:
+    return mod.build_order_counts(
+        mod.validate_build_order((FIXTURES / name).read_text(encoding="utf-8"))
+    )
 
 
 def test_counts_well_formed() -> None:
@@ -38,8 +40,8 @@ def test_counts_empty_when_columns_bad() -> None:
     assert (c.rows, c.repos, c.edges) == (0, 0, 0)
 
 
-def test_validate_roadmap_json_ok(capsys) -> None:
-    rc = workflow_cmd.main(["validate-roadmap", "--json", str(FIXTURES / "well-formed.md")])
+def test_validate_build_order_json_ok(capsys) -> None:
+    rc = workflow_cmd.main(["validate-build-order", "--json", str(FIXTURES / "well-formed.md")])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is True
@@ -49,8 +51,8 @@ def test_validate_roadmap_json_ok(capsys) -> None:
     assert payload["problems"] == []
 
 
-def test_validate_roadmap_json_invalid(capsys) -> None:
-    rc = workflow_cmd.main(["validate-roadmap", "--json", str(FIXTURES / "cyclic.md")])
+def test_validate_build_order_json_invalid(capsys) -> None:
+    rc = workflow_cmd.main(["validate-build-order", "--json", str(FIXTURES / "cyclic.md")])
     assert rc != 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is False
@@ -58,8 +60,8 @@ def test_validate_roadmap_json_invalid(capsys) -> None:
     assert any(p["kind"] == "cycle" for p in payload["problems"])
 
 
-def test_validate_roadmap_human_path_still_works(capsys) -> None:
+def test_validate_build_order_human_path_still_works(capsys) -> None:
     # Without --json the existing human/exit-coded path is unchanged.
-    rc = workflow_cmd.main(["validate-roadmap", str(FIXTURES / "well-formed.md")])
+    rc = workflow_cmd.main(["validate-build-order", str(FIXTURES / "well-formed.md")])
     assert rc == 0
-    assert "roadmap OK" in capsys.readouterr().out
+    assert "build order OK" in capsys.readouterr().out

@@ -14,6 +14,7 @@ from typing import Annotated
 
 import typer
 from lore_workflow.board_parser import BoardParseError, parse_board
+from lore_workflow.build_order_validator import build_order_counts, validate_build_order
 from lore_workflow.epic_policy import resolve_epic_policy
 from lore_workflow.ledger import (
     KINDS,
@@ -39,7 +40,6 @@ from lore_workflow.risk import (
     parse_unified_diff,
     repo_is_local,
 )
-from lore_workflow.roadmap_validator import roadmap_counts, validate_roadmap
 from lore_workflow.seed_epic import compose_seed_lift
 from rich.console import Console
 
@@ -49,17 +49,16 @@ console = Console()
 
 app = typer.Typer(
     add_completion=False,
-    help="Deterministic epic-workflow gates: roadmap validation, PRD scaffolding.",
+    help="Deterministic epic-workflow gates: build-order validation, PRD scaffolding.",
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
 
 
-@app.command("validate-roadmap")
-def validate_roadmap_cmd(
-    path: str = typer.Argument(
-        "-", help="Path to the epic body Markdown, or '-' to read stdin."
-    ),
+@app.command("validate-roadmap", hidden=True)  # old name of validate-build-order
+@app.command("validate-build-order")
+def validate_build_order_cmd(
+    path: str = typer.Argument("-", help="Path to the epic body Markdown, or '-' to read stdin."),
     as_json: bool = typer.Option(
         False,
         "--json",
@@ -67,13 +66,13 @@ def validate_roadmap_cmd(
         "Exit code is unchanged (0 valid, 1 invalid).",
     ),
 ) -> None:
-    """Validate an epic's roadmap table: required columns, fully-qualified
+    """Validate an epic's build-order table: required columns, fully-qualified
     `owner/repo#n` issue refs, resolvable blocked-by edges, acyclic DAG.
     """
     text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
-    result = validate_roadmap(text)
+    result = validate_build_order(text)
     if as_json:
-        counts = roadmap_counts(result)
+        counts = build_order_counts(result)
         # stdout, not rich console: keep it parse-clean (no markup/wrapping).
         print(
             json.dumps(
@@ -82,9 +81,7 @@ def validate_roadmap_cmd(
                     "rows": counts.rows,
                     "repos": counts.repos,
                     "edges": counts.edges,
-                    "problems": [
-                        {"kind": p.kind, "message": p.message} for p in result.problems
-                    ],
+                    "problems": [{"kind": p.kind, "message": p.message} for p in result.problems],
                 }
             )
         )
@@ -93,11 +90,11 @@ def validate_roadmap_cmd(
         return
     if result.ok:
         console.print(
-            f"[green]roadmap OK[/green]: {len(result.rows)} feature(s), "
+            f"[green]build order OK[/green]: {len(result.rows)} feature(s), "
             "dependency DAG is acyclic"
         )
         return
-    console.print("[red]roadmap INVALID[/red]:")
+    console.print("[red]build order INVALID[/red]:")
     for problem in result.problems:
         console.print(f"  - {problem.kind}: {problem.message}")
     raise typer.Exit(code=1)
@@ -145,9 +142,7 @@ def prd_ship_cmd(
 
 @app.command("epic-policy")
 def epic_policy_cmd(
-    repo_root: str = typer.Argument(
-        ".", help="Repo root to resolve policy for (default: cwd)."
-    ),
+    repo_root: str = typer.Argument(".", help="Repo root to resolve policy for (default: cwd)."),
 ) -> None:
     """Emit a repo's epic-merge policy as JSON: {target_branch, deploy_gate}.
 
@@ -157,11 +152,7 @@ def epic_policy_cmd(
     """
     policy = resolve_epic_policy(Path(repo_root))
     # stdout, not rich console: keep it parse-clean for machine consumers.
-    print(
-        json.dumps(
-            {"target_branch": policy.target_branch, "deploy_gate": policy.deploy_gate}
-        )
-    )
+    print(json.dumps({"target_branch": policy.target_branch, "deploy_gate": policy.deploy_gate}))
 
 
 @app.command("seed-lift")
@@ -192,9 +183,7 @@ def seed_lift_cmd(
 
 @app.command("parse-board")
 def parse_board_cmd(
-    path: str = typer.Argument(
-        "-", help="Path to the board comment body, or '-' to read stdin."
-    ),
+    path: str = typer.Argument("-", help="Path to the board comment body, or '-' to read stdin."),
 ) -> None:
     """Parse a build epic-mode supervision-board comment into JSON rows.
 

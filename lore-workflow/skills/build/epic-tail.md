@@ -1,6 +1,6 @@
 # Epic tail
 
-Read this when every roadmap row is `merged` and epic-branch CI is green.
+Read this when every build-order row is `merged` and epic-branch CI is green.
 
 ## 1. Open the epic PR
 
@@ -14,7 +14,9 @@ List the open lines of the board's `## Ledger` section with `lore workflow ledge
 - **User reachable:** present the lines in one message, as [loop-wrap-up.md](loop-wrap-up.md)
   step 3 does. Write what the user approves onto `epic/<issue>`. An ADR fills `Holds` and
   `Revisit if` per [ADR-FORMAT.md](../grilling/ADR-FORMAT.md).
-- **User not reachable:** file each open line through `file-issue`, then set it `filed`.
+- **User not reachable:** file each open line through `file-issue`, then set it `filed`. Send a
+  feature-idea line to `lore roadmap add` on `epic/<issue>` instead, commit it there, and set it
+  `approved`.
 - An epic PR that carries a new ADR merges only after the merge approval in `SKILL.md`
   (decision gate). An unreachable user leaves it open.
 
@@ -34,6 +36,8 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
   `<target_branch>...epic/<issue>`. It commits onto `epic/<issue>` and marks the PRD shipped with
   `lore workflow prd-ship`. The docs step may escalate, or stay red after one fix pass. Then drop
   its commit, merge without it, and run `document` in catch-up mode afterwards.
+- **Roadmap.** Remove the shipped roadmap item from its `ROADMAP.md`: the item that links this
+  epic or its PRD. Commit the change on `epic/<issue>`.
 - **Whole-epic review**, only for an epic with three or more features. Follow
   [review.md](review.md) on the epic PR, after the docs commit. The reviewer checks
   cross-feature consistency: naming, duplicate helpers, conflicting edits to shared files. It
@@ -75,9 +79,10 @@ history of the epic branch.
 
 Verify each item, then report:
 
-- [ ] every roadmap checkbox ticked, every sub-issue closed
+- [ ] every build-order checkbox ticked, every sub-issue closed
 - [ ] the epic PR merged; the handover section names its merge SHA
 - [ ] the ledger check passes on the board
 - [ ] the board shows no `queued` or `running` row
 - [ ] the PRD status is `shipped`, or the catch-up docs PR is open
+- [ ] no roadmap item links the epic or its PRD any more
 - [ ] every feature branch and worktree gone, local and remote

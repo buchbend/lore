@@ -28,7 +28,8 @@ Resolve the tier with `lore tier resolve <tier>` and pass the result as the mode
 reads the diff and the linked sub-issue. In `epic` mode, keep one reviewer per batch and level.
 Send each later PR of that batch to it with `SendMessage`, so it sees siblings side by side.
 
-The reviewer judges three things only: correctness, acceptance criteria, scope. It runs
+The reviewer judges three things only: correctness, acceptance criteria, scope. A roadmap item
+that `lore roadmap add` filed under `## Not placed yet` is in scope. The reviewer runs
 `code-review` on the PR first, never with `--comment` or `--fix`. A confirmed correctness
 finding fails the line. Cleanup findings go in the note only.
 

@@ -1,4 +1,4 @@
-"""Tests for `lore_workflow.roadmap_validator` — the roadmap-DAG gate.
+"""Tests for `lore_workflow.build_order_validator` — the build-order DAG gate.
 
 Ported from ccat-agent-workflow's `tests/test_roadmap_validator.py`. Only the
 behavioural half is ported: that repo's prose-gate checks against its own
@@ -10,9 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from lore_workflow import roadmap_validator as mod
+from lore_workflow import build_order_validator as mod
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "roadmaps"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "build_orders"
 
 
 def _fixture(name: str) -> str:
@@ -29,13 +29,13 @@ def _kinds(result: mod.ValidationResult) -> set[str]:
 
 
 def test_well_formed_passes() -> None:
-    result = mod.validate_roadmap(_fixture("well-formed.md"))
-    assert result.ok, f"well-formed roadmap must pass; problems={result.problems}"
+    result = mod.validate_build_order(_fixture("well-formed.md"))
+    assert result.ok, f"well-formed build order must pass; problems={result.problems}"
     assert not result.problems
 
 
 def test_well_formed_rows_parsed() -> None:
-    result = mod.validate_roadmap(_fixture("well-formed.md"))
+    result = mod.validate_build_order(_fixture("well-formed.md"))
     assert len(result.rows) == 3
     first = result.rows[0]
     assert first.issue == "ccatobs/widget#12"
@@ -45,18 +45,18 @@ def test_well_formed_rows_parsed() -> None:
 
 
 def test_or_raise_returns_on_valid() -> None:
-    result = mod.validate_roadmap_or_raise(_fixture("well-formed.md"))
+    result = mod.validate_build_order_or_raise(_fixture("well-formed.md"))
     assert result.ok
 
 
 # ---------------------------------------------------------------------------
-# Cross-repo roadmap (fully-qualified edges resolve across repos)
+# Cross-repo build order (fully-qualified edges resolve across repos)
 # ---------------------------------------------------------------------------
 
 
 def test_cross_repo_passes() -> None:
-    result = mod.validate_roadmap(_fixture("cross-repo.md"))
-    assert result.ok, f"cross-repo roadmap must pass; problems={result.problems}"
+    result = mod.validate_build_order(_fixture("cross-repo.md"))
+    assert result.ok, f"cross-repo build order must pass; problems={result.problems}"
     repos = {row.repo for row in result.rows}
     assert repos == {"producer", "consumer"}, "cross-repo rows span >1 repo"
 
@@ -64,7 +64,7 @@ def test_cross_repo_passes() -> None:
 def test_cross_repo_full_ref_edges_resolve() -> None:
     """A fully-qualified blocked-by resolves even with a number shared across
     repos (producer#5 vs consumer#5)."""
-    result = mod.validate_roadmap(_fixture("cross-repo.md"))
+    result = mod.validate_build_order(_fixture("cross-repo.md"))
     assert "dangling_edge" not in _kinds(result)
 
 
@@ -74,39 +74,37 @@ def test_cross_repo_full_ref_edges_resolve() -> None:
 
 
 def test_malformed_columns_fails() -> None:
-    result = mod.validate_roadmap(_fixture("malformed-columns.md"))
+    result = mod.validate_build_order(_fixture("malformed-columns.md"))
     assert not result.ok
     assert "columns" in _kinds(result), "missing required column must be reported"
 
 
 def test_non_fq_ref_fails() -> None:
-    result = mod.validate_roadmap(_fixture("malformed-non-fq.md"))
+    result = mod.validate_build_order(_fixture("malformed-non-fq.md"))
     assert not result.ok
-    assert "non_fq_ref" in _kinds(result), (
-        "an Issue ref lacking owner/repo must be rejected"
-    )
+    assert "non_fq_ref" in _kinds(result), "an Issue ref lacking owner/repo must be rejected"
 
 
 def test_dangling_edge_fails() -> None:
-    result = mod.validate_roadmap(_fixture("malformed-dangling.md"))
+    result = mod.validate_build_order(_fixture("malformed-dangling.md"))
     assert not result.ok
     assert "dangling_edge" in _kinds(result)
 
 
 def test_cyclic_fails() -> None:
-    result = mod.validate_roadmap(_fixture("cyclic.md"))
+    result = mod.validate_build_order(_fixture("cyclic.md"))
     assert not result.ok
     assert "cycle" in _kinds(result)
 
 
 def test_or_raise_raises_on_invalid() -> None:
-    with pytest.raises(mod.RoadmapError) as exc:
-        mod.validate_roadmap_or_raise(_fixture("cyclic.md"))
+    with pytest.raises(mod.BuildOrderError) as exc:
+        mod.validate_build_order_or_raise(_fixture("cyclic.md"))
     assert exc.value.problems
 
 
 def test_missing_table_returns_no_rows() -> None:
-    result = mod.validate_roadmap("# no table here")
+    result = mod.validate_build_order("# no table here")
     assert not result.ok
     assert result.rows == []
 
@@ -117,7 +115,7 @@ def test_missing_table_returns_no_rows() -> None:
 
 
 def test_result_and_problem_shape() -> None:
-    result = mod.validate_roadmap(_fixture("cyclic.md"))
+    result = mod.validate_build_order(_fixture("cyclic.md"))
     assert hasattr(result, "ok")
     assert hasattr(result, "problems")
     assert hasattr(result, "rows")
@@ -139,3 +137,9 @@ def test_cli_returns_zero_on_valid() -> None:
 
 def test_cli_returns_nonzero_on_invalid() -> None:
     assert mod.main([str(FIXTURES / "cyclic.md")]) != 0
+
+
+def test_legacy_roadmap_heading_still_accepted() -> None:
+    body = _fixture("well-formed.md").replace("## Build order", "## Roadmap")
+    assert "## Build order" not in body
+    assert mod.validate_build_order(body).ok

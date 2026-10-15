@@ -155,5 +155,5 @@ bodies and the PR bodies its teammates open — [`document`](../document/SKILL.m
 [`handover`](../handover/SKILL.md) file through this skill instead of writing issue or PR
 bodies inline.
 
-Machine-readable text stays exempt: roadmap tables, board comments, and reviewer
+Machine-readable text stays exempt: build-order tables, board comments, and reviewer
 verdicts are parsed, not read, so the writing rules do not apply to them.

@@ -52,15 +52,15 @@ orient → grilling → to-epic → build → document
 ```
 
 with `handover` at any stop. `build` runs in three modes: `loop` for fast
-rounds, `issue` for one clear issue, `epic` for a roadmap. `tdd` is the
+rounds, `issue` for one clear issue, `epic` for a build order. `tdd` is the
 discipline every mode follows.
 More reading:
 
 - [`docs/conventions.md`](docs/conventions.md): the full chain, where each
   fact lives, and the tier vocabulary.
 - [`docs/how-to/`](docs/how-to/): task recipes. Run an epic, use the fast
-  path, resume a build run, onboard a repo, file facts as artifacts, search
-  notes and issues, record a decision, measure token use.
+  path, resume a build run, onboard a repo, file facts as artifacts, keep a
+  roadmap, search notes and issues, record a decision, measure token use.
 - [`docs/explanation/`](docs/explanation/): the reasons behind the design.
 - [`lore-workflow/README.md`](lore-workflow/README.md): the skill roster.
 

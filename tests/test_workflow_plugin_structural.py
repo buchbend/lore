@@ -312,3 +312,56 @@ def test_skill_line_budget(skill_dir: Path) -> None:
     assert n_lines <= cap, (
         f"{skill_dir.name}/SKILL.md: {n_lines} lines exceeds its {cap}-line budget"
     )
+
+
+# --- PRD 0018 (the roadmap): each workflow skill names its roadmap step -----
+
+
+def _joined(rel: str) -> str:
+    """Whitespace-joined text of a file under skills/, so wrapped prose matches."""
+    return " ".join((SKILLS_ROOT / rel).read_text(encoding="utf-8").split())
+
+
+def test_orient_reads_the_roadmap_and_takes_an_item_as_its_seed() -> None:
+    text = _joined("orient/SKILL.md")
+    assert "the `ROADMAP.md` at the repo root" in text
+    assert "component directory" in text
+    assert "names a roadmap item, the item is the seed" in text
+
+
+def test_orient_reads_a_milestone_ref_with_lore_read() -> None:
+    text = _joined("orient/SKILL.md")
+    assert "milestone ref" in text
+    assert "`lore_read`" in text
+    assert "Without a source, the ref stays plain text" in text
+
+
+def test_grilling_asks_which_roadmap_item_the_plan_serves() -> None:
+    text = _joined("grilling/SKILL.md")
+    assert "which roadmap item the plan serves" in text
+    assert "`ROADMAP.md`" in text
+    assert "For one change, name the item in the issue body" in text
+
+
+def test_to_epic_links_the_prd_and_epic_down_from_the_roadmap_item() -> None:
+    text = _joined("to-epic/SKILL.md")
+    publish = text[text.index("### 6. Publish") : text.index("## PRD file template")]
+    assert "add the PRD and epic links to the item" in publish
+    assert "`ROADMAP.md`" in publish
+    assert "The PRD gets no field that points up to the item" in publish
+
+
+def test_build_removes_the_shipped_roadmap_item_at_every_finish_point() -> None:
+    skill = _joined("build/SKILL.md")
+    issue_mode = skill[skill.index("## Mode `issue`") : skill.index("## Mode `epic`")]
+    finish_points = {
+        "issue": issue_mode,
+        "loop": _joined("build/loop-wrap-up.md"),
+        "epic": _joined("build/epic-tail.md"),
+    }
+    for mode, text in finish_points.items():
+        assert "Remove the shipped roadmap item from its `ROADMAP.md`" in text, mode
+        assert "commit the change" in text.lower(), mode
+    assert "if the issue ships one: the item that links the issue or that the issue names" in (
+        issue_mode
+    )

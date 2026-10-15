@@ -23,9 +23,9 @@ orient → grilling → to-epic → build → document
 
 | Step | What it does |
 |------|--------------|
-| `orient` | The first step. The session does its own homework, then reflects its understanding back for confirmation. A light mode ("brief me") pulls only the context pack and hands one change to `build`. |
+| `orient` | The first step. The session does its own homework, then reflects its understanding back for confirmation. A light mode ("brief me") pulls only the roadmap and the context pack, and hands one change to `build`. |
 | `grilling` | An interview that stress-tests a plan. It also sharpens the domain model: it writes approved terms into `CONTEXT.md` and ADRs with `Holds` and `Revisit if`. |
-| `to-epic` | The human checkpoint. Writes the PRD under `docs/prd/`, the epic tracker issue and one sub-issue per feature, with the roadmap table `build` reads. |
+| `to-epic` | The human checkpoint. Writes the PRD under `docs/prd/`, the epic tracker issue and one sub-issue per feature, with the build-order table `build` reads. |
 | `build` | Builds code in one of three modes. See below. |
 | `document` | Brings the Diátaxis docs in line with the code. At the epic tail it runs before the merge and marks the PRD shipped. |
 | `handover` | Writes the handover section for work that stops before its finish point, and turns follow-up work into a seed issue. |
@@ -43,7 +43,7 @@ workflow uses it but does not ship it.
 |------|----------|--------------|
 | `loop` | The user reacts to a running feature in fast rounds. | One wrap-up PR from `loop/<slug>`. Rounds merge locally; nothing else reaches the remote. |
 | `issue` | One written, clear issue. | One PR. The agent merges it after the user approves in the conversation. |
-| `epic` | An epic tracker issue with a roadmap. | The epic PR, then the handover section in the epic issue. |
+| `epic` | An epic tracker issue with a build order. | The epic PR, then the handover section in the epic issue. |
 
 Every mode keeps a ledger of ADR candidates, term candidates and
 left-on-the-table items. `lore workflow ledger-check` blocks each finish
@@ -96,10 +96,10 @@ Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore setup scope
 The GitHub epic issue coordinates the work. It is not the spec:
 
 - a one-paragraph summary that links the PRD;
-- the roadmap table (`# | Feature | Issue | Repo | Type | Blocked by`);
+- the build-order table (`# | Feature | Issue | Repo | Type | Blocked by`);
 - a checklist of the sub-issues.
 
-`build` reads the roadmap table to order the features. At the finish point
+`build` reads the build-order table to order the features. At the finish point
 it writes the handover section into the epic issue body.
 
 ### Reading the tracker with `gh`
