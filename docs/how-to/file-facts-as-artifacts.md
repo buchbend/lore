@@ -4,8 +4,8 @@
 Then nobody digs the fact out of a chat window later.
 
 Lore writes nothing into a wiki on its own. Agents and people file facts with
-`gh` and the `lore-workflow:file-issue` skill. Lore ships one filing command:
-`lore roadmap add` files a feature idea in the roadmap.
+`gh` and the `lore-workflow:file-issue` skill. `lore roadmap add` files a
+feature idea in the roadmap ([keep a roadmap](keep-a-roadmap.md)).
 The SessionStart directive tells the agent the filing rule below.
 
 ## Before you start

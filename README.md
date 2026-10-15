@@ -59,8 +59,8 @@ More reading:
 - [`docs/conventions.md`](docs/conventions.md): the full chain, where each
   fact lives, and the tier vocabulary.
 - [`docs/how-to/`](docs/how-to/): task recipes. Run an epic, use the fast
-  path, resume a build run, onboard a repo, file facts as artifacts, search
-  notes and issues, record a decision, measure token use.
+  path, resume a build run, onboard a repo, file facts as artifacts, keep a
+  roadmap, search notes and issues, record a decision, measure token use.
 - [`docs/explanation/`](docs/explanation/): the reasons behind the design.
 - [`lore-workflow/README.md`](lore-workflow/README.md): the skill roster.
 
