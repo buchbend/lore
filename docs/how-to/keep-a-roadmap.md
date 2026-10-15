@@ -53,7 +53,7 @@ order. Edit the file by hand. A dropped item moves back down to
 - `to-epic` adds the PRD and epic links to the item.
 - `build` removes the shipped item at its finish point, on the build branch. `CHANGELOG.md` and the shipped PRD keep the record.
 - An agent files a feature idea outside its task with `lore roadmap add`, through its pull request.
-- `handover` files a deferred feature idea the same way, on the branch of the work. An idea with findings worth keeping also gets a seed issue, and the item links the seed.
+- `handover` files a deferred feature idea the same way, on the open branch of the work. An idea with findings that a cold session would rediscover also gets a seed issue, and the item links the seed. Without an open branch, the seed holds the idea alone, and `to-epic` adds the item later.
 
 ## Name a milestone
 

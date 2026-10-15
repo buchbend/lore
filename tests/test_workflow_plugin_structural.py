@@ -346,7 +346,7 @@ def test_grilling_asks_which_roadmap_item_the_plan_serves() -> None:
 def test_to_epic_links_the_prd_and_epic_down_from_the_roadmap_item() -> None:
     text = _joined("to-epic/SKILL.md")
     publish = text[text.index("### 6. Publish") : text.index("## PRD file template")]
-    assert "add the PRD and epic links to the item" in publish
+    assert "add the PRD and epic links to it in its `ROADMAP.md`" in publish
     assert "`ROADMAP.md`" in publish
     assert "The PRD gets no field that points up to the item" in publish
 
