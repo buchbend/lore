@@ -95,6 +95,15 @@ def test_title_dot_and_empty(repo, capsys):
     assert "roadmap add:" in capsys.readouterr().err
 
 
+def test_title_keeps_closing_punctuation(repo):
+    """#519: a title that ends in ? or ! gets no extra dot."""
+    for title, want in (("Why?", "- **Why?**"), ("Done!", "- **Done!**")):
+        assert _add(title) == 0
+        assert want in (repo / "ROADMAP.md").read_text()
+    assert _add("Faster search") == 0
+    assert "- **Faster search.**" in (repo / "ROADMAP.md").read_text()
+
+
 def test_invariant_lib_imports_no_project_manage_package():
     """ADR 0018: no module under lib/ imports `pm_cli` (project-manage CLI) or any
     top-level package starting with `project_manage` (backend and its plugins such as
