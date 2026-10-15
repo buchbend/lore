@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.89.1] - 2026-10-15
+
+- **`lore workflow validate-roadmap` prints a deprecation line (#516).** The hidden alias writes one line on stderr that names `validate-build-order`. Stdout and exit codes stay identical to the new name.
+
 ## [0.89.0] - 2026-10-15
 
 Ships `lore-workflow` 0.17.0. Reinstall the CLI together with the plugins: the skills call two new commands.
