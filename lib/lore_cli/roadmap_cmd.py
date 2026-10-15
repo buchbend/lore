@@ -63,7 +63,8 @@ def add_cmd(
     if not title:
         typer.echo("roadmap add: the title is empty", err=True)
         raise typer.Exit(code=1)
-    item = f"- **{title}.**" + (f" {paragraph}" if paragraph else "")
+    end = "" if title.endswith(("?", "!")) else "."
+    item = f"- **{title}{end}**" + (f" {paragraph}" if paragraph else "")
     text = path.read_text(encoding="utf-8") if exists else _SKELETON
     atomic_write_text(path, _insert(text, item))
     typer.echo(f"roadmap add: wrote {path}")
