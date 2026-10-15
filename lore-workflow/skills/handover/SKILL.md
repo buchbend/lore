@@ -51,11 +51,12 @@ question.
 ## When work stops early
 
 1. **Resolve what you can.** Run `lore workflow ledger-check` (epic: pipe the board comment into
-   `lore workflow ledger-check -`). File each `left` line you can through
-   [`file-issue`](../file-issue/SKILL.md) and set it `filed` with `lore workflow ledger-set`.
-   In epic mode, add `--board -`, pipe the board comment in, and write the printed body back to
-   the comment; see [build's epic tail](../build/epic-tail.md) § 2. Leave ADR and term
-   candidates open for the next session; name them under **State**.
+   `lore workflow ledger-check -`). File each `left` line with a defect or a concrete change
+   through [`file-issue`](../file-issue/SKILL.md) and set it `filed` with `lore workflow
+   ledger-set`. Send a feature-idea line through § A deferred feature idea. In epic mode, add
+   `--board -`, pipe the board comment in, and write the printed body back to the comment; see
+   [build's epic tail](../build/epic-tail.md) § 2. Leave ADR and term candidates open for the next
+   session; name them under **State**.
 2. **Write the handover section** into its home. With no home, write a seed issue.
 3. **Write the logbook entry.** Run `lore log add --ref <ref> --text-file <file>` as
    [build's logbook.md](../build/logbook.md) says. The ref is the PR, the seed issue or
@@ -64,12 +65,23 @@ question.
    "<next ask>"` (epic: with `--path -`, pasted into the board's `## Ledger`).
 5. Tell the user that `/clear` is safe, and print the next step.
 
+## A deferred feature idea
+
+The filing rule sends a feature idea to the roadmap, not to an issue.
+
+- Run `lore roadmap add` on the branch of the work and commit the item there. Set its `left` line
+  `approved`.
+- An idea with findings that a cold session would rediscover also gets a seed issue. Write the
+  seed first; the roadmap item links it.
+- When no branch carries the work, the seed holds the idea alone. Its **Next step** names the
+  roadmap item for the next run's PR. Set the `left` line `filed <owner/repo#seed>`.
+
 ## Next run
 
 A `build` run reaches this step after its merge. Skip the step when the run filed no follow-ups.
 
 1. **Collect** the follow-ups: the `filed` ledger lines and the **Follow-ups** of the handover
-   section.
+   section. A roadmap item gets no next run; `orient` picks it up from the roadmap.
 2. **Group** them. Give each group one next run:
 
    | Group | Next run |
@@ -92,7 +104,8 @@ to rebuild. The new session forms the work through `orient → grilling → to-e
 decide scope here.
 
 1. **Harvest** the follow-up work from this session: new problems, deferred ideas, loose ends,
-   traps met. Take it from the context; do not interview.
+   traps met. Take it from the context; do not interview. A deferred feature idea follows
+   § A deferred feature idea.
 2. **Group** the threads into seeds, one future epic each. A small, clear follow-up needs no
    seed: file it as an issue. Confirm the grouping with the user.
 3. **Write** each seed in the template below. Make **Findings** rich; that is the handover value.

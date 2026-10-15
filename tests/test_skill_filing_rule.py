@@ -132,3 +132,36 @@ def test_loop_wrap_up_sends_a_kept_feature_idea_to_the_roadmap() -> None:
     text = _file("build/loop-wrap-up.md")
     assert "add a feature idea to the roadmap" in text
     assert "`lore roadmap add`" in text
+
+
+# --- handover follows the same rule (issue 517) ----------------------------
+
+
+def test_handover_files_only_a_defect_line_as_an_issue() -> None:
+    text = _text("handover")
+    assert "File each `left` line with a defect or a concrete change through" in text
+    assert "Send a feature-idea line through § A deferred feature idea" in text
+
+
+def test_handover_sends_a_feature_idea_to_the_roadmap_on_the_work_branch() -> None:
+    text = _text("handover")
+    assert "## A deferred feature idea" in text
+    assert "Run `lore roadmap add` on the branch of the work and commit the item there." in text
+    assert "Set its `left` line `approved`." in text
+
+
+def test_a_feature_idea_with_findings_gets_a_seed_the_roadmap_item_links() -> None:
+    text = _text("handover")
+    assert "also gets a seed issue. Write the seed first; the roadmap item links it." in text
+
+
+def test_without_a_branch_the_seed_names_the_roadmap_item() -> None:
+    text = _text("handover")
+    assert "When no branch carries the work, the seed holds the idea alone." in text
+    assert "Its **Next step** names the roadmap item for the next run's PR." in text
+
+
+def test_next_run_offers_no_run_for_a_roadmap_item() -> None:
+    assert "A roadmap item gets no next run; `orient` picks it up from the roadmap." in _text(
+        "handover"
+    )
