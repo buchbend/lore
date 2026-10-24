@@ -24,8 +24,8 @@ For any single setting, the resolution order is:
    `wiki_config.py`
 
 Note settings (frontmatter inside individual `.md` files) are a
-separate axis — they govern how a *single note* is interpreted, not
-how Lore is configured globally.
+separate axis. They govern how Lore reads a *single note*. They do not
+configure Lore globally.
 
 ---
 
@@ -47,9 +47,9 @@ above is unchanged.
 - `lore config schema` — list the settable keys and their expected types.
 
 All accept `--wiki <name>` to target that wiki's `<wiki>/.lore-wiki.yml` instead
-of the person's `~/.config/lore/config.yml`. On a rejected write the file on
-disk is left unchanged: an unknown key is rejected naming the nearest valid keys,
-and an invalid value is rejected naming the expected type/choices.
+of the person's `~/.config/lore/config.yml`. A rejected write leaves the file on
+disk unchanged. The rejection of an unknown key names the nearest valid keys.
+The rejection of an invalid value names the expected type or choices.
 
 ---
 
@@ -74,17 +74,16 @@ and an invalid value is rejected naming the expected type/choices.
 |-----|------|---------|-------------|
 | `LORE_ROOT` | path (default: `~/lore`) | many CLI commands + `lore_core/route.py` | `lore_core.config.get_lore_root()` |
 
-`get_lore_root()` returns env-or-default. CLI commands that *require*
-the user to have explicitly set `LORE_ROOT` should call
-`require_lore_root()` instead — that one errors when env is unset
-rather than silently falling back to `~/lore`.
+`get_lore_root()` returns env-or-default. A CLI command that *requires*
+an explicit `LORE_ROOT` calls `require_lore_root()` instead. That function
+errors when the env var is unset and does not fall back to `~/lore`.
 
 #### Curator
 
 | Var | Type | Default | Read in | Wins over |
 |-----|------|---------|---------|-----------|
 | `LORE_CURATOR_MODE` | `1` \| unset | unset | `lore_cli/hooks.py:_in_curator_mode` | (internal — set by the curator's own detached-subprocess spawns, not a user knob) |
-| `LORE_SUPPRESS_CAPTURE` | `1` \| unset | unset | `lore_cli/hooks.py:_capture_suppressed`, checked first thing in `capture()` | (dispatch contract — set by an orchestrator when it launches a teammate session whose transcript should not become its own standalone note; unset leaves capture unchanged) |
+| `LORE_SUPPRESS_CAPTURE` | `1` \| unset | unset | `lore_cli/hooks.py:_capture_suppressed`, checked first thing in `capture()` | (dispatch contract — an orchestrator sets it for a teammate session whose transcript must not become a standalone note. Unset leaves capture unchanged.) |
 
 #### Observability / runtime
 
@@ -187,9 +186,9 @@ Optional and committed. Holds exceptions only: `tracker`, `logbook` (sinks)
 and `sources`, by name, such as an opt-out from a sink. `resolve_route(cwd)`
 (`lib/lore_core/route.py`) reads the nearest one between the working
 directory and the repo root, ahead of the scope that matches the folder
-(ADR 0016). A `.lore.yml` does not choose the wiki or the scope: the route
-ignores a `wiki:` or `scope:` key there and adds a note that `lore status`
-prints.
+(ADR 0016). A `.lore.yml` does not choose the wiki or the scope. The route
+ignores a `wiki:` or `scope:` key there. It adds a note, and `lore status`
+prints the note.
 
 ### 6. `.claude-plugin/plugin.json`
 
@@ -221,9 +220,9 @@ Each source has a justified role:
   an installer artifact.
 
 The config layer that *should* be unified is "env override → file
-override → default" — and that already is, for every env var listed
-above. The unification is a *pattern* (in `_resolve_mode`); when a new
-env-overridable setting is added, follow the same shape.
+override → default". It already is, for every env var listed above.
+The unification is a *pattern* (in `_resolve_mode`). Follow the same
+shape for a new env-overridable setting.
 
 ---
 
