@@ -2,6 +2,9 @@
 
 Companion plugin to [`lore`](../README.md): deterministic epic/PRD/TDD
 workflow skills, ported from `ccatobs/ccat-agent-workflow` (see PRD 0003).
+`grilling` and `tdd`, and the conversation-to-PRD idea behind `to-epic`, build on
+Matt Pocock's [`mattpocock/skills`](https://github.com/mattpocock/skills) (MIT). See
+[THIRD-PARTY.md](./THIRD-PARTY.md) for what is his and what is ours.
 
 **Dependency direction: `lore-workflow` depends on `lore`; `lore` never
 depends on `lore-workflow`.** Workflow skills call `lore`'s CLI/MCP surface

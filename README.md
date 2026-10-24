@@ -432,6 +432,15 @@ No files move. If your vault does not yet match the canonical shape,
 
 [![Star History Chart](https://api.star-history.com/svg?repos=buchbend/lore&type=Date)](https://star-history.com/#buchbend/lore&Date)
 
+## Credits
+
+The grilling method, the shared-language glossary (`CONTEXT.md`), the ADR format and the
+TDD skill in `lore-workflow` come from Matt Pocock's
+[`mattpocock/skills`](https://github.com/mattpocock/skills) (MIT). The step from a
+conversation to a PRD and issues is his idea too. The rest of `lore` and `lore-workflow`
+is our own. [lore-workflow/THIRD-PARTY.md](./lore-workflow/THIRD-PARTY.md) says exactly
+which parts are his, what we changed, and holds his licence.
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).
