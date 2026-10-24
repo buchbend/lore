@@ -61,6 +61,14 @@ by capture with no LLM call. It is what `lore_drill` reads to answer
 The block is derived and rebuildable, and stays machine-local with the
 rest of the ledger. Only the wiki's notes are ever pushed.
 
+**Token records stay local too.** The SessionEnd hook appends one token
+record per session to `<lore_root>/.lore/token-usage.jsonl`, also a sibling
+of `wiki/`. A record holds token counts per phase and served model, and the
+model and effort each subagent spawn asked for. `lore trace tokens` and the
+`tokens` section of `lore status` read the file. Appends take a lock on
+`token-usage.lock` next to it, because a long record exceeds the size of an
+atomic append.
+
 ---
 
 ## Concurrency-safety guarantees

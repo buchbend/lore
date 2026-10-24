@@ -68,6 +68,14 @@
             "command": "lore hook capture --event session-end"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook token-usage"
+          }
+        ]
       }
     ],
     "Stop": [

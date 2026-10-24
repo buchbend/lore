@@ -1,4 +1,4 @@
-"""Claude Code hook dispatch — the seven `lore hook ...` entry points.
+"""Claude Code hook dispatch — the eight `lore hook ...` entry points.
 
 Each command is a thin shell: resolve cwd, read the stdin payload, check the
 suppression toggles, delegate, emit. The work itself lives in the domain
@@ -17,6 +17,7 @@ Code process.
     lore hook spawn-model-gate
     lore hook context-log
     lore hook capture --event ...
+    lore hook token-usage
 
 Exposed via `lore_cli.__main__` dispatch (see subcommand wiring there).
 """
@@ -332,6 +333,7 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _spawn_detached_transcript_sync,
     _spawn_detached_wiki_pull,
     _spawn_logbook_flush,
+    _spawn_token_usage_record,
     _stamp_within_cooldown,
     _write_stamp,
 )
@@ -747,6 +749,43 @@ def cmd_spawn_model_gate() -> None:
         return
     sys.stderr.write(deny_message)
     raise typer.Exit(code=2)
+
+
+@hook_app.command("token-usage")
+def cmd_token_usage() -> None:
+    """SessionEnd hook: append the session's token record to ``.lore/token-usage.jsonl``.
+
+    Hands the transcript to a detached child and returns at once. Writes
+    nothing while ``/lore:off all`` mutes the session. Never fails the hook.
+    """
+    payload = _read_hook_payload()
+    if _session_off_all():
+        return
+    session, transcript = payload.get("session_id"), payload.get("transcript_path")
+    if not (isinstance(session, str) and session and isinstance(transcript, str) and transcript):
+        return
+    try:
+        lore_root = get_lore_root()
+    except Exception:  # noqa: BLE001 - no vault, nowhere to record
+        return
+    cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else ""
+    _spawn_token_usage_record(lore_root, session, transcript, cwd)
+
+
+@hook_app.command("token-usage-record", hidden=True)
+def cmd_token_usage_record(
+    session: str = typer.Option(..., "--session"),
+    transcript: Path = typer.Option(..., "--transcript"),
+    cwd: str = typer.Option("", "--cwd"),
+) -> None:
+    """Background child: count one transcript and append its token record."""
+    from lore_core.token_usage import record_session
+
+    if not transcript.is_file():
+        return
+    # Statistics never surface as a hook failure.
+    with contextlib.suppress(Exception):
+        record_session(get_lore_root(), session, transcript, cwd=cwd)
 
 
 @hook_app.command("context-log")

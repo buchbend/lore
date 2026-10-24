@@ -23,16 +23,24 @@ Rules:
   tool_use gets its own row, ``agent:<meta description>``. Agents spawned by a
   subagent get their own rows the same way.
 - Each phase start makes a new row, even when a name repeats.
+- Each row also splits its tokens by the model that served each message
+  (``message.model``; ``?`` when the line carries none). An agent row keeps
+  the ``model`` and ``effort`` its spawn asked for, so a reader can compare
+  the request with the model that answered.
 """
 
 from __future__ import annotations
 
 import glob
 import json
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _AGENT_TOOLS = {"Task", "Agent"}
+# Claude Code writes this as the model of messages it makes up itself
+# (an interrupted turn, an API error); they carry no billed tokens.
+_SYNTHETIC = "<synthetic>"
 
 
 @dataclass
@@ -43,21 +51,70 @@ class PhaseTokens:
     output: int = 0
     cache_read: int = 0
     cache_write: int = 0
+    # The part of ``cache_write`` that went to the 1-hour cache, which bills
+    # higher than the 5-minute one.
+    cache_write_1h: int = 0
+    models: dict[str, PhaseTokens] = field(default_factory=dict)
+    requested_model: str | None = None
+    requested_effort: str | None = None
 
     @property
     def total(self) -> int:
         return self.input + self.output + self.cache_read + self.cache_write
 
-    def as_dict(self) -> dict:
+    def counts(self) -> dict:
         return {
-            "name": self.name,
             "messages": self.messages,
             "input": self.input,
             "output": self.output,
             "cache_read": self.cache_read,
             "cache_write": self.cache_write,
+            "cache_write_1h": self.cache_write_1h,
             "total": self.total,
         }
+
+    def as_dict(self) -> dict:
+        data = {"name": self.name, **self.counts()}
+        data["models"] = {m: u.counts() for m, u in self.models.items()}
+        if self.requested_model or self.requested_effort:
+            data["requested"] = {"model": self.requested_model, "effort": self.requested_effort}
+        return data
+
+    @property
+    def model_mismatch(self) -> bool:
+        """True when the spawn asked for a model and none of its messages ran on it."""
+        if not self.requested_model:
+            return False
+        served = [m for m in self.models if m != "?"]
+        return bool(served) and not any(model_matches(self.requested_model, m) for m in served)
+
+
+def model_matches(requested: str, served: str) -> bool:
+    """Whether ``served`` is the model a spawn's ``requested`` value names.
+
+    A spawn may name a full id (``claude-sonnet-5-5``) or an alias
+    (``sonnet``); a served id may carry a suffix (``[1m]``, a date).
+    ``inherit`` asks for the session's model, which a subagent file alone
+    cannot confirm, so it always matches.
+    """
+    want, got = requested.strip().lower(), served.strip().lower()
+    if want == "inherit":
+        return True
+    if want.startswith("claude-"):
+        return is_variant_of(got, want)
+    return want in got
+
+
+def is_variant_of(model: str, family: str) -> bool:
+    """``model`` is ``family`` itself, or ``family`` plus a date or a ``[...]`` suffix.
+
+    ``claude-sonnet-5`` is not a variant of ``claude-sonnet-5-5``'s family,
+    nor the other way round.
+    """
+    if not model.startswith(family):
+        return False
+    rest = model.split("[", 1)[0].removeprefix(family)
+    return rest == "" or bool(re.fullmatch(r"-\d{8}", rest))
 
 
 def _phase_name(block: dict) -> str | None:
@@ -91,12 +148,32 @@ def _blocks(message: dict):
     return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
 
 
-def _add(target: PhaseTokens, usage: dict) -> None:
+def _count(target: PhaseTokens, usage: dict) -> None:
     target.messages += 1
     target.input += _int(usage.get("input_tokens"))
     target.output += _int(usage.get("output_tokens"))
     target.cache_read += _int(usage.get("cache_read_input_tokens"))
     target.cache_write += _int(usage.get("cache_creation_input_tokens"))
+    creation = usage.get("cache_creation")
+    if isinstance(creation, dict):
+        target.cache_write_1h += _int(creation.get("ephemeral_1h_input_tokens"))
+
+
+def _add(target: PhaseTokens, message: dict) -> None:
+    usage = message["usage"]
+    _count(target, usage)
+    model = message.get("model") if isinstance(message.get("model"), str) else "?"
+    if model != _SYNTHETIC:
+        _count(target.models.setdefault(model, PhaseTokens(model)), usage)
+
+
+def _agent_row(name: str, block: dict) -> PhaseTokens:
+    inp = block.get("input") or {}
+    row = PhaseTokens(name)
+    for attr, key in (("requested_model", "model"), ("requested_effort", "effort")):
+        if isinstance(inp.get(key), str) and inp[key].strip():
+            setattr(row, attr, inp[key].strip())
+    return row
 
 
 def _subagent_files(path: Path) -> list[Path]:
@@ -126,7 +203,7 @@ def trace_tokens(path: Path) -> list[PhaseTokens]:
         if isinstance(usage, dict) and (mid is None or mid not in seen):
             if mid is not None:
                 seen.add(mid)
-            _add(last_agent if sidechain and last_agent else current, usage)
+            _add(last_agent if sidechain and last_agent else current, message)
 
         if sidechain:
             continue
@@ -134,7 +211,7 @@ def trace_tokens(path: Path) -> list[PhaseTokens]:
             name = _phase_name(block)
             if not name:
                 continue
-            row = PhaseTokens(name)
+            row = _agent_row(name, block) if name.startswith("agent:") else PhaseTokens(name)
             phases.append(row)
             if name.startswith("agent:"):
                 by_tool_use[block.get("id", "")] = row
@@ -154,7 +231,7 @@ def trace_tokens(path: Path) -> list[PhaseTokens]:
             for block in _blocks(message):
                 name = _phase_name(block)
                 if name and name.startswith("agent:") and block.get("id") not in by_tool_use:
-                    row = PhaseTokens(name)
+                    row = _agent_row(name, block)
                     phases.append(row)
                     by_tool_use[block["id"]] = row
         row = by_tool_use.get(meta.get("toolUseId", ""))
@@ -169,7 +246,7 @@ def trace_tokens(path: Path) -> list[PhaseTokens]:
             if isinstance(usage, dict) and (mid is None or mid not in seen):
                 if mid is not None:
                     seen.add(mid)
-                _add(row, usage)
+                _add(row, message)
     return phases
 
 

@@ -1,7 +1,7 @@
 """``lore status`` — unified health dashboard (issue #193).
 
 The single glanceable "is Lore healthy right now?" surface. One line per
-concern across six sections, every alert paired with the exact drill-down
+concern across seven sections, every alert paired with the exact drill-down
 command (PRD 0005, "Dashboard grammar"):
 
     lore: active · private/proj:test · routed at ~/project
@@ -16,6 +16,9 @@ command (PRD 0005, "Dashboard grammar"):
     retention
       · hot 0.0/10 MB · janitor 5m ago
 
+    tokens
+      · 7d: 14 sessions · about $38.20 · opus-5-5 81% · sonnet-5-5 19%
+
     news
       · nothing new
 
@@ -26,8 +29,8 @@ Every row here reflects a state some code writes. A row whose producer is
 gone is a defect, not a blank: issue #377 removed the four capture rows
 and the flushes panel the compose pipeline used to feed.
 
-Reads only — the event spine (#185), retention janitor status (#190), and
-per-wiki git state.
+Reads only — the event spine (#185), retention janitor status (#190),
+the token records, and per-wiki git state.
 Absorbs ``lore news`` (drain events for the current session, cursor
 advance preserved). Rendered as plain text (no ANSI) so it degrades
 cleanly for non-TTY / ``--plain`` and scripting. Exit code is 0 when
@@ -212,6 +215,44 @@ def _retention_lines(lore_root: Path, now: datetime) -> list[str]:
     if failed:
         msg += f" · {failed} failed deletion(s)"
     return [_line(glyph, msg)]
+
+
+# ---------------------------------------------------------------------------
+# tokens section — the token records the SessionEnd hook writes
+# ---------------------------------------------------------------------------
+
+_TOKEN_DAYS = 7
+
+
+def _token_summary(lore_root: Path, now: datetime):
+    from lore_core.root_config import load_root_config
+    from lore_core.token_usage import load_records, summarize
+
+    prices = load_root_config(lore_root).tokens.prices
+    since = now - timedelta(days=_TOKEN_DAYS)
+    return summarize(load_records(lore_root), since=since, prices=prices)
+
+
+def _token_lines(lore_root: Path, now: datetime) -> list[str]:
+    summary = _token_summary(lore_root, now)
+    if not summary.sessions:
+        return [_line(_HEALTHY, f"{_TOKEN_DAYS}d: no sessions recorded yet")]
+    cost = summary.total.cost
+    noun = "session" if summary.sessions == 1 else "sessions"
+    parts = [f"{_TOKEN_DAYS}d: {summary.sessions} {noun}", f"about ${cost:.2f}"]
+    ranked = sorted(summary.by_model.items(), key=lambda kv: -kv[1].cost)
+    if cost:
+        parts += [f"{m.removeprefix('claude-')} {b.cost / cost:.0%}" for m, b in ranked[:3]]
+    lines = [_line(_HEALTHY, " · ".join(parts))]
+    if summary.mismatches:
+        lines.append(
+            _line(
+                _WARN,
+                f"{len(summary.mismatches)} subagent(s) ran on a different model than "
+                "requested · run: lore trace tokens",
+            )
+        )
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +477,7 @@ def _json_payload(state: CaptureState, lore_root: Path, now: datetime, offline: 
 
     data = _state_to_json(state)
     data["retention"] = read_janitor_status(lore_root)
+    data["tokens"] = {"days": _TOKEN_DAYS, **_token_summary(lore_root, now).as_dict()}
     wikis: list[dict] = []
     for d in list_wikis(lore_root):
         h = wiki_health(d, offline=offline)
@@ -510,6 +552,9 @@ def status(
         "",
         "retention",
         *_retention_lines(lore_root, now),
+        "",
+        "tokens",
+        *_token_lines(lore_root, now),
         "",
         "news",
         *_news_lines(lore_root, resolved_cwd),

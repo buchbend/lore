@@ -139,6 +139,10 @@ it and deletes them. Subsections:
 - `tiers.overrides.<host>.<tier>` — override the shipped model-tier table
   (`lib/lore_core/tiers/table.py`) for one host/tier cell; see
   `docs/model-tiers.md`.
+- `tokens.prices.<model>.{input, output, cache_read}` — override or add a row
+  of the price table behind the cost estimate of `lore trace tokens`, in US
+  dollars per million tokens (`lib/lore_core/token_prices.py`); see
+  `docs/how-to/measure-token-use.md`.
 
 A `curator:` or `journal:` block is a retired key here too. The LLM-backend
 selector left with the LLM client, and the journal left with its commands.
