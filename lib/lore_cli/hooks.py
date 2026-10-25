@@ -662,6 +662,18 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - handover must never crash SessionStart
         pass
 
+    # Glossary index last: the cap cuts the end first, and `lore glossary`
+    # recovers the list, unlike the resume and handover blocks above.
+    try:
+        from lore_core.glossary import find_repo_root, index_text, load
+
+        repo_root = find_repo_root(cwd_resolved)
+        index = index_text(load(repo_root), repo_root) if repo_root else None
+        if index:
+            out = out + "\n\n" + index
+    except Exception:  # noqa: BLE001 - the glossary must never crash SessionStart
+        pass
+
     notice = "\n".join(n for n in (handover_notice, logbook_notice) if n) or None
     _emit("SessionStart", out, plain=plain, notice=notice)
 

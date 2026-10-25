@@ -8,6 +8,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.91.0] - 2026-10-25
+
+Ships `lore-workflow` 0.19.0. Reinstall the CLI together with the plugins: the skills call a new command.
+
+- **Glossary index at session start.** SessionStart lists the words that the repo's `CONTEXT.md` defines, without the definitions, in about 200 tokens. The hidden `lore glossary <term> [<term> …]` prints each definition with its file and line. A term the glossary lacks exits 1 and names close terms. A `CONTEXT-MAP.md` contributes every context it links. `file-issue`, `orient` and `to-epic` look terms up instead of reading the whole file.
+- **Board line for epic runs.** `lore workflow ledger-add --kind board --url <comment URL> --text <epic>` records an epic's board comment in the local ledger of the checkout that runs the epic. After a compaction, the PreCompact hook names the board and the `gh api` call that reads it. A new session in that checkout offers to resume the epic, until the epic tail archives the ledger.
+- **`build` loads one mode (lore-workflow 0.19.0).** `build/SKILL.md` keeps the mode table and the shared rules; `loop.md`, `issue.md` and `epic.md` hold the modes. A run reads about 9 KB instead of 13 KB. The rules say to grep or read directly for one lookup instead of spawning a subagent. A teammate's final report stays within 15 lines.
+- `CONTEXT.md` defines glossary index and board line.
+
 ## [0.90.0] - 2026-10-25
 
 Ships `lore-workflow` 0.18.0. Reinstall the CLI together with the plugins: the new SessionEnd hook calls a new command, and the skills name stage tags.

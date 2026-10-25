@@ -25,8 +25,8 @@ EXPECTED_DIRECTIVE_LINES = [
     ),
     (
         "- Before writing or editing an issue, a PR body or a comment, "
-        "follow `lore style show writing-rules` and the glossary "
-        "`CONTEXT.md`."
+        "follow `lore style show writing-rules` and the `CONTEXT.md` "
+        "glossary: `lore glossary <term>` prints a definition."
     ),
     (
         "- File every team-relevant fact as a repo artifact the moment "

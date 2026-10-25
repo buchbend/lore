@@ -42,7 +42,7 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
   cross-feature consistency: naming, duplicate helpers, conflicting edits to shared files. It
   also checks the docs commit against the behaviour. No separate docs round. For one or two
   features, the per-PR reviews already read every diff; skip this review. Exception: the
-  human-present option in `SKILL.md` runs this review for any number of features.
+  human-present option in [epic.md](epic.md) runs this review for any number of features.
 - A FAIL goes to the teammates that own the files. Two fix rounds at most, then block and
   escalate.
 
@@ -55,7 +55,7 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
    one.
 3. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
    .body | lore workflow ledger-check -`. Do not merge while it exits 1.
-4. Ask for the merge approval in `SKILL.md`. When `epic-policy` returned `deploy_gate: true`,
+4. Ask for the merge approval, as the rules in [SKILL.md](SKILL.md) give it. When `epic-policy` returned `deploy_gate: true`,
    name the deploy gate in the same message and note the yes on the board. Merge on a yes.
    An unreachable user leaves the epic PR open.
 
@@ -71,7 +71,8 @@ its ledger. Name each entry that is still undelivered under **Known limits**.
 ## 6. Cleanup
 
 Delete every merged feature branch, local and remote, and remove its worktree. Keep only the
-history of the epic branch.
+history of the epic branch. Run `lore workflow ledger-archive` in the checkout that holds the
+board line, so SessionStart stops offering the epic.
 
 ## Final checklist
 
@@ -84,3 +85,4 @@ Verify each item, then report:
 - [ ] the PRD status is `shipped`, or the catch-up docs PR is open
 - [ ] no roadmap item links the epic or its PRD any more
 - [ ] every feature branch and worktree gone, local and remote
+- [ ] the local ledger with the board line archived

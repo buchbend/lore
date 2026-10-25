@@ -45,7 +45,7 @@ Understand the current state. Identify **every target repo** — an epic may be 
 each, pull `lore_context_pack` (+ `lore_repo_docs_list` / `lore_repo_docs_fetch`) up front,
 before any deeper exploration — cold-start-safe, so it costs nothing even on a repo with no
 ADRs/PRDs yet. Its `adr` / `prd` entries are the fast path into each project's domain language
-(CONTEXT.md / glossary if present) and ratified decisions (`docs/adr`); go beyond the pack only
+(`lore glossary <term> --cwd <checkout>` prints a `CONTEXT.md` term) and ratified decisions (`docs/adr`); go beyond the pack only
 for what it comes back thin or missing on for this epic's scope.
 
 ### 3. Synthesize the PRD

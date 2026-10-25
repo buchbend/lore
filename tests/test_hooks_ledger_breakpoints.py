@@ -187,3 +187,32 @@ def test_a_failing_flush_spawn_never_breaks_session_end(
     monkeypatch.setattr(hooks, "_spawn_logbook_flush", boom)
     (repo / ".git" / "lore-ledger.md").write_text(UNDELIVERED)
     _run("capture", "--event", "session-end", "--cwd", str(repo))
+
+
+BOARD_LINE = "- [board] https://github.com/acme/widget/issues/7#issuecomment-42 — acme/widget#7\n"
+
+
+def test_pre_compact_names_the_epic_board_and_how_to_read_it(repo: Path) -> None:
+    (repo / ".git" / "lore-ledger.md").write_text(BOARD_LINE)
+    out = _run("pre-compact", "--cwd", str(repo), "--plain")
+    assert "epic board for acme/widget#7" in out
+    assert "gh api repos/acme/widget/issues/comments/42 --jq .body" in out
+    assert "build ledger at" not in out
+
+
+def test_session_start_offers_the_epic_run_from_a_board_line(repo: Path) -> None:
+    (repo / ".git" / "lore-ledger.md").write_text(BOARD_LINE)
+    out = _run("session-start", "--cwd", str(repo), "--plain", "--probe")
+    assert "`/lore-workflow:build epic acme/widget#7`" in out
+
+
+def test_ledger_add_board_line_without_url_fails(repo: Path) -> None:
+    from lore_cli import workflow_cmd
+
+    path = repo / ".git" / "lore-ledger.md"
+    args = ["ledger-add", "--kind", "board", "--text", "acme/widget#7", "--path", str(path)]
+    assert workflow_cmd.main(args) == 1
+    assert not path.exists()
+    url = "https://github.com/acme/widget/issues/7#issuecomment-42"
+    assert workflow_cmd.main([*args, "--url", url]) == 0
+    assert path.read_text().endswith(BOARD_LINE)

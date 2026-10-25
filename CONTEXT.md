@@ -172,6 +172,9 @@ Terms used in the workflow layer and orchestration:
   by every teammate, instead of having each teammate discover symbols independently.
   Distinct from a full `lore_context_pack`, which joins ADRs/PRDs and epic
   state; the codemap excerpt is the code-navigation half only.
+- **Glossary index** — the list of words that a repo's `CONTEXT.md`
+  defines, without their definitions. SessionStart injects it.
+  `lore glossary <term>` prints one definition on demand.
 - **Writing rules** — the prose style an agent uses for issue text, PR
   descriptions, PR review comments, ADR context sections and design
   documents. Session notes stay out. The document holds sentence and
@@ -268,6 +271,9 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
   candidates, left-on-the-table items and resume lines. The ledger of
   `loop` and `issue` mode lives in the worktree's git directory. The
   ledger of `epic` mode lives in the board comment.
+- **Board line** — a ledger line that holds the URL of an epic's board
+  comment. It sits in the local ledger of the checkout that runs the epic.
+  PreCompact and SessionStart name the board from it.
 - **Ledger check** — `lore workflow ledger-check`. It blocks a finish
   point while a ledger line has no outcome: approved, dropped or filed.
 - **Finish point** — the step where a build run ends: loop wrap-up, the

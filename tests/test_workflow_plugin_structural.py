@@ -53,9 +53,12 @@ DOCUMENT_SKILL = SKILLS_ROOT / "document" / "SKILL.md"
 
 # `build` keeps its core loop in SKILL.md and loads these when a run reaches
 # them (PRD 0015 § Build, "Skill size").
+BUILD_MODE_FILES = ("loop.md", "issue.md", "epic.md")
 BUILD_SIBLING_FILES = ("review.md", "teammate-brief.md", "epic-tail.md", "loop-wrap-up.md")
 # The old orchestrate-epic/SKILL.md alone was 17,350 bytes and loaded on every run.
-BUILD_SKILL_BYTE_BUDGET = 13_000
+# A run loads SKILL.md and its mode file; the other modes stay unread.
+BUILD_SKILL_BYTE_BUDGET = 6_000
+BUILD_RUN_BYTE_BUDGET = 10_000
 
 # No skill under lore-workflow may name a concrete model — tiers are resolved
 # via `lore tier resolve`, never hardcoded.
@@ -84,7 +87,6 @@ BANNED_SCRIPT_REFERENCES = (
 
 SKILL_LINE_BUDGET = 150
 SKILL_LINE_BUDGET_WAIVERS: dict[str, int] = {
-    "build": 225,
     "to-epic": 220,
     "file-issue": 160,
 }
@@ -210,14 +212,25 @@ def test_document_skill_contract() -> None:
 def test_build_loads_its_sibling_files_and_stays_small() -> None:
     skill = SKILLS_ROOT / "build" / "SKILL.md"
     text = skill.read_text(encoding="utf-8")
-    for name in BUILD_SIBLING_FILES:
+    for name in BUILD_MODE_FILES:
         assert (skill.parent / name).is_file(), f"build/{name} is missing"
         assert f"]({name})" in text, f"build/SKILL.md never tells the agent to read {name}"
+    linked = text + "".join(
+        (skill.parent / n).read_text(encoding="utf-8") for n in BUILD_MODE_FILES
+    )
+    for name in BUILD_SIBLING_FILES:
+        assert (skill.parent / name).is_file(), f"build/{name} is missing"
+        assert f"]({name})" in linked, f"no build file tells the agent to read {name}"
     size = len(skill.read_bytes())
     assert size <= BUILD_SKILL_BYTE_BUDGET, (
         f"build/SKILL.md is {size} bytes; keep it under {BUILD_SKILL_BYTE_BUDGET} and move "
         "a step that only some runs reach into a sibling file"
     )
+    for name in BUILD_MODE_FILES:
+        run = size + len((skill.parent / name).read_bytes())
+        assert run <= BUILD_RUN_BYTE_BUDGET, (
+            f"build/SKILL.md plus {name} is {run} bytes; keep it under {BUILD_RUN_BYTE_BUDGET}"
+        )
 
 
 def test_grilling_subsystem_cohesion() -> None:
@@ -352,8 +365,7 @@ def test_to_epic_links_the_prd_and_epic_down_from_the_roadmap_item() -> None:
 
 
 def test_build_removes_the_shipped_roadmap_item_at_every_finish_point() -> None:
-    skill = _joined("build/SKILL.md")
-    issue_mode = skill[skill.index("## Mode `issue`") : skill.index("## Mode `epic`")]
+    issue_mode = _joined("build/issue.md")
     finish_points = {
         "issue": issue_mode,
         "loop": _joined("build/loop-wrap-up.md"),

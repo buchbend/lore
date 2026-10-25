@@ -16,8 +16,10 @@ ledger file may carry a heading or prose::
     - [left] dropped — Rename the board marker
     - [resume] 2026-09-29T10:00:00Z — round 2 merged; next: wire the hook
     - [logbook] file=delivered pm=undelivered — {"key":"lore:acme/widget:#7",...}
+    - [board] https://github.com/acme/widget/issues/7#issuecomment-42 — acme/widget#7
 
-- ``kind`` sits in brackets: ``adr``, ``term``, ``left``, ``resume`` or ``logbook``.
+- ``kind`` sits in brackets: ``adr``, ``term``, ``left``, ``resume``, ``logbook``
+  or ``board``.
 - An ``adr``, ``term`` or ``left`` line carries its outcome next: ``open``,
   ``approved``, ``dropped`` or ``filed <owner/repo#n>``.
 - A resume line carries an ISO 8601 UTC timestamp instead of an outcome.
@@ -26,6 +28,9 @@ ledger file may carry a heading or prose::
   and the entry as JSON (:mod:`lore_workflow.logbook`). It is never open, so
   it never blocks the check. :func:`archive_ledger` carries an undelivered
   one into the new ledger.
+- A board line carries the URL of an epic's board comment, then the epic.
+  It is never open. PreCompact and SessionStart name the board from it, so an
+  epic run finds its ledger again after compaction.
 - An em dash with a space on each side (`` — ``) separates the text.
   The text runs to the end of the line.
 
@@ -54,7 +59,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-KINDS: tuple[str, ...] = ("adr", "term", "left", "resume", "logbook")
+KINDS: tuple[str, ...] = ("adr", "term", "left", "resume", "logbook", "board")
 
 #: File name of the loop/issue ledger inside the git dir.
 LEDGER_FILENAME = "lore-ledger.md"
@@ -66,6 +71,7 @@ SEP = " — "
 
 _OUTCOME_RE = re.compile(r"^(open|approved|dropped|filed [\w.-]+/[\w.-]+#\d+)$")
 _TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?$")
+_URL_RE = re.compile(r"^https?://\S+$")
 _DELIVERY_RE = re.compile(r"^[\w.-]+=(un)?delivered( [\w.-]+=(un)?delivered)*$")
 _LINE_RE = re.compile(r"^- \[(?P<kind>[a-z]+)\] (?P<status>.+?) — (?P<text>.*)$")
 
@@ -135,6 +141,10 @@ def format_entry(entry: LedgerEntry) -> str:
             raise ValueError(
                 f"invalid logbook delivery {status!r}: use '<sink>=delivered|undelivered'"
             )
+    elif entry.kind == "board":
+        status = entry.outcome or ""
+        if not _URL_RE.match(status):
+            raise ValueError(f"invalid board URL {status!r}: use the board comment's URL")
     else:
         status = validate_outcome(entry.outcome or "open")
     return f"- [{entry.kind}] {status}{SEP}{text}"
@@ -156,7 +166,8 @@ def parse_line(raw: str, lineno: int = 0) -> LedgerEntry | None:
         if not _TIMESTAMP_RE.match(status):
             raise LedgerParseError(f"{where}resume line needs an ISO timestamp: {stripped}")
         return LedgerEntry(kind=kind, text=text, timestamp=status, line=lineno)
-    if not (_DELIVERY_RE if kind == "logbook" else _OUTCOME_RE).match(status):
+    pattern = {"logbook": _DELIVERY_RE, "board": _URL_RE}.get(kind, _OUTCOME_RE)
+    if not pattern.match(status):
         raise LedgerParseError(f"{where}invalid outcome {status!r}: {stripped}")
     return LedgerEntry(kind=kind, text=text, outcome=status, line=lineno)
 
@@ -192,6 +203,10 @@ def append_entry(path: Path, entry: LedgerEntry) -> str:
     return line
 
 
+#: Kinds whose line carries no outcome for ``ledger-set``.
+_NO_OUTCOME = ("resume", "logbook", "board")
+
+
 def _select(entries: list[LedgerEntry], selector: str) -> LedgerEntry:
     """Pick one entry by 1-based index or by a case-insensitive text match."""
     if selector.isdigit():
@@ -200,9 +215,7 @@ def _select(entries: list[LedgerEntry], selector: str) -> LedgerEntry:
             raise ValueError(f"no ledger line {index}: the ledger has {len(entries)}")
         return entries[index - 1]
     needle = selector.casefold()
-    hits = [
-        e for e in entries if e.kind not in ("resume", "logbook") and needle in e.text.casefold()
-    ]
+    hits = [e for e in entries if e.kind not in _NO_OUTCOME and needle in e.text.casefold()]
     if len(hits) != 1:
         raise ValueError(f"{len(hits)} ledger lines match {selector!r}; expected exactly one")
     return hits[0]
@@ -238,7 +251,7 @@ def _rewrite_outcome(
     """Rewrite the source line of the selected entry; return (text, new line)."""
     validate_outcome(outcome)
     target = _select(entries, selector)
-    if target.kind in ("resume", "logbook"):
+    if target.kind in _NO_OUTCOME:
         raise ValueError(f"a {target.kind} line carries no outcome")
     new_line = format_entry(LedgerEntry(kind=target.kind, text=target.text, outcome=outcome))
     lines = text.splitlines(keepends=True)
@@ -361,26 +374,63 @@ def open_entries(entries: list[LedgerEntry]) -> list[tuple[int, LedgerEntry]]:
 # ---------------------------------------------------------------------------
 
 
+def _tolerant_entries(text: str) -> list[LedgerEntry | None]:
+    """Parse every line; a malformed one becomes None instead of raising."""
+    entries: list[LedgerEntry | None] = []
+    for raw in text.splitlines():
+        try:
+            entry = parse_line(raw)
+        except LedgerParseError:
+            entries.append(None)
+            continue
+        if entry is not None:
+            entries.append(entry)
+    return entries
+
+
+def last_board_line(text: str) -> LedgerEntry | None:
+    """The last well-formed board line in *text*, or None."""
+    boards = [e for e in _tolerant_entries(text) if e is not None and e.kind == "board"]
+    return boards[-1] if boards else None
+
+
+def board_api_path(url: str) -> str | None:
+    """``repos/<owner>/<repo>/issues/comments/<id>`` for a GitHub comment URL, or None."""
+    match = re.match(
+        r"^https://github\.com/([\w.-]+)/([\w.-]+)/(?:issues|pull)/\d+#issuecomment-(\d+)$", url
+    )
+    return f"repos/{match[1]}/{match[2]}/issues/comments/{match[3]}" if match else None
+
+
+def _board_read(board: LedgerEntry) -> str:
+    """How to read the board of *board*: a ``gh api`` pipe when the URL allows."""
+    api = board_api_path(board.outcome or "")
+    if api:
+        return f"`gh api {api} --jq .body | lore workflow parse-board`"
+    return "its comment body piped into `lore workflow parse-board`"
+
+
 def precompact_note(cwd: Path) -> str | None:
-    """The PreCompact line that names the ledger of *cwd*, or None if absent."""
+    """The PreCompact lines that name the ledger of *cwd* and its epic board, or None."""
     path = default_ledger_path(cwd)
     if path is None or not path.is_file():
         return None
-
-    def kind(raw: str) -> str | None:
-        try:
-            parsed = parse_line(raw)
-        except LedgerParseError:
-            return "malformed"
-        return parsed.kind if parsed else None
-
-    kinds = {kind(raw) for raw in path.read_text(encoding="utf-8").splitlines()} - {None}
-    if kinds <= {"logbook"}:
-        return None  # only undelivered logbook entries are left (issue #490)
-    return (
-        f"lore: build ledger at {path} — re-read it after compaction; "
-        "`lore workflow ledger-check` gates the finish point."
-    )
+    text = path.read_text(encoding="utf-8")
+    entries = _tolerant_entries(text)
+    kinds = {e.kind if e is not None else "malformed" for e in entries}
+    notes: list[str] = []
+    board = last_board_line(text)
+    if board is not None:
+        notes.append(
+            f"lore: epic board for {board.text} at {board.outcome} — re-read it after "
+            f"compaction with {_board_read(board)}; the board holds the epic's ledger."
+        )
+    if kinds - {"logbook", "board"}:  # logbook lines alone are no run (issue #490)
+        notes.append(
+            f"lore: build ledger at {path} — re-read it after compaction; "
+            "`lore workflow ledger-check` gates the finish point."
+        )
+    return "\n".join(notes) or None
 
 
 def last_resume_line(text: str) -> str | None:
@@ -406,14 +456,7 @@ def _looks_finished(text: str) -> bool:
 
     Tolerant like :func:`last_resume_line`: malformed lines are skipped.
     """
-    entries: list[LedgerEntry] = []
-    for raw in text.splitlines():
-        try:
-            entry = parse_line(raw)
-        except LedgerParseError:
-            continue
-        if entry is not None:
-            entries.append(entry)
+    entries = [e for e in _tolerant_entries(text) if e is not None and e.kind != "board"]
     if not entries or any(e.is_open for e in entries):
         return False
     return entries[-1].kind != "resume"
@@ -422,15 +465,23 @@ def _looks_finished(text: str) -> bool:
 def resume_offer(cwd: Path) -> str | None:
     """The SessionStart line offering to resume, or None.
 
-    None without a resume line, and None for a ledger that looks finished:
-    no open line, and an outcome line after the last resume line. The build
-    skill archives a finished ledger (:func:`archive_ledger`), which also
-    ends the offer.
+    A board line offers the epic run until the epic tail archives the ledger.
+    Otherwise None without a resume line, and None for a ledger that looks
+    finished: no open line, and an outcome line after the last resume line.
+    The build skill archives a finished ledger (:func:`archive_ledger`), which
+    also ends the offer.
     """
     path = default_ledger_path(cwd)
     if path is None or not path.is_file():
         return None
     text = path.read_text(encoding="utf-8", errors="replace")
+    board = last_board_line(text)
+    if board is not None:
+        return (
+            f"lore: an epic run for {board.text} is in progress from this checkout; its board "
+            f"is {board.outcome}. Offer the user to resume it with "
+            f"`/lore-workflow:build epic {board.text}`. Read the board with {_board_read(board)}."
+        )
     line = last_resume_line(text)
     if line is None or _looks_finished(text):
         return None

@@ -31,9 +31,13 @@ def _text(rel: str) -> str:
 def _section(heading: str) -> str:
     """The body of one `## ` section of build/SKILL.md, whitespace-joined.
 
-    A heading inside a code fence (the board template's `## Ledger`) does not
-    end the section.
+    A mode heading (``Mode `epic` ``) names the mode's own file instead, which
+    the skill split out of SKILL.md. A heading inside a code fence (the board
+    template's `## Ledger`) does not end the section.
     """
+    mode = re.fullmatch(r"Mode `(\w+)`", heading)
+    if mode:
+        return _text(f"build/{mode[1]}.md")
     lines, found, in_fence = [], False, False
     for line in (BUILD / "SKILL.md").read_text(encoding="utf-8").splitlines():
         if line.startswith("```"):
@@ -150,9 +154,9 @@ def test_whole_epic_review_needs_three_features_and_checks_the_docs() -> None:
 
 
 def test_the_board_template_parses_with_its_ledger_before_the_notes() -> None:
-    skill = (BUILD / "SKILL.md").read_text(encoding="utf-8")
+    skill = (BUILD / "epic.md").read_text(encoding="utf-8")
     board = re.search(r"```\n(<!-- lore-orchestrate-epic:status v1 -->.*?)```", skill, re.S)
-    assert board, "build/SKILL.md lost the board template"
+    assert board, "build/epic.md lost the board template"
     text = board.group(1)
     assert text.index("## Ledger") < text.index("## Notes")
     assert parse_board(text)[0].state == "queued"
@@ -250,3 +254,16 @@ def test_the_finish_offers_the_next_run_for_filed_follow_ups() -> None:
         assert command in offer
     # The offer carries the commands up front, not after the user asks.
     assert "one line each, with its command" in offer
+
+
+def test_an_epic_records_its_board_line_and_the_tail_archives_it() -> None:
+    """Compaction finds the board again through the local ledger's board line."""
+    epic = _section("Mode `epic`")
+    assert "lore workflow ledger-add --kind board --url <comment URL>" in epic
+    assert "Write the board line below if the local ledger lacks it" in epic
+    tail = _text("build/epic-tail.md")
+    assert "Run `lore workflow ledger-archive` in the checkout that holds the board line" in tail
+
+
+def test_build_names_when_to_grep_instead_of_spawning() -> None:
+    assert "For one lookup, grep or read directly." in _section("Rules for every mode")

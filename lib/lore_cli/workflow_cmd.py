@@ -233,6 +233,9 @@ def ledger_add_cmd(
     next_ask: str | None = typer.Option(
         None, "--next", help="Resume lines only: the next ask, appended as '; next: <ask>'."
     ),
+    url: str | None = typer.Option(
+        None, "--url", help="Board lines only: the URL of the epic's board comment."
+    ),
     path: str | None = typer.Option(
         None, "--path", help="Ledger file (default: <git-dir>/lore-ledger.md of the cwd)."
     ),
@@ -240,7 +243,9 @@ def ledger_add_cmd(
     """Append one line to a loop/issue ledger file and print it.
 
     An epic keeps its ledger in the board comment; print the line with
-    `--path -` and paste it into the `## Ledger` section.
+    `--path -` and paste it into the `## Ledger` section. The epic's checkout
+    keeps one board line (`--kind board --url <comment URL> --text <epic>`), so
+    PreCompact and SessionStart can name the board.
     """
     if not text.strip():
         # A blank line would be written and then rejected by the parser.
@@ -249,6 +254,8 @@ def ledger_add_cmd(
     if kind == "resume":
         body = f"{text}; next: {next_ask}" if next_ask else text
         entry = LedgerEntry(kind=kind, text=body, timestamp=utc_now())
+    elif kind == "board":
+        entry = LedgerEntry(kind=kind, text=text, outcome=url or "")
     else:
         entry = LedgerEntry(kind=kind, text=text, outcome=outcome)
     try:

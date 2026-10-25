@@ -24,6 +24,12 @@ from the last one.
 
 With no status comment on the epic, the run starts fresh.
 
+The checkout that runs the epic keeps one board line in its local ledger,
+`$(git rev-parse --git-dir)/lore-ledger.md`. The line holds the URL of the
+status comment. After a compaction, the PreCompact hook names the board and
+the `gh api` call that reads it. A new session in that checkout offers to
+resume the epic. The offer stops when the epic tail archives the ledger.
+
 ## Resume a loop or an issue
 
 The `loop` and `issue` modes keep the ledger in the worktree:

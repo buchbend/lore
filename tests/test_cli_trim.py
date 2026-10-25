@@ -28,6 +28,7 @@ HIDDEN = {
     "workflow",
     "tier",
     "codemap",
+    "glossary",
     "trace",
     "transcripts",
     "style",
