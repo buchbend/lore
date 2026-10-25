@@ -33,8 +33,7 @@ MAX_DEPTH = 3
 _SKIP_DIRS = {"node_modules", ".venv", "venv", "__pycache__", ".tox", "dist", "build"}
 _COMPOSE = ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
 _PEP508_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
-# The ref after the last ``@`` holds no ``/``; an ``@`` inside an ssh URL does.
-_GIT_URL = re.compile(r"git\+(?P<url>\S+?)(?:@(?P<ref>[^@\s/;#]+))?(?=$|[\s;#])")
+_GIT_URL = re.compile(r"git\+(?P<url>[^\s;#]+)")
 _SHA = re.compile(r"^[0-9a-f]{7,40}$")
 
 
@@ -83,6 +82,15 @@ def _read(path: Path) -> str | None:
         return path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
+
+
+def _split_ref(url: str) -> tuple[str, str | None]:
+    """Split a pip ``…/repo.git@<ref>`` URL; the ref may hold a ``/``."""
+    host_end = url.find("/", url.index("://") + 3) if "://" in url else url.find(":")
+    at = url.find("@", max(host_end, 0))
+    if host_end < 0 or at < 0:
+        return url, None
+    return url[:at], url[at + 1 :] or None
 
 
 def _pin_for_ref(ref: str | None) -> str | None:
@@ -221,87 +229,94 @@ def scan(folder: Path) -> list[Candidate]:
         return by_slug.get(slug.casefold()) if slug else None
 
     for consumer, path in checkouts.items():
-        modules = path / ".gitmodules"
-        if modules.is_file():
-            parser = configparser.ConfigParser()
-            try:
-                # Git indents keys with a tab; configparser reads that as a continuation.
-                lines = (line.strip() for line in (_read(modules) or "").splitlines())
-                parser.read_string("\n".join(lines))
-            except configparser.Error:
+        # One malformed file skips the rest of its checkout, not the whole scan.
+        try:
+            modules = path / ".gitmodules"
+            if modules.is_file():
                 parser = configparser.ConfigParser()
-            for section in parser.sections():
-                url = parser.get(section, "url", fallback="")
-                add(consumer, by_url(url), "submodule", ".gitmodules", url, "sha")
+                try:
+                    # Git indents keys with a tab; configparser reads that as a continuation.
+                    lines = (line.strip() for line in (_read(modules) or "").splitlines())
+                    parser.read_string("\n".join(lines))
+                except configparser.Error:
+                    parser = configparser.ConfigParser()
+                for section in parser.sections():
+                    url = parser.get(section, "url", fallback="")
+                    add(consumer, by_url(url), "submodule", ".gitmodules", url, "sha")
 
-        for dep in _python_deps(_pyproject(path / "pyproject.toml")):
-            git = _GIT_URL.search(dep)
-            if git:
-                add(
-                    consumer,
-                    by_url(git["url"]),
-                    "git-url",
-                    "pyproject.toml",
-                    dep.strip(),
-                    _pin_for_ref(git["ref"]),
-                )
-                continue
-            name = _PEP508_NAME.match(dep)
-            if name:
-                key = re.sub(r"[-_.]+", "-", name[1]).casefold()
-                add(consumer, packages.get(key), "package", "pyproject.toml", name[1], "package")
-
-        pkg = _package_json(path / "package.json")
-        for field in ("dependencies", "devDependencies", "peerDependencies"):
-            deps = pkg.get(field)
-            if not isinstance(deps, dict):
-                continue
-            for name, spec in deps.items():
-                spec = str(spec)
-                if spec.startswith(("git", "github:")) or "://" in spec:
-                    url = spec.removeprefix("github:")
-                    url = url if "/" in url and ":" in url else f"https://github.com/{url}"
-                    ref = url.split("#", 1)[1] if "#" in url else None
+            for dep in _python_deps(_pyproject(path / "pyproject.toml")):
+                git = _GIT_URL.search(dep)
+                if git:
+                    url, ref = _split_ref(git["url"])
                     add(
                         consumer,
-                        by_url(url.split("#", 1)[0]),
+                        by_url(url),
                         "git-url",
-                        "package.json",
-                        f"{name}: {spec}",
+                        "pyproject.toml",
+                        dep.strip(),
                         _pin_for_ref(ref),
                     )
                     continue
-                add(
-                    consumer,
-                    packages.get(str(name).casefold()),
-                    "package",
-                    "package.json",
-                    str(name),
-                    "package",
-                )
+                name = _PEP508_NAME.match(dep)
+                if name:
+                    key = re.sub(r"[-_.]+", "-", name[1]).casefold()
+                    add(
+                        consumer, packages.get(key), "package", "pyproject.toml", name[1], "package"
+                    )
 
-        for dockerfile in sorted(path.glob("Dockerfile*")):
-            for image in _from_images(_read(dockerfile) or ""):
-                add(
-                    consumer,
-                    _image_repo(image, checkouts, built),
-                    "image",
-                    dockerfile.name,
-                    image,
-                    "image",
-                )
-        for compose in _COMPOSE:
-            for service in _compose_services(path / compose):
-                image = service.get("image")
-                if isinstance(image, str) and not service.get("build"):
+            pkg = _package_json(path / "package.json")
+            for field in ("dependencies", "devDependencies", "peerDependencies"):
+                deps = pkg.get(field)
+                if not isinstance(deps, dict):
+                    continue
+                for name, spec in deps.items():
+                    spec = str(spec)
+                    if spec.startswith(("git", "github:")) or "://" in spec:
+                        url = spec.removeprefix("github:")
+                        url = url if "/" in url and ":" in url else f"https://github.com/{url}"
+                        ref = url.split("#", 1)[1] if "#" in url else None
+                        add(
+                            consumer,
+                            by_url(url.split("#", 1)[0]),
+                            "git-url",
+                            "package.json",
+                            f"{name}: {spec}",
+                            _pin_for_ref(ref),
+                        )
+                        continue
+                    add(
+                        consumer,
+                        packages.get(str(name).casefold()),
+                        "package",
+                        "package.json",
+                        str(name),
+                        "package",
+                    )
+
+            for dockerfile in sorted(path.glob("Dockerfile*")):
+                for image in _from_images(_read(dockerfile) or ""):
                     add(
                         consumer,
                         _image_repo(image, checkouts, built),
                         "image",
-                        compose,
+                        dockerfile.name,
                         image,
                         "image",
                     )
+            for compose in _COMPOSE:
+                for service in _compose_services(path / compose):
+                    image = service.get("image")
+                    if isinstance(image, str) and not service.get("build"):
+                        add(
+                            consumer,
+                            _image_repo(image, checkouts, built),
+                            "image",
+                            compose,
+                            image,
+                            "image",
+                        )
+        except (TypeError, AttributeError, ValueError):
+            continue
     return found
 
 

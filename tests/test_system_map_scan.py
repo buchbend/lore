@@ -230,3 +230,46 @@ def test_the_background_child_records_the_count_the_map_lacks(
 
     assert result.exit_code == 0, result.output
     assert system_map_scan.hint(vault, "ccat").startswith("System map: 6 candidate edges")
+
+
+def test_ssh_urls_and_refs_with_a_slash_resolve_to_the_checkout(tmp_path: Path) -> None:
+    folder = tmp_path / "s"
+    _checkout(folder, "o/b")
+    a = _checkout(folder, "o/a")
+    (a / "pyproject.toml").write_text(
+        '[project]\nname = "a"\ndependencies = ["b @ git+ssh://git@github.com/o/b.git@v1.0"]\n'
+        '[project.optional-dependencies]\nx = ["b @ git+https://github.com/o/b@feature/x"]\n'
+    )
+    (a / "package.json").write_text(
+        '{"dependencies": {"b": "git+ssh://git@github.com/o/b.git#v1"}}'
+    )
+    (a / ".gitmodules").write_text('[submodule "b"]\n\turl = ssh://git@github.com:22/o/b.git\n')
+    hits = {(c.kind, c.source, c.pin) for c in scan(folder) if c.producer == "o/b"}
+    assert hits == {
+        ("git-url", "pyproject.toml", "tag"),
+        ("git-url", "package.json", "tag"),
+        ("submodule", ".gitmodules", "sha"),
+    }
+    refs = [c.detail for c in scan(folder) if c.source == "pyproject.toml"]
+    assert len(refs) == 2
+
+
+def test_a_malformed_file_in_one_checkout_does_not_stop_the_scan(scope: Path) -> None:
+    (scope / "libx" / "pyproject.toml").write_text(
+        '[project]\nname = "libx"\noptional-dependencies = "oops"\n'
+    )
+    assert len(scan(scope)) == 6
+
+
+def test_canonical_repo_name_reads_ssh_and_git_urls() -> None:
+    from lore_core.git import canonical_repo_name
+
+    for url in (
+        "ssh://git@github.com/o/b.git",
+        "ssh://git@github.com:22/o/b.git",
+        "git+ssh://git@github.com/o/b.git",
+        "git://github.com/o/b.git",
+        "git@github.com:o/b.git",
+        "https://github.com/o/b",
+    ):
+        assert canonical_repo_name(url) == "o/b", url

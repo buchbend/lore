@@ -724,7 +724,7 @@ def cmd_map_scan(
     name, folder, _tidy = ms.scope_for(Path(cwd))
     if name is None or folder is None:
         return
-    maps = load_maps(wiki_dirs(resolve_route(Path(cwd)).wiki))
+    maps = load_maps(wiki_dirs())  # every wiki, as `lore map scan` reads them
     ms.record_missing(get_lore_root(), name, len(ms.missing(ms.scan(folder), maps)))
 
 

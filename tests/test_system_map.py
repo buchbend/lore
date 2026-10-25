@@ -223,3 +223,10 @@ def test_map_is_a_hidden_command() -> None:
     result = CliRunner().invoke(root, ["--help"])
     assert " map " not in result.output
     assert map_cmd.app is not None
+
+
+def test_one_edge_over_the_budget_leaves_no_blank_line() -> None:
+    edge = system_map.Edge(
+        consumer="o/c", producer="o/p", interface="x" * 700, system="s", note=Path("s.md")
+    )
+    assert neighbours_block([edge], "o/p") == "## Neighbours (system map)\n… 1 more: `lore map o/p`"

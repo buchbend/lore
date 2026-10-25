@@ -211,7 +211,7 @@ def neighbours_block(
             listed.append(line)
             used += len(line) + 1
     rest = len(lines) - len(listed)
-    text = head + "\n".join(listed)
+    text = (head + "\n".join(listed)).rstrip("\n")
     if rest:
         text += f"\n… {rest} more: `lore map {repo}`"
     return text

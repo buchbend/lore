@@ -79,10 +79,11 @@ def git_repo_root(cwd: Path | str | None = None) -> Path | None:
 
 
 # Match: git@github.com:org/name.git, https://github.com/org/name,
+# ssh://git@github.com:22/org/name.git, git+ssh://…, git://…,
 # https://example.org/gitlab/group/name.git, etc.
 _REMOTE_RE = re.compile(
     r"""
-    (?:git@[^:]+:|https?://[^/]+/)   # auth prefix
+    (?:git@[^:/]+:|[\w+]+://(?:[^@/]+@)?[^/]+/)   # auth prefix
     (?P<path>[^\s]+?)                 # org/name path
     (?:\.git)?$                       # optional .git suffix
     """,
