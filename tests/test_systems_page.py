@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -329,7 +330,7 @@ def test_the_page_shows_the_target_and_marks_drift(vault: Path, tmp_path: Path) 
     html = systems_page.write_page(vault).read_text()
     assert "target <code>feat/x</code> (set 2026-10-25) · 2 of 3 checkouts on target" in html
     assert "off target: ccatobs/web" in html
-    assert '<g class="node drift"><title>ccatobs/web: not on the target branch</title>' in html
+    assert re.search(r'<g class="node n\d+[^"]* drift"><title>ccatobs/web: not on the target', html)
 
 
 def test_system_status_rejects_an_unknown_system(vault: Path) -> None:

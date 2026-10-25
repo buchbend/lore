@@ -72,7 +72,7 @@ lore stats --page systems
 `stats.html` (token use) and `systems.html` (the system map). The systems page
 holds:
 
-- a diagram per system: each producer above its consumers, an arrow to each consumer, the pin on the arrow;
+- a diagram per system: each producer above its consumers, with an arrow to each consumer. A long edge runs in a lane between the boxes. The line style shows the pin, and a legend names each style. Hover a repo to highlight its edges and neighbours, and click it for its card;
 - the map's prose and a table of its edges;
 - the system's target branch, how many checkouts are on it, and an orange border on each box that is off it;
 - one card per repo: its systems, scope, checkout folder, current branch, local work, and one line on what the repo is. That line is the `pyproject.toml` or `package.json` description, else the README's first paragraph;

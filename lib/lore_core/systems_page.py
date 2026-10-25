@@ -18,13 +18,13 @@ from dataclasses import dataclass, field
 from html import escape
 from pathlib import Path
 
+from lore_core.map_layout import NODE_H, layout, path
 from lore_core.stats_page import _CSS, nav
 from lore_core.system_checkouts import order
 from lore_core.system_map import SystemMap, problems
 
 PAGE_NAME = "systems.html"
 
-_NODE_W, _NODE_H, _GAP_X, _ROW_H, _PAD = 190, 40, 28, 96, 16
 _ABOUT_CHARS = 280
 
 _EXTRA_CSS = """
@@ -54,9 +54,18 @@ svg.map .node.drift rect { stroke: var(--warn); stroke-width: 2.5; }
 svg.map .node.off rect { stroke: var(--line); stroke-dasharray: 4 3; }
 svg.map .node text { fill: var(--ink); font-size: 13px; }
 svg.map .node text.owner { fill: var(--muted); font-size: 10.5px; }
-svg.map .edge { stroke: var(--muted); stroke-width: 1.4; fill: none; }
-svg.map .pin { fill: var(--muted); font-size: 10.5px; }
-svg.map .head { fill: var(--muted); }
+svg.map .edge .line { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+svg.map .edge .hit { stroke: transparent; stroke-width: 10; fill: none; }
+svg.map .edge:hover .line { stroke: var(--bar); stroke-width: 2.2; }
+svg.map .head { fill: var(--muted); fill: context-stroke; }
+svg.map:has(.node:hover) .edge, svg.map:has(.node:hover) .node { opacity: 0.18; }
+svg.map .edge, svg.map .node { transition: opacity 0.12s; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px;
+  color: var(--muted); font-size: 12.5px; }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; }
+.legend svg { width: 34px; height: 8px; display: inline-block; }
+.legend line { stroke: var(--muted); stroke-width: 1.5; }
+.hint { margin: 6px 0 0; }
 """
 
 
@@ -163,129 +172,109 @@ def _title(markdown: str) -> str | None:
     return None
 
 
-def _labels(repos: list[str]) -> dict[str, tuple[str, str]]:
-    """Owner and name for each node. A long name ends in an ellipsis."""
+def _labels(repos: list[str], chars: int) -> dict[str, tuple[str, str]]:
+    """Owner and name for each node. A name past *chars* ends in an ellipsis."""
     out = {}
     for repo in repos:
         owner, _, name = repo.rpartition("/")
-        if len(name) > 24:
-            name = name[:23] + "…"
+        if len(name) > chars:
+            name = name[: chars - 1] + "…"
         out[repo] = (owner, name)
     return out
+
+
+#: How each pin draws its edge; the legend under a diagram repeats it.
+_PIN_DASH = {"sha": "7 4", "tag": "2 4", "image": "10 3 2 3", "package": "1 5"}
 
 
 def _diagram(
     system: SystemMap, index: int, checked_out: set[str], off_target: frozenset[str] = frozenset()
 ) -> str:
-    """The system as layered boxes: producers on top, an arrow down to each consumer."""
+    """The system as layered boxes: producers above, an arrow down to each consumer.
+
+    Pins draw as dash patterns. Hovering a box highlights its edges and
+    neighbours, through CSS alone.
+    """
     repos = order([system])
     if not repos:
         return ""
     key = {r.casefold(): r for r in repos}
-    layer: dict[str, int] = {}
-    for repo in repos:  # `order` puts each producer first, outside a cycle
-        ups = [
-            layer[key[e.producer.casefold()]]
-            for e in system.edges
-            if e.consumer.casefold() == repo.casefold() and key[e.producer.casefold()] in layer
-        ]
-        layer[repo] = max(ups) + 1 if ups else 0
-    rows: dict[int, list[str]] = {}
-    for repo in repos:
-        rows.setdefault(layer[repo], []).append(repo)
-    x_of: dict[str, float] = {}
-    widest = max(len(r) for r in rows.values())
-    width = _PAD * 2 + widest * _NODE_W + (widest - 1) * _GAP_X
-    for depth in sorted(rows):
-        row = rows[depth]
-        if depth:
-
-            def centre(repo: str) -> float:
-                xs = [
-                    x_of[key[e.producer.casefold()]]
-                    for e in system.edges
-                    if e.consumer.casefold() == repo.casefold()
-                    and key[e.producer.casefold()] in x_of
-                ]
-                return sum(xs) / len(xs) if xs else width / 2
-
-            row.sort(key=lambda r: (centre(r), r))
-        span = len(row) * _NODE_W + (len(row) - 1) * _GAP_X
-        left = (width - span) / 2
-        for i, repo in enumerate(row):
-            x_of[repo] = left + i * (_NODE_W + _GAP_X) + _NODE_W / 2
-    height = _PAD * 2 + (max(rows) + 1) * _ROW_H - (_ROW_H - _NODE_H)
-
-    def y_of(repo: str) -> float:
-        return _PAD + layer[repo] * _ROW_H
-
+    edges = [(key[e.producer.casefold()], key[e.consumer.casefold()]) for e in system.edges]
+    shape = layout(repos, edges)
+    number = {r: i for i, r in enumerate(repos)}
+    neighbours: dict[str, set[int]] = {r: set() for r in repos}
+    for producer, consumer in edges:
+        neighbours[producer].add(number[consumer])
+        neighbours[consumer].add(number[producer])
+    scope = f"map-{index}"
     marker = f"head-{index}"
-    drawn: list[str] = []
-    lanes = 0
-    for edge in system.edges:
-        consumer, producer = key[edge.consumer.casefold()], key[edge.producer.casefold()]
-        x1, y1 = x_of[producer], y_of(producer) + _NODE_H
-        x2, y2 = x_of[consumer], y_of(consumer)
-        between = [r for d in range(layer[producer] + 1, layer[consumer]) for r in rows[d]]
-        if y2 <= y1:  # an edge inside a row or upwards, from a cycle
-            y1, y2 = y_of(producer) + _NODE_H / 2, y_of(consumer) + _NODE_H / 2
-            mid = (y1 + y2) / 2
-            route = (
-                f"M{x1:.1f},{y1:.1f} C{x1:.1f},{mid:.1f} {x2:.1f},{mid:.1f} {x2:.1f},{y2 - 2:.1f}"
-            )
-            label = ((x1 + x2) / 2, mid)
-        elif between:  # past the rows between: a lane right of their boxes
-            side = max(x_of[r] for r in between) + _NODE_W / 2 + _GAP_X / 2 + lanes * 10
-            lanes += 1
-            width = max(width, side + _PAD + 30)
-            top, bottom = y1 + (_ROW_H - _NODE_H), y2 - (_ROW_H - _NODE_H)
-            route = (
-                f"M{x1:.1f},{y1:.1f} C{x1:.1f},{top:.1f} {side:.1f},{y1:.1f} {side:.1f},{top:.1f} "
-                f"L{side:.1f},{bottom:.1f} C{side:.1f},{y2:.1f} {x2:.1f},{bottom:.1f} "
-                f"{x2:.1f},{y2 - 2:.1f}"
-            )
-            label = (side, (top + bottom) / 2)
-        else:
-            mid = (y1 + y2) / 2
-            route = (
-                f"M{x1:.1f},{y1:.1f} C{x1:.1f},{mid:.1f} {x2:.1f},{mid:.1f} {x2:.1f},{y2 - 2:.1f}"
-            )
-            label = ((x1 + x2) / 2, mid)
-        tip = f"{edge.consumer} uses {edge.producer}: {edge.interface}"
-        drawn.append(
-            f'<path class="edge" d="{route}" marker-end="url(#{marker})">'
-            f"<title>{escape(tip)}</title></path>"
-        )
-        if edge.pin:
-            drawn.append(
-                f'<text class="pin" x="{label[0] + 6:.1f}" y="{label[1] + 4:.1f}">'
-                f"{escape(edge.pin)}</text>"
-            )
     parts = [
-        f'<svg class="map" viewBox="0 0 {width:.0f} {height:.0f}" width="{width:.0f}" '
-        f'role="img" aria-label="{escape(system.name)}: {len(repos)} repos, '
-        f'{len(system.edges)} edges">'
+        f'<svg class="map" id="{scope}" viewBox="0 0 {shape.width:.0f} {shape.height:.0f}" '
+        f'width="{shape.width:.0f}" role="img" aria-label="{escape(system.name)}: '
+        f'{len(repos)} repos, {len(system.edges)} edges">'
         f'<defs><marker id="{marker}" viewBox="0 0 10 10" refX="9" refY="5" '
         'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
-        '<path class="head" d="M0,0 L10,5 L0,10 z"/></marker></defs>',
-        *drawn,
+        '<path class="head" d="M0,0 L10,5 L0,10 z"/></marker></defs>'
     ]
-    labels = _labels(repos)
+    for route in shape.routes:
+        edge = system.edges[route.index]
+        producer, consumer = edges[route.index]
+        tip = f"{edge.consumer} uses {edge.producer}: {edge.interface}"
+        if edge.pin:
+            tip += f" (pin: {edge.pin})"
+        dash = _PIN_DASH.get(edge.pin or "")
+        style = f' stroke-dasharray="{dash}"' if dash else ""
+        d = path(route.points)
+        parts.append(
+            f'<g class="edge e{number[producer]} e{number[consumer]}">'
+            f'<path class="line" d="{d}"{style} marker-end="url(#{marker})"/>'
+            f'<path class="hit" d="{d}"><title>{escape(tip)}</title></path></g>'
+        )
+    labels = _labels(repos, int((min(b.w for b in shape.boxes.values()) - 20) / 7.6))
     for repo in repos:
+        box = shape.boxes[repo]
         owner, name = labels[repo]
-        x, y = x_of[repo] - _NODE_W / 2, y_of(repo)
-        off = "" if repo.casefold() in checked_out else " off"
+        x = box.x - box.w / 2
+        state = "" if repo.casefold() in checked_out else " off"
         tip = repo
         if repo in off_target:
-            off, tip = " drift", f"{repo}: not on the target branch"
+            state, tip = " drift", f"{repo}: not on the target branch"
+        near = "".join(f" nb{i}" for i in sorted(neighbours[repo]))
         parts.append(
-            f'<a href="#{_anchor(repo)}"><g class="node{off}"><title>{escape(tip)}</title>'
-            f'<rect x="{x:.1f}" y="{y:.1f}" width="{_NODE_W}" height="{_NODE_H}" rx="6"/>'
-            f'<text class="owner" x="{x + 10:.1f}" y="{y + 14:.1f}">{escape(owner)}</text>'
-            f'<text x="{x + 10:.1f}" y="{y + 31:.1f}">{escape(name)}</text></g></a>'
+            f'<a href="#{_anchor(repo)}"><g class="node n{number[repo]}{near}{state}">'
+            f"<title>{escape(tip)}</title>"
+            f'<rect x="{x:.1f}" y="{box.y:.1f}" width="{box.w:.0f}" height="{NODE_H}" rx="6"/>'
+            f'<text class="owner" x="{x + 10:.1f}" y="{box.y + 14:.1f}">{escape(owner)}</text>'
+            f'<text x="{x + 10:.1f}" y="{box.y + 31:.1f}">{escape(name)}</text></g></a>'
         )
     parts.append("</svg>")
-    return '<div class="scroll" style="padding:12px">' + "".join(parts) + "</div>"
+    hover = "".join(
+        f"#{scope}:has(.n{i}:hover) .e{i} {{ opacity: 1; }}"
+        f"#{scope}:has(.n{i}:hover) .e{i} .line {{ stroke: var(--bar); stroke-width: 2.2; }}"
+        f"#{scope}:has(.n{i}:hover) :is(.n{i}, .nb{i}) {{ opacity: 1; }}"
+        for i in range(len(repos))
+    )
+    pins = sorted({e.pin for e in system.edges if e.pin in _PIN_DASH})
+    legend = "".join(
+        f'<span class="key"><svg width="34" height="8" aria-hidden="true">'
+        f'<line x1="0" y1="4" x2="34" y2="4" stroke-dasharray="{_PIN_DASH[p]}"/></svg>'
+        f"pin: {escape(p)}</span>"
+        for p in pins
+    )
+    if legend:
+        legend = (
+            '<div class="legend"><span class="key"><svg width="34" height="8" '
+            'aria-hidden="true"><line x1="0" y1="4" x2="34" y2="4"/></svg>no pin</span>'
+            f"{legend}</div>"
+        )
+    return (
+        f"<style>{hover}</style>"
+        '<div class="scroll" style="padding:12px">'
+        + "".join(parts)
+        + legend
+        + '<p class="note hint">Hover a repo to follow its edges; click it for its card.</p>'
+        "</div>"
+    )
 
 
 def _edge_table(system: SystemMap) -> str:
