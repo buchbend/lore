@@ -8,6 +8,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.92.0] - 2026-10-25
+
+Ships `lore-workflow` 0.20.0. Reinstall the CLI together with the plugins: SessionStart and the skills call a new command.
+
+- **System map.** A wiki note at `systems/<name>.md` with `type: system-map` lists the repos of one system and the edges between them: consumer, producer, interface, and the optional `pin` and `breaks_when` (PRD 0019, the system map). SessionStart shows the current repo's neighbours before the glossary index, one line per edge and 600 characters at most. The hidden `lore map [owner/repo] [--json]` prints the edges; `lore map check` exits 1 on a format error and names the note and the edge.
+- **`lore map scan`.** `lore map scan [--scope <folder>] --json` lists candidate edges between the checkouts of a scope folder: git submodules, git URLs and package names in `pyproject.toml` and `package.json`, Dockerfile `FROM` images and compose images. It calls no model and no network. SessionStart runs the scan in a background child once an hour per scope and names the count the map lacks.
+- **`/lore:map` skill.** The map phase opens one wiki PR with added, changed and no-longer-found edges. After that PR merged, the tidy phase removes cross-repo text from each repo's `AGENTS.md` or `CLAUDE.md`, one PR per repo. `scopes.<name>.map.tidy: false` turns the tidy phase off.
+- **Workflow skills read the map (lore-workflow 0.20.0).** `orient` starts its cross-repo explorer from `lore map`, `to-epic` names the edge's `pin` in a cross-repo row, and `build` in `epic` mode reads the `pin` before it dispatches a consumer.
+- `canonical_repo_name` reads `ssh://`, `git+ssh://` and `git://` remotes. How-to: `docs/how-to/keep-a-system-map.md`. `CONTEXT.md` defines system map and neighbour; ADR 0014 (one home per fact) names the system map as the home for what spans several repos.
+
 ## [0.91.0] - 2026-10-25
 
 Ships `lore-workflow` 0.19.0. Reinstall the CLI together with the plugins: the skills call a new command.
