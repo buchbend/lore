@@ -165,13 +165,18 @@ def _status(maps: list, system: str | None, branch: str | None, as_json: bool) -
             "checkouts": [s.as_dict() for s in states],
             "no_checkout": [r for r in repos if r not in found],
             "pinned": pinned,
+            "local_work": [
+                {"repo": s.repo, "path": s.path, "work": s.local_work()}
+                for s in states
+                if s.local_work()
+            ],
         }
         print(json.dumps(data, indent=2))
         return
     for s in states:
         line = f"{s.repo}: {s.branch or 'detached'} ({s.path})"
-        if s.dirty:
-            line += f"; {s.dirty} changed files"
+        if s.local_work():
+            line += "; " + ", ".join(s.local_work())
         if branch:
             line += f" -> {s.action()}"
         print(line)

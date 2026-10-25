@@ -45,22 +45,41 @@ class CheckoutState:
     target_local: bool = False
     target_remote: str | None = None
     target_elsewhere: str | None = None
+    untracked: int = 0
+    conflicts: int = 0
+    operation: str | None = None
+    unpushed: int = 0
 
     def as_dict(self) -> dict[str, object]:
-        return {**asdict(self), "action": self.action()}
+        return {**asdict(self), "action": self.action(), "local_work": self.local_work()}
+
+    def local_work(self) -> list[str]:
+        """What a switch could bury: one reason per kind of work not on a remote."""
+        found = []
+        if self.operation:
+            found.append(f"a {self.operation} in progress")
+        if self.conflicts:
+            found.append(f"{self.conflicts} unmerged files")
+        if self.dirty:
+            found.append(f"{self.dirty} changed files")
+        if self.untracked:
+            found.append(f"{self.untracked} untracked files")
+        if self.unpushed:
+            found.append(f"{self.unpushed} commits on no remote")
+        return found
 
     def action(self) -> str:
         """What ``lore:checkout`` does with this checkout for the target branch.
 
-        ``skip`` with local changes, ``blocked`` when another worktree holds
+        ``stop`` with local work (see :meth:`local_work`), ``blocked`` when another worktree holds
         the branch, ``pull`` on the branch already, ``switch`` where the branch
         exists, ``default`` where it does not: the checkout goes to its
         default branch. ``none`` without a target.
         """
         if not self.target:
             return "none"
-        if self.dirty:
-            return "skip"
+        if self.local_work():
+            return "stop"
         if self.branch == self.target:
             return "pull"
         if self.target_elsewhere:
@@ -153,11 +172,34 @@ def _elsewhere(path: Path, branch: str) -> str | None:
     return None
 
 
+_OPERATIONS = (
+    ("MERGE_HEAD", "merge"),
+    ("rebase-merge", "rebase"),
+    ("rebase-apply", "rebase"),
+    ("CHERRY_PICK_HEAD", "cherry-pick"),
+    ("REVERT_HEAD", "revert"),
+    ("BISECT_LOG", "bisect"),
+)
+_CONFLICT_CODES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
+
+
+def _operation(path: Path) -> str | None:
+    """The merge, rebase, cherry-pick, revert or bisect in progress, if one is."""
+    for name, label in _OPERATIONS:
+        found = _git(path, "rev-parse", "--git-path", name)
+        if found and (path / found).exists():
+            return label
+    return None
+
+
 def state(checkout: Checkout, target: str | None = None) -> CheckoutState:
     """The git state of *checkout*; with *target*, where that branch exists."""
     path = checkout.path
     branch = _git(path, "rev-parse", "--abbrev-ref", "HEAD")
-    status = _git(path, "status", "--porcelain", "--untracked-files=no")
+    status = _git(path, "status", "--porcelain=v1", "--untracked-files=normal") or ""
+    codes = [line[:2] for line in status.splitlines()]
+    # Commits HEAD holds that no remote-tracking ref holds: never pushed.
+    unpushed = _git(path, "rev-list", "--count", "HEAD", "--not", "--remotes")
     counts = _git(path, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
     ahead = behind = None
     if counts and len(counts.split()) == 2:
@@ -168,9 +210,13 @@ def state(checkout: Checkout, target: str | None = None) -> CheckoutState:
         scope=checkout.scope,
         branch=None if branch in (None, "HEAD") else branch,
         default_branch=_default_branch(path),
-        dirty=len(status.splitlines()) if status else 0,
+        dirty=sum(1 for c in codes if c != "??" and c not in _CONFLICT_CODES),
         ahead=ahead,
         behind=behind,
+        untracked=codes.count("??"),
+        conflicts=sum(1 for c in codes if c in _CONFLICT_CODES),
+        operation=_operation(path),
+        unpushed=int(unpushed) if unpushed and unpushed.isdigit() else 0,
     )
     if not target:
         return found

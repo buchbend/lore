@@ -58,9 +58,14 @@ def _checkout(folder: Path, slug: str, description: str | None = None) -> Path:
             f'[project]\nname = "{path.name}"\ndescription = "{description}"\n'
         )
     (path / "README.md").write_text(f"# {path.name}\n\nThe {path.name} repo.\n")
-    _git(path, "add", "-A")
-    _git(path, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+    _commit(path, "init")
+    _git(path, "update-ref", "refs/remotes/origin/main", "HEAD")  # as if pushed
     return path
+
+
+def _commit(path: Path, message: str) -> None:
+    _git(path, "add", "-A")
+    _git(path, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", message)
 
 
 @pytest.fixture
@@ -148,9 +153,43 @@ def test_state_names_the_action_for_a_target_branch(vault: Path, tmp_path: Path)
     assert state(checkout, "feat/x").action() == "switch"
     assert state(checkout, "main").action() == "pull"
     assert state(checkout, "nope").action() == "default"
-    (web / "README.md").write_text("changed\n")
-    assert state(checkout, "feat/x").dirty == 1
-    assert state(checkout, "feat/x").action() == "skip"
+    assert state(checkout, "feat/x").local_work() == []
+
+
+@pytest.mark.parametrize(
+    ("change", "work"),
+    [
+        (lambda web: (web / "README.md").write_text("changed\n"), "1 changed files"),
+        (lambda web: (web / "notes.txt").write_text("new\n"), "1 untracked files"),
+        (
+            lambda web: ((web / "README.md").write_text("local\n"), _commit(web, "local")),
+            "1 commits on no remote",
+        ),
+    ],
+)
+def test_local_work_stops_the_switch(vault: Path, tmp_path: Path, change, work: str) -> None:
+    web = tmp_path / "src" / "ccat" / "web"
+    _git(web, "branch", "feat/x")
+    change(web)
+    got = state(Checkout(repo="ccatobs/web", scope="ccat", path=web), "feat/x")
+    assert got.local_work() == [work]
+    assert got.action() == "stop"
+
+
+def test_an_unfinished_merge_stops_the_switch(vault: Path, tmp_path: Path) -> None:
+    web = tmp_path / "src" / "ccat" / "web"
+    _git(web, "switch", "-qc", "side")
+    (web / "README.md").write_text("side\n")
+    _commit(web, "side")
+    _git(web, "switch", "-q", "main")
+    (web / "README.md").write_text("main\n")
+    _commit(web, "main")
+    merge = ["-c", "user.email=t@t", "-c", "user.name=t", "merge", "-q", "side"]
+    subprocess.run(["git", "-C", str(web), *merge], capture_output=True, check=False)
+    got = state(Checkout(repo="ccatobs/web", scope="ccat", path=web), "main")
+    assert "a merge in progress" in got.local_work()
+    assert "1 unmerged files" in got.local_work()
+    assert got.action() == "stop"
 
 
 def test_a_branch_held_by_another_worktree_blocks_the_switch(vault: Path, tmp_path: Path) -> None:
@@ -181,10 +220,27 @@ def test_map_status_lists_checkouts_producers_first(vault: Path, tmp_path: Path)
     ]
     assert [c["action"] for c in data["checkouts"]] == ["switch", "default", "default"]
     assert data["no_checkout"] == ["ccatobs/archive"]
+    assert data["local_work"] == []
     assert {(e["consumer"], e["pin"]) for e in data["pinned"]} == {
         ("ccatobs/data-center", "sha"),
         ("ccatobs/web", "image"),
     }
+
+
+def test_map_status_names_each_checkout_with_local_work(vault: Path, tmp_path: Path) -> None:
+    (tmp_path / "src" / "ccat" / "data-center" / "README.md").write_text("changed\n")
+    result = runner.invoke(map_app, ["status", "--branch", "main", "--json"])
+    data = json.loads(result.output)
+    assert [(w["repo"], w["work"]) for w in data["local_work"]] == [
+        ("ccatobs/data-center", ["1 changed files"])
+    ]
+    assert [c["action"] for c in data["checkouts"]] == ["pull", "stop", "pull"]
+
+
+def test_the_page_warns_of_local_work(vault: Path, tmp_path: Path) -> None:
+    (tmp_path / "src" / "ccat" / "web" / "scratch.txt").write_text("x\n")
+    html = systems_page.write_page(vault).read_text()
+    assert '<span class="tag warn">1 untracked files</span>' in html
 
 
 def test_map_status_rejects_an_unknown_system(vault: Path) -> None:
@@ -205,6 +261,9 @@ def test_checkout_skill_follows_the_map_and_never_discards_work() -> None:
     assert "lore map status --branch <branch> --system <system> --json" in text
     assert "producers first" in text
     assert "Never stash, reset, rebase, force or delete a branch. Never push." in text
-    for action in ("`switch`", "`pull`", "`default`", "`skip`", "`blocked`"):
+    for action in ("`switch`", "`pull`", "`default`", "`stop`", "`blocked`"):
         assert action in text
+    assert "Where `local_work` is not empty, warn and stop" in text
+    assert "switch no checkout" in text
+    assert "Proceed only with an empty `local_work`" in text
     assert "`pinned`" in text and "Do not edit the pin" in text

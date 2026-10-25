@@ -67,7 +67,7 @@ class RepoView:
     scope: str | None = None
     path: str | None = None
     branch: str | None = None
-    dirty: int = 0
+    work: tuple[str, ...] = ()
     about: str | None = None
 
 
@@ -335,8 +335,7 @@ def _repo_card(repo: str, view: RepoView, maps: list[SystemMap]) -> str:
             f"scope {escape(view.scope or '-')} · <code>{escape(view.path)}</code> · "
             f"branch <code>{escape(view.branch or 'detached')}</code>"
         )
-        if view.dirty:
-            where += f' <span class="tag warn">{view.dirty} changed files</span>'
+        where += "".join(f' <span class="tag warn">{escape(w)}</span>' for w in view.work)
     else:
         where = '<span class="tag warn">no local checkout</span> in any scope folder'
 
@@ -537,7 +536,7 @@ def write_page(lore_root: Path) -> Path:
                 scope=name,
                 path=_home(path),
                 branch=git.branch,
-                dirty=git.dirty,
+                work=tuple(git.local_work()),
                 about=about(path),
             )
     bodies = {}

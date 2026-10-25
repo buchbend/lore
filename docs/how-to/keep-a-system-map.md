@@ -86,6 +86,11 @@ makes no network request.
 Run `/lore:checkout <branch> [system]`. The skill puts each checkout of the
 system's repos on the branch, producers first.
 
+First the skill checks every checkout for local work: a merge, rebase,
+cherry-pick, revert or bisect in progress, unmerged files, changed files,
+untracked files, or commits on no remote. On any, it warns, names each checkout
+and its work, and switches nothing. Settle the work and run the skill again.
+
 ```
 lore map status --system ccat --json                   # every checkout of the map, producers first
 lore map status --branch feat/x --system ccat --json   # the same, with the action for the branch
@@ -98,10 +103,12 @@ Each checkout gets one action:
 | `switch` | `git switch <branch>`, then `git pull --ff-only` |
 | `pull` | already on the branch: `git pull --ff-only` |
 | `default` | no branch of that name: switch to the default branch and pull |
-| `skip` | the checkout holds changed files; it stays as it is |
+| `stop` | the checkout holds local work; the skill switches nothing |
 | `blocked` | another worktree holds the branch; it stays as it is |
 
 - The skill fetches first. `lore map status` reads the local refs only.
+- `local_work` lists each checkout with local work. The systems page shows the same warning on the repo's card.
+- A git command that fails, such as a pull on a diverged branch, stops the run. The skill never merges or rebases.
 - The skill never stashes, resets, rebases, forces or pushes.
 - `pinned` lists the edges whose consumer pins the producer by `sha`, `tag`, `image` or `package`. A producer on the new branch does not reach such a consumer until the pin moves. The skill names each one and leaves the pin alone.
 
