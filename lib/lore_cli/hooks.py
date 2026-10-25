@@ -333,6 +333,7 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _spawn_detached_transcript_sync,
     _spawn_detached_wiki_pull,
     _spawn_logbook_flush,
+    _spawn_map_scan,
     _spawn_token_usage_record,
     _stamp_within_cooldown,
     _write_stamp,
@@ -662,6 +663,21 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - handover must never crash SessionStart
         pass
 
+    # Neighbours before the glossary: both are short, and `lore map` and
+    # `lore glossary` recover what the cap cuts (PRD 0019, the system map).
+    try:
+        from lore_core.system_map import session_start_block as neighbours
+
+        block = neighbours(cwd_resolved, scope.wiki if scope is not None else None)
+        if block:
+            out = out + "\n\n" + block
+    except Exception:  # noqa: BLE001 - the system map must never crash SessionStart
+        pass
+    with contextlib.suppress(Exception):  # the map scan must never crash SessionStart
+        map_hint = _map_scan_hint(cwd_resolved, spawn=not probe)
+        if map_hint:
+            out = out + "\n\n" + map_hint
+
     # Glossary index last: the cap cuts the end first, and `lore glossary`
     # recovers the list, unlike the resume and handover blocks above.
     try:
@@ -676,6 +692,40 @@ def cmd_session_start(
 
     notice = "\n".join(n for n in (handover_notice, logbook_notice) if n) or None
     _emit("SessionStart", out, plain=plain, notice=notice)
+
+
+#: SessionStart spawns at most one background map scan per scope and hour.
+MAP_SCAN_COOLDOWN_S = 3600
+
+
+def _map_scan_hint(cwd: Path, *, spawn: bool) -> str | None:
+    """The banner line the last map scan recorded; spawn the next scan when due."""
+    from lore_core import system_map_scan as ms
+
+    name, folder, _tidy = ms.scope_for(cwd)
+    if name is None or folder is None:
+        return None
+    lore_root = get_lore_root()
+    stamp = ms.stamp_path(lore_root, name)
+    if spawn and not _stamp_within_cooldown(stamp, MAP_SCAN_COOLDOWN_S):
+        _write_stamp(stamp)
+        _spawn_map_scan(cwd)
+    return ms.hint(lore_root, name)
+
+
+@hook_app.command("map-scan", hidden=True)
+def cmd_map_scan(
+    cwd: str = typer.Option(..., "--cwd", help="A folder inside the scope."),
+) -> None:
+    """Background child: scan the scope's checkouts and record what the map lacks."""
+    from lore_core import system_map_scan as ms
+    from lore_core.system_map import load_maps, wiki_dirs
+
+    name, folder, _tidy = ms.scope_for(Path(cwd))
+    if name is None or folder is None:
+        return
+    maps = load_maps(wiki_dirs())  # every wiki, as `lore map scan` reads them
+    ms.record_missing(get_lore_root(), name, len(ms.missing(ms.scan(folder), maps)))
 
 
 @hook_app.command("wiki-pull", hidden=True)

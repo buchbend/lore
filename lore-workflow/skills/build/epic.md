@@ -58,8 +58,10 @@ more into the same worktree. A second death blocks the feature.
 it into `epic/<issue>`.
 
 **Merge.** If the epic branch moved, rebase the PR and wait for green checks. A rebase conflict
-goes back to the teammate. For a cross-repo pin, merge the producer and record its SHA before you
-dispatch the consumer that pins it. After each merge:
+goes back to the teammate. For a cross-repo pin, read the `pin` of the edge between producer and
+consumer (`lore map <consumer> --json`). Merge the producer and record what the pin names (SHA,
+tag, image or package version) before you dispatch the consumer. Without an edge, record the
+producer's SHA. After each merge:
 - tick its build-order box;
 - close the sub-issue (`gh issue close <n> --comment "Merged via PR #<pr>"`);
 - set the row to `merged`;
