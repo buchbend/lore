@@ -33,7 +33,7 @@ Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 
 Use the repo's domain terms, which its `CONTEXT.md` defines. Print the ones you use with `lore
 glossary <term> [<term> …]` (`--cwd <checkout>` for another repo), and use no synonym. When the
-repo holds no `CONTEXT.md`, draft without one and name the absence in your report.
+repo holds no `CONTEXT.md`, draft without one and name the absence in one line of your report.
 **Never write to `CONTEXT.md`** — a term worth adding belongs to `grilling`, not this
 skill.
 
