@@ -29,6 +29,7 @@ HIDDEN = {
     "tier",
     "codemap",
     "glossary",
+    "map",
     "trace",
     "transcripts",
     "style",
