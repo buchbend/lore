@@ -75,7 +75,7 @@ holds:
 - a diagram per system: each producer above its consumers, an arrow to each consumer, the pin on the arrow;
 - the map's prose and a table of its edges;
 - the system's target branch, how many checkouts are on it, and an orange border on each box that is off it;
-- one card per repo: its systems, scope, checkout folder, current branch, local work, and one line on what the repo is (the `pyproject.toml` or `package.json` description, else the README's first paragraph);
+- one card per repo: its systems, scope, checkout folder, current branch, local work, and one line on what the repo is. That line is the `pyproject.toml` or `package.json` description, else the README's first paragraph;
 - one row per scope: the checkouts below its folder, with the ones in no map marked;
 - "What is a system map?", the terms of the map.
 
@@ -148,7 +148,7 @@ target. The skill:
 
 1. Shows `lore system status`, after a fetch.
 2. Offers to save a new branch as the target.
-3. Walks the repos producers first and offers to settle each repo's local work: commit (it shows the diff and proposes a message), push, add a `.gitignore` line, finish or abort a merge or rebase, or leave the repo as it is.
+3. Walks the repos producers first and offers to settle each repo's local work. It offers a commit, a push, a `.gitignore` line, or to finish or abort a merge or rebase. You can also leave the repo as it is. Before a commit, it shows the diff and proposes a message.
 4. Switches each checkout and pulls with `--ff-only`. A pull that fails shows both sides and asks.
 5. Names the pinned edges that lag the target, and offers a `checkouts` line for each repo without a checkout.
 6. Shows `lore system status` again.
