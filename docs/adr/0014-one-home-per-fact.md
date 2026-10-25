@@ -51,7 +51,7 @@ Lore routes each kind of fact to one home:
 | How does it work now, and how do I use it? | Diátaxis docs | the `document` pass |
 | How do agents work in this repo? | `AGENTS.md` | human |
 | What does a domain term mean? | `CONTEXT.md`, or the context `CONTEXT-MAP.md` names | `grilling` or a ledger outcome |
-| What spans several repos? | wiki topic note, edited through a PR | human merges |
+| What spans several repos? | system map: a wiki note at `systems/<name>.md`, edited through a PR | human merges; `lore:map` proposes |
 | Where is the code heading, and in what order? | roadmap: `ROADMAP.md` in the repo; across repos, a wiki topic note | human; an agent adds an item under "Not placed yet" through its PR |
 | What shipped, what changed, what is left? | handover section | `build` at its finish point |
 | Why was this work done, and what does it mean for the team? | logbook entry in the scope's sinks | `build` at its finish point (ADR 0017) |
@@ -102,6 +102,11 @@ dropped, or filed as an issue.
   reasoning; ADR 0017 amendment). The entry may summarise facts from the
   other homes in plain words and links to each home. The homes stay the
   source of each fact.
+- 2026-10-25: the row "What spans several repos?" names the system map as
+  its home (PRD 0019, the system map). A system map lists the repos of one
+  system and the edges between them. A repo's `AGENTS.md` or `CLAUDE.md`
+  links the map and restates none of its edges. The `lore:map` skill
+  proposes changes through a PR that a human merges.
 - 2026-10-14: new row "Where is the code heading, and in what order?" with
   the roadmap as its home (ADR 0018, Lore and project-manage meet only
   through generic contracts). A roadmap holds direction and order. Dates
