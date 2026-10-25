@@ -31,9 +31,9 @@ acceptance criteria, and the prose rules. **Never write from memory of the rules
 team overrides the rules inside its wiki, so the resolved text is the only authority.
 Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 
-Read `CONTEXT.md` at the repo root too, if present. It defines each domain term with
-one tight meaning — draft with those terms instead of a synonym. When the repo holds no
-`CONTEXT.md`, draft without one and name the absence in one line when you report back.
+Use the repo's domain terms, which its `CONTEXT.md` defines. Print the ones you use with `lore
+glossary <term> [<term> …]` (`--cwd <checkout>` for another repo), and use no synonym. When the
+repo holds no `CONTEXT.md`, draft without one and name the absence in your report.
 **Never write to `CONTEXT.md`** — a term worth adding belongs to `grilling`, not this
 skill.
 

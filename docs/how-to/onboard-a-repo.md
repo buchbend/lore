@@ -41,6 +41,11 @@ final merge — see [Conventions](../conventions.md)) are not yet part of the
 automated scaffold; add the marker to `AGENTS.md` by hand if your repo's
 target-branch merge triggers a deployment.
 
+A `CONTEXT.md` glossary needs no wiring either. SessionStart lists the words
+the glossary defines, without the definitions, in about 200 tokens. The agent
+prints a definition when it needs one: `lore glossary Ledger "Resume line"`.
+A repo with a `CONTEXT-MAP.md` gets the terms of every context the map links.
+
 ## Done when
 
 The scaffold reports the agent guide and the docs stubs present (created or

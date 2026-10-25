@@ -47,7 +47,8 @@ Pull `lore_context_pack` once, up front. It is cold-start-safe: an empty repo re
 pack. Add `lore_repo_docs_list` and `lore_repo_docs_fetch` for the full ADR and PRD listing. Read
 ADRs and PRDs as context; only `Invariant` lines bind.
 
-- **Docs and decisions** come from the pack's `adr` and `prd` entries and from `CONTEXT.md`.
+- **Docs and decisions** come from the pack's `adr` and `prd` entries. Domain words come from
+  `lore glossary <term> [<term> …]`, which prints their `CONTEXT.md` definitions.
 - **Prior art** comes from the pack's `epic_state`, plus one targeted `lore_search` or
   `lore_drill` call for what the pack lacks.
 - **Code** comes from `lore codemap` (or the `lore_codemap` tool): a ranked index, not a
@@ -60,7 +61,8 @@ brief.
 missed, one for the code map, one for cross-repo consumers when the intent spans repos. Spawn
 them in one message at the `mid` tier (required): pass `lore tier resolve mid` as each model,
 and open each description with `[orient:explore]`; see
-[TIER-DELEGATION.md](../../TIER-DELEGATION.md). Scale the fan-out to the ask.
+[TIER-DELEGATION.md](../../TIER-DELEGATION.md). Scale the fan-out to the ask. For one lookup,
+grep or read directly; spawn only for parallel or isolated work.
 
 **Named agents** run in both modes, after the pack, in the same message as any explorers. Spawn
 each one as its own `subagent_type` and keep its own model; set no tier. Open its description
