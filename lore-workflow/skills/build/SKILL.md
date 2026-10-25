@@ -10,13 +10,14 @@ description: Build code in one of three modes. `loop` — fast rounds with the h
 # Build
 
 The user names the mode (`/lore-workflow:build epic owner/repo#n`), or you pick it from the table.
-Then follow its section. Read a sibling file only when the run reaches it.
+Then read the mode's file and follow it, with the rules below. Read any other sibling file only
+when the run reaches it.
 
 | Mode | Use when | Finish point |
 |---|---|---|
-| `loop` | The user reacts to a running feature: screenshots, "make this red", "quick fix". | Wrap-up PR from `loop/<slug>` |
-| `issue` | One written, clear issue. | One PR, merged after the user approves |
-| `epic` | An epic tracker with a build-order table from [`to-epic`](../to-epic/SKILL.md). | Epic PR, then the handover section |
+| [`loop`](loop.md) | The user reacts to a running feature: screenshots, "make this red", "quick fix". | Wrap-up PR from `loop/<slug>` |
+| [`issue`](issue.md) | One written, clear issue. | One PR, merged after the user approves |
+| [`epic`](epic.md) | An epic tracker with a build-order table from [`to-epic`](../to-epic/SKILL.md). | Epic PR, then the handover section |
 
 Work that is several features, or still unshaped, goes back to [`orient`](../orient/SKILL.md).
 Several epics take one `build` run each. Start a downstream epic after its upstream epic merged.
@@ -35,7 +36,8 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
   a reply about something else is not a yes. The user can merge on GitHub instead; then go on
   from the merged state.
 - **Tiers.** A spawn's model is `lore tier resolve <tier>`; its description opens with its
-  stage tag. See [TIER-DELEGATION.md](../../TIER-DELEGATION.md).
+  stage tag. See [TIER-DELEGATION.md](../../TIER-DELEGATION.md). Spawn only the subagents a mode
+  names, or for parallel or isolated work. For one lookup, grep or read directly.
 - **Writing rules.** Run `lore style show writing-rules` before you write a PR body, an ADR, a
   glossary term or the handover section. Write PR bodies and follow-up issues through
   [`file-issue`](../file-issue/SKILL.md). The board and the verdict block are machine-read and
@@ -68,156 +70,3 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
   retrieval miss on `feedback.retrieval_misses_repo` through `file-issue`: the fact, the tools
   tried, the turn count. When false, skip the check. List every issue and PR the session
   created or commented on in your final message.
-
-## Mode `loop`
-
-Small asks, the human watching. No PRD, no teammates, no PR per round.
-
-**Stop and advise design** before you code an ask with any of these signs:
-- a new data model, table, API endpoint or persisted state;
-- several features or component boundaries;
-- a choice between real alternatives the user has not made;
-- auth, permissions, secrets or other users' data;
-- no way to state it as one testable behaviour.
-
-Name the sign in one line. Recommend
-`orient` then `issue`, or `grilling` then `to-epic`. Log the ask as a `left` line and carry on
-with the small asks. The user may say "do it anyway"; then slice it into small rounds.
-
-**Setup, once.**
-1. The target is the branch the dev stack serves: the branch of the primary checkout (`git
-   worktree list`, first row). Only `develop` or `main` qualify. Anything else, or both look
-   plausible: ask.
-2. Create branch `loop/<slug>` off the target in a sibling worktree. Edit only there.
-3. Start the ledger in the worktree: `lore workflow ledger-add --kind resume --text "base <sha>
-   of <target>" --next "round 1"`.
-
-**One round.**
-1. Restate the asks, one line each. Pick and name a default for an ambiguous ask. Ask only when
-   a wrong guess is costly to undo.
-2. Read the code each ask touches, shared helpers too. A helper that rebuilds a record from
-   known fields drops a new field; grep its callers.
-3. Test first where there is behaviour: a handler, a state change, an API field, a key path, a
-   phone-width branch. Assert a CSS rule that carries behaviour. Pure looks get no test; list
-   them as "visual only".
-4. Run only this round's tests, plus ruff on the touched files. Read the result, then commit.
-   Do not chain the commit behind the test command. One commit per round.
-5. Merge into the target locally: in the primary checkout, `git merge --ff-only loop/<slug>`.
-   A dirty checkout or a non-fast-forward: stop and ask. Restart the dev stack the way the repo
-   says. Nothing reaches the remote until wrap-up.
-6. Spawn one background subagent at the `cheap` tier. It runs the full suite and ruff on the
-   merged commit, read-only, and reports failing test ids or "green". A new round replaces a
-   running check. A failure becomes the first ask of the next round.
-7. Add ledger lines for this round's candidates, then the resume line (breakpoint).
-8. Report: what changed, what the tests verify, what is visual only, the defaults you picked,
-   new ledger lines, the last background result. Ask for the next round.
-
-**Traps.** A value read back right after a router write is still the old value; keep the new
-one in a local. A leave transition removes its element a frame later. A test that stubs globals
-restores them on failure too. Without a browser the look is unverified; say so.
-
-On "wrap up", read [loop-wrap-up.md](loop-wrap-up.md) and follow it.
-
-## Mode `issue`
-
-1. **Intake.** Read the issue (`gh issue view <n> --json title,body`). Run `lore codemap` to find
-   the files. No explorer fan-out.
-2. **Clarify only if needed.** Ambiguous intent or criteria: ask at most three questions. Clear
-   issue: ask none.
-3. **Branch.** `lore workflow epic-policy <repo_root>` gives `target_branch`. Create
-   `feat/<issue>-<slug>` off it in a worktree. Implement with [`tdd`](../tdd/SKILL.md), one PR.
-4. **Docs.** Run the pre-merge mode of [`document`](../document/SKILL.md) on the branch diff.
-5. **Open the PR**, linking the issue. Write the body through `file-issue`: what the change does.
-6. **Review.** Follow [review.md](review.md). Fix the findings. Keep `gh pr checks` green.
-7. **Finish point.** Present the open ledger lines to the user in one message, as
-   [loop-wrap-up.md](loop-wrap-up.md) steps 3 and 4 do. Push the approved ADRs and terms to the
-   same PR. `lore workflow ledger-check` passes, or you go back to the user. Remove the shipped
-   roadmap item from its `ROADMAP.md`, if the issue ships one: the item that links the issue or
-   that the issue names. Commit the change. Add the handover section to the PR body. Run
-   `lore log add`. Run `lore workflow ledger-archive`. Ask for the merge approval and merge on a yes.
-
-## Mode `epic`
-
-You plan, dispatch, review and merge. Teammates write the feature code. Run without asking.
-Stop only for completion or a stop condition.
-
-**Map.** Read the epic body and build order. Run `lore workflow epic-policy <repo_root>` once per
-repo: `{target_branch, deploy_gate}`. Feature PRs target `epic/<issue>`. `epic/<issue>` merges
-into `target_branch` through one epic PR.
-
-**Resume.** Fetch the board comment (marker below) and pipe it to `lore workflow parse-board`.
-A `merged` row is done. A `queued` or `blocked` row is dispatched again. Reuse an existing
-`epic/<issue>`. Read the last resume line in the `ledger` key. No board: fresh run.
-
-**Gate.** `lore workflow validate-build-order --json` on the epic body. `ok: false`: report the
-`problems` and stop. A feature's batch is its depth in the DAG. **Compact** band: one repo,
-every row AFK, one feature per batch. Then one teammate builds the features in order, still one
-branch and one PR each. Otherwise **standard**: up to four teammates at once.
-
-**Board.** One comment on the epic issue, edited in place, never a second one:
-
-```
-<!-- lore-orchestrate-epic:status v1 -->
-
-| Feature | Issue | Tier | Batch | State | PR |
-|---|---|---|---|---|---|
-| <title> | owner/repo#n | <tier> | <batch> | queued | — |
-
-## Ledger
-
-- [resume] <UTC timestamp> — <state>; next: <next ask>
-
-## Notes
-
-- <blocker or escalation only>
-```
-
-`lore workflow parse-board` reads the marker and the columns verbatim; the marker keeps its
-old name. `State` is queued, running, review, merged or blocked. Then create and push
-`epic/<issue>` from `target_branch`.
-
-**Codemap excerpt.** Build it once: rank `lore codemap` symbols against the epic's touchpoints
-and keep about 1k tokens.
-
-**Dispatch.** A feature is ready once its blockers merged into `epic/<issue>`. Give each ready
-feature a worktree off `epic/<issue>` and a background teammate with `LORE_SUPPRESS_CAPTURE=1`
-in its environment. Tier: `mid` for well-scoped work, `strong` for cross-cutting work. Fill
-[teammate-brief.md](teammate-brief.md). A teammate silent for about 30 minutes is spawned once
-more into the same worktree. A second death blocks the feature.
-
-**Review.** When a feature PR opens, follow [review.md](review.md). PASS and green checks: merge
-it into `epic/<issue>`.
-
-**Merge.** If the epic branch moved, rebase the PR and wait for green checks. A rebase conflict
-goes back to the teammate. For a cross-repo pin, merge the producer and record its SHA before you
-dispatch the consumer that pins it. After each merge:
-- tick its build-order box;
-- close the sub-issue (`gh issue close <n> --comment "Merged via PR #<pr>"`);
-- set the row to `merged`;
-- add the teammate's ADR and term candidates to the ledger;
-- add the resume line (breakpoint);
-- check that epic-branch CI is green and, where the repo has migrations, that one migration head
-  remains.
-
-Then dispatch every feature the merge made ready.
-
-**Human present, on request.** This option needs three things. The user asks for a quick run
-and stays present. Every row is AFK. One repo without a deploy gate holds all rows.
-- Build the slices that share new files yourself, on `epic/<issue>`.
-- Give teammates only the independent slices. They commit without a PR; you merge their
-  branches with `--no-ff`.
-- Your own slices may write tests beside the code. Then break two or three pieces of key logic,
-  confirm the tests fail, restore, and note the check on the board.
-- Then run the epic tail.
-
-**Epic tail.** When every row is merged and CI is green, read [epic-tail.md](epic-tail.md) and
-follow it.
-
-**Stop conditions:**
-- a HITL row;
-- a PR still failing after two fix rounds;
-- an ambiguous spec that needs a scientific or architectural call;
-- a merge conflict no teammate resolves;
-- a CI infrastructure failure.
-
-Note the stop on the board, keep the other features running, and report.
