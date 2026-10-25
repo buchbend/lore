@@ -232,6 +232,10 @@ and 0013, spec in PRD 0014.
 - **Served model** — the model that answered a message, read from
   `message.model` in the transcript. A spawn's requested model can differ
   from the served model; `lore trace tokens` names each such subagent.
+- **Stage tag** — the bracketed workflow step that opens a spawn's
+  description, such as `[build:review]`. The epic or issue the spawn works for
+  may follow it. Token statistics group by it. The list lives in
+  `lore-workflow/TIER-DELEGATION.md` and `lib/lore_core/stages.py`.
 - **Linkage block** — the transcript index entry's `repo`, `branch`,
   `prs`, `issues`, `commits` and `files` keys, written by capture with no
   LLM call. It is what `lore_drill` reads to answer "which sessions
