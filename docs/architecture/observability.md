@@ -178,7 +178,8 @@ only; exit code is 0 when healthy, nonzero when any alert fires. Every
 row reflects a state some code still writes — issue #377 removed five
 capture rows (`Last note`, `Last run`, `Last flush`, `Pending`, `Lock`)
 and the flushes panel the compose pipeline used to feed, and the flag
-retirement removed the flags section.
+retirement removed the flags section. A `tokens` section shows token use
+and estimated cost over the last 7 days.
 
 ### `lore trace <selector>`
 
@@ -195,6 +196,21 @@ note path / `[[wikilink]]` (reverse-resolved through the note's own
 `dead` and `last` selectors are gone with the flush lifecycle record
 they resolved through; either now raises the same "no trace, session,
 or note matches" error as any other unknown selector.
+
+`lore trace tokens <session>` splits one session's tokens by phase and
+served model. `lore trace tokens` with no session sums the token records
+that the `SessionEnd` hook writes. See
+[`../how-to/measure-token-use.md`](../how-to/measure-token-use.md).
+
+### `lore stats`
+
+**Module:** `lore_cli/stats_cmd.py`, business logic in
+`lore_core/stats_page.py`. Writes one static page,
+`<lore_root>/.lore/stats.html`, from the token records, and opens it in the
+browser. The page groups token use and estimated cost by day, model, stage
+tag, and epic or issue. The same records give the same bytes. `lore stats` joined
+the read commands after the consolidation above, for statistics over time rather
+than health or one story.
 
 ### The Check step of `lore setup`
 

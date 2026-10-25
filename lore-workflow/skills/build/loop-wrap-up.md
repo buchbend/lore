@@ -6,7 +6,8 @@ commit in the first resume line of the ledger.
 1. **Full suite and ruff**, once, in the foreground, on `loop/<slug>`. Fix red in one more round
    first.
 2. **Offer the advisory pass.** Ask whether to run it; skip it on a no. On a yes, spawn two
-   subagents in parallel at the `strong` tier over `<base>..loop/<slug>`:
+   subagents in parallel at the `strong` tier over `<base>..loop/<slug>`. Open each description
+   with `[build:advisory]`:
    - **Architect:** security, code layout, duplication, correctness risks.
    - **Web design:** style consistency, accessibility, responsive layout. Skip it when the diff
      touches no UI.

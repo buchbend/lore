@@ -62,14 +62,14 @@ Open PRs: mergeable? stale? superseded by a merged PR? Does it fix an open issue
 Split the issues into three to five themes that fit this repo. Give each theme one subagent with
 a lens. Default lenses:
 
-| Lens | Takes | Tier |
-|---|---|---|
-| Security reviewer | secrets, auth, access, exposure | `strong` |
-| Architect | CI/CD, build, deploy, design | `strong` |
-| Ops/SRE reviewer | runtime, backups, monitoring, docs | `mid` |
+| Lens | Takes | Tier | Stage tag |
+|---|---|---|---|
+| Security reviewer | secrets, auth, access, exposure | `strong` | `[triage:security]` |
+| Architect | CI/CD, build, deploy, design | `strong` | `[triage:architect]` |
+| Ops/SRE reviewer | runtime, backups, monitoring, docs | `mid` | `[triage:ops]` |
 
-Pass `lore tier resolve <tier>` as each spawn's model (see
-[TIER-DELEGATION.md](../../TIER-DELEGATION.md)). Split a theme above about 40 issues into two
+Pass `lore tier resolve <tier>` as each spawn's model and open its description with the tag;
+another theme takes `[triage:other]` ([TIER-DELEGATION.md](../../TIER-DELEGATION.md)). Split a theme above about 40 issues into two
 spawns. Each brief carries the repo state from § 1, the issue numbers and the checklist in
 § 2. It also carries the verdicts below, the review-only rule and this return shape, one JSON
 object per issue:

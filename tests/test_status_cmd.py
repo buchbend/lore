@@ -1,6 +1,6 @@
 """`lore status` — unified health dashboard (issue #193).
 
-Five sections render from live state (capture, wikis, retention,
+Six sections render from live state (capture, wikis, retention, tokens,
 news, alerts). Golden --plain section tests + exit-code-mirrors-alerts +
 --offline note are the heart of the suite. Every row the panel prints
 has a writer; issue #377 removed the ones that lost theirs.
@@ -243,6 +243,48 @@ def test_retention_failed_deletions_alert(tmp_path: Path, monkeypatch) -> None:
     result = _invoke(lore_root, project, monkeypatch=monkeypatch)
     assert "failed" in result.output.lower()
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# Tokens section — the token records the SessionEnd hook writes
+# ---------------------------------------------------------------------------
+
+
+def _seed_token_record(lore_root: Path, session: str, *, ago: timedelta, rows: list) -> None:
+    from lore_core.token_usage import append_record
+
+    append_record(lore_root, {"session": session, "recorded_at": _iso(_NOW - ago), "rows": rows})
+
+
+def test_tokens_section_sums_the_last_week(tmp_path: Path, monkeypatch) -> None:
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
+    opus = {"phase": "main", "model": "claude-opus-5-5", "output": 1_000_000}
+    sonnet = {"phase": "agent:x", "model": "claude-sonnet-5-5", "output": 1_000_000}
+    _seed_token_record(lore_root, "a", ago=timedelta(days=1), rows=[opus, sonnet])
+    _seed_token_record(lore_root, "old", ago=timedelta(days=30), rows=[opus])
+
+    result = _invoke(lore_root, project, "--plain", monkeypatch=monkeypatch)
+    assert "\ntokens\n" in result.output
+    assert "7d: 1 session · about $30.00 · opus-5-5 67% · sonnet-5-5 33%" in result.output
+    assert result.exit_code == 0
+
+
+def test_tokens_section_warns_on_a_model_mismatch(tmp_path: Path, monkeypatch) -> None:
+    lore_root, project = _seed_vault(tmp_path)
+    _seed_hook_event(lore_root, ago=timedelta(hours=2))
+    row = {
+        "phase": "agent:x",
+        "model": "claude-opus-5-5",
+        "requested_model": "claude-sonnet-5-5",
+        "output": 10,
+    }
+    _seed_token_record(lore_root, "a", ago=timedelta(hours=1), rows=[row])
+
+    result = _invoke(lore_root, project, "--plain", monkeypatch=monkeypatch)
+    assert "1 subagent(s) ran on a different model than requested" in result.output
+    data = json.loads(_invoke(lore_root, project, "--json", monkeypatch=monkeypatch).output)
+    assert data["tokens"]["sessions"] == 1
 
 
 # ---------------------------------------------------------------------------

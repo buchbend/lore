@@ -1,7 +1,7 @@
 {
   "name": "lore",
   "description": "LLM-optimized knowledge graph for AI-coding teams \u2014 transcripts captured and archived, facts filed as repo artifacts, repo-scoped context injected at session start.",
-  "version": "0.89.3",
+  "version": "0.90.0",
   "author": {
     "name": "Christof Buchbender"
   },
@@ -66,6 +66,14 @@
           {
             "type": "command",
             "command": "lore hook capture --event session-end"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lore hook token-usage"
           }
         ]
       }

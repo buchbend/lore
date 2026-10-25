@@ -90,6 +90,18 @@ class TierConfig:
 
 
 @dataclass
+class TokensConfig:
+    """Token-usage statistics settings (``lore trace tokens``).
+
+    ``prices`` overrides or adds rows of the shipped price table, keyed by
+    model id: ``claude-opus-5-5: {input: 4, output: 20, cache_read: 0.2}``
+    in USD per million tokens. See :mod:`lore_core.token_prices`.
+    """
+
+    prices: dict[str, dict[str, float]] = field(default_factory=dict)
+
+
+@dataclass
 class FeedbackConfig:
     """Session-end retrieval-miss reporting, opt-in per user.
 
@@ -194,6 +206,7 @@ class RootConfig:
     sources: dict[str, dict] = field(default_factory=dict)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
+    tokens: TokensConfig = field(default_factory=TokensConfig)
     user: UserConfig = field(default_factory=UserConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)

@@ -8,6 +8,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.90.0] - 2026-10-25
+
+Ships `lore-workflow` 0.18.0. Reinstall the CLI together with the plugins: the new SessionEnd hook calls a new command, and the skills name stage tags.
+
+- **Token statistics over time.** A new SessionEnd hook, `lore hook token-usage`, appends one token record per session to `.lore/token-usage.jsonl`. A record splits the tokens by phase and by served model. For each subagent it also keeps the model and effort that the spawn asked for. The file stays on the machine.
+- **`lore stats` opens a statistics page.** The command writes `.lore/stats.html` from the token records and opens it in the browser. The page shows the estimated cost per day, and tables by model, by workflow stage, by epic or issue, and by stage and requested model. It lists subagents that ran on a model they did not ask for, and the most expensive sessions. The page is static: no script, no network request, and the same records give the same page. `--days` sets the window (default 30); `--no-open` only prints the path.
+- **Stage tags (lore-workflow 0.18.0).** Every spawn in the workflow skills opens its description with a stage tag, such as `[build:review]` or `[build:epic-review]`, and the epic or issue it works for. A teammate brief opens with the same line. `lore-workflow/TIER-DELEGATION.md` lists the tags. Lore also reads the epic or issue from a skill's arguments, so `/lore-workflow:build epic owner/repo#510` counts its session for that epic.
+- **`lore trace tokens` with no session sums the records** in the terminal, with the same groups. `lore trace tokens <session>` gains a `model` column and lists each subagent whose served model differs from the requested model.
+- **`lore status` has a `tokens` section** for the last 7 days: sessions, estimated cost and the share per model, plus a warning line for a model mismatch.
+- **`tokens.prices` in `~/.config/lore/config.yml`** overrides or adds a row of the price table, in US dollars per million tokens. The estimate is not a bill. How-to: `docs/how-to/measure-token-use.md`. `CONTEXT.md` defines token record, served model and stage tag.
+
 ## [0.89.3] - 2026-10-15
 
 Ships `lore-workflow` 0.17.1.

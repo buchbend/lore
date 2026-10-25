@@ -58,11 +58,13 @@ brief.
 
 **Full mode** fans out only what the pack left thin: one `Explore` subagent for docs the pack
 missed, one for the code map, one for cross-repo consumers when the intent spans repos. Spawn
-them in one message at the `mid` tier (required): pass `lore tier resolve mid` as each model; see
+them in one message at the `mid` tier (required): pass `lore tier resolve mid` as each model,
+and open each description with `[orient:explore]`; see
 [TIER-DELEGATION.md](../../TIER-DELEGATION.md). Scale the fan-out to the ask.
 
 **Named agents** run in both modes, after the pack, in the same message as any explorers. Spawn
-each one as its own `subagent_type` and keep its own model; set no tier. Give it the verbatim
+each one as its own `subagent_type` and keep its own model; set no tier. Open its description
+with `[orient:named]`. Give it the verbatim
 intent and the pack facts that bear on its lens. Ask for the constraints, risks and questions it
 sees, each with its evidence. A name that is not an available agent type: say so in the brief and
 go on without it. Fold each return into the brief and credit the agent by name.

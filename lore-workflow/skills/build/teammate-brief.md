@@ -1,7 +1,11 @@
 # Teammate brief
 
-Fill the brackets and pass the text to each `epic` teammate.
+Fill the brackets and pass the text to each `epic` teammate. Open the spawn's description with
+the first line of the brief too. Lore reads the line to count the teammate's tokens for the
+stage and the epic.
 
+> [build:implement] <owner/repo#epic>
+>
 > Implement **<feature title>** (sub-issue #<n>) in repo <repo>.
 > Worktree <path>, branch `feat/<n>-<slug>` off `epic/<issue>`. The PR targets `epic/<issue>`.
 > Acceptance criteria: <criteria>.

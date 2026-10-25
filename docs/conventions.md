@@ -142,7 +142,9 @@ exception is the status change `prd-ship` makes.
 ## Model tiers
 
 Every delegation point names a semantic tier (`frontier`, `strong`, `mid`,
-`cheap`), never a concrete model. `lore tier resolve <tier>` resolves it. The
+`cheap`), never a concrete model. `lore tier resolve <tier>` resolves it. Each
+delegation point also opens the spawn's description with a stage tag, such as
+`[build:review]`, so `lore stats` can count tokens per stage. The
 rules for each tier live in [`docs/model-tiers.md`](model-tiers.md). The spawn
 rules every skill shares live in
 [`lore-workflow/TIER-DELEGATION.md`](../lore-workflow/TIER-DELEGATION.md).

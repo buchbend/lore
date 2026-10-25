@@ -365,3 +365,41 @@ def test_build_removes_the_shipped_roadmap_item_at_every_finish_point() -> None:
     assert "if the issue ships one: the item that links the issue or that the issue names" in (
         issue_mode
     )
+
+
+# --- Stage tags: each delegation point names its tag (lore stats) ----------
+
+_STAGE_TAG = re.compile(r"\[([a-z][a-z0-9-]*:[a-z][a-z0-9-]*)\]")
+
+# The file of each delegation point, and the tags it must name.
+STAGE_TAG_SITES = {
+    "build/review.md": {"build:review", "build:epic-review"},
+    "build/epic-tail.md": {"build:epic-review"},
+    "build/teammate-brief.md": {"build:implement"},
+    "build/loop-wrap-up.md": {"build:advisory"},
+    "orient/SKILL.md": {"orient:explore", "orient:named"},
+    "triage/SKILL.md": {"triage:security", "triage:architect", "triage:ops", "triage:other"},
+}
+
+
+def test_skills_name_only_known_stage_tags() -> None:
+    from lore_core.stages import STAGES
+
+    failures = []
+    for path in _all_skill_files():
+        for tag in sorted(set(_STAGE_TAG.findall(path.read_text(encoding="utf-8"))) - set(STAGES)):
+            failures.append(f"{path.relative_to(REPO_ROOT)}: unknown stage tag [{tag}]")
+    assert not failures, "add the tag to lore_core.stages.STAGES:\n  " + "\n  ".join(failures)
+
+
+def test_each_delegation_point_names_its_stage_tag() -> None:
+    for rel, tags in STAGE_TAG_SITES.items():
+        named = set(_STAGE_TAG.findall((SKILLS_ROOT / rel).read_text(encoding="utf-8")))
+        assert tags <= named, f"{rel} must name {sorted(tags - named)}"
+
+
+def test_tier_delegation_doc_lists_every_stage_tag() -> None:
+    from lore_core.stages import STAGES
+
+    documented = set(_STAGE_TAG.findall(TIER_DELEGATION_DOC.read_text(encoding="utf-8")))
+    assert documented == set(STAGES)

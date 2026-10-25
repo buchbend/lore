@@ -321,6 +321,25 @@ def _spawn_logbook_flush(cwd: Path) -> bool:
     return _spawn_in_repo(cwd, "log", "flush")
 
 
+def _spawn_token_usage_record(lore_root: Path, session: str, transcript: str, cwd: str) -> bool:
+    """Fire-and-forget ``lore hook token-usage-record`` for one finished session.
+
+    Reading a long transcript and its subagent files takes longer than a
+    hook should hold Claude Code's exit, so SessionEnd hands it to a child.
+    """
+    return _spawn_in_repo(
+        lore_root,
+        "hook",
+        "token-usage-record",
+        "--session",
+        session,
+        "--transcript",
+        transcript,
+        "--cwd",
+        cwd,
+    )
+
+
 def _spawn_in_repo(cwd: Path, *args: str) -> bool:
     """Fire-and-forget ``lore <args>`` in *cwd*, detached, output discarded."""
     import subprocess
