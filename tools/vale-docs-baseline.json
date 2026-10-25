@@ -8,7 +8,6 @@
   "docs/adr/0011-flag-review-runs-in-a-local-ephemeral-browser-page.md": 1,
   "docs/adr/0013-search-over-wiki-and-github-is-federated-not-cached.md": 1,
   "docs/architecture/cli-contract.md": 6,
-  "docs/architecture/config.md": 5,
   "docs/architecture/lore-drill.md": 1,
   "docs/architecture/observability.md": 20,
   "docs/architecture/slash-toggles.md": 3,
