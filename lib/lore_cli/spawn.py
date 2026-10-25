@@ -313,6 +313,16 @@ def _spawn_codemap_refresh(cwd: Path) -> bool:
     return _spawn_in_repo(cwd, "hook", "codemap-refresh", "--cwd", str(cwd))
 
 
+def _spawn_map_scan(cwd: Path) -> bool:
+    """Fire-and-forget ``lore hook map-scan --cwd <cwd>`` (PRD 0019, the system map).
+
+    The scan reads every checkout of the scope folder, so SessionStart never
+    runs it inline. The child records the count the map lacks for the next
+    banner.
+    """
+    return _spawn_in_repo(cwd, "hook", "map-scan", "--cwd", str(cwd))
+
+
 def _spawn_logbook_flush(cwd: Path) -> bool:
     """Fire-and-forget ``lore log flush`` in *cwd* (PRD 0017 § Pending entries).
 
