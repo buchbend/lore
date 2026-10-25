@@ -58,8 +58,9 @@ ADRs and PRDs as context; only `Invariant` lines bind.
 brief.
 
 **Full mode** fans out only what the pack left thin: one `Explore` subagent for docs the pack
-missed, one for the code map, one for cross-repo consumers when the intent spans repos. Spawn
-them in one message at the `mid` tier (required): pass `lore tier resolve mid` as each model,
+missed, one for the code map, one for cross-repo consumers when the intent spans repos. The
+cross-repo explorer starts from `lore map <owner/repo> --json` for the current repo and widens
+from there. A repo in no map gets an empty list: it scans as before. Spawn them in one message at the `mid` tier (required): pass `lore tier resolve mid` as each model,
 and open each description with `[orient:explore]`; see
 [TIER-DELEGATION.md](../../TIER-DELEGATION.md). Scale the fan-out to the ask. For one lookup,
 grep or read directly; spawn only for parallel or isolated work.
