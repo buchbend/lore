@@ -662,6 +662,17 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - handover must never crash SessionStart
         pass
 
+    # Neighbours before the glossary: both are short, and `lore map` and
+    # `lore glossary` recover what the cap cuts (PRD 0019, the system map).
+    try:
+        from lore_core.system_map import session_start_block as neighbours
+
+        block = neighbours(cwd_resolved, scope.wiki if scope is not None else None)
+        if block:
+            out = out + "\n\n" + block
+    except Exception:  # noqa: BLE001 - the system map must never crash SessionStart
+        pass
+
     # Glossary index last: the cap cuts the end first, and `lore glossary`
     # recovers the list, unlike the resume and handover blocks above.
     try:
