@@ -40,6 +40,10 @@ that no real symbol grounds does not belong here.
 - **Neighbour** — a repo one edge away from the current repo in a system
   map. SessionStart shows the current repo's neighbours. _Avoid_: sibling,
   related repo.
+- **Target** — the branch a system belongs on, kept per person in
+  `<lore_root>/.lore/system-target/`. `lore system status` shows each
+  checkout against it; `lore:system` brings the checkouts there. _Avoid_:
+  system branch, baseline.
 
 Full model (three state files, resolution order, failure modes):
 `docs/architecture/state.md`. Config precedence across CLI flag / env

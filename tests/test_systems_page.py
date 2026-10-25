@@ -1,16 +1,17 @@
-"""The systems page and `lore map status`: the system map for humans, and checkout state."""
+"""The systems page and `lore system`: the system map for humans, and checkout state."""
 
 from __future__ import annotations
 
 import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from lore_cli.map_cmd import app as map_app
 from lore_cli.stats_cmd import app as stats_app
+from lore_cli.system_cmd import app as system_app
 from lore_core import systems_page
-from lore_core.system_checkouts import Checkout, order, state
+from lore_core.system_checkouts import Checkout, load_target, locate, order, save_target, state
 from lore_core.system_map import load_maps
 from lore_core.systems_page import RepoView, ScopeView, render
 from typer.testing import CliRunner
@@ -208,33 +209,112 @@ def test_a_remote_only_branch_counts(vault: Path, tmp_path: Path) -> None:
     assert got.action() == "switch"
 
 
-def test_map_status_lists_checkouts_producers_first(vault: Path, tmp_path: Path) -> None:
-    _git(tmp_path / "src" / "ccat" / "ops-db", "branch", "feat/x")
-    result = runner.invoke(map_app, ["status", "--branch", "feat/x", "--json"])
+def _status(*args: str) -> dict:
+    result = runner.invoke(system_app, ["status", *args, "--json"])
     assert result.exit_code == 0, result.output
-    data = json.loads(result.output)
+    (only,) = json.loads(result.output)["systems"]
+    return only
+
+
+def test_system_status_lists_checkouts_producers_first(vault: Path, tmp_path: Path) -> None:
+    _git(tmp_path / "src" / "ccat" / "ops-db", "branch", "feat/x")
+    data = _status("ccat", "--branch", "feat/x")
     assert [c["repo"] for c in data["checkouts"]] == [
         "ccatobs/ops-db",
         "ccatobs/data-center",
         "ccatobs/web",
     ]
     assert [c["action"] for c in data["checkouts"]] == ["switch", "default", "default"]
-    assert data["no_checkout"] == ["ccatobs/archive"]
-    assert data["local_work"] == []
+    # data-center and web have no feat/x: they belong on main, and are there.
+    assert [c["at_target"] for c in data["checkouts"]] == [False, True, True]
+    assert data["at_target"] == 2
+    assert [r["repo"] for r in data["no_checkout"]] == ["ccatobs/archive"]
+    assert "checkouts: {ccatobs/archive: <folder>}" in data["no_checkout"][0]["hint"]
+    assert data["local_work"] == [] and data["warnings"] == []
     assert {(e["consumer"], e["pin"]) for e in data["pinned"]} == {
         ("ccatobs/data-center", "sha"),
         ("ccatobs/web", "image"),
     }
 
 
-def test_map_status_names_each_checkout_with_local_work(vault: Path, tmp_path: Path) -> None:
+def test_system_status_names_each_checkout_with_local_work(vault: Path, tmp_path: Path) -> None:
     (tmp_path / "src" / "ccat" / "data-center" / "README.md").write_text("changed\n")
-    result = runner.invoke(map_app, ["status", "--branch", "main", "--json"])
-    data = json.loads(result.output)
+    data = _status("--branch", "main")
     assert [(w["repo"], w["work"]) for w in data["local_work"]] == [
         ("ccatobs/data-center", ["1 changed files"])
     ]
     assert [c["action"] for c in data["checkouts"]] == ["pull", "stop", "pull"]
+
+
+def test_the_saved_target_is_the_default_comparison(vault: Path, tmp_path: Path) -> None:
+    _git(tmp_path / "src" / "ccat" / "web", "branch", "feat/x")
+    assert _status()["target"] is None
+    result = runner.invoke(system_app, ["target", "feat/x"])  # the only map
+    assert result.exit_code == 0, result.output
+    assert load_target(vault, "ccat")["branch"] == "feat/x"
+    data = _status("ccat")
+    assert data["target"]["branch"] == "feat/x" and data["target"]["from"] == "saved"
+    web = [c for c in data["checkouts"] if c["repo"] == "ccatobs/web"][0]
+    assert web["at_target"] is False and web["action"] == "switch"
+    assert _status("--branch", "main")["target"]["from"] == "--branch"
+    assert load_target(vault, "ccat")["branch"] == "feat/x"  # --branch saves nothing
+    assert runner.invoke(system_app, ["target", "--clear", "ccat"]).exit_code == 0
+    assert load_target(vault, "ccat") is None
+
+
+def test_the_text_status_reads_like_git_status(vault: Path, tmp_path: Path) -> None:
+    (tmp_path / "src" / "ccat" / "web" / "scratch.txt").write_text("x\n")
+    save_target(vault, "ccat", "main", datetime(2026, 10, 25, tzinfo=UTC))
+    result = runner.invoke(system_app, ["status", "ccat"])
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    assert lines[0] == "ccat · target main (saved, set 2026-10-25) · 3 of 3 checkouts on target"
+    assert lines[1].split()[:4] == ["✓", "ccatobs/ops-db", "main", "clean"]
+    assert lines[3].split()[:2] == ["✓", "ccatobs/web"] and "1 untracked files" in lines[3]
+    assert "ccatobs/archive" in lines[4] and "no checkout" in lines[4]
+    assert "pin: ccatobs/data-center pins ccatobs/ops-db by sha" in result.output
+    assert runner.invoke(system_app, ["status", "ccat"]).output == result.output
+
+
+def test_a_checkouts_entry_wins_over_the_search(vault: Path, tmp_path: Path) -> None:
+    elsewhere = _checkout(tmp_path / "other", "ccatobs/archive")
+    config = tmp_path / "xdg" / "lore" / "config.yml"
+    config.write_text(config.read_text() + f"checkouts:\n  ccatobs/archive: {elsewhere}\n")
+    found, warnings = locate(["ccatobs/archive", "ccatobs/web"])
+    assert found["ccatobs/archive"].path == elsewhere
+    assert found["ccatobs/archive"].source == "pinned"
+    assert found["ccatobs/web"].source == "scope ccat"
+    assert warnings == []
+    data = _status("ccat")
+    assert data["no_checkout"] == []
+    assert "(pinned)" in runner.invoke(system_app, ["status", "ccat"]).output
+
+
+@pytest.mark.parametrize("wrong", ["missing", "other-remote"])
+def test_a_wrong_checkouts_entry_warns_and_falls_back(
+    vault: Path, tmp_path: Path, wrong: str
+) -> None:
+    folder = tmp_path / "nowhere"
+    if wrong == "other-remote":
+        folder = _checkout(tmp_path / "other", "someone/else")
+    config = tmp_path / "xdg" / "lore" / "config.yml"
+    config.write_text(config.read_text() + f"checkouts:\n  ccatobs/web: {folder}\n")
+    found, warnings = locate(["ccatobs/web"])
+    assert found["ccatobs/web"].path == tmp_path / "src" / "ccat" / "web"
+    assert len(warnings) == 1 and "searched the scope folders instead" in warnings[0]
+    assert ("someone/else" in warnings[0]) == (wrong == "other-remote")
+
+
+def test_the_checkouts_key_is_known_to_the_config(vault: Path, tmp_path: Path) -> None:
+    import warnings
+
+    from lore_core.root_config import load_root_config
+
+    config = tmp_path / "xdg" / "lore" / "config.yml"
+    config.write_text(config.read_text() + "checkouts:\n  ccatobs/web: /x\n")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert load_root_config(vault).checkouts == {"ccatobs/web": "/x"}
 
 
 def test_the_page_warns_of_local_work(vault: Path, tmp_path: Path) -> None:
@@ -243,27 +323,48 @@ def test_the_page_warns_of_local_work(vault: Path, tmp_path: Path) -> None:
     assert '<span class="tag warn">1 untracked files</span>' in html
 
 
-def test_map_status_rejects_an_unknown_system(vault: Path) -> None:
-    result = runner.invoke(map_app, ["status", "--system", "nope"])
+def test_the_page_shows_the_target_and_marks_drift(vault: Path, tmp_path: Path) -> None:
+    _git(tmp_path / "src" / "ccat" / "web", "branch", "feat/x")
+    save_target(vault, "ccat", "feat/x", datetime(2026, 10, 25, tzinfo=UTC))
+    html = systems_page.write_page(vault).read_text()
+    assert "target <code>feat/x</code> (set 2026-10-25) · 2 of 3 checkouts on target" in html
+    assert "off target: ccatobs/web" in html
+    assert '<g class="node drift"><title>ccatobs/web: not on the target branch</title>' in html
+
+
+def test_system_status_rejects_an_unknown_system(vault: Path) -> None:
+    result = runner.invoke(system_app, ["status", "nope"])
     assert result.exit_code == 1
 
 
-SKILL = Path(__file__).resolve().parent.parent / "skills" / "checkout" / "SKILL.md"
+SKILL = Path(__file__).resolve().parent.parent / "skills" / "system" / "SKILL.md"
 
 
-def test_checkout_skill_follows_the_map_and_never_discards_work() -> None:
+def _skill() -> str:
+    return " ".join(SKILL.read_text(encoding="utf-8").split())
+
+
+def test_system_skill_is_invocable_and_reads_the_status() -> None:
     import yaml
 
     raw = SKILL.read_text(encoding="utf-8")
     fm = yaml.safe_load(raw[4 : raw.find("\n---", 3)])
-    assert fm["name"] == "lore:checkout" and fm["user_invocable"] is True
-    text = " ".join(raw.split())
-    assert "lore map status --branch <branch> --system <system> --json" in text
+    assert fm["name"] == "lore:system" and fm["user_invocable"] is True
+    text = _skill()
+    assert "lore system status <system> --fetch --json" in text
+    assert "lore system target <branch> <system>" in text
     assert "producers first" in text
-    assert "Never stash, reset, rebase, force or delete a branch. Never push." in text
     for action in ("`switch`", "`pull`", "`default`", "`stop`", "`blocked`"):
         assert action in text
-    assert "Where `local_work` is not empty, warn and stop" in text
-    assert "switch no checkout" in text
-    assert "Proceed only with an empty `local_work`" in text
-    assert "`pinned`" in text and "Do not edit the pin" in text
+
+
+def test_system_skill_asks_before_each_change_and_never_discards_work() -> None:
+    text = _skill()
+    assert "Ask before every change, one repo at a time" in text
+    assert "A yes for one repo covers no other repo" in text
+    assert "Never discard work" in text
+    for command in ("`reset`", "`clean`", "`checkout -- <file>`", "a force push"):
+        assert command in text
+    assert "Never pass `--no-verify`" in text
+    assert "Never move a pin" in text
+    assert "Run `lore system status <system>` and show it" in text

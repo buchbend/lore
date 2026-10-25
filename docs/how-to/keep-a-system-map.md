@@ -74,43 +74,96 @@ holds:
 
 - a diagram per system: each producer above its consumers, an arrow to each consumer, the pin on the arrow;
 - the map's prose and a table of its edges;
-- one card per repo: its systems, scope, checkout folder, current branch, changed files, and one line on what the repo is (the `pyproject.toml` or `package.json` description, else the README's first paragraph);
+- the system's target branch, how many checkouts are on it, and an orange border on each box that is off it;
+- one card per repo: its systems, scope, checkout folder, current branch, local work, and one line on what the repo is (the `pyproject.toml` or `package.json` description, else the README's first paragraph);
 - one row per scope: the checkouts below its folder, with the ones in no map marked;
 - "What is a system map?", the terms of the map.
 
 A dashed box has no checkout below a scope folder. The page has no script and
 makes no network request.
 
-## Switch a system to one branch
+## Find the checkouts
 
-Run `/lore:checkout <branch> [system]`. The skill puts each checkout of the
-system's repos on the branch, producers first.
+The map names repos as `owner/repo`, never folders: folders differ between
+people. Lore finds each checkout on your machine:
 
-First the skill checks every checkout for local work: a merge, rebase,
-cherry-pick, revert or bisect in progress, unmerged files, changed files,
-untracked files, or commits on no remote. On any, it warns, names each checkout
-and its work, and switches nothing. Settle the work and run the skill again.
+1. A `checkouts` entry in `~/.config/lore/config.yml` names its folder.
+2. Otherwise Lore looks below each scope folder, three levels deep, and names each checkout by its git remote.
+
+```yaml
+scopes:
+  ccat:
+    path: ~/src/ccat
+checkouts:                         # only for repos the search misses
+  ccatobs/archive: /data/archive-clone
+```
+
+- An entry wins over the search. Lore checks that the folder's remote is that repo. On a missing folder or another remote, Lore warns and searches instead.
+- Use an entry for a repo outside every scope folder, or to choose one of several clones.
+- Each person keeps their own entries. Nothing about folders goes into the wiki.
+
+## See the state of a system
 
 ```
-lore map status --system ccat --json                   # every checkout of the map, producers first
-lore map status --branch feat/x --system ccat --json   # the same, with the action for the branch
+lore system status                  # every system
+lore system status ccat             # one system
+lore system status ccat --fetch     # fetch each checkout first
+lore system status ccat --json      # the same as JSON
 ```
 
-Each checkout gets one action:
+`lore system status` is `git status` for every repo of a system, producers first:
+
+```
+ccat · target feat/x (saved, set 2026-10-25) · 1 of 3 checkouts on target
+  ✗  ccatobs/ops-db       main  clean              → switch                   ~/src/ccat/ops-db
+  ✗  ccatobs/data-center  main  1 changed files    → settle local work first  ~/src/ccat/data-center
+  ✓  ccatobs/web          main  1 untracked files                             ~/src/ccat/web
+  -  ccatobs/archive      no checkout: add `checkouts: {ccatobs/archive: <folder>}` to ~/.config/lore/config.yml
+  pin: ccatobs/data-center pins ccatobs/ops-db by sha
+```
+
+- Each line shows the branch, the local work, ahead and behind the upstream, the step to the target, and the folder. `(pinned)` marks a folder from `checkouts`.
+- Local work is a merge, rebase, cherry-pick, revert or bisect in progress, unmerged files, changed files, untracked files, or commits on no remote.
+- The command changes nothing. Only `--fetch` reaches the network.
+- The same repos in the same git state give the same output.
+
+## Set the target
+
+The target is the branch a system belongs on, such as a feature branch that
+spans repos. Lore keeps it on your machine, in `<lore_root>/.lore/system-target/`.
+
+```
+lore system target feat/x ccat      # remember feat/x for ccat
+lore system target ccat             # print it   (with one map: `lore system target`)
+lore system target --clear ccat     # forget it
+lore system status ccat --branch main   # compare with main once; saves nothing
+```
+
+A repo without the target branch belongs on its default branch.
+
+## Bring a system to its target
+
+Run `/lore:system [branch] [system]`. Without a branch the skill uses the saved
+target. The skill:
+
+1. Shows `lore system status`, after a fetch.
+2. Offers to save a new branch as the target.
+3. Walks the repos producers first and offers to settle each repo's local work: commit (it shows the diff and proposes a message), push, add a `.gitignore` line, finish or abort a merge or rebase, or leave the repo as it is.
+4. Switches each checkout and pulls with `--ff-only`. A pull that fails shows both sides and asks.
+5. Names the pinned edges that lag the target, and offers a `checkouts` line for each repo without a checkout.
+6. Shows `lore system status` again.
+
+The skill acts only after you say yes, one repo at a time. It never runs `reset`,
+`clean`, `checkout -- <file>`, a branch delete or a force push; to throw work away,
+it shows the command and you run it. It never moves a pin.
 
 | action | what the skill does |
 |---|---|
-| `switch` | `git switch <branch>`, then `git pull --ff-only` |
-| `pull` | already on the branch: `git pull --ff-only` |
-| `default` | no branch of that name: switch to the default branch and pull |
-| `stop` | the checkout holds local work; the skill switches nothing |
+| `switch` | `git switch <target>`, then `git pull --ff-only` |
+| `pull` | on the target already: `git pull --ff-only` |
+| `default` | the repo has no branch of that name: its default branch, then pull |
+| `stop` | the repo holds local work you chose to keep; it stays as it is |
 | `blocked` | another worktree holds the branch; it stays as it is |
-
-- The skill fetches first. `lore map status` reads the local refs only.
-- `local_work` lists each checkout with local work. The systems page shows the same warning on the repo's card.
-- A git command that fails, such as a pull on a diverged branch, stops the run. The skill never merges or rebases.
-- The skill never stashes, resets, rebases, forces or pushes.
-- `pinned` lists the edges whose consumer pins the producer by `sha`, `tag`, `image` or `package`. A producer on the new branch does not reach such a consumer until the pin moves. The skill names each one and leaves the pin alone.
 
 ## Propose map changes
 

@@ -1,32 +1,47 @@
 """The local checkouts of the repos of a system map, and their git state.
 
-``order`` sorts the repos of the maps producers first: a producer comes
-before each repo that consumes it. ``locate`` finds the checkout of each
-repo below the folders of the person's scopes. ``state`` reads one
-checkout's branch, local changes and the refs of a target branch.
+The map names repos as ``owner/repo``, never a folder: folders differ between
+people. ``locate`` finds each repo's checkout on this machine. A
+``checkouts`` entry in the person's config pins one repo to a folder; the
+rest are found below the scope folders, named by their git remote.
 
-Everything here reads the local repository only; no call fetches. The
-``lore:checkout`` skill fetches first, then reads ``lore map status``,
-which prints these facts. The systems page shows them too.
+``order`` sorts the repos of the maps producers first: a producer comes
+before each repo that consumes it. ``state`` reads one checkout's branch,
+local work and the refs of a target branch. ``report`` gathers one system's
+status for ``lore system status``. The target, the branch the person wants a
+system on, is saved per system under ``<lore_root>/.lore/system-target/``.
+
+Only ``report(fetch=True)`` reaches the network; everything else reads the
+local repositories.
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 
 from lore_core.system_map import SystemMap
 
+CONFIG_KEY = "checkouts"
+TARGET_DIR = "system-target"
+
 
 @dataclass(frozen=True)
 class Checkout:
-    """Where the checkout of *repo* sits: its scope and its folder."""
+    """Where the checkout of *repo* sits, and how Lore found it.
+
+    ``source`` is ``pinned`` for a ``checkouts`` entry of the config, else
+    ``scope <name>``. ``scope`` names the scope whose folder holds it, if one does.
+    """
 
     repo: str
     scope: str
     path: Path
+    source: str = ""
 
 
 @dataclass(frozen=True)
@@ -36,6 +51,7 @@ class CheckoutState:
     repo: str
     path: str
     scope: str
+    source: str
     branch: str | None
     default_branch: str | None
     dirty: int
@@ -51,7 +67,23 @@ class CheckoutState:
     unpushed: int = 0
 
     def as_dict(self) -> dict[str, object]:
-        return {**asdict(self), "action": self.action(), "local_work": self.local_work()}
+        return {
+            **asdict(self),
+            "action": self.action(),
+            "local_work": self.local_work(),
+            "at_target": self.at_target(),
+        }
+
+    def at_target(self) -> bool | None:
+        """Whether the checkout is where the target puts it; None without a target.
+
+        A repo without the target branch belongs on its default branch.
+        """
+        if not self.target:
+            return None
+        if self.target_local or self.target_remote:
+            return self.branch == self.target
+        return self.branch is not None and self.branch == self.default_branch
 
     def local_work(self) -> list[str]:
         """What a switch could bury: one reason per kind of work not on a remote."""
@@ -69,7 +101,7 @@ class CheckoutState:
         return found
 
     def action(self) -> str:
-        """What ``lore:checkout`` does with this checkout for the target branch.
+        """What ``lore:system`` does with this checkout for the target branch.
 
         ``stop`` with local work (see :meth:`local_work`), ``blocked`` when another worktree holds
         the branch, ``pull`` on the branch already, ``switch`` where the branch
@@ -117,20 +149,97 @@ def order(maps: Iterable[SystemMap], system: str | None = None) -> list[str]:
     return [names[k] for k in done]
 
 
-def locate(repos: Iterable[str]) -> dict[str, Checkout]:
-    """The checkout of each of *repos* below a scope folder, keyed by the name in *repos*."""
+def pinned_checkouts() -> dict[str, Path]:
+    """The ``checkouts`` entries of the person's config: ``owner/repo`` → folder."""
+    from lore_core.config import user_config_path
+    from lore_core.config_schema import _read_raw
+
+    raw = _read_raw(user_config_path()).get(CONFIG_KEY)
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(repo): Path(folder).expanduser()
+        for repo, folder in raw.items()
+        if isinstance(folder, str) and folder.strip()
+    }
+
+
+def locate(repos: Iterable[str]) -> tuple[dict[str, Checkout], list[str]]:
+    """The checkout of each of *repos*, keyed by the name in *repos*, and warnings.
+
+    A ``checkouts`` entry wins when its folder's remote names the repo. A
+    missing folder or another remote gives a warning, and the search below
+    the scope folders takes over.
+    """
+    from lore_core.git import current_repo
     from lore_core.system_map_scan import configured_scopes, find_checkouts
 
     wanted = {r.casefold(): r for r in repos}
+    scopes = [(name, folder) for name, folder, _tidy in configured_scopes()]
+
+    def scope_of(path: Path) -> str:
+        holding = [(len(f.parts), n) for n, f in scopes if path.resolve().is_relative_to(f)]
+        return max(holding)[1] if holding else ""
+
     found: dict[str, Checkout] = {}
-    for scope, folder, _tidy in configured_scopes():
+    warnings: list[str] = []
+    for slug, folder in pinned_checkouts().items():
+        repo = wanted.get(slug.casefold())
+        if repo is None:
+            continue
+        where = f"{CONFIG_KEY}.{slug}: {folder}"
+        if not folder.is_dir():
+            warnings.append(f"{where} is no folder; searched the scope folders instead")
+            continue
+        remote = current_repo(folder)
+        if (remote or "").casefold() != slug.casefold():
+            warnings.append(
+                f"{where} has remote {remote or 'none'}, not {slug}; "
+                "searched the scope folders instead"
+            )
+            continue
+        found[repo] = Checkout(repo=repo, scope=scope_of(folder), path=folder, source="pinned")
+    for scope, folder in scopes:
         if not folder.is_dir():
             continue
         for slug, path in find_checkouts(folder).items():
             repo = wanted.get(slug.casefold())
             if repo and repo not in found:
-                found[repo] = Checkout(repo=repo, scope=scope, path=path)
-    return found
+                found[repo] = Checkout(repo=repo, scope=scope, path=path, source=f"scope {scope}")
+    return found, warnings
+
+
+def target_path(lore_root: Path, system: str) -> Path:
+    return Path(lore_root) / ".lore" / TARGET_DIR / f"{system}.json"
+
+
+def save_target(lore_root: Path, system: str, branch: str, now: datetime) -> Path:
+    """Remember *branch* as the target of *system*."""
+    from lore_core.io import atomic_write_text
+
+    path = target_path(lore_root, system)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, json.dumps({"branch": branch, "set": now.date().isoformat()}))
+    return path
+
+
+def load_target(lore_root: Path, system: str) -> dict[str, str] | None:
+    """The saved target of *system*: ``branch`` and the date it was ``set``."""
+    try:
+        data = json.loads(target_path(lore_root, system).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("branch"), str):
+        return None
+    return {"branch": data["branch"], "set": str(data.get("set") or "")}
+
+
+def clear_target(lore_root: Path, system: str) -> bool:
+    try:
+        target_path(lore_root, system).unlink()
+    except OSError:
+        return False
+    return True
 
 
 def _git(path: Path, *args: str) -> str | None:
@@ -208,6 +317,7 @@ def state(checkout: Checkout, target: str | None = None) -> CheckoutState:
         repo=checkout.repo,
         path=str(path),
         scope=checkout.scope,
+        source=checkout.source,
         branch=None if branch in (None, "HEAD") else branch,
         default_branch=_default_branch(path),
         dirty=sum(1 for c in codes if c != "??" and c not in _CONFLICT_CODES),
@@ -232,3 +342,67 @@ def state(checkout: Checkout, target: str | None = None) -> CheckoutState:
             "target_elsewhere": _elsewhere(path, target),
         }
     )
+
+
+def fetch(path: Path) -> bool:
+    """``git fetch --prune`` in *path*; False when it fails. Reaches the network."""
+    try:
+        result = subprocess.run(
+            ["git", "fetch", "--prune", "--quiet"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def report(
+    system: SystemMap,
+    lore_root: Path,
+    branch: str | None = None,
+    do_fetch: bool = False,
+) -> dict[str, object]:
+    """The status of *system*: each checkout producers first, against its target.
+
+    *branch* overrides the saved target for this report; it saves nothing.
+    """
+    from lore_core.config import user_config_path
+
+    repos = order([system])
+    found, warnings = locate(repos)
+    saved = load_target(lore_root, system.name)
+    target = {"branch": branch, "set": "", "from": "--branch"} if branch else None
+    if target is None and saved:
+        target = {**saved, "from": "saved"}
+    failed = [r for r in repos if r in found and do_fetch and not fetch(found[r].path)]
+    states = [state(found[r], target["branch"] if target else None) for r in repos if r in found]
+    return {
+        "system": system.name,
+        "note": str(system.path),
+        "target": target,
+        "order": repos,
+        "checkouts": [s.as_dict() for s in states],
+        "at_target": sum(1 for s in states if s.at_target()),
+        "no_checkout": [
+            {
+                "repo": r,
+                "hint": f"add `{CONFIG_KEY}: {{{r}: <folder>}}` to {user_config_path()}",
+            }
+            for r in repos
+            if r not in found
+        ],
+        "pinned": [
+            e.as_dict() for e in system.edges if e.pin and e.pin != "none" and e.producer in found
+        ],
+        "local_work": [
+            {"repo": s.repo, "path": s.path, "work": s.local_work()}
+            for s in states
+            if s.local_work()
+        ],
+        "fetch_failed": failed,
+        "warnings": warnings,
+    }

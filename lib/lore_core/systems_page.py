@@ -50,6 +50,7 @@ a { color: var(--bar); }
 table.text th, table.text td { text-align: left; white-space: normal; min-width: 110px; }
 svg.map { width: auto; max-width: 100%; margin: 0 auto; }
 svg.map .node rect { fill: var(--panel); stroke: var(--bar); stroke-width: 1.5; }
+svg.map .node.drift rect { stroke: var(--warn); stroke-width: 2.5; }
 svg.map .node.off rect { stroke: var(--line); stroke-dasharray: 4 3; }
 svg.map .node text { fill: var(--ink); font-size: 13px; }
 svg.map .node text.owner { fill: var(--muted); font-size: 10.5px; }
@@ -68,7 +69,19 @@ class RepoView:
     path: str | None = None
     branch: str | None = None
     work: tuple[str, ...] = ()
+    pinned: bool = False
     about: str | None = None
+
+
+@dataclass(frozen=True)
+class TargetView:
+    """A system's saved target and which checkouts are off it."""
+
+    branch: str
+    set: str = ""
+    at_target: int = 0
+    checkouts: int = 0
+    off: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -161,7 +174,9 @@ def _labels(repos: list[str]) -> dict[str, tuple[str, str]]:
     return out
 
 
-def _diagram(system: SystemMap, index: int, checked_out: set[str]) -> str:
+def _diagram(
+    system: SystemMap, index: int, checked_out: set[str], off_target: frozenset[str] = frozenset()
+) -> str:
     """The system as layered boxes: producers on top, an arrow down to each consumer."""
     repos = order([system])
     if not repos:
@@ -260,8 +275,11 @@ def _diagram(system: SystemMap, index: int, checked_out: set[str]) -> str:
         owner, name = labels[repo]
         x, y = x_of[repo] - _NODE_W / 2, y_of(repo)
         off = "" if repo.casefold() in checked_out else " off"
+        tip = repo
+        if repo in off_target:
+            off, tip = " drift", f"{repo}: not on the target branch"
         parts.append(
-            f'<a href="#{_anchor(repo)}"><g class="node{off}"><title>{escape(repo)}</title>'
+            f'<a href="#{_anchor(repo)}"><g class="node{off}"><title>{escape(tip)}</title>'
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{_NODE_W}" height="{_NODE_H}" rx="6"/>'
             f'<text class="owner" x="{x + 10:.1f}" y="{y + 14:.1f}">{escape(owner)}</text>'
             f'<text x="{x + 10:.1f}" y="{y + 31:.1f}">{escape(name)}</text></g></a>'
@@ -306,13 +324,17 @@ producer's checkout reaches the consumer only after the pin moves.</dd>
 <dt>Neighbours</dt>
 <dd>The repos one edge away. SessionStart shows them in each repo of a map.</dd>
 <dt>Scope</dt>
-<dd>A folder from <code>scopes</code> in <code>~/.config/lore/config.yml</code>. Lore looks
-for the checkouts of the map's repos below each scope folder. A dashed box has no local
-checkout.</dd>
+<dd>A folder from <code>scopes</code> in <code>~/.config/lore/config.yml</code>. The map
+names repos, never folders, since folders differ between people. Lore finds each checkout
+below the scope folders by its git remote. A <code>checkouts</code> entry in the same
+config pins a repo to a folder the search misses. A dashed box has no local checkout.</dd>
+<dt>Target</dt>
+<dd>The branch a system belongs on, kept on this machine only. A box with an orange border
+is off the target. <code>lore system status</code> shows the same in the terminal.</dd>
 </dl>
 <p class="note">Change a map with <code>/lore:map</code>, which scans the checkouts and opens
-a wiki PR. Print it with <code>lore map</code>. Switch every checkout of a system to one
-branch with <code>/lore:checkout</code>.</p>
+a wiki PR. Print it with <code>lore map</code>. Bring a system to its target branch with
+<code>/lore:system</code>.</p>
 """
 
 
@@ -332,12 +354,16 @@ def _repo_card(repo: str, view: RepoView, maps: list[SystemMap]) -> str:
     tags = "".join(f'<span class="tag">{escape(s)}</span>' for s in systems)
     if view.path:
         where = (
-            f"scope {escape(view.scope or '-')} · <code>{escape(view.path)}</code> · "
+            f"scope {escape(view.scope or '-')} · <code>{escape(view.path)}</code>"
+            f"{' (pinned in your config)' if view.pinned else ''} · "
             f"branch <code>{escape(view.branch or 'detached')}</code>"
         )
         where += "".join(f' <span class="tag warn">{escape(w)}</span>' for w in view.work)
     else:
-        where = '<span class="tag warn">no local checkout</span> in any scope folder'
+        where = (
+            '<span class="tag warn">no local checkout</span> in any scope folder; add '
+            f"<code>checkouts: {{{escape(repo)}: &lt;folder&gt;}}</code> to your config"
+        )
 
     def item(edge, other: str) -> str:
         text = f'<a href="#{_anchor(other)}">{escape(other)}</a>: {escape(edge.interface)}'
@@ -371,9 +397,12 @@ def render(
     repos: dict[str, RepoView],
     scopes: list[ScopeView],
     bodies: dict[str, str] | None = None,
+    targets: dict[str, TargetView] | None = None,
 ) -> str:
-    """The page. *bodies* maps a map's note path to its markdown body."""
+    """The page. *bodies* maps a map's note path to its markdown body; *targets*
+    maps a system's name to its saved target."""
     bodies = bodies or {}
+    targets = targets or {}
     all_repos = order(maps)
     checked_out = {r.casefold() for r, v in repos.items() if v.path}
     edges = sum(len(m.edges) for m in maps)
@@ -424,10 +453,28 @@ def render(
             f'<p class="meta"><code>{escape(str(system.path))}</code> · '
             f"{len(system.repos)} repos · {len(system.edges)} edges</p>",
         ]
+        goal = targets.get(system.name)
+        if goal:
+            drift = (
+                ' <span class="tag warn">off target: ' + escape(", ".join(goal.off)) + "</span>"
+                if goal.off
+                else ""
+            )
+            body.append(
+                f'<p class="meta">target <code>{escape(goal.branch)}</code>'
+                f"{' (set ' + escape(goal.set) + ')' if goal.set else ''} · "
+                f"{goal.at_target} of {goal.checkouts} checkouts on target{drift}</p>"
+            )
+        else:
+            body.append(
+                '<p class="meta">no target · <code>lore system target &lt;branch&gt; '
+                f"{escape(system.name)}</code></p>"
+            )
         prose = _prose(text)
         if prose:
             body.append(f'<div class="prose">{prose}</div>')
-        body.append(_diagram(system, index, checked_out))
+        off = frozenset(goal.off) if goal else frozenset()
+        body.append(_diagram(system, index, checked_out, off))
         if system.edges:
             body.append(_edge_table(system))
     if all_repos:
@@ -515,29 +562,43 @@ def write_page(lore_root: Path) -> Path:
     from lore_core.config import list_wikis
     from lore_core.io import atomic_write_text
     from lore_core.schema import strip_frontmatter
-    from lore_core.system_checkouts import Checkout, state
+    from lore_core.system_checkouts import report
     from lore_core.system_map import load_maps
     from lore_core.system_map_scan import configured_scopes, find_checkouts
 
     maps = load_maps(list_wikis(Path(lore_root)))
-    wanted = {r.casefold(): r for r in order(maps)}
-    scopes: list[ScopeView] = []
+    scopes = [
+        ScopeView(
+            name=name,
+            folder=_home(folder),
+            repos=sorted(find_checkouts(folder)) if folder.is_dir() else [],
+        )
+        for name, folder, _tidy in configured_scopes()
+    ]
     repos: dict[str, RepoView] = {}
-    for name, folder, _tidy in configured_scopes():
-        found = find_checkouts(folder) if folder.is_dir() else {}
-        scopes.append(ScopeView(name=name, folder=_home(folder), repos=sorted(found)))
-        for slug, path in found.items():
-            repo = wanted.get(slug.casefold())
-            if not repo or repo in repos:
+    targets: dict[str, TargetView] = {}
+    for m in maps:
+        data = report(m, Path(lore_root))
+        for c in data["checkouts"]:
+            if c["repo"] in repos:
                 continue
-            git = state(Checkout(repo=repo, scope=name, path=path))
-            repos[repo] = RepoView(
-                repo=repo,
-                scope=name,
+            path = Path(c["path"])
+            repos[c["repo"]] = RepoView(
+                repo=c["repo"],
+                scope=c["scope"] or None,
                 path=_home(path),
-                branch=git.branch,
-                work=tuple(git.local_work()),
+                branch=c["branch"],
+                work=tuple(c["local_work"]),
+                pinned=c["source"] == "pinned",
                 about=about(path),
+            )
+        if data["target"]:
+            targets[m.name] = TargetView(
+                branch=data["target"]["branch"],
+                set=data["target"]["set"],
+                at_target=data["at_target"],
+                checkouts=len(data["checkouts"]),
+                off=tuple(c["repo"] for c in data["checkouts"] if c["at_target"] is False),
             )
     bodies = {}
     for m in maps:
@@ -545,5 +606,5 @@ def write_page(lore_root: Path) -> Path:
             bodies[str(m.path)] = strip_frontmatter(m.path.read_text(encoding="utf-8"))
     path = Path(lore_root) / ".lore" / PAGE_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(path, render(maps, repos, scopes, bodies))
+    atomic_write_text(path, render(maps, repos, scopes, bodies, targets))
     return path
