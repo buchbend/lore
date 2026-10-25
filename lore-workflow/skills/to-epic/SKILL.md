@@ -71,7 +71,7 @@ boundaries never justify a split. **Blocked by** records a real dependency only:
 needs code, a schema or an interface that another slice adds. Two slices that only edit the
 same files carry no edge — they run in parallel and the later merge rebases. Target 2–4
 slices (1 is fine; more than 6 smells like two epics). For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
-blocked-by, and acceptance criteria as checkboxes. HITL slices need a human decision;
+blocked-by, and acceptance criteria as checkboxes. A row that crosses repos names the edge's `pin` in its acceptance criteria (`lore map <owner/repo> --json`); no edge: write the row as before. HITL slices need a human decision;
 `build` in `epic` mode escalates rather than auto-implements them, so resolve
 what you can into AFK during planning.
 
