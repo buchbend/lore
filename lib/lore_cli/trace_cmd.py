@@ -217,8 +217,9 @@ def _tokens_summary(lore_root: Path | None, json_out: bool, days: int) -> None:
     )
     for title, buckets in (
         ("by model", summary.by_model),
-        ("by phase", summary.by_where),
-        ("subagents by requested model", summary.by_request),
+        ("by stage", summary.by_stage),
+        ("by epic or issue", summary.by_target),
+        ("subagents by stage and requested model", summary.by_request),
     ):
         if buckets:
             console.print()
@@ -258,7 +259,7 @@ def trace(
     """Chronological drill-down of one story, correlated by trace_id.
 
     `lore trace tokens <session>` prints token totals per skill or agent phase.
-    `lore trace tokens` sums the recorded sessions by model and phase.
+    `lore trace tokens` sums the recorded sessions by model, stage, and epic or issue.
     """
     from lore_core.config import get_lore_root
 

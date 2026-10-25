@@ -14,12 +14,14 @@ A record::
 
     {"v": 1, "session": "...", "recorded_at": "2026-10-24T09:00:00Z",
      "cwd": "/repo", "rows": [{"phase": "skill:build", "model": "claude-opus-5-5",
-     "requested_model": null, "requested_effort": null, "messages": 3,
-     "input": ..., "output": ..., "cache_read": ..., "cache_write": ...,
-     "cache_write_1h": ...}]}
+     "requested_model": null, "requested_effort": null, "stage": null,
+     "target": "lore#510", "messages": 3, "input": ..., "output": ...,
+     "cache_read": ..., "cache_write": ..., "cache_write_1h": ...}]}
 
 One row per (phase, served model). ``requested_*`` is set on agent rows
-whose spawn named a model or effort.
+whose spawn named a model or effort. ``stage`` is the row's stage tag and
+``target`` the epic or issue it worked for, as ``repo#n`` (see
+:mod:`lore_core.stages`). Records written before these keys lack them.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from lore_core.stages import ref_label
 from lore_core.token_prices import estimate_cost
 from lore_core.token_trace import model_matches, trace_tokens
 
@@ -48,8 +51,16 @@ def build_record(
     """The token record for the transcript at ``transcript``."""
     merged: dict[tuple, dict] = {}
     for phase in trace_tokens(transcript):
+        target = ref_label(phase.target, cwd) if phase.target else None
         for model, usage in phase.models.items():
-            key = (phase.name, model, phase.requested_model, phase.requested_effort)
+            key = (
+                phase.name,
+                model,
+                phase.requested_model,
+                phase.requested_effort,
+                phase.stage,
+                target,
+            )
             row = merged.setdefault(
                 key,
                 {
@@ -57,6 +68,8 @@ def build_record(
                     "model": model,
                     "requested_model": phase.requested_model,
                     "requested_effort": phase.requested_effort,
+                    "stage": phase.stage,
+                    "target": target,
                     **dict.fromkeys(_COUNT_KEYS, 0),
                 },
             )
@@ -150,36 +163,73 @@ class Mismatch:
 
 
 @dataclass
+class SessionCost:
+    session: str
+    recorded_at: str
+    cwd: str
+    bucket: Bucket = field(default_factory=Bucket)
+    targets: set[str] = field(default_factory=set)
+
+    def as_dict(self) -> dict:
+        return {
+            "session": self.session,
+            "recorded_at": self.recorded_at,
+            "cwd": self.cwd,
+            "targets": sorted(self.targets),
+            **self.bucket.as_dict(),
+        }
+
+
+UNTAGGED = "untagged subagents"
+NO_TARGET = "no epic or issue"
+
+
+@dataclass
 class Summary:
     sessions: int = 0
     total: Bucket = field(default_factory=Bucket)
     by_model: dict[str, Bucket] = field(default_factory=dict)
-    by_where: dict[str, Bucket] = field(default_factory=dict)
+    by_stage: dict[str, Bucket] = field(default_factory=dict)
+    by_target: dict[str, Bucket] = field(default_factory=dict)
     by_request: dict[str, Bucket] = field(default_factory=dict)
+    by_day: dict[str, Bucket] = field(default_factory=dict)
+    per_session: list[SessionCost] = field(default_factory=list)
     mismatches: list[Mismatch] = field(default_factory=list)
     unpriced_models: set[str] = field(default_factory=set)
+    latest: str = ""  # the newest ``recorded_at`` summed
 
     def as_dict(self) -> dict:
+        def buckets(d: dict[str, Bucket]) -> dict:
+            return {k: v.as_dict() for k, v in sorted(d.items())}
+
         return {
             "sessions": self.sessions,
+            "latest": self.latest,
             "total": self.total.as_dict(),
-            "by_model": {k: v.as_dict() for k, v in self.by_model.items()},
-            "by_where": {k: v.as_dict() for k, v in self.by_where.items()},
-            "by_request": {k: v.as_dict() for k, v in self.by_request.items()},
+            "by_model": buckets(self.by_model),
+            "by_stage": buckets(self.by_stage),
+            "by_target": buckets(self.by_target),
+            "by_request": buckets(self.by_request),
+            "by_day": buckets(self.by_day),
+            "per_session": [s.as_dict() for s in self.per_session],
             "mismatches": [vars(m) for m in self.mismatches],
             "unpriced_models": sorted(self.unpriced_models),
         }
 
 
-def _where(phase: str) -> str:
-    """Group a phase for the summary: ``main``, ``skill:<name>`` or ``agents``."""
-    return "agents" if phase.startswith("agent:") else phase
+def stage_label(row: dict) -> str:
+    """Group a row by stage: its tag, else ``untagged subagents`` or the phase name."""
+    if row.get("stage"):
+        return str(row["stage"])
+    phase = str(row.get("phase") or "?")
+    return UNTAGGED if phase.startswith("agent:") else phase
 
 
 def _request_label(row: dict) -> str:
     model = row.get("requested_model") or "no model named"
     effort = row.get("requested_effort")
-    return f"{model} @ {effort}" if effort else model
+    request = f"{model} @ {effort}" if effort else model
+    return f"{stage_label(row)} · {request}"
 
 
 def summarize(
@@ -195,6 +245,11 @@ def summarize(
         if since is not None and (when is None or when < since):
             continue
         out.sessions += 1
+        stamp = str(record.get("recorded_at") or "")
+        out.latest = max(out.latest, stamp)
+        session = SessionCost(str(record.get("session")), stamp, str(record.get("cwd") or ""))
+        out.per_session.append(session)
+        day = out.by_day.setdefault(stamp[:10] or "?", Bucket())
         mismatched: set[str] = set()
         for row in record.get("rows") or []:
             if not isinstance(row, dict):
@@ -203,8 +258,12 @@ def summarize(
             cost = estimate_cost(model, row, prices)
             if cost is None:
                 out.unpriced_models.add(model)
-            buckets = [out.total, out.by_model.setdefault(model, Bucket())]
-            buckets.append(out.by_where.setdefault(_where(phase), Bucket()))
+            target = row.get("target") or NO_TARGET
+            if row.get("target"):
+                session.targets.add(str(target))
+            buckets = [out.total, session.bucket, day, out.by_model.setdefault(model, Bucket())]
+            buckets.append(out.by_stage.setdefault(stage_label(row), Bucket()))
+            buckets.append(out.by_target.setdefault(str(target), Bucket()))
             if phase.startswith("agent:"):
                 buckets.append(out.by_request.setdefault(_request_label(row), Bucket()))
             for bucket in buckets:
@@ -220,4 +279,5 @@ def summarize(
                 out.mismatches.append(
                     Mismatch(str(record.get("session")), phase, str(requested), model)
                 )
+    out.per_session.sort(key=lambda s: (-s.bucket.cost, s.session))
     return out

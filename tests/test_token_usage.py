@@ -223,8 +223,11 @@ def test_summarize_groups_by_model_phase_and_request(session: Path) -> None:
     summary = summarize([old, record], since=_NOW - timedelta(days=7))
     assert summary.sessions == 1
     assert set(summary.by_model) == {"claude-opus-5-5", "claude-sonnet-5-5"}
-    assert set(summary.by_where) == {"main", "agents"}
-    assert set(summary.by_request) == {"claude-sonnet-5-5 @ medium", "haiku"}
+    assert set(summary.by_stage) == {"main", "untagged subagents"}
+    assert set(summary.by_request) == {
+        "untagged subagents · claude-sonnet-5-5 @ medium",
+        "untagged subagents · haiku",
+    }
     assert [(m.phase, m.requested, m.served) for m in summary.mismatches] == [
         ("agent:review", "haiku", "claude-opus-5-5")
     ]
@@ -314,7 +317,7 @@ def test_summary_table_and_json(session: Path, monkeypatch, tmp_path: Path) -> N
 
     result = runner.invoke(trace_app, ["tokens", "--days", "0"], catch_exceptions=False)
     assert result.exit_code == 0
-    for word in ("1 session,", "by model", "opus-5-5", "by phase", "agents", "asked haiku"):
+    for word in ("1 session,", "by model", "opus-5-5", "by stage", "untagged", "asked haiku"):
         assert word in result.output
 
     result = runner.invoke(trace_app, ["tokens", "--json"], catch_exceptions=False)

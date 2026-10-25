@@ -12,6 +12,7 @@ runner = CliRunner()
 VISIBLE = {
     "setup",
     "status",
+    "stats",
     "config",
     "search",
     "read",

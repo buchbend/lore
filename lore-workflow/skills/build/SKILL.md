@@ -34,8 +34,8 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
   merge. On a clear yes, merge with the repo's usual method and report the merge SHA. Silence or
   a reply about something else is not a yes. The user can merge on GitHub instead; then go on
   from the merged state.
-- **Tiers.** Every spawn names a tier and passes `lore tier resolve <tier>` as its model. See
-  [TIER-DELEGATION.md](../../TIER-DELEGATION.md).
+- **Tiers.** A spawn's model is `lore tier resolve <tier>`; its description opens with its
+  stage tag. See [TIER-DELEGATION.md](../../TIER-DELEGATION.md).
 - **Writing rules.** Run `lore style show writing-rules` before you write a PR body, an ADR, a
   glossary term or the handover section. Write PR bodies and follow-up issues through
   [`file-issue`](../file-issue/SKILL.md). The board and the verdict block are machine-read and

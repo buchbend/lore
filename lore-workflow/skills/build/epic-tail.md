@@ -37,7 +37,8 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
 - **Roadmap.** Remove the shipped roadmap item from its `ROADMAP.md`: the item that links this
   epic or its PRD. Commit the change on `epic/<issue>`.
 - **Whole-epic review**, only for an epic with three or more features. Follow
-  [review.md](review.md) on the epic PR, after the docs commit. The reviewer checks
+  [review.md](review.md) on the epic PR, after the docs commit, with the tag
+  `[build:epic-review]`. The reviewer checks
   cross-feature consistency: naming, duplicate helpers, conflicting edits to shared files. It
   also checks the docs commit against the behaviour. No separate docs round. For one or two
   features, the per-PR reviews already read every diff; skip this review. Exception: the

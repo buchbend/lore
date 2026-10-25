@@ -71,6 +71,7 @@ def _build_app() -> typer.Typer:
         roadmap_cmd,
         search_cmd,
         setup_cmd,
+        stats_cmd,
         status_cmd,
         style_cmd,
         tier_cmd,
@@ -96,6 +97,7 @@ def _build_app() -> typer.Typer:
 
     app.add_typer(setup_cmd.app, name="setup", rich_help_panel=_GS)
     app.add_typer(status_cmd.app, name="status", rich_help_panel=_GS)
+    app.add_typer(stats_cmd.app, name="stats", rich_help_panel=_GS)
     app.add_typer(config_cmd.app, name="config", rich_help_panel=_GS)
 
     app.add_typer(search_cmd.app, name="search", rich_help_panel=_KN)

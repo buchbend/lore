@@ -27,6 +27,28 @@ different rule from the one above and the two are not interchangeable:
 delegation-point skills resolve a tier for a spawn; main-session skills
 simply state they don't spawn.
 
+## Stage tags
+
+Every spawn also opens its `description` with a **stage tag**. When the spawn works for an epic or
+an issue, the reference follows the tag: `[build:review] owner/repo#510`. Lore reads the tag from
+the transcript and counts the spawn's tokens for that stage and that epic or issue (`lore stats`).
+A spawn without a tag still counts, under "untagged subagents".
+
+| Tag | Delegation point |
+|---|---|
+| `[build:implement]` | `build` teammate, `epic` mode; also the first line of its brief |
+| `[build:review]` | `build` per-PR review |
+| `[build:epic-review]` | `build` whole-epic review in the epic tail |
+| `[build:suite]` | `build` background suite after a `loop` round |
+| `[build:advisory]` | `build` advisory pass of the `loop` wrap-up |
+| `[orient:explore]` | `orient` explorer, full mode |
+| `[orient:named]` | `orient` named agent |
+| `[triage:security]`, `[triage:architect]`, `[triage:ops]` | `triage` default lenses |
+| `[triage:other]` | `triage` theme outside the default lenses |
+
+`lib/lore_core/stages.py` holds the same list. A structural test fails when a skill names a tag
+the list lacks.
+
 ## Workflow-specific tier choices
 
 **Implementation teammates** (`build`, `epic` mode, Dispatch): **advisory**. Assess each

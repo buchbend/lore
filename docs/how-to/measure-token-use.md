@@ -1,7 +1,8 @@
 # Measure token use
 
-**Goal:** see how many tokens your Claude Code sessions spent, which models
-served them, and what the use would cost at API list prices.
+**Goal:** see how many tokens your Claude Code sessions spent and which models
+served them. See which workflow stage and which epic or issue spent them, and
+what the use would cost at API list prices.
 
 ## Before you start
 
@@ -13,7 +14,46 @@ token-usage` hook counts the transcript and appends one token record to
 `<lore_root>/.lore/token-usage.jsonl`. The file stays on your machine. While
 `/lore:off all` mutes a session, the hook records nothing for it.
 
-## Sum the recorded sessions
+## Open the statistics page
+
+1. **Run the command.**
+
+   ```
+   lore stats
+   lore stats --days 7
+   lore stats --no-open
+   ```
+
+   `lore stats` writes `<lore_root>/.lore/stats.html` and opens it in your
+   browser. `--no-open` only prints the path. `--days` sets the window. The
+   default is 30 days; `0` sums every record.
+
+2. **Read the page.** The page shows the estimated cost per day, then tables by
+   served model, by workflow stage, by epic or issue, and by stage and requested
+   model. The page lists each subagent that ran on a model it did not ask for,
+   and the most expensive sessions.
+
+The page is one static file with no script and no network request. The same
+token records always give the same page.
+
+## How Lore finds the stage and the epic
+
+- **Stage.** Every spawn in the lore-workflow skills opens its description with
+  a stage tag, such as `[build:review]` or `[build:epic-review]`.
+  `lore-workflow/TIER-DELEGATION.md` lists the tags. A subagent without a tag
+  counts under "untagged subagents". Work in the main session counts under its
+  skill, such as `skill:lore-workflow:build`.
+- **Teammate session.** A teammate that runs as its own session gets a brief
+  whose first line is the tag and the epic: `[build:implement]
+  owner/repo#510`. The whole session counts for that stage and epic.
+- **Epic or issue.** A reference after the tag counts the spawn for that epic
+  or issue. Without one, the spawn counts for the reference in the arguments of
+  the skill that runs, such as `/lore-workflow:build epic owner/repo#510`. The
+  reference stays in effect until another one appears in the session.
+- After `/clear`, the session starts without a reference. Work there counts
+  under "no epic or issue" until a skill names the epic again.
+
+## Sum the recorded sessions in the terminal
 
 1. **Run the command with no session.**
 
@@ -25,13 +65,14 @@ token-usage` hook counts the transcript and appends one token record to
 
    `--days` sets the window. The default is 30 days; `0` sums every record.
 
-2. **Read the three tables.**
+2. **Read the four tables.**
 
    - `by model` groups the tokens by served model, the model that answered.
-   - `by phase` groups them into `main`, one row per `skill:<name>`, and
-     `agents` for every subagent.
-   - `subagents by requested model` groups subagent tokens by the model and
-     effort that each spawn asked for.
+   - `by stage` groups them by stage tag. Main-session work counts under
+     `main` or `skill:<name>`.
+   - `by epic or issue` groups them by reference, as `repo#n`.
+   - `subagents by stage and requested model` groups subagent tokens by stage,
+     and by the model and effort that each spawn asked for.
 
    Each table has an `est. USD` column (US dollars) and a `share` of the total cost.
 
