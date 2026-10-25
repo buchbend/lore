@@ -340,6 +340,17 @@ def test_config_file_unreadable_handled(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delenv("LORE_ROOT", raising=False)
     cfg = _write_config(Path.home(), "lore_root: /tmp/v\n")
     cfg.chmod(0)
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        # Root reads a file whatever its mode, so raise the error a normal
+        # user gets from the kernel for this one file (#539).
+        read_text = Path.read_text
+
+        def denied(self: Path, *args, **kwargs) -> str:
+            if self == cfg:
+                raise PermissionError(13, "Permission denied", str(self))
+            return read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", denied)
     try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
