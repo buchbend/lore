@@ -208,7 +208,9 @@ that the `SessionEnd` hook writes. See
 `lore_core/stats_page.py`. Writes one static page,
 `<lore_root>/.lore/stats.html`, from the token records, and opens it in the
 browser. The page groups token use and estimated cost by day, model, stage
-tag, and epic or issue. The same records give the same bytes. `lore stats` joined
+tag, and epic or issue. The same records give the same bytes. Next to it,
+`lore_core/systems_page.py` writes `systems.html`: the system maps, the repos
+with their checkout and branch, and the scopes. `--page systems` opens it. `lore stats` joined
 the read commands after the consolidation above, for statistics over time rather
 than health or one story.
 

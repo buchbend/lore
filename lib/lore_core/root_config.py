@@ -204,6 +204,8 @@ class RootConfig:
     scopes: dict[str, ScopeConfig] = field(default_factory=dict, metadata={"item": ScopeConfig})
     sinks: dict[str, dict] = field(default_factory=dict)
     sources: dict[str, dict] = field(default_factory=dict)
+    #: ``owner/repo`` → folder of its checkout, where the scope search misses it.
+    checkouts: dict[str, str] = field(default_factory=dict)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     tiers: TierConfig = field(default_factory=TierConfig)
     tokens: TokensConfig = field(default_factory=TokensConfig)

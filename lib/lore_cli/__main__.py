@@ -75,6 +75,7 @@ def _build_app() -> typer.Typer:
         setup_cmd,
         stats_cmd,
         status_cmd,
+        system_cmd,
         style_cmd,
         tier_cmd,
         toggle_cmd,
@@ -108,6 +109,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
     app.add_typer(log_cmd.app, name="log", rich_help_panel=_KN)
     app.add_typer(roadmap_cmd.app, name="roadmap", rich_help_panel=_KN)
+    app.add_typer(system_cmd.app, name="system", rich_help_panel=_KN)
     app.add_typer(toggle_cmd.on_app, name="on", hidden=True)
     app.add_typer(toggle_cmd.off_app, name="off", hidden=True)
 

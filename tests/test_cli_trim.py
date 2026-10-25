@@ -19,6 +19,7 @@ VISIBLE = {
     "wiki",
     "log",
     "roadmap",
+    "system",
     "update",
     "uninstall",
 }

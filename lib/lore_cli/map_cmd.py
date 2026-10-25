@@ -10,7 +10,8 @@ A system map is a wiki note at ``<wiki>/systems/<name>.md`` (PRD 0019, the
 system map). SessionStart shows the current repo's neighbours; this command
 prints the full list. ``check`` exits 1 on a format error. ``scan`` reads the
 checkouts below the scope folder and lists the candidate edges the files
-suggest; the ``lore:map`` skill turns them into a wiki PR.
+suggest; the ``lore:map`` skill turns them into a wiki PR. ``lore system
+status`` shows the checkouts of the map's repos.
 """
 
 from __future__ import annotations

@@ -105,6 +105,11 @@ it and deletes them. Subsections:
 - `scopes.<name>.{path, remote, wiki, tracker, logbook, sources}` — a folder
   (and optional git remotes) whose repos share a wiki; `lore setup scope`
   adds one. `defaults` holds the values a repo gets when no scope sets them.
+- `checkouts.<owner/repo>` — the folder of that repo's checkout, for a repo
+  the scope search misses (outside every scope folder, or one of several
+  clones). The system map names repos only; this pins one to a folder on this
+  machine. Lore checks the folder's remote and warns on a mismatch. See
+  `docs/how-to/keep-a-system-map.md`.
 - `sinks.<name>` — a logbook sink: `kind: file`, or `kind: command` with
   `run` (a shell line) and an optional `secret` (a secret name). `lore setup
   sink` writes it. See `docs/how-to/use-the-logbook.md`.
