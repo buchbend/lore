@@ -73,7 +73,9 @@ lore map scan --scope ~/src/ccat      # another folder
 ```
 
 - The scan reads git submodules, git URLs and package names in `pyproject.toml` and `package.json`, `FROM` images in Dockerfiles and images in compose files.
-- The scan names each checkout by its remote. A dependency that no checkout provides stays out.
+- The scan reads a Python package name from `pyproject.toml`, `setup.cfg` or `setup.py`. An image tag such as `${TAG:-main}` counts as a tag.
+- The scan names each checkout by its remote. Where a main checkout and a worktree of one repo both sit in the folder, the scan reads the main checkout.
+- A dependency that no checkout provides stays out. A package name that two checkouts declare is listed under `ambiguous`, with no candidate edge.
 - The scan calls no model and no network.
 - The wiki PR has three sections: added, changed, and edges the scan no longer finds. The skill deletes no edge. A human deletes one in the PR.
 - SessionStart runs the scan in a background child, once an hour per scope. The banner names the count of candidate edges that the map lacks.

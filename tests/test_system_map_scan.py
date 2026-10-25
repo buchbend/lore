@@ -273,3 +273,108 @@ def test_canonical_repo_name_reads_ssh_and_git_urls() -> None:
         "https://github.com/o/b",
     ):
         assert canonical_repo_name(url) == "o/b", url
+
+
+# Issue 540 (setup.py names, variable image tags, main checkouts, ambiguous packages).
+
+
+def test_a_package_name_from_setup_py_or_setup_cfg_maps_to_its_checkout(tmp_path: Path) -> None:
+    folder = tmp_path / "s"
+    ops = _checkout(folder, "o/ops-db")
+    (ops / "pyproject.toml").write_text("[build-system]\nrequires = ['setuptools']\n")
+    (ops / "setup.py").write_text(
+        "from setuptools import setup\n\nsetup(\n    name=\"ccat_ops_db\",\n    version='1')\n"
+    )
+    cfg = _checkout(folder, "o/cfg")
+    (cfg / "setup.cfg").write_text("[metadata]\nname = cfg-lib\n")
+    api = _checkout(folder, "o/api")
+    (api / "pyproject.toml").write_text(
+        '[project]\nname = "api"\ndependencies = ["ccat-ops-db>=1", "cfg_lib"]\n'
+    )
+    assert {(c.producer, c.detail) for c in scan(folder) if c.consumer == "o/api"} == {
+        ("o/ops-db", "ccat-ops-db"),
+        ("o/cfg", "cfg_lib"),
+    }
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "ghcr.io/o/ops-db:${CCAT_IMAGE_TAG:-main}",
+        "ghcr.io/o/ops-db:${TAG}",
+        "ghcr.io/o/ops-db:v1@sha256:abc",
+        "ghcr.io/o/ops-db",
+    ],
+)
+def test_an_image_tag_with_a_variable_is_removed_whole(tmp_path: Path, image: str) -> None:
+    folder = tmp_path / "s"
+    _checkout(folder, "o/ops-db")
+    si = _checkout(folder, "o/si")
+    (si / "docker-compose.yml").write_text(f"services:\n  db:\n    image: {image}\n")
+    (si / "Dockerfile").write_text(f"FROM {image}\n")
+    hits = {(c.producer, c.source) for c in scan(folder) if c.kind == "image"}
+    assert hits == {("o/ops-db", "docker-compose.yml"), ("o/ops-db", "Dockerfile")}
+
+
+def _worktree(main: Path, path: Path) -> None:
+    subprocess.run(
+        ["git", "-C", str(main), "commit", "-q", "--allow-empty", "-m", "x"],
+        check=True,
+        env={
+            **__import__("os").environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        },
+    )
+    subprocess.run(
+        ["git", "-C", str(main), "worktree", "add", "-q", "-b", "wt", str(path)], check=True
+    )
+
+
+def test_the_main_checkout_wins_over_a_worktree_that_sorts_first(tmp_path: Path) -> None:
+    folder = tmp_path / "s"
+    main = _checkout(folder, "o/system-integration")
+    _worktree(main, folder / "si-wt-718")
+    assert find_checkouts(folder)["o/system-integration"] == main
+
+
+def test_a_lone_worktree_is_the_checkout(tmp_path: Path) -> None:
+    main = _checkout(tmp_path / "elsewhere", "o/tcs")
+    folder = tmp_path / "s"
+    folder.mkdir()
+    _worktree(main, folder / "tcs-wt-21")
+    assert find_checkouts(folder)["o/tcs"] == folder / "tcs-wt-21"
+
+
+def test_a_package_two_checkouts_publish_is_ambiguous_not_an_edge(tmp_path: Path) -> None:
+    folder = tmp_path / "s"
+    for slug in ("o/obs_implementation", "o/fyst-scheduler"):
+        (_checkout(folder, slug) / "pyproject.toml").write_text('[project]\nname = "fystplan"\n')
+    api = _checkout(folder, "o/api")
+    (api / "pyproject.toml").write_text('[project]\nname = "api"\ndependencies = ["fystplan"]\n')
+    assert [c for c in scan(folder) if c.consumer == "o/api"] == []
+    assert system_map_scan.ambiguous(folder) == {
+        "fystplan": ["o/fyst-scheduler", "o/obs_implementation"]
+    }
+    result = CliRunner().invoke(
+        app, ["scan", "--scope", str(folder), "--json", "--wiki-dir", str(tmp_path / "none")]
+    )
+    assert json.loads(result.output)["ambiguous"] == [
+        {
+            "package": "fystplan",
+            "checkouts": ["o/fyst-scheduler", "o/obs_implementation"],
+            "consumers": ["o/api"],
+        }
+    ]
+
+
+def test_a_registry_variable_still_matches_by_owner_and_repo(tmp_path: Path) -> None:
+    folder = tmp_path / "s"
+    _checkout(folder, "o/ops-db")
+    si = _checkout(folder, "o/si")
+    (si / "Dockerfile").write_text("ARG REG\nFROM ${REG}/o/ops-db:${TAG}\nFROM ${BASE}\n")
+    assert [(c.producer, c.detail) for c in scan(folder)] == [
+        ("o/ops-db", "${REG}/o/ops-db:${TAG}")
+    ]
