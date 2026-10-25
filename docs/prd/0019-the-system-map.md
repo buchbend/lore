@@ -1,12 +1,14 @@
 ---
 title: The system map
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/531
 repos:
   - buchbend/lore
 ---
 
 # PRD 0019: The system map
+
+> Historical. Current decisions: ADR 0014.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/531).
 > The epic links here; this file is not embedded in the issue body.
