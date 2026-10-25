@@ -33,6 +33,13 @@ that no real symbol grounds does not belong here.
 - **Hidden command** — a command registered at its path but left out of
   `lore --help`, because only hooks or skills call it. _Avoid_: internal,
   private command.
+- **System map** — a wiki note that lists the repos of one system and the
+  edges between them. Each edge names a consumer, a producer and the
+  interface between them. Humans merge every change; `lore:map` proposes
+  them. _Avoid_: dependency graph, repo map.
+- **Neighbour** — a repo one edge away from the current repo in a system
+  map. SessionStart shows the current repo's neighbours. _Avoid_: sibling,
+  related repo.
 
 Full model (three state files, resolution order, failure modes):
 `docs/architecture/state.md`. Config precedence across CLI flag / env
