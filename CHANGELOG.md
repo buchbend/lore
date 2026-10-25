@@ -8,12 +8,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
-## [0.93.1] - 2026-10-25
-
-### Changed
-
-- **`/lore:checkout` stops on local work.** Before any switch, the skill checks every checkout of the system for a merge, rebase, cherry-pick, revert or bisect in progress, unmerged files, changed files, untracked files, and commits on no remote. On any, it warns, names each checkout and its work, and switches nothing. A git command that fails also stops the run. `lore map status --json` lists that work under `local_work`, and such a checkout's action is `stop` (it was `skip`). The systems page shows the same warnings on the repo's card.
-
 ## [0.93.0] - 2026-10-25
 
 ### Added
