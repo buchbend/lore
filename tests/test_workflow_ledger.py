@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 import pytest
-from lore_workflow.ledger import LedgerEntry, format_entry, parse_ledger
+from lore_workflow.ledger import (
+    LedgerEntry,
+    LedgerParseError,
+    archive_ledger,
+    board_api_path,
+    format_entry,
+    parse_ledger,
+    set_outcome,
+)
 
 LEDGER = """\
 # Lore ledger
@@ -132,3 +140,35 @@ def test_parse_board_ledger_without_section_is_empty() -> None:
     from lore_workflow.ledger import parse_board_ledger
 
     assert parse_board_ledger(BOARD.split("## Ledger")[0]) == []
+
+
+BOARD_URL = "https://github.com/acme/widget/issues/7#issuecomment-42"
+
+
+def test_board_line_round_trips_and_is_never_open() -> None:
+    line = f"- [board] {BOARD_URL} — acme/widget#7"
+    (entry,) = parse_ledger(line)
+    assert (entry.kind, entry.outcome, entry.text) == ("board", BOARD_URL, "acme/widget#7")
+    assert not entry.is_open
+    assert format_entry(entry) == line
+
+
+def test_board_line_needs_a_url() -> None:
+    with pytest.raises(ValueError, match="invalid board URL"):
+        format_entry(LedgerEntry(kind="board", outcome="open", text="acme/widget#7"))
+    with pytest.raises(LedgerParseError):
+        parse_ledger("- [board] open — acme/widget#7")
+
+
+def test_board_line_carries_no_outcome_and_leaves_with_the_archive(tmp_path) -> None:
+    path = tmp_path / "lore-ledger.md"
+    path.write_text(f"- [board] {BOARD_URL} — acme/widget#7\n- [adr] approved — x\n")
+    with pytest.raises(ValueError, match="carries no outcome"):
+        set_outcome(path, "1", "approved")
+    archive_ledger(path)
+    assert not path.exists()
+
+
+def test_board_api_path_reads_a_github_comment_url() -> None:
+    assert board_api_path(BOARD_URL) == "repos/acme/widget/issues/comments/42"
+    assert board_api_path("https://example.org/x") is None
