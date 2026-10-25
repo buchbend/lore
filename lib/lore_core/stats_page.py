@@ -62,7 +62,23 @@ svg .axis { fill: var(--muted); font-size: 11px; }
 svg .grid { stroke: var(--line); }
 code { font-size: 12.5px; }
 ul.mismatch li { margin: 4px 0; }
+nav.pages { display: flex; gap: 16px; font-size: 14px; margin-bottom: 18px; }
+nav.pages a { color: var(--muted); text-decoration: none; }
+nav.pages a[aria-current] { color: var(--ink); font-weight: 600; }
 """
+
+#: The status pages ``lore stats`` writes side by side: file name, nav label.
+PAGES = (("stats.html", "Token use"), ("systems.html", "System map"))
+
+
+def nav(current: str) -> str:
+    """The links between the status pages; *current* is this page's file name."""
+    current_attr = ' aria-current="page"'
+    links = "".join(
+        f'<a href="{name}"{current_attr if name == current else ""}>{label}</a>'
+        for name, label in PAGES
+    )
+    return f'<nav class="pages">{links}</nav>'
 
 
 def _n(value: int) -> str:
@@ -196,6 +212,7 @@ def render(summary: Summary, *, span: str, prices_as_of: str) -> str:
         ("Model mismatches", _n(len(summary.mismatches)), bool(summary.mismatches)),
     ]
     body = [
+        nav(PAGE_NAME),
         "<h1>Token use</h1>",
         f'<p class="sub">{escape(span)} · newest record {escape(latest)} · '
         f"API list prices of {escape(prices_as_of)}</p>",

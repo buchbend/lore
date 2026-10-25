@@ -1,13 +1,16 @@
-"""`lore stats` — write the token-statistics page and open it in the browser.
+"""`lore stats` — write the status pages and open one in the browser.
 
     lore stats
     lore stats --days 7
+    lore stats --page systems
     lore stats --no-open
 
-The page sums the token records that the SessionEnd hook writes: cost per
-day, by model, by workflow stage, by epic or issue, and the most expensive
-sessions. It is one static HTML file at ``<vault>/.lore/stats.html``.
-See ``docs/how-to/measure-token-use.md``.
+The token page sums the token records that the SessionEnd hook writes: cost
+per day, by model, by workflow stage, by epic or issue, and the most
+expensive sessions. The systems page draws the system maps of the wiki and
+the checkouts of each scope. Both are static HTML files in
+``<vault>/.lore/``: ``stats.html`` and ``systems.html``. See
+``docs/how-to/measure-token-use.md`` and ``docs/how-to/keep-a-system-map.md``.
 """
 
 from __future__ import annotations
@@ -34,12 +37,18 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 def stats(
     days: int = typer.Option(30, "--days", help="Days to sum; 0 for every record."),
-    no_open: bool = typer.Option(False, "--no-open", help="Write the page; do not open it."),
+    page: str = typer.Option("tokens", "--page", help="The page to open: `tokens` or `systems`."),
+    no_open: bool = typer.Option(False, "--no-open", help="Write the pages; do not open one."),
 ) -> None:
-    """Write the token-statistics page and open it."""
+    """Write the status pages and open one."""
     import webbrowser
 
+    from lore_core import systems_page
     from lore_core.config import get_lore_root
+
+    if page not in ("tokens", "systems"):
+        console.print(f"[red]Unknown page {page!r}.[/red] Pass `tokens` or `systems`.")
+        raise typer.Exit(2)
 
     try:
         lore_root = get_lore_root()
@@ -47,6 +56,9 @@ def stats(
         console.print("[red]LORE_ROOT not set.[/red] Run `lore setup` or export $LORE_ROOT.")
         raise typer.Exit(1) from None
     path = write_page(lore_root, days=days, now=datetime.now(UTC))
+    systems = systems_page.write_page(lore_root)
+    if page == "systems":
+        path = systems
     print(path)
     if not no_open:
         webbrowser.open(path.as_uri())

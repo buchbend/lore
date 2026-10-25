@@ -25,7 +25,9 @@ token-usage` hook counts the transcript and appends one token record to
    ```
 
    `lore stats` writes `<lore_root>/.lore/stats.html` and opens it in your
-   browser. `--no-open` only prints the path. `--days` sets the window. The
+   browser. It writes the systems page, `systems.html`, next to it; the pages link
+   each other. `--page systems` opens the systems page
+   ([keep a system map](keep-a-system-map.md)). `--no-open` only prints the path. `--days` sets the window. The
    default is 30 days; `0` sums every record.
 
 2. **Read the page.** The page shows the estimated cost per day, then tables by

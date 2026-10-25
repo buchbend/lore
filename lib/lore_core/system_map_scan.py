@@ -425,21 +425,28 @@ def no_checkout(maps: Iterable[SystemMap], checkouts: dict[str, Path]) -> list[s
     return gone
 
 
-def scope_for(cwd: Path) -> tuple[str | None, Path | None, bool]:
-    """The person's scope whose folder holds *cwd*: name, folder, the tidy switch."""
+def configured_scopes() -> list[tuple[str, Path, bool]]:
+    """Each scope of the person's config with a ``path``: name, folder, the tidy switch."""
     from lore_core.config_schema import _read_raw
 
     scopes = _read_raw(user_config_path()).get("scopes")
-    best: tuple[int, str, Path, bool] | None = None
-    target = Path(cwd).expanduser().resolve()
+    found = []
     for name, cfg in (scopes if isinstance(scopes, dict) else {}).items():
         if not isinstance(cfg, dict) or not isinstance(cfg.get("path"), str):
             continue
-        folder = Path(cfg["path"]).expanduser().resolve()
-        if not target.is_relative_to(folder):
-            continue
         switch = cfg.get("map") if isinstance(cfg.get("map"), dict) else {}
         tidy = switch.get("tidy", True) is not False
+        found.append((str(name), Path(cfg["path"]).expanduser().resolve(), tidy))
+    return found
+
+
+def scope_for(cwd: Path) -> tuple[str | None, Path | None, bool]:
+    """The person's scope whose folder holds *cwd*: name, folder, the tidy switch."""
+    best: tuple[int, str, Path, bool] | None = None
+    target = Path(cwd).expanduser().resolve()
+    for name, folder, tidy in configured_scopes():
+        if not target.is_relative_to(folder):
+            continue
         if best is None or len(folder.parts) > best[0]:
             best = (len(folder.parts), name, folder, tidy)
     return (best[1], best[2], best[3]) if best else (None, None, True)

@@ -62,6 +62,49 @@ lore map --wiki ccat              # read one wiki only
 - `lore map check` exits 1 on an edge without `consumer`, `producer` or `interface`, on an unknown `pin`, and on a repo that `repos` lacks. Each error names the note and the edge.
 - The check validates the format only. The check does not test that an edge is true.
 
+## See the map in the browser
+
+```
+lore stats --page systems
+```
+
+`lore stats` writes two static pages into `<lore_root>/.lore/` and links them:
+`stats.html` (token use) and `systems.html` (the system map). The systems page
+holds:
+
+- a diagram per system: each producer above its consumers, an arrow to each consumer, the pin on the arrow;
+- the map's prose and a table of its edges;
+- one card per repo: its systems, scope, checkout folder, current branch, changed files, and one line on what the repo is (the `pyproject.toml` or `package.json` description, else the README's first paragraph);
+- one row per scope: the checkouts below its folder, with the ones in no map marked;
+- "What is a system map?", the terms of the map.
+
+A dashed box has no checkout below a scope folder. The page has no script and
+makes no network request.
+
+## Switch a system to one branch
+
+Run `/lore:checkout <branch> [system]`. The skill puts each checkout of the
+system's repos on the branch, producers first.
+
+```
+lore map status --system ccat --json                   # every checkout of the map, producers first
+lore map status --branch feat/x --system ccat --json   # the same, with the action for the branch
+```
+
+Each checkout gets one action:
+
+| action | what the skill does |
+|---|---|
+| `switch` | `git switch <branch>`, then `git pull --ff-only` |
+| `pull` | already on the branch: `git pull --ff-only` |
+| `default` | no branch of that name: switch to the default branch and pull |
+| `skip` | the checkout holds changed files; it stays as it is |
+| `blocked` | another worktree holds the branch; it stays as it is |
+
+- The skill fetches first. `lore map status` reads the local refs only.
+- The skill never stashes, resets, rebases, forces or pushes.
+- `pinned` lists the edges whose consumer pins the producer by `sha`, `tag`, `image` or `package`. A producer on the new branch does not reach such a consumer until the pin moves. The skill names each one and leaves the pin alone.
+
 ## Propose map changes
 
 Run `/lore:map` inside a scope folder. The skill runs `lore map scan --json`,
