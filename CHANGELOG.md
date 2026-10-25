@@ -8,16 +8,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
-## [0.93.0] - 2026-10-25
-
-### Added
-
-- **The systems page.** `lore stats` writes `<lore_root>/.lore/systems.html` next to `stats.html`; the two pages link each other. The page draws each system map as a diagram (producers above their consumers, the pin on each arrow), shows the map's prose and its edges, the system's target and which checkouts are off it (orange border), one card per repo (systems, scope, folder, branch, local work, one line from its package description or README) and one row per scope with the checkouts below its folder. "What is a system map?" explains the terms. `lore stats --page systems` opens it.
-- **`lore system status [system] [--branch B] [--fetch] [--json]`.** `git status` for every repo of a system, producers first: branch, local work (an operation in progress, unmerged, changed or untracked files, commits on no remote), ahead and behind, the step to the target, and the folder. It changes nothing; only `--fetch` reaches the network.
-- **`lore system target <branch> [system]`.** Saves the branch a system belongs on, per person, in `<lore_root>/.lore/system-target/`. `--clear` forgets it. A repo without that branch belongs on its default branch.
-- **`checkouts` in `~/.config/lore/config.yml`.** `checkouts: {owner/repo: folder}` pins a repo that the scope search misses. The map keeps naming repos only. Lore checks the folder's remote and falls back to the search, with a warning, on a mismatch.
-- **`/lore:system [branch] [system]`.** Brings a system to its target. It shows the status, offers to save the target, walks the repos producers first and offers to settle each repo's local work (commit with a shown diff and a proposed message, push, a `.gitignore` line, finish or abort a merge or rebase), each only after a yes for that repo. Then it switches and pulls with `--ff-only`, names the pins that lag the target, offers `checkouts` lines for missing checkouts, and shows the status again. It never runs `reset`, `clean`, a branch delete or a force push, and never moves a pin.
-
 ## [0.92.1] - 2026-10-25
 
 Fixes to `lore map scan` from its first run on a real scope ([#540](https://github.com/buchbend/lore/issues/540)).
