@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.93.1] - 2026-10-25
+
+### Changed
+
+- **The systems page draws real maps readably.** A new layered layout (`lore_core.map_layout`) keeps a dozen repos and dozens of edges legible. One edge of each cycle draws upwards. A long edge runs in a lane between the boxes, never through one. Rows are ordered to cut crossings, and edge ends spread along each box; a box with many ends grows wider. Pins show as line styles with a legend instead of text labels. Hovering a repo highlights its edges and neighbours, through CSS alone; the page still has no script.
+
 ## [0.93.0] - 2026-10-25
 
 ### Added
