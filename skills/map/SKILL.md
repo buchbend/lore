@@ -23,7 +23,7 @@ branch, and never merge a PR yourself.
 
 1. Run `lore map scan --json` from inside the scope folder. Pass `--scope <folder>` when the
    cwd is outside it. The output holds `folder`, `scope`, `tidy`, `checkouts`, `candidates`,
-   `missing` and `no_checkout`.
+   `missing`, `no_checkout` and `ambiguous`.
 2. Run `lore map --json` and `lore map check`. Fix a format error the check names in the same
    PR.
 3. For each entry of `missing`, read the code around its `source` in the consumer's checkout.
@@ -31,6 +31,11 @@ branch, and never merge a PR yourself.
    Fill `breaks_when` with the producer change that breaks the consumer. Take `pin` from the
    candidate. A candidate that is no real dependency (a test fixture, a dead file) stays out.
    Name it in the PR body.
+   Each entry of `ambiguous` names a package that several checkouts declare, and the consumers
+   that use it. The scan made no candidate for it. Find the producer in the consumer: its CI
+   checkout step, its lock file, or the git URL it installs from. Never pick one producer for
+   an ambiguous package by guess. If the consumer does not tell, name the package in the PR
+   body and add no edge.
 4. For each existing edge, check that the scan still finds it. An edge with a changed `pin`
    or `interface` goes to the changed section.
 5. Leave each edge the scan no longer finds in the map. A human deletes it in the PR. List it

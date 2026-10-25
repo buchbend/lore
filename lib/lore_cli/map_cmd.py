@@ -100,7 +100,7 @@ def _scan(folder: Path | None, maps: list, as_json: bool) -> None:
         folder = scope_folder
     folder = folder.expanduser().resolve()
     checkouts = ms.find_checkouts(folder)
-    candidates = ms.scan(folder)
+    candidates, unclear = ms.scan_all(folder)
     lacking = ms.missing(candidates, maps)
     if as_json:
         data = {
@@ -111,6 +111,7 @@ def _scan(folder: Path | None, maps: list, as_json: bool) -> None:
             "candidates": [c.as_dict() for c in candidates],
             "missing": [c.as_dict() for c in lacking],
             "no_checkout": ms.no_checkout(maps, checkouts),
+            "ambiguous": unclear,
         }
         print(json.dumps(data, indent=2))
         return
@@ -120,6 +121,11 @@ def _scan(folder: Path | None, maps: list, as_json: bool) -> None:
     )
     for c in lacking:
         print(f"- {c.consumer} <- {c.producer}: {c.kind} {c.detail} ({c.source})")
+    for item in unclear:
+        print(
+            f"- ambiguous package {item['package']}: declared by "
+            f"{', '.join(item['checkouts'])}; used by {', '.join(item['consumers']) or 'none'}"
+        )
 
 
 main = argv_main(app)

@@ -34,6 +34,7 @@ _SKIP_DIRS = {"node_modules", ".venv", "venv", "__pycache__", ".tox", "dist", "b
 _COMPOSE = ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
 _PEP508_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 _GIT_URL = re.compile(r"git\+(?P<url>[^\s;#]+)")
+_SETUP_NAME = re.compile(r"""\bname\s*=\s*["']([^"']+)["']""")
 _SHA = re.compile(r"^[0-9a-f]{7,40}$")
 
 
@@ -55,12 +56,20 @@ class Candidate:
 def find_checkouts(folder: Path, depth: int = MAX_DEPTH) -> dict[str, Path]:
     """Each git checkout below *folder*, keyed by the ``owner/repo`` of its remote."""
     found: dict[str, Path] = {}
+    keys: dict[str, str] = {}  # casefold slug → the slug as first seen
 
     def walk(path: Path, level: int) -> None:
         if (path / ".git").exists():
             slug = current_repo(path)
-            if slug and slug.casefold() not in {k.casefold() for k in found}:
-                found[slug] = path
+            if not slug:
+                return
+            seen = keys.setdefault(slug.casefold(), slug)
+            # A worktree holds a `.git` file and may sit on an old branch;
+            # the main checkout, with a `.git` folder, wins.
+            if seen not in found or (
+                (path / ".git").is_dir() and not (found[seen] / ".git").is_dir()
+            ):
+                found[seen] = path
             return
         if level >= depth:
             return
@@ -138,12 +147,29 @@ def _python_deps(data: dict) -> list[str]:
     return [d for d in deps if isinstance(d, str)]
 
 
+def _image_name(image: str) -> str:
+    """*image* without its tag and digest, casefolded.
+
+    A tag may hold a ``${VAR:-default}`` expression, so a colon or slash
+    inside ``${…}`` neither ends the name nor starts the tag.
+    """
+    depth, last_slash, cut = 0, -1, len(image)
+    text = image.strip()
+    for i, ch in enumerate(text):
+        if text.startswith("${", i):
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+        elif depth == 0 and ch == "/":
+            last_slash, cut = i, len(text)
+        elif depth == 0 and ch in ":@" and i > last_slash and cut == len(text):
+            cut = i
+    return text[:cut].casefold()
+
+
 def _image_repo(image: str, checkouts: dict[str, Path], built: dict[str, str]) -> str | None:
     """The checkout that builds *image*: a compose ``build`` or the image path."""
-    name = image.strip().split("@", 1)[0]
-    if ":" in name.rsplit("/", 1)[-1]:
-        name = name.rsplit(":", 1)[0]
-    key = name.casefold()
+    key = _image_name(image)
     if key in built:
         return built[key]
     parts = key.split("/")
@@ -167,25 +193,59 @@ def _compose_services(path: Path) -> list[dict]:
     return [s for s in services.values() if isinstance(s, dict)]
 
 
-def _producers(checkouts: dict[str, Path]) -> tuple[dict[str, str], dict[str, str]]:
-    """Packages and images each checkout provides: name (casefold) → ``owner/repo``."""
-    packages: dict[str, str] = {}
+def _python_key(name: str) -> str:
+    """A Python package name in PEP 503 form: ``CCAT_ops.db`` → ``ccat-ops-db``."""
+    return re.sub(r"[-_.]+", "-", name).casefold()
+
+
+def _python_names(path: Path) -> list[str]:
+    """The package names a checkout declares: ``pyproject.toml``, ``setup.cfg``, ``setup.py``."""
+    names: list[str] = []
+    name = (_pyproject(path / "pyproject.toml").get("project") or {}).get("name")
+    if isinstance(name, str):
+        names.append(name)
+    cfg = _read(path / "setup.cfg")
+    if cfg:
+        parser = configparser.ConfigParser()
+        try:
+            parser.read_string(cfg)
+            if parser.get("metadata", "name", fallback=""):
+                names.append(parser.get("metadata", "name"))
+        except configparser.Error:
+            pass
+    setup = _read(path / "setup.py")
+    match = _SETUP_NAME.search(setup) if setup else None
+    if match:
+        names.append(match[1])
+    return names
+
+
+def _producers(checkouts: dict[str, Path]) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """Packages and images each checkout provides: name (casefold) → ``owner/repo``.
+
+    A package name maps to every checkout that declares it; more than one
+    makes the name ambiguous.
+    """
+    packages: dict[str, list[str]] = {}
     images: dict[str, str] = {}
     for slug, path in checkouts.items():
-        name = (_pyproject(path / "pyproject.toml").get("project") or {}).get("name")
-        if isinstance(name, str):
-            packages[re.sub(r"[-_.]+", "-", name).casefold()] = slug
+        keys = [_python_key(n) for n in _python_names(path)]
         name = _package_json(path / "package.json").get("name")
         if isinstance(name, str):
-            packages[name.casefold()] = slug
+            keys.append(name.casefold())
+        for key in dict.fromkeys(keys):
+            packages.setdefault(key, []).append(slug)
         for compose in _COMPOSE:
             for service in _compose_services(path / compose):
                 if service.get("build") and isinstance(service.get("image"), str):
-                    image = service["image"].split("@", 1)[0]
-                    if ":" in image.rsplit("/", 1)[-1]:
-                        image = image.rsplit(":", 1)[0]
-                    images[image.casefold()] = slug
+                    images[_image_name(service["image"])] = slug
     return packages, images
+
+
+def ambiguous(folder: Path) -> dict[str, list[str]]:
+    """Package names that more than one checkout below *folder* declares."""
+    packages, _ = _producers(find_checkouts(folder))
+    return {name: sorted(slugs) for name, slugs in sorted(packages.items()) if len(slugs) > 1}
 
 
 def _from_images(text: str) -> list[str]:
@@ -202,7 +262,7 @@ def _from_images(text: str) -> list[str]:
         image = args[0]
         if len(args) >= 3 and args[1].upper() == "AS":
             stages.add(args[2].casefold())
-        if image.casefold() in stages or image == "scratch" or "$" in image:
+        if image.casefold() in stages or image == "scratch":
             continue
         images.append(image)
     return images
@@ -210,10 +270,30 @@ def _from_images(text: str) -> list[str]:
 
 def scan(folder: Path) -> list[Candidate]:
     """Candidate edges between the checkouts below *folder*, in checkout order."""
+    return scan_all(folder)[0]
+
+
+def scan_all(folder: Path) -> tuple[list[Candidate], list[dict[str, object]]]:
+    """The candidates, and each ambiguous package with its checkouts and consumers.
+
+    A package that several checkouts declare gives no candidate: the scan
+    cannot tell which checkout the consumer installs.
+    """
     checkouts = find_checkouts(folder)
     by_slug = {slug.casefold(): slug for slug in checkouts}
     packages, built = _producers(checkouts)
     found: list[Candidate] = []
+    unclear: dict[str, list[str]] = {
+        name: [] for name, slugs in sorted(packages.items()) if len(slugs) > 1
+    }
+
+    def package(consumer: str, key: str) -> str | None:
+        slugs = packages.get(key, [])
+        if len(slugs) > 1:
+            if consumer not in unclear[key]:
+                unclear[key].append(consumer)
+            return None
+        return slugs[0] if slugs else None
 
     def add(
         consumer: str, producer: str | None, kind: str, source: str, detail: str, pin: str | None
@@ -259,9 +339,13 @@ def scan(folder: Path) -> list[Candidate]:
                     continue
                 name = _PEP508_NAME.match(dep)
                 if name:
-                    key = re.sub(r"[-_.]+", "-", name[1]).casefold()
                     add(
-                        consumer, packages.get(key), "package", "pyproject.toml", name[1], "package"
+                        consumer,
+                        package(consumer, _python_key(name[1])),
+                        "package",
+                        "pyproject.toml",
+                        name[1],
+                        "package",
                     )
 
             pkg = _package_json(path / "package.json")
@@ -286,7 +370,7 @@ def scan(folder: Path) -> list[Candidate]:
                         continue
                     add(
                         consumer,
-                        packages.get(str(name).casefold()),
+                        package(consumer, str(name).casefold()),
                         "package",
                         "package.json",
                         str(name),
@@ -317,7 +401,11 @@ def scan(folder: Path) -> list[Candidate]:
                         )
         except (TypeError, AttributeError, ValueError):
             continue
-    return found
+    ambiguous_uses = [
+        {"package": name, "checkouts": sorted(packages[name]), "consumers": sorted(users)}
+        for name, users in unclear.items()
+    ]
+    return found, ambiguous_uses
 
 
 def missing(candidates: Iterable[Candidate], maps: Iterable[SystemMap]) -> list[Candidate]:

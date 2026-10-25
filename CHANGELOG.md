@@ -8,6 +8,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.92.1] - 2026-10-25
+
+Fixes to `lore map scan` from its first run on a real scope ([#540](https://github.com/buchbend/lore/issues/540)).
+
+- The scan reads a Python package name from `setup.cfg` and `setup.py` as well as `pyproject.toml`.
+- An image tag with a variable, such as `ghcr.io/o/r:${TAG:-main}`, no longer hides the image. A registry given as a variable still matches by `owner/repo`.
+- Where a main checkout and a worktree of one repo both sit in the scope folder, the scan reads the main checkout. A lone worktree still counts.
+- A package name that two checkouts declare gives no candidate edge. `lore map scan --json` lists it under `ambiguous`, with the checkouts and the consumers. The `/lore:map` skill finds the producer from the consumer and does not guess.
+
 ## [0.92.0] - 2026-10-25
 
 Ships `lore-workflow` 0.20.0. Reinstall the CLI together with the plugins: SessionStart and the skills call a new command.

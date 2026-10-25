@@ -73,3 +73,9 @@ def test_tidy_switch_skips_the_phase() -> None:
 def test_the_skill_writes_only_through_prs() -> None:
     text = _text()
     assert "Never push to a default branch" in text
+
+
+def test_an_ambiguous_package_is_resolved_from_the_consumer_not_guessed() -> None:
+    text = _section("Map phase")
+    assert "`ambiguous`" in text
+    assert "Never pick one producer for an ambiguous package by guess" in text
