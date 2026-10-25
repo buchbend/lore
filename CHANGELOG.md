@@ -8,14 +8,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
-## [0.93.0] - 2026-10-25
-
-### Added
-
-- **The systems page.** `lore stats` writes `<lore_root>/.lore/systems.html` next to `stats.html`; the two pages link each other. The page draws each system map as a diagram (producers above their consumers, the pin on each arrow), lists the edges and the map's prose, shows one card per repo (systems, scope, checkout, branch, changed files, one line from its package description or README) and one row per scope with the checkouts below its folder. "What is a system map?" explains the terms. `lore stats --page systems` opens it.
-- **`/lore:checkout <branch> [system]`.** Switches each local checkout of a system to one branch, producers first. It fetches, then runs `git switch` and `git pull --ff-only` only. A checkout with changed files, or a branch another worktree holds, stays as it is. A repo without the branch goes to its default branch. The skill names each pinned edge the switch does not reach and leaves the pin alone.
-- **`lore map status [--branch B] [--system S] --json`.** The checkouts of the map's repos, producers first, with branch, changed files, ahead and behind, and the action for the branch; plus the pinned edges and the repos without a checkout.
-
 ## [0.92.1] - 2026-10-25
 
 Fixes to `lore map scan` from its first run on a real scope ([#540](https://github.com/buchbend/lore/issues/540)).
