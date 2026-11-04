@@ -5,7 +5,8 @@ Read this when a PR opens in `issue` or `epic` mode, and for the epic PR.
 ## 1. Deterministic checks first
 
 - `gh pr checks <n>` answers CI and ruff. A red check blocks the merge. The reviewer does not
-  judge it.
+  judge it. An `epic` feature PR is the exception: the lead's local run gates it
+  ([epic.md](epic.md) § Merge), and nobody waits for its CI.
 - A check that fails on the base branch too is inherited. It does not count against this PR.
   Name it as a blocker: in `epic` mode in the board's Notes, in `issue` mode in the PR body.
 
@@ -55,7 +56,7 @@ Any `fail` line makes the verdict FAIL.
 
 ## 4. Act on the verdict
 
-- **PASS and green checks, `epic` feature PR:** merge it into `epic/<issue>`.
+- **PASS, `epic` feature PR:** merge it into `epic/<issue>` on a green local run ([epic.md](epic.md) § Merge).
 - **PASS and green checks, the epic PR:** go back to [epic-tail.md](epic-tail.md) § 4.
 - **PASS and green checks, `issue` mode:** go on to the finish point. Merge after the merge approval.
 - **FAIL:** send the numbered fixes to the teammate. In `issue` mode, fix them yourself. The same
