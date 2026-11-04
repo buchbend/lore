@@ -54,15 +54,12 @@ in its environment. Tier: `mid` for well-scoped work, `strong` for cross-cutting
 [teammate-brief.md](teammate-brief.md). A teammate silent for about 30 minutes is spawned once
 more into the same worktree. A second death blocks the feature.
 
-**Review.** When a feature PR opens, follow [review.md](review.md). PASS: merge it into
-`epic/<issue>` as below. Do not wait for its CI.
+**Review.** When a feature PR opens, follow [review.md](review.md). PASS: merge as below.
 
-**Merge.** Merge locally, gate locally, then push. In a worktree of `epic/<issue>`: `git pull
---ff-only`, `git merge --no-ff feat/<n>-<slug>`, then run the full suite, `ruff check` and `ruff
-format --check`, and read the exit codes. Green: `git push`. GitHub marks the PR merged because
-its head is now in `epic/<issue>`, so the PR, its review comment and its CI run stay on GitHub.
-Red: `git reset --hard ORIG_HEAD`, send the failures to the teammate as a fix round. A merge
-conflict goes back to the teammate. For a cross-repo pin, read the `pin` of the edge between producer and
+**Merge.** Never wait for CI here. In a worktree of `epic/<issue>`: `git pull --ff-only`, `git
+merge --no-ff feat/<n>-<slug>`, run the full suite and ruff, read the exit codes. Green: `git
+push`; GitHub marks the PR merged. Red or a conflict: `git reset --hard ORIG_HEAD`, back to the
+teammate. For a cross-repo pin, read the `pin` of the edge between producer and
 consumer (`lore map <consumer> --json`). Merge the producer and record what the pin names (SHA,
 tag, image or package version) before you dispatch the consumer. Without an edge, record the
 producer's SHA. After each merge:
@@ -73,9 +70,8 @@ producer's SHA. After each merge:
 - add the resume line (breakpoint);
 - where the repo has migrations, check that one migration head remains.
 
-Do not wait for epic-branch CI. Glance at the latest run (`gh run list --branch epic/<issue> -L 3`)
-when you next dispatch. A red run that the local suite missed (other OS, services, secrets) gets
-a fix feature or a note on the board; the epic PR merges only on green CI.
+Glance at `gh run list --branch epic/<issue> -L 3` when you next dispatch. A red run the local
+suite missed gets a fix; the epic PR merges only on green CI.
 
 Then dispatch every feature the merge made ready.
 
@@ -88,8 +84,7 @@ and stays present. Every row is AFK. One repo without a deploy gate holds all ro
   confirm the tests fail, restore, and note the check on the board.
 - Then run the epic tail.
 
-**Epic tail.** When every row is merged, start the tail right away; do not wait for CI. Read [epic-tail.md](epic-tail.md) and
-follow it.
+**Epic tail.** When every row is merged, follow [epic-tail.md](epic-tail.md) at once.
 
 **Stop conditions:**
 - a HITL row;
