@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.94.0] - 2026-11-04
+
+Ships `lore-workflow` 0.21.0.
+
+- **`build` epic mode stops waiting for CI per feature.** A feature PR that passes review merges into `epic/<issue>` locally: the lead runs the full suite and ruff, then pushes. GitHub marks the PR merged, so the PR, its review comment and its CI run stay on GitHub. A red epic-branch run that the local suite missed gets a fix before the epic PR merges. The epic tail starts at once; CI is checked once, on the epic PR's last commit, at merge approval.
+
 ## [0.93.1] - 2026-10-25
 
 ### Changed
