@@ -16,8 +16,8 @@ stage and the epic.
 >
 > Method: strict TDD with `/lore-workflow:tdd`. Put the failing-test output in the PR body.
 > Before you push, run ruff (check and format) and the test files you touched, plus the tests of
-> shared surfaces you reach: routes, permissions, schema. Do not run the full suite; epic-branch
-> CI runs it after each merge. When stuck, use the `/lore-workflow:debug` circuit breaker, not a
+> shared surfaces you reach: routes, permissions, schema. Do not run the full suite; the lead runs
+> it locally before each merge. When stuck, use the `/lore-workflow:debug` circuit breaker, not a
 > fourth blind fix.
 >
 > Scope: change only what this feature needs. A feature idea outside your scope goes to the

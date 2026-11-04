@@ -1,6 +1,7 @@
 # Epic tail
 
-Read this when every build-order row is `merged` and epic-branch CI is green.
+Read this when every build-order row is `merged`. Do not wait for CI here: the tail adds commits,
+and only CI on the last one counts (§ 4).
 
 ## 1. Open the epic PR
 
@@ -55,7 +56,9 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
    one.
 3. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
    .body | lore workflow ledger-check -`. Do not merge while it exits 1.
-4. Ask for the merge approval, as the rules in [SKILL.md](SKILL.md) give it. When `epic-policy` returned `deploy_gate: true`,
+4. Check `gh pr checks <epic-pr>` on the last commit. Pending: post the approval message anyway
+   and merge once green. Red: fix on `epic/<issue>` before you merge.
+5. Ask for the merge approval, as the rules in [SKILL.md](SKILL.md) give it. When `epic-policy` returned `deploy_gate: true`,
    name the deploy gate in the same message and note the yes on the board. Merge on a yes.
    An unreachable user leaves the epic PR open.
 

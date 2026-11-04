@@ -188,7 +188,7 @@ def test_every_lore_workflow_verb_in_the_skills_exists() -> None:
 # --- who merges after a PASS ----------------------------------------------
 
 PASS_ACTIONS = (
-    "**PASS and green checks, `epic` feature PR:** merge it into `epic/<issue>`.",
+    "**PASS, `epic` feature PR:** merge it into `epic/<issue>` on a green local run ([epic.md](epic.md) § Merge).",
     "**PASS and green checks, the epic PR:** go back to [epic-tail.md](epic-tail.md) § 4.",
     "**PASS and green checks, `issue` mode:** go on to the finish point. Merge after the merge approval.",
 )

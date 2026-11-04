@@ -27,6 +27,7 @@ Several epics take one `build` run each. Start a downstream epic after its upstr
 - **Test first.** Use [`tdd`](../tdd/SKILL.md) for every behaviour a test can observe.
 - **Never merge on red.** CI status and ruff come from `gh pr checks <n>`, never from a model.
   Where CI has no ruff job, run `ruff check` and `ruff format --check` and read the exit codes.
+  Exception: an `epic` feature PR merges on a green local run ([epic.md](epic.md) § Merge).
 - **Decision gate.** An ADR, a PRD or a wiki topic-note edit outside a grilling session is a PR.
   A human approves its merge. Draft an ADR only after the user approved its ledger line.
 - **Merge approval.** A PR that ends a `loop` or `issue` run, or an epic PR, merges only after
