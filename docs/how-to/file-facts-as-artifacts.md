@@ -23,7 +23,7 @@ The SessionStart directive tells the agent the filing rule below.
 | About an existing issue or PR | A comment on that issue or PR |
 | A dead end and its reason | An issue you open, closed as not planned, with the reason in the close comment |
 | A decision | A pull request holding the ADR draft. A human merges it. |
-| Across several repos | An issue on the org knowledge repo |
+| Across several repos | An edge in the system map, proposed with `/lore:map` |
 | For a wiki topic note | A pull request on the wiki repo with the edit |
 
 An ADR or PRD negotiated with the user in a `grilling` session is the one

@@ -115,7 +115,8 @@ large trackers.
 `document` runs inside the `build` epic tail, before the epic PR merges
 (ADR 0005):
 
-1. Every feature PR merged into `epic/<n>`, and its CI is green.
+1. Every feature PR merged into `epic/<n>` on a green local suite and ruff.
+   CI is checked once, on the epic PR.
 2. `document` in pre-merge mode updates the Diátaxis docs for the whole
    diff. It commits them onto the epic branch. No separate docs PR.
 3. `document` runs `lore workflow prd-ship` to set the PRD's status to
@@ -166,8 +167,8 @@ rules every skill shares live in
 | Loop background suite | `cheap` |
 
 `lore workflow risk <pr>` sets the risk level from the diff. An agent may
-raise the level and does not lower it. CI and ruff status come from `gh pr
-checks`, not from the reviewer.
+raise the level and does not lower it. The local suite and ruff gate each feature
+merge; CI is checked on the epic PR (`gh pr checks`), not by the reviewer.
 
 ### Required and advisory
 

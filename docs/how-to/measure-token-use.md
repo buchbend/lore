@@ -11,8 +11,7 @@ what the use would cost at API list prices.
 
 Lore records every session by itself. At `SessionEnd` the `lore hook
 token-usage` hook counts the transcript and appends one token record to
-`<lore_root>/.lore/token-usage.jsonl`. The file stays on your machine. While
-`/lore:off all` mutes a session, the hook records nothing for it.
+`<lore_root>/.lore/token-usage.jsonl`. The file stays on your machine.
 
 ## Open the statistics page
 

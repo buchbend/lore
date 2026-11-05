@@ -175,7 +175,8 @@ directly, move it back to a lower layer.
 - **Substrate trim** — the `lore log` / `lore news` / `lore runs` /
   `lore proc` deprecation aliases below were removed outright once their
   one-release grace window closed; `lore trace` / `lore status` are now
-  the only entry points for that debugging role.
+  the only entry points for that debugging role. (The name `lore log` was later reused for the logbook, PRD 0017; that
+  command is unrelated to the debug verb removed here.)
 - **#195** — `lore log` / `lore news` / `lore runs` / `lore proc` became
   deprecated thin aliases for `lore trace` / `lore status` (see
   "Deprecating a verb" above); `lore drain` (and its sole subcommand,

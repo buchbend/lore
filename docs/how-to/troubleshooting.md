@@ -68,12 +68,28 @@ whole `.lore/flushes/` directory on its next opportunistic pass, so a
 `queued` or `running` record there is a leftover, not a flush stuck
 mid-flight. Delete the directory by hand if you want it gone sooner.
 
-## "No such command" for `lore log` / `lore news` / `lore runs` / `lore proc`
+## "No such command" for `lore news` / `lore runs` / `lore proc`
 
 These are gone, not renamed under a flag — `lore trace` and `lore status`
 fully absorbed their role (see `CHANGELOG.md`'s `### Removed` entry). Reach
 for `lore trace <selector>` for the correlated, chronological story these
-used to print, or `lore status` for the health snapshot.
+used to print, or `lore status` for the health snapshot. The old debug
+`lore log` went the same way; the name now belongs to the logbook
+(`lore log add|flush|show`, see [use the logbook](use-the-logbook.md)).
+
+## A logbook entry did not arrive
+
+When a sink fails, the entry is marked undelivered on its `[logbook]` ledger
+line. `lore log flush` retries every undelivered entry; the SessionStart hook
+also starts a flush when it sees one. `lore log show` lists this month's
+entries.
+
+## Upgrading from a pre-v0.10 `install.sh`
+
+The old installer wrote skill symlinks into `~/.claude/skills/`, and
+`lore setup` refuses until they are gone. From a checkout, run
+`python3 tools/undo_install_sh.py --dry-run`, then without `--dry-run`, then
+re-run the install one-liner from the README.
 
 Other verbs that moved rather than vanished:
 

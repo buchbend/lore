@@ -4,18 +4,18 @@
     "name": "Christof Buchbender"
   },
   "metadata": {
-    "description": "Lore \u2014 knowledge graph for AI-coding teams."
+    "description": "Lore \u2014 workflow and knowledge layer for AI-coding teams."
   },
   "plugins": [
     {
       "name": "lore",
       "source": "./",
-      "description": "LLM-optimized knowledge graph: transcripts captured and archived, facts filed as repo artifacts, repo-scoped context injected at session start."
+      "description": "Workflow and knowledge layer for teams coding with Claude Code \u2014 small repo-scoped context at session start, facts filed where they have a reader (issues, PRs, ADRs, team wiki, logbook), the rest pulled on demand over MCP."
     },
     {
       "name": "lore-workflow",
       "source": "./lore-workflow",
-      "description": "Deterministic epic/PRD/TDD workflow skills for AI-coding teams (9 skills: orient, grilling, to-epic, build, tdd, debug, document, handover, file-issue). Depends on lore."
+      "description": "Deterministic epic/PRD/TDD workflow skills for AI-coding teams (10 skills: orient, grilling, to-epic, build, tdd, debug, document, handover, file-issue, triage). Depends on lore."
     }
   ]
 }
