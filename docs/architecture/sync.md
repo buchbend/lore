@@ -13,8 +13,8 @@ laptop and workstation are two hosts of the same wiki.
 ## Vision pillar this addresses
 
 > Cross-host: a single user works from multiple machines; their vault
-> syncs. Cross-team: team members write sessions; cross-team synergies
-> surface automatically.
+> syncs. Cross-team: team members share one wiki, and each change
+> reaches it by pull request.
 
 Both pillars rest on a single mechanism: **the wiki is a git repo, and
 git is the sync layer.** The system needs to keep the local copy

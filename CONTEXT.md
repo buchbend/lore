@@ -107,8 +107,7 @@ not from anything injected ambiently:
 
 - `lore_search`, `lore_read` — retrieval primitives.
 - `lore_drill` — one composite `search → read → expand wikilinks →
-  read_expanded` call with a structured trace
-  (`docs/architecture/lore-drill.md`).
+  read_expanded` call with a structured trace.
 - `lore_inbox_classify` — read-only gather that a skill turns into
   prose, then commits via a CLI verb.
 - `lore_pending_verdicts` / `lore_verdict` — list and record freshness

@@ -4,6 +4,9 @@
 new spine producer, or wondering why `lore log`/`lore news`/`lore runs`/
 `lore proc` no longer exist as commands.
 
+The logbook later reused the name `lore log` (PRD 0017). That command has
+nothing to do with the debug verb this page describes.
+
 Before PRD 0005's epic, debugging one background flush meant walking
 seven uncorrelated surfaces — `lore log`, `lore proc`, `lore runs`,
 `lore status`, `lore news`, the checks of `lore setup`, and a crash-log directory —
