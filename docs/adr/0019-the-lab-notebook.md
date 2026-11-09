@@ -51,8 +51,8 @@ a defect and not a how-to. Issue #417 recorded the gap on 2026-09-16.
 Two outside observations shaped the decision. Agents that run many
 experiments do not track by themselves what they tried, so an entry states
 where its idea stands. Reviews of autonomous research agents found invented
-numbers in narrated results, so Lore stamps the provenance and the agent
-writes only the reading of the result.
+numbers in narrated results. Lore therefore stamps the provenance, and the
+agent writes only the reading of the result.
 
 The entry starts at a deliberate act: a person starts the `experiment`
 skill. The skill writes the question and the expected result before the run.

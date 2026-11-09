@@ -21,7 +21,7 @@ A review of Lore on 2026-11-09 found five gaps.
   `lore_search` exists, not what the repo holds.
 - **A session without the plugin gets no pointer.** A cloud session or a
   colleague without Lore sees only `AGENTS.md`. That file holds no index.
-- **Some fixed cost buys little.** The MCP server lists 11 tools in about
+- **Some standing cost buys little.** The MCP server lists 11 tools in about
   10,000 characters of schema. Three tools serve two rarely used skills, and
   one duplicates a command the skills already call.
 - **The ADR template asks for nine sections.** `Status` appears twice. Authors
