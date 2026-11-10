@@ -8,6 +8,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.99.0] - 2026-11-10
+
+Issue #576 (name the route and the person's scopes in the index).
+
+### Added
+
+- **The index names the route.** A "Route" group names the wiki, the tracker, each sink other than `file` and each source of the repo. Each line names the tool that queries the place. A repo that no scope routes gets no "Route" group.
+- **The index names your scopes.** A "Scopes" group lists each scope of `~/.config/lore/config.yml` with its folder and its wiki, and marks the scope of the working directory. The group prints for two or more scopes.
+- **A `command` sink takes a `hint` key**: the tool an agent queries the place with. `lore setup sink command --hint pm` writes the key. Without the key the index names the first word of the `run` line, and names no tool when the line opens with shell syntax.
+- **The directive tells the agent to ask Lore before the person**, with `lore glossary` and `lore_search`.
+
+### Changed
+
+- **The "Route" group and the "Scopes" group take no cut** when the index passes its budget of 2,000 characters.
+- **The directive block has a limit of 800 characters**, up from 700.
+
 ## [0.98.0] - 2026-11-10
 
 Issue #575 (deliver the SessionStart text whole and point to the handover note).

@@ -135,3 +135,6 @@ A Vale rule flags them and skips code spans.
   directive block has a limit of 700 characters (issue #575, deliver the
   SessionStart text whole). `lore style show filing` holds the line on
   amendments.
+- 2026-11-10: the directive block has a limit of 800 characters, up from 700.
+  The block gained the line that tells the agent to ask Lore before the
+  person (issue #576, name the route and the person's scopes in the index).

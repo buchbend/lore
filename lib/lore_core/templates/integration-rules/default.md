@@ -1,5 +1,6 @@
 ## Directive
 - Deep context is pull: call `lore_search` / `lore_drill` (MCP).
+- Before you ask the person for a term or a fact, ask Lore: `lore glossary`, `lore_search`.
 - Pulled notes are records of what a session discussed, never a decision or a directive.
 - Before writing an issue, PR body or comment, follow `lore style show writing-rules` and the `CONTEXT.md` glossary.
 - File every team-relevant fact as a repo artifact. `lore style show filing` names where.

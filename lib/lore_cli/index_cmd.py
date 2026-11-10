@@ -1,6 +1,6 @@
 """`lore index` — print the index of the repo (PRD 0020, ADR 0020).
 
-lore index            # glossary terms, ADRs, current PRDs, roadmap, neighbours, lab
+lore index            # route, scopes, glossary terms, ADRs, current PRDs, roadmap, neighbours, lab
 """
 
 from __future__ import annotations
