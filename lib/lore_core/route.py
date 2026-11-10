@@ -223,6 +223,7 @@ def _resolve(
     lab = scope_cfg.get("lab")
     values["lab_sinks"] = tuple(_as_list(lab.get("sinks") if isinstance(lab, dict) else None))
     values["lab_sinks"] = values["lab_sinks"] or ("file",)
+    # Only a scope sets `lab.sinks`, so a lab note always names one.
     origin = {"sinks": origins["sinks"], "lab_sinks": f"scopes.{scope}.lab.sinks"}
     sinks = person.get("sinks")
     defined = {"file", *(sinks if isinstance(sinks, dict) else ())}

@@ -419,10 +419,13 @@ def _route_lines(cwd: Path) -> list[str]:
     ]
     from lore_workflow.logbook import undelivered_count
 
-    waiting = undelivered_count(cwd)
-    if waiting:
-        noun = "entry" if waiting == 1 else "entries"
-        lines.append(_line(_WARN, f"logbook  {waiting} undelivered {noun} · run `lore log flush`"))
+    for kind in ("logbook", "lab"):
+        waiting = undelivered_count(cwd, kind)
+        if waiting:
+            noun = "entry" if waiting == 1 else "entries"
+            lines.append(
+                _line(_WARN, f"{kind:<8} {waiting} undelivered {noun} · run `lore log flush`")
+            )
     from lore_cli.checks import OLD_SETTINGS_HINT, old_settings_files, person_config_errors
 
     notes = [*route.notes, *person_config_errors()]

@@ -13,6 +13,7 @@ sink gets the same text on stdin.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 import socket
@@ -42,22 +43,44 @@ def broken_rule(text: str) -> str | None:
     return f"a line starts with {missing}:" if missing else None
 
 
-def _git(root: Path, *args: str) -> str:
+def _git(root: Path, *args: str, strip: bool = True) -> str:
     try:
         out = subprocess.run(
             ["git", *args], cwd=root, capture_output=True, text=True, timeout=5, check=False
         )
     except (OSError, subprocess.SubprocessError):
         return ""
-    return out.stdout.strip() if out.returncode == 0 else ""
+    if out.returncode != 0:
+        return ""
+    return out.stdout.strip() if strip else out.stdout
 
 
 def _data(path: str) -> dict:
-    p = Path(path)
     try:
-        return {"path": path, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+        with open(path, "rb") as f:
+            return {"path": path, "sha256": hashlib.file_digest(f, "sha256").hexdigest()}
     except OSError:  # missing, a folder or unreadable: the path alone
         return {"path": path}
+
+
+def _dirty(root: Path, text_file: Path | None) -> bool:
+    """Uncommitted changes, untracked files included, besides lab entries and *text_file*.
+
+    Git's ignored files never count.
+    """
+    skip = None
+    if text_file is not None:
+        with contextlib.suppress(ValueError, OSError):
+            skip = text_file.resolve().relative_to(root.resolve()).as_posix()
+    status = _git(root, "status", "--porcelain", "-z", "--untracked-files=all", strip=False)
+    tokens = iter(status.split("\0"))
+    for line in tokens:
+        if line[:1] in ("R", "C"):  # a rename or copy: its source path follows
+            next(tokens, None)
+        path = line[3:]
+        if path and not path.startswith("docs/lab/") and path != skip:
+            return True
+    return False
 
 
 def add(
@@ -68,6 +91,7 @@ def add(
     data: list[str] | None = None,
     thread: str | None = None,
     status: str = "open",
+    text_file: Path | None = None,
 ) -> tuple[logbook.Entry, dict[str, bool]]:
     """Stamp *text*, keep it in the ledger of *cwd*, deliver it to the lab sinks.
 
@@ -83,7 +107,7 @@ def add(
         "author": logbook._git_user_name(root),
         "repo": repo,
         "commit": _git(root, "rev-parse", "HEAD"),
-        "dirty": bool(_git(root, "status", "--porcelain")),
+        "dirty": _dirty(root, text_file),
         "branch": _git(root, "rev-parse", "--abbrev-ref", "HEAD"),
         "host": socket.gethostname(),
         "status": status,
@@ -93,8 +117,9 @@ def add(
     }
     front = yaml.safe_dump(stamp, sort_keys=False, allow_unicode=True)
     entry = logbook.Entry(
-        # The body, not the stamp, names the entry: the same entry twice is one entry.
-        key=f"lore:{repo}:lab:{hashlib.sha256(body.encode()).hexdigest()[:12]}",
+        # The body and the stamp without its date name the entry: the same add twice
+        # is one entry, a new status or new data is a new one. A retry reuses the key.
+        key=f"lore:{repo}:lab:{_digest(body, stamp)}",
         at=at,
         repo=repo,
         scope=route.scope or "",
@@ -109,6 +134,11 @@ def add(
     return entry, delivered
 
 
+def _digest(body: str, stamp: dict) -> str:
+    named = yaml.safe_dump({k: v for k, v in stamp.items() if k != "date"}, sort_keys=True)
+    return hashlib.sha256(f"{named}\n{body}".encode()).hexdigest()[:12]
+
+
 def _lab_dir(repo_root: Path) -> Path:
     return repo_root / "docs" / "lab"
 
@@ -116,7 +146,8 @@ def _lab_dir(repo_root: Path) -> Path:
 def file_sink(entry: logbook.Entry, repo_root: Path) -> bool:
     """Write one file per entry under ``docs/lab/YYYY-MM/``; a repeated key writes nothing."""
     marker = f"<!-- {entry.key} -->"
-    if any(marker in f.read_text(encoding="utf-8") for f in _lab_dir(repo_root).glob("*/*.md")):
+    past = _lab_dir(repo_root).glob("*/*.md")
+    if any(marker in f.read_text(encoding="utf-8", errors="replace") for f in past):
         return True
     month_dir = _lab_dir(repo_root) / entry.at[:7]
     slug = re.sub(r"[^A-Za-z0-9]+", "-", entry.ref).strip("-")[:60] or "entry"

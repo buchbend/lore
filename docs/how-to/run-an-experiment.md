@@ -59,6 +59,9 @@ lore lab add --text-file entry.md \
   dirty flag, branch and host. `--cmd` adds the command line. `--data` adds
   the path and, for a readable file, its SHA-256. Repeat `--data` for more
   paths.
+- Any uncommitted change sets the dirty flag, an untracked file included.
+  Lab entries under `docs/lab/` and the `--text-file` file do not count, and
+  git-ignored files such as data never count.
 - `--status` is `open` (the default), `concluded` or `dead-end`. Use
   `dead-end` when the experiment failed to answer the question. A dead end
   in an experiment is a lab entry, not a closed issue.

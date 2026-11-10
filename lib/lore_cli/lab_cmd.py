@@ -47,7 +47,13 @@ def add_cmd(
         raise typer.Exit(code=2)
     try:
         entry, delivered = lab.add(
-            text, Path.cwd(), cmd=cmd, data=data, thread=thread, status=status
+            text,
+            Path.cwd(),
+            cmd=cmd,
+            data=data,
+            thread=thread,
+            status=status,
+            text_file=None if text_file == "-" else Path(text_file),
         )
     except ValueError as exc:
         print(f"lab add: {exc}", file=sys.stderr)

@@ -40,16 +40,19 @@ Write the entry in five labelled parts, at most 400 words:
 **Next:** the next experiment, or "none".
 ```
 
-Then add the entry:
+Pass the entry on stdin, so no entry file lands in the repo:
 
 ```
-lore lab add --text-file entry.md --cmd '<command line>' --data <path> \
-  --thread <slug> --status open|concluded|dead-end
+lore lab add --text-file - --cmd '<command line>' --data <path> \
+  --thread <slug> --status open|concluded|dead-end <<'EOF'
+**Question:** ...
+EOF
 ```
 
 - Lore writes the stamp: date, author, repo, commit, dirty flag, branch and
   host. Lore adds a SHA-256 for each `--data` path that is a readable file.
-  Do not write the stamp yourself.
+  Do not write the stamp yourself. An uncommitted change sets the dirty flag;
+  commit the code of the run first.
 - `--status concluded` when the run answered the question.
 - `--status dead-end` when the experiment failed to answer the question.
   A dead end is a lab entry, not a closed issue.

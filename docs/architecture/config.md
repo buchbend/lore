@@ -105,7 +105,9 @@ it and deletes them. Subsections:
 - `scopes.<name>.{path, remote, wiki, tracker, logbook, lab.sinks, sources}` — a folder
   (and optional git remotes) whose repos share a wiki; `lore setup scope`
   adds one. `lab.sinks` lists the sinks of lab entries, `[file]` without the
-  key (see `docs/how-to/run-an-experiment.md`). `defaults` holds the values a repo gets when no scope sets them.
+  key (see `docs/how-to/run-an-experiment.md`). A lab `command` sink gets
+  the entry with its stamp as YAML front matter on stdin; `LORE_ENTRY_REF`
+  holds the thread. `defaults` holds the values a repo gets when no scope sets them.
 - `checkouts.<owner/repo>` — the folder of that repo's checkout, for a repo
   the scope search misses (outside every scope folder, or one of several
   clones). The system map names repos only; this pins one to a folder on this

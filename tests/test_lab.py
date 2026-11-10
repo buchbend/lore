@@ -294,3 +294,68 @@ def test_the_experiment_skill_writes_the_question_first_and_a_dead_end_entry() -
     assert "Commit that file on the current branch" in text
     assert "`--status dead-end` when the experiment failed to answer the question" in text
     assert (root / "docs/how-to/run-an-experiment.md").is_file()
+
+
+# --- review round 1 of PR #562 ----------------------------------------------
+
+
+def test_an_untracked_lab_entry_and_the_text_file_leave_the_tree_clean(repo, tmp_path) -> None:
+    old = repo / "docs" / "lab" / "2026-10" / "old.md"
+    old.parent.mkdir(parents=True)
+    old.write_text("an earlier entry\n")
+    entry = repo / "entry.md"
+    entry.write_text(GOOD)
+    assert main(["lab", "add", "--text-file", str(entry)]) == 0
+    new = [p for p in _entries(repo) if p != old]
+    assert _stamp(new[0])["dirty"] is False
+
+
+def test_a_changed_committed_lab_entry_leaves_the_tree_clean(repo, tmp_path) -> None:
+    old = repo / "docs" / "lab" / "2026-10" / "old.md"
+    old.parent.mkdir(parents=True)
+    old.write_text("an earlier entry\n")
+    _git(repo, "add", "docs")
+    _git(repo, "commit", "-q", "-m", "lab")
+    old.write_text("an earlier entry, changed\n")
+    assert _add(tmp_path) == 0
+    assert _stamp(next(p for p in _entries(repo) if p != old))["dirty"] is False
+
+
+def test_an_untracked_script_sets_the_dirty_flag(repo, tmp_path) -> None:
+    (repo / "analyse.py").write_text("print(3)\n")
+    assert _add(tmp_path) == 0
+    assert _stamp(_entries(repo)[0])["dirty"] is True
+
+
+def test_the_same_text_with_a_new_status_is_a_new_entry(repo, tmp_path) -> None:
+    assert _add(tmp_path) == 0
+    assert _add(tmp_path, GOOD, "--status", "concluded") == 0
+    assert len(_entries(repo)) == 2
+
+
+def test_the_same_add_twice_writes_one_file(repo, tmp_path) -> None:
+    for _ in range(2):
+        assert _add(tmp_path, GOOD, "--thread", "lo-drift") == 0
+    assert len(_entries(repo)) == 1
+
+
+def test_data_is_hashed_in_chunks(repo, tmp_path, monkeypatch) -> None:
+    data = tmp_path / "big.bin"
+    data.write_bytes(b"x" * 100)
+    monkeypatch.setattr(Path, "read_bytes", lambda self: pytest.fail("read the whole file"))
+    assert _add(tmp_path, GOOD, "--data", str(data)) == 0
+    assert _stamp(_entries(repo)[0])["data"][0]["sha256"] == hashlib.sha256(b"x" * 100).hexdigest()
+
+
+def test_a_non_utf8_file_under_docs_lab_does_not_block_delivery(repo, tmp_path) -> None:
+    bad = repo / "docs" / "lab" / "2026-10" / "bad.md"
+    bad.parent.mkdir(parents=True)
+    bad.write_bytes(b"\xff\xfe broken")
+    assert _add(tmp_path) == 0
+    assert "- [lab] file=delivered" in _ledger(repo)
+
+
+def test_lore_status_counts_an_undelivered_lab_line(repo, capsys) -> None:
+    _lab_line(repo)
+    main(["status"])
+    assert "lab" in capsys.readouterr().out
