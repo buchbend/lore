@@ -1,7 +1,5 @@
 # Mode `epic`
 
-Read this in `epic` mode. [SKILL.md](SKILL.md) rules apply too.
-
 You plan, dispatch, review and merge; teammates write the feature code. Run without asking.
 Stop only for completion or a stop condition.
 
@@ -9,14 +7,14 @@ Stop only for completion or a stop condition.
 repo: `{target_branch, deploy_gate}`. Feature PRs target `epic/<issue>`, which merges into
 `target_branch` through one epic PR.
 
-**Resume.** Fetch the board comment (marker below), pipe it to `lore workflow parse-board`.
-`merged` is done; `queued`/`blocked` is dispatched again. Reuse an existing `epic/<issue>`.
-Read the last resume line in `ledger`. Write the board line below if the local ledger lacks it. No board: fresh run.
+**Resume.** Pipe the board comment (marker below) to `lore workflow parse-board`. `merged` is
+done; `queued`/`blocked` is dispatched again. Reuse an existing `epic/<issue>`. Read the last
+resume line in `ledger`. Write the board line below if the local ledger lacks it. No board: fresh run.
 
 **Gate.** `lore workflow validate-build-order --json` on the epic body. `ok: false`: report
-`problems`, stop. A feature's batch is its DAG depth. **Compact** band: one repo,
-every row AFK, one feature per batch. Then one teammate builds the features in order, still one
-branch and one PR each. Otherwise **standard**: up to four teammates at once.
+`problems`, stop. A feature's batch is its DAG depth. **Compact** band (one repo, every row AFK,
+one feature per batch): one teammate builds the features in order, still one branch and one PR
+each. Otherwise **standard**: up to four teammates at once.
 
 **Board.** One comment on the epic issue, edited in place, never a second one:
 
@@ -50,9 +48,11 @@ PreCompact names the board and the read call; re-read it before you act.
 
 **Codemap excerpt.** Once: rank `lore codemap` symbols against the epic's touchpoints; ~1k tokens.
 
-**Dispatch.** A feature is ready once its blockers merged into `epic/<issue>`. Give it a worktree off `epic/<issue>` and a background teammate with `LORE_SUPPRESS_CAPTURE=1` in its environment. Tier: `mid` well-scoped, `strong` cross-cutting. Fill
-[teammate-brief.md](teammate-brief.md). A teammate silent about 30 minutes is spawned once more in
-the same worktree; a second death blocks the feature.
+**Dispatch.** A feature is ready once its blockers merged into `epic/<issue>`. Give it a worktree
+off that branch and a background teammate with `LORE_SUPPRESS_CAPTURE=1` in its environment.
+Tier: `mid` well-scoped, `strong` cross-cutting. Fill [teammate-brief.md](teammate-brief.md). A
+teammate silent about 30 minutes is spawned once more in the same worktree; a second death
+blocks the feature.
 
 **Review.** Feature PR: [review.md](review.md). PASS: merge as below.
 
@@ -60,8 +60,9 @@ the same worktree; a second death blocks the feature.
 merge --no-ff feat/<n>-<slug>`, run the full suite and ruff, read the exit codes. Green: `git
 push`; GitHub marks the PR merged. Red or a conflict: `git reset --hard ORIG_HEAD`, back to the
 teammate. Cross-repo: read the `pin` of the edge between producer and consumer
-(`lore map <consumer> --json`). Merge the producer and record what the pin names (SHA, tag, image or
-package version) before dispatching the consumer. Without an edge, record the producer's SHA. After each merge:
+(`lore map <consumer> --json`). Merge the producer and record what the pin names (SHA, tag, image
+or package version) before dispatching the consumer. Without an edge, record the producer's SHA.
+After each merge:
 - tick its build-order box;
 - close the sub-issue (`gh issue close <n> --comment "Merged via PR #<pr>"`);
 - set the row to `merged`;
