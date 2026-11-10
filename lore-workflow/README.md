@@ -29,6 +29,7 @@ The chain: `orient → grilling → to-epic → build → document`, with `hando
 | `build` | Build code in three modes: `loop` (fast rounds, local merges, one wrap-up PR), `issue` (one issue, one PR), `epic` (a build order, teammates, review by risk level). Keeps a ledger and writes a handover section. |
 | `tdd` | Test-driven red-green-refactor loop. |
 | `debug` | Systematic root-cause debugging with a hard circuit breaker. |
+| `experiment` | Run one experiment: write the question and the expected result, run it, write one lab entry with `lore lab add` and commit it. |
 | `document` | Bring the Diátaxis docs in line with the code: pre-merge, catch-up, or a plan-approved consolidation of a docs tree. Marks a shipped PRD at the epic tail. |
 | `handover` | Write the handover section for work that stops early, and turn follow-up work into a seed issue. |
 | `file-issue` | Writes issue text and files it: resolve the writing rules, draft, Vale-lint, then post the issue or PR body. |

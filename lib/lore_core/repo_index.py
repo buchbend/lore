@@ -1,14 +1,15 @@
 """The index of a repo: what it holds, one line per item (PRD 0020).
 
-One group each for glossary terms, ADR titles, current PRDs, roadmap headings
-and neighbours. Each group ends with the command that pulls the detail. A
+One group each for glossary terms, ADR titles, current PRDs, roadmap headings,
+neighbours and the newest lab entries. Each group ends with the command that pulls the detail. A
 group without content prints nothing. Pure filesystem reads: no model call,
 no network call.
 
 SessionStart injects the index; ``lore index --write`` keeps the same text
 between two markers in ``AGENTS.md``. The committed block leaves the
 neighbours out: they come from the local wiki, so a block holding them would
-read stale on any machine with another wiki.
+read stale on any machine with another wiki. It leaves the lab entries out
+too: each new entry would make the block stale.
 """
 
 from __future__ import annotations
@@ -62,11 +63,24 @@ def _roadmap_headings(repo_root: Path) -> list[str]:
     return [f"- {m.group(1).strip()}" for m in re.finditer(r"^## (.+)$", text, re.MULTILINE)]
 
 
-def groups(repo_root: Path, neighbours: list[str] | None = None) -> list[Group]:
+#: How many lab entries the index lists.
+LAB_ENTRIES = 3
+
+
+def _lab_lines(repo_root: Path) -> list[str]:
+    from lore_workflow import lab
+
+    newest = lab.entries(repo_root)[:LAB_ENTRIES]
+    return [f"- {str(s.get('date', ''))[:10]}: {lab.question(b)}" for _, s, b in reversed(newest)]
+
+
+def groups(
+    repo_root: Path, neighbours: list[str] | None = None, *, lab: bool = False
+) -> list[Group]:
     """Every group of the index of *repo_root*, empty ones left out.
 
     *neighbours* are the edge lines of the system map; ``None`` leaves the
-    group out. Lab entries (PRD 0020) join as one more group here.
+    group out. *lab* adds the newest lab entries (PRD 0020).
     """
     entries = glossary.load(repo_root)
     terms = list(dict.fromkeys(e.term for e in entries))
@@ -90,6 +104,7 @@ def groups(repo_root: Path, neighbours: list[str] | None = None) -> list[Group]:
         ),
         Group("### Roadmap", _roadmap_headings(repo_root), "Detail: `ROADMAP.md`"),
         Group("### Neighbours (system map)", neighbours or [], "Detail: `lore map <repo>`"),
+        Group("### Lab entries", _lab_lines(repo_root) if lab else [], "Detail: `lore lab show`"),
     ]
     return [g for g in out if g.items]
 

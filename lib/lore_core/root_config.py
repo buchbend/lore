@@ -182,11 +182,18 @@ class DefaultsConfig:
 
 
 @dataclass
+class LabConfig:
+    """Where a scope delivers lab entries (PRD 0020); ``[file]`` when empty."""
+
+    sinks: list[str] = _names()
+
+
+@dataclass
 class ScopeConfig:
     """A folder (and optional git remotes) whose repos share a wiki, sinks and sources.
 
-    ``logbook`` and ``sources`` hold names defined under the top-level
-    ``sinks`` and ``sources`` sections (PRD 0017 gives them behaviour).
+    ``logbook``, ``lab.sinks`` and ``sources`` hold names defined under the
+    top-level ``sinks`` and ``sources`` sections (PRD 0017 gives them behaviour).
     """
 
     path: str = ""
@@ -194,6 +201,7 @@ class ScopeConfig:
     wiki: str = ""
     tracker: str = ""
     logbook: list[str] = _names()
+    lab: LabConfig = field(default_factory=LabConfig)
     sources: list[str] = _names()
 
 

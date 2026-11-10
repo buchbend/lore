@@ -1,6 +1,6 @@
 """`lore index` — print the index of the repo, or keep it in AGENTS.md (PRD 0020).
 
-lore index            # glossary terms, ADRs, current PRDs, roadmap, neighbours
+lore index            # glossary terms, ADRs, current PRDs, roadmap, neighbours, lab
 lore index --write    # replace the marked block in AGENTS.md, or append it
 lore index --check    # exit 1 when the block in AGENTS.md is stale
 """
@@ -60,6 +60,6 @@ def index(
     except repo_index.UnmatchedMarker as exc:
         print(f"lore index: {agents}: {exc}; fix the markers by hand", file=sys.stderr)
         raise typer.Exit(1) from None
-    text = repo_index.index_text(repo_index.groups(root, _neighbours(root)))
+    text = repo_index.index_text(repo_index.groups(root, _neighbours(root), lab=True))
     if text:
         print(text)

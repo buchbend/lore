@@ -67,6 +67,7 @@ def _build_app() -> typer.Typer:
         index_cmd,
         ingest_cmd,
         integrations,
+        lab_cmd,
         log_cmd,
         map_cmd,
         mcp_cmd,
@@ -110,6 +111,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(handover_cmd.app, name="handover", hidden=True)
     app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
     app.add_typer(log_cmd.app, name="log", rich_help_panel=_KN)
+    app.add_typer(lab_cmd.app, name="lab", rich_help_panel=_KN)
     app.add_typer(roadmap_cmd.app, name="roadmap", rich_help_panel=_KN)
     app.add_typer(system_cmd.app, name="system", rich_help_panel=_KN)
     app.add_typer(toggle_cmd.on_app, name="on", hidden=True)

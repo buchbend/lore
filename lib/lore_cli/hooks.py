@@ -343,21 +343,25 @@ from lore_cli.spawn import (  # noqa: E402, F401
 def _logbook_line(cwd: Path, *, spawn: bool) -> str | None:
     """The undelivered-entries banner line; spawn a background flush when asked.
 
-    PRD 0017 § Pending entries. Never raises: a hook must not break on it.
+    PRD 0017 § Pending entries; lab entries ride along (PRD 0020). Never
+    raises: a hook must not break on it.
     """
     try:
+        from lore_workflow.ledger import DELIVERY_KINDS
         from lore_workflow.logbook import undelivered_count
 
-        count = undelivered_count(cwd)
+        counts = {kind: undelivered_count(cwd, kind) for kind in DELIVERY_KINDS}
     except Exception:  # noqa: BLE001 - logbook must never crash a hook
         return None
-    if not count:
+    if not any(counts.values()):
         return None
     if spawn:
         with contextlib.suppress(Exception):
             _spawn_logbook_flush(cwd)
-    noun = "entry" if count == 1 else "entries"
-    return f"lore: {count} logbook {noun} undelivered; `lore log flush` retries them"
+    waiting = " and ".join(
+        f"{n} {kind} {'entry' if n == 1 else 'entries'}" for kind, n in counts.items() if n
+    )
+    return f"lore: {waiting} undelivered; `lore log flush` retries them"
 
 hook_app = typer.Typer(
     add_completion=False,
@@ -686,7 +690,7 @@ def cmd_session_start(
         from lore_core.glossary import find_repo_root
 
         repo_root = find_repo_root(cwd_resolved)
-        index = repo_index.index_text(repo_index.groups(repo_root)) if repo_root else None
+        index = repo_index.index_text(repo_index.groups(repo_root, lab=True)) if repo_root else None
         if index:
             out = out + "\n\n" + index
     except Exception:  # noqa: BLE001 - the index must never crash SessionStart

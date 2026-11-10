@@ -17,6 +17,9 @@ Sinks:
 - ``command`` runs ``run`` through the shell with the entry text on stdin and
   ``LORE_ENTRY_*`` in the environment. A named ``secret`` arrives as
   ``LORE_SECRET`` and nowhere else. Exit code 0 means delivered.
+
+Lab entries (:mod:`lore_workflow.lab`, PRD 0020) share :func:`deliver`, the
+ledger lines (as ``[lab]``) and :func:`flush`; only their ``file`` sink differs.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -83,25 +87,29 @@ class Entry:
     text: str
 
 
+#: Writes *entry* to the ``file`` sink of a repo; True when delivered.
+FileSink = Callable[[Entry, Path], bool]
+
+
 # ---------------------------------------------------------------------------
 # Ledger lines
 # ---------------------------------------------------------------------------
 
 
-def _ledger_entry(entry: Entry, status: dict[str, bool]) -> LedgerEntry:
+def _ledger_entry(entry: Entry, status: dict[str, bool], kind: str) -> LedgerEntry:
     return LedgerEntry(
-        kind="logbook",
+        kind=kind,
         # ASCII JSON: a raw U+2028 would split the line under `splitlines()`.
         text=json.dumps(asdict(entry), ensure_ascii=True, separators=(",", ":")),
         outcome=" ".join(f"{n}={'delivered' if ok else 'undelivered'}" for n, ok in status.items()),
     )
 
 
-def _read_line(raw: str) -> tuple[Entry, dict[str, bool]] | None:
-    """The entry and per-sink delivery of a ``[logbook]`` line, else None."""
+def _read_line(raw: str, kind: str = "logbook") -> tuple[Entry, dict[str, bool]] | None:
+    """The entry and per-sink delivery of a ``[<kind>]`` line, else None."""
     try:
         parsed = parse_line(raw)
-        if parsed is None or parsed.kind != "logbook":
+        if parsed is None or parsed.kind != kind:
             return None
         entry = Entry(**json.loads(parsed.text))
     except (LedgerParseError, ValueError, TypeError):
@@ -110,24 +118,26 @@ def _read_line(raw: str) -> tuple[Entry, dict[str, bool]] | None:
     return entry, {name: state == "delivered" for name, _, state in pairs}
 
 
-def pending(ledger: Path) -> list[tuple[Entry, dict[str, bool]]]:
-    """Every ``[logbook]`` line of *ledger* with at least one undelivered sink."""
+def pending(ledger: Path, kind: str = "logbook") -> list[tuple[Entry, dict[str, bool]]]:
+    """Every ``[<kind>]`` line of *ledger* with at least one undelivered sink."""
     if not ledger.is_file():
         return []
-    lines = (_read_line(raw) for raw in ledger.read_text(encoding="utf-8").splitlines())
+    lines = (_read_line(raw, kind) for raw in ledger.read_text(encoding="utf-8").splitlines())
     return [line for line in lines if line is not None and not all(line[1].values())]
 
 
-def _write_status(ledger: Path, entry: Entry, status: dict[str, bool]) -> None:
-    """Replace the ``[logbook]`` line with *entry*'s key, or append one."""
-    new = format_entry(_ledger_entry(entry, status))
+def _write_status(
+    ledger: Path, entry: Entry, status: dict[str, bool], kind: str = "logbook"
+) -> None:
+    """Replace the ``[<kind>]`` line with *entry*'s key, or append one."""
+    new = format_entry(_ledger_entry(entry, status, kind))
     lines = (
         ledger.read_text(encoding="utf-8").splitlines()
         if ledger.exists()
         else ["# Lore ledger", ""]
     )
     for i, raw in enumerate(lines):
-        found = _read_line(raw)
+        found = _read_line(raw, kind)
         if found is not None and found[0].key == entry.key:
             lines[i] = new
             break
@@ -221,11 +231,13 @@ def _command_sink(entry: Entry, spec: dict, repo_root: Path) -> bool:
     return done.returncode == 0
 
 
-def _deliver_one(entry: Entry, name: str, spec: dict | None, repo_root: Path) -> bool:
+def _deliver_one(
+    entry: Entry, name: str, spec: dict | None, repo_root: Path, file_sink: FileSink
+) -> bool:
     kind = "file" if spec is None and name == "file" else (spec or {}).get("kind")
     try:
         if kind == "file":
-            return _file_sink(entry, repo_root)
+            return file_sink(entry, repo_root)
         if kind == "command" and spec and spec.get("run"):
             return _command_sink(entry, spec, repo_root)
     except Exception:  # noqa: BLE001 - a failed sink stays undelivered, never raises
@@ -233,13 +245,21 @@ def _deliver_one(entry: Entry, name: str, spec: dict | None, repo_root: Path) ->
     return False
 
 
-def deliver(entry: Entry, names: list[str], repo_root: Path) -> dict[str, bool]:
-    """Deliver *entry* to every sink in *names* at once; ``{name: delivered}``."""
+def deliver(
+    entry: Entry, names: list[str], repo_root: Path, file_sink: FileSink | None = None
+) -> dict[str, bool]:
+    """Deliver *entry* to every sink in *names* at once; ``{name: delivered}``.
+
+    *file_sink* writes a ``file`` sink; the logbook's own by default.
+    """
     if not names:
         return {}
     specs = _sink_specs()
+    sink = file_sink or _file_sink
     with ThreadPoolExecutor(max_workers=len(names)) as pool:
-        futures = {n: pool.submit(_deliver_one, entry, n, specs.get(n), repo_root) for n in names}
+        futures = {
+            n: pool.submit(_deliver_one, entry, n, specs.get(n), repo_root, sink) for n in names
+        }
     return {n: f.result() for n, f in futures.items()}
 
 
@@ -292,11 +312,8 @@ def _lock(ledger: Path, *, blocking: bool = True):
     return flocked(ledger.with_name(ledger.name + ".lock"), blocking=blocking)
 
 
-def add(text: str, ref: str, cwd: Path) -> tuple[Entry, dict[str, bool]]:
-    """Stamp *text*, keep it in the ledger of *cwd*, deliver it to the route's sinks.
-
-    Raises ValueError outside a git repo. The caller checks the content rules.
-    """
+def where(cwd: Path):
+    """(route, ledger path, repo name) of *cwd*; ValueError outside a git repo."""
     from lore_core.git import current_repo
     from lore_core.route import resolve_route
 
@@ -304,7 +321,15 @@ def add(text: str, ref: str, cwd: Path) -> tuple[Entry, dict[str, bool]]:
     ledger = default_ledger_path(cwd)
     if ledger is None or route.repo_root is None:
         raise ValueError(f"{cwd} is not inside a git repository")
-    repo = current_repo(route.repo_root) or _main_checkout_name(route.repo_root)
+    return route, ledger, current_repo(route.repo_root) or _main_checkout_name(route.repo_root)
+
+
+def add(text: str, ref: str, cwd: Path) -> tuple[Entry, dict[str, bool]]:
+    """Stamp *text*, keep it in the ledger of *cwd*, deliver it to the route's sinks.
+
+    Raises ValueError outside a git repo. The caller checks the content rules.
+    """
+    route, ledger, repo = where(cwd)
     # `owner/repo#n` in its own repo keys as `#n`, so both spellings dedupe.
     key_ref = ref.removeprefix(repo) if ref.startswith(f"{repo}#") else ref
     entry = Entry(
@@ -326,9 +351,13 @@ def add(text: str, ref: str, cwd: Path) -> tuple[Entry, dict[str, bool]]:
 def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]] | None:
     """Retry every undelivered sink in the ledger of *cwd*; return the new states.
 
+    Retries the ``[logbook]`` lines, then the ``[lab]`` lines.
+
     Returns None when another flush or `log add` holds the ledger's lock.
     """
     from lore_core.route import resolve_route
+
+    from lore_workflow import lab
 
     ledger = default_ledger_path(cwd)
     repo_root = resolve_route(cwd).repo_root
@@ -338,15 +367,16 @@ def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]] | None:
     with _lock(ledger, blocking=False) as held:
         if not held:
             return None
-        for entry, status in pending(ledger):
-            retry = [name for name, ok in status.items() if not ok]
-            status = {**status, **deliver(entry, retry, repo_root)}
-            _write_status(ledger, entry, status)
-            results.append((entry, status))
+        for kind, file_sink in (("logbook", _file_sink), ("lab", lab.file_sink)):
+            for entry, status in pending(ledger, kind):
+                retry = [name for name, ok in status.items() if not ok]
+                status = {**status, **deliver(entry, retry, repo_root, file_sink)}
+                _write_status(ledger, entry, status, kind)
+                results.append((entry, status))
     return results
 
 
-def undelivered_count(cwd: Path) -> int:
-    """How many ``[logbook]`` lines in the ledger of *cwd* wait for a sink."""
+def undelivered_count(cwd: Path, kind: str = "logbook") -> int:
+    """How many ``[<kind>]`` lines in the ledger of *cwd* wait for a sink."""
     ledger = default_ledger_path(cwd)
-    return 0 if ledger is None else len(pending(ledger))
+    return 0 if ledger is None else len(pending(ledger, kind))
