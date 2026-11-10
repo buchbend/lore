@@ -13,7 +13,7 @@ repos:
 
 ## Problem
 
-A review of Lore on 2026-11-09 found five gaps.
+A review of Lore on 2026-11-09 found five gaps. The planning of this epic showed a sixth.
 
 - **The banner says how to behave, not what exists.** SessionStart injects 14
   directive lines, the glossary index and the neighbours. It names no ADR, no
@@ -31,6 +31,9 @@ A review of Lore on 2026-11-09 found five gaps.
   not a decision, a defect or a how-to. Issue #417 (regime registry and
   lab-notebook brainstorm) names the gap. The logbook answers "who worked on
   what", not "what did we try, and what came out".
+- **The spec waits on a branch.** `to-epic` commits the PRD on a branch.
+  `build` cuts `epic/<n>` from the target branch, where the PRD does not
+  exist yet. A person merges the spec by hand before each build.
 
 ## Solution
 
@@ -51,6 +54,10 @@ A review of Lore on 2026-11-09 found five gaps.
   one lab entry at its end. `lore lab add` checks the entry, stamps the
   provenance and delivers the entry through the scope's sinks. ADR 0019 (the
   lab notebook) records the decision.
+- **Spec branch.** `to-epic` names the branch of the PRD in the epic body.
+  `build` in `epic` mode takes that branch into `epic/<n>` when the target
+  branch lacks the PRD. The start of the build counts as the approval of the
+  spec.
 
 ## Implementation decisions
 
@@ -98,6 +105,23 @@ A review of Lore on 2026-11-09 found five gaps.
   ADR 0019 already uses the new sections.
 - Existing ADRs stay as they are.
 
+### Spec branch
+
+- `to-epic` writes one line into the epic body: `**Spec branch:** <name>`.
+  It pushes the branch before it files the epic.
+- `lore workflow spec-branch` reads an epic body and the repo. It prints
+  JSON: the branch, and whether the target branch already holds the PRD.
+- `build` in `epic` mode runs the command in its Map step. When the target
+  branch lacks the PRD, `build` merges the spec branch into `epic/<n>` right
+  after it creates `epic/<n>`. The spec then reaches the target branch with
+  the epic PR.
+- When the target branch holds the PRD, `build` does nothing with the spec
+  branch.
+- When the epic body names no spec branch and the target branch lacks the
+  PRD, `build` stops and names the missing PRD.
+- A direct merge into the target branch stays out: a protected branch
+  rejects the push, and a second PR adds one more wait for CI.
+
 ### Lab notebook
 
 - A lab entry has five labelled parts: `Question`, `Setup`, `Result`,
@@ -133,6 +157,8 @@ A review of Lore on 2026-11-09 found five gaps.
 - MCP: one test asserts the tool names and the schema budget.
 - ADR lint: an ADR with the new sections passes; an ADR without `Holds`
   fails.
+- Spec branch: a fixture repo with the PRD on a side branch gives
+  `needs_merge: true`; with the PRD on the target branch it gives `false`.
 - Lab: `lore lab add` rejects a missing label. The stamp holds the commit of
   a fixture repo. A dirty tree sets the dirty flag. The file sink writes one
   file per entry.
