@@ -29,7 +29,9 @@ END_MARKER = "<!-- lore index: end -->"
 
 @dataclass
 class Group:
-    """One group of the index. *items* run oldest first; a cut drops the oldest."""
+    """One group of the index. *items* run oldest first, or newest first with *newest_first*.
+
+    A cut drops the oldest."""
 
     heading: str
     items: list[str]
@@ -37,6 +39,7 @@ class Group:
     joiner: str = "\n"
     #: False for a group the AGENTS.md block leaves out (PRD 0020).
     committed: bool = True
+    newest_first: bool = False
 
 
 def _number(path: str) -> str:
@@ -44,8 +47,15 @@ def _number(path: str) -> str:
 
 
 def _title(entry: dict) -> str:
-    """The title without a leading ``ADR 0012:`` or ``0012 —``: the line adds the number."""
-    return re.sub(r"^(?:(?:ADR|PRD)\s*)?\d+\s*[:—–-]\s*", "", str(entry["title"]))
+    """The title without a leading ``ADR 0012:`` or ``0012 —``: the line adds the number.
+
+    Another leading number, as in ``3-tier routing``, stays."""
+    num = _number(entry["path"])
+    return re.sub(
+        r"^(?:(?:ADR|PRD)\s*)?(\d+)\s*[:—–-]\s*",
+        lambda m: "" if num.isdigit() and int(m[1]) == int(num) else m[0],
+        str(entry["title"]),
+    )
 
 
 def _adr_line(entry: dict) -> str:
@@ -72,8 +82,8 @@ LAB_ENTRIES = 3
 def _lab_lines(repo_root: Path) -> list[str]:
     from lore_workflow import lab
 
-    newest = lab.entries(repo_root)[:LAB_ENTRIES]
-    return [f"- {str(s.get('date', ''))[:10]}: {lab.question(b)}" for _, s, b in reversed(newest)]
+    newest = lab.entries(repo_root, limit=LAB_ENTRIES)
+    return [f"- {str(s.get('date', ''))[:10]}: {lab.question(b)}" for _, s, b in newest]
 
 
 def groups(
@@ -111,6 +121,7 @@ def groups(
             _lab_lines(repo_root) if lab else [],
             "Detail: `lore lab show`",
             committed=False,
+            newest_first=True,
         ),
     ]
     return [g for g in out if g.items]
@@ -121,7 +132,8 @@ def _render(gs: list[Group], keep: list[int]) -> str:
     for g, k in zip(gs, keep, strict=True):
         parts.append(g.heading)
         if k:
-            parts.append(g.joiner.join(g.items[len(g.items) - k :]))
+            kept = g.items[:k] if g.newest_first else g.items[len(g.items) - k :]
+            parts.append(g.joiner.join(kept))
         if k < len(g.items):
             parts.append(f"… {len(g.items) - k} more")
         parts.append(g.detail)
@@ -152,6 +164,40 @@ class UnmatchedMarker(ValueError):
 
 _START_PREFIX = "<!-- lore index: start"
 _END_PREFIX = "<!-- lore index: end"
+_FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+_MARKER = re.compile(r" {0,3}(?=<!-- lore index: (start|end))")
+
+
+def _markers(text: str) -> tuple[list[int], list[int]]:
+    """Offsets of the start and the end markers of *text*.
+
+    A marker opens a line, after at most three spaces, and stands outside a code
+    fence. A quoted marker does neither: a code span and an indented code block
+    both put more text before it.
+    """
+    found: dict[str, list[int]] = {"start": [], "end": []}
+    lines = text.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    fence, opener, i = "", 0, 0
+    while i < len(lines):
+        line = lines[i]
+        m = _FENCE.match(line)
+        if fence:
+            # A fence closes on a bare run of its own character, at least as long.
+            if m and m[1].startswith(fence) and not line[m.end() :].strip():
+                fence = ""
+        elif m:
+            fence, opener = m[1], i
+        # A byte order mark may open the file, before the marker.
+        elif mk := _MARKER.match(line, 1 if i == 0 and line.startswith("\ufeff") else 0):
+            found[mk[1]].append(offsets[i] + mk.end())
+        i += 1
+        if i == len(lines) and fence:
+            # This fence never closes, so it is no fence: read on below its opener.
+            fence, i = "", opener + 1
+    return found["start"], found["end"]
 
 
 def _split(text: str) -> tuple[str, str, str] | None:
@@ -160,12 +206,12 @@ def _split(text: str) -> tuple[str, str, str] | None:
     Raises UnmatchedMarker unless *text* holds one start marker followed by one
     end marker: a write over a broken pair would eat the text between them.
     """
-    starts, ends = text.count(_START_PREFIX), text.count(_END_PREFIX)
+    starts, ends = _markers(text)
     if not starts and not ends:
         return None
-    start, end = text.find(_START_PREFIX), text.find(_END_PREFIX)
-    if starts != 1 or ends != 1 or end < start:
+    if len(starts) != 1 or len(ends) != 1 or ends[0] < starts[0]:
         raise UnmatchedMarker("unmatched lore index marker")
+    start, end = starts[0], ends[0]
     end = text.find("-->", end)
     end = len(text) if end < 0 else end + len("-->")
     return text[:start], text[start:end], text[end:]

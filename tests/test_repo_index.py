@@ -235,3 +235,71 @@ def test_session_start_injects_the_full_index_when_claude_md_does_not_import_age
     out = _session_start(repo, tmp_path, monkeypatch)
     assert "ADR 0001: One home per fact" in out
     assert "is stale" not in out
+
+
+def test_a_title_keeps_a_leading_number_that_is_not_the_document_number(repo: Path) -> None:
+    (repo / "docs" / "adr" / "0004-routing.md").write_text("# 3-tier model routing\n")
+    out = _index(repo).output
+    assert "- ADR 0004: 3-tier model routing" in out
+    assert "- ADR 0003: Search is federated" in out
+
+
+def test_write_ignores_a_marker_in_a_code_span_or_block(repo: Path) -> None:
+    agents = repo / "AGENTS.md"
+    quoted = (
+        "Write `<!-- lore index: start -->` and `<!-- lore index: end -->` by hand.\n\n"
+        "```\n<!-- lore index: start -->\n<!-- lore index: end -->\n```\n"
+    )
+    agents.write_text(f"# Agents\n\n{quoted}")
+    assert _index(repo, "--write").exit_code == 0
+    assert _index(repo, "--write").exit_code == 0
+    text = agents.read_text()
+    assert text.startswith(f"# Agents\n\n{quoted}")
+    assert text.count("### ADRs") == 1
+    assert _index(repo, "--check").exit_code == 0
+
+
+_START, _END = "<!-- lore index: start -->", "<!-- lore index: end -->"
+
+
+@pytest.mark.parametrize(
+    "quoted",
+    [
+        f"    {_START}\n    {_END}\n",  # indented code block
+        f"Write ``{_START}`` and ``{_END}`` by hand.\n",  # double-backtick span
+        f"- an item:\n\n  ```\n  {_START}\n  {_END}\n  ```\n",  # fence in a list item
+        f"````\n```\n{_START}\n{_END}\n```\n````\n",  # fence around a fence
+        f"~~~\n```\n{_START}\n~~~\n",  # a fence closes only on its own character
+        "```\nnever closed\n",  # an unclosed fence hides no real block
+    ],
+)
+def test_write_ignores_a_marker_in_any_code_form(repo: Path, quoted: str) -> None:
+    agents = repo / "AGENTS.md"
+    agents.write_text(f"# Agents\n\n{quoted}")
+    assert _index(repo, "--write").exit_code == 0
+    assert _index(repo, "--write").exit_code == 0
+    text = agents.read_text()
+    assert text.startswith(f"# Agents\n\n{quoted}")
+    assert text.count("### ADRs") == 1
+    assert _index(repo, "--check").exit_code == 0
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("﻿", "\n"),  # a byte order mark opens the file
+        ("# Agents\n\n  ", "\n"),  # a block indented by two spaces
+        # a closed fence that quotes a marker, and a fence that never closes
+        (f"```\n{_END}\n```\n\n", "\n\n```\nnever closed\n"),
+    ],
+)
+def test_write_replaces_the_real_block_in_place(repo: Path, before: str, after: str) -> None:
+    agents = repo / "AGENTS.md"
+    agents.write_text(f"{before}{_START}\nstale\n{_END}{after}", encoding="utf-8")
+    assert _index(repo, "--write").exit_code == 0
+    text = agents.read_text(encoding="utf-8")
+    assert text.startswith(f"{before}<!-- lore index: start")
+    assert text.endswith(f"{_END}{after}")
+    assert "stale" not in text
+    assert text.count("### ADRs") == 1
+    assert _index(repo, "--check").exit_code == 0

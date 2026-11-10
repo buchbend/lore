@@ -8,6 +8,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.96.1] - 2026-11-10
+
+Issue #566 (loose ends of the index and the lab notebook).
+
+### Fixed
+
+- **The index shows the question of each lab entry**, also when the question starts on the line below its label. The lab group lists the newest entry first.
+- **SessionStart parses three lab files at most.** `lore lab add` reads only the files of the month of the entry when it checks for a repeat.
+- **A title keeps a leading number** that is not the number of the document: "3-tier model routing" stays whole.
+- **`lore index --write` ignores a marker that `AGENTS.md` quotes** in a code span or a code block. A marker counts when it opens a line outside a code fence.
+- **`lore lab add --text-file`** exits 1 and names the path when the file is missing or is not UTF-8.
+- **`lore lab add --data`** records a relative path inside the repo from the repo root.
+
 ## [0.96.0] - 2026-11-10
 
 Ships `lore-workflow` 0.23.0.
