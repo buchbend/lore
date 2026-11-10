@@ -208,7 +208,7 @@ def test_session_start_puts_the_neighbours_before_the_glossary(
 ) -> None:
     out = _session_start(repo, monkeypatch, "ccatobs/data-center")
     assert "- uses ccatobs/ops-db: SQLAlchemy models; pin: sha" in out
-    assert out.index("## Neighbours") < out.index("## Glossary")
+    assert out.index("## Neighbours") < out.index("## Index")
 
 
 def test_session_start_without_an_edge_adds_no_block(

@@ -18,6 +18,7 @@ VISIBLE = {
     "read",
     "wiki",
     "log",
+    "lab",
     "roadmap",
     "system",
     "update",

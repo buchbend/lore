@@ -1,12 +1,14 @@
 ---
 title: "Join the writing rules to the glossary"
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/336
 repos:
   - buchbend/lore
 ---
 
 # PRD 0010: Join the writing rules to the glossary
+
+> Historical. Current decisions: ADR 0006.
 
 > Source of truth for this epic.
 

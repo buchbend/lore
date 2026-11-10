@@ -27,8 +27,8 @@ Pocock's contribution is the form of these ideas as agent skills, which we adopt
 
 ## Our changes to his work
 
-- The ADR template follows MADR-lite (Context · Decision · Consequences · Alternatives ·
-  Status), with a deterministic step that registers each ADR in the docs index.
+- The ADR template keeps four required parts (header · Holds · Revisit if · Alternatives
+  considered) and an optional Background, with a deterministic step that registers each ADR in the docs index.
 - Each ADR states its strength: `Holds`, `Revisit if` and `Amendments`. Only an invariant
   that names its enforcing test binds (lore ADR 0015).
 - Glossary entries and ADRs follow our writing rules (`lore style show writing-rules`).

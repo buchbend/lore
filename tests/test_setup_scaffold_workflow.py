@@ -52,3 +52,25 @@ def test_scaffold_flag_idempotent_on_rerun(repo: Path) -> None:
     second = _scope("--scaffold-workflow")
     assert second.exit_code == 0, second.output
     assert (repo / "docs" / "prd" / "index.md").read_text() == before
+
+
+def test_scaffold_flag_writes_the_index_block(repo: Path) -> None:
+    (repo / "docs" / "adr").mkdir(parents=True)
+    (repo / "docs" / "adr" / "0001-one-home.md").write_text("# ADR 0001: One home per fact\n")
+    assert _scope("--scaffold-workflow").exit_code == 0
+    agents = (repo / "AGENTS.md").read_text()
+    assert "<!-- lore index: start" in agents and "<!-- lore index: end -->" in agents
+    assert "ADR 0001: One home per fact" in agents
+    assert runner.invoke(app, ["index", "--check"]).exit_code == 0
+
+
+def test_scaffold_flag_on_a_repo_without_inputs_writes_no_index_block(repo: Path) -> None:
+    assert _scope("--scaffold-workflow").exit_code == 0
+    assert "lore index" not in (repo / "AGENTS.md").read_text()
+
+
+def test_scaffold_adr_index_names_the_adr_template_sections(repo: Path) -> None:
+    assert _scope("--scaffold-workflow").exit_code == 0
+    stub = (repo / "docs" / "adr" / "index.md").read_text()
+    assert "`Holds`" in stub and "`Revisit if`" in stub and "`Alternatives considered`" in stub
+    assert "MADR" not in stub and "Consequences" not in stub

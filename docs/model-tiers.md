@@ -48,9 +48,6 @@ lore tier resolve mid
 lore tier resolve frontier --host cursor
 ```
 
-Also exposed as the `lore_tier_resolve` MCP tool (`tier`, optional
-`host`) — same resolution, for callers that can't shell out.
-
 ## User overrides
 
 Any table cell can be overridden per person, without touching the

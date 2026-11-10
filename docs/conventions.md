@@ -31,6 +31,7 @@ orient → grilling → to-epic → build → document
 | `handover` | Writes the handover section for work that stops before its finish point, and turns follow-up work into a seed issue. |
 | `tdd` | The red-green-refactor loop every `build` mode follows. |
 | `debug` | Root-cause debugging with a circuit breaker after three failed fixes. |
+| `experiment` | Runs one experiment and writes one lab entry with `lore lab add`. A dead end gets status `dead-end`. |
 | `file-issue` | Writes issue text and PR bodies under the writing rules and files them. |
 | `triage` | Reviews every open issue and PR of a repo against the code, gives each a verdict, and presents one filterable page for discussion. Review only until the user decides. |
 
@@ -90,6 +91,17 @@ is a one-line shim that imports it:
 
 Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore setup scope
 --scaffold-workflow` moves an existing `CLAUDE.md` into this shape.
+
+`AGENTS.md` also holds the index block, between two `lore index` markers.
+`lore index --write` regenerates the block. `lore index --check` exits 1
+when the block is stale. Edit the text outside the markers by hand; leave
+the text between them to the command.
+
+No command writes the block on its own. SessionStart compares the block with
+the repo at each start. A current block that `CLAUDE.md` imports is not
+repeated in the banner: the banner holds one pointer line and the lab
+entries. For a stale block, the banner holds the full index and the line
+"Run `lore index --write`".
 
 ### The epic issue as tracker
 

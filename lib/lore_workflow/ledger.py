@@ -16,10 +16,11 @@ ledger file may carry a heading or prose::
     - [left] dropped — Rename the board marker
     - [resume] 2026-09-29T10:00:00Z — round 2 merged; next: wire the hook
     - [logbook] file=delivered pm=undelivered — {"key":"lore:acme/widget:#7",...}
+    - [lab] file=delivered — {"key":"lore:acme/widget:lab:0f3a…",...}
     - [board] https://github.com/acme/widget/issues/7#issuecomment-42 — acme/widget#7
 
-- ``kind`` sits in brackets: ``adr``, ``term``, ``left``, ``resume``, ``logbook``
-  or ``board``.
+- ``kind`` sits in brackets: ``adr``, ``term``, ``left``, ``resume``, ``logbook``,
+  ``lab`` or ``board``.
 - An ``adr``, ``term`` or ``left`` line carries its outcome next: ``open``,
   ``approved``, ``dropped`` or ``filed <owner/repo#n>``.
 - A resume line carries an ISO 8601 UTC timestamp instead of an outcome.
@@ -27,7 +28,7 @@ ledger file may carry a heading or prose::
 - A logbook line (PRD 0017) carries ``<sink>=delivered|undelivered`` per sink
   and the entry as JSON (:mod:`lore_workflow.logbook`). It is never open, so
   it never blocks the check. :func:`archive_ledger` carries an undelivered
-  one into the new ledger.
+  one into the new ledger. A lab line (PRD 0020) has the same shape.
 - A board line carries the URL of an epic's board comment, then the epic.
   It is never open. PreCompact and SessionStart name the board from it, so an
   epic run finds its ledger again after compaction.
@@ -59,7 +60,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-KINDS: tuple[str, ...] = ("adr", "term", "left", "resume", "logbook", "board")
+KINDS: tuple[str, ...] = ("adr", "term", "left", "resume", "logbook", "lab", "board")
+
+#: Kinds whose line holds an entry as JSON and its delivery per sink.
+DELIVERY_KINDS: tuple[str, ...] = ("logbook", "lab")
 
 #: File name of the loop/issue ledger inside the git dir.
 LEDGER_FILENAME = "lore-ledger.md"
@@ -132,14 +136,14 @@ def format_entry(entry: LedgerEntry) -> str:
     """
     if entry.kind not in KINDS:
         raise ValueError(f"invalid kind {entry.kind!r}: use one of {', '.join(KINDS)}")
-    text = entry.text if entry.kind == "logbook" else " ".join(entry.text.split())
+    text = entry.text if entry.kind in DELIVERY_KINDS else " ".join(entry.text.split())
     if entry.kind == "resume":
         status = entry.timestamp or utc_now()
-    elif entry.kind == "logbook":
+    elif entry.kind in DELIVERY_KINDS:
         status = entry.outcome or ""
         if not _DELIVERY_RE.match(status):
             raise ValueError(
-                f"invalid logbook delivery {status!r}: use '<sink>=delivered|undelivered'"
+                f"invalid {entry.kind} delivery {status!r}: use '<sink>=delivered|undelivered'"
             )
     elif entry.kind == "board":
         status = entry.outcome or ""
@@ -166,7 +170,9 @@ def parse_line(raw: str, lineno: int = 0) -> LedgerEntry | None:
         if not _TIMESTAMP_RE.match(status):
             raise LedgerParseError(f"{where}resume line needs an ISO timestamp: {stripped}")
         return LedgerEntry(kind=kind, text=text, timestamp=status, line=lineno)
-    pattern = {"logbook": _DELIVERY_RE, "board": _URL_RE}.get(kind, _OUTCOME_RE)
+    pattern = {"logbook": _DELIVERY_RE, "lab": _DELIVERY_RE, "board": _URL_RE}.get(
+        kind, _OUTCOME_RE
+    )
     if not pattern.match(status):
         raise LedgerParseError(f"{where}invalid outcome {status!r}: {stripped}")
     return LedgerEntry(kind=kind, text=text, outcome=status, line=lineno)
@@ -204,7 +210,7 @@ def append_entry(path: Path, entry: LedgerEntry) -> str:
 
 
 #: Kinds whose line carries no outcome for ``ledger-set``.
-_NO_OUTCOME = ("resume", "logbook", "board")
+_NO_OUTCOME = ("resume", *DELIVERY_KINDS, "board")
 
 
 def _select(entries: list[LedgerEntry], selector: str) -> LedgerEntry:
@@ -288,7 +294,7 @@ def archive_ledger(path: Path) -> Path:
     undelivered = [
         format_entry(e)
         for e in entries
-        if e.kind == "logbook" and "=undelivered" in (e.outcome or "")
+        if e.kind in DELIVERY_KINDS and "=undelivered" in (e.outcome or "")
     ]
     if undelivered:
         path.write_text(_FILE_HEADING + "\n" + "\n".join(undelivered) + "\n", encoding="utf-8")
@@ -425,7 +431,7 @@ def precompact_note(cwd: Path) -> str | None:
             f"lore: epic board for {board.text} at {board.outcome} — re-read it after "
             f"compaction with {_board_read(board)}; the board holds the epic's ledger."
         )
-    if kinds - {"logbook", "board"}:  # logbook lines alone are no run (issue #490)
+    if kinds - {*DELIVERY_KINDS, "board"}:  # logbook lines alone are no run (issue #490)
         notes.append(
             f"lore: build ledger at {path} — re-read it after compaction; "
             "`lore workflow ledger-check` gates the finish point."
