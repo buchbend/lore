@@ -26,7 +26,9 @@ needs work before any code. For one small, clear change, use the
 3. **Build the epic.** Point a session at the epic issue and run
    `/lore-workflow:build` in `epic` mode. The skill:
    - validates the build order with `lore workflow validate-build-order`;
-   - creates `epic/<issue>` from the target branch;
+   - creates `epic/<issue>` from the target branch, and merges the spec branch into it
+     when the target branch lacks the PRD (starting the build approves the spec on that
+     branch);
    - builds the features test-first, one teammate per feature;
    - reviews each PR at the depth `lore workflow risk` sets;
    - merges the features in dependency order and opens the epic PR.
