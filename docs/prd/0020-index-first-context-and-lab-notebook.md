@@ -160,7 +160,8 @@ A review of Lore on 2026-11-09 found five gaps. The planning of this epic showed
 - ADR lint: an ADR with the new sections passes; an ADR without `Holds`
   fails.
 - Spec branch: a fixture repo with the PRD on a side branch gives
-  `needs_merge: true`; with the PRD on the target branch it gives `false`.
+  `needs_merge: true`; with the PRD on the target branch it gives `false`. The
+  `ref` key is `origin/<name>` when the remote holds the PRD, else the local name.
 - Lab: `lore lab add` rejects a missing label. The stamp holds the commit of
   a fixture repo. A dirty tree sets the dirty flag. The file sink writes one
   file per entry.

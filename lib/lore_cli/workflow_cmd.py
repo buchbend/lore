@@ -60,7 +60,7 @@ def spec_branch_cmd(
     path: str = typer.Argument("-", help="Path to the epic body Markdown, or '-' to read stdin."),
     repo_root: Path = typer.Option(Path("."), "--repo", help="Repo root."),
 ) -> None:
-    """Print {branch, prd, needs_merge}: whether the spec branch must be merged into
+    """Print {branch, prd, needs_merge, ref}: whether the spec branch must be merged into
     `epic/<n>` because the target branch lacks the PRD. Exit 1 if the PRD is nowhere."""
     from lore_workflow.epic_policy import resolve_epic_policy
     from lore_workflow.spec_branch import SpecBranchError, resolve_spec_branch
@@ -71,7 +71,9 @@ def spec_branch_cmd(
     except SpecBranchError as exc:
         typer.echo(f"spec-branch: {exc}", err=True)
         raise typer.Exit(code=1) from None
-    print(json.dumps({"branch": r.branch, "prd": r.prd, "needs_merge": r.needs_merge}))
+    print(
+        json.dumps({"branch": r.branch, "prd": r.prd, "needs_merge": r.needs_merge, "ref": r.ref})
+    )
 
 
 @app.command("validate-roadmap", hidden=True)  # old name of validate-build-order
