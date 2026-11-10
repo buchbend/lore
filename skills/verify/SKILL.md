@@ -22,9 +22,9 @@ clear the backlog on their own schedule.
 
 ## Workflow
 
-1. **Discover.** Call `mcp__lore__lore_pending_verdicts` (no args —
-   the tool auto-resolves the active wiki from the cwd route).
-   The response carries every picker field per entry; no further reads
+1. **Discover.** Run `lore verdict pending` (JSON; it
+   auto-resolves the active wiki from the cwd route, or pass `--wiki`).
+   The output carries every picker field per entry; no further reads
    are needed.
 
 2. **Handle empty.** If `count == 0`, say "no pending verdicts in this
@@ -49,16 +49,15 @@ clear the backlog on their own schedule.
 4. **On `stale`.** Show a second `AskUserQuestion` for the one-line
    reason. Offer three context-aware canned options derived from the
    entry's `reason` field (the picker UI will also expose "Other" for
-   free-form entry). Then call `mcp__lore__lore_verdict` with
-   `{wiki: <response.wiki>, note: entry.path, verdict: "stale",
-   reason: <chosen>}`. Echo the returned freshness block so the user
+   free-form entry). Then run
+   `lore verdict set <response.wiki> <entry.path> stale --reason "<chosen>"`. Echo the returned freshness block so the user
    sees what landed.
 
-5. **On `confirm`.** Call `mcp__lore__lore_verdict` with
-   `{wiki: <response.wiki>, note: entry.path, verdict: "confirm"}`.
+5. **On `confirm`.** Run
+   `lore verdict set <response.wiki> <entry.path> confirm`.
    Echo the returned freshness block.
 
-6. **On `skip`.** No MCP call. Move to the next entry.
+6. **On `skip`.** No command. Move to the next entry.
 
 7. **Summarize.** End-of-loop: how many confirmed, how many stale,
    how many skipped. Mention that the SessionStart status-line chip
@@ -66,10 +65,10 @@ clear the backlog on their own schedule.
 
 ## Hard rules
 
-- **Zero bash.** Everything you need is in `lore_pending_verdicts`'s
-  response + per-entry `lore_verdict` calls. Do not read the catalog,
+- **Only the verdict commands.** Everything you need is in the
+  `lore verdict pending` output + per-entry `lore verdict set` calls. Do not read the catalog,
   walk the wiki, or open notes directly.
-- One MCP call per verdict — do not batch (each verdict is a separate
+- One `lore verdict set` per verdict — do not batch (each verdict is a separate
   user choice and the per-write audit trail matters).
 - Never auto-resolve a `disagreement` — always ask.
 - `skip` means *make no write*; do not even open the sidecar.

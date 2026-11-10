@@ -82,6 +82,7 @@ def _build_app() -> typer.Typer:
         toggle_cmd,
         trace_cmd,
         transcripts_cmd,
+        verdict_cmd,
         wiki_cmd,
         workflow_cmd,
     )
@@ -125,6 +126,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(ingest_cmd.app, name="ingest", hidden=True)
     app.add_typer(mcp_cmd.app, name="mcp", hidden=True)
     app.add_typer(migrate_cmd.app, name="migrate", hidden=True)
+    app.add_typer(verdict_cmd.app, name="verdict", hidden=True)
     app.add_typer(trace_cmd.app, name="trace", hidden=True)
     app.add_typer(transcripts_cmd.app, name="transcripts", hidden=True)
     app.add_typer(workflow_cmd.app, name="workflow", hidden=True)

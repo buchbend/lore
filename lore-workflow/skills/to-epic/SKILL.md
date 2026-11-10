@@ -83,12 +83,11 @@ doubt, merge. Iterate to approval — `build` in `epic` mode will not ask again.
 
 ### 6. Publish
 Order matters so every cross-reference resolves:
-
 1. **Write the PRD file.** Call `lore workflow create-prd` (see above) to write
    `docs/prd/NNNN-kebab.md` and wire it into `docs/prd/index.md`'s toctree. Front-matter
    carries `epic:` (filled with the epic URL once it exists — step 4 closes this loop) and
    `repos:` (every involved repo). Fill the PRD body sections with the synthesized PRD. Commit
-   it to the repo on the branch the docs PR will carry.
+   it on the branch the docs PR will carry (the **spec branch**) and push it before you file the epic.
 2. **Create sub-issues** in dependency order so refs resolve, each in its target repo through
    [`file-issue`](../file-issue/SKILL.md) in caller-template mode, handing it the sub-issue
    template below (optionally labeled `epic:<n>` for grouping).
@@ -168,6 +167,7 @@ and carries the build-order DAG — the table **stays in the epic body**, where 
 ## Summary
 One paragraph: problem → solution. Full spec lives in the PRD.
 
+**Spec branch:** `<branch holding the PRD>`
 **PRD:** [`docs/prd/NNNN-kebab.md`](../blob/<branch>/docs/prd/NNNN-kebab.md) — the source of truth.
 
 ## Build order

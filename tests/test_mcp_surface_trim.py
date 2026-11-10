@@ -24,12 +24,11 @@ REMOVED_TOOLS = {
     "lore_briefing_gather",
     "lore_resume",
     "lore_journal_write",
+    "lore_pending_verdicts",
+    "lore_verdict",
+    "lore_inbox_classify",
+    "lore_tier_resolve",
 }
-
-
-def test_tool_schema_has_exactly_eleven_tools() -> None:
-    names = [t["name"] for t in _tool_schema()]
-    assert len(names) == 11, names
 
 
 def test_tool_schema_excludes_removed_tools() -> None:

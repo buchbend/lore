@@ -55,10 +55,10 @@ def test_skill_body_documents_three_picker_options():
     assert "skip" in text
 
 
-def test_skill_calls_lore_verdict_mcp():
-    """No new write paths — must wrap the existing MCP tool."""
+def test_skill_calls_verdict_commands_not_removed_tools():
     text = SKILL_PATH.read_text()
-    assert "lore_verdict" in text
+    assert "lore verdict pending" in text and "lore verdict set" in text
+    assert "lore_verdict" not in text and "lore_pending_verdicts" not in text
 
 
 def test_plugin_version_bumped_for_skill_addition():
