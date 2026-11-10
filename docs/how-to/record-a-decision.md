@@ -32,10 +32,14 @@ it with `lore wiki lint adr`. Change it later without a new record.
 
 3. **Fill in `Revisit if`.** One line per condition that reopens the decision.
 
-4. **Write the other sections.** Context, Decision, Consequences, Alternatives
-   considered and Status explain the decision. An agent reads them as
-   background, and only invariants bind it. Keep mechanism detail out of
-   Decision and put it in `Holds` as an incidental line.
+4. **Fill in `Alternatives considered`.** The genuine alternatives and why each
+   lost. Add `Background` only when a future reader needs context that `Holds`
+   does not give; the section is free and optional. The header line holds the
+   status, so there is no `Status` section. The four required parts are the
+   header, `Holds`, `Revisit if` and `Alternatives considered`. An agent reads
+   everything outside `Holds` as background, and only invariants bind it. Keep
+   mechanism detail out of `Background` and put it in `Holds` as an incidental
+   line. ADRs written to the old nine-section template stay valid.
 
 5. **Run the check.**
 
