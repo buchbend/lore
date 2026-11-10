@@ -186,6 +186,10 @@ Terms used in the workflow layer and orchestration:
 - **Glossary index** — the list of words that a repo's `CONTEXT.md`
   defines, without their definitions. SessionStart injects it.
   `lore glossary <term>` prints one definition on demand.
+- **Index** — the short list of what a repo holds: terms, ADR titles,
+  current PRDs, roadmap headings and neighbours. Each group names the
+  command that pulls the detail. `lore index` prints it. _Avoid_: overview,
+  map.
 - **Writing rules** — the prose style an agent uses for issue text, PR
   descriptions, PR review comments, ADR context sections and design
   documents. Session notes stay out. The document holds sentence and
@@ -327,6 +331,11 @@ ships, the term names the planned behavior.
   It has four labelled parts: why, what we did, consequences, not done yet.
   It explains the work to a human reader and links to the homes of the facts.
   _Avoid_: log, post, summary.
+- **Lab entry** — the dated record of one experiment. It has five labelled
+  parts and a stamp that Lore writes. Nobody edits it. Decision in ADR 0019.
+  _Avoid_: note, log, run.
+- **Thread** — the lab entries that follow one idea. Its status is open,
+  concluded or dead-end. _Avoid_: series, track.
 - **Source** — a system that `lore_search` queries live, next to the
   wiki index. Each source returns its own list of hits. _Avoid_: backend,
   provider.
