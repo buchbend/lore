@@ -147,7 +147,7 @@ def _freshness_block_for(
     block = signal_to_dict(sig)
 
     # Slice 9: surface team-mode disagreements (someone marked stale,
-    # someone else confirmed after) so the in-passing nudge can ask
+    # someone else confirmed after) so `/lore:verify` can ask
     # for explicit resolution instead of silently overwriting.
     from lore_core.disagreement import detect_disagreement, disagreement_to_dict
 

@@ -1,9 +1,8 @@
 ---
 name: lore:verify
 description: List pending freshness verdicts and let the user resolve
-  each one. The primary verdict path is the in-passing nudge emitted
-  during a session; this slash command is the explicit fallback that
-  makes the SessionStart pending-verdict chip actionable. Run with
+  each one. This slash command is the one verdict path; it makes the
+  SessionStart pending-verdict chip actionable. Run with
   "/lore:verify" — wiki-scoped to match the chip count.
 user_invocable: true
 ---
@@ -15,10 +14,8 @@ time. Wiki-scoped to match the SessionStart status-line chip: when the
 chip says "N pending verdict", running this command surfaces exactly
 those N notes.
 
-The primary verdict path is the LLM-emitted in-passing nudge that
-fires when the agent actively cites a stale-candidate note in flow.
-This slash command is the explicit fallback for the user who wants to
-clear the backlog on their own schedule.
+This slash command is the one verdict path. The user clears the
+backlog on their own schedule.
 
 ## Workflow
 

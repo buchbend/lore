@@ -54,8 +54,7 @@ class FreshnessSignal:
             membership. ``"none"`` for confirmed notes (kept as a
             literal rather than ``None`` so JSON consumers see a
             consistent enum).
-        reason: Short human-readable explanation, used by the in-passing
-            nudge directive (slice 7).
+        reason: Short human-readable explanation, shown by `/lore:verify`.
         confirmed_at: Personal sidecar confirm date when present
             (slice 6). Always ``None`` in slice 1.
     """
