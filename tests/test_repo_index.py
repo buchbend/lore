@@ -143,6 +143,8 @@ def test_the_banner_holds_the_filing_trigger_and_reading_rule_and_no_routing_lin
     assert "Only `Invariant` lines bind" in out
     assert "becomes an issue on the owning repo" not in out
     assert "becomes a comment on it" not in out
+    assert "Never merge an ADR, PRD or wiki topic-note PR yourself" in out
+    assert "Close only issues you opened" in out
 
 
 def test_style_show_filing_prints_the_routing_lines() -> None:
@@ -161,3 +163,33 @@ def test_file_issue_reads_the_filing_rules_before_it_drafts() -> None:
     text = skill.read_text(encoding="utf-8")
     step_one = text.split("\n## 1. ", 1)[1].split("\n## 2. ", 1)[0]
     assert "lore style show filing" in step_one
+
+
+@pytest.mark.parametrize(
+    "markers",
+    [
+        "<!-- lore index: start -->\n",
+        "<!-- lore index: end -->\n<!-- lore index: start -->\n",
+        "<!-- lore index: start -->\n<!-- lore index: end -->\n" * 2,
+    ],
+)
+def test_write_refuses_unmatched_markers_and_keeps_the_user_text(repo: Path, markers: str) -> None:
+    agents = repo / "AGENTS.md"
+    text = f"# Agents\n\n{markers}\nHand-written rules.\n"
+    agents.write_text(text)
+    for _ in range(2):
+        result = _index(repo, "--write")
+        assert result.exit_code == 1
+        assert f"{agents}: unmatched lore index marker" in result.output
+    assert agents.read_text() == text
+    check = _index(repo, "--check")
+    assert check.exit_code == 1
+    assert "unmatched lore index marker" in check.output
+
+
+def test_the_repo_agents_md_block_is_current() -> None:
+    """A stale committed block fails the suite: run `lore index --write`."""
+    from lore_core import repo_index
+
+    root = Path(__file__).resolve().parent.parent
+    assert repo_index.agents_block_is_current(root), "run `lore index --write`"

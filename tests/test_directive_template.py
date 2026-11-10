@@ -33,6 +33,11 @@ EXPECTED_DIRECTIVE_LINES = [
         "it appears, with the refs behind it. Never interrupt the user "
         "to ask. `lore style show filing` names where each fact goes."
     ),
+    (
+        "- Never merge an ADR, PRD or wiki topic-note PR yourself; a human "
+        "merges it. Close only issues you opened; never change the state of "
+        "a human's issue or PR."
+    ),
     ("- At session end, list every artifact the session opened or commented on."),
     (
         "- ADRs and PRDs explain where the code comes from. Read them as "
@@ -70,6 +75,9 @@ def test_directive_states_the_filing_trigger_and_names_no_flag():
     assert "file every team-relevant fact" in joined
     assert "lore style show filing" in joined
     assert "becomes an issue" not in joined
+    assert "becomes a roadmap item" not in joined
+    assert "never merge an adr, prd or wiki topic-note pr yourself" in joined
+    assert "close only issues you opened" in joined
 
 
 def test_directive_is_a_single_block_with_the_genre_rule():

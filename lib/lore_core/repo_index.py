@@ -124,18 +124,36 @@ def agents_block(repo_root: Path) -> str:
     return f"{START_MARKER}\n{index_text(groups(repo_root)) or ''}\n{END_MARKER}"
 
 
+class UnmatchedMarker(ValueError):
+    """AGENTS.md holds a start marker without its end marker, or the reverse."""
+
+
+_START_PREFIX = "<!-- lore index: start"
+_END_PREFIX = "<!-- lore index: end"
+
+
 def _split(text: str) -> tuple[str, str, str] | None:
-    """(before, block, after) of *text*, or None without both markers."""
-    start = text.find(START_MARKER)
-    end = text.find(END_MARKER, start)
-    if start < 0 or end < 0:
+    """(before, block, after) of *text*, or None without a marker.
+
+    Raises UnmatchedMarker unless *text* holds one start marker followed by one
+    end marker: a write over a broken pair would eat the text between them.
+    """
+    starts, ends = text.count(_START_PREFIX), text.count(_END_PREFIX)
+    if not starts and not ends:
         return None
-    end += len(END_MARKER)
+    start, end = text.find(_START_PREFIX), text.find(_END_PREFIX)
+    if starts != 1 or ends != 1 or end < start:
+        raise UnmatchedMarker("unmatched lore index marker")
+    end = text.find("-->", end)
+    end = len(text) if end < 0 else end + len("-->")
     return text[:start], text[start:end], text[end:]
 
 
 def write_agents_block(repo_root: Path) -> bool:
-    """Replace the marked block in AGENTS.md, or append it. Returns whether it wrote."""
+    """Replace the marked block in AGENTS.md, or append it. Returns whether it wrote.
+
+    Raises UnmatchedMarker when the markers in AGENTS.md do not form one pair.
+    """
     path = repo_root / "AGENTS.md"
     current = path.read_text(encoding="utf-8") if path.exists() else ""
     block = agents_block(repo_root)
@@ -152,9 +170,13 @@ def write_agents_block(repo_root: Path) -> bool:
 
 
 def agents_block_is_current(repo_root: Path) -> bool:
-    """True when AGENTS.md holds the markers and the text between them is the generated one."""
+    """True when AGENTS.md holds the markers and the text between them is the generated one.
+
+    Raises UnmatchedMarker when the markers do not form one pair.
+    """
     try:
-        parts = _split((repo_root / "AGENTS.md").read_text(encoding="utf-8"))
+        text = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
     except OSError:
         return False
+    parts = _split(text)
     return parts is not None and parts[1] == agents_block(repo_root)

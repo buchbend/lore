@@ -46,16 +46,20 @@ def index(
         print("lore index: not inside a git repository", file=sys.stderr)
         raise typer.Exit(1)
     agents = root / "AGENTS.md"
-    if check:
-        if not repo_index.agents_block_is_current(root):
-            print(f"lore index: {agents} is stale; run `lore index --write`", file=sys.stderr)
-            raise typer.Exit(1)
-        print(f"lore index: {agents} is current")
-        return
-    if write:
-        wrote = repo_index.write_agents_block(root)
-        print(f"lore index: {'wrote' if wrote else 'unchanged'} {agents}")
-        return
+    try:
+        if check:
+            if not repo_index.agents_block_is_current(root):
+                print(f"lore index: {agents} is stale; run `lore index --write`", file=sys.stderr)
+                raise typer.Exit(1)
+            print(f"lore index: {agents} is current")
+            return
+        if write:
+            wrote = repo_index.write_agents_block(root)
+            print(f"lore index: {'wrote' if wrote else 'unchanged'} {agents}")
+            return
+    except repo_index.UnmatchedMarker as exc:
+        print(f"lore index: {agents}: {exc}; fix the markers by hand", file=sys.stderr)
+        raise typer.Exit(1) from None
     text = repo_index.index_text(repo_index.groups(root, _neighbours(root)))
     if text:
         print(text)

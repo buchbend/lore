@@ -17,7 +17,8 @@ What it does:
 4. Append ADR 0015's reading rule to AGENTS.md unless the file carries it.
    The text comes from the SessionStart directive template, so the hook and
    AGENTS.md say the same thing.
-5. Write the index block (`lore index --write`, PRD 0020) into AGENTS.md.
+5. Write the index block (`lore index --write`, PRD 0020) into AGENTS.md when
+   the repo holds something to index and AGENTS.md holds no broken marker.
 
 Deliberately out of scope (per PRD 0003, a sibling slice, #170): the
 .claude/settings.json permissions allowlist and hook wiring. This module
@@ -28,7 +29,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lore_core.repo_index import write_agents_block
+from lore_core import repo_index
 from lore_core.session_start import reading_rule
 
 from lore_workflow.prd_docs import wire_toctree
@@ -40,8 +41,8 @@ SHIM_SENTINEL = "@AGENTS.md"
 _ADR_INDEX_STUB = """\
 # Architecture Decision Records
 
-Decision records in MADR-lite form
-(Context · Decision · Consequences / Trade-offs · Alternatives considered).
+Decision records with a header, `Holds`, `Revisit if` and
+`Alternatives considered`, plus an optional `Background`.
 
 ```{toctree}
 :maxdepth: 1
@@ -144,6 +145,16 @@ def _wire_docs_index(target: Path) -> bool:
     return docs_index.read_text(encoding="utf-8") != before
 
 
+def _write_index_block(target: Path) -> bool:
+    """Write the index block, but no empty one, and never over a broken marker."""
+    if not repo_index.groups(target):
+        return False
+    try:
+        return repo_index.write_agents_block(target)
+    except repo_index.UnmatchedMarker:
+        return False  # `lore index --write` names the broken marker
+
+
 def scaffold(target: Path) -> bool:
     """Onboard the repo at *target* into the workflow conventions.
 
@@ -157,5 +168,5 @@ def scaffold(target: Path) -> bool:
     changed |= _create_index_stub(target / "docs" / "adr" / "index.md", _ADR_INDEX_STUB)
     changed |= _create_index_stub(target / "docs" / "prd" / "index.md", _PRD_INDEX_STUB)
     changed |= _wire_docs_index(target)
-    changed |= write_agents_block(target)
+    changed |= _write_index_block(target)
     return changed
