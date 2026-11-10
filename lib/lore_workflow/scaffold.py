@@ -17,6 +17,7 @@ What it does:
 4. Append ADR 0015's reading rule to AGENTS.md unless the file carries it.
    The text comes from the SessionStart directive template, so the hook and
    AGENTS.md say the same thing.
+5. Write the index block (`lore index --write`, PRD 0020) into AGENTS.md.
 
 Deliberately out of scope (per PRD 0003, a sibling slice, #170): the
 .claude/settings.json permissions allowlist and hook wiring. This module
@@ -27,6 +28,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from lore_core.repo_index import write_agents_block
 from lore_core.session_start import reading_rule
 
 from lore_workflow.prd_docs import wire_toctree
@@ -155,4 +157,5 @@ def scaffold(target: Path) -> bool:
     changed |= _create_index_stub(target / "docs" / "adr" / "index.md", _ADR_INDEX_STUB)
     changed |= _create_index_stub(target / "docs" / "prd" / "index.md", _PRD_INDEX_STUB)
     changed |= _wire_docs_index(target)
+    changed |= write_agents_block(target)
     return changed

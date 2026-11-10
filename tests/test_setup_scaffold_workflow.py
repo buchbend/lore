@@ -52,3 +52,13 @@ def test_scaffold_flag_idempotent_on_rerun(repo: Path) -> None:
     second = _scope("--scaffold-workflow")
     assert second.exit_code == 0, second.output
     assert (repo / "docs" / "prd" / "index.md").read_text() == before
+
+
+def test_scaffold_flag_writes_the_index_block(repo: Path) -> None:
+    (repo / "docs" / "adr").mkdir(parents=True)
+    (repo / "docs" / "adr" / "0001-one-home.md").write_text("# ADR 0001: One home per fact\n")
+    assert _scope("--scaffold-workflow").exit_code == 0
+    agents = (repo / "AGENTS.md").read_text()
+    assert "<!-- lore index: start" in agents and "<!-- lore index: end -->" in agents
+    assert "ADR 0001: One home per fact" in agents
+    assert runner.invoke(app, ["index", "--check"]).exit_code == 0

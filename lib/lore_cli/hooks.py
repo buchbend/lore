@@ -678,16 +678,18 @@ def cmd_session_start(
         if map_hint:
             out = out + "\n\n" + map_hint
 
-    # Glossary index last: the cap cuts the end first, and `lore glossary`
-    # recovers the list, unlike the resume and handover blocks above.
+    # The index last: the cap cuts the end first, and `lore index` recovers
+    # it, unlike the resume and handover blocks above. The neighbours sit
+    # just above, so the index leaves its neighbours group out (PRD 0020).
     try:
-        from lore_core.glossary import find_repo_root, index_text, load
+        from lore_core import repo_index
+        from lore_core.glossary import find_repo_root
 
         repo_root = find_repo_root(cwd_resolved)
-        index = index_text(load(repo_root), repo_root) if repo_root else None
+        index = repo_index.index_text(repo_index.groups(repo_root)) if repo_root else None
         if index:
             out = out + "\n\n" + index
-    except Exception:  # noqa: BLE001 - the glossary must never crash SessionStart
+    except Exception:  # noqa: BLE001 - the index must never crash SessionStart
         pass
 
     notice = "\n".join(n for n in (handover_notice, logbook_notice) if n) or None
