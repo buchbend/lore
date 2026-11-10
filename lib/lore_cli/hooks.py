@@ -690,7 +690,7 @@ def cmd_session_start(
         from lore_core.glossary import find_repo_root
 
         repo_root = find_repo_root(cwd_resolved)
-        gs = repo_index.groups(repo_root, lab=True) if repo_root else []
+        gs = repo_index.groups(repo_root) if repo_root else []
         index = repo_index.index_text(gs)
         if index:
             out = out + "\n\n" + index

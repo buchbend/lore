@@ -10,17 +10,18 @@
   [0020](../prd/0020-index-first-context-and-lab-notebook.md) (index-first
   context and the lab notebook), section "Index"
 - **See also:** ADR [0014](0014-one-home-per-fact.md) (one home per fact),
-  ADR [0013](0013-search-over-wiki-and-github-is-federated-not-cached.md) (search over wiki and
-  GitHub is federated, not cached)
+  ADR [0013](0013-search-over-wiki-and-github-is-federated-not-cached.md)
+  (search over wiki and GitHub is federated, not cached)
 
 ## Holds
 
 - **Invariant** (test: `tests/test_repo_index.py::test_session_start_injects_the_full_index_beside_an_old_agents_block`):
   SessionStart injects the full index and reads neither `AGENTS.md` nor
   `CLAUDE.md` for the index.
-- **Default:** the index has two delivery paths with the same text:
-  SessionStart injects the index, and `lore index` prints the index. Both
-  read the inputs at call time.
+- **Default:** the index has two delivery paths: SessionStart injects the
+  index, and `lore index` prints the index. Both read the inputs at call
+  time. SessionStart leaves the neighbours group out, because the banner
+  holds the neighbours above the index.
 - **Default:** no file holds a generated copy of the index. Lore ships no
   command that writes or checks such a copy.
 - **Default:** `AGENTS.md` holds static pointers only. The scaffold appends

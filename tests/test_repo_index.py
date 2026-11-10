@@ -172,7 +172,8 @@ def test_the_repo_agents_md_and_docs_name_no_generated_block() -> None:
     offenders = [
         str(p.relative_to(root))
         for p in (root / "docs").rglob("*.md")
-        if p.relative_to(root).parts[1] not in ("prd", "logbook")
+        if p.name != "0020-index-first-context-and-lab-notebook.md"
+        and p.relative_to(root).parts[1] != "logbook"
         and re.search(r"lore index --(write|check)", p.read_text(encoding="utf-8"))
     ]
     assert not offenders

@@ -78,13 +78,11 @@ def _lab_lines(repo_root: Path) -> list[str]:
     return [f"- {str(s.get('date', ''))[:10]}: {lab.question(b)}" for _, s, b in newest]
 
 
-def groups(
-    repo_root: Path, neighbours: list[str] | None = None, *, lab: bool = False
-) -> list[Group]:
+def groups(repo_root: Path, neighbours: list[str] | None = None) -> list[Group]:
     """Every group of the index of *repo_root*, empty ones left out.
 
     *neighbours* are the edge lines of the system map; ``None`` leaves the
-    group out. *lab* adds the newest lab entries (PRD 0020).
+    group out.
     """
     entries = glossary.load(repo_root)
     terms = list(dict.fromkeys(e.term for e in entries))
@@ -110,7 +108,7 @@ def groups(
         Group("### Neighbours (system map)", neighbours or [], "Detail: `lore map <repo>`"),
         Group(
             "### Lab entries",
-            _lab_lines(repo_root) if lab else [],
+            _lab_lines(repo_root),
             "Detail: `lore lab show`",
             newest_first=True,
         ),

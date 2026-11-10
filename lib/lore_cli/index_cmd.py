@@ -39,6 +39,6 @@ def index(
     if root is None:
         print("lore index: not inside a git repository", file=sys.stderr)
         raise typer.Exit(1)
-    text = repo_index.index_text(repo_index.groups(root, _neighbours(root), lab=True))
+    text = repo_index.index_text(repo_index.groups(root, _neighbours(root)))
     if text:
         print(text)
