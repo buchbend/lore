@@ -17,8 +17,9 @@ What it does:
 4. Append ADR 0015's reading rule to AGENTS.md unless the file carries it.
    The text comes from the SessionStart directive template, so the hook and
    AGENTS.md say the same thing.
-5. Write the index block (`lore index --write`, PRD 0020) into AGENTS.md when
-   the repo holds something to index and AGENTS.md holds no broken marker.
+5. Append the `## Where to look` paragraph to AGENTS.md unless the file holds
+   the heading. The paragraph names the homes that exist and holds no
+   generated text (ADR 0020).
 
 Deliberately out of scope (per PRD 0003, a sibling slice, #170): the
 .claude/settings.json permissions allowlist and hook wiring. This module
@@ -29,7 +30,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lore_core import repo_index
 from lore_core.session_start import reading_rule
 
 from lore_workflow.prd_docs import wire_toctree
@@ -145,14 +145,28 @@ def _wire_docs_index(target: Path) -> bool:
     return docs_index.read_text(encoding="utf-8") != before
 
 
-def _write_index_block(target: Path) -> bool:
-    """Write the index block, but no empty one, and never over a broken marker."""
-    if not repo_index.groups(target):
+_WHERE_HEADING = "## Where to look"
+_HOMES = (
+    ("Decisions", "docs/adr/"),
+    ("Specs", "docs/prd/"),
+    ("Terms", "CONTEXT.md"),
+    ("Plan", "ROADMAP.md"),
+)
+
+
+def _append_where_to_look(target: Path) -> bool:
+    """Append the static pointer paragraph to AGENTS.md once. Returns whether it wrote."""
+    agents_md = target / "AGENTS.md"
+    current = agents_md.read_text(encoding="utf-8") if agents_md.exists() else ""
+    if any(line.strip() == _WHERE_HEADING for line in current.splitlines()):
         return False
-    try:
-        return repo_index.write_agents_block(target)
-    except repo_index.UnmatchedMarker:
-        return False  # `lore index --write` names the broken marker
+    homes = " ".join(f"{name}: `{path}`." for name, path in _HOMES if (target / path).exists())
+    if not homes:
+        return False
+    separator = "" if not current else ("\n" if current.endswith("\n") else "\n\n")
+    pointer = f"{_WHERE_HEADING}\n{homes}\nWith Lore: `lore index` lists all of them.\n"
+    agents_md.write_text(f"{current}{separator}{pointer}", encoding="utf-8")
+    return True
 
 
 def scaffold(target: Path) -> bool:
@@ -168,5 +182,5 @@ def scaffold(target: Path) -> bool:
     changed |= _create_index_stub(target / "docs" / "adr" / "index.md", _ADR_INDEX_STUB)
     changed |= _create_index_stub(target / "docs" / "prd" / "index.md", _PRD_INDEX_STUB)
     changed |= _wire_docs_index(target)
-    changed |= _write_index_block(target)
+    changed |= _append_where_to_look(target)
     return changed
