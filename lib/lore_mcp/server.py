@@ -11,14 +11,8 @@ Exposed tools:
                               expand→read_expanded) in one envelope with a
                               structured trace, plus transcript pointers for
                               queries naming an issue, a PR, or a file
-    lore_inbox_classify     — read-only inbox walk (file list with type +
-                              routing hint); skill composes notes, then shells
-                              out to `lore inbox archive`
-    lore_pending_verdicts   — enumerate wiki-wide pending freshness verdicts
-    lore_verdict            — record a freshness verdict (confirm/stale/clear-stale)
     lore_repo_docs_list     — list a connected repo's ADRs or PRDs (pull-only)
     lore_repo_docs_fetch    — fetch one ADR or PRD's content (pull-only)
-    lore_tier_resolve       — resolve a semantic model tier to a concrete model
     lore_codemap            — bounded code-map query (symbols/directory/top-N)
     lore_context_pack       — bounded pointer pack (ADR/PRD/epic state)
                               joined from git-derived linkage, given cwd/branch/issue
@@ -125,9 +119,7 @@ def _freshness_block_for(
     try:
         target.relative_to(wiki_path.resolve())
     except ValueError:
-        return signal_to_dict(
-            compute_freshness({}, target, wiki_path, None, set())
-        )
+        return signal_to_dict(compute_freshness({}, target, wiki_path, None, set()))
     fm: dict = {}
     try:
         fm = parse_frontmatter(target.read_text(errors="replace"))
@@ -205,6 +197,7 @@ def _maybe_reindex(backend: FtsBackend, wiki: str | None) -> None:
     paper trail without code-reading.
     """
     import time as _time
+
     now = _time.monotonic()
     last = _reindex_last_seen.get(wiki)
 
@@ -241,9 +234,7 @@ def _wiki_hits(
 ) -> list[dict[str, Any]]:
     backend = FtsBackend()
     _maybe_reindex(backend, wiki)
-    hits = backend.search(
-        query, wiki=wiki, for_repo=for_repo, k=k, redact_human_only=True
-    )
+    hits = backend.search(query, wiki=wiki, for_repo=for_repo, k=k, redact_human_only=True)
     # Cache one wiki-path resolution per (wiki-name) and one orphan-set
     # load per wiki-path to avoid re-walking ``$LORE_ROOT/wiki`` and
     # re-reading ``_catalog.json`` on every hit.
@@ -264,22 +255,20 @@ def _wiki_hits(
     for h in hits:
         wp = _wp(h.wiki)
         if wp is not None:
-            freshness = _freshness_block_for(
-                wp, h.path, orphan_set=_orphans(h.wiki, wp)
-            )
+            freshness = _freshness_block_for(wp, h.path, orphan_set=_orphans(h.wiki, wp))
         else:
-            freshness = signal_to_dict(
-                compute_freshness({}, Path(h.path), Path("/"), None, set())
-            )
-        out.append({
-            "path": h.path,
-            "wiki": h.wiki,
-            "filename": h.filename,
-            "score": round(h.score, 3),
-            "description": h.description,
-            "tags": h.tags or [],
-            "freshness": freshness,
-        })
+            freshness = signal_to_dict(compute_freshness({}, Path(h.path), Path("/"), None, set()))
+        out.append(
+            {
+                "path": h.path,
+                "wiki": h.wiki,
+                "filename": h.filename,
+                "score": round(h.score, 3),
+                "description": h.description,
+                "tags": h.tags or [],
+                "freshness": freshness,
+            }
+        )
     sorted_out, _audit = apply_search_filter(out)
     return sorted_out
 
@@ -414,9 +403,7 @@ def handle_read(
     # the signature for callers that still pass it, but there is nothing
     # to redact — the full body is returned.
 
-    freshness = _freshness_block_for(
-        wiki_path, path, orphan_set=load_orphan_set(wiki_path)
-    )
+    freshness = _freshness_block_for(wiki_path, path, orphan_set=load_orphan_set(wiki_path))
 
     if section is not None:
         section_text, headings = _extract_section(text, section)
@@ -508,13 +495,6 @@ def _extract_section(text: str, query: str) -> tuple[str | None, list[str]]:
     return "\n".join(lines[start:end]), all_heading_strs
 
 
-def handle_inbox_classify() -> dict[str, Any]:
-    """Read-only inbox classifier. Delegates to lore_core.inbox.classify()."""
-    from lore_core.inbox import classify
-
-    return classify()
-
-
 def handle_drill(
     query: str,
     wiki: str | None = None,
@@ -573,12 +553,14 @@ def handle_drill(
     # Stage 1: search
     t0 = _time.monotonic()
     hits = _wiki_hits(query=query, wiki=wiki, k=k)
-    trace.append({
-        "stage": "search",
-        "query": query,
-        "hits": len(hits),
-        "elapsed_ms": int((_time.monotonic() - t0) * 1000),
-    })
+    trace.append(
+        {
+            "stage": "search",
+            "query": query,
+            "hits": len(hits),
+            "elapsed_ms": int((_time.monotonic() - t0) * 1000),
+        }
+    )
 
     if not hits:
         # Record the downstream stages as skipped so the trace shape is
@@ -620,7 +602,13 @@ def handle_drill(
                 seen.add(slug)
                 expanded_slugs.append(slug)
     if not expanded_slugs:
-        trace.append({"stage": "expand", "skipped": "no_wikilinks", "elapsed_ms": int((_time.monotonic() - t0) * 1000)})
+        trace.append(
+            {
+                "stage": "expand",
+                "skipped": "no_wikilinks",
+                "elapsed_ms": int((_time.monotonic() - t0) * 1000),
+            }
+        )
         trace.append({"stage": "read_expanded", "skipped": "no_wikilinks", "elapsed_ms": 0})
         return _envelope()
     expand_step: dict[str, Any] = {
@@ -786,9 +774,7 @@ def handle_verdict(
             mark_stale(target, reason=str(reason), handle=handle)
         except StaleMarkerError as e:
             return _mcp_error("stale_write_refused", str(e))
-        freshness = _freshness_block_for(
-            wiki_path, rel_path, orphan_set=load_orphan_set(wiki_path)
-        )
+        freshness = _freshness_block_for(wiki_path, rel_path, orphan_set=load_orphan_set(wiki_path))
         return {
             "schema": "lore.verdict/1",
             "wiki": wiki_path.name,
@@ -799,9 +785,7 @@ def handle_verdict(
 
     # verdict == "clear-stale"
     clear_stale(target)
-    freshness = _freshness_block_for(
-        wiki_path, rel_path, orphan_set=load_orphan_set(wiki_path)
-    )
+    freshness = _freshness_block_for(wiki_path, rel_path, orphan_set=load_orphan_set(wiki_path))
     return {
         "schema": "lore.verdict/1",
         "wiki": wiki_path.name,
@@ -868,8 +852,9 @@ def handle_pending_verdicts(wiki: str | None = None) -> dict[str, Any]:
         return _mcp_error(
             WIKI_NOT_FOUND,
             (
-                f"wiki not found: {wiki}" if wiki else
-                "could not resolve active wiki (no explicit `wiki`, no "
+                f"wiki not found: {wiki}"
+                if wiki
+                else "could not resolve active wiki (no explicit `wiki`, no "
                 "single-wiki fallback, no route for the cwd)"
             ),
             next_="pass `wiki` explicitly or run `lore setup scope` in the repo",
@@ -901,18 +886,6 @@ def _resolve_repo_root(repo_path: str | None) -> Path | None:
     from lore_core.git import git_repo_root
 
     return git_repo_root(Path.cwd())
-
-
-def handle_tier_resolve(tier: str, host: str | None = None) -> dict[str, Any]:
-    """Resolve a semantic model tier to a concrete model for the current host."""
-    from lore_core.tiers import TierResolutionError, detect_host, resolve_tier
-
-    try:
-        resolved_host = host or detect_host()
-        model = resolve_tier(tier, host=resolved_host)
-    except TierResolutionError as e:
-        return _mcp_error("tier_resolution_failed", str(e))
-    return {"tier": tier, "host": resolved_host, "model": model}
 
 
 def handle_repo_docs_list(kind: str, repo_path: str | None = None) -> dict[str, Any]:
@@ -1034,18 +1007,13 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_search",
             "description": (
-                "Federated search. Returns `wiki` (ranked knowledge-note paths from "
-                "the local index) and `sources`: one list per search source "
-                "of the route, `[{name, kind, hits, note}]`, never merged. "
-                "The `github` source holds issues and PRs from one live "
-                "search, each with an `owner/repo#number` ref; other kinds "
-                "(`dokuwiki`, `command`) hold hits with a `<source>:<id>` "
-                "ref that `lore_read` reads. A `note` on a source explains "
-                "why its list is empty (no repo attached, `gh` failed, "
-                "timeout, offline). Search is for finding. Nothing about a "
-                "hit is stored here, so read an issue or PR live through "
-                "`gh` before you comment on it, close it, merge it or poll "
-                "its state."
+                "Federated search. Returns `wiki` (ranked note paths) and `sources`: "
+                "one list per source of the route, `[{name, kind, hits, note}]`, never "
+                "merged. `github` hits are issues/PRs with an `owner/repo#number` ref; "
+                "other kinds hold hits with a `<source>:<id>` ref that `lore_read` "
+                "reads. A `note` explains an empty list. Search is for finding. Read an"
+                " issue or PR live through `gh` before you comment on it, close it, "
+                "merge it or poll its state."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1067,17 +1035,11 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_read",
             "description": (
-                "Read one note by relative path, [[wikilink]], or bare slug "
-                "within a wiki. Optional `section` arg returns just one H2 "
-                "section (first match in document order, case-insensitive "
-                "substring; code-fence aware so ## inside fenced blocks is "
-                "ignored). Use `section` for long surface notes when you only "
-                "need one heading's content. By default the response strips "
-                "the human-only region (everything after the "
-                "`<!-- lore:human-only -->` marker, if present). Pass "
-                "`include_human=true` to return the full note. A "
-                "`<source>:<id>` ref from a `lore_search` source list reads "
-                "that source's page instead."
+                "Read one note by relative path, [[wikilink]] or bare slug within a "
+                "wiki. `section` returns one H2 section only (first case-insensitive "
+                "match, fence-aware). The human-only region (after `<!-- lore:human-"
+                "only -->`) is stripped unless `include_human=true`. A `<source>:<id>` "
+                "ref from `lore_search` reads that source's page."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1108,34 +1070,26 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_drill",
             "description": (
-                "Composite multi-stage retrieval: search → read top hits → expand "
-                "wikilinks → read expanded set, all in one round-trip. Returns "
-                "{trace: [...], result: {notes: [...]}} with structured stage "
-                "breadcrumbs (elapsed_ms per stage; `skipped` reasons for empty "
-                "intermediate results: `search_returned_zero`, `no_wikilinks`, "
-                "`expand_only_empty`). When the expand cap fires, the "
-                "`read_expanded` stage records `truncated_slugs: [...]` listing "
-                "the dropped links — re-call with `expand_only=[slugs]` to read "
-                "exactly those without recomputing search. `expand_only` is "
-                "intersection-only (it cannot add slugs that weren't in the "
-                "discovered set; only narrow). "
-                "A query naming an issue (`#358`), a PR (`PR 364`) or a file "
-                "path also returns `result.sessions` — pointers to the local "
-                "transcripts of the sessions that touched it, read from the "
-                "transcript ledger. Those pointers are machine-local: they name "
-                "files on this machine only, so never quote them to anyone but "
-                "their owner. "
-                "Prefer `lore_drill` for cold-start exploration of a topic, and "
-                "for \"which sessions touched X?\". "
-                "Prefer `lore_search` (then `lore_read`) when you already know "
-                "the rough path/slug or want to steer between stages."
+                "Composite retrieval in one round-trip: search, read top hits, expand "
+                "wikilinks, read the expanded set. Returns {trace: [...], result: "
+                "{notes: [...]}} with per-stage breadcrumbs and `skipped` reasons. When"
+                " the expand cap fires, `read_expanded` lists `truncated_slugs`; re-"
+                "call with `expand_only=[slugs]` (narrows only). A query naming an "
+                "issue (`#358`), PR (`PR 364`) or file path also returns "
+                "`result.sessions`, machine-local transcript pointers: never quote them"
+                " to anyone but their owner. Prefer it for cold-start exploration; use "
+                "`lore_search` then `lore_read` when you know the path."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
                     "wiki": {"type": "string", "description": "Scope to one wiki (optional)"},
-                    "k": {"type": "integer", "default": 5, "description": "Top-k for the search stage"},
+                    "k": {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "Top-k for the search stage",
+                    },
                     "expand_limit": {
                         "type": "integer",
                         "default": 5,
@@ -1155,90 +1109,11 @@ def _tool_schema() -> list[dict]:
             },
         },
         {
-            "name": "lore_inbox_classify",
-            "description": (
-                "Read-only inbox walk: returns every file in the root "
-                "inbox and per-wiki inboxes with detected type and "
-                "routing hint. Caller reads each file, composes vault "
-                "notes (LLM judgment), then runs `lore inbox archive` "
-                "to move the source to `.processed/`."
-            ),
-            "inputSchema": {"type": "object", "properties": {}},
-        },
-        {
-            "name": "lore_pending_verdicts",
-            "description": (
-                "Enumerate wiki-wide pending freshness verdicts as "
-                "picker-ready rows. Backs the `/lore:verify` slash "
-                "command: one call returns the full sorted list "
-                "(disagreements first, then authored markers, then "
-                "orphan-link signals), each row carrying everything "
-                "the picker needs (slug, cause, reason, personal "
-                "confirmed_at, optional disagreement block). The "
-                "skill then loops one `AskUserQuestion` per row and "
-                "calls `lore_verdict` for each user choice. `wiki` "
-                "is optional — auto-resolves from the cwd's route "
-                "(its scope's wiki) when omitted."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "wiki": {
-                        "type": "string",
-                        "description": (
-                            "Wiki name. Optional; auto-resolves from "
-                            "the cwd's route when omitted."
-                        ),
-                    },
-                },
-            },
-        },
-        {
-            "name": "lore_verdict",
-            "description": (
-                "Record a freshness verdict for a note. Use when the "
-                "user replies to an in-passing freshness nudge with a "
-                "concrete answer: \"yes still good\" → "
-                "verdict=\"confirm\"; \"no, stale because X\" → "
-                "verdict=\"stale\" with a one-line `reason`. The "
-                "stale branch writes the four-field schema "
-                "(`status: stale`, `stale_reason`, `stale_by`, "
-                "`stale_at`) additively to the note's frontmatter; "
-                "never touches the body. The verdict is silent until "
-                "the user actually responds — if the user types past "
-                "the nudge without answering, do NOT call this tool. "
-                "(`clear-stale` removes a prior stale verdict; the "
-                "confirm branch lands in slice 6.)"
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "wiki": {"type": "string"},
-                    "note": {
-                        "type": "string",
-                        "description": "Note path, [[wikilink]], or bare slug.",
-                    },
-                    "verdict": {
-                        "type": "string",
-                        "enum": ["confirm", "stale", "clear-stale"],
-                    },
-                    "reason": {
-                        "type": "string",
-                        "description": "Required when verdict=stale.",
-                    },
-                },
-                "required": ["wiki", "note", "verdict"],
-            },
-        },
-        {
             "name": "lore_repo_docs_list",
             "description": (
-                "List a connected repo's ADRs or PRDs from their conventional, "
-                "hard-coded homes (`docs/adr/`, `docs/prd/`; homes are not "
-                "configurable). Includes index files (README.md/index.md). "
-                "Pull-only: fires on explicit call, never injected ambiently. "
-                "A repo without the home directory is not an error — returns "
-                "`exists: false` and an empty `entries` list."
+                "List a connected repo's ADRs or PRDs from `docs/adr/` or `docs/prd/` "
+                "(fixed homes), index files included. Pull-only. A repo without the "
+                "directory returns `exists: false` and empty `entries`."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1246,48 +1121,20 @@ def _tool_schema() -> list[dict]:
                     "kind": {"type": "string", "enum": ["adr", "prd"]},
                     "repo_path": {
                         "type": "string",
-                        "description": (
-                            "Override the repo root. Defaults to the git repo "
-                            "containing the server's working directory."
-                        ),
+                        "description": ("Repo root override."),
                     },
                 },
                 "required": ["kind"],
             },
         },
         {
-            "name": "lore_tier_resolve",
-            "description": (
-                "Resolve a semantic model tier (frontier | strong | mid | "
-                "cheap) to the concrete model for the current host. Use "
-                "before spawning a subagent so its model param reflects "
-                "the tier the task needs, not a guess."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tier": {"type": "string"},
-                    "host": {
-                        "type": "string",
-                        "description": "Override host detection (optional).",
-                    },
-                },
-                "required": ["tier"],
-            },
-        },
-        {
             "name": "lore_codemap",
             "description": (
-                "Bounded, cached slice of the connected repo's code map — "
-                "never the whole map. Three modes: `symbols` (qualname "
-                "regex/substring match, ranked by cross-repo references), "
-                "`directory` (inventory rows scoped to a directory prefix, "
-                "or the top-level bounded inventory when `directory` is "
-                "omitted), `top` (the N most-referenced symbols). Use this "
-                "instead of reading CODEMAP.md directly — pull ~30 relevant "
-                "rows instead of a 400-line file. Cached per-repo on the "
-                "generator's fingerprint; a cold repo (no map yet) is "
-                "generated on first call."
+                "Bounded, cached slice of the repo's code map, never the whole map. "
+                "Modes: `symbols` (qualname match, ranked by cross-repo references), "
+                "`directory` (inventory rows under a prefix, or the top-level "
+                "inventory), `top` (most-referenced symbols). Use it instead of reading"
+                " CODEMAP.md. A cold repo is generated on first call."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1315,10 +1162,7 @@ def _tool_schema() -> list[dict]:
                     },
                     "repo_path": {
                         "type": "string",
-                        "description": (
-                            "Override the repo root. Defaults to the git repo "
-                            "containing the server's working directory."
-                        ),
+                        "description": ("Repo root override."),
                     },
                 },
                 "required": ["mode"],
@@ -1327,9 +1171,8 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_repo_docs_fetch",
             "description": (
-                "Fetch one ADR or PRD's full content from a connected repo. "
-                "`path` accepts a bare slug (`0001-x`), a filename (`0001-x.md`), "
-                "or the full repo-relative path (`docs/adr/0001-x.md`). Pull-only."
+                "Fetch one ADR or PRD's full content. `path` is a slug (`0001-x`), "
+                "filename or repo-relative path. Pull-only."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1338,10 +1181,7 @@ def _tool_schema() -> list[dict]:
                     "path": {"type": "string"},
                     "repo_path": {
                         "type": "string",
-                        "description": (
-                            "Override the repo root. Defaults to the git repo "
-                            "containing the server's working directory."
-                        ),
+                        "description": ("Repo root override."),
                     },
                 },
                 "required": ["kind", "path"],
@@ -1350,12 +1190,10 @@ def _tool_schema() -> list[dict]:
         {
             "name": "lore_context_pack",
             "description": (
-                "Bounded pointer pack (ADR/PRD entries, epic state) for a "
-                "cwd/branch/issue, joined purely on git-derived linkage — "
-                "never an LLM call, never FTS ranking dressed up as a join. "
-                "Cold start (no repo, no vault, no attached scope) returns a "
-                "well-formed empty pack, never an error. Bodies are pulled "
-                "selectively afterward via `lore_read`/`lore_repo_docs_fetch`."
+                "Bounded pointer pack (ADR/PRD entries, epic state) for a cwd, branch "
+                "or issue, joined on git-derived linkage only: no LLM, no FTS. A cold "
+                "start returns an empty pack, not an error. Pull bodies afterwards via "
+                "`lore_read` or `lore_repo_docs_fetch`."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1377,10 +1215,7 @@ def _tool_schema() -> list[dict]:
                     },
                     "repo_path": {
                         "type": "string",
-                        "description": (
-                            "Override the repo root. Defaults to the git repo "
-                            "containing the server's working directory."
-                        ),
+                        "description": ("Repo root override."),
                     },
                 },
                 "required": [],
@@ -1395,6 +1230,7 @@ def _dispatch(tool_name: str, args: dict) -> Any:
     sid = os.environ.get("CLAUDE_SESSION_ID")
     if sid:
         from lore_core.toggles import is_off
+
         if is_off("all", sid):
             return _mcp_error(
                 SESSION_OFF,
@@ -1409,18 +1245,10 @@ def _dispatch(tool_name: str, args: dict) -> Any:
             return handle_read(**args)
         case "lore_drill":
             return handle_drill(**args)
-        case "lore_inbox_classify":
-            return handle_inbox_classify(**args)
-        case "lore_verdict":
-            return handle_verdict(**args)
-        case "lore_pending_verdicts":
-            return handle_pending_verdicts(**args)
         case "lore_repo_docs_list":
             return handle_repo_docs_list(**args)
         case "lore_repo_docs_fetch":
             return handle_repo_docs_fetch(**args)
-        case "lore_tier_resolve":
-            return handle_tier_resolve(**args)
         case "lore_codemap":
             return handle_codemap(**args)
         case "lore_context_pack":

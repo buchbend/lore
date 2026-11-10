@@ -362,20 +362,16 @@ One row per leaf verb, plus the bare forms of `lore install`, `lore attach` and
 
 ## MCP tools
 
-The twelve tools `lib/lore_mcp/server.py` registers.
+The seven tools `lib/lore_mcp/server.py` registers.
 
 | Tool | Last caller | Job | Note |
 | --- | --- | --- | --- |
 | `lore_search` | `lore-workflow/skills/orient/SKILL.md:35` (+8) · skill | 3 retrieval |  |
 | `lore_read` | `lore-workflow/skills/seed-epic/SKILL.md:46` (+1) · skill | 3 retrieval |  |
 | `lore_drill` | `lore-workflow/skills/orient/SKILL.md:35` (+3) · skill | 3 retrieval |  |
-| `lore_inbox_classify` | `skills/inbox/SKILL.md:4` · skill | 2 wiki notes |  |
 | `lore_journal_write` | `lib/lore_cli/hooks.py:418` · code message | none | offered only when the journal is on |
-| `lore_pending_verdicts` | `skills/verify/SKILL.md:69` · skill | 3 retrieval | freshness |
-| `lore_verdict` | `skills/verify/SKILL.md:70` · skill | 3 retrieval | freshness |
 | `lore_repo_docs_list` | `lore-workflow/skills/orient/SKILL.md:28` (+1) · skill | 1 artifact map |  |
 | `lore_repo_docs_fetch` | `lore-workflow/skills/orient/SKILL.md:28` (+1) · skill | 1 artifact map |  |
-| `lore_tier_resolve` | `docs/model-tiers.md:51` · docs | 3 retrieval | skills call `lore tier resolve` instead |
 | `lore_codemap` | `lore-workflow/skills/brief/SKILL.md:26` (+5) · skill | 3 retrieval |  |
 | `lore_context_pack` | `lore-workflow/skills/brief/SKILL.md:26` (+5) · skill | 3 retrieval |  |
 
@@ -478,8 +474,6 @@ Judgement calls for the owner.
     `inbox classify`, `scopes ls`, `scopes show`, `scopes reparent`,
     `scopes reconcile`, `scopes rm`, `transcripts show`.
   - `lore search` duplicates the `lore_search` tool, which the skills call.
-    `lore inbox classify` duplicates `lore_inbox_classify`, which
-    `skills/inbox/SKILL.md` calls.
   - Keys: `observability.hook_events.keep_rotations`,
     `observability.proc.keep_generations`, `git.auto_commit`,
     `breadcrumb.scope_filter`, and `schema_version` in `.lore.yml`. Each is a
@@ -512,8 +506,6 @@ Judgement calls for the owner.
 - **Docs drift.** `docs/architecture/config.md` lists `LORE_TRACE_LLM`,
   `LORE_LOG_NOW`, `LORE_ASCII` and a `run_render.py`. No code reads those
   variables and the file does not exist.
-- **`lore_tier_resolve`.** Only `docs/model-tiers.md:51` names the tool. The
-  skills call `lore tier resolve` from a shell instead.
 - **Job boundaries.**
   - Inbox, curator, lint and project notes are under job 2. They produce or
     maintain wiki notes; they do not inject them. The owner decides whether

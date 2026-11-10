@@ -109,17 +109,11 @@ not from anything injected ambiently:
 - `lore_drill` — one composite `search → read → expand wikilinks →
   read_expanded` call with a structured trace
   (`docs/architecture/lore-drill.md`).
-- `lore_inbox_classify` — read-only gather that a skill turns into
-  prose, then commits via a CLI verb.
-- `lore_pending_verdicts` / `lore_verdict` — list and record freshness
-  verdicts; backs `/lore:verify` and the in-passing verdict nudge.
 - `lore_repo_docs_list` / `lore_repo_docs_fetch`
   (`lore_core/repo_docs.py`) — pull-only reads of a connected repo's
   `docs/adr/` and `docs/prd/`. Ratified decisions live in the repo, not
   in the vault; Lore reads them on request instead of re-deriving them
   from session transcripts.
-- `lore_tier_resolve` — resolve a semantic model tier to the concrete
-  model for the current host before spawning a subagent.
 - `lore_codemap` — bounded, cached slice of the connected repo's code
   map (symbols / directory / callers modes), never the whole map.
 - `lore_context_pack` (`lore_core/context_pack.py`) — a deterministic
