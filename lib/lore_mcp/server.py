@@ -1006,7 +1006,15 @@ def _tool_schema() -> list[dict]:
     return [
         {
             "name": "lore_search",
-            "description": "Federated search. Returns `wiki` (ranked note paths) and `sources`: one list per source of the route, `[{name, kind, hits, note}]`, never merged. `github` hits are issues/PRs with an `owner/repo#number` ref; other kinds hold hits with a `<source>:<id>` ref that `lore_read` reads. A `note` explains an empty list. Search finds; read an issue or PR live through `gh` before you comment on, close or merge it.",
+            "description": (
+                "Federated search. Returns `wiki` (ranked note paths) and `sources`: "
+                "one list per source of the route, `[{name, kind, hits, note}]`, never "
+                "merged. `github` hits are issues/PRs with an `owner/repo#number` ref; "
+                "other kinds hold hits with a `<source>:<id>` ref that `lore_read` "
+                "reads. A `note` explains an empty list. Search is for finding. Read an"
+                " issue or PR live through `gh` before you comment on it, close it, "
+                "merge it or poll its state."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1026,7 +1034,13 @@ def _tool_schema() -> list[dict]:
         },
         {
             "name": "lore_read",
-            "description": "Read one note by relative path, [[wikilink]] or bare slug within a wiki. `section` returns one H2 section only (first case-insensitive match, fence-aware). The human-only region (after `<!-- lore:human-only -->`) is stripped unless `include_human=true`. A `<source>:<id>` ref from `lore_search` reads that source's page.",
+            "description": (
+                "Read one note by relative path, [[wikilink]] or bare slug within a "
+                "wiki. `section` returns one H2 section only (first case-insensitive "
+                "match, fence-aware). The human-only region (after `<!-- lore:human-"
+                "only -->`) is stripped unless `include_human=true`. A `<source>:<id>` "
+                "ref from `lore_search` reads that source's page."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1055,7 +1069,17 @@ def _tool_schema() -> list[dict]:
         },
         {
             "name": "lore_drill",
-            "description": "Composite retrieval in one round-trip: search, read top hits, expand wikilinks, read the expanded set. Returns {trace: [...], result: {notes: [...]}} with per-stage breadcrumbs and `skipped` reasons. When the expand cap fires, `read_expanded` lists `truncated_slugs`; re-call with `expand_only=[slugs]` (narrows only). A query naming an issue (`#358`), PR (`PR 364`) or file path also returns `result.sessions`, machine-local transcript pointers: never quote them to anyone but their owner. Prefer it for cold-start exploration; use `lore_search` then `lore_read` when you know the path.",
+            "description": (
+                "Composite retrieval in one round-trip: search, read top hits, expand "
+                "wikilinks, read the expanded set. Returns {trace: [...], result: "
+                "{notes: [...]}} with per-stage breadcrumbs and `skipped` reasons. When"
+                " the expand cap fires, `read_expanded` lists `truncated_slugs`; re-"
+                "call with `expand_only=[slugs]` (narrows only). A query naming an "
+                "issue (`#358`), PR (`PR 364`) or file path also returns "
+                "`result.sessions`, machine-local transcript pointers: never quote them"
+                " to anyone but their owner. Prefer it for cold-start exploration; use "
+                "`lore_search` then `lore_read` when you know the path."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1086,7 +1110,11 @@ def _tool_schema() -> list[dict]:
         },
         {
             "name": "lore_repo_docs_list",
-            "description": 'List a connected repo"s ADRs or PRDs from `docs/adr/` or `docs/prd/` (fixed homes), index files included. Pull-only. A repo without the directory returns `exists: false` and empty `entries`.',
+            "description": (
+                "List a connected repo's ADRs or PRDs from `docs/adr/` or `docs/prd/` "
+                "(fixed homes), index files included. Pull-only. A repo without the "
+                "directory returns `exists: false` and empty `entries`."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1101,7 +1129,13 @@ def _tool_schema() -> list[dict]:
         },
         {
             "name": "lore_codemap",
-            "description": 'Bounded, cached slice of the repo"s code map, never the whole map. Modes: `symbols` (qualname match, ranked by cross-repo references), `directory` (inventory rows under a prefix, or the top-level inventory), `top` (most-referenced symbols). Use it instead of reading CODEMAP.md. A cold repo is generated on first call.',
+            "description": (
+                "Bounded, cached slice of the repo's code map, never the whole map. "
+                "Modes: `symbols` (qualname match, ranked by cross-repo references), "
+                "`directory` (inventory rows under a prefix, or the top-level "
+                "inventory), `top` (most-referenced symbols). Use it instead of reading"
+                " CODEMAP.md. A cold repo is generated on first call."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1136,7 +1170,10 @@ def _tool_schema() -> list[dict]:
         },
         {
             "name": "lore_repo_docs_fetch",
-            "description": "Fetch one ADR or PRD's full content. `path` is a slug (`0001-x`), filename or repo-relative path. Pull-only.",
+            "description": (
+                "Fetch one ADR or PRD's full content. `path` is a slug (`0001-x`), "
+                "filename or repo-relative path. Pull-only."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1152,7 +1189,12 @@ def _tool_schema() -> list[dict]:
         },
         {
             "name": "lore_context_pack",
-            "description": "Bounded pointer pack (ADR/PRD entries, epic state) for a cwd, branch or issue, joined on git-derived linkage only: no LLM, no FTS. A cold start returns an empty pack, not an error. Pull bodies afterwards via `lore_read` or `lore_repo_docs_fetch`.",
+            "description": (
+                "Bounded pointer pack (ADR/PRD entries, epic state) for a cwd, branch "
+                "or issue, joined on git-derived linkage only: no LLM, no FTS. A cold "
+                "start returns an empty pack, not an error. Pull bodies afterwards via "
+                "`lore_read` or `lore_repo_docs_fetch`."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {

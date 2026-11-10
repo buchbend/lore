@@ -24,6 +24,10 @@ REMOVED_TOOLS = {
     "lore_briefing_gather",
     "lore_resume",
     "lore_journal_write",
+    "lore_pending_verdicts",
+    "lore_verdict",
+    "lore_inbox_classify",
+    "lore_tier_resolve",
 }
 
 

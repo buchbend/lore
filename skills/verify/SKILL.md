@@ -50,7 +50,7 @@ clear the backlog on their own schedule.
    reason. Offer three context-aware canned options derived from the
    entry's `reason` field (the picker UI will also expose "Other" for
    free-form entry). Then run
-   `lore verdict set <response.wiki> <entry.path> stale --reason <chosen>`. Echo the returned freshness block so the user
+   `lore verdict set <response.wiki> <entry.path> stale --reason "<chosen>"`. Echo the returned freshness block so the user
    sees what landed.
 
 5. **On `confirm`.** Run
