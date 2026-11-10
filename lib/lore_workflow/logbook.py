@@ -356,6 +356,7 @@ def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]] | None:
     Returns None when another flush or `log add` holds the ledger's lock.
     """
     from lore_core.route import resolve_route
+
     from lore_workflow import lab
 
     ledger = default_ledger_path(cwd)

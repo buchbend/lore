@@ -36,6 +36,7 @@ EXPECTED_SKILL_NAMES = {
     "build",
     "debug",
     "document",
+    "experiment",
     "file-issue",
     "grilling",
     "handover",

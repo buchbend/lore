@@ -102,9 +102,10 @@ One settings file per person (PRD 0016). Schema lives in
 it and deletes them. Subsections:
 
 - `lore_root` — the vault location.
-- `scopes.<name>.{path, remote, wiki, tracker, logbook, sources}` — a folder
+- `scopes.<name>.{path, remote, wiki, tracker, logbook, lab.sinks, sources}` — a folder
   (and optional git remotes) whose repos share a wiki; `lore setup scope`
-  adds one. `defaults` holds the values a repo gets when no scope sets them.
+  adds one. `lab.sinks` lists the sinks of lab entries, `[file]` without the
+  key (see `docs/how-to/run-an-experiment.md`). `defaults` holds the values a repo gets when no scope sets them.
 - `checkouts.<owner/repo>` — the folder of that repo's checkout, for a repo
   the scope search misses (outside every scope folder, or one of several
   clones). The system map names repos only; this pins one to a folder on this

@@ -269,3 +269,28 @@ def test_a_lab_entry_keeps_the_agents_md_block_current(repo, tmp_path) -> None:
     assert repo_index.agents_block_is_current(repo)
     assert "Lab entries" not in (repo / "AGENTS.md").read_text()
     assert main(["index", "--check"]) == 0
+
+
+def test_filing_and_adr_0014_name_the_lab_entry_as_the_home_of_a_result() -> None:
+    from lore_cli.style_cmd import app
+    from typer.testing import CliRunner
+
+    out = CliRunner().invoke(app, ["show", "filing"]).output
+    assert "An experiment result becomes a lab entry" in out
+    assert "lab entry with status `dead-end`" in out
+    adr = next((Path(__file__).resolve().parent.parent / "docs" / "adr").glob("0014-*.md"))
+    text = adr.read_text()
+    assert "| What did we try, and what came out? | lab entry" in text
+    assert "- 2026-11-10: new row" in text.split("## Amendments", 1)[1]
+
+
+def test_the_experiment_skill_writes_the_question_first_and_a_dead_end_entry() -> None:
+    root = Path(__file__).resolve().parent.parent
+    text = " ".join((root / "lore-workflow/skills/experiment/SKILL.md").read_text().split())
+    assert text.index("## 1. Before the run: write the question and the expected result") < (
+        text.index("## 2. Run the experiment")
+    )
+    assert "lore lab add" in text
+    assert "Commit that file on the current branch" in text
+    assert "`--status dead-end` when the experiment failed to answer the question" in text
+    assert (root / "docs/how-to/run-an-experiment.md").is_file()

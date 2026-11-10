@@ -31,6 +31,7 @@ orient → grilling → to-epic → build → document
 | `handover` | Writes the handover section for work that stops before its finish point, and turns follow-up work into a seed issue. |
 | `tdd` | The red-green-refactor loop every `build` mode follows. |
 | `debug` | Root-cause debugging with a circuit breaker after three failed fixes. |
+| `experiment` | Runs one experiment and writes one lab entry with `lore lab add`. A dead end gets status `dead-end`. |
 | `file-issue` | Writes issue text and PR bodies under the writing rules and files them. |
 | `triage` | Reviews every open issue and PR of a repo against the code, gives each a verdict, and presents one filterable page for discussion. Review only until the user decides. |
 

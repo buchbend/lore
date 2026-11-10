@@ -18,7 +18,9 @@ app = typer.Typer(
 
 @app.command("add")
 def add_cmd(
-    text_file: Annotated[str, typer.Option("--text-file", help="The entry text, or '-' for stdin.")],
+    text_file: Annotated[
+        str, typer.Option("--text-file", help="The entry text, or '-' for stdin.")
+    ],
     cmd: Annotated[str | None, typer.Option("--cmd", help="The command line of the run.")] = None,
     data: Annotated[
         list[str] | None, typer.Option("--data", help="A data path; repeat for more.")
@@ -26,9 +28,7 @@ def add_cmd(
     thread: Annotated[
         str | None, typer.Option("--thread", help="The slug of the idea this entry follows.")
     ] = None,
-    status: Annotated[
-        str, typer.Option("--status", help="open, concluded or dead-end.")
-    ] = "open",
+    status: Annotated[str, typer.Option("--status", help="open, concluded or dead-end.")] = "open",
 ) -> None:
     """Check an entry, stamp it, keep it in the ledger and deliver it to every lab sink.
 
