@@ -22,7 +22,7 @@ epic starts after its upstream epic merged.
 ## Rules for every mode
 
 - **Test first.** Use [`tdd`](../tdd/SKILL.md) for every behaviour a test can observe.
-- **Never merge on red.** CI status and ruff come from `gh pr checks <n>`, never from a model. No ruff job in CI: run `ruff check` and `ruff format --check`, read the exit codes. Exception: an `epic` feature PR (`epic.md` § Merge).
+- **Never merge on red.** CI status and ruff come from `gh pr checks <n>`, never from a model. No ruff job in CI: run `ruff check` and `ruff format --check`, read the exit codes. Exception: an `epic` feature PR merges on a green local run (`epic.md` § Merge).
 - **Decision gate.** An ADR, a PRD or a wiki topic-note edit outside a grilling session is a PR. A human approves its merge. Draft an ADR only after the user approved its ledger line.
 - **Merge approval.** A PR that ends a `loop` or `issue` run, or an epic PR, merges only after the user approves it in the conversation. Post one message: the PR link, `gh pr diff <n> --name-only`, the review verdict, `gh pr checks <n>`, the ledger outcomes. Ask whether to merge. On a clear yes, merge with the repo's usual method and report the merge SHA. Silence or a reply about something else is not a yes. The user can merge on GitHub instead; then go on from the merged state.
 - **Tiers.** A spawn's model is `lore tier resolve <tier>`; its description opens with its stage tag (`../../TIER-DELEGATION.md`). Spawn only the subagents a mode names, or for parallel or isolated work. For one lookup, grep or read directly.
