@@ -1,12 +1,14 @@
 ---
 title: "The issue register: per-team prose style for agent-written issues"
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/310
 repos:
   - buchbend/lore
 ---
 
 # PRD 0009: The issue register: per-team prose style for agent-written issues
+
+> Historical. Current decisions: ADR 0006.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/310).
 > The epic links here; this file is not embedded in the issue body.

@@ -1,12 +1,14 @@
 ---
 title: Onboarding, connection config & observability revamp
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/183
 repos:
   - buchbend/lore
 ---
 
 # PRD 0005: Onboarding, connection config & observability revamp
+
+> Historical. Current decisions: ADR 0016.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/183).
 > The epic links here; this file is not embedded in the issue body.

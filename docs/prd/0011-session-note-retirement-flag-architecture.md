@@ -1,12 +1,14 @@
 ---
 title: Session-note retirement + flag architecture
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/362
 repos:
   - buchbend/lore
 ---
 
 # PRD 0011: Session-note retirement + flag architecture
+
+> Historical. Current decisions: ADR 0007, ADR 0012.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/362).
 > The epic links here; this file is not embedded in the issue body.

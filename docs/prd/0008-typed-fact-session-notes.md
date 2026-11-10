@@ -1,12 +1,14 @@
 ---
 title: "Typed-fact session notes: end-mode extraction, deterministic rendering, epistemic stamping"
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/282
 repos:
   - buchbend/lore
 ---
 
 # PRD 0008: Typed-fact session notes — end-mode extraction, deterministic rendering, epistemic stamping
+
+> Historical. Current decisions: ADR 0007, ADR 0004.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/282).
 > The epic links here; this file is not embedded in the issue body.

@@ -1,12 +1,14 @@
 ---
 title: Workflow lightening & deepening on the lore substrate
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/229
 repos:
   - buchbend/lore
 ---
 
 # PRD 0006: Workflow lightening & deepening on the lore substrate
+
+> Historical. Current decisions: ADR 0014, ADR 0015.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/229).
 > The epic links here; this file is not embedded in the issue body.

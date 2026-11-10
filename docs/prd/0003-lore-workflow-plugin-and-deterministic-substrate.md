@@ -1,6 +1,6 @@
 ---
 title: lore-workflow plugin + deterministic substrate
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/161
 repos:
   - buchbend/lore
@@ -8,6 +8,8 @@ repos:
 ---
 
 # PRD 0003: lore-workflow plugin + deterministic substrate
+
+> Historical. Current decisions: ADR 0005, ADR 0010.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/161).
 > The epic links here; this file is not embedded in the issue body.

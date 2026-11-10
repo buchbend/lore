@@ -1,12 +1,14 @@
 ---
 title: Retire flags; attach facts to repo artifacts; trim Lore to a context machine
-status: accepted
+status: shipped
 epic: https://github.com/buchbend/lore/issues/419
 repos:
   - buchbend/lore
 ---
 
 # PRD 0014: Retire flags; attach facts to repo artifacts; trim Lore to a context machine
+
+> Historical. Current decisions: ADR 0012, ADR 0013.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/419).
 > Decisions recorded in ADR [0012](../adr/0012-agents-file-facts-as-repo-artifacts.md)
