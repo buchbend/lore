@@ -8,6 +8,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.95.1] - 2026-11-10
+
+Ships `lore-workflow` 0.22.1.
+
+### Changed
+
+- **The `build` skill is shorter.** `SKILL.md` plus `epic.md` hold 9,427 bytes, down from 9,999. Every rule, step and stop condition stays. The skill description names the three modes in one clause each. Issue #564 (trim the build skill).
+
 ## [0.95.0] - 2026-11-10
 
 Ships `lore-workflow` 0.22.0. Epic #555 (index-first context and the lab notebook), PRD 0020.
