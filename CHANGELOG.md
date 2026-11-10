@@ -8,6 +8,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.96.0] - 2026-11-10
+
+Ships `lore-workflow` 0.23.0.
+
+### Added
+
+- **`lore workflow spec-branch` prints `ref`**, the ref that holds the PRD: `origin/<name>` when the remote holds it, the local branch name otherwise. Issue #565 (spec-branch for cross-repo epics and unpushed branches).
+
+### Changed
+
+- **`build` in `epic` mode merges the printed `ref`** and runs `spec-branch` only in the repo of the `**PRD:**` link.
+
 ## [0.95.1] - 2026-11-10
 
 Ships `lore-workflow` 0.22.1.

@@ -56,7 +56,12 @@ def _run(repo: Path, body: str):
 def test_prd_on_side_branch_needs_merge(tmp_path: Path) -> None:
     r = _run(_repo(tmp_path / "r", prd_on="spec"), BODY)
     assert r.exit_code == 0, r.output
-    assert json.loads(r.stdout) == {"branch": "spec/x", "prd": PRD, "needs_merge": True}
+    assert json.loads(r.stdout) == {
+        "branch": "spec/x",
+        "prd": PRD,
+        "needs_merge": True,
+        "ref": "spec/x",
+    }
 
 
 def test_prd_on_target_needs_no_merge(tmp_path: Path) -> None:
@@ -78,7 +83,19 @@ def test_spec_branch_only_on_origin_counts(tmp_path: Path) -> None:
     _git(repo, "push", "origin", "spec/x")
     _git(repo, "fetch", "origin")
     _git(repo, "branch", "-D", "spec/x")
-    assert json.loads(_run(repo, BODY).stdout)["needs_merge"] is True
+    out = json.loads(_run(repo, BODY).stdout)
+    assert out["needs_merge"] is True
+    assert out["ref"] == "origin/spec/x"
+
+
+def test_ref_is_origin_when_spec_branch_is_pushed(tmp_path: Path) -> None:
+    repo = _repo(tmp_path / "r", prd_on="spec")
+    bare = tmp_path / "bare.git"
+    subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "origin", "spec/x")
+    _git(repo, "fetch", "origin")
+    assert json.loads(_run(repo, BODY).stdout)["ref"] == "origin/spec/x"
 
 
 def test_validate_build_order_accepts_the_spec_branch_line() -> None:

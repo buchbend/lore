@@ -37,10 +37,10 @@ each. Otherwise **standard**: up to four teammates at once.
 `parse-board` reads marker and columns verbatim; the marker keeps its old name. `State` is
 queued, running, review, merged or blocked. Then create and push `epic/<issue>` from `target_branch`.
 
-**Spec branch.** `lore workflow spec-branch <body file> --repo <repo_root>` prints `{branch,
-prd, needs_merge}`; exit 1: stop. `needs_merge`: merge `origin/<branch>` into the new
-`epic/<issue>`, push it, then dispatch. A conflict: abort the merge, stop and report. No second
-PR; push nothing to `target_branch`.
+**Spec branch.** Run `lore workflow spec-branch <body file> --repo <repo_root>` only in the repo
+of the `**PRD:**` link; it prints `{branch, prd, needs_merge, ref}`; exit 1: stop. `needs_merge`:
+merge the printed `ref` into the new `epic/<issue>` there, push it, then dispatch. A conflict:
+abort the merge, stop and report. No second PR; push nothing to `target_branch`.
 
 **Board line.** Record the board in this checkout's local ledger: `lore workflow
 ledger-add --kind board --url <comment URL> --text "<owner/repo#epic>"`. After a compaction,

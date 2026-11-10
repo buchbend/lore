@@ -26,10 +26,12 @@ class SpecBranch:
     branch: str | None
     prd: str
     needs_merge: bool
+    ref: str
 
 
-def _holds(repo: Path, branch: str, path: str) -> bool:
-    for ref in (branch, f"origin/{branch}"):
+def _holds(repo: Path, branch: str, path: str) -> str | None:
+    """The ref that holds `path`: `origin/<branch>` first, else the local branch."""
+    for ref in (f"origin/{branch}", branch):
         try:
             r = subprocess.run(
                 ["git", "cat-file", "-e", f"{ref}:{path}"], cwd=str(repo), capture_output=True
@@ -37,8 +39,8 @@ def _holds(repo: Path, branch: str, path: str) -> bool:
         except OSError as exc:
             raise SpecBranchError(f"cannot run git in {repo}: {exc}") from None
         if r.returncode == 0:
-            return True
-    return False
+            return ref
+    return None
 
 
 def resolve_spec_branch(body: str, repo: Path, target_branch: str) -> SpecBranch:
@@ -50,10 +52,10 @@ def resolve_spec_branch(body: str, repo: Path, target_branch: str) -> SpecBranch
     branch = branch_m.group(1) if branch_m else None
     if branch and branch.startswith("<"):  # template placeholder, not a branch
         branch = None
-    if _holds(repo, target_branch, prd):
-        return SpecBranch(branch, prd, False)
-    if branch and _holds(repo, branch, prd):
-        return SpecBranch(branch, prd, True)
+    if ref := _holds(repo, target_branch, prd):
+        return SpecBranch(branch, prd, False, ref)
+    if branch and (ref := _holds(repo, branch, prd)):
+        return SpecBranch(branch, prd, True, ref)
     raise SpecBranchError(
         f"{prd} is not on {target_branch} and "
         + (f"spec branch {branch} lacks it" if branch else "the body names no **Spec branch:**")
