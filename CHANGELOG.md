@@ -8,6 +8,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.95.0] - 2026-11-10
+
+Ships `lore-workflow` 0.22.0. Epic #555 (index-first context and the lab notebook), PRD 0020.
+
+### Added
+
+- **The index.** `lore index` prints what a repo holds: the glossary terms, the ADR titles, the current PRDs, the roadmap headings, the neighbours and the three newest lab entries. Each group names the command that pulls the detail. SessionStart injects the index where the glossary index sat. `lore index --write` keeps a copy in a marked block of `AGENTS.md`, without the neighbours and the lab entries; `lore index --check` exits 1 on a stale block. `lore setup scope --scaffold-workflow` writes the first block. When `CLAUDE.md` imports a current block, the banner holds one pointer line and does not repeat the block.
+- **The lab notebook.** `lore lab add` checks a lab entry (five labels, at most 400 words), stamps it with date, author, repo, commit, dirty flag, branch and host, and delivers it through `lab.sinks` of the scope (default `[file]`, one file per entry under `docs/lab/YYYY-MM/`). `--cmd`, `--data` (with SHA-256), `--thread` and `--status open|concluded|dead-end` add to the stamp. `lore lab show [--thread]` prints entries, newest first. An undelivered entry waits as a `[lab]` line in the local ledger. The new `experiment` skill runs one experiment and writes one lab entry. ADR 0019 (the lab notebook).
+- **`lore workflow spec-branch`.** `to-epic` writes `**Spec branch:** <name>` into the epic body and pushes the branch. `build` in `epic` mode merges the spec branch into `epic/<n>` when the target branch lacks the PRD. The start of a build approves the spec.
+- **`lore verdict pending` and `lore verdict set`**, with JSON output. `/lore:verify` calls them.
+- **`lore style show filing`** prints where each fact goes.
+
+### Changed
+
+- **The MCP server lists seven tools**, down from eleven, and its schema shrinks from 9,983 to 5,470 characters. Removed: `lore_pending_verdicts`, `lore_verdict`, `lore_inbox_classify`, `lore_tier_resolve`. Use `lore verdict`, `lore inbox classify` and `lore tier resolve`.
+- **The SessionStart directive is shorter.** It keeps the filing trigger, the session-end listing, the reading rule and one guard line. The routing lines moved to `lore style show filing`.
+- **The ADR template requires four sections**: the header, `Holds`, `Revisit if` and `Alternatives considered`. `Background` is optional and replaces `Context`, `Decision` and `Consequences`. `lore wiki lint adr` accepts both shapes.
+- PRDs 0002 to 0014 and 0020 are marked shipped.
+
+### Removed
+
+- The in-passing verdict nudge. `/lore:verify` is the one verdict path.
+
 ## [0.94.0] - 2026-11-04
 
 Ships `lore-workflow` 0.21.0.
