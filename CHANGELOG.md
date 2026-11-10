@@ -8,6 +8,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.97.0] - 2026-11-10
+
+Issue #574 (retire the generated index block of AGENTS.md). ADR 0020 (SessionStart delivers the index; AGENTS.md holds static pointers only).
+
+### Removed
+
+- **`lore index --write` and `lore index --check`.** Each exits 2 with a usage error. Lore keeps no generated copy of the index in `AGENTS.md` and holds no marker code. Remove an old block from `AGENTS.md` by hand.
+
+### Changed
+
+- **SessionStart injects the full index in every session.** The hook reads neither `AGENTS.md` nor `CLAUDE.md` for the index, so an old block changes nothing.
+- **`lore setup scope --scaffold-workflow` appends a static `## Where to look` paragraph** to `AGENTS.md`, once. The paragraph names the homes that exist in the repo: `docs/adr/`, `docs/prd/`, `CONTEXT.md`, `ROADMAP.md`.
+
 ## [0.96.1] - 2026-11-10
 
 Issue #566 (loose ends of the index and the lab notebook).
