@@ -56,9 +56,5 @@ def resolve_spec_branch(body: str, repo: Path, target_branch: str) -> SpecBranch
         return SpecBranch(branch, prd, True)
     raise SpecBranchError(
         f"{prd} is not on {target_branch} and "
-        + (
-            f"spec branch {branch} lacks it"
-            if branch
-            else "the body names no **Spec branch:**"
-        )
+        + (f"spec branch {branch} lacks it" if branch else "the body names no **Spec branch:**")
     )
