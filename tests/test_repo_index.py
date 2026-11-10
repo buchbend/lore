@@ -156,6 +156,10 @@ def test_style_show_filing_prints_the_routing_lines() -> None:
     assert "run `lore roadmap add`" in result.output
     assert "becomes a comment on it" in result.output
     assert "closed as not planned" in result.output
+    assert (
+        "An ADR, a PRD or a wiki topic-note edit outside a grilling session is a pull request."
+        in result.output
+    )
 
 
 def test_file_issue_reads_the_filing_rules_before_it_drafts() -> None:

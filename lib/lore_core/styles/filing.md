@@ -8,3 +8,4 @@ file; these lines say where.
 - A fact about an existing issue or PR becomes a comment on it.
 - A dead end becomes an issue you opened, closed as not planned, with the reason in the close comment.
 - A fact for a wiki topic note becomes a pull request on the wiki repo.
+- An ADR, a PRD or a wiki topic-note edit outside a grilling session is a pull request.

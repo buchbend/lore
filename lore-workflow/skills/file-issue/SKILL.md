@@ -27,10 +27,10 @@ lore style show writing-rules
 lore style show filing
 ```
 
-`filing` names where each fact goes; check that this artifact is its home. `writing-rules`
-carries the section skeleton, the EARS patterns for acceptance criteria, and the prose rules. **Never write from memory of the rules** — a
-team overrides the rules inside its wiki, so the resolved text is the only authority.
-Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
+`filing` names the home of each fact. `writing-rules` carries the required section skeleton, the
+EARS patterns for acceptance criteria, and the prose rules. **Never write from memory of the
+rules** — a team overrides the rules inside its wiki, so the resolved text is the only
+authority. Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 
 Use the repo's domain terms, which its `CONTEXT.md` defines. Print the ones you use with `lore
 glossary <term> [<term> …]` (`--cwd <checkout>` for another repo), and use no synonym. When the
