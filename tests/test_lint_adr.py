@@ -182,7 +182,7 @@ def test_the_adr_template_keeps_the_three_criteria_gate() -> None:
 def test_the_adr_template_says_text_outside_holds_is_background() -> None:
     template = ADR_FORMAT.read_text(encoding="utf-8")
     assert "outside `Holds` is background" in template
-    assert "Mechanism detail stays out of `Decision`" in template
+    assert "Mechanism detail stays out of `Background`" in template
 
 
 def test_a_test_reference_wrapped_onto_a_continuation_line_passes(tmp_path: Path) -> None:
@@ -214,3 +214,68 @@ def test_a_wrapped_reference_to_a_missing_test_names_the_items_first_line(
     # Line 8 is the Invariant's first line; the reference sits on line 9.
     assert "docs/adr/0016-wrapped-bad.md:8" in result.output
     assert "test_gone" in result.output
+
+
+# --- ADR template with four required sections (PRD 0020) -------------------
+
+_HOLDS = "- **Default:** do x."
+_NEW_SHAPE = (
+    "# ADR\n\n- **Status:** Accepted\n\n## Holds\n\n" + _HOLDS + "\n\n"
+    "## Revisit if\n\n- y changes\n\n## Alternatives considered\n\n- z\n\n"
+    "## Amendments\n\nNone.\n"
+)
+_OLD_SHAPE = (
+    "# ADR\n\n- **Status:** Accepted\n\n## Holds\n\n" + _HOLDS + "\n\n"
+    "## Revisit if\n\n- y\n\n## Context\n\nc\n\n## Decision\n\nd\n\n"
+    "## Consequences / Trade-offs\n\ne\n\n## Alternatives considered\n\nf\n\n"
+    "## Status\n\nAccepted.\n\n## Amendments\n\nNone.\n"
+)
+
+
+def _write(repo: Path, body: str) -> None:
+    path = repo / "docs" / "adr" / "0020-shape.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def test_an_adr_with_the_four_required_sections_passes(tmp_path: Path) -> None:
+    _write(tmp_path, _NEW_SHAPE)
+    assert _lint(tmp_path).exit_code == 0
+
+
+def test_an_adr_with_the_four_sections_and_background_passes(tmp_path: Path) -> None:
+    _write(tmp_path, _NEW_SHAPE.replace("## Amendments", "## Background\n\nWhy.\n\n## Amendments"))
+    assert _lint(tmp_path).exit_code == 0
+
+
+def test_an_adr_with_the_nine_sections_of_the_old_template_passes(tmp_path: Path) -> None:
+    _write(tmp_path, _OLD_SHAPE)
+    assert _lint(tmp_path).exit_code == 0
+
+
+def test_the_adr_template_names_four_required_sections_and_no_status_section() -> None:
+    template = ADR_FORMAT.read_text(encoding="utf-8")
+    fence = template[template.index("```md\n# NNNN") :]
+    fence = fence[: fence.index("\n```\n", 5)]
+    headings = [line for line in fence.splitlines() if line.startswith("## ")]
+    assert headings == [
+        "## Holds",
+        "## Revisit if",
+        "## Alternatives considered",
+        "## Background",
+        "## Amendments",
+    ]
+    for dropped in ("## Status", "## Context", "## Decision", "## Consequences"):
+        assert dropped not in fence
+
+
+def test_adr_0015_carries_the_2026_11_10_amendment() -> None:
+    text = ADR_0015.read_text(encoding="utf-8")
+    assert "- 2026-11-10:" in text.split("\n## Amendments")[-1]
+
+
+def test_the_record_a_decision_how_to_describes_the_four_required_sections() -> None:
+    how_to = (REPO_ROOT / "docs" / "how-to" / "record-a-decision.md").read_text(encoding="utf-8")
+    for name in ("Holds", "Revisit if", "Alternatives considered", "Background"):
+        assert f"`{name}`" in how_to
+    assert "Consequences, Alternatives" not in how_to
