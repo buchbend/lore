@@ -2,9 +2,9 @@
 
 The agent writes one note per working directory with `lore handover write`.
 SessionStart reads the hook payload's ``source``: after ``clear`` or
-``compact`` it injects the full note, on ``startup`` or ``resume`` it offers
-the note in one line. A clear archives the note after injecting it, so the
-next clear does not replay a stale handover.
+``compact`` it injects a pointer to the note file, on ``startup`` or ``resume``
+it offers the note in one line. A clear archives the note, so the next clear
+does not replay a stale handover. The pointer then names the archived file.
 """
 
 from __future__ import annotations
@@ -62,10 +62,10 @@ def test_write_replaces_the_previous_note(env: Path) -> None:
     assert handover.read(env) == NOTE
 
 
-def test_write_rejects_a_note_over_the_budget(env: Path) -> None:
-    with pytest.raises(handover.HandoverTooLong):
-        handover.write(env, "x" * (handover.BUDGET_CHARS + 1))
-    assert handover.read(env) is None
+def test_write_accepts_a_note_of_50_000_characters(env: Path) -> None:
+    note = "x" * 50_000
+    handover.write(env, note)
+    assert handover.read(env) == note
 
 
 def test_write_rejects_an_empty_note(env: Path) -> None:
@@ -76,19 +76,28 @@ def test_write_rejects_an_empty_note(env: Path) -> None:
 # --- SessionStart ------------------------------------------------------------
 
 
-def test_clear_injects_the_full_note_and_archives_it(env: Path) -> None:
+def _pointed_file(out: str) -> Path:
+    line = next(ln for ln in out.splitlines() if "Read the whole file" in ln)
+    return Path(line.split("`")[1])
+
+
+def test_clear_points_to_the_archived_note_and_injects_no_line_of_it(env: Path) -> None:
     handover.write(env, NOTE)
     out = _session_start(env, "clear")
-    assert "Ship the handover hook." in out
-    assert "Wire PreCompact." in out
+    assert "## Handover (written " in out
+    assert "Read the whole file before any other action." in out
+    assert not any(ln and ln in out for ln in NOTE.splitlines())
+    assert _pointed_file(out).read_text(encoding="utf-8") == NOTE
     assert handover.read(env) is None
-    assert "Ship the handover hook." not in _session_start(env, "clear")
+    assert "handover" not in _session_start(env, "clear").lower()
 
 
-def test_compact_injects_the_full_note_and_keeps_it(env: Path) -> None:
+def test_compact_points_to_the_note_and_keeps_it(env: Path) -> None:
     handover.write(env, NOTE)
     out = _session_start(env, "compact")
-    assert "Ship the handover hook." in out
+    assert "Read the whole file before any other action." in out
+    assert "Ship the handover hook." not in out
+    assert _pointed_file(out) == handover.handover_path(env)
     assert handover.read(env) == NOTE
 
 
@@ -154,16 +163,6 @@ def test_cli_write_reads_stdin_and_show_prints_it(env: Path) -> None:
     shown = runner.invoke(handover_app, ["show", "--cwd", str(env)])
     assert shown.exit_code == 0
     assert "Ship the handover hook." in shown.output
-
-
-def test_cli_write_over_budget_fails_and_names_the_limit(env: Path) -> None:
-    result = CliRunner().invoke(
-        handover_app,
-        ["write", "--cwd", str(env)],
-        input="x" * (handover.BUDGET_CHARS + 1),
-    )
-    assert result.exit_code != 0
-    assert str(handover.BUDGET_CHARS) in result.output
 
 
 def test_cli_show_without_note_fails(env: Path) -> None:

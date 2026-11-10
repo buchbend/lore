@@ -1,6 +1,6 @@
 ---
 name: lore:handover
-description: Write a handover note so the next session continues this one after /clear or compaction. SessionStart injects the note automatically. Use when the user says "handover", "hand over", "write a handover", or before they run /clear on unfinished work. Run with "/lore:handover".
+description: Write a handover note so the next session continues this one after /clear or compaction. SessionStart points the next session to the note automatically. Use when the user says "handover", "hand over", "write a handover", or before they run /clear on unfinished work. Run with "/lore:handover".
 user_invocable: true
 ---
 
@@ -8,8 +8,8 @@ user_invocable: true
 
 `orient` rebuilds understanding from the repo. A handover carries what the
 repo does not hold: decisions, dead ends, the next ask. SessionStart injects
-the note in full after `/clear` or compaction, and offers it in one line on
-a fresh start. Nothing runs before `/clear`, so write the note first.
+the path of the note after `/clear` or compaction, and offers it in one line
+on a fresh start. The next session reads the whole file. Nothing runs before `/clear`, so write the note first.
 
 ## Write the note
 
@@ -46,7 +46,7 @@ Rules:
 - Run `lore style show writing-rules` first; the note follows them.
 - State facts with their source: path, commit, run id, log.
 - Write for a reader with no memory of this session.
-- Stay under the limit `lore handover write` enforces. Cut history, keep state.
+- A note has no size limit: the next session reads the file. Cut history, keep state.
 
 ## Store it
 

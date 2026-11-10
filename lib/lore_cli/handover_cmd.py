@@ -3,7 +3,7 @@
   lore handover write < note.md     store the note (stdin), replacing the last one
   lore handover show                print the note
 
-SessionStart injects the note after ``/clear`` or compaction; see
+SessionStart injects the path of the note after ``/clear`` or compaction; see
 :mod:`lore_core.handover`.
 """
 

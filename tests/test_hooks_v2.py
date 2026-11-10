@@ -291,6 +291,52 @@ def test_session_start_no_scope_emits_setup_scope_hint(fake_vault, tmp_path, mon
     assert "writing-rules" not in out
 
 
+def test_session_start_names_the_scope_and_the_wiki_the_vault_does_not_hold(
+    fake_vault, tmp_path, monkeypatch
+):
+    """Issue #575: a scope that names a missing wiki is not "no scope"."""
+    vault, _wiki = fake_vault
+    repo_dir = tmp_path / "lore"
+    repo_dir.mkdir()
+    _register_attachment(vault, repo_dir, wiki="private", scope="lore")
+    monkeypatch.setattr(session_start, "current_repo", lambda _cwd: None)
+
+    out = hooks._session_start(str(repo_dir))
+    assert "scope `lore`" in out and "wiki `private`" in out
+    assert "lore setup scope" in out
+    assert "no scope routes this repo" not in out
+
+
+def test_session_start_emits_the_text_whole_and_context_log_prints_the_same(
+    tmp_path, monkeypatch, capsys
+):
+    """Issue #575: Lore cuts no SessionStart text."""
+    import json
+    import os
+
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setattr(hooks, "_claude_code_pid", os.getpid)  # a live pid survives the gc
+    text = "lore 9.9.9: active\n" + "x" * 20_000 + "\nlast line"
+    hooks._emit("SessionStart", text, plain=False)
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert context == text
+    assert hooks._context_log().rstrip("\n").endswith(text)
+
+
+def test_the_project_orientation_gives_way_over_the_hook_limit():
+    """Claude Code limits a hook string to 10,000 characters (issue #575)."""
+    orientation = "## Project: [[lore]]\n" + "o" * 2_900
+    rest = "## Index (`lore index`)\n" + "i" * 1_000
+    small = f"banner\n\n{orientation}\n\n{rest}"
+    assert session_start.fit_hook_limit(small, orientation) == small
+    big = f"banner\n\n{orientation}\n\n{'p' * 7_000}\n\n{rest}"
+    out = session_start.fit_hook_limit(big, orientation)
+    assert len(out) <= session_start.HOOK_LIMIT_CHARS
+    assert "## Project: [[lore]]" in out and "ooo" not in out
+    assert out.endswith(rest) and "p" * 7_000 in out
+    assert session_start.fit_hook_limit(big, None) == big
+
+
 def test_session_start_no_vault_emits_no_vault_hint(tmp_path, monkeypatch):
     """No wiki mount at all (``$LORE_ROOT`` unset/missing) → the "no
     vault" hint, and — like the other unattached paths — no directive."""

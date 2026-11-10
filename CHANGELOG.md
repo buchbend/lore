@@ -8,6 +8,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.98.0] - 2026-11-10
+
+Issue #575 (deliver the SessionStart text whole and point to the handover note).
+
+### Changed
+
+- **Lore cuts no SessionStart text.** The cut at 5,000 characters is gone. Over the 10,000 characters that Claude Code allows per hook string, the project orientation gives way to two lines.
+- **SessionStart points to the handover note.** After `/clear` or compaction the session receives the path of the note and reads the whole file. After `/clear` the path names the archived file. `lore handover write` accepts a note of any size.
+- **The directive block measures 695 characters**, down from 1,111. `lore style show filing` holds the detail the block lost. The reading rule of ADR 0015 (decision records state their strength) has a shorter wording.
+- **The text for the model holds no "Last active", "Branches" or "Refs" line.** The status line keeps the last active day.
+
+### Fixed
+
+- **The banner names a scope whose wiki the vault does not hold**, with the wiki and `lore setup scope --wiki <name>`. The banner said "no scope routes this repo" before.
+- **`lore setup scope --scaffold-workflow` appends the reading rule once**, also when `AGENTS.md` holds an older wording of the rule.
+
 ## [0.97.0] - 2026-11-10
 
 Issue #574 (retire the generated index block of AGENTS.md). ADR 0020 (SessionStart delivers the index; AGENTS.md holds static pointers only).
