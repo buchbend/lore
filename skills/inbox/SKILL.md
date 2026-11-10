@@ -1,7 +1,7 @@
 ---
 name: lore:inbox
 description: Process files from wiki inboxes and the root inbox.
-  Calls MCP `lore_inbox_classify` for the deterministic walk; LLM
+  Runs `lore inbox classify` for the deterministic walk; LLM
   reads each file and composes notes; `lore inbox archive` moves
   originals to `.processed/`. Run with "/lore:inbox".
 user_invocable: true
@@ -10,12 +10,12 @@ user_invocable: true
 # Knowledge Inbox Processor
 
 Process files dropped into any inbox and create structured notes in
-the appropriate wiki. The walk + classification is one MCP call; the
+the appropriate wiki. The walk + classification is one command; the
 LLM reads files, composes notes, and archives originals.
 
 ## Workflow
 
-1. **Classify** — call `mcp__lore__lore_inbox_classify` (no args).
+1. **Classify** — run `lore inbox classify` (JSON; read `data`).
    Returns per-file `path`, `type`, `target_wiki`, `needs_triage`. If
    `total == 0`, report and stop. Do not Glob substitute.
 
@@ -45,7 +45,7 @@ LLM reads files, composes notes, and archives originals.
 
 ## Hard rules
 
-- One MCP call for the walk (Glob substitutes are a regression).
+- One command for the walk (Glob substitutes are a regression).
 - Per-wiki inboxes are pre-routed — don't second-guess `target_wiki`.
 - Always archive, never delete.
 - Atomic notes — one topic per note; split multi-topic documents.

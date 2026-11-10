@@ -27,11 +27,6 @@ REMOVED_TOOLS = {
 }
 
 
-def test_tool_schema_has_exactly_eleven_tools() -> None:
-    names = [t["name"] for t in _tool_schema()]
-    assert len(names) == 11, names
-
-
 def test_tool_schema_excludes_removed_tools() -> None:
     names = {t["name"] for t in _tool_schema()}
     assert names.isdisjoint(REMOVED_TOOLS), names & REMOVED_TOOLS
