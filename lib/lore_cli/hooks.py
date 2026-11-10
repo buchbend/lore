@@ -690,7 +690,7 @@ def cmd_session_start(
         from lore_core.glossary import find_repo_root
 
         repo_root = find_repo_root(cwd_resolved)
-        index = repo_index.index_text(repo_index.groups(repo_root, lab=True)) if repo_root else None
+        index = repo_index.banner_text(repo_root) if repo_root else None
         if index:
             out = out + "\n\n" + index
     except Exception:  # noqa: BLE001 - the index must never crash SessionStart

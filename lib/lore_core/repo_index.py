@@ -35,6 +35,8 @@ class Group:
     items: list[str]
     detail: str
     joiner: str = "\n"
+    #: False for a group the AGENTS.md block leaves out (PRD 0020).
+    committed: bool = True
 
 
 def _number(path: str) -> str:
@@ -104,7 +106,12 @@ def groups(
         ),
         Group("### Roadmap", _roadmap_headings(repo_root), "Detail: `ROADMAP.md`"),
         Group("### Neighbours (system map)", neighbours or [], "Detail: `lore map <repo>`"),
-        Group("### Lab entries", _lab_lines(repo_root) if lab else [], "Detail: `lore lab show`"),
+        Group(
+            "### Lab entries",
+            _lab_lines(repo_root) if lab else [],
+            "Detail: `lore lab show`",
+            committed=False,
+        ),
     ]
     return [g for g in out if g.items]
 
@@ -195,3 +202,38 @@ def agents_block_is_current(repo_root: Path) -> bool:
         return False
     parts = _split(text)
     return parts is not None and parts[1] == agents_block(repo_root)
+
+
+#: The banner line that stands in for the groups AGENTS.md already loaded.
+POINTER = "Terms, ADRs, current PRDs and roadmap: the index block of `AGENTS.md`, loaded above."
+STALE_HINT = "The index block of `AGENTS.md` is stale. Run `lore index --write`."
+
+
+def banner_text(repo_root: Path) -> str | None:
+    """The index SessionStart injects, without what the session already holds.
+
+    When ``CLAUDE.md`` imports an ``AGENTS.md`` whose block is current, the
+    session holds the committed groups. The banner then carries a pointer and
+    the other groups. A stale block gets the full index and a hint.
+    """
+    gs = groups(repo_root, lab=True)
+    try:
+        has_block = _split((repo_root / "AGENTS.md").read_text(encoding="utf-8")) is not None
+        current = has_block and agents_block_is_current(repo_root)
+    except (OSError, UnmatchedMarker):
+        has_block = current = False
+    if not has_block:
+        return index_text(gs)
+    if not current:
+        return f"{index_text(gs) or ''}\n{STALE_HINT}".strip()
+    # ponytail: only the Claude Code import is known; another host that loads
+    # AGENTS.md by itself still gets the full index. Add a host check when one asks.
+    try:
+        imported = "@AGENTS.md" in (repo_root / "CLAUDE.md").read_text(encoding="utf-8")
+    except OSError:
+        imported = False
+    if not imported:
+        return index_text(gs)
+    rest = [g for g in gs if not g.committed]
+    head, _, tail = _render(rest, [len(g.items) for g in rest]).partition("\n")
+    return "\n".join(p for p in (head, POINTER, tail) if p)

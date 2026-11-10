@@ -197,3 +197,41 @@ def test_the_repo_agents_md_block_is_current() -> None:
 
     root = Path(__file__).resolve().parent.parent
     assert repo_index.agents_block_is_current(root), "run `lore index --write`"
+
+
+# --- the banner does not repeat what AGENTS.md already loaded -----------------
+
+
+def _with_block(repo: Path, *, imported: bool = True) -> None:
+    (repo / "CONTEXT.md").write_text("- **Ledger** — the working list.\n")
+    assert _index(repo, "--write").exit_code == 0
+    if imported:
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n")
+
+
+def test_session_start_points_to_a_current_agents_block_and_does_not_repeat_it(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _with_block(repo)
+    out = _session_start(repo, tmp_path, monkeypatch)
+    assert "ADR 0001: One home per fact" not in out
+    assert "index block of `AGENTS.md`" in out
+
+
+def test_session_start_injects_the_full_index_and_a_hint_when_the_block_is_stale(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _with_block(repo)
+    (repo / "docs" / "adr" / "0004-new.md").write_text("# ADR 0004: A new decision\n")
+    out = _session_start(repo, tmp_path, monkeypatch)
+    assert "ADR 0004: A new decision" in out
+    assert "is stale. Run `lore index --write`" in out
+
+
+def test_session_start_injects_the_full_index_when_claude_md_does_not_import_agents_md(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _with_block(repo, imported=False)
+    out = _session_start(repo, tmp_path, monkeypatch)
+    assert "ADR 0001: One home per fact" in out
+    assert "is stale" not in out

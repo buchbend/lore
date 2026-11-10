@@ -97,6 +97,12 @@ Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore setup scope
 when the block is stale. Edit the text outside the markers by hand; leave
 the text between them to the command.
 
+No command writes the block on its own. SessionStart compares the block with
+the repo at each start. A current block that `CLAUDE.md` imports is not
+repeated in the banner: the banner holds one pointer line and the lab
+entries. For a stale block, the banner holds the full index and the line
+"Run `lore index --write`".
+
 ### The epic issue as tracker
 
 The GitHub epic issue coordinates the work. It is not the spec:
