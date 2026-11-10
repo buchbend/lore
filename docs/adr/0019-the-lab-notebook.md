@@ -1,6 +1,6 @@
 # ADR 0019: The lab notebook
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-09
 - **Deciders:** Christof Buchbender
 - **Relates to:** PRD [0020](../prd/0020-index-first-context-and-lab-notebook.md)

@@ -15,6 +15,8 @@
 > `note_document.py` stays, because `seed_epic.py` and `trace.py` still
 > import `read_note`. The deletion took only its marker-chapter writer and
 > its ref-stamp code. The body below stays the snapshot at `c1e4081`.
+> Update 2026-11-10, epic 555 (index-first context and the lab notebook): the
+> MCP tools table lists the seven tools that remain.
 
 Swept at `c1e4081` on branch `epic/419` on 2026-09-29, for issue 423. The
 issue belongs to PRD (product requirements document) 0014,
