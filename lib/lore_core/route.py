@@ -38,6 +38,7 @@ class Route:
     scope: str | None = None
     tracker: str = "auto"
     sinks: tuple[str, ...] = ("file",)
+    lab_sinks: tuple[str, ...] = ("file",)
     sources: tuple[str, ...] = ()
     origins: dict[str, str] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
@@ -218,17 +219,23 @@ def _resolve(
 
     # Reporting boundary (ADR 0016 invariant): only the person's own config
     # defines a sink. A name it does not define falls back to `file`.
+    # Lab entries (PRD 0020) go to the scope's `lab.sinks`, `[file]` without the key.
+    lab = scope_cfg.get("lab")
+    values["lab_sinks"] = tuple(_as_list(lab.get("sinks") if isinstance(lab, dict) else None))
+    values["lab_sinks"] = values["lab_sinks"] or ("file",)
+    origin = {"sinks": origins["sinks"], "lab_sinks": f"scopes.{scope}.lab.sinks"}
     sinks = person.get("sinks")
     defined = {"file", *(sinks if isinstance(sinks, dict) else ())}
-    undefined = [s for s in values["sinks"] if s not in defined]  # type: ignore[union-attr]
-    if undefined:
-        notes.append(
-            f"sink {', '.join(map(repr, undefined))} from {origins['sinks']} is not defined "
-            f"in {cfg_path}; using file"
-        )
-        values["sinks"] = tuple(
-            dict.fromkeys(s if s in defined else "file" for s in values["sinks"])
-        )  # type: ignore[union-attr]
+    for key in ("sinks", "lab_sinks"):
+        undefined = [s for s in values[key] if s not in defined]  # type: ignore[union-attr]
+        if undefined:
+            notes.append(
+                f"sink {', '.join(map(repr, undefined))} from {origin[key]} is not defined "
+                f"in {cfg_path}; using file"
+            )
+            values[key] = tuple(
+                dict.fromkeys(s if s in defined else "file" for s in values[key])  # type: ignore[union-attr]
+            )
 
     return Route(
         cwd=cwd,
