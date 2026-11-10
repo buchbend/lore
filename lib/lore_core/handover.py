@@ -13,6 +13,8 @@ SessionStart reads the hook payload's ``source`` and calls
 
 The pointer holds the path and no note text, so a note has no size limit
 (issue #575).
+The pointer follows the status line, inside the 2,000
+characters Claude Code shows of a text over the hook limit (issue #579).
 
 Home: ``$LORE_CACHE/handovers/<dirname>-<hash>.md``, keyed by the resolved
 working directory. The cache works outside git repos, and each worktree has
@@ -23,6 +25,7 @@ Standard library only.
 
 from __future__ import annotations
 
+import glob
 import hashlib
 import os
 from datetime import UTC, datetime
@@ -72,6 +75,13 @@ def archive(cwd: Path) -> Path:
     return path.replace(path.with_name(f"{path.stem}.{stamp}.done.md"))
 
 
+def latest_archived(cwd: Path) -> Path | None:
+    """The newest archived note of *cwd*. The stamp in the name sorts by time."""
+    path = handover_path(cwd)
+    pattern = f"{glob.escape(path.stem)}.*.done.md"
+    return max(path.parent.glob(pattern), default=None)
+
+
 def session_start_block(cwd: Path, source: str | None, *, probe: bool = False) -> str | None:
     """The SessionStart text for *source*, or None when no note exists.
 
@@ -114,7 +124,7 @@ def status_line(cwd: Path, source: str | None) -> str | None:
         if source in ("clear", "compact"):
             return "lore: no handover note for this directory"
         return None
-    verb = "loaded" if source in ("clear", "compact") else "available"
+    verb = "pointed to" if source in ("clear", "compact") else "available"
     gist = _gist(text)
     tail = f" — {gist}" if gist else ""
     return f"lore: handover {verb} ({_written_at(handover_path(cwd))}){tail}"

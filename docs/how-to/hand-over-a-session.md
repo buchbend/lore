@@ -9,8 +9,9 @@ A long session carries decisions and next steps the repo does not hold.
 2. The agent writes the note and stores it with `lore handover write`.
 3. Run `/clear`.
 
-The new session receives the path of the note in its SessionStart context.
-The agent reads the whole file before it acts.
+The new session receives the path of the note in its SessionStart context,
+directly after the status line. The agent reads the whole file before it acts.
+The banner shows `lore: handover pointed to (<time>) — <goal>`.
 
 ## When the note is injected
 
@@ -35,5 +36,5 @@ whose state has moved on.
 
 ```bash
 lore handover write < note.md   # store a note for the current directory
-lore handover show              # print it
+lore handover show              # print it; after /clear, the newest archived note
 ```
