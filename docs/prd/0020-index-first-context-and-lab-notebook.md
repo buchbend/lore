@@ -1,14 +1,14 @@
 ---
 title: Index-first context and the lab notebook
 status: draft
-epic: TODO
+epic: https://github.com/buchbend/lore/issues/555
 repos:
   - buchbend/lore
 ---
 
 # PRD 0020: Index-first context and the lab notebook
 
-> Source of truth for this epic. Tracker: [epic issue](TODO).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/555).
 > The epic links here; this file is not embedded in the issue body.
 
 ## Problem

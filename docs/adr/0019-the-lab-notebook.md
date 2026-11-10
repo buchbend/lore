@@ -4,7 +4,8 @@
 - **Date:** 2026-11-09
 - **Deciders:** Christof Buchbender
 - **Relates to:** PRD [0020](../prd/0020-index-first-context-and-lab-notebook.md)
-  (index-first context and the lab notebook); issue
+  (index-first context and the lab notebook), epic
+  [#555](https://github.com/buchbend/lore/issues/555); issue
   [#417](https://github.com/buchbend/lore/issues/417) (regime registry and
   lab-notebook brainstorm)
 - **See also:** ADR [0014](0014-one-home-per-fact.md) (one home per fact),
