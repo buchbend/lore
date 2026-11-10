@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import os
 import re
 import socket
 import subprocess
@@ -59,8 +60,11 @@ def _data(path: str, cwd: Path, root: Path) -> dict:
     """A relative *path* is relative to *cwd*; inside the repo it is recorded from *root*."""
     full = cwd / path
     if not Path(path).is_absolute():
-        with contextlib.suppress(ValueError, OSError):
-            path = full.resolve().relative_to(root.resolve()).as_posix()
+        # The path as written first: resolve() follows a symlink out of the repo.
+        for f, r in ((Path(os.path.abspath(full)), root), (full.resolve(), root.resolve())):
+            if f.is_relative_to(r):
+                path = f.relative_to(r).as_posix()
+                break
     try:
         with open(full, "rb") as f:
             return {"path": path, "sha256": hashlib.file_digest(f, "sha256").hexdigest()}
@@ -187,4 +191,7 @@ def question(body: str) -> str:
     m = _label_re("Question").search(body)
     if not m:
         return ""
-    return (m.group(1) or body[m.end() :].strip().partition("\n")[0]).strip()
+    below = body[m.end() :].strip().partition("\n")[0]
+    if any(_label_re(label).match(below) for label in LABELS):
+        below = ""  # an empty question: the next line is the next label
+    return (m.group(1) or below).strip()

@@ -257,3 +257,28 @@ def test_write_ignores_a_marker_in_a_code_span_or_block(repo: Path) -> None:
     assert text.startswith(f"# Agents\n\n{quoted}")
     assert text.count("### ADRs") == 1
     assert _index(repo, "--check").exit_code == 0
+
+
+_START, _END = "<!-- lore index: start -->", "<!-- lore index: end -->"
+
+
+@pytest.mark.parametrize(
+    "quoted",
+    [
+        f"    {_START}\n    {_END}\n",  # indented code block
+        f"Write ``{_START}`` and ``{_END}`` by hand.\n",  # double-backtick span
+        f"- an item:\n\n  ```\n  {_START}\n  {_END}\n  ```\n",  # fence in a list item
+        f"````\n```\n{_START}\n{_END}\n```\n````\n",  # fence around a fence
+        f"~~~\n```\n{_START}\n~~~\n",  # a fence closes only on its own character
+        "```\nnever closed\n",  # an unclosed fence hides no real block
+    ],
+)
+def test_write_ignores_a_marker_in_any_code_form(repo: Path, quoted: str) -> None:
+    agents = repo / "AGENTS.md"
+    agents.write_text(f"# Agents\n\n{quoted}")
+    assert _index(repo, "--write").exit_code == 0
+    assert _index(repo, "--write").exit_code == 0
+    text = agents.read_text()
+    assert text.startswith(f"# Agents\n\n{quoted}")
+    assert text.count("### ADRs") == 1
+    assert _index(repo, "--check").exit_code == 0

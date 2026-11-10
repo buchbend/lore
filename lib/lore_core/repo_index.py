@@ -164,7 +164,33 @@ class UnmatchedMarker(ValueError):
 
 _START_PREFIX = "<!-- lore index: start"
 _END_PREFIX = "<!-- lore index: end"
-_CODE = re.compile(r"^(```|~~~).*?^\1|`[^`\n]*`", re.M | re.S)
+_FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+
+
+def _markers(text: str, fences: bool = True) -> tuple[list[int], list[int]]:
+    """Offsets of the start and the end markers of *text*.
+
+    A marker opens a line and stands outside a code fence. A quoted marker does
+    neither: a code span and an indented code block both put text before it.
+    """
+    starts: list[int] = []
+    ends: list[int] = []
+    fence, pos = "", 0
+    for line in text.splitlines(keepends=True):
+        m = _FENCE.match(line) if fences else None
+        if fence:
+            # A fence closes on a bare run of its own character, at least as long.
+            if m and m[1].startswith(fence) and not line[m.end() :].strip():
+                fence = ""
+        elif m:
+            fence = m[1]
+        elif line.startswith(_START_PREFIX):
+            starts.append(pos)
+        elif line.startswith(_END_PREFIX):
+            ends.append(pos)
+        pos += len(line)
+    # A fence that never closes is no fence: it must not hide the real block.
+    return _markers(text, fences=False) if fence else (starts, ends)
 
 
 def _split(text: str) -> tuple[str, str, str] | None:
@@ -173,14 +199,12 @@ def _split(text: str) -> tuple[str, str, str] | None:
     Raises UnmatchedMarker unless *text* holds one start marker followed by one
     end marker: a write over a broken pair would eat the text between them.
     """
-    # A marker quoted in a code block or a code span is not a marker.
-    seen = _CODE.sub(lambda m: re.sub(r"[^\n]", " ", m[0]), text)
-    starts, ends = seen.count(_START_PREFIX), seen.count(_END_PREFIX)
+    starts, ends = _markers(text)
     if not starts and not ends:
         return None
-    start, end = seen.find(_START_PREFIX), seen.find(_END_PREFIX)
-    if starts != 1 or ends != 1 or end < start:
+    if len(starts) != 1 or len(ends) != 1 or ends[0] < starts[0]:
         raise UnmatchedMarker("unmatched lore index marker")
+    start, end = starts[0], ends[0]
     end = text.find("-->", end)
     end = len(text) if end < 0 else end + len("-->")
     return text[:start], text[start:end], text[end:]

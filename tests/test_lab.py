@@ -426,3 +426,32 @@ def test_a_relative_data_path_is_recorded_relative_to_the_repo_root(
     assert _stamp(_entries(repo)[0])["data"] == [
         {"path": "data/scan.csv", "sha256": hashlib.sha256(b"1,2\n").hexdigest()}
     ]
+
+
+# --- review round 1 of PR #571 ----------------------------------------------
+
+
+def test_a_symlinked_data_file_keeps_its_path_in_the_repo(repo, tmp_path, monkeypatch) -> None:
+    outside = tmp_path / "outside.csv"
+    outside.write_text("1,2\n")
+    (repo / "data").mkdir()
+    (repo / "data" / "link.csv").symlink_to(outside)
+    monkeypatch.chdir(repo / "data")
+    assert _add(tmp_path, GOOD, "--data", "link.csv") == 0
+    assert _stamp(_entries(repo)[0])["data"][0]["path"] == "data/link.csv"
+
+
+def test_an_empty_question_does_not_borrow_the_next_label() -> None:
+    from lore_workflow import lab
+
+    assert lab.question("**Question:**\n**Setup:** a") == ""
+    assert lab.question("**Question:**\n\nDoes it drift?\n\n**Setup:** a") == "Does it drift?"
+
+
+def test_a_text_file_that_is_not_utf8_exits_1_and_names_the_path(repo, tmp_path, capsys) -> None:
+    bad = tmp_path / "bad.md"
+    bad.write_bytes(b"\xff\xfe broken")
+    assert main(["lab", "add", "--text-file", str(bad)]) == 1
+    err = capsys.readouterr().err
+    assert str(bad) in err
+    assert "unexpected error" not in err

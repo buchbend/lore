@@ -41,8 +41,11 @@ def add_cmd(
         raise typer.Exit(code=2)
     try:
         text = sys.stdin.read() if text_file == "-" else Path(text_file).read_text(encoding="utf-8")
-    except OSError as exc:
-        print(f"lab add: cannot read {text_file}: {exc.strerror}", file=sys.stderr)
+    except (OSError, UnicodeDecodeError) as exc:
+        print(
+            f"lab add: cannot read {text_file}: {getattr(exc, 'strerror', None) or exc}",
+            file=sys.stderr,
+        )
         raise typer.Exit(code=1) from exc
     text = text.removeprefix("﻿")
     rule = lab.broken_rule(text)
