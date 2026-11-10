@@ -165,32 +165,39 @@ class UnmatchedMarker(ValueError):
 _START_PREFIX = "<!-- lore index: start"
 _END_PREFIX = "<!-- lore index: end"
 _FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+_MARKER = re.compile(r" {0,3}(?=<!-- lore index: (start|end))")
 
 
-def _markers(text: str, fences: bool = True) -> tuple[list[int], list[int]]:
+def _markers(text: str) -> tuple[list[int], list[int]]:
     """Offsets of the start and the end markers of *text*.
 
-    A marker opens a line and stands outside a code fence. A quoted marker does
-    neither: a code span and an indented code block both put text before it.
+    A marker opens a line, after at most three spaces, and stands outside a code
+    fence. A quoted marker does neither: a code span and an indented code block
+    both put more text before it.
     """
-    starts: list[int] = []
-    ends: list[int] = []
-    fence, pos = "", 0
-    for line in text.splitlines(keepends=True):
-        m = _FENCE.match(line) if fences else None
+    found: dict[str, list[int]] = {"start": [], "end": []}
+    lines = text.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    fence, opener, i = "", 0, 0
+    while i < len(lines):
+        line = lines[i]
+        m = _FENCE.match(line)
         if fence:
             # A fence closes on a bare run of its own character, at least as long.
             if m and m[1].startswith(fence) and not line[m.end() :].strip():
                 fence = ""
         elif m:
-            fence = m[1]
-        elif line.startswith(_START_PREFIX):
-            starts.append(pos)
-        elif line.startswith(_END_PREFIX):
-            ends.append(pos)
-        pos += len(line)
-    # A fence that never closes is no fence: it must not hide the real block.
-    return _markers(text, fences=False) if fence else (starts, ends)
+            fence, opener = m[1], i
+        # A byte order mark may open the file, before the marker.
+        elif mk := _MARKER.match(line, 1 if i == 0 and line.startswith("\ufeff") else 0):
+            found[mk[1]].append(offsets[i] + mk.end())
+        i += 1
+        if i == len(lines) and fence:
+            # This fence never closes, so it is no fence: read on below its opener.
+            fence, i = "", opener + 1
+    return found["start"], found["end"]
 
 
 def _split(text: str) -> tuple[str, str, str] | None:

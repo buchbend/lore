@@ -282,3 +282,24 @@ def test_write_ignores_a_marker_in_any_code_form(repo: Path, quoted: str) -> Non
     assert text.startswith(f"# Agents\n\n{quoted}")
     assert text.count("### ADRs") == 1
     assert _index(repo, "--check").exit_code == 0
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("﻿", "\n"),  # a byte order mark opens the file
+        ("# Agents\n\n  ", "\n"),  # a block indented by two spaces
+        # a closed fence that quotes a marker, and a fence that never closes
+        (f"```\n{_END}\n```\n\n", "\n\n```\nnever closed\n"),
+    ],
+)
+def test_write_replaces_the_real_block_in_place(repo: Path, before: str, after: str) -> None:
+    agents = repo / "AGENTS.md"
+    agents.write_text(f"{before}{_START}\nstale\n{_END}{after}", encoding="utf-8")
+    assert _index(repo, "--write").exit_code == 0
+    text = agents.read_text(encoding="utf-8")
+    assert text.startswith(f"{before}<!-- lore index: start")
+    assert text.endswith(f"{_END}{after}")
+    assert "stale" not in text
+    assert text.count("### ADRs") == 1
+    assert _index(repo, "--check").exit_code == 0
