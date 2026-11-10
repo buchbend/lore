@@ -1,7 +1,8 @@
 <!--
-Adapted for CCAT: MADR-lite template (Context · Decision · Consequences /
-Trade-offs · Alternatives considered · Status) plus a deterministic toctree-
-wiring step, and the Holds / Revisit if / Amendments sections of ADR 0015. Deviates from upstream mattpocock/skills, whose ADR-FORMAT.md uses
+Adapted for CCAT: a four-section template (header · Holds · Revisit if ·
+Alternatives considered, plus a free Background and Amendments; PRD 0020) and a
+deterministic toctree-wiring step, with the Holds / Revisit if / Amendments
+sections of ADR 0015. Deviates from upstream mattpocock/skills, whose ADR-FORMAT.md uses
 a freeform 1-3 sentence template with optional sections and no docs-site wiring.
 The three-criteria "offer ADRs sparingly" gate is kept verbatim from upstream.
 See THIRD-PARTY.md for provenance.
@@ -16,9 +17,10 @@ Create the `docs/adr/` directory lazily — only when the first ADR is needed.
 
 ## Template
 
-CCAT uses **MADR-lite**: a fixed set of sections so every ADR reads the same way
-and renders predictably in the docs site. Fill them all — terse is fine, but an
-ADR is more than a single paragraph here.
+An ADR has four required parts: the header, `Holds`, `Revisit if` and
+`Alternatives considered`. `Background` is one free section and may be left out.
+The header line holds the status, so the template has no `Status` section.
+Terse is fine. State each fact once; do not restate `Holds` in `Background`.
 
 ```md
 # NNNN — {Short title of the decision}
@@ -38,35 +40,23 @@ ADR is more than a single paragraph here.
 
 - <a condition that reopens the decision>
 
-## Context
-
-What forces are in play — the problem, the constraints, the background a future
-reader needs.
-
-## Decision
-
-What we decided, stated plainly.
-
-## Consequences / Trade-offs
-
-What becomes easier and what becomes harder as a result. Call out the costs, not
-just the wins.
-
 ## Alternatives considered
 
 The genuine alternatives and why each was rejected. The non-obvious rejections
 are the valuable part — they stop someone re-proposing a settled option later.
 
-## Status
+## Background
 
-(Also carried in the header line above.) Track the decision's lifecycle:
-`Proposed` → `Accepted`, and later `Deprecated` or `Superseded by ADR-NNNN` when
-revisited.
+Optional and free-form: the forces in play and the context a future reader
+needs. Leave it out when `Holds` says enough.
 
 ## Amendments
 
 - YYYY-MM-DD: <what changed and why>.
 ```
+
+Older ADRs keep their `Context`, `Decision`, `Consequences / Trade-offs` and
+`Status` sections. Leave them as they are; the lint accepts both shapes.
 
 ## Holds: how strong each part is
 
@@ -84,7 +74,7 @@ every ADR from 0014 onward, and CI runs the check.
 - A `Holds` section with only `Default` and `Incidental` lines is valid.
 - Text outside `Holds` is background. It explains the decision; an agent does
   not follow it as an instruction.
-- Mechanism detail stays out of `Decision`: a version floor, a regex form, a
+- Mechanism detail stays out of `Background`: a version floor, a regex form, a
   substring match. Put it in `Holds` as `Incidental`, or leave it to the code.
 - `Revisit if` names the conditions that reopen the decision.
 - `Amendments` takes one dated line per relaxed or sharpened rule. A reversal

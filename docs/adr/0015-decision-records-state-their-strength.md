@@ -123,3 +123,8 @@ A Vale rule flags them and skips code spans.
 - 2026-09-29: two defaults become invariants. `lore lint adr` and its tests
   landed with PRD 0015. `Revisit if` and `Amendments` stay defaults, because
   the lint checks only `Holds`.
+- 2026-11-10: the ADR template shrinks to four required parts: the header,
+  `Holds`, `Revisit if` and `Alternatives considered` (PRD 0020). One optional
+  `Background` section replaces `Context`, `Decision` and `Consequences /
+  Trade-offs`. The `Status` section goes; the header line holds the status. The
+  lint still checks `Holds` and accepts the old nine-section shape.
