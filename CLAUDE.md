@@ -1,3 +1,5 @@
+@AGENTS.md
+
 ## Releasing
 
 Every merge to `main` that ships plugin-relevant behavior (hooks, MCP server,

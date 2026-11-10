@@ -31,28 +31,13 @@ EXPECTED_DIRECTIVE_LINES = [
     (
         "- File every team-relevant fact as a repo artifact the moment "
         "it appears, with the refs behind it. Never interrupt the user "
-        "to ask."
+        "to ask. `lore style show filing` names where each fact goes."
     ),
     (
-        "- A defect, a concrete change, a gap between docs and code, a "
-        "trap or a missing fact becomes an issue on the owning repo."
+        "- Never merge an ADR, PRD or wiki topic-note PR yourself; a human "
+        "merges it. Close only issues you opened; never change the state of "
+        "a human's issue or PR."
     ),
-    (
-        "- A feature idea outside the task's scope becomes a roadmap item: "
-        "run `lore roadmap add`. The next pull request carries it."
-    ),
-    "- A fact about an existing issue or PR becomes a comment on it.",
-    (
-        "- A dead end becomes an issue you opened, closed as not "
-        "planned, with the reason in the close comment."
-    ),
-    ("- A fact for a wiki topic note becomes a pull request on the wiki repo."),
-    (
-        "- An ADR, a PRD or a wiki topic-note edit outside a grilling "
-        "session is a pull request. A human merges it; never merge it "
-        "yourself."
-    ),
-    "- Close only issues you opened; never change the state of a human's issue or PR.",
     ("- At session end, list every artifact the session opened or commented on."),
     (
         "- ADRs and PRDs explain where the code comes from. Read them as "
@@ -77,22 +62,22 @@ def test_module_level_attribute_still_resolves():
     assert hooks.LORE_DIRECTIVE_LINES == EXPECTED_DIRECTIVE_LINES
 
 
-def test_directive_states_the_filing_rule_and_names_no_flag():
-    """The filing rule is the directive's write path: issue, comment, PR.
+def test_directive_states_the_filing_trigger_and_names_no_flag():
+    """The directive says when to file and names where to look up where.
 
-    A flag was the former crossing and no longer exists, so the text
-    must not send an agent looking for one.
+    The routing lines live in `lore style show filing` (PRD 0020). A flag
+    was the former crossing and no longer exists, so the text must not
+    send an agent looking for one.
     """
     joined = "\n".join(_load_directive_lines()).lower()
 
     assert "flag" not in joined
-    assert "becomes an issue" in joined
-    assert "a defect, a concrete change" in joined
-    assert "a feature idea outside the task's scope becomes a roadmap item" in joined
-    assert "lore roadmap add" in joined
-    assert "becomes a comment" in joined
-    assert "pull request" in joined
-    assert "closed as not planned" in joined
+    assert "file every team-relevant fact" in joined
+    assert "lore style show filing" in joined
+    assert "becomes an issue" not in joined
+    assert "becomes a roadmap item" not in joined
+    assert "never merge an adr, prd or wiki topic-note pr yourself" in joined
+    assert "close only issues you opened" in joined
 
 
 def test_directive_is_a_single_block_with_the_genre_rule():

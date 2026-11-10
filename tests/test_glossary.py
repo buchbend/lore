@@ -148,8 +148,9 @@ def test_session_start_injects_the_index_last(
         .invoke(hook_app, ["session-start", "--cwd", str(repo), "--plain", "--probe"], input="")
         .output
     )
-    assert out.rstrip().endswith("Ledger, Resume line, Freshness, Sink")
-    assert out.index("round 2 merged") < out.index("## Glossary")
+    terms = "Ledger, Resume line, Freshness, Sink"
+    assert out.rstrip().endswith(f"{terms}\nDetail: `lore glossary <term>`")
+    assert out.index("round 2 merged") < out.index("## Index")
 
 
 def test_session_start_without_glossary_names_none(

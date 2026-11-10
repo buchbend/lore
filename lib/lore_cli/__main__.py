@@ -64,6 +64,7 @@ def _build_app() -> typer.Typer:
         handover_cmd,
         hooks,
         inbox_cmd,
+        index_cmd,
         ingest_cmd,
         integrations,
         log_cmd,
@@ -118,6 +119,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(style_cmd.app, name="style", hidden=True)
     app.add_typer(codemap_cmd.app, name="codemap", hidden=True)
     app.add_typer(glossary_cmd.app, name="glossary", hidden=True)
+    app.add_typer(index_cmd.app, name="index", hidden=True)
     app.add_typer(map_cmd.app, name="map", hidden=True)
     app.add_typer(hooks.hook_app, name="hook", hidden=True)
     app.add_typer(inbox_cmd.app, name="inbox", hidden=True)

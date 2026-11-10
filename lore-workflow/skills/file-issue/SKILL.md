@@ -20,16 +20,17 @@ Never re-litigate the caller's judgement about whether something deserves an iss
 Do every step in the calling session. **Never spawn a subagent** — not to draft, not to
 lint, not to post. One subagent per issue is the cost this skill exists to avoid.
 
-## 1. Resolve the writing rules and the glossary
+## 1. Resolve the writing rules, the filing rules and the glossary
 
 ```bash
 lore style show writing-rules
+lore style show filing
 ```
 
-Read the output. It carries the required section skeleton, the EARS patterns for
-acceptance criteria, and the prose rules. **Never write from memory of the rules** — a
-team overrides the rules inside its wiki, so the resolved text is the only authority.
-Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
+`filing` names the home of each fact. `writing-rules` carries the required section skeleton, the
+EARS patterns for acceptance criteria, and the prose rules. **Never write from memory of the
+rules** — a team overrides the rules inside its wiki, so the resolved text is the only
+authority. Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 
 Use the repo's domain terms, which its `CONTEXT.md` defines. Print the ones you use with `lore
 glossary <term> [<term> …]` (`--cwd <checkout>` for another repo), and use no synonym. When the
