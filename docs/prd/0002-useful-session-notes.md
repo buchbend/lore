@@ -1,12 +1,14 @@
 ---
 title: Session notes that carry the essence, one per session
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/151
 repos:
   - buchbend/lore
 ---
 
 # PRD 0002: Session notes that carry the essence, one per session
+
+> Historical. Current decisions: ADR 0007.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/151).
 > The epic links here; this file is not embedded in the issue body.

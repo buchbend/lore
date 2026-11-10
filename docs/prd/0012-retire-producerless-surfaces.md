@@ -1,12 +1,14 @@
 ---
 title: Retire the producerless surfaces and restore flag transport
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/375
 repos:
   - buchbend/lore
 ---
 
 # PRD 0012: Retire the producerless surfaces and restore flag transport
+
+> Historical. Current decisions: ADR 0010, ADR 0012.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/375).
 > The epic links here; this file is not embedded in the issue body.

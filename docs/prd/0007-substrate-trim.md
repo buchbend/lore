@@ -1,12 +1,14 @@
 ---
 title: "Substrate trim: cut dead surface, consolidate CLI, split hooks"
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/257
 repos:
   - buchbend/lore
 ---
 
 # PRD 0007: Substrate trim — cut dead surface, consolidate CLI, split hooks
+
+> Historical. Current decisions: ADR 0010.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/257).
 > The epic links here; this file is not embedded in the issue body.
