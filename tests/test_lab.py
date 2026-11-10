@@ -261,16 +261,6 @@ def test_session_start_shows_the_lab_group(repo, tmp_path, spawned) -> None:
     assert "Does the LO drift stay under 0.1 K per hour?" in out
 
 
-def test_a_lab_entry_keeps_the_agents_md_block_current(repo, tmp_path) -> None:
-    from lore_core import repo_index
-
-    assert repo_index.write_agents_block(repo)
-    assert _add(tmp_path) == 0
-    assert repo_index.agents_block_is_current(repo)
-    assert "Lab entries" not in (repo / "AGENTS.md").read_text()
-    assert main(["index", "--check"]) == 0
-
-
 def test_filing_and_adr_0014_name_the_lab_entry_as_the_home_of_a_result() -> None:
     from lore_cli.style_cmd import app
     from typer.testing import CliRunner

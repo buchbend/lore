@@ -1,7 +1,8 @@
-"""`lore index` — the index of a repo, in the banner and in AGENTS.md (PRD 0020)."""
+"""`lore index` — the index of a repo, printed and in the banner (PRD 0020, ADR 0020)."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -77,39 +78,17 @@ def test_a_group_without_content_prints_no_line(tmp_path: Path) -> None:
     assert _index(root).output == ""
 
 
-def test_write_appends_the_block_then_replaces_only_the_text_between_the_markers(
-    repo: Path,
-) -> None:
-    agents = repo / "AGENTS.md"
-    agents.write_text("# Agents\n\nHand-written rules.\n")
-    assert _index(repo, "--write").exit_code == 0
-    first = agents.read_text()
-    assert first.startswith("# Agents\n\nHand-written rules.\n\n<!-- lore index: start")
-    assert "ADR 0002: The logbook" in first
-    agents.write_text(first + "\n## Tail\n\nKept.\n")
-    (repo / "docs" / "adr" / "0004-new.md").write_text("# ADR 0004: A new decision\n")
-    assert _index(repo, "--write").exit_code == 0
-    second = agents.read_text()
-    assert second.startswith("# Agents\n\nHand-written rules.\n\n<!-- lore index: start")
-    assert second.endswith("<!-- lore index: end -->\n\n## Tail\n\nKept.\n")
-    assert "ADR 0004: A new decision" in second
-    assert second.count("<!-- lore index: start") == 1
-
-
-def test_check_exits_1_and_names_the_file_when_the_block_is_stale(repo: Path) -> None:
-    assert _index(repo, "--check").exit_code == 1
-    _index(repo, "--write")
-    assert _index(repo, "--check").exit_code == 0
-    (repo / "docs" / "prd" / "0003-another.md").write_text(_prd("0003", "Another", "draft"))
-    result = _index(repo, "--check")
-    assert result.exit_code == 1
-    assert str(repo / "AGENTS.md") in result.output
+@pytest.mark.parametrize("option", ["--write", "--check"])
+def test_the_retired_block_options_are_usage_errors(repo: Path, option: str) -> None:
+    before = sorted(p.name for p in repo.iterdir())
+    assert _index(repo, option).exit_code == 2
+    assert sorted(p.name for p in repo.iterdir()) == before
 
 
 def _session_start(repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     from lore_cli.hooks import hook_app
 
-    (tmp_path / "vault" / "wiki").mkdir(parents=True)
+    (tmp_path / "vault" / "wiki").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("LORE_ROOT", str(tmp_path / "vault"))
     args = ["session-start", "--cwd", str(repo), "--plain", "--probe"]
     return CliRunner().invoke(hook_app, args, input="").output
@@ -169,72 +148,35 @@ def test_file_issue_reads_the_filing_rules_before_it_drafts() -> None:
     assert "lore style show filing" in step_one
 
 
-@pytest.mark.parametrize(
-    "markers",
-    [
-        "<!-- lore index: start -->\n",
-        "<!-- lore index: end -->\n<!-- lore index: start -->\n",
-        "<!-- lore index: start -->\n<!-- lore index: end -->\n" * 2,
-    ],
-)
-def test_write_refuses_unmatched_markers_and_keeps_the_user_text(repo: Path, markers: str) -> None:
-    agents = repo / "AGENTS.md"
-    text = f"# Agents\n\n{markers}\nHand-written rules.\n"
-    agents.write_text(text)
-    for _ in range(2):
-        result = _index(repo, "--write")
-        assert result.exit_code == 1
-        assert f"{agents}: unmatched lore index marker" in result.output
-    assert agents.read_text() == text
-    check = _index(repo, "--check")
-    assert check.exit_code == 1
-    assert "unmatched lore index marker" in check.output
-
-
-def test_the_repo_agents_md_block_is_current() -> None:
-    """A stale committed block fails the suite: run `lore index --write`."""
-    from lore_core import repo_index
-
-    root = Path(__file__).resolve().parent.parent
-    assert repo_index.agents_block_is_current(root), "run `lore index --write`"
-
-
-# --- the banner does not repeat what AGENTS.md already loaded -----------------
-
-
-def _with_block(repo: Path, *, imported: bool = True) -> None:
+def test_session_start_injects_the_full_index_beside_an_old_agents_block(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0020: SessionStart reads neither AGENTS.md nor CLAUDE.md for the index."""
     (repo / "CONTEXT.md").write_text("- **Ledger** — the working list.\n")
-    assert _index(repo, "--write").exit_code == 0
-    if imported:
-        (repo / "CLAUDE.md").write_text("@AGENTS.md\n")
-
-
-def test_session_start_points_to_a_current_agents_block_and_does_not_repeat_it(
-    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _with_block(repo)
+    old = "<!-- lore index: start -->\n## Index (`lore index`)\n<!-- lore index: end -->\n"
+    (repo / "AGENTS.md").write_text(old)
+    (repo / "CLAUDE.md").write_text("@AGENTS.md\n")
     out = _session_start(repo, tmp_path, monkeypatch)
-    assert "ADR 0001: One home per fact" not in out
-    assert "index block of `AGENTS.md`" in out
+    index = _index(repo).output.strip()
+    assert index and index in out
+    assert "is stale" not in out and "loaded above" not in out
+    (repo / "AGENTS.md").unlink()
+    (repo / "CLAUDE.md").unlink()
+    assert index in _session_start(repo, tmp_path, monkeypatch)
 
 
-def test_session_start_injects_the_full_index_and_a_hint_when_the_block_is_stale(
-    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _with_block(repo)
-    (repo / "docs" / "adr" / "0004-new.md").write_text("# ADR 0004: A new decision\n")
-    out = _session_start(repo, tmp_path, monkeypatch)
-    assert "ADR 0004: A new decision" in out
-    assert "is stale. Run `lore index --write`" in out
-
-
-def test_session_start_injects_the_full_index_when_claude_md_does_not_import_agents_md(
-    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _with_block(repo, imported=False)
-    out = _session_start(repo, tmp_path, monkeypatch)
-    assert "ADR 0001: One home per fact" in out
-    assert "is stale" not in out
+def test_the_repo_agents_md_and_docs_name_no_generated_block() -> None:
+    """ADR 0020. PRD 0020 and the logbook are records and keep their text."""
+    root = Path(__file__).resolve().parent.parent
+    assert "lore index:" not in (root / "AGENTS.md").read_text(encoding="utf-8")
+    offenders = [
+        str(p.relative_to(root))
+        for p in (root / "docs").rglob("*.md")
+        if p.name != "0020-index-first-context-and-lab-notebook.md"
+        and p.relative_to(root).parts[1] != "logbook"
+        and re.search(r"lore index --(write|check)", p.read_text(encoding="utf-8"))
+    ]
+    assert not offenders
 
 
 def test_a_title_keeps_a_leading_number_that_is_not_the_document_number(repo: Path) -> None:
@@ -242,64 +184,3 @@ def test_a_title_keeps_a_leading_number_that_is_not_the_document_number(repo: Pa
     out = _index(repo).output
     assert "- ADR 0004: 3-tier model routing" in out
     assert "- ADR 0003: Search is federated" in out
-
-
-def test_write_ignores_a_marker_in_a_code_span_or_block(repo: Path) -> None:
-    agents = repo / "AGENTS.md"
-    quoted = (
-        "Write `<!-- lore index: start -->` and `<!-- lore index: end -->` by hand.\n\n"
-        "```\n<!-- lore index: start -->\n<!-- lore index: end -->\n```\n"
-    )
-    agents.write_text(f"# Agents\n\n{quoted}")
-    assert _index(repo, "--write").exit_code == 0
-    assert _index(repo, "--write").exit_code == 0
-    text = agents.read_text()
-    assert text.startswith(f"# Agents\n\n{quoted}")
-    assert text.count("### ADRs") == 1
-    assert _index(repo, "--check").exit_code == 0
-
-
-_START, _END = "<!-- lore index: start -->", "<!-- lore index: end -->"
-
-
-@pytest.mark.parametrize(
-    "quoted",
-    [
-        f"    {_START}\n    {_END}\n",  # indented code block
-        f"Write ``{_START}`` and ``{_END}`` by hand.\n",  # double-backtick span
-        f"- an item:\n\n  ```\n  {_START}\n  {_END}\n  ```\n",  # fence in a list item
-        f"````\n```\n{_START}\n{_END}\n```\n````\n",  # fence around a fence
-        f"~~~\n```\n{_START}\n~~~\n",  # a fence closes only on its own character
-        "```\nnever closed\n",  # an unclosed fence hides no real block
-    ],
-)
-def test_write_ignores_a_marker_in_any_code_form(repo: Path, quoted: str) -> None:
-    agents = repo / "AGENTS.md"
-    agents.write_text(f"# Agents\n\n{quoted}")
-    assert _index(repo, "--write").exit_code == 0
-    assert _index(repo, "--write").exit_code == 0
-    text = agents.read_text()
-    assert text.startswith(f"# Agents\n\n{quoted}")
-    assert text.count("### ADRs") == 1
-    assert _index(repo, "--check").exit_code == 0
-
-
-@pytest.mark.parametrize(
-    ("before", "after"),
-    [
-        ("﻿", "\n"),  # a byte order mark opens the file
-        ("# Agents\n\n  ", "\n"),  # a block indented by two spaces
-        # a closed fence that quotes a marker, and a fence that never closes
-        (f"```\n{_END}\n```\n\n", "\n\n```\nnever closed\n"),
-    ],
-)
-def test_write_replaces_the_real_block_in_place(repo: Path, before: str, after: str) -> None:
-    agents = repo / "AGENTS.md"
-    agents.write_text(f"{before}{_START}\nstale\n{_END}{after}", encoding="utf-8")
-    assert _index(repo, "--write").exit_code == 0
-    text = agents.read_text(encoding="utf-8")
-    assert text.startswith(f"{before}<!-- lore index: start")
-    assert text.endswith(f"{_END}{after}")
-    assert "stale" not in text
-    assert text.count("### ADRs") == 1
-    assert _index(repo, "--check").exit_code == 0

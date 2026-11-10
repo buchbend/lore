@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 from lore_cli.__main__ import app
-from lore_core import repo_index
 from lore_core.style import KNOWN_STYLES, UnknownStyle, resolve_style_path
 from typer.testing import CliRunner
 
@@ -315,9 +314,6 @@ def test_no_tracked_file_names_the_retired_style() -> None:
         if path.suffix not in TEXT_SUFFIXES or not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
-        if rel == "AGENTS.md" and (parts := repo_index._split(text)):
-            # The generated index block quotes PRD titles, PRD 0009's among them.
-            text = parts[0] + parts[2]
         joined = " ".join(text.split())
         if RETIRED_TERM.search(joined):
             offenders.append(rel)

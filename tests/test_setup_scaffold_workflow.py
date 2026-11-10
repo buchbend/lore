@@ -54,19 +54,37 @@ def test_scaffold_flag_idempotent_on_rerun(repo: Path) -> None:
     assert (repo / "docs" / "prd" / "index.md").read_text() == before
 
 
-def test_scaffold_flag_writes_the_index_block(repo: Path) -> None:
+_ALL = "Decisions: `docs/adr/`. Specs: `docs/prd/`. Terms: `CONTEXT.md`. Plan: `ROADMAP.md`."
+
+
+def test_scaffold_flag_appends_the_static_pointer_and_no_generated_index(repo: Path) -> None:
     (repo / "docs" / "adr").mkdir(parents=True)
     (repo / "docs" / "adr" / "0001-one-home.md").write_text("# ADR 0001: One home per fact\n")
+    (repo / "CONTEXT.md").write_text("- **Ledger** — the working list.\n")
+    (repo / "ROADMAP.md").write_text("# Roadmap\n")
     assert _scope("--scaffold-workflow").exit_code == 0
     agents = (repo / "AGENTS.md").read_text()
-    assert "<!-- lore index: start" in agents and "<!-- lore index: end -->" in agents
-    assert "ADR 0001: One home per fact" in agents
-    assert runner.invoke(app, ["index", "--check"]).exit_code == 0
+    assert agents.endswith(
+        f"## Where to look\n{_ALL}\nWith Lore: `lore index` lists all of them.\n"
+    )
+    assert "One home per fact" not in agents and "lore index:" not in agents
 
 
-def test_scaffold_flag_on_a_repo_without_inputs_writes_no_index_block(repo: Path) -> None:
+def test_scaffold_flag_names_only_the_paths_that_exist(repo: Path) -> None:
     assert _scope("--scaffold-workflow").exit_code == 0
-    assert "lore index" not in (repo / "AGENTS.md").read_text()
+    agents = (repo / "AGENTS.md").read_text()
+    assert "## Where to look\nDecisions: `docs/adr/`. Specs: `docs/prd/`.\nWith Lore:" in agents
+    assert "CONTEXT.md" not in agents and "ROADMAP.md" not in agents
+
+
+def test_scaffold_flag_leaves_an_existing_where_to_look_paragraph(repo: Path) -> None:
+    (repo / "AGENTS.md").write_text("## Where to look\nAsk Ada.\n")
+    (repo / "CONTEXT.md").write_text("- **Ledger** — the working list.\n")
+    assert _scope("--scaffold-workflow").exit_code == 0
+    assert _scope("--scaffold-workflow").exit_code == 0
+    agents = (repo / "AGENTS.md").read_text()
+    assert agents.startswith("## Where to look\nAsk Ada.\n")
+    assert agents.count("## Where to look") == 1 and "CONTEXT.md" not in agents
 
 
 def test_scaffold_adr_index_names_the_adr_template_sections(repo: Path) -> None:

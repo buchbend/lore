@@ -183,9 +183,8 @@ Terms used in the workflow layer and orchestration:
 - **Index** — the short list of what a repo holds: terms, ADR titles,
   current PRDs, roadmap headings, neighbours and the newest lab entries.
   Each group names the command that pulls the detail. `lore index` prints
-  it, and SessionStart injects it. `AGENTS.md` holds a committed copy
-  without the neighbours and the lab entries, which differ per machine or
-  change often. _Avoid_: overview, map, table of contents.
+  it, and SessionStart injects it. The index reads its inputs at call
+  time, and no file holds a copy. _Avoid_: overview, map, table of contents.
 - **Writing rules** — the prose style an agent uses for issue text, PR
   descriptions, PR review comments, ADR context sections and design
   documents. Session notes stay out. The document holds sentence and
