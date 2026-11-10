@@ -27,10 +27,8 @@ lore style show writing-rules
 lore style show filing
 ```
 
-Read both outputs. `filing` names where each fact goes: an issue, a comment, a roadmap
-item or a pull request. Check that this artifact is the right home before you draft.
-`writing-rules` carries the required section skeleton, the EARS patterns for
-acceptance criteria, and the prose rules. **Never write from memory of the rules** — a
+`filing` names where each fact goes; check that this artifact is its home. `writing-rules`
+carries the section skeleton, the EARS patterns for acceptance criteria, and the prose rules. **Never write from memory of the rules** — a
 team overrides the rules inside its wiki, so the resolved text is the only authority.
 Add `--wiki <name>` when the target repo belongs to a wiki other than the cwd's.
 

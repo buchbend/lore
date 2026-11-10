@@ -277,9 +277,11 @@ RETIRED_TERM = re.compile(
 )
 
 # Files that name the retired term on purpose: the alias itself, the decisions
-# recorded under it, and the entries for releases that shipped it.
+# recorded under it, and the entries for releases that shipped it. AGENTS.md
+# quotes the PRD 0009 title in its generated index block.
 KEEPS_THE_RETIRED_TERM = frozenset(
     {
+        "AGENTS.md",
         "CHANGELOG.md",
         "CONTEXT.md",
         "docs/how-to/customize-the-writing-rules.md",
