@@ -8,6 +8,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.99.1] - 2026-11-10
+
+Issue #579 (let `lore handover show` find the note after `/clear`).
+
+### Fixed
+
+- **`lore handover show` finds the note after `/clear`.** Without a live note the command prints the newest archived note of the directory and names its path on stderr. The command exited 1 before.
+- **The banner says "handover pointed to"** after `/clear` or compaction. The banner said "handover loaded" before; SessionStart loads no note text.
+- **The handover pointer follows the status line.** The pointer sits inside the 2,000 characters that Claude Code shows of a text over 10,000 characters. The pointer stood near the end of the text before.
+
 ## [0.99.0] - 2026-11-10
 
 Issue #576 (name the route and the person's scopes in the index).

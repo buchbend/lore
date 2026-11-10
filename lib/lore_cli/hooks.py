@@ -658,7 +658,10 @@ def cmd_session_start(
         handover_notice = status_line(cwd_resolved, payload.get("source"))
         block = session_start_block(cwd_resolved, payload.get("source"), probe=probe)
         if block:
-            out = out + "\n\n" + block
+            # Directly after the status line: inside the 2,000 characters
+            # Claude Code shows of a text over the hook limit (issue #579).
+            head, _, rest = out.partition("\n")
+            out = "\n\n".join(p for p in (head, block, rest.lstrip("\n")) if p)
     except Exception:  # noqa: BLE001 - handover must never crash SessionStart
         pass
 

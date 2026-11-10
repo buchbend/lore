@@ -110,6 +110,18 @@ def test_startup_offers_the_note_in_one_line(env: Path) -> None:
     assert handover.read(env) == NOTE
 
 
+def test_pointer_follows_the_status_line_in_a_text_over_the_hook_limit(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lore_cli import hooks
+
+    monkeypatch.setattr(hooks, "_session_start", lambda cwd: "lore: active\n" + "x" * 12_000)
+    handover.write(env, NOTE)
+    out = _session_start(env, "clear")
+    assert out.splitlines()[0] == "lore: active"
+    assert out.index("Read the whole file before any other action.") < 2_000
+
+
 def test_probe_never_archives(env: Path) -> None:
     handover.write(env, NOTE)
     _session_start(env, "clear", probe=True)
@@ -128,7 +140,8 @@ def _banner(cwd: Path, source: str) -> str:
 
 def test_banner_shows_the_note_was_found_and_its_goal(env: Path) -> None:
     handover.write(env, NOTE)
-    assert "handover loaded" in _banner(env, "clear")
+    assert "handover pointed to" in _banner(env, "clear")
+    assert "handover pointed to" in _banner(env, "compact")
     assert "Ship the handover hook." in _banner(env, "clear")
     assert "handover available" in _banner(env, "startup")
 
@@ -168,3 +181,24 @@ def test_cli_write_reads_stdin_and_show_prints_it(env: Path) -> None:
 def test_cli_show_without_note_fails(env: Path) -> None:
     result = CliRunner().invoke(handover_app, ["show", "--cwd", str(env)])
     assert result.exit_code != 0
+
+
+def test_cli_show_prints_the_newest_archived_note_after_clear(env: Path) -> None:
+    handover.write(env, "old note")
+    old = handover.archive(env)
+    old.rename(old.with_name(old.name.replace(".2", ".1", 1)))  # an earlier stamp
+    handover.write(env, NOTE)
+    archived = handover.archive(env)
+    shown = CliRunner().invoke(handover_app, ["show", "--cwd", str(env)])
+    assert shown.exit_code == 0
+    assert NOTE in shown.output
+    assert "old note" not in shown.output
+    assert str(archived) in shown.output
+
+
+def test_cli_show_prefers_the_live_note(env: Path) -> None:
+    handover.write(env, "old note")
+    handover.archive(env)
+    handover.write(env, NOTE)
+    shown = CliRunner().invoke(handover_app, ["show", "--cwd", str(env)])
+    assert shown.output == NOTE
