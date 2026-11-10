@@ -6,7 +6,8 @@ Then nobody digs the fact out of a chat window later.
 Lore writes nothing into a wiki on its own. Agents and people file facts with
 `gh` and the `lore-workflow:file-issue` skill. `lore roadmap add` files a
 feature idea in the roadmap ([keep a roadmap](keep-a-roadmap.md)).
-The SessionStart directive tells the agent the filing rule below.
+The SessionStart directive tells the agent when to file. `lore style show filing`
+prints the core of the filing rule below.
 
 ## Before you start
 
@@ -21,7 +22,9 @@ The SessionStart directive tells the agent the filing rule below.
 | A feature idea outside the scope of the task | A roadmap item: run `lore roadmap add "Title" ["paragraph"]`. The next pull request carries it. |
 | A trivial fix close to the work in hand | A fix on the session branch, named in the PR body |
 | About an existing issue or PR | A comment on that issue or PR |
-| A dead end and its reason | An issue you open, closed as not planned, with the reason in the close comment |
+| An experiment result | A lab entry: run the `experiment` skill or `lore lab add`. See [run an experiment](run-an-experiment.md). |
+| A dead end in an experiment | A lab entry with status `dead-end` |
+| A dead end in software work, and its reason | An issue you open, closed as not planned, with the reason in the close comment |
 | A decision | A pull request holding the ADR draft. A human merges it. |
 | Across several repos | An edge in the system map, proposed with `/lore:map` |
 | For a wiki topic note | A pull request on the wiki repo with the edit |

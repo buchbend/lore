@@ -107,18 +107,21 @@ not from anything injected ambiently:
 
 - `lore_search`, `lore_read` — retrieval primitives.
 - `lore_drill` — one composite `search → read → expand wikilinks →
+<<<<<<< HEAD
   read_expanded` call with a structured trace.
 - `lore_inbox_classify` — read-only gather that a skill turns into
   prose, then commits via a CLI verb.
 - `lore_pending_verdicts` / `lore_verdict` — list and record freshness
   verdicts; backs `/lore:verify` and the in-passing verdict nudge.
+=======
+  read_expanded` call with a structured trace
+  (`docs/architecture/lore-drill.md`).
+>>>>>>> origin/main
 - `lore_repo_docs_list` / `lore_repo_docs_fetch`
   (`lore_core/repo_docs.py`) — pull-only reads of a connected repo's
   `docs/adr/` and `docs/prd/`. Ratified decisions live in the repo, not
   in the vault; Lore reads them on request instead of re-deriving them
   from session transcripts.
-- `lore_tier_resolve` — resolve a semantic model tier to the concrete
-  model for the current host before spawning a subagent.
 - `lore_codemap` — bounded, cached slice of the connected repo's code
   map (symbols / directory / callers modes), never the whole map.
 - `lore_context_pack` (`lore_core/context_pack.py`) — a deterministic
@@ -183,8 +186,14 @@ Terms used in the workflow layer and orchestration:
   Distinct from a full `lore_context_pack`, which joins ADRs/PRDs and epic
   state; the codemap excerpt is the code-navigation half only.
 - **Glossary index** — the list of words that a repo's `CONTEXT.md`
-  defines, without their definitions. SessionStart injects it.
+  defines, without their definitions. It is the terms group of the index.
   `lore glossary <term>` prints one definition on demand.
+- **Index** — the short list of what a repo holds: terms, ADR titles,
+  current PRDs, roadmap headings, neighbours and the newest lab entries.
+  Each group names the command that pulls the detail. `lore index` prints
+  it, and SessionStart injects it. `AGENTS.md` holds a committed copy
+  without the neighbours and the lab entries, which differ per machine or
+  change often. _Avoid_: overview, map, table of contents.
 - **Writing rules** — the prose style an agent uses for issue text, PR
   descriptions, PR review comments, ADR context sections and design
   documents. Session notes stay out. The document holds sentence and
@@ -310,6 +319,10 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
   shipped, the decisions, the deviations from the PRD, the follow-ups and
   the known limits. `build` writes it at the finish point. The `handover`
   skill writes it for work that stops early.
+- **Spec branch** — the branch that holds the PRD of an epic before the
+  build. `to-epic` names it in the epic body. `build` merges it into the
+  epic branch when the target branch lacks the PRD. _Avoid_: docs branch,
+  PRD branch.
 - **Seed issue** — a tracker issue labeled `epic-seed` that the `handover`
   skill writes. It carries intent and findings for a cold session to
   orient on. It is no spec.
@@ -326,6 +339,11 @@ ships, the term names the planned behavior.
   It has four labelled parts: why, what we did, consequences, not done yet.
   It explains the work to a human reader and links to the homes of the facts.
   _Avoid_: log, post, summary.
+- **Lab entry** — the dated record of one experiment. It has five labelled
+  parts and a stamp that Lore writes. Nobody edits it. Decision in ADR 0019.
+  _Avoid_: note, log, run.
+- **Thread** — the lab entries that follow one idea. Its status is open,
+  concluded or dead-end. _Avoid_: series, track.
 - **Source** — a system that `lore_search` queries live, next to the
   wiki index. Each source returns its own list of hits. _Avoid_: backend,
   provider.

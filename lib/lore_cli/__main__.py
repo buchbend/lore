@@ -64,8 +64,10 @@ def _build_app() -> typer.Typer:
         handover_cmd,
         hooks,
         inbox_cmd,
+        index_cmd,
         ingest_cmd,
         integrations,
+        lab_cmd,
         log_cmd,
         map_cmd,
         mcp_cmd,
@@ -81,6 +83,7 @@ def _build_app() -> typer.Typer:
         toggle_cmd,
         trace_cmd,
         transcripts_cmd,
+        verdict_cmd,
         wiki_cmd,
         workflow_cmd,
     )
@@ -108,6 +111,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(handover_cmd.app, name="handover", hidden=True)
     app.add_typer(wiki_cmd.app, name="wiki", rich_help_panel=_KN)
     app.add_typer(log_cmd.app, name="log", rich_help_panel=_KN)
+    app.add_typer(lab_cmd.app, name="lab", rich_help_panel=_KN)
     app.add_typer(roadmap_cmd.app, name="roadmap", rich_help_panel=_KN)
     app.add_typer(system_cmd.app, name="system", rich_help_panel=_KN)
     app.add_typer(toggle_cmd.on_app, name="on", hidden=True)
@@ -117,12 +121,14 @@ def _build_app() -> typer.Typer:
     app.add_typer(style_cmd.app, name="style", hidden=True)
     app.add_typer(codemap_cmd.app, name="codemap", hidden=True)
     app.add_typer(glossary_cmd.app, name="glossary", hidden=True)
+    app.add_typer(index_cmd.app, name="index", hidden=True)
     app.add_typer(map_cmd.app, name="map", hidden=True)
     app.add_typer(hooks.hook_app, name="hook", hidden=True)
     app.add_typer(inbox_cmd.app, name="inbox", hidden=True)
     app.add_typer(ingest_cmd.app, name="ingest", hidden=True)
     app.add_typer(mcp_cmd.app, name="mcp", hidden=True)
     app.add_typer(migrate_cmd.app, name="migrate", hidden=True)
+    app.add_typer(verdict_cmd.app, name="verdict", hidden=True)
     app.add_typer(trace_cmd.app, name="trace", hidden=True)
     app.add_typer(transcripts_cmd.app, name="transcripts", hidden=True)
     app.add_typer(workflow_cmd.app, name="workflow", hidden=True)

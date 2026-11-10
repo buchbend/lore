@@ -25,7 +25,7 @@ from pathlib import Path
 
 # Style names Lore ships a default for. The per-wiki override uses the same
 # file name under `<wiki>/style/`.
-KNOWN_STYLES: tuple[str, ...] = ("writing-rules",)
+KNOWN_STYLES: tuple[str, ...] = ("writing-rules", "filing")
 
 # Retired style names and the style each one resolves to. Instruction files in
 # other repos already carry `lore style show issue-register`, so the old name

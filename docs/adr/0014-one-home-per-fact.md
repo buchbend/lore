@@ -55,6 +55,7 @@ Lore routes each kind of fact to one home:
 | Where is the code heading, and in what order? | roadmap: `ROADMAP.md` in the repo; across repos, a wiki topic note | human; an agent adds an item under "Not placed yet" through its PR |
 | What shipped, what changed, what is left? | handover section | `build` at its finish point |
 | Why was this work done, and what does it mean for the team? | logbook entry in the scope's sinks | `build` at its finish point (ADR 0017) |
+| What did we try, and what came out? | lab entry in the scope's lab sinks, `docs/lab/` by default | the `experiment` skill, or `lore lab add` (ADR 0019) |
 | What was said in the session? | transcript copy (personal) | Lore capture |
 
 The trail from code back to intent is a chain of links. `git blame` leads to
@@ -112,3 +113,8 @@ dropped, or filed as an issue.
   through generic contracts). A roadmap holds direction and order. Dates
   stay in milestones, and a roadmap item links to its milestone, PRD or
   issue instead of restating them.
+- 2026-11-10: new row "What did we try, and what came out?" with the lab
+  entry as its home (PRD 0020, index-first context and the lab notebook;
+  ADR 0019, the lab notebook). One lab entry records one experiment. A dead
+  end in an experiment is a lab entry with status `dead-end`; a dead end in
+  software work stays a closed issue.

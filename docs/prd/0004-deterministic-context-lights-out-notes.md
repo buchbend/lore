@@ -1,12 +1,14 @@
 ---
 title: Deterministic context, lights-out notes
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/162
 repos:
   - buchbend/lore
 ---
 
 # PRD 0004: Deterministic context, lights-out notes
+
+> Historical. Current decisions: ADR 0007.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/162).
 > The epic links here; this file is not embedded in the issue body.

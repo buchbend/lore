@@ -4,7 +4,7 @@ A team-mode conflict surfaces when one user marked a note stale
 (team-wide frontmatter ``status: stale``) and a second user (or the
 same user later) personally confirmed it. The asymmetric storage
 means the two verdicts coexist silently; the disagreement detector
-spots the contradiction so the in-passing nudge can ask for an
+spots the contradiction so `/lore:verify` can ask for an
 explicit resolution.
 
 Pure: no I/O. Inputs are the parsed frontmatter dict and the (already
