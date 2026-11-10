@@ -84,3 +84,14 @@ def test_spec_branch_only_on_origin_counts(tmp_path: Path) -> None:
 def test_validate_build_order_accepts_the_spec_branch_line() -> None:
     r = CliRunner().invoke(workflow_cmd.app, ["validate-build-order", "-"], input=BODY)
     assert r.exit_code == 0, r.output
+
+
+def test_template_placeholder_is_not_a_branch(tmp_path: Path) -> None:
+    body = BODY.replace("`spec/x`", "`<branch holding the PRD>`")
+    r = _run(_repo(tmp_path / "r", prd_on="none"), body)
+    assert r.exit_code == 1
+
+
+def test_not_a_repo_is_a_clean_error(tmp_path: Path) -> None:
+    r = _run(tmp_path, BODY)
+    assert r.exit_code == 1 and r.exception is None or isinstance(r.exception, SystemExit)

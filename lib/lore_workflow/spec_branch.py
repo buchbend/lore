@@ -30,9 +30,12 @@ class SpecBranch:
 
 def _holds(repo: Path, branch: str, path: str) -> bool:
     for ref in (branch, f"origin/{branch}"):
-        r = subprocess.run(
-            ["git", "cat-file", "-e", f"{ref}:{path}"], cwd=str(repo), capture_output=True
-        )
+        try:
+            r = subprocess.run(
+                ["git", "cat-file", "-e", f"{ref}:{path}"], cwd=str(repo), capture_output=True
+            )
+        except OSError as exc:
+            raise SpecBranchError(f"cannot run git in {repo}: {exc}") from None
         if r.returncode == 0:
             return True
     return False
@@ -45,11 +48,17 @@ def resolve_spec_branch(body: str, repo: Path, target_branch: str) -> SpecBranch
     prd = prd_m.group(1)
     branch_m = _BRANCH_RE.search(body)
     branch = branch_m.group(1) if branch_m else None
+    if branch and branch.startswith("<"):  # template placeholder, not a branch
+        branch = None
     if _holds(repo, target_branch, prd):
         return SpecBranch(branch, prd, False)
     if branch and _holds(repo, branch, prd):
         return SpecBranch(branch, prd, True)
     raise SpecBranchError(
-        f"{prd} is on {target_branch} nowhere and the epic body names "
-        + (f"spec branch {branch}, which lacks it" if branch else "no **Spec branch:**")
+        f"{prd} is not on {target_branch} and "
+        + (
+            f"spec branch {branch} lacks it"
+            if branch
+            else "the body names no **Spec branch:**"
+        )
     )
