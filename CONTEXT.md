@@ -107,16 +107,8 @@ not from anything injected ambiently:
 
 - `lore_search`, `lore_read` — retrieval primitives.
 - `lore_drill` — one composite `search → read → expand wikilinks →
-<<<<<<< HEAD
-  read_expanded` call with a structured trace.
-- `lore_inbox_classify` — read-only gather that a skill turns into
-  prose, then commits via a CLI verb.
-- `lore_pending_verdicts` / `lore_verdict` — list and record freshness
-  verdicts; backs `/lore:verify` and the in-passing verdict nudge.
-=======
   read_expanded` call with a structured trace
   (`docs/architecture/lore-drill.md`).
->>>>>>> origin/main
 - `lore_repo_docs_list` / `lore_repo_docs_fetch`
   (`lore_core/repo_docs.py`) — pull-only reads of a connected repo's
   `docs/adr/` and `docs/prd/`. Ratified decisions live in the repo, not

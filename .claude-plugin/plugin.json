@@ -1,19 +1,13 @@
 {
   "name": "lore",
-<<<<<<< HEAD
   "description": "Workflow and knowledge layer for teams coding with Claude Code \u2014 small repo-scoped context at session start, facts filed where they have a reader (issues, PRs, ADRs, team wiki, logbook), the rest pulled on demand over MCP.",
-  "version": "0.94.0",
-=======
-  "description": "LLM-optimized knowledge graph for AI-coding teams \u2014 transcripts captured and archived, facts filed as repo artifacts, repo-scoped context injected at session start.",
   "version": "0.95.0",
->>>>>>> origin/main
   "author": {
     "name": "Christof Buchbender"
   },
   "homepage": "https://github.com/buchbend/lore",
   "license": "MIT",
   "keywords": [
-    "knowledge-graph",
     "obsidian",
     "mcp",
     "rag"
