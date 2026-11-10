@@ -184,3 +184,77 @@ def test_a_title_keeps_a_leading_number_that_is_not_the_document_number(repo: Pa
     out = _index(repo).output
     assert "- ADR 0004: 3-tier model routing" in out
     assert "- ADR 0003: Search is federated" in out
+
+
+# --- the route and the scopes of the person (issue #576) -------------------
+
+
+def _person(tmp_path: Path, repo: Path, **extra: object) -> None:
+    import yaml
+    from lore_core.config import user_config_path
+
+    cfg = {
+        "scopes": {
+            "mine": {"path": str(repo), "wiki": "w1", "logbook": ["file", "pm"], "sources": ["dw"]},
+            "other": {"path": str(tmp_path / "elsewhere"), "wiki": "w2"},
+        },
+        "sinks": {"pm": {"kind": "command", "run": "pm log X"}},
+        "sources": {"dw": {"kind": "dokuwiki"}},
+        **extra,
+    }
+    path = user_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(cfg))
+
+
+def test_the_index_names_the_route_and_the_scopes(repo: Path, tmp_path: Path) -> None:
+    _person(tmp_path, repo)
+
+    out = _index(repo).output
+
+    assert "### Route" in out
+    assert "- wiki w1: `lore_search`" in out
+    assert "- tracker auto" in out
+    assert "- sink pm (command): `pm`" in out
+    assert "sink file" not in out
+    assert "- source dw (dokuwiki)" in out
+    assert f"- mine: {repo}, wiki w1 (here)" in out
+    assert f"- other: {tmp_path / 'elsewhere'}, wiki w2\n" in out
+    assert "`lore glossary --cwd <folder>`" in out
+
+
+def test_a_command_sink_names_its_hint_and_no_tool_for_a_shell_line(
+    repo: Path, tmp_path: Path
+) -> None:
+    shell = "(printf x; cat) | pm log X"
+    _person(tmp_path, repo, sinks={"pm": {"kind": "command", "run": shell, "hint": "pm show"}})
+    assert "- sink pm (command): `pm show`" in _index(repo).output
+
+    _person(tmp_path, repo, sinks={"pm": {"kind": "command", "run": shell}})
+    assert "- sink pm (command)\n" in _index(repo).output
+
+
+def test_no_scope_prints_no_route_and_one_scope_prints_no_scopes(
+    repo: Path, tmp_path: Path
+) -> None:
+    (repo / "CONTEXT.md").write_text("- **Ledger** — the working list.\n")
+    assert "### Route" not in _index(repo).output
+
+    _person(tmp_path, repo, scopes={"mine": {"path": str(repo), "wiki": "w1"}})
+    out = _index(repo).output
+    assert "### Route" in out
+    assert "### Scopes" not in out
+
+
+def test_over_budget_the_route_and_the_scopes_stay_whole(repo: Path, tmp_path: Path) -> None:
+    from lore_core import repo_index
+
+    _person(tmp_path, repo)
+    for n in range(4, 60):
+        (repo / "docs" / "adr" / f"{n:04d}-x.md").write_text(f"# A decision with a title {n}\n")
+
+    out = repo_index.index_text(repo_index.groups(repo), budget=600)
+
+    assert "more" in out
+    assert "- sink pm (command): `pm`" in out
+    assert "- other: " in out

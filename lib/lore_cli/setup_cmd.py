@@ -698,6 +698,9 @@ def setup_sink(
     secret: str = typer.Option(
         None, "--secret", help="command: a secret name; its value arrives as $LORE_SECRET."
     ),
+    hint: str = typer.Option(
+        None, "--hint", help="command: the tool an agent queries the place with, such as `pm`."
+    ),
     scope: str = typer.Option(
         None, "--scope", help="Add the sink to this scope's logbook list (default: [file, NAME])."
     ),
@@ -716,6 +719,8 @@ def setup_sink(
     if not re.fullmatch(r"[\w.-]+", name):
         raise typer.BadParameter(f"sink name {name!r}: use letters, digits, '.', '_' or '-'")
     spec = {"kind": kind, **({"run": run} if run else {}), **({"secret": secret} if secret else {})}
+    if hint:
+        spec["hint"] = hint
     person = _read_person()
     scopes = person.get("scopes") if isinstance(person.get("scopes"), dict) else {}
     if scope and not isinstance(scopes.get(scope), dict):

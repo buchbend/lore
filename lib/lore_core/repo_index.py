@@ -1,9 +1,9 @@
 """The index of a repo: what it holds, one line per item (PRD 0020).
 
-One group each for glossary terms, ADR titles, current PRDs, roadmap headings,
-neighbours and the newest lab entries. Each group ends with the command that pulls the detail. A
-group without content prints nothing. Pure filesystem reads: no model call,
-no network call.
+One group each for the route, the person's scopes, glossary terms, ADR titles,
+current PRDs, roadmap headings, neighbours and the newest lab entries. Each
+group ends with the command that pulls the detail. A group without content
+prints nothing. Pure filesystem reads: no model call, no network call.
 
 SessionStart injects the index and ``lore index`` prints it. No file holds a
 copy (ADR 0020): the index reads its inputs at call time.
@@ -25,13 +25,14 @@ BUDGET_CHARS = 2000
 class Group:
     """One group of the index. *items* run oldest first, or newest first with *newest_first*.
 
-    A cut drops the oldest."""
+    A cut drops the oldest. A *whole* group takes no cut."""
 
     heading: str
     items: list[str]
     detail: str
     joiner: str = "\n"
     newest_first: bool = False
+    whole: bool = False
 
 
 def _number(path: str) -> str:
@@ -78,6 +79,66 @@ def _lab_lines(repo_root: Path) -> list[str]:
     return [f"- {str(s.get('date', ''))[:10]}: {lab.question(b)}" for _, s, b in newest]
 
 
+def _tool(spec: dict) -> str:
+    """The tool a ``command`` sink names: its ``hint``, else the first word of ``run``.
+
+    A ``run`` line that opens with shell syntax, as in ``(printf …) | pm``, names no tool."""
+    hint = spec.get("hint")
+    if isinstance(hint, str) and hint.strip():
+        return hint.strip()
+    first = str(spec.get("run") or "").split(None, 1)[:1]
+    return first[0] if first and re.fullmatch(r"[\w./-]+", first[0]) else ""
+
+
+def _route_groups(repo_root: Path) -> list[Group]:
+    """The route of *repo_root* and the scopes of the person (issue #576).
+
+    Both come from the person's config and stay on the machine (ADR 0009)."""
+    from lore_core.config import user_config_path
+    from lore_core.config_schema import _read_raw
+    from lore_core.route import resolve_route
+
+    route = resolve_route(repo_root)
+    person = _read_raw(user_config_path())
+
+    def table(key: str) -> dict:
+        value = person.get(key)
+        return (
+            {n: s for n, s in value.items() if isinstance(s, dict)}
+            if isinstance(value, dict)
+            else {}
+        )
+
+    out = []
+    if route.scope:
+        items = [f"- wiki {route.wiki}: `lore_search`, `lore_drill` (MCP)"] if route.wiki else []
+        items.append(f"- tracker {route.tracker}" + (": `gh`" if route.tracker == "auto" else ""))
+        sinks = table("sinks")
+        for name in route.sinks:
+            if name != "file":
+                spec = sinks.get(name, {})
+                tool = _tool(spec)
+                items.append(
+                    f"- sink {name} ({spec.get('kind', '?')})" + (f": `{tool}`" if tool else "")
+                )
+        sources = table("sources")
+        items += [
+            f"- source {name} ({sources.get(name, {}).get('kind', '?')}): `lore_search`"
+            for name in route.sources
+        ]
+        out.append(Group("### Route (where to ask)", items, "Detail: `lore status`", whole=True))
+    scopes = table("scopes")
+    if len(scopes) >= 2:
+        items = [
+            f"- {name}: {s.get('path', '?')}, wiki {s.get('wiki', 'none')}"
+            + (" (here)" if name == route.scope else "")
+            for name, s in scopes.items()
+        ]
+        detail = "Another scope: `lore glossary --cwd <folder>`, `lore_search` with `wiki`"
+        out.append(Group("### Scopes", items, detail, whole=True))
+    return out
+
+
 def groups(repo_root: Path, neighbours: list[str] | None = None) -> list[Group]:
     """Every group of the index of *repo_root*, empty ones left out.
 
@@ -92,6 +153,7 @@ def groups(repo_root: Path, neighbours: list[str] | None = None) -> list[Group]:
         for kind in ("adr", "prd")
     }
     out = [
+        *_route_groups(repo_root),
         Group(
             f"### Terms ({', '.join(files)}), one fixed meaning each",
             terms,
@@ -130,13 +192,16 @@ def _render(gs: list[Group], keep: list[int]) -> str:
 
 
 def index_text(gs: list[Group], budget: int = BUDGET_CHARS) -> str | None:
-    """The index, or None without a group. Over *budget*, each group keeps its newest items."""
+    """The index, or None without a group. Over *budget*, each group keeps its newest items.
+
+    A whole group keeps every item."""
     if not gs:
         return None
     keep = [len(g.items) for g in gs]
     text = _render(gs, keep)
     # ponytail: drops one item per pass from the fullest group, O(n²) on a few hundred lines.
-    while len(text) > budget and any(keep):
-        keep[keep.index(max(keep))] -= 1
+    cut = [i for i, g in enumerate(gs) if not g.whole]
+    while len(text) > budget and any(keep[i] for i in cut):
+        keep[max(cut, key=keep.__getitem__)] -= 1
         text = _render(gs, keep)
     return text

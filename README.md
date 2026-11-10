@@ -264,10 +264,11 @@ Once a scope routes the repo to a wiki:
 - **Banner at SessionStart** is deliberately minimal: a status line
   that names the last active day (read off the transcript ledger, no LLM
   call), an optional Focus block, freshness lines only on positive evidence, a fixed directive pointing
-  at MCP pull for anything deeper, and the index. The index names what
-  the repo holds: the glossary terms, the ADR titles, the current PRDs,
-  the roadmap headings and the newest lab entries. `lore index` prints
-  it. `lore!:` prefix flags actionable errors.
+  at MCP pull for anything deeper, and the index. The index names where
+  an agent can ask: the route of the repo (wiki, tracker, sinks, sources)
+  and your scopes. The index then names what the repo holds: the glossary
+  terms, the ADR titles, the current PRDs, the roadmap headings and the
+  newest lab entries. `lore index` prints it. `lore!:` prefix flags actionable errors.
 
 ### Search
 
