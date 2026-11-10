@@ -9,14 +9,15 @@ A long session carries decisions and next steps the repo does not hold.
 2. The agent writes the note and stores it with `lore handover write`.
 3. Run `/clear`.
 
-The new session receives the full note in its SessionStart context.
+The new session receives the path of the note in its SessionStart context.
+The agent reads the whole file before it acts.
 
 ## When the note is injected
 
 | Session start | What SessionStart does |
 |---------------|------------------------|
-| after `/clear` | injects the full note, then archives it |
-| after compaction | injects the full note and keeps it |
+| after `/clear` | archives the note, then injects the path of the archived file |
+| after compaction | injects the path of the note and keeps the note |
 | fresh start or `claude --continue` | shows one line: `run lore handover show to load it` |
 
 Before compaction, the PreCompact hook reminds the agent to rewrite a note
@@ -28,7 +29,7 @@ whose state has moved on.
   `$LORE_CACHE` defaults to `~/.cache/lore`.
 - Each worktree has its own directory, so parallel sessions keep separate notes.
 - A new note replaces the old one. Archived notes end in `.done.md`.
-- `lore handover write` rejects a note over 12,000 characters.
+- A note has no size limit. SessionStart injects the path of the note, not its text.
 
 ## Commands
 

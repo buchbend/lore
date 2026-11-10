@@ -62,10 +62,7 @@ def test_recap_summarises_the_last_active_day(tmp_path: Path) -> None:
 
     lines = last_active_day_recap(tmp_path)
 
-    assert len(lines) <= 3
-    assert lines[0] == "Last active 2026-08-04 — 2 sessions in buchbend/lore"
-    assert "feat/357-flag" in lines[1] and "feat/358-ledger" in lines[1]
-    assert "#357" in lines[2] and "#358" in lines[2] and "#364" in lines[2]
+    assert lines == ("Last active 2026-08-04 — 2 sessions in buchbend/lore",)
 
 
 def test_recap_is_empty_when_the_ledger_is(tmp_path: Path) -> None:
@@ -107,11 +104,11 @@ def test_collect_session_facts_carries_the_recap(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Render side — the recap replaces the last-session note hints
+# Render side — the recap stays in the status line, for the person (issue #575)
 # ---------------------------------------------------------------------------
 
 
-def test_banner_renders_the_recap() -> None:
+def test_the_model_text_holds_no_recap_line_and_the_status_line_keeps_the_day() -> None:
     import pytest
     from lore_core import session_start
     from lore_core.session_start import SessionFacts, render_session_banner
@@ -125,19 +122,11 @@ def test_banner_renders_the_recap() -> None:
             repo="o/r",
             scope="ccat:data-center",
             project_entry=None,
-            recap=(
-                "Last active 2026-08-04 — 2 sessions in buchbend/lore",
-                "Branches: feat/358-ledger",
-                "Refs: #358, #364",
-            ),
+            recap=("Last active 2026-08-04 — 2 sessions in buchbend/lore",),
         )
         out = render_session_banner(facts)
     finally:
         mp.undo()
 
-    assert "Last: [[12-1530-fix]]" not in out
-    assert "fixed the thing" not in out
-    assert "Last active 2026-08-04 — 2 sessions in buchbend/lore" in out
-    assert "Branches: feat/358-ledger" in out
-    assert "Refs: #358, #364" in out
+    assert "Last active" not in out and "Branches" not in out and "Refs:" not in out
     assert out.splitlines()[0] == "lore 9.9.9: active · ccat:data-center · last active 2026-08-04"

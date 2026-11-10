@@ -28,11 +28,7 @@ def _deterministic_directive(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 PROJECT_ENTRY = {"name": "data-transfer", "description": "Long-haul data pipeline"}
-RECAP = (
-    "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer",
-    "Branches: feat/12-fix-thing",
-    "Refs: #12",
-)
+RECAP = ("Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer",)
 
 
 V1_FACTS = SessionFacts(
@@ -49,10 +45,6 @@ V1_EXPECTED = (
     "\n"
     "## Focus: [[data-transfer]]\n"
     "Long-haul data pipeline\n"
-    "\n"
-    "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer\n"
-    "Branches: feat/12-fix-thing\n"
-    "Refs: #12\n"
     "\n"
     "## Directive\n"
     "- pull, not push"
@@ -73,10 +65,6 @@ V2_EXPECTED = (
     "\n"
     "## Focus: [[data-transfer]]\n"
     "Long-haul data pipeline\n"
-    "\n"
-    "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer\n"
-    "Branches: feat/12-fix-thing\n"
-    "Refs: #12\n"
     "\n"
     "## Directive\n"
     "- pull, not push"
@@ -110,8 +98,8 @@ def test_render_session_banner_includes_pending_chip_and_no_project_note() -> No
 
 
 def test_render_session_banner_has_exactly_the_agreed_elements() -> None:
-    """The ambient-minimum contract: status line, Focus block, ≤3 recap
-    lines, freshness lines, and a single directive — nothing else. Feed
+    """The ambient-minimum contract: status line, Focus block,
+    freshness lines, and a single directive — nothing else. Feed
     every optional slot so a stray extra section would show up."""
     facts = SessionFacts(
         wiki_name="ccat",
@@ -129,10 +117,6 @@ def test_render_session_banner_has_exactly_the_agreed_elements() -> None:
         "\n"
         "## Focus: [[data-transfer]]\n"
         "Long-haul data pipeline\n"
-        "\n"
-        "Last active 2026-08-04 — 2 sessions in ccatobs/data-transfer\n"
-        "Branches: feat/12-fix-thing\n"
-        "Refs: #12\n"
         "\n"
         "## Directive\n"
         "- pull, not push"

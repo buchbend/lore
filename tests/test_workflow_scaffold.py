@@ -126,3 +126,13 @@ def test_scaffold_appends_the_reading_rule_to_an_existing_agents_md_once(
     agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
     assert agents.startswith("# Guide\n\nHouse rules.\n")
     assert agents.count(reading_rule()) == 1
+
+
+def test_scaffold_keeps_an_older_wording_of_the_reading_rule(tmp_path: Path) -> None:
+    """The directive wording changes over time; the heading marks the section."""
+    old = "# Guide\n\n## Reading ADRs and PRDs\n\nAn older wording.\n"
+    (tmp_path / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text(old, encoding="utf-8")
+    mod.scaffold(tmp_path)
+    agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert agents.startswith(old) and agents.count("## Reading ADRs and PRDs") == 1
