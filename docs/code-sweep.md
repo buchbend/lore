@@ -369,7 +369,6 @@ The seven tools `lib/lore_mcp/server.py` registers.
 | `lore_search` | `lore-workflow/skills/orient/SKILL.md:35` (+8) · skill | 3 retrieval |  |
 | `lore_read` | `lore-workflow/skills/seed-epic/SKILL.md:46` (+1) · skill | 3 retrieval |  |
 | `lore_drill` | `lore-workflow/skills/orient/SKILL.md:35` (+3) · skill | 3 retrieval |  |
-| `lore_journal_write` | `lib/lore_cli/hooks.py:418` · code message | none | offered only when the journal is on |
 | `lore_repo_docs_list` | `lore-workflow/skills/orient/SKILL.md:28` (+1) · skill | 1 artifact map |  |
 | `lore_repo_docs_fetch` | `lore-workflow/skills/orient/SKILL.md:28` (+1) · skill | 1 artifact map |  |
 | `lore_codemap` | `lore-workflow/skills/brief/SKILL.md:26` (+5) · skill | 3 retrieval |  |

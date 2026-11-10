@@ -92,6 +92,11 @@ is a one-line shim that imports it:
 Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore setup scope
 --scaffold-workflow` moves an existing `CLAUDE.md` into this shape.
 
+`AGENTS.md` also holds the index block, between two `lore index` markers.
+`lore index --write` regenerates the block. `lore index --check` exits 1
+when the block is stale. Edit the text outside the markers by hand; leave
+the text between them to the command.
+
 ### The epic issue as tracker
 
 The GitHub epic issue coordinates the work. It is not the spec:

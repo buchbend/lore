@@ -29,6 +29,11 @@ file.
 - **`AGENTS.md` as the canonical per-repo agent guide**, migrated from any
   existing `CLAUDE.md`; `CLAUDE.md` becomes a one-line `@AGENTS.md` import
   shim so Claude Code still auto-loads it.
+- **The index block in `AGENTS.md`**, between two `lore index` markers. The
+  block names the glossary terms, the ADR titles, the current PRDs and the
+  roadmap headings, so a session without the plugin still sees them. Run
+  `lore index --write` after one of them changes. `lore index --check` exits
+  1 when the block is stale. A repo with nothing to index gets no block.
 - **`docs/prd/index.md` and `docs/adr/index.md`** — stubs for the PRD and
   ADR homes — and a root **`docs/index.md`** that wires them in.
 

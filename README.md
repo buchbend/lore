@@ -264,9 +264,11 @@ Once a scope routes the repo to a wiki:
 - **Banner at SessionStart** is deliberately minimal: a status line, an
   optional Focus block, a last-active-day recap read off the transcript
   ledger (day, session count, repos, branches, refs — no LLM call),
-  freshness lines only on positive evidence, and
-  a fixed directive pointing at MCP pull for anything deeper. `lore!:`
-  prefix flags actionable errors.
+  freshness lines only on positive evidence, a fixed directive pointing
+  at MCP pull for anything deeper, and the index. The index names what
+  the repo holds: the glossary terms, the ADR titles, the current PRDs,
+  the roadmap headings and the newest lab entries. `lore index` prints
+  it. `lore!:` prefix flags actionable errors.
 
 ### Search
 

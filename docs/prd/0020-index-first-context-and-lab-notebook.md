@@ -1,12 +1,14 @@
 ---
 title: Index-first context and the lab notebook
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/555
 repos:
   - buchbend/lore
 ---
 
 # PRD 0020: Index-first context and the lab notebook
+
+> Historical. Current decisions: ADR 0019, ADR 0014, ADR 0015.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/555).
 > The epic links here; this file is not embedded in the issue body.
