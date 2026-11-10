@@ -116,7 +116,7 @@ def _append_reading_rule(target: Path) -> bool:
     agents_md = target / "AGENTS.md"
     current = agents_md.read_text(encoding="utf-8") if agents_md.exists() else ""
     # The heading, not the rule text: the wording of the rule changes over time.
-    if not rule or _READING_RULE_HEADING in current:
+    if not rule or _READING_RULE_HEADING in current.splitlines():
         return False
     separator = "" if not current else ("\n" if current.endswith("\n") else "\n\n")
     agents_md.write_text(

@@ -12,4 +12,5 @@ file; these lines say where.
 - A dead end in software work becomes an issue you opened, closed as not planned, with the reason in the close comment.
 - A fact for a wiki topic note becomes a pull request on the wiki repo.
 - An ADR, a PRD or a wiki topic-note edit outside a grilling session is a pull request. A human merges it.
+- A rule that looks out of date becomes a proposed amendment of its ADR.
 - Close only issues you opened. Do not change the state of a human's issue or PR.

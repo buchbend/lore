@@ -8,11 +8,11 @@ SessionStart reads the hook payload's ``source`` and calls
   later clear in the same directory does not replay a stale handover.
 - ``compact`` injects a pointer to the note and keeps it. One piece of work
   can cross several compactions.
+- ``startup`` and ``resume`` offer the note in one line. An old note must not
+  take over a fresh session.
 
 The pointer holds the path and no note text, so a note has no size limit
 (issue #575).
-- ``startup`` and ``resume`` offer the note in one line. An old note must not
-  take over a fresh session.
 
 Home: ``$LORE_CACHE/handovers/<dirname>-<hash>.md``, keyed by the resolved
 working directory. The cache works outside git repos, and each worktree has

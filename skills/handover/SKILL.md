@@ -1,6 +1,6 @@
 ---
 name: lore:handover
-description: Write a handover note so the next session continues this one after /clear or compaction. SessionStart injects the note automatically. Use when the user says "handover", "hand over", "write a handover", or before they run /clear on unfinished work. Run with "/lore:handover".
+description: Write a handover note so the next session continues this one after /clear or compaction. SessionStart points the next session to the note automatically. Use when the user says "handover", "hand over", "write a handover", or before they run /clear on unfinished work. Run with "/lore:handover".
 user_invocable: true
 ---
 

@@ -4,7 +4,7 @@ Gathers the facts (project note, last-active-day recap, pending freshness
 verdicts) and renders the banner. Deliberately cheap: reads cached files the
 linter regenerates (``_index.txt``, ``_catalog.json``) and the transcript
 ledger, no LLM, no network. The banner is ambient-minimal — status line,
-optional Focus block, the recap, one directive. Depth is a pull (MCP), not
+optional Focus block, one directive. Depth is a pull (MCP), not
 a push.
 
 Also holds the wiki auto-pull, a SessionStart-adjacent decision that reads
@@ -425,7 +425,7 @@ def session_start_text(cwd: str | None) -> str:
             if block.get("wiki"):
                 return (
                     f"lore: scope `{block.get('scope') or '?'}` names the wiki "
-                    f"`{block['wiki']}`, which the vault at {wiki_root} does not hold. "
+                    f"`{block['wiki']}`, which {wiki_root} does not hold. "
                     "Run `lore setup scope --wiki <name>` with a wiki of the vault."
                 )
 
@@ -497,7 +497,7 @@ def render_project_orientation(scope: Scope, wiki_root: Path) -> str | None:
             if not body:
                 return None
             if len(body) > ORIENTATION_BUDGET_CHARS:
-                suffix = "\n... (orientation truncated — /lore:context for full)"
+                suffix = "\n... (orientation truncated — pull the note with `lore_search`)"
                 body = body[: ORIENTATION_BUDGET_CHARS - len(suffix)] + suffix
             header = f"## Project: [[{path.stem}]]\n"
             return header + body
