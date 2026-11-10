@@ -39,7 +39,11 @@ def add_cmd(
     if status not in lab.STATUSES:
         print(f"lab add: --status must be one of {', '.join(lab.STATUSES)}", file=sys.stderr)
         raise typer.Exit(code=2)
-    text = sys.stdin.read() if text_file == "-" else Path(text_file).read_text(encoding="utf-8")
+    try:
+        text = sys.stdin.read() if text_file == "-" else Path(text_file).read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"lab add: cannot read {text_file}: {exc.strerror}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
     text = text.removeprefix("﻿")
     rule = lab.broken_rule(text)
     if rule:

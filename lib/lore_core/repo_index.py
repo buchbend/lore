@@ -29,7 +29,9 @@ END_MARKER = "<!-- lore index: end -->"
 
 @dataclass
 class Group:
-    """One group of the index. *items* run oldest first; a cut drops the oldest."""
+    """One group of the index. *items* run oldest first, or newest first with *newest_first*.
+
+    A cut drops the oldest."""
 
     heading: str
     items: list[str]
@@ -37,6 +39,7 @@ class Group:
     joiner: str = "\n"
     #: False for a group the AGENTS.md block leaves out (PRD 0020).
     committed: bool = True
+    newest_first: bool = False
 
 
 def _number(path: str) -> str:
@@ -44,8 +47,15 @@ def _number(path: str) -> str:
 
 
 def _title(entry: dict) -> str:
-    """The title without a leading ``ADR 0012:`` or ``0012 —``: the line adds the number."""
-    return re.sub(r"^(?:(?:ADR|PRD)\s*)?\d+\s*[:—–-]\s*", "", str(entry["title"]))
+    """The title without a leading ``ADR 0012:`` or ``0012 —``: the line adds the number.
+
+    Another leading number, as in ``3-tier routing``, stays."""
+    num = _number(entry["path"])
+    return re.sub(
+        r"^(?:(?:ADR|PRD)\s*)?(\d+)\s*[:—–-]\s*",
+        lambda m: "" if num.isdigit() and int(m[1]) == int(num) else m[0],
+        str(entry["title"]),
+    )
 
 
 def _adr_line(entry: dict) -> str:
@@ -72,8 +82,8 @@ LAB_ENTRIES = 3
 def _lab_lines(repo_root: Path) -> list[str]:
     from lore_workflow import lab
 
-    newest = lab.entries(repo_root)[:LAB_ENTRIES]
-    return [f"- {str(s.get('date', ''))[:10]}: {lab.question(b)}" for _, s, b in reversed(newest)]
+    newest = lab.entries(repo_root, limit=LAB_ENTRIES)
+    return [f"- {str(s.get('date', ''))[:10]}: {lab.question(b)}" for _, s, b in newest]
 
 
 def groups(
@@ -111,6 +121,7 @@ def groups(
             _lab_lines(repo_root) if lab else [],
             "Detail: `lore lab show`",
             committed=False,
+            newest_first=True,
         ),
     ]
     return [g for g in out if g.items]
@@ -121,7 +132,8 @@ def _render(gs: list[Group], keep: list[int]) -> str:
     for g, k in zip(gs, keep, strict=True):
         parts.append(g.heading)
         if k:
-            parts.append(g.joiner.join(g.items[len(g.items) - k :]))
+            kept = g.items[:k] if g.newest_first else g.items[len(g.items) - k :]
+            parts.append(g.joiner.join(kept))
         if k < len(g.items):
             parts.append(f"… {len(g.items) - k} more")
         parts.append(g.detail)
@@ -152,6 +164,7 @@ class UnmatchedMarker(ValueError):
 
 _START_PREFIX = "<!-- lore index: start"
 _END_PREFIX = "<!-- lore index: end"
+_CODE = re.compile(r"^(```|~~~).*?^\1|`[^`\n]*`", re.M | re.S)
 
 
 def _split(text: str) -> tuple[str, str, str] | None:
@@ -160,10 +173,12 @@ def _split(text: str) -> tuple[str, str, str] | None:
     Raises UnmatchedMarker unless *text* holds one start marker followed by one
     end marker: a write over a broken pair would eat the text between them.
     """
-    starts, ends = text.count(_START_PREFIX), text.count(_END_PREFIX)
+    # A marker quoted in a code block or a code span is not a marker.
+    seen = _CODE.sub(lambda m: re.sub(r"[^\n]", " ", m[0]), text)
+    starts, ends = seen.count(_START_PREFIX), seen.count(_END_PREFIX)
     if not starts and not ends:
         return None
-    start, end = text.find(_START_PREFIX), text.find(_END_PREFIX)
+    start, end = seen.find(_START_PREFIX), seen.find(_END_PREFIX)
     if starts != 1 or ends != 1 or end < start:
         raise UnmatchedMarker("unmatched lore index marker")
     end = text.find("-->", end)

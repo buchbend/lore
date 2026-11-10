@@ -250,7 +250,7 @@ def test_the_index_lists_the_three_newest_lab_entries(repo, tmp_path) -> None:
     out = CliRunner().invoke(app, ["--cwd", str(repo)]).output
     assert "### Lab entries" in out
     assert "Q0:" not in out
-    assert out.index("Q1:") < out.index("Q2:") < out.index("Q3:")
+    assert out.index("Q3:") < out.index("Q2:") < out.index("Q1:")
     assert "Detail: `lore lab show`" in out
 
 
@@ -359,3 +359,70 @@ def test_lore_status_counts_an_undelivered_lab_line(repo, capsys) -> None:
     _lab_line(repo)
     main(["status"])
     assert "lab" in capsys.readouterr().out
+
+
+def _index_out(repo: Path) -> str:
+    from lore_cli.index_cmd import app
+    from typer.testing import CliRunner
+
+    return CliRunner().invoke(app, ["--cwd", str(repo)]).output
+
+
+def test_the_index_shows_a_question_that_starts_on_the_next_line(repo, tmp_path) -> None:
+    text = GOOD.replace("**Question:** Does", "**Question:**\nDoes")
+    assert _add(tmp_path, text) == 0
+    assert "Does the LO drift stay under 0.1 K per hour?" in _index_out(repo)
+
+
+def test_session_start_parses_at_most_three_lab_files(repo, tmp_path, monkeypatch) -> None:
+    for n in range(5):
+        assert _add(tmp_path, GOOD.replace("Does the", f"Q{n}: does the")) == 0
+    reads: list[Path] = []
+    real = Path.read_text
+
+    def counting(self, *a, **k):
+        reads.append(self)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", counting)
+    out = _index_out(repo)
+    lab_reads = [p for p in reads if "lab" in p.parts and p.suffix == ".md"]
+    assert len(lab_reads) <= 3
+    assert "Q4:" in out and "Q2:" in out and "Q1:" not in out
+
+
+def test_the_file_sink_reads_only_the_files_of_the_month_of_the_entry(
+    repo, tmp_path, monkeypatch
+) -> None:
+    other = repo / "docs" / "lab" / "2020-01"
+    other.mkdir(parents=True)
+    (other / "old.md").write_text("old\n")
+    reads: list[Path] = []
+    real = Path.read_text
+
+    def counting(self, *a, **k):
+        reads.append(self)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", counting)
+    assert _add(tmp_path) == 0
+    assert other / "old.md" not in reads
+
+
+def test_a_missing_text_file_exits_1_and_names_the_path(repo, capsys) -> None:
+    assert main(["lab", "add", "--text-file", "nope/entry.md"]) == 1
+    err = capsys.readouterr().err
+    assert "nope/entry.md" in err
+    assert "unexpected error" not in err
+
+
+def test_a_relative_data_path_is_recorded_relative_to_the_repo_root(
+    repo, tmp_path, monkeypatch
+) -> None:
+    (repo / "data").mkdir()
+    (repo / "data" / "scan.csv").write_text("1,2\n")
+    monkeypatch.chdir(repo / "data")
+    assert _add(tmp_path, GOOD, "--data", "scan.csv") == 0
+    assert _stamp(_entries(repo)[0])["data"] == [
+        {"path": "data/scan.csv", "sha256": hashlib.sha256(b"1,2\n").hexdigest()}
+    ]
