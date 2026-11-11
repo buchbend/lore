@@ -121,3 +121,12 @@ def test_no_doc_cites_old_repo_as_authoritative() -> None:
         if "ccat-agent-workflow" in path.read_text(encoding="utf-8")
     ]
     assert not failures, "Old-repo reference in migrated docs:\n  " + "\n  ".join(failures)
+
+
+def test_architecture_figure_shows_one_plugin():
+    """Issue 592: the figure names no second plugin, and the repo holds its script."""
+    svg = (REPO_ROOT / "docs" / "img" / "architecture.svg").read_text()
+    # matplotlib writes each label as glyph paths plus one XML comment with the text
+    assert "lore-workflow" not in svg
+    assert "<!-- orient -->" in svg  # the comments exist, so the check above is not vacuous
+    assert (REPO_ROOT / "tools" / "fig_architecture.py").is_file()
