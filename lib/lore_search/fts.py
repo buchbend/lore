@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_wiki_root
-from lore_core.lint import (
+from lore_core.wiki_check import (
     SKIP_DIRS,
     SKIP_FILES,
     discover_notes,

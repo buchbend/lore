@@ -129,6 +129,7 @@ its own git repo, mounted as a symlink or an inline directory:
 ```bash
 ln -s ~/git/myorg/team-knowledge ~/lore/wiki/team   # mount an existing wiki
 lore wiki new research                              # or scaffold a new one
+lore wiki check --wiki research                     # check links, descriptions, filenames, writing rules
 ```
 
 **Scopes.** A scope maps a folder of repos to a wiki, in

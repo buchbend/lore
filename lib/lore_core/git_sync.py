@@ -44,10 +44,13 @@ class SyncResult:
 class ConflictKind(str, Enum):
     NOTE = "note"  # bail to user
     SESSION = "session"  # bail to user (rare — pre-pull eliminates)
-    REGENERABLE = "regenerable"  # ours wins; lint reconciles
+    REGENERABLE = "regenerable"  # ours wins; no Lore code reads the file
     UNKNOWN = "unknown"  # bail to user
 
 
+# Files older Lore versions generated. Lore writes none of them now and reads
+# none, but a wiki may still hold committed copies. A conflict on one must not
+# block a push, so ours wins.
 _REGENERABLE_FILENAMES = {
     "_catalog.json",
     "_index.txt",
@@ -55,9 +58,6 @@ _REGENERABLE_FILENAMES = {
     "_concepts.txt",
     "_decisions.txt",
     "_recent.txt",
-    # Legacy filenames — kept regenerable so a peer pushing from a
-    # vault that hasn't run lint after upgrade still auto-resolves.
-    # Drop once all clients have re-linted.
     "_index.md",
     "llms.txt",
     "threads.md",
@@ -335,7 +335,7 @@ def _merge_and_push(wiki_dir: Path, upstream: str, note_dirs: list[str] | None) 
     for path in conflicts:
         kind = _classify_conflict_path(path, note_names)
         if kind is ConflictKind.REGENERABLE:
-            # Take ours; lint will truth it after the merge.
+            # Take ours: no Lore code reads the file.
             _git(wiki_dir, "checkout", "--ours", path)
             _git(wiki_dir, "add", path)
             merged.append(path)

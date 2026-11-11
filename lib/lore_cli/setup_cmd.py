@@ -144,7 +144,7 @@ def migrate(lore_root: Path) -> list[Event]:
                 if not path or not wiki or path in known:
                     continue
                 # The old scope's leaf is the project slug that SessionStart's
-                # orientation and `lint._repo_by_project_slug` match on.
+                # orientation matches on.
                 base = str(row.get("scope") or "").rsplit(":", 1)[-1] or Path(path).name or "scope"
                 name, n = base, 2
                 while name in scopes:

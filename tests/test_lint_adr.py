@@ -1,4 +1,4 @@
-"""`lore lint adr` — decision records state their strength (ADR 0015, #444).
+"""`lore adr check` — decision records state their strength (ADR 0015, #444).
 
 The verb reads each ADR numbered 0014 or higher under a repo's `docs/adr/`.
 It fails on a record without a `## Holds` section, and on an `Invariant`
@@ -9,7 +9,6 @@ predate the section and are skipped.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from lore_cli.__main__ import app
@@ -32,7 +31,7 @@ def _adr(repo: Path, name: str, holds: str | None) -> Path:
 
 
 def _lint(repo: Path, *extra: str):
-    return runner.invoke(app, ["wiki", "lint", "adr", str(repo), *extra])
+    return runner.invoke(app, ["adr", "check", str(repo), *extra])
 
 
 def test_an_adr_without_holds_fails_and_names_the_file(tmp_path: Path) -> None:
@@ -136,16 +135,6 @@ def test_json_report_lists_each_problem(tmp_path: Path) -> None:
 def test_this_repos_adrs_pass() -> None:
     result = _lint(REPO_ROOT)
     assert result.exit_code == 0, result.output
-
-
-def test_bare_lint_still_runs_the_vault_lint_not_the_adr_check() -> None:
-    """The `adr` sub-verb must not swallow the vault lint's own help."""
-    result = runner.invoke(app, ["wiki", "lint", "--help"])
-    assert result.exit_code == 0
-    # CI renders Rich help with colour codes that split option names.
-    output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
-    assert "adr" in output
-    assert "--check-only" in output
 
 
 # --- the ADR template carries the sections the lint reads -----------------

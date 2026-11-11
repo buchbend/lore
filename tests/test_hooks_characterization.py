@@ -44,10 +44,8 @@ def test_collect_session_facts_picks_up_scope_and_latest_session(tmp_path: Path)
 
 def test_collect_session_facts_resolves_project_note_by_repo(tmp_path: Path) -> None:
     wiki = _wiki_with_session(tmp_path, title="t")
-    (wiki / "_catalog.json").write_text(
-        '{"sections": {"projects": [{"name": "proj", "description": "d",'
-        ' "repos": ["org/repo"]}]}}'
-    )
+    (wiki / "projects").mkdir()
+    (wiki / "projects" / "proj.md").write_text("---\ndescription: d\nrepos: [org/repo]\n---\n")
     facts = collect_session_facts(wiki, "org/repo")
     assert facts.project_entry is not None
     assert facts.project_entry["name"] == "proj"

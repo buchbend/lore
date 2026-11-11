@@ -1,7 +1,7 @@
 """SessionStart context assembly — what Lore injects when a session opens.
 
-Gathers the facts (project note, last-active-day recap) and renders the banner. Deliberately cheap: reads cached files the
-linter regenerates (``_index.txt``, ``_catalog.json``) and the transcript
+Gathers the facts (project note, last-active-day recap) and renders the banner.
+Deliberately cheap: reads the notes under ``projects/`` and the transcript
 ledger, no LLM, no network. The banner is ambient-minimal — status line,
 optional Focus block, one directive. Depth is a pull (MCP), not
 a push.
@@ -156,17 +156,6 @@ PRECOMPACT_DIRECTIVE = (
 # ---------------------------------------------------------------------------
 
 
-def wiki_catalog(wiki_path: Path) -> dict | None:
-    """Load _catalog.json for a wiki, or None if missing."""
-    catalog_path = wiki_path / "_catalog.json"
-    if not catalog_path.exists():
-        return None
-    try:
-        return json.loads(catalog_path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
 def last_active_day_recap(lore_root: Path) -> tuple[str, ...]:
     """Recap the most recent day the transcript ledger saw work.
 
@@ -223,13 +212,26 @@ def cross_scope_breadcrumbs(lore_root: Path, current_wiki: str) -> list[str]:
 def project_note_for_repo(wiki: Path, repo: str) -> dict | None:
     """Find a project note whose filename or frontmatter matches the repo.
 
-    Returns a dict with {name, description, path} or None.
+    Reads the notes under ``projects/``. Returns a dict with
+    {name, description, path, repos} or None.
     """
-    catalog = wiki_catalog(wiki)
-    if catalog is None:
-        return None
+    from lore_core.schema import parse_frontmatter
+
     tail = repo.rsplit("/", 1)[-1].lower()
-    projects = catalog.get("sections", {}).get("projects", [])
+    projects = []
+    for path in sorted((wiki / "projects").rglob("*.md")):
+        try:
+            fm = parse_frontmatter(path.read_text(errors="replace"))
+        except OSError:
+            continue
+        projects.append(
+            {
+                "name": path.stem,
+                "description": fm.get("description"),
+                "path": path.relative_to(wiki).as_posix(),
+                "repos": fm.get("repos"),
+            }
+        )
     # Prefer exact repo match in frontmatter
     for entry in projects:
         repos = entry.get("repos") or []
@@ -590,15 +592,9 @@ def render_capture_state_block(
 
     wiki_cfg = load_wiki_config(lore_root / "wiki" / scope.wiki)
 
-    # Note count is decoration; a catalog with an unexpected shape must not
-    # cost us the banner.
-    note_count = 0
-    try:
-        catalog = wiki_catalog(wiki_root / scope.wiki)
-        if catalog:
-            note_count = catalog.get("stats", {}).get("total_notes", 0)
-    except (KeyError, TypeError, AttributeError):
-        pass
+    from lore_core.wiki_check import wiki_notes
+
+    note_count = len(wiki_notes(wiki_root / scope.wiki))
 
     from datetime import UTC, datetime
 

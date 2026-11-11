@@ -141,7 +141,7 @@ def test_migrates_attachments_and_scopes_json(tmp_path, agents, no_prompt, monke
     result = _setup("--yes", "--vault", str(vault))
     assert result.exit_code == 0, result.output
     scopes = _person()["scopes"]
-    # Named after the old scope's leaf: the project slug orientation and lint match on.
+    # Named after the old scope's leaf: the project slug orientation matches on.
     assert {n: s["path"] for n, s in scopes.items()} == {"a": str(a), "b": str(b), "c": str(c)}
     assert all(s["wiki"] == "team" for s in scopes.values())
     assert not (old / "attachments.json").exists() and not (old / "scopes.json").exists()
