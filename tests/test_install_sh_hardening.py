@@ -31,13 +31,11 @@ def test_install_sh_first_install_runs_lore_setup():
     assert "exec lore setup" in INSTALL_SH.read_text()
 
 
-def test_install_sh_upgrade_refreshes_both_plugin_caches():
+def test_install_sh_upgrade_uninstalls_the_old_workflow_plugin():
     text = INSTALL_SH.read_text()
     assert "claude plugin update lore@lore" in text
-    assert "claude plugin update lore-workflow@lore" in text, (
-        "the upgrade path must refresh lore-workflow@lore too — otherwise its "
-        "skills cache silently stays on the old version (#311)"
-    )
+    assert "claude plugin uninstall lore-workflow@lore" in text
+    assert "claude plugin update lore-workflow@lore" not in text
 
 
 def test_install_sh_pipx_upgrade_does_not_force_over_the_existing_venv():

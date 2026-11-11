@@ -265,3 +265,16 @@ def test_check_mcp_imports_passes_against_the_supported_line():
     ok, msg = checks._check_mcp_imports(".")
     assert ok is True
     assert "tools" in msg
+
+
+def test_old_workflow_plugin_fails_doctor_with_the_uninstall_command(tmp_path, monkeypatch):
+    monkeypatch.setattr(checks.Path, "home", classmethod(lambda cls: tmp_path))
+    assert checks._check_old_workflow_plugin(str(tmp_path))[0] is True
+    _write_plugin_index(tmp_path, version="1.0.0")
+    assert checks._check_old_workflow_plugin(str(tmp_path))[0] is True
+    idx = tmp_path / ".claude" / "plugins" / "installed_plugins.json"
+    data = json.loads(idx.read_text())
+    data["plugins"]["lore-workflow@lore"] = [{"scope": "user", "version": "1.0.0"}]
+    idx.write_text(json.dumps(data))
+    ok, msg = checks._check_old_workflow_plugin(str(tmp_path))
+    assert ok is False and "claude plugin uninstall lore-workflow@lore" in msg

@@ -145,13 +145,12 @@ if [ "$HAS_PLUGIN" -eq 1 ]; then
         # refresh it first or the update can report the old version as latest.
         claude plugin marketplace update lore || warn "claude plugin marketplace update lore failed"
         claude plugin update lore@lore || warn "claude plugin update failed; run it manually"
-        # lore-workflow versions independently; without its own refresh the
-        # installed skills silently stay on the old version.
+        # lore-workflow merged into lore (PRD 0021); drop the old plugin.
         if grep -q '"lore-workflow@lore"' "$PLUGIN_INDEX"; then
-            claude plugin update lore-workflow@lore || warn "claude plugin update lore-workflow@lore failed; run it manually"
+            claude plugin uninstall lore-workflow@lore || warn "claude plugin uninstall lore-workflow@lore failed; run it manually"
         fi
     else
-        warn "claude CLI not found; run: claude plugin update lore@lore (and lore-workflow@lore if installed)"
+        warn "claude CLI not found; run: claude plugin update lore@lore (and claude plugin uninstall lore-workflow@lore if installed)"
     fi
     # Migrate old vault-local state (root config, attachments, scopes) into
     # ~/.config/lore/config.yml; the new lore reads only that file.

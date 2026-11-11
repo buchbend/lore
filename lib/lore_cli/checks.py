@@ -171,6 +171,18 @@ def claude_cache_version() -> str | None:
     return None if entry is None else str(entry.get("version") or "").strip()
 
 
+def _check_old_workflow_plugin(cwd: str) -> Check:
+    """Fail while the merged-away plugin ``lore-workflow@lore`` is still installed (PRD 0021)."""
+    try:
+        held = json.loads(_plugin_index().read_text()).get("plugins", {}).get("lore-workflow@lore")
+    except (OSError, ValueError):
+        held = None
+    if held:
+        cmd = "claude plugin uninstall lore-workflow@lore"
+        return False, f"old plugin lore-workflow@lore is installed; run: {cmd}"
+    return True, "no old lore-workflow plugin"
+
+
 def _check_claude_plugin_cache_drift(cwd: str) -> Check:
     """Compare the Claude Code plugin cache version to the installed pip version.
 
@@ -601,6 +613,7 @@ _CHECKS: list[tuple[str, Callable[[str], Check], bool]] = [
     # reports the old version; this names the fix command. The drift is
     # common enough in practice that it should block a green `doctor` run.
     ("plugin cache", _check_claude_plugin_cache_drift, True),
+    ("old plugin", _check_old_workflow_plugin, True),
     # Cursor integration checks. All advisory: a Claude-only user has
     # no ~/.cursor dir and these all skip cleanly.
     ("cursor plugin", _check_cursor_plugin_dir, False),
