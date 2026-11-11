@@ -8,20 +8,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
-## [0.100.0] - 2026-11-11
-
-`build` epic mode builds and merges locally, so CI runs once per epic.
-
-### Changed
-
-- **An epic reaches the remote once.** `build` creates `epic/<issue>` locally and pushes nothing while the features build. The epic tail commits docs, logbook entry and version bump locally, then pushes once and opens the epic PR.
-- **A feature has no PR.** The teammate commits on its branch and does not push. The lead merges the branch into `epic/<issue>` after a green local run of the full suite and ruff.
-- **The sub-issue holds the feature record.** The teammate posts its summary and the red→green evidence as a sub-issue comment. The reviewer posts the verdict block there. The whole-epic verdict goes on the epic issue.
-- **The review reads a local range.** In `epic` mode the lead passes `--range epic/<issue>..feat/<n>-<slug>` to `lore workflow risk` and the branch to `code-review`.
-- **The logbook entry of an epic refers to the epic issue.** The epic PR does not exist when the lead writes the entry.
-- **One early push stays possible.** A cross-repo pin that resolves only from the remote (image, package) lets the lead push the producer's `epic/<issue>` early.
-- **CI of this repo runs once per PR commit.** `ci.yml` limits the `push` trigger to `main`. A bare `push` trigger ran each PR commit twice, once per event.
-
 ## [0.99.1] - 2026-11-10
 
 Issue #579 (let `lore handover show` find the note after `/clear`).
