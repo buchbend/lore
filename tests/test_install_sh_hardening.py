@@ -67,3 +67,9 @@ def test_install_sh_upgrade_runs_setup_wiki_so_old_state_migrates():
     branch = INSTALL_SH.read_text().split('if [ "$HAS_PLUGIN" -eq 1 ]; then', 1)[1]
     upgrade = branch.split("\nelse\n", 1)[0]
     assert "lore setup wiki --yes </dev/null" in upgrade
+
+
+def test_install_sh_uninstalls_the_old_plugin_only_after_the_lore_update_succeeded():
+    text = INSTALL_SH.read_text()
+    update = text.index("if claude plugin update lore@lore")
+    assert update < text.index("claude plugin uninstall lore-workflow@lore")
