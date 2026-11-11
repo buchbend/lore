@@ -1,18 +1,23 @@
 # Review a PR
 
-Read this when a PR opens in `issue` or `epic` mode, and for the epic PR.
+Read this when a PR opens in `issue` mode, for each `epic` feature branch, and for the
+whole-epic review.
 
 ## 1. Deterministic checks first
 
 - `gh pr checks <n>` answers CI and ruff. A red check blocks the merge. The reviewer does not
-  judge it. An `epic` feature PR is the exception: the lead's local run gates it
-  ([epic.md](epic.md) § Merge), and nobody waits for its CI.
+  judge it. `epic` mode is the exception: a feature branch and the whole-epic review have no PR
+  and no CI run. The lead's local run gates them ([epic.md](epic.md) § Merge), and CI answers
+  once, on the epic PR ([epic-tail.md](epic-tail.md) § 4).
 - A check that fails on the base branch too is inherited. It does not count against this PR.
   Name it as a blocker: in `epic` mode in the board's Notes, in `issue` mode in the PR body.
 
 ## 2. Risk level sets the review depth
 
 Run `lore workflow risk <n> --json`. It prints `{level, reasons, notes, files, lines}`.
+In `epic` mode nothing has a PR number: pass `--range epic/<issue>..feat/<n>-<slug>` to `risk`
+and the feature branch to `code-review` in place of `<n>`. The whole-epic review uses
+`<target_branch>..epic/<issue>` and the epic branch.
 
 | Level | Reviewer tier | Correctness pass |
 |---|---|---|
@@ -29,7 +34,7 @@ Resolve the tier with `lore tier resolve <tier>` and pass the result as the mode
 description with `[build:review] <owner/repo#issue>`, the epic or issue under review. For the
 whole-epic review, open it with `[build:epic-review] <owner/repo#epic>`. The reviewer
 reads the diff and the linked sub-issue. In `epic` mode, keep one reviewer per batch and level.
-Send each later PR of that batch to it with `SendMessage`, so it sees siblings side by side.
+Send each later feature of that batch to it with `SendMessage`, so it sees siblings side by side.
 
 The reviewer judges three things only: correctness, acceptance criteria, scope. A roadmap item
 that `lore roadmap add` filed under `## Not placed yet` is in scope. The reviewer runs
@@ -39,7 +44,9 @@ finding fails the line. Cleanup findings go in the note only.
 The "failing test first" check does not apply to the lead's own slices in the human-present
 option of `epic` mode. There the mutation check on the board replaces it.
 
-The reviewer posts this block as a PR comment (`gh pr comment <n> --body-file …`) and returns it:
+The reviewer posts this block as a PR comment (`gh pr comment <n> --body-file …`) and returns it.
+In `epic` mode the block goes on the sub-issue (`gh issue comment <n> --body-file …`), the
+whole-epic block on the epic issue. Its first line then names the branch and its head SHA:
 
 ```
 PR #<n>
@@ -56,11 +63,11 @@ Any `fail` line makes the verdict FAIL.
 
 ## 4. Act on the verdict
 
-- **PASS, `epic` feature PR:** merge it into `epic/<issue>` on a green local run ([epic.md](epic.md) § Merge).
-- **PASS and green checks, the epic PR:** go back to [epic-tail.md](epic-tail.md) § 4.
+- **PASS, `epic` feature branch:** merge it into `epic/<issue>` on a green local run ([epic.md](epic.md) § Merge).
+- **PASS, the whole-epic review:** go back to [epic-tail.md](epic-tail.md) § 4.
 - **PASS and green checks, `issue` mode:** go on to the finish point. Merge after the merge approval.
 - **FAIL:** send the numbered fixes to the teammate. In `issue` mode, fix them yourself. The same
-  reviewer checks that PR again. At most two fix rounds.
+  reviewer checks the change again. At most two fix rounds.
 - A round that does not move the verdict gets the [`debug`](../debug/SKILL.md) method, not "try
   again".
 - Still FAIL after two rounds: in `epic` mode, mark the feature `blocked`, note it on the board

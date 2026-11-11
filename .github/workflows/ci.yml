@@ -1,10 +1,12 @@
 name: ci
 
-# The prerequisite gate for every PR into epic/161 and main. Keep pytest
-# green. ruff is advisory (continue-on-error) until the repo-wide
-# lint/format cleanup lands — see #196 — so it reports without blocking.
+# The prerequisite gate for every PR. Keep pytest green. ruff is advisory
+# (continue-on-error) until the repo-wide lint/format cleanup lands — see
+# #196 — so it reports without blocking. `push` is limited to main: a bare
+# `push` ran every PR commit twice, once per event.
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:

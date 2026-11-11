@@ -121,7 +121,8 @@ large trackers.
 `document` runs inside the `build` epic tail, before the epic PR merges
 (ADR 0005):
 
-1. Every feature PR merged into `epic/<n>`, and its CI is green.
+1. Every feature branch merged into the local `epic/<n>` on a green local
+   run. Nothing is pushed yet.
 2. `document` in pre-merge mode updates the Diátaxis docs for the whole
    diff. It commits them onto the epic branch. No separate docs PR.
 3. `document` runs `lore workflow prd-ship` to set the PRD's status to
