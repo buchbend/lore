@@ -14,16 +14,22 @@ The `file` sink writes one file per entry under `docs/logbook/YYYY-MM/` in the r
 lore setup sink file
 ```
 
-A `command` sink runs a shell line. Add a secret when the command needs one:
+A `command` sink runs a shell line. This sink posts each entry to one logbook
+of project-manage, named by its handle:
 
 ```
-lore setup sink command --name pm --run 'pm log add' --secret PM_TOKEN
+lore setup sink command --name pm --run 'pm log CCAT-RZEFFC'
 ```
+
+`pm` keeps its own host and token from `pm auth login`, so the sink needs no
+Lore secret. The `pm` token needs the `write:logbooks` scope.
+
+Add `--secret NAME` when a command reads a secret from its environment. Store
+the secret with `lore config secret set NAME`.
 
 Both commands write the definition to `~/.config/lore/config.yml`. They then
-check, without posting, that the command is on `PATH` and that the secret is
-set. A failed check exits 1 and keeps the definition. Store the secret with
-`lore config secret set PM_TOKEN`.
+check, without posting, that the command is on `PATH` and that a named secret
+is set. A failed check exits 1 and keeps the definition.
 
 The index names each sink of the route (`lore index`). For a `command` sink
 the index names the first word of the `run` line as the tool an agent can

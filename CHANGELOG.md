@@ -8,6 +8,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.99.2] - 2026-11-11
+
+PR #583 (fix eight small defects from the triage of 2026-11-11).
+
+### Changed
+
+- **The dokuwiki source refuses a secret on an `http://` URL.** The source list carries a note and no hits until the URL uses `https://`. The source sent the token in plaintext before (issue #489).
+
+### Fixed
+
+- **The dokuwiki source keeps the token out of a redirect** and ends a slow reply at the timeout of the source (issue #489).
+- **`lore workflow epic-policy` and `lore workflow spec-branch` warn on stderr when git cannot read `origin`.** The target branch `main` is then a fallback. The commands said nothing before (issue #549).
+- **`create-prd` writes the title as a quoted YAML scalar.** A title with a colon broke the front-matter (issue #546).
+- **The `file-issue` skill resolves its draft path once** and stops when the draft is missing (issue #528, `lore-workflow` 0.23.1).
+- **The test suite passes with `LORE_SUPPRESS_CAPTURE=1` set** (issue #481).
+- **The logbook how-to shows a `pm` sink that posts by logbook handle** (issue #492).
+
+### Added
+
+- **Glossary terms: Source list, Undelivered, Candidate edge** (issues #488 and #536).
+
 ## [0.99.1] - 2026-11-10
 
 Issue #579 (let `lore handover show` find the note after `/clear`).

@@ -40,6 +40,10 @@ that no real symbol grounds does not belong here.
 - **Neighbour** — a repo one edge away from the current repo in a system
   map. SessionStart shows the current repo's neighbours. _Avoid_: sibling,
   related repo.
+- **Candidate edge** — an edge that `lore map scan` suggests from the
+  files of the checkouts, and that no system map holds yet. A human
+  confirms it by merging the wiki PR that `/lore:map` opens. _Avoid_:
+  proposed edge, detected dependency.
 - **Target** — the branch a system belongs on, kept per person in
   `<lore_root>/.lore/system-target/`. `lore system status` shows each
   checkout against it; `lore:system` brings the checkouts there. _Avoid_:
@@ -325,7 +329,11 @@ ships, the term names the planned behavior.
 
 - **Sink** — a destination for logbook entries. A scope lists its sinks,
   and Lore delivers each entry to every sink in the list. The kinds are
-  `file` and `command`. _Avoid_: target, output.
+  `file` and `command`. A sink that did not confirm an entry is
+  undelivered. _Avoid_: target, output.
+- **Undelivered** — the state of one sink on a `[logbook]` ledger line
+  when the sink did not confirm the entry. `lore log flush` retries an
+  undelivered sink. See Sink and Logbook entry. _Avoid_: failed, pending.
 - **Logbook entry** — the text that the agent writes at a finish point.
   It has four labelled parts: why, what we did, consequences, not done yet.
   It explains the work to a human reader and links to the homes of the facts.
@@ -336,8 +344,11 @@ ships, the term names the planned behavior.
 - **Thread** — the lab entries that follow one idea. Its status is open,
   concluded or dead-end. _Avoid_: series, track.
 - **Source** — a system that `lore_search` queries live, next to the
-  wiki index. Each source returns its own list of hits. _Avoid_: backend,
+  wiki index. Each source returns its own source list. _Avoid_: backend,
   provider.
+- **Source list** — the hits of one source plus its note. Lore never
+  merges one source list with another. See Source. _Avoid_: result set,
+  merged results.
 - **Tracker** — the system that holds a repo's issues: GitHub, or an
   issues folder inside the repo. _Avoid_: backend.
 - **Hosting** — the system that runs a repo's pull requests and CI.
