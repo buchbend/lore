@@ -436,7 +436,7 @@ def test_refresh_survives_a_hung_claude_and_refreshes_lore_workflow(monkeypatch)
 def test_no_retired_phrase_in_skill_text():
     hits = [
         f"{p.relative_to(REPO)}:{n}"
-        for root in ("skills", "lore-workflow/skills")
+        for root in ("skills",)
         for p in sorted((REPO / root).rglob("*.md"))
         for n, line in enumerate(p.read_text().splitlines(), 1)
         if _RETIRED.search(line)

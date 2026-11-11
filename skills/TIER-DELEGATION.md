@@ -20,7 +20,7 @@ the tier contract and burns frontier-tier tokens on work a cheaper tier
 would do. Every delegation point in this plugin names its tier and
 resolves it explicitly; none relies on inheritance.
 
-**Frontier main-session note.** Some steps (`grilling`, `handover`) run
+**Frontier main-session steps.** Some steps (`grilling`, `handover`) run
 **in the main session**, at frontier-tier reasoning, and are never
 delegated to a subagent at all — there is no spawn to resolve. That is a
 different rule from the one above and the two are not interchangeable:

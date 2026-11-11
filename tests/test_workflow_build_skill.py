@@ -16,7 +16,7 @@ from lore_workflow.board_parser import parse_board
 from lore_workflow.ledger import parse_board_ledger
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILLS = REPO_ROOT / "lore-workflow" / "skills"
+SKILLS = REPO_ROOT / "skills"
 BUILD = SKILLS / "build"
 
 # Every skill that writes team-facing text (PRD 0015 § Writing rules everywhere).
@@ -270,9 +270,9 @@ def test_the_finish_offers_the_next_run_for_filed_follow_ups() -> None:
     offer = _text("handover/SKILL.md")
     assert "## Next run" in offer
     for command in (
-        "/lore-workflow:build issue <owner/repo#n>",
-        "/lore-workflow:build epic <owner/repo#n>",
-        "/lore-workflow:orient <owner/repo#seed>",
+        "/lore:build issue <owner/repo#n>",
+        "/lore:build epic <owner/repo#n>",
+        "/lore:orient <owner/repo#seed>",
     ):
         assert command in offer
     # The offer carries the commands up front, not after the user asks.
@@ -296,3 +296,17 @@ def test_epic_spec_branch_runs_in_prd_repo_and_merges_ref() -> None:
     text = " ".join((BUILD / "epic.md").read_text(encoding="utf-8").split())
     assert "only in the repo of the `**PRD:**` link" in text
     assert "merge the printed `ref` into the new `epic/<issue>`" in text
+
+
+def test_one_handover_skill_holds_the_note_and_the_section_and_the_seed() -> None:
+    """ADR 0021: `lore:handover` holds both handover jobs, in two parts."""
+    text = _text("handover/SKILL.md")
+    assert text.startswith("--- name: lore:handover ")
+    # Part one: the note for the next session, stored by `lore handover write`.
+    assert "lore handover write <<'EOF'" in text
+    # Part two: the shape of the handover section, and the seed issue steps.
+    assert "## Handover - **Shipped:**" in text
+    assert "- **Next step:** <the exact command a fresh session runs>" in text
+    assert "## Seed issue" in text and "<seed-template>" in text
+    assert "Label it `epic-seed`" in text
+    assert text.index("lore handover write") < text.index("## Seed issue")

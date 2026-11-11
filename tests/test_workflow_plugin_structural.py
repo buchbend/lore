@@ -1,7 +1,7 @@
-"""Structural gates for the `lore-workflow` plugin (PRD 0003 / epic #161).
+"""Structural gates for the skills of the `lore` plugin (PRD 0003 / epic #161).
 
 Ported from `ccat-agent-workflow`'s `tests/validate.py`, scoped to
-`lore-workflow/` instead of a whole-repo layout, and updated for this repo's
+`skills/` (one plugin since ADR 0021), and updated for this repo's
 rewires: skills delegate tiers via `lore tier resolve` (not a bundled
 MODEL-TIERS.md), and the shared boilerplate that used to repeat across five
 skills now lives in one `TIER-DELEGATION.md`.
@@ -20,11 +20,11 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PLUGIN_ROOT = REPO_ROOT / "lore-workflow"
+PLUGIN_ROOT = REPO_ROOT
 PLUGIN_MANIFEST = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
 SKILLS_ROOT = PLUGIN_ROOT / "skills"
 SKILLS_GLOB = "skills/*/SKILL.md"
-TIER_DELEGATION_DOC = PLUGIN_ROOT / "TIER-DELEGATION.md"
+TIER_DELEGATION_DOC = SKILLS_ROOT / "TIER-DELEGATION.md"
 MODEL_TIERS_DOC = REPO_ROOT / "docs" / "model-tiers.md"
 
 REQUIRED_PLUGIN_FIELDS = ("name", "version", "description", "author")
@@ -34,16 +34,22 @@ KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 # Every ported skill must carry the plugin's slash-command prefix.
 EXPECTED_SKILL_NAMES = {
     "build",
+    "context",
+    "curator",
     "debug",
     "document",
     "experiment",
     "file-issue",
     "grilling",
     "handover",
+    "inbox",
+    "map",
     "orient",
+    "system",
     "tdd",
     "to-epic",
     "triage",
+    "verify",
 }
 
 GRILLING_SKILL_FILES = {
@@ -61,7 +67,7 @@ BUILD_SIBLING_FILES = ("review.md", "teammate-brief.md", "epic-tail.md", "loop-w
 BUILD_SKILL_BYTE_BUDGET = 6_000
 BUILD_RUN_BYTE_BUDGET = 10_000
 
-# No skill under lore-workflow may name a concrete model — tiers are resolved
+# No skill may name a concrete model — tiers are resolved
 # via `lore tier resolve`, never hardcoded.
 BANNED_MODEL_NAME_SUBSTRINGS = (
     "opus",
@@ -90,6 +96,8 @@ SKILL_LINE_BUDGET = 150
 SKILL_LINE_BUDGET_WAIVERS: dict[str, int] = {
     "to-epic": 220,
     "file-issue": 160,
+    # Two parts: the note for the next session, and the handover section + seed issue.
+    "handover": 230,
 }
 
 _MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
@@ -154,9 +162,18 @@ def test_skill_frontmatter_valid(skill_path: Path) -> None:
 def test_skill_name_carries_plugin_prefix(skill_path: Path) -> None:
     frontmatter = _parse_frontmatter(skill_path.read_text(encoding="utf-8"))
     name = frontmatter["name"] if frontmatter else ""
-    assert name == f"lore-workflow:{skill_path.parent.name}", (
-        f"{skill_path}: name '{name}' must be 'lore-workflow:{skill_path.parent.name}'"
+    assert name == f"lore:{skill_path.parent.name}", (
+        f"{skill_path}: name '{name}' must be 'lore:{skill_path.parent.name}'"
     )
+
+
+def test_no_two_skills_share_a_name() -> None:
+    names: dict[str, list[str]] = {}
+    for path in sorted(SKILLS_ROOT.rglob("SKILL.md")):
+        frontmatter = _parse_frontmatter(path.read_text(encoding="utf-8")) or {}
+        names.setdefault(frontmatter.get("name", ""), []).append(str(path.relative_to(REPO_ROOT)))
+    dupes = {n: ps for n, ps in names.items() if len(ps) > 1}
+    assert not dupes, f"skills share a name: {dupes}"
 
 
 def test_no_legacy_skill_install_path() -> None:
@@ -288,7 +305,7 @@ def test_skill_tiers_are_defined() -> None:
 
 
 def test_tier_delegation_doc_states_the_rules() -> None:
-    assert TIER_DELEGATION_DOC.exists(), "missing lore-workflow/TIER-DELEGATION.md"
+    assert TIER_DELEGATION_DOC.exists(), "missing skills/TIER-DELEGATION.md"
     text = TIER_DELEGATION_DOC.read_text().lower()
     assert "lore tier resolve" in text
     assert "implicit" in text and "inherit" in text, (
@@ -310,7 +327,7 @@ def test_model_tiers_doc_covers_ordinal_fallback_cheap_rules() -> None:
 
 def test_readme_skill_table_matches_shipped_skills() -> None:
     readme = (PLUGIN_ROOT / "README.md").read_text(encoding="utf-8")
-    row = re.compile(r"^\|\s*`([a-z0-9]+(?:-[a-z0-9]+)*)`\s*\|", re.M)
+    row = re.compile(r"^\|\s*`/lore:([a-z0-9]+(?:-[a-z0-9]+)*)`\s*\|", re.M)
     documented = set(row.findall(readme))
     actual = {p.name for p in _skill_dirs()}
     assert documented == actual, (

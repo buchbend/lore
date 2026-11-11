@@ -168,12 +168,13 @@ Terms used in the workflow layer and orchestration:
 
 - **Workflow** — a skill-bundled planning chain: `orient → grilling →
   to-epic → build → document`, with `handover` at any stop. Each step is a
-  callable skill. The human checkpoint sits between shaping and the build.
+  callable skill of the one `lore` plugin. The human checkpoint sits between shaping and the build.
   See `docs/conventions.md` for the stage vocabulary and tier assignments.
 - **Skill** — a callable, namespaced Claude Code automation block (e.g.,
-  `lore-workflow:build`, `lore:verify`). Skills are registered in
+  `lore:build`, `lore:verify`). Skills are registered in
   `plugin.json` and dispatched by CLI invocation or intra-skill routing.
-  Workflow skills are bundled in the `lore-workflow` plugin.
+  Lore ships one plugin, `lore`; every skill lives in `skills/` and has the
+  name `lore:<name>`, the workflow skills too.
 - **Lore context pack** — synonym for `lore_context_pack` (see above).
 - **Codemap excerpt** — a bounded, ranked slice of the `lore codemap`
   output, token-budgeted (~1k tokens) and curated for a specific feature
@@ -252,7 +253,7 @@ and 0013, spec in PRD 0014.
 - **Stage tag** — the bracketed workflow step that opens a spawn's
   description, such as `[build:review]`. The epic or issue the spawn works for
   may follow it. Token statistics group by it. The list lives in
-  `lore-workflow/TIER-DELEGATION.md` and `lib/lore_core/stages.py`.
+  `skills/TIER-DELEGATION.md` and `lib/lore_core/stages.py`.
 - **Linkage block** — the transcript index entry's `repo`, `branch`,
   `prs`, `issues`, `commits` and `files` keys, written by capture with no
   LLM call. It is what `lore_drill` reads to answer "which sessions

@@ -42,17 +42,10 @@ The figure is from the ADASS 2026 talk; the bullets below describe Lore today.
 - **Colleagues** work on the same artifacts and the same wiki, with the
   same workflow.
 
-## Two plugins: `lore` + `lore-workflow`
+## One plugin: `lore`
 
-This repo is a Claude Code marketplace with two plugins, versioned and
-installed independently:
-
-| Plugin | What it's for | Depends on |
-|---|---|---|
-| **`lore`** | Hooks, MCP server, and the `/lore:*` skills: capture, context, search, wiki upkeep. | nothing else |
-| **`lore-workflow`** | One planning-and-build workflow: orient, grilling, epics, PRDs, TDD, docs. | `lore` |
-
-The `lore-workflow` chain:
+This repo is a Claude Code marketplace with one plugin, `lore`: hooks, the
+MCP server, and every skill as `/lore:<name>`. The planning-and-build chain:
 
 ```
 orient → grilling → to-epic → build → document     (+ handover at any stop)
@@ -61,14 +54,33 @@ orient → grilling → to-epic → build → document     (+ handover at any st
 `build` runs in three modes: `loop` for fast rounds with you watching,
 `issue` for one clear issue, `epic` for a build order of sub-issues. `tdd`
 is the discipline every mode follows; `debug`, `experiment`, `triage` and
-`file-issue` are helpers. See [`lore-workflow/README.md`](lore-workflow/README.md).
+`file-issue` are helpers. The build skills call the `lore` CLI and MCP
+surface (`lore codemap`, `lore tier resolve`, `lore workflow
+validate-build-order` / `create-prd`). Onboard a repo with
+`lore setup scope --scaffold-workflow`. The spawn rules the skills share live
+in [`skills/TIER-DELEGATION.md`](skills/TIER-DELEGATION.md).
 
-The `lore` skills:
+The build skills:
+
+| Skill | What it does |
+|---|---|
+| `/lore:orient` | First step of a task: homework, then reflect understanding back. A light mode ("brief me") pulls only the roadmap and the context pack, and hands one change to `build`. |
+| `/lore:grilling` | Interview the user to stress-test a plan, and sharpen the domain model: `CONTEXT.md` terms and ADRs with `Holds` and `Revisit if`. |
+| `/lore:to-epic` | Turn a plan into a PRD file plus an epic tracker issue with a build-order table. |
+| `/lore:build` | Build code in three modes: `loop` (fast rounds, local merges, one wrap-up PR), `issue` (one issue, one PR), `epic` (a build order, teammates, review by risk level). Keeps a ledger and writes a handover section. |
+| `/lore:tdd` | Test-driven red-green-refactor loop. |
+| `/lore:debug` | Systematic root-cause debugging with a hard circuit breaker. |
+| `/lore:experiment` | Run one experiment: write the question and the expected result, run it, write one lab entry with `lore lab add` and commit it. |
+| `/lore:document` | Bring the Diátaxis docs in line with the code: pre-merge, catch-up, or a plan-approved consolidation of a docs tree. Marks a shipped PRD at the epic tail. |
+| `/lore:file-issue` | Writes issue text and files it: resolve the writing rules, draft, Vale-lint, then post the issue or PR body. |
+| `/lore:triage` | Reviews every open issue and PR of a repo against the code, gives each a verdict, and presents one filterable page for discussion. Review only until the user decides. |
+
+The context and upkeep skills:
 
 | Skill | What it does |
 |---|---|
 | `/lore:context` | Show what Lore injected this session. |
-| `/lore:handover` | Write a handover note for the next session. |
+| `/lore:handover` | Part one writes a handover note for the next session. Part two writes the handover section for work that stops early, and turns follow-up work into a seed issue. |
 | `/lore:inbox` | Route inbox files into the right wiki. |
 | `/lore:map` | Keep the system map true across repos. |
 | `/lore:system` | Bring every checkout of a system to its target branch. |
@@ -84,8 +96,8 @@ curl -fsSL https://raw.githubusercontent.com/buchbend/lore/main/install.sh | sh
 ```
 
 The script installs the `lore` CLI with `pipx`, `uv tool` or `pip --user`,
-then runs `lore setup`. Setup creates or links a wiki and installs both
-Claude Code plugins, plus Cursor's MCP wiring where present. It offers a
+then runs `lore setup`. Setup creates or links a wiki and installs the
+Claude Code plugin, plus Cursor's MCP wiring where present. It offers a
 scope for the current repo and runs the checks. Upgrade later with `lore update`.
 
 By hand:
@@ -98,12 +110,11 @@ lore setup
 > The bare `pipx install lore` will *not* work: the name is taken on PyPI
 > by an unrelated package.
 
-Plugins only, from inside Claude Code (you still need the CLI):
+The plugin only, from inside Claude Code (you still need the CLI):
 
 ```text
 /plugin marketplace add buchbend/lore
 /plugin install lore@lore
-/plugin install lore-workflow@lore
 ```
 
 `lore setup` is also the repair command. On a healthy setup it writes
@@ -185,10 +196,10 @@ Event logs live in `$LORE_ROOT/.lore/spine.jsonl`. See
 ## Credits
 
 The grilling method, the shared-language glossary (`CONTEXT.md`), the ADR format and the
-TDD skill in `lore-workflow` come from Matt Pocock's
+TDD skill come from Matt Pocock's
 [`mattpocock/skills`](https://github.com/mattpocock/skills) (MIT). The step from a
-conversation to a PRD and issues is his idea too. The rest of `lore` and `lore-workflow`
-is our own. [lore-workflow/THIRD-PARTY.md](./lore-workflow/THIRD-PARTY.md) says exactly
+conversation to a PRD and issues is his idea too. The rest of `lore`
+is our own. [skills/THIRD-PARTY.md](./skills/THIRD-PARTY.md) says exactly
 which parts are his, what we changed, and holds his licence.
 
 ## License

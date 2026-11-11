@@ -466,3 +466,13 @@ def test_resolve_cwd_prefers_claude_project_dir_when_both_set(
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(claude_dir))
     monkeypatch.setenv("CURSOR_PROJECT_DIR", str(cursor_dir))
     assert _resolve_cwd(None) == str(claude_dir)
+
+
+def test_cursor_copies_the_one_skill_root_with_the_build_skills(cursor_home, monkeypatch):
+    """ADR 0021: Cursor reads `skills/` only, and it holds the build skills too."""
+    repo = Path(__file__).resolve().parent.parent
+    monkeypatch.setattr(cursor, "resolve_lore_source_root", lambda *a, **kw: repo)
+    sources = [a.payload.get("copy_from") for a in cursor.plan(InstallContext())]
+    skill_roots = [s for s in sources if s and s.endswith("skills")]
+    assert skill_roots == [str(repo / "skills")]
+    assert (repo / "skills" / "build" / "SKILL.md").is_file()
