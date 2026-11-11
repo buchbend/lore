@@ -310,11 +310,17 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
 - **Risk level** — `low` or `high`, from `lore workflow risk <pr>`. The
   level sets the review depth. An agent raises the level and never
   lowers it.
+- **Handover note** — the note that part one of the `handover` skill writes
+  so the next session continues this one after `/clear` or compaction.
+  `lore handover write` stores it in the local cache, one note per working
+  directory; a new note replaces the old one. SessionStart names its path.
+  The note stays local; team-facing text goes in a handover section or a
+  seed issue. _Avoid_: handoff, session note.
 - **Handover section** — the `## Handover` section of an epic issue or of
   a build PR body. It names what
   shipped, the decisions, the deviations from the PRD, the follow-ups and
-  the known limits. `build` writes it at the finish point. The `handover`
-  skill writes it for work that stops early.
+  the known limits. `build` writes it at the finish point. Part two of the
+  `handover` skill writes it for work that stops early.
 - **Spec branch** — the branch that holds the PRD of an epic before the
   build. `to-epic` names it in the epic body. `build` merges it into the
   epic branch when the target branch lacks the PRD. _Avoid_: docs branch,
