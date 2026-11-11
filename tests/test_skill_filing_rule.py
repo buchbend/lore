@@ -132,3 +132,52 @@ def test_loop_wrap_up_sends_a_kept_feature_idea_to_the_roadmap() -> None:
     text = _file("build/loop-wrap-up.md")
     assert "add a feature idea to the roadmap" in text
     assert "`lore roadmap add`" in text
+
+
+# --- handover follows the same rule ----------------------------------------
+# Issue 517 (decide where handover sends a deferred feature idea).
+
+
+def test_handover_files_only_a_non_idea_line_as_an_issue() -> None:
+    text = _text("handover")
+    assert "Send a feature-idea line through § A deferred feature idea." in text
+    assert "File each other `left` line you can through" in text
+    assert "File each `left` line you can" not in text
+    assert "A small, clear defect or concrete change needs no seed" in text
+    assert "A small, clear follow-up needs no seed" not in text
+
+
+def test_handover_adds_the_roadmap_item_in_the_worktree_of_the_open_branch() -> None:
+    text = _text("handover")
+    assert "## A deferred feature idea" in text
+    assert "`epic/<issue>` in `epic` mode, else the build branch" in text
+    assert '`cd <worktree> && lore roadmap add "Title" "Paragraph"` in one shell call' in text
+    assert "Name the item under **State**." in text
+
+
+def test_a_feature_idea_with_findings_gets_a_seed_the_roadmap_item_links() -> None:
+    text = _text("handover")
+    assert "also gets a seed issue. Write the seed before the roadmap item" in text
+    assert "end the item's paragraph with `Seed: <owner/repo#n>`" in text
+
+
+def test_without_an_open_branch_the_seed_names_the_item_and_to_epic_adds_it() -> None:
+    text = _text("handover")
+    assert "When no open branch carries the work, or the branch has merged," in text
+    assert "the seed issue that this handover writes holds the idea alone." in text
+    assert "Its **Next step** names the roadmap item, under the `orient` command." in text
+    to_epic = _text("to-epic")
+    assert "or the seed names one. Then add the PRD and epic links" in to_epic
+    assert "Add a missing item with `lore roadmap add`." in to_epic
+
+
+def test_handover_sets_the_left_line_of_the_idea_where_one_exists() -> None:
+    text = _text("handover")
+    assert "Where the idea has a `left` line" in text
+    assert "`approved` for a roadmap item, `filed <owner/repo#seed>` for a seed alone" in text
+
+
+def test_next_run_offers_no_run_for_a_roadmap_item() -> None:
+    assert "A roadmap item gets no next run; `orient` picks it up from the roadmap." in _text(
+        "handover"
+    )
