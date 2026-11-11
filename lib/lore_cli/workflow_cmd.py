@@ -66,8 +66,11 @@ def spec_branch_cmd(
     from lore_workflow.spec_branch import SpecBranchError, resolve_spec_branch
 
     text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
+    policy = resolve_epic_policy(repo_root)
+    if policy.warning:
+        typer.echo(f"spec-branch: {policy.warning}", err=True)
     try:
-        r = resolve_spec_branch(text, repo_root, resolve_epic_policy(repo_root).target_branch)
+        r = resolve_spec_branch(text, repo_root, policy.target_branch)
     except SpecBranchError as exc:
         typer.echo(f"spec-branch: {exc}", err=True)
         raise typer.Exit(code=1) from None

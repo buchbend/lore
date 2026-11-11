@@ -257,9 +257,12 @@ def test_dokuwiki_ends_a_slow_reply_at_the_timeout(cfg_home, monkeypatch):
     cfg_home({"sources": {"team": {**DOKU, "timeout": 0.2}}}, {"team-wiki": "s3cret"})
 
     class _Drip(_FakeResponse):
+        drips = 100  # ends by itself, so a broken deadline fails and does not hang
+
         def read1(self, n=-1):
             time.sleep(0.05)
-            return b" "
+            self.drips -= 1
+            return b" " if self.drips > 0 else b""
 
     monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: _Drip())
     start = time.monotonic()

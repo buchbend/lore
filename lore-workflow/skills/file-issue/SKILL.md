@@ -94,10 +94,9 @@ whether Vale is on PATH.)
 With Vale present:
 
 ```bash
-test -f "<draft>" && vale --config "$(lore style vale-config)" "<draft>"
+test -f "<draft>" || { echo "draft missing: <draft>"; exit 2; }
+vale --config "$(lore style vale-config)" "<draft>"
 ```
-
-When `test -f` fails, the draft is not at the path. **Stop and report the path.**
 
 Read the result by exit code, not by whether anything printed:
 
@@ -106,9 +105,9 @@ Read the result by exit code, not by whether anything printed:
   is 0. A retired heading means the structure you drafted from has moved — re-read the
   template rather than renaming the heading.
 - **Exit 0 with findings printed** — `warning`-level heuristics only. Advisory.
-- **Exit 2** — the invocation itself is broken, not the prose. Vale exits 2 on an empty
-  path argument and on a `--config` path it cannot resolve. **Stop and report.** Editing
-  prose here rewrites a draft that was never read.
+- **Exit 2** — the invocation itself is broken, not the prose: the draft is missing, the
+  path argument is empty, or Vale cannot resolve the `--config` path. **Stop and report
+  the path.** Editing prose here rewrites a draft that was never read.
 
 Vale reports "0 files" as success. When the output names `stdin` or "0 files", the lint
 did not run. Confirm the output names your draft file before you trust a clean result.
