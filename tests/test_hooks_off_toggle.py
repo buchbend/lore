@@ -1,7 +1,7 @@
 """Hooks short-circuit when `/lore:off` (scope=all) is active for the session.
 
-Mirrors the curator-mode guard pattern in
-``test_curator_mode_guard.py``. Every hook entry point checks
+Mirrors the child-mode guard pattern in
+``test_child_mode_guard.py``. Every hook entry point checks
 ``lore_core.toggles.is_off("all", sid)`` after reading the payload and
 returns without emitting when the sentinel is present.
 
@@ -24,9 +24,9 @@ from lore_core import toggles
 
 @pytest.fixture(autouse=True)
 def _isolate_env(tmp_path, monkeypatch):
-    """Per-test TMPDIR + clean curator-mode + known sid via stdin payload."""
+    """Per-test TMPDIR + clean child-mode + known sid via stdin payload."""
     monkeypatch.setenv("TMPDIR", str(tmp_path))
-    monkeypatch.delenv("LORE_CURATOR_MODE", raising=False)
+    monkeypatch.delenv("LORE_CHILD_MODE", raising=False)
     monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
     yield
 

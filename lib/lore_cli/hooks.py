@@ -3,7 +3,7 @@
 Each command is a thin shell: resolve cwd, read the stdin payload, check the
 suppression toggles, delegate, emit. The work itself lives in the domain
 layer — :mod:`lore_core.session_start` (banner assembly) and
-:mod:`lore_curator.capture_routing` (transcript registration).
+:mod:`lore_core.capture_routing` (transcript registration).
 
 What stays here is the hook contract itself: the crash shield, the JSON
 envelope Claude Code expects per event, stdin payload parsing, the PID-keyed
@@ -46,10 +46,10 @@ from lore_core.session_start import recorded_auto_pull_warning as _recorded_auto
 from lore_core.session_start import render_capture_state_block as _render_capture_state_block
 from lore_core.session_start import render_project_orientation as _render_project_orientation
 from lore_core.session_start import session_start_text as _session_start
-from lore_curator.capture_routing import (
+from lore_core.capture_routing import (
     register_pending_transcripts as _register_pending_transcripts,
 )
-from lore_curator.capture_routing import route_capture as _route_capture
+from lore_core.capture_routing import route_capture as _route_capture
 
 from lore_cli.context_cache import (
     _cache_dir,
@@ -259,7 +259,7 @@ def _shield_hook(typer_event: str):
     surface a friendly diagnostic via `_emit` and exit 0.
 
     Local try/except blocks scattered through the hook bodies catch
-    *expected* failures (offer-rendering, drain breadcrumbs, curator
+    *expected* failures (offer-rendering, drain breadcrumbs, child
     spawns). The shield is the backstop for *unexpected* ones —
     NameError, FileNotFoundError on a bundled resource, etc. — that
     would otherwise leak a Python traceback into Claude Code's UI.
@@ -396,8 +396,8 @@ def _resolve_cwd(explicit: str | None) -> str:
     )
 
 
-def _in_curator_mode() -> bool:
-    return os.environ.get("LORE_CURATOR_MODE") == "1"
+def _in_child_mode() -> bool:
+    return os.environ.get("LORE_CHILD_MODE") == "1"
 
 
 def _capture_suppressed() -> bool:
@@ -449,15 +449,12 @@ def _read_hook_payload() -> dict:
     The payload carries the canonical ``session_id`` (and ``cwd``,
     ``transcript_path``, ``hook_event_name``). Until v0.12.1 lore never
     read it, so :func:`lore_core.drain.resolve_session_id` had to fall
-    back to a transcript-freshness heuristic — fine for a single
-    session, but with multiple concurrent Claude sessions the freshest
-    transcript at curator-write time and at heartbeat-read time can
-    disagree, leaving curator-filed notes stranded in the wrong drain
-    file (issue #29).
+    back to a transcript-freshness heuristic, which picks the wrong
+    session when several Claude sessions run at once (issue #29).
 
     Side effect: when the payload provides ``session_id`` we publish it
     as ``CLAUDE_SESSION_ID`` so :func:`resolve_session_id`'s priority-2
-    branch (and any spawned curator subprocess inheriting the env)
+    branch (and any spawned child process inheriting the env)
     pick it up without further plumbing. We never overwrite an
     explicit ``CLAUDE_SESSION_ID`` already in the env — a host that
     sets it directly stays authoritative.
@@ -553,7 +550,7 @@ def cmd_session_start(
     ),
 ) -> None:
     """Inject vault context at session start."""
-    if _in_curator_mode():
+    if _in_child_mode():
         return
     payload = _read_hook_payload()
     if _session_off_all():
@@ -565,7 +562,7 @@ def cmd_session_start(
         with contextlib.suppress(Exception):  # codemap must never crash SessionStart
             _spawn_codemap_refresh(cwd_resolved)
 
-    # Resolve the route once — reused by the banner, curator spawns, and
+    # Resolve the route once — reused by the banner, the wiki pull and
     # transcript sync below. None means "no wiki routes this cwd."
     route = resolve_route(cwd_resolved)
     scope = route if route.wiki else None
@@ -751,7 +748,7 @@ def cmd_pre_compact(
     ),
 ) -> None:
     """Inject open items before compaction."""
-    if _in_curator_mode():
+    if _in_child_mode():
         return
     _read_hook_payload()
     if _session_off_all():
@@ -787,7 +784,7 @@ def cmd_stop(
     ),
 ) -> None:
     """Stop hook: a no-op; capture is automatic."""
-    if _in_curator_mode():
+    if _in_child_mode():
         return
     _read_hook_payload()
     if _session_off_all():
@@ -875,7 +872,7 @@ def cmd_user_prompt_submit(
     ),
 ) -> None:
     """Mid-session transcript registration plus the citations directive."""
-    if _in_curator_mode():
+    if _in_child_mode():
         return
     _read_hook_payload()
     if _session_off_all():
@@ -1004,17 +1001,13 @@ def capture(
     Must return in <100ms. Updates the sidecar ledger. No LLM, bounded FS
     walk (8 levels). Only session-end touches the network: it pushes the wiki.
     """
-    if _in_curator_mode() or _capture_suppressed():
+    if _in_child_mode() or _capture_suppressed():
         return
     _read_hook_payload()
     if _session_off_all():
         # `/lore:off all` is the security-first contract: no transcript
-        # ingestion, no curator spawn, no ledger writes, no vault output
-        # while the user has muted us. SessionEnd is the *only* hook bound
-        # to the capture pipeline, so if this is bypassed the user can
-        # mute SessionStart/PreCompact/Stop/UserPromptSubmit and still see
-        # vault content surface from a curator that ran during their
-        # "muted" session.
+        # ingestion, no child spawn, no ledger writes, no vault output
+        # while the user has muted us.
         return
     if event == "session-end":  # PRD 0017: retry undelivered logbook entries
         _logbook_line(cwd_override or _resolve_cwd_capture(), spawn=True)
@@ -1026,20 +1019,6 @@ def capture(
     cwd = cwd_override or _resolve_cwd_capture()
     _capture_pid = os.getpid()
     _capture_ppid_cmd = _ppid_cmd()
-
-    # Never capture transcripts from the vault root — curator subprocesses
-    # run with cwd=LORE_ROOT and their claude -p transcripts must not be
-    # re-ingested as user sessions. Only skip when the cwd is the vault root
-    # AND has no explicit scope attachment (a real project attached at the
-    # vault root would still be captured).
-    try:
-        _vault = get_lore_root().resolve()
-        if Path(cwd).resolve() == _vault and not resolve_route(cwd).wiki:
-            return
-    except OSError:
-        # Path resolution failed (broken symlink, permission, etc.); fall
-        # through so the calling capture path still runs.
-        pass
 
     route = resolve_route(cwd)
     scope = route if route.wiki else None

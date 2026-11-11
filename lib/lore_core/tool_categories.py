@@ -4,7 +4,7 @@ Lore is glue between integrations (Claude Code, Cursor, VSCode Copilot,
 future IDEs and agent frameworks). Each integration names its tools
 differently: Claude Code's ``Edit`` is Cursor's ``edit_file`` is
 Copilot's ``applyEdit``. Downstream consumers (noteworthy cascade,
-Curator B surfaces, the knowledge graph) should not care which
+the knowledge graph) should not care which
 integration a turn came from — they reason over
 :data:`lore_core.types.ToolCategory`.
 

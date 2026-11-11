@@ -6,8 +6,7 @@ transcript lives (``path``, ``directory``), when it last grew
 session worked on (``linkage``). Transcript sync, the drill tool and the
 last-active-day recap read those fields.
 
-The digest watermarks the curator pipeline wrote are gone with the
-pipeline (issues #361, #377). Sync decides what to copy by comparing
+Sync decides what to copy by comparing
 filesystem modification times, so no ledger field carries a sync
 guarantee.
 

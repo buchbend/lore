@@ -6,7 +6,7 @@ The shape (lifted in v0.13.0):
         - exposes a module-level ``app: typer.Typer``
         - registers its callback / command(s) inside the file
         - imports business logic from lower layers (lore_core /
-          lore_curator / lore_mcp / lore_search) — never the reverse
+          lore_mcp / lore_search) — never the reverse
 
     A module owning sibling verbs that share one implementation exposes
     one named app per verb instead (``toggle_cmd.on_app`` /

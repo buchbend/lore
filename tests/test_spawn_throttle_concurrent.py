@@ -184,7 +184,7 @@ def test_cooldown_blocks_second_call_within_window(tmp_path: Path, monkeypatch) 
 def test_cooldown_expired_allows_spawn(tmp_path: Path) -> None:
     """Age the stamp past cooldown → next call spawns."""
     lore_root = _make_lore_root(tmp_path)
-    stamp = lore_root / ".lore" / "curator-a.spawn.stamp"
+    stamp = lore_root / ".lore" / "spawn-transcripts.stamp"
     stamp.parent.mkdir(parents=True, exist_ok=True)
     # Write a stamp timestamp from 2 hours ago.
     stamp.write_text(f"{time.time() - 7200:.6f}")

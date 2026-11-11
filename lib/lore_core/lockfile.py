@@ -68,7 +68,7 @@ def try_acquire_spawn_lock(lore_root: Path, role: str):
     and the (held, stamp_path) tuple shape that callers depend on for
     cooldown bookkeeping.
     """
-    lock_path = lore_root / ".lore" / f"curator-{role}.spawn.lock"
-    stamp_path = lore_root / ".lore" / f"curator-{role}.spawn.stamp"
+    lock_path = lore_root / ".lore" / f"spawn-{role}.lock"
+    stamp_path = lore_root / ".lore" / f"spawn-{role}.stamp"
     with flocked(lock_path, blocking=False) as held:
         yield (held, stamp_path)

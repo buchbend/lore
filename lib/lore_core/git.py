@@ -1,7 +1,7 @@
-"""Git helpers — repo resolution, remote parsing, co-commit history.
+"""Git helpers — repo resolution and remote parsing.
 
-Used by hooks to scope context to the current repository, and by the
-curator / session skills to auto-populate `repos:` frontmatter.
+Hooks, linkage and the system map use them to scope work to the current
+repository.
 """
 
 from __future__ import annotations
@@ -9,54 +9,6 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
-
-
-def git_user_email(
-    cwd: Path | str | None = None,
-    *,
-    env_override: str | None = "GIT_AUTHOR_EMAIL",
-    fallback_hostname: bool = False,
-) -> str:
-    """Resolve the configured git ``user.email`` for ``cwd``.
-
-    Resolution order:
-      1. ``$GIT_AUTHOR_EMAIL`` (when ``env_override`` is set; this is git's
-         own override and lets tests fix the value without touching repo
-         config). Pass ``env_override=None`` to ignore.
-      2. ``git config user.email`` in ``cwd``.
-      3. ``socket.gethostname()`` (when ``fallback_hostname=True``).
-         Some callers want a non-empty deterministic identifier even
-         when no email is configured (curator-C jitter offset).
-      4. Empty string.
-
-    Single source of truth — replaces near-identical reimplementations
-    across ``lore_core.session`` and ``lore_cli.hooks``.
-    """
-    import os
-    if env_override:
-        env_value = os.environ.get(env_override)
-        if env_value:
-            return env_value
-    try:
-        result = subprocess.run(
-            ["git", "config", "user.email"],
-            cwd=str(cwd) if cwd else None,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except (OSError, subprocess.TimeoutExpired, subprocess.SubprocessError):
-        pass
-    if fallback_hostname:
-        import socket
-        try:
-            return socket.gethostname()
-        except OSError:
-            return ""
-    return ""
 
 
 def git_repo_root(cwd: Path | str | None = None) -> Path | None:
@@ -147,45 +99,3 @@ def current_repo(cwd: Path | str | None = None) -> str | None:
             if canonical:
                 return canonical
     return None
-
-
-def repos_touched_in_range(
-    repo_root: Path, since: str = "HEAD~20", until: str = "HEAD"
-) -> list[str]:
-    """List repos touched by commits in a git range. For session auto-tagging.
-
-    Here `repo_root` is the wiki repo; we return all external repo refs
-    mentioned in commit messages or metadata. Callers that want the
-    repo this cwd lives in should use `current_repo()`.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "log", "--format=%B", f"{since}..{until}"],
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    if result.returncode != 0:
-        return []
-    # Extract `org/name` patterns from commit bodies (best-effort)
-    found = set(re.findall(r"\b[\w.-]+/[\w.-]+\b", result.stdout))
-    return sorted(found)
-
-
-def is_obsidian_holding(path: Path) -> bool:
-    """Return True if Obsidian appears to hold an edit lock on `path`'s vault.
-
-    Cheap heuristic: check for Obsidian's lock file pattern. Curator
-    invokes this before patching to avoid last-writer-wins races.
-    """
-    # Obsidian does not create a hard lock; we approximate by checking
-    # for recent .obsidian/workspace state changes in the containing tree.
-    # A more robust check would require OS-specific process inspection.
-    for parent in [path, *path.parents]:
-        if (parent / ".obsidian").is_dir():
-            return True
-    return False

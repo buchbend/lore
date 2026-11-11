@@ -2,7 +2,7 @@
 
 The dependency graph is one-way:
 
-    plugin/skills → lore_cli → lore_core / lore_curator / lore_mcp / lore_search
+    plugin/skills → lore_cli → lore_core / lore_mcp / lore_search
 
 Lower layers must not import from ``lore_cli``. The typer/click
 plumbing for every CLI verb lives in ``lore_cli/<verb>_cmd.py`` (lifted
@@ -26,7 +26,6 @@ LIB = REPO_ROOT / "lib"
 
 LOWER_LAYERS = (
     "lore_core",
-    "lore_curator",
     "lore_mcp",
     "lore_search",
     "lore_adapters",

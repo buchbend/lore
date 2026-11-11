@@ -60,7 +60,7 @@ lore writes it without a model. Every fact worth keeping leaves as a repo
 artifact instead (see the **filing rule** in the glossary).
 
 **A transcript-ledger entry.** Capture registers every transcript it sees
-for the session's directory (`lore_curator/capture_routing.py`) and
+for the session's directory (`lore_core/capture_routing.py`) and
 archives it. It stamps a **linkage block** onto the entry. The block names
 the repo, the branch, and the PRs, issues, commits and files the session
 touched. The block is derived from
@@ -131,13 +131,13 @@ above:
 
 | Concern | Module |
 |---|---|
-| Transcript capture, ledger registration, linkage stamp | `lore_curator/capture_routing.py` |
+| Transcript capture, ledger registration, linkage stamp | `lore_core/capture_routing.py` |
 | Note reading (used by trace and seed-lift) | `lore_core/note_document.py` |
 | Repo ADR/PRD pull (filesystem side) | `lore_core/repo_docs.py` |
 | MCP server (tool dispatch) | `lore_mcp/server.py` |
 | Hook dispatch (the seven `lore hook ...` entry points) | `lore_cli/hooks.py` |
 | SessionStart context assembly + banner | `lore_core/session_start.py` |
-| Capture routing (transcripts, flush, spawn gate) | `lore_curator/capture_routing.py` |
+| Capture routing (transcripts, flush, spawn gate) | `lore_core/capture_routing.py` |
 | Vault/wiki/scope resolution | `lore_core/route.py`, `lore_core/config.py` |
 
 ## Glossary

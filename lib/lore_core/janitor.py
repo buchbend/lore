@@ -4,7 +4,7 @@ One flock-guarded sweep enforces tiered retention across the event spine
 and the flush record store, replacing the old inconsistent per-family
 behavior (10 MB hook rotation, count+MB run caps with swallowed delete
 errors, append-forever drain, soft-hidden crash logs). Runs
-opportunistically from hook fire / curator run end (see
+opportunistically from hook fire (see
 ``lore_cli._janitor_entry``) — no daemon.
 
 Tiers, per spine file:

@@ -1,7 +1,7 @@
 """Atomic I/O helpers — never leave a partial file behind.
 
 Readers (SessionStart, PreCompact hooks) race with writers (linter,
-curator, skill output). `.tmp + os.replace` ensures readers never see
+skill output). `.tmp + os.replace` ensures readers never see
 a half-written file. POSIX atomic on same filesystem.
 
 This module also hosts two small text helpers that turned out to need
@@ -25,8 +25,7 @@ def atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> N
     If content ends without a newline, one is appended.
 
     Fsyncs the tmp file before rename so concurrent readers on the same
-    host see a committed state even if we crash. Required by Plan 5's
-    Curator C team-mode coordination (code-reviewer must-fix).
+    host see a committed state even if we crash.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")

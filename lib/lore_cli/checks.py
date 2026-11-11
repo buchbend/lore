@@ -306,7 +306,7 @@ def _check_spine_writable(cwd: str) -> Check:
 def _check_hook_runnable(cwd: str) -> Check:
     """Run `lore hook session-start --plain --probe` and confirm it produces output.
 
-    `--probe` suppresses side-effects (curator spawns, stamp/lock writes, ledger
+    `--probe` suppresses side-effects (child spawns, stamp/lock writes, ledger
     mutations) so the diagnostic doesn't mutate the thing it's diagnosing.
     """
     cmd = [

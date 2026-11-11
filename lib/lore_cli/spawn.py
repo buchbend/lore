@@ -184,7 +184,7 @@ def _spawn_detached(
     The runaway gate is the safety net for "child hangs and cooldown keeps
     green-lighting fresh spawns" — once tripped, a single warning event is
     appended to the event spine per ``cooldown_s * 10`` window
-    (throttled via ``curator-<role>.runaway.stamp``) so users running
+    (throttled via ``spawn-<role>.runaway.stamp``) so users running
     ``lore status`` / grepping the log can see the issue without it
     spamming on every UserPromptSubmit.
     """
@@ -202,7 +202,7 @@ def _spawn_detached(
             return False
         runaway = _prior_spawn_runaway(lore_root, role, runaway_age_s=effective_runaway)
         if runaway is not None:
-            warn_stamp = lore_root / ".lore" / f"curator-{role}.runaway.stamp"
+            warn_stamp = lore_root / ".lore" / f"spawn-{role}.runaway.stamp"
             if not _stamp_within_cooldown(warn_stamp, cooldown_s * 10):
                 with contextlib.suppress(Exception):
                     emit_hook_event(
@@ -229,7 +229,7 @@ def _spawn_detached(
         # provenance is per-process; the path value is what matters
         # across boundaries.
         env["LORE_ROOT"] = str(lore_root)
-        env["LORE_CURATOR_MODE"] = "1"
+        env["LORE_CHILD_MODE"] = "1"
         log_fd = _open_proc_log(lore_root, role)
         proc_dir = lore_root / ".lore" / "proc"
         meta_path = proc_dir / f"{role}.meta.json"
@@ -355,7 +355,7 @@ def _spawn_in_repo(cwd: Path, *args: str) -> bool:
     import subprocess
 
     env = os.environ.copy()
-    env["LORE_CURATOR_MODE"] = "1"
+    env["LORE_CHILD_MODE"] = "1"
     try:
         subprocess.Popen(
             [sys.executable, "-m", "lore_cli", *args],

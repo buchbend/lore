@@ -45,7 +45,7 @@ def test_session_start_refreshes_codemap_in_background(tmp_path: Path, monkeypat
 
     _git_repo(tmp_path)
     (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
-    monkeypatch.delenv("LORE_CURATOR_MODE", raising=False)
+    monkeypatch.delenv("LORE_CHILD_MODE", raising=False)
     monkeypatch.setenv("LORE_ROOT", str(tmp_path / "no-vault"))
     inline: list[Path] = []
     monkeypatch.setattr(cm, "generate", lambda root, **kw: inline.append(root))

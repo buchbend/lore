@@ -77,8 +77,8 @@ Two state files are written from
 hot paths and need to survive multiple concurrent Claude sessions:
 
 - **`$LORE_ROOT/.lore/spine.jsonl`** — the append-only event spine.
-  All background-pipeline telemetry shares one envelope here (hook
-  events are the first producer; curator/drain/janitor follow).
+  All background-pipeline telemetry shares one envelope here (hook,
+  drain, janitor, install and MCP events).
   Concurrent appends are safe by POSIX semantics: every write is
   ``O_APPEND``-atomic for records ≤ ``PIPE_BUF`` (typically 4096
   bytes), and envelope records are well under that. No application-
@@ -91,10 +91,9 @@ hot paths and need to survive multiple concurrent Claude sessions:
 
 The same pattern (``LOCK_EX | LOCK_NB`` on a sibling lock file) is
 used by ``lore_core.lockfile.try_acquire_spawn_lock`` to serialise a
-detached background-process launch — transcript sync at SessionStart
-today. The curator's own turn-threshold auto-spawn read this same lock
-before the heartbeat that decided when to take it retired with the
-compose pipeline. See those modules for the implementation details — it's
+detached background-process launch — transcript sync and the per-wiki
+pull at SessionStart. The lock lives at `.lore/spawn-<role>.lock`, its
+cooldown stamp at `.lore/spawn-<role>.stamp`. See those modules for the implementation details — it's
 the canonical lockfile pattern used across the codebase.
 
 ## Failure modes

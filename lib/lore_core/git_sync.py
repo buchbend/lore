@@ -1,7 +1,6 @@
 """Cross-host sync engine for wiki git repos.
 
-Pure functions over a wiki directory. The hooks/curator wiring layer
-calls these; this module never reads the hook event log or spawns
+Pure functions over a wiki directory. The hooks call these; this module never reads the hook event log or spawns
 subprocesses outside of git itself.
 
 See `docs/architecture/sync.md` for the conflict policy.

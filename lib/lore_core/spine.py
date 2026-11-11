@@ -1,9 +1,8 @@
 """Unified event spine — one envelope, one writer, one JSONL family.
 
 All background-pipeline telemetry is emitted through :class:`SpineWriter`
-onto ``$LORE_ROOT/.lore/spine.jsonl``. Hook events are the first producer
-to migrate (issue #185); curator run events, drain/news events and the
-janitor move onto the same envelope in later slices. Any query layer
+onto ``$LORE_ROOT/.lore/spine.jsonl``. Hook events, drain events and
+the janitor share the one envelope. Any query layer
 (``lore status``/``trace``/``doctor``) READS this file, never owns it.
 
 Every record shares the envelope defined here::
@@ -52,14 +51,13 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-# Bump on any envelope-shape change (see module docstring). Version 2
-# drops the error codes whose only raiser was the flush lifecycle state
-# machine: removing a member of the closed ``ErrorCode`` enum narrows the
-# set a reader may see, which is a schema change.
-SCHEMA_VERSION = 2
+# Bump on any envelope-shape change (see module docstring). Removing a
+# member of a closed set (``SOURCES``, ``ErrorCode``) narrows what a reader
+# may see, so it counts as a schema change too.
+SCHEMA_VERSION = 3
 
 # Closed producer set. A source outside this set is a bug, not data.
-SOURCES: frozenset[str] = frozenset({"hook", "curator", "drain", "janitor", "install", "mcp"})
+SOURCES: frozenset[str] = frozenset({"hook", "drain", "janitor", "install", "mcp"})
 
 LEVELS: frozenset[str] = frozenset({"info", "warn", "error"})
 

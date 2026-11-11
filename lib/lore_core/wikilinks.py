@@ -1,14 +1,7 @@
 """Wikilink primitives — parse, validate, strip-broken.
 
-Used in two complementary places:
-
-* **Forward guard** — curator note writers sanitize LLM output before
-  the atomic write, so broken `[[wikilinks]]` never land in the vault
-  in the first place.
-* **Backward migration** — ``lore migrate frontmatter --strip-broken-wikilinks``
-  cleans up legacy notes written before the forward guard existed.
-
-Both call :func:`strip_broken_wikilinks`. A "broken" wikilink is one
+``lore migrate frontmatter --strip-broken-wikilinks`` cleans broken links
+out of existing notes through :func:`strip_broken_wikilinks`. A "broken" wikilink is one
 whose target slug doesn't match any existing ``.md`` file in the wiki.
 The primitive *converts*, never deletes: ``[[Foo Bar]]`` becomes the
 plain text ``Foo Bar``; ``[[slug|displayed]]`` becomes ``displayed``.
@@ -49,7 +42,7 @@ def existing_slugs(wiki_path: Path) -> set[str]:
     Wikilink resolution in Lore is **per-wiki**. Wikis are portable
     units (shareable across vaults / teams); a wikilink that only
     resolves via a sibling wiki breaks the moment the wiki is
-    extracted. Validators and forward guards must call this function
+    extracted. Validators must call this function
     against the originating wiki only — never union slugs across
     multiple wikis.
     """
@@ -90,24 +83,6 @@ def _aliases_from_file(path: Path) -> set[str]:
     if not isinstance(raw, list):
         return set()
     return {str(a).strip() for a in raw if str(a).strip()}
-
-
-def sanitize_for_write(text: str, wiki_root: Path) -> str:
-    """Forward guard for curator note writers.
-
-    Strips wikilinks whose target doesn't resolve in ``wiki_root``,
-    returning the cleaned text. Use this between body rendering and
-    ``atomic_write_text`` so LLM-hallucinated ``[[noun phrase]]`` and
-    ``[[file/path.py]]`` references never land on disk in the first
-    place. Pairs with the backward migration
-    ``lore migrate frontmatter --strip-broken-wikilinks`` for legacy notes; both
-    share the same primitive and the same per-wiki scoping.
-
-    Per-wiki scoping is intentional — see :func:`existing_slugs`.
-    Cross-wiki references are broken by design and treated as dangles.
-    """
-    new_text, _, _ = strip_broken_wikilinks(text, existing_slugs(wiki_root))
-    return new_text
 
 
 def _strip_prose(s: str, valid: set[str]) -> tuple[str, list[str]]:

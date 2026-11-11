@@ -94,7 +94,7 @@ def _is_non_note_link_target(target: str) -> bool:
     Used by :func:`check_wikilinks` to suppress ``broken_link`` warnings
     for targets that the session-note wikilink discipline already
     forbids: file/dir paths, PR/issue refs, URLs, env vars, version
-    strings. Concept-style names (``Curator B``, ``CCAT Data Center``)
+    strings. Concept-style names (``Event Spine``, ``CCAT Data Center``)
     still flag — those are real candidates either to be promoted into
     notes or to be removed by the author.
     """

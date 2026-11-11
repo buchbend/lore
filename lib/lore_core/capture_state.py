@@ -36,7 +36,7 @@ class CaptureState:
     # invoke our SessionStart/PreCompact/SessionEnd hook recently?". All
     # three fields come from the newest hook record on the event spine.
     last_hook_event_ts: datetime | None = None
-    last_hook_event_outcome: str | None = None    # e.g. "spawned-curator" | "no-scope"
+    last_hook_event_outcome: str | None = None    # e.g. "ledger-advanced" | "no-scope"
     last_hook_event_kind: str | None = None       # e.g. "session-start"
 
 

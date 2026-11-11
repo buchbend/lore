@@ -80,7 +80,7 @@ def test_user_prompt_submit_emits_directive_mid_session(
 
     sid = "sid-cite-D"
     monkeypatch.setenv("CLAUDE_SESSION_ID", sid)
-    monkeypatch.delenv("LORE_CURATOR_MODE", raising=False)
+    monkeypatch.delenv("LORE_CHILD_MODE", raising=False)
 
     # Stdin payload publishes the sid (mirrors the SessionStart fixture).
     payload = {"session_id": sid, "hook_event_name": "UserPromptSubmit"}

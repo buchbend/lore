@@ -3,7 +3,7 @@
 Privacy boundary: the originals under ``~/.claude/projects/...`` are the
 user's property, never pushed anywhere. The wiki-local mirror at
 ``<wiki>/.transcripts/<uuid>.jsonl`` is gitignored so distributed wikis
-only transport curator-redacted summaries. The mirror enables
+never transport raw transcripts. The mirror enables
 ``lore transcripts show`` and any future "restore full context" workflow
 without exposing raw transcripts to the wiki's backend.
 
@@ -246,8 +246,7 @@ def sync_transcripts(
             continue
 
         if not entry.directory.exists():
-            # Source dir retired. Curator A marks orphan on its next pass;
-            # for now, don't try to resolve a wiki that can't answer.
+            # Source dir retired. Don't try to resolve a wiki that can't answer.
             result.skipped += 1
             continue
 

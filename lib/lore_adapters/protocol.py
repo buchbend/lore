@@ -1,6 +1,6 @@
 """Adapter protocol — how every integration adapter speaks to lore.
 
-Downstream components (curator, ledger, CLI) speak only `Turn` +
+Downstream components (ledger, capture, CLI) speak only `Turn` +
 `TranscriptHandle` — never the integration's native format. This seam makes
 lore integration-agnostic and allows third-party adapters.
 """
@@ -18,7 +18,7 @@ from lore_core.types import TranscriptHandle, Turn
 class Adapter(Protocol):
     """Protocol every integration adapter implements.
 
-    Downstream components (curator, ledger, CLI) speak only `Turn` +
+    Downstream components (ledger, capture, CLI) speak only `Turn` +
     `TranscriptHandle` — never the integration's native format. This is the
     seam that makes lore integration-agnostic.
 
