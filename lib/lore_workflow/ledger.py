@@ -486,7 +486,7 @@ def resume_offer(cwd: Path) -> str | None:
         return (
             f"lore: an epic run for {board.text} is in progress from this checkout; its board "
             f"is {board.outcome}. Offer the user to resume it with "
-            f"`/lore-workflow:build epic {board.text}`. Read the board with {_board_read(board)}."
+            f"`/lore:build epic {board.text}`. Read the board with {_board_read(board)}."
         )
     line = last_resume_line(text)
     if line is None or _looks_finished(text):

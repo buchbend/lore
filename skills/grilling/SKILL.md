@@ -1,5 +1,5 @@
 ---
-name: lore-workflow:grilling
+name: lore:grilling
 description: Interview the user relentlessly about a plan or design, and sharpen the domain model as decisions land (CONTEXT.md terms, ADRs). Use when the user wants to stress-test a plan before building, says "grill me" or "grill with docs", uses any other 'grill' trigger phrase, or wants to pin down domain terms or record an architectural decision.
 ---
 

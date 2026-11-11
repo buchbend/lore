@@ -1,12 +1,13 @@
 # Third-party notices
 
-`lore-workflow` builds on the skills of Matt Pocock,
+The workflow skills of `lore` build on the skills of Matt Pocock,
 [`mattpocock/skills`](https://github.com/mattpocock/skills), licensed MIT. This file
 says what we took from his work, what we changed, and what is our own.
 
 The files came into `ccatobs/ccat-agent-workflow` on 2026-06-22 from upstream commit
 [`6eeb81b`](https://github.com/mattpocock/skills/commit/6eeb81b5fcfeeb5bd531dd47ab2f9f2bbea27461).
-`lore-workflow` ported them from there on 2026-07-09 (PRD 0003). The port lost this
+The plugin `lore-workflow` ported them from there on 2026-07-09 (PRD 0003); since
+ADR 0021 they ship in `lore`. The port lost this
 notice; this file restores it.
 
 ## From Matt Pocock

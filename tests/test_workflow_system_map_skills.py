@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-SKILLS = Path(__file__).resolve().parent.parent / "lore-workflow" / "skills"
+SKILLS = Path(__file__).resolve().parent.parent / "skills"
 
 
 def _text(rel: str) -> str:

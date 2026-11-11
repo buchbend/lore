@@ -84,9 +84,7 @@ def test_context_md_sentences_stay_inside_the_ceiling() -> None:
 def test_the_format_spec_names_the_sentence_ceiling() -> None:
     """An agent writing a definition reads the format spec, not this test, so
     the spec has to name the ceiling and point at the document holding it."""
-    spec = (REPO_ROOT / "lore-workflow/skills/grilling/CONTEXT-FORMAT.md").read_text(
-        encoding="utf-8"
-    )
+    spec = (REPO_ROOT / "skills/grilling/CONTEXT-FORMAT.md").read_text(encoding="utf-8")
     assert "sentence ceiling" in spec
     assert "lore style show writing-rules" in spec
 

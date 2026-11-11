@@ -276,7 +276,7 @@ def test_filing_and_adr_0014_name_the_lab_entry_as_the_home_of_a_result() -> Non
 
 def test_the_experiment_skill_writes_the_question_first_and_a_dead_end_entry() -> None:
     root = Path(__file__).resolve().parent.parent
-    text = " ".join((root / "lore-workflow/skills/experiment/SKILL.md").read_text().split())
+    text = " ".join((root / "skills/experiment/SKILL.md").read_text().split())
     assert text.index("## 1. Before the run: write the question and the expected result") < (
         text.index("## 2. Run the experiment")
     )

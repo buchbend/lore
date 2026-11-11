@@ -1,10 +1,10 @@
 ---
-name: lore-workflow:file-issue
+name: lore:file-issue
 description: Writes issue text and files it — resolve the team's writing
   rules, draft in their skeleton (single change, batch, a caller's template, or a PR
   body), lint with Vale when Vale is installed, then post with gh. Use whenever you are
   about to write or edit a GitHub issue, a sub-issue, or a PR description. Triggers on
-  "file an issue", "file these as issues", or "/lore-workflow:file-issue".
+  "file an issue", "file these as issues", or "/lore:file-issue".
 ---
 
 # File Issue

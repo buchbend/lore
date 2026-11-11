@@ -1,5 +1,5 @@
 ---
-name: lore-workflow:orient
+name: lore:orient
 description: The first step of a piece of work — the session does its own homework, then
   reflects its understanding back for confirmation before any planning or grilling. A light
   mode ("brief me") pulls only the roadmap, the context pack and the code map, and hands one
@@ -62,7 +62,7 @@ missed, one for the code map, one for cross-repo consumers when the intent spans
 cross-repo explorer starts from `lore map <owner/repo> --json` for the current repo and widens
 from there. A repo in no map gets an empty list: it scans as before. Spawn them in one message at the `mid` tier (required): pass `lore tier resolve mid` as each model,
 and open each description with `[orient:explore]`; see
-[TIER-DELEGATION.md](../../TIER-DELEGATION.md). Scale the fan-out to the ask. For one lookup,
+[TIER-DELEGATION.md](../TIER-DELEGATION.md). Scale the fan-out to the ask. For one lookup,
 grep or read directly; spawn only for parallel or isolated work.
 
 **Named agents** run in both modes, after the pack, in the same message as any explorers. Spawn
@@ -104,7 +104,7 @@ switch to full mode; the brief so far seeds step 1.
 
 ## 5. Hand off
 
-- **Full mode:** `/lore-workflow:grilling`, in "grill with docs" mode by default. It aligns terms
+- **Full mode:** `/lore:grilling`, in "grill with docs" mode by default. It aligns terms
   against `CONTEXT.md` and ADRs, which `to-epic` depends on. Say "grill me" when there is no
   domain model to align against.
 - **Light mode:** file the agreed intent and acceptance criteria through

@@ -1,7 +1,7 @@
 """Workflow docs ↔ skill/MCP surface honesty (sub-issue #173).
 
 The migrated conventions/how-to docs under ``docs/`` cite
-``lore-workflow:<skill>`` skill names and reference the
+``lore:<skill>`` skill names and reference the
 ``orient → grilling → to-epic → build → document`` chain by name. Nothing catches
 it if a skill is renamed or removed and the docs are not updated to match —
 this test does.
@@ -13,14 +13,15 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILLS_ROOT = REPO_ROOT / "lore-workflow" / "skills"
+SKILLS_ROOT = REPO_ROOT / "skills"
 MCP_SERVER = REPO_ROOT / "lib" / "lore_mcp" / "server.py"
-DOCS_FILES = sorted((REPO_ROOT / "docs").rglob("*.md")) + [
-    REPO_ROOT / "README.md",
-    REPO_ROOT / "CONTEXT.md",
-]
 
-SKILL_REF_RE = re.compile(r"lore-workflow:([a-z][a-z-]*)")
+# `lore:acme/widget` and `lore:buchbend/lore:#501` are scopes and refs, not skills.
+SKILL_REF_RE = re.compile(r"lore:([a-z][a-z-]*)(?![\w/:-])")
+OLD_PREFIX = "lore-workflow:"
+# Historical documents keep the names that were true when they were written.
+HISTORICAL = ("docs/adr/", "docs/prd/", "docs/superpowers/", "docs/logbook/")
+HISTORICAL_FILES = {"docs/code-sweep.md", "docs/session-note-teardown-sweep.md"}
 CHAIN_RE = re.compile(r"orient\s*→\s*grilling\s*→\s*to-epic\s*→\s*build\s*→\s*document\b")
 
 
@@ -28,24 +29,47 @@ def _shipped_skill_names() -> set[str]:
     return {p.name for p in SKILLS_ROOT.iterdir() if p.is_dir()}
 
 
-def test_lore_workflow_skill_references_resolve_to_shipped_skills() -> None:
-    """Every ``lore-workflow:<name>`` cited in a doc must be a real skill dir.
+def test_lore_skill_references_resolve_to_shipped_skills() -> None:
+    """Every ``lore:<name>`` cited in a living doc must be a real skill dir.
 
-    ``docs/prd/`` is exempt: PRDs are plans and legitimately cite skills that
-    ship later. Drift honesty applies to docs describing the present.
+    Historical docs are exempt: PRDs are plans and legitimately cite skills
+    that ship later, ADRs and sweeps cite skills that are gone. Drift honesty
+    applies to docs describing the present.
     """
     shipped = _shipped_skill_names()
     failures: list[str] = []
-    for path in DOCS_FILES:
-        if path.relative_to(REPO_ROOT).parts[:2] == ("docs", "prd"):
-            continue
+    for path in _living_documents():
         text = path.read_text(encoding="utf-8")
         for name in SKILL_REF_RE.findall(text):
             if name not in shipped:
-                failures.append(
-                    f"{path.relative_to(REPO_ROOT)}: cites lore-workflow:{name}, no such skill"
-                )
+                failures.append(f"{path.relative_to(REPO_ROOT)}: cites lore:{name}, no such skill")
     assert not failures, "Doc/skill drift:\n  " + "\n  ".join(failures)
+
+
+def _living_documents() -> list[Path]:
+    files = [*SKILLS_ROOT.rglob("*.md"), *(REPO_ROOT / "docs").rglob("*.md")]
+    files += [REPO_ROOT / n for n in ("README.md", "CONTEXT.md", "CONTRIBUTING.md", "AGENTS.md")]
+    living = []
+    for path in files:
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        if rel.startswith(HISTORICAL) or rel in HISTORICAL_FILES:
+            continue
+        living.append(path)
+    return sorted(living)
+
+
+def test_no_living_document_names_the_old_skill_prefix() -> None:
+    """Skills are ``lore:<name>`` since ADR 0021; ``lore-workflow:`` is gone.
+
+    ``CHANGELOG.md`` is not scanned: its entries record the old names.
+    """
+    hits = [
+        f"{path.relative_to(REPO_ROOT)}:{n}"
+        for path in _living_documents()
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if OLD_PREFIX in line
+    ]
+    assert not hits, "old skill prefix in living documents:\n  " + "\n  ".join(hits)
 
 
 def test_docs_conventions_chain_matches_readme_chain() -> None:

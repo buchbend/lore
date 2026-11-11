@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-TRIAGE = Path(__file__).resolve().parent.parent / "lore-workflow" / "skills" / "triage"
+TRIAGE = Path(__file__).resolve().parent.parent / "skills" / "triage"
 
 VERDICTS = (
     "**Critical**",

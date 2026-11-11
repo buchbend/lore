@@ -15,10 +15,10 @@ stage and the epic.
 > red→green evidence; the ranked ~1k-token excerpt from `lore codemap`; the scope fence
 > and the files sibling features edit>. Read it before you explore. Widen from it only as needed.
 >
-> Method: strict TDD with `/lore-workflow:tdd`. Keep the failing-test output for the sub-issue
+> Method: strict TDD with `/lore:tdd`. Keep the failing-test output for the sub-issue
 > comment. Before you report, run ruff (check and format) and the test files you touched, plus the tests of
 > shared surfaces you reach: routes, permissions, schema. Do not run the full suite; the lead runs
-> it locally before each merge. When stuck, use the `/lore-workflow:debug` circuit breaker, not a
+> it locally before each merge. When stuck, use the `/lore:debug` circuit breaker, not a
 > fourth blind fix.
 >
 > Scope: change only what this feature needs. A feature idea outside your scope goes to the
@@ -34,7 +34,7 @@ stage and the epic.
 > paths.
 >
 > Deliver: commit on your branch. Write what a PR body would hold through
-> `/lore-workflow:file-issue` in PR-body mode and post it as a comment on the sub-issue
+> `/lore:file-issue` in PR-body mode and post it as a comment on the sub-issue
 > (`gh issue comment <n> --body-file …`). Report the branch, its head SHA, the red→green
 > evidence, a one-paragraph summary, and the candidates above, in 15 lines or fewer. The
 > sub-issue comment holds the detail.

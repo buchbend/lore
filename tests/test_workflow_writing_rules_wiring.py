@@ -20,7 +20,7 @@ from lore_core.style import default_style_path, default_vale_config_path
 from lore_workflow import build_order_validator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILLS_ROOT = REPO_ROOT / "lore-workflow" / "skills"
+SKILLS_ROOT = REPO_ROOT / "skills"
 
 # Every skill that writes issue or PR text. `file-issue` itself does the writing.
 FILING_SKILLS = (

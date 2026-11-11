@@ -1,7 +1,7 @@
 ---
-name: lore-workflow:to-epic
+name: lore:to-epic
 description: Turn the current conversation or a plan/PRD into a PRD file under docs/prd/ plus
-  an epic tracker issue with one sub-issue per feature, structured so /lore-workflow:build can
+  an epic tracker issue with one sub-issue per feature, structured so /lore:build can
   implement it autonomously. Use when the user wants an epic/tracker issue, or to turn a
   plan/PRD into an orchestratable epic.
 ---
@@ -37,7 +37,7 @@ lore workflow create-prd --slug <kebab> --title "<Title>" --epic-url <url> \
 
 ### 1. Gather context
 Work from the conversation. If the user passes a plan, PRD, or issue reference — including
-an epic-seed issue produced by `/lore-workflow:handover` (labeled `epic-seed`) — fetch and read it
+an epic-seed issue produced by `/lore:handover` (labeled `epic-seed`) — fetch and read it
 (`gh ... --json`; see the repo's own conventions doc, if any).
 
 ### 2. Explore the repo(s)
@@ -101,7 +101,7 @@ Order matters so every cross-reference resolves:
    add the PRD and epic links to it in its `ROADMAP.md`. Add a missing item with `lore roadmap add`.
    Commit on the PRD's branch. The PRD gets no field that points up to the item.
 6. **Close the consumed seed.** If this epic was formed from an epic-seed issue (labeled
-   `epic-seed`, produced by `/lore-workflow:handover`), close the seed issue. The close comment
+   `epic-seed`, produced by `/lore:handover`), close the seed issue. The close comment
    links the new epic: `gh issue close <seed> --comment "Formed into epic <owner/repo#epic>"`.
 
 **Gate publishing on the build-order validator.** The build-order table is the dependency DAG
@@ -116,7 +116,7 @@ Issue refs, blocked-by edges that resolve to rows in the table, and an acyclic D
 Use `owner/repo#n` refs for every cross-repo link. Do not modify unrelated parent issues.
 
 Finish by printing the PRD file path, the epic reference, and the exact next command:
-`/lore-workflow:build epic <owner/repo#n>`.
+`/lore:build epic <owner/repo#n>`.
 
 ## PRD file template
 

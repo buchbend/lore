@@ -1,6 +1,6 @@
 # Onboard a repo
 
-**Goal:** prepare a repository to adopt `lore-workflow`, once, before you run
+**Goal:** prepare a repository to adopt the `lore` workflow, once, before you run
 any of the chain in it.
 
 Onboarding is one command, `lore setup scope --scaffold-workflow`. The command

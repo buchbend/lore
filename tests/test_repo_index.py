@@ -142,7 +142,7 @@ def test_style_show_filing_prints_the_routing_lines() -> None:
 
 
 def test_file_issue_reads_the_filing_rules_before_it_drafts() -> None:
-    skill = Path(__file__).resolve().parent.parent / "lore-workflow/skills/file-issue/SKILL.md"
+    skill = Path(__file__).resolve().parent.parent / "skills/file-issue/SKILL.md"
     text = skill.read_text(encoding="utf-8")
     step_one = text.split("\n## 1. ", 1)[1].split("\n## 2. ", 1)[0]
     assert "lore style show filing" in step_one

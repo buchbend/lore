@@ -5,7 +5,7 @@
 A **lab entry** is the dated record of one experiment (ADR 0019, the lab
 notebook). It has five labelled parts and a stamp that Lore writes. A
 **thread** is the lab entries that follow one idea. The `experiment` skill
-of `lore-workflow` walks the steps below. You can also run `lore lab add`
+of `lore` walks the steps below. You can also run `lore lab add`
 yourself.
 
 The example measures the drift of a local oscillator over six hours.

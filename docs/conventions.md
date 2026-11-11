@@ -1,8 +1,8 @@
 # Conventions
 
-The conventions of the `lore-workflow` chain: the steps, where each fact
+The conventions of the workflow chain: the steps, where each fact
 lives, which stage runs at which tier, and the terms the chain uses. A repo
-that adopts `lore-workflow` speaks this language.
+that adopts the workflow speaks this language.
 
 For the tier-resolution mechanics (which model a semantic tier maps to on
 which host), see [`docs/model-tiers.md`](model-tiers.md). This page only names
@@ -154,7 +154,7 @@ delegation point also opens the spawn's description with a stage tag, such as
 `[build:review]`, so `lore stats` can count tokens per stage. The
 rules for each tier live in [`docs/model-tiers.md`](model-tiers.md). The spawn
 rules every skill shares live in
-[`lore-workflow/TIER-DELEGATION.md`](../lore-workflow/TIER-DELEGATION.md).
+[`skills/TIER-DELEGATION.md`](../skills/TIER-DELEGATION.md).
 
 ### Stage and tier
 

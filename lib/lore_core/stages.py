@@ -1,6 +1,6 @@
 """Stage tags: which workflow step a subagent or a session works for.
 
-A lore-workflow delegation point starts the spawn's ``description`` with a
+A workflow skill's delegation point starts the spawn's ``description`` with a
 stage tag, for example ``[build:review]``. A session that a skill starts with
 its own prompt (a teammate) opens that prompt with the tag instead. A tag may
 carry the epic or issue it works for: ``[build:implement] owner/repo#510``.
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-#: Every stage tag the lore-workflow skills use, with the step it names.
+#: Every stage tag the workflow skills use, with the step it names.
 STAGES: dict[str, str] = {
     "build:implement": "teammate that writes an epic feature",
     "build:review": "per-PR review",

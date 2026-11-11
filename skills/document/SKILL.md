@@ -1,5 +1,5 @@
 ---
-name: lore-workflow:document
+name: lore:document
 description: Bring a repo's Diátaxis docs (tutorial, how-to, reference, explanation) in line
   with the code. Pre-merge — commit docs onto the branch that is about to merge and, at an epic
   tail, mark the PRD shipped. Catch-up — a docs PR for work that already merged. Consolidate —

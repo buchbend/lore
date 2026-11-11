@@ -9,7 +9,7 @@ Rules:
 - A phase starts at an assistant ``tool_use`` block named ``Skill``
   (``skill:<input.skill>``) or ``Task`` / ``Agent``
   (``agent:<input.description or input.subagent_type>``). A user line that
-  runs a namespaced slash command (``<command-name>/lore-workflow:build``)
+  runs a namespaced slash command (``<command-name>/lore:build``)
   starts a skill phase too. A built-in command (``/model``) has no colon and
   starts none.
 - A message counts in the phase that is active when its first line appears.

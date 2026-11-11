@@ -203,7 +203,7 @@ def test_pre_compact_names_the_epic_board_and_how_to_read_it(repo: Path) -> None
 def test_session_start_offers_the_epic_run_from_a_board_line(repo: Path) -> None:
     (repo / ".git" / "lore-ledger.md").write_text(BOARD_LINE)
     out = _run("session-start", "--cwd", str(repo), "--plain", "--probe")
-    assert "`/lore-workflow:build epic acme/widget#7`" in out
+    assert "`/lore:build epic acme/widget#7`" in out
 
 
 def test_ledger_add_board_line_without_url_fails(repo: Path) -> None:
