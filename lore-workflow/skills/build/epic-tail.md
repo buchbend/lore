@@ -1,12 +1,11 @@
 # Epic tail
 
-Read this when every build-order row is `merged`. Do not wait for CI here: the tail adds commits,
-and only CI on the last one counts (§ 4).
+Read this when every build-order row is `merged`.
 
-## 1. Open the epic PR
+## 1. Stay local until § 4
 
-Open one PR `epic/<issue> → <target_branch>` that links every sub-issue. Write the body through
-[`file-issue`](../file-issue/SKILL.md) in PR-body mode.
+§§ 2 and 3 and the first steps of § 4 commit on the local `epic/<issue>`. The branch reaches
+the remote once, in § 4, after the last commit. Each earlier push would run CI again.
 
 ## 2. Resolve the ledger
 
@@ -38,7 +37,7 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
 - **Roadmap.** Remove the shipped roadmap item from its `ROADMAP.md`: the item that links this
   epic or its PRD. Commit the change on `epic/<issue>`.
 - **Whole-epic review**, only for an epic with three or more features. Follow
-  [review.md](review.md) on the epic PR, after the docs commit, with the tag
+  [review.md](review.md) on `<target_branch>..epic/<issue>`, after the docs commit, with the tag
   `[build:epic-review]`. The reviewer checks
   cross-feature consistency: naming, duplicate helpers, conflicting edits to shared files. It
   also checks the docs commit against the behaviour. No separate docs round. For one or two
@@ -49,16 +48,22 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
 
 ## 4. Merge
 
-1. Run `lore log add --ref <owner/repo#epic-pr> --text-file <file>` in the epic worktree, as
-   [logbook.md](logbook.md) says. The `[logbook]` line stays in the local ledger of that
-   worktree, not on the board. Commit the change under `docs/logbook/` on `epic/<issue>`.
+1. Run `lore log add --ref <owner/repo#epic> --text-file <file>` in the epic worktree, as
+   [logbook.md](logbook.md) says. The ref is the epic issue: the epic PR does not exist yet. The
+   `[logbook]` line stays in the local ledger of that worktree, not on the board. Commit the
+   change under `docs/logbook/` on `epic/<issue>`.
 2. Add the version bump as the last commit, if the repo's `AGENTS.md` or `CLAUDE.md` requires
    one.
 3. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
    .body | lore workflow ledger-check -`. Do not merge while it exits 1.
-4. Check `gh pr checks <epic-pr>` on the last commit. Pending: post the approval message anyway
-   and merge once green. Red: fix on `epic/<issue>` before you merge.
-5. Ask for the merge approval, as the rules in [SKILL.md](SKILL.md) give it. When `epic-policy` returned `deploy_gate: true`,
+4. Run the full suite and ruff on the last commit, and every other check the repo's CI runs
+   that you can run locally. Red: fix before the push.
+5. `git push -u origin epic/<issue>`, then open one PR `epic/<issue> → <target_branch>` that
+   links every sub-issue. Write the body through [`file-issue`](../file-issue/SKILL.md) in
+   PR-body mode. Set the PR on the board.
+6. Check `gh pr checks <epic-pr>` on the last commit. Pending: post the approval message anyway
+   and merge once green. Red: fix on `epic/<issue>` and push again before you merge.
+7. Ask for the merge approval, as the rules in [SKILL.md](SKILL.md) give it. When `epic-policy` returned `deploy_gate: true`,
    name the deploy gate in the same message and note the yes on the board. Merge on a yes.
    An unreachable user leaves the epic PR open.
 
@@ -73,7 +78,7 @@ its ledger. Name each entry that is still undelivered under **Known limits**.
 
 ## 6. Cleanup
 
-Delete every merged feature branch, local and remote, and remove its worktree. Keep only the
+Delete every merged feature branch and remove its worktree. Keep only the
 history of the epic branch. Run `lore workflow ledger-archive` in the checkout that holds the
 board line, so SessionStart stops offering the epic.
 
@@ -87,5 +92,5 @@ Verify each item, then report:
 - [ ] the board shows no `queued` or `running` row
 - [ ] the PRD status is `shipped`, or the catch-up docs PR is open
 - [ ] no roadmap item links the epic or its PRD any more
-- [ ] every feature branch and worktree gone, local and remote
+- [ ] every feature branch and worktree gone
 - [ ] the local ledger with the board line archived
