@@ -33,7 +33,7 @@ def test_search_hit_holds_no_freshness_key_and_starts_no_git(tmp_path, monkeypat
 
     _wiki(tmp_path, monkeypatch)
     monkeypatch.delenv("GIT_AUTHOR_EMAIL", raising=False)
-    hits = _wiki_hits("zebra", wiki="demo")  # first call may reindex
+    _wiki_hits("zebra", wiki="demo")  # first call may reindex
 
     def no_git(cmd, *a, **kw):
         raise AssertionError(f"lore_search started a process: {cmd}")

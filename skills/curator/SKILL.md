@@ -32,10 +32,6 @@ Passes per wiki, all frontmatter-only — note bodies are never touched:
 5. **Review summary** — writes `wiki/<name>/_review.md` listing every
    action; SessionStart surfaces the count in its one-liner.
 
-Staleness is **not** flagged by age: it is positive-evidence-only at
-read time (a broken wikilink or an authored marker), so the curator's
-staleness pass is a deliberate no-op.
-
 ## Workflow
 
 ```bash
