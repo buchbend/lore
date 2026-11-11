@@ -31,7 +31,10 @@ needs work before any code. For one small, clear change, use the
      branch);
    - builds the features test-first, one teammate per feature;
    - reviews each PR at the depth `lore workflow risk` sets;
-   - merges the features in dependency order and opens the epic PR.
+   - merges each feature into the epic branch once the full local suite and
+     ruff pass, without waiting for CI;
+   - merges the features in dependency order and opens the epic PR. CI is
+     checked there: the epic PR merges only on green CI.
 4. **Docs ship with the epic.** Before the epic PR merges, `build` runs
    `/lore-workflow:document` in pre-merge mode. The docs commit lands on the
    epic branch, and the PRD status becomes `shipped`.

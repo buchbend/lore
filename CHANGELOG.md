@@ -8,6 +8,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.100.1] - 2026-11-11
+
+PR #550 (rewrite the README around the current architecture, fix stale docs).
+
+### Changed
+
+- **The README describes Lore as the code stands.** The page opens with the architecture figure and covers the session context, the workflow, the filing of facts, the team wiki, the logbook and the MCP pull. The page also covers both plugins, the `/lore:*` skills, install, configuration and the main commands.
+- **The plugin manifests and `lore --help` describe Lore as a workflow and knowledge layer.** The words "knowledge graph" are gone. The `lore-workflow` entry of the marketplace lists 11 skills.
+
+### Fixed
+
+- **Stale claims in the docs:** the vault layout, the `lore log` command, the plugin subagents, `/lore:off`, the CI gate of an epic and the row for cross-repo filing.
+
+### Removed
+
+- **`docs/architecture/slash-toggles.md`**: the feature is gone.
+
 ## [0.100.0] - 2026-11-11
 
 `build` epic mode builds and merges locally, so CI runs once per epic.

@@ -90,7 +90,7 @@ def _build_app() -> typer.Typer:
 
     app = typer.Typer(
         add_completion=True,
-        help="lore — knowledge-graph tooling for AI-coding teams.",
+        help="lore — workflow and knowledge layer for AI-coding teams.",
         no_args_is_help=True,
         rich_markup_mode="rich",
     )

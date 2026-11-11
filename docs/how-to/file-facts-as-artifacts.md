@@ -26,7 +26,7 @@ prints the core of the filing rule below.
 | A dead end in an experiment | A lab entry with status `dead-end` |
 | A dead end in software work, and its reason | An issue you open, closed as not planned, with the reason in the close comment |
 | A decision | A pull request holding the ADR draft. A human merges it. |
-| Across several repos | An issue on the org knowledge repo |
+| Across several repos | An edge in the system map, proposed with `/lore:map` |
 | For a wiki topic note | A pull request on the wiki repo with the edit |
 
 An ADR or PRD negotiated with the user in a `grilling` session is the one

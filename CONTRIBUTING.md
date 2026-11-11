@@ -87,8 +87,8 @@ Adding a new host (Codex, Gemini, OpenCode, …) is one Python file.
    }
    ```
 
-3. **Add a `_binary_for()` mapping** in `lib/lore_cli/install_cmd.py`
-   so `--host all` can detect the host's CLI on PATH.
+3. **Add a `_binary_for()` mapping** in `lib/lore_cli/integrations.py`
+   so setup can detect the host's CLI on PATH.
 
 4. **Use the existing primitives** rather than rolling your own.
    Writing into files the user owns lives in `lore_core.managed_files`:
@@ -115,7 +115,7 @@ Adding a new host (Codex, Gemini, OpenCode, …) is one Python file.
    same-schema / absent-schema (silent migrate) / present-old-schema
    (replace) cases; assert uninstall round-trip preserves user content.
 
-The dispatcher (`lib/lore_cli/install_cmd.py`) handles all the
+The dispatcher (`lib/lore_cli/integrations.py`) handles all the
 print-and-confirm UX, legacy detection, JSON envelope, and error
 reporting — your module just emits Actions.
 
@@ -218,9 +218,12 @@ as advisory (`continue-on-error: true`) until the repo-wide lint and
 formatting cleanup tracked in #196 lands — new code you write should
 still pass both locally before you push.
 
+CI also installs [Vale](https://vale.sh) and lints `docs/**/*.md`; it fails on
+error level only, against the baseline in `tools/vale-docs-baseline.json`.
+`lore wiki lint adr` is a blocking step too.
+
 For end-to-end testing on a clean container, the canonical checklist
-lives in the PR description that lands a release (or in
-`docs/REVIEW-*.md` when one is written). If you're cutting a release,
+lives in the PR description that lands a release. If you're cutting a release,
 spin up a fresh container, run the canonical install path from the
 README, and verify hooks fire on a real Claude Code session.
 
