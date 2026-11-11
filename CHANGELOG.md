@@ -8,6 +8,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.103.1] - 2026-11-11
+
+Issue #597 (remove the curator name from capture code and spawn code).
+
+### Changed
+
+- The hook guard variable `LORE_CURATOR_MODE` is now `LORE_CHILD_MODE`. `lore_cli/spawn.py` sets it on every detached child it starts, so hooks never re-enter inside one. It is internal, not a user knob; anything outside Lore that set the old name must set the new one.
+- The capture modules moved from `lore_curator` to `lore_core.capture_routing` and `lore_core.ledger_linkage`. The `lore_curator` package is gone.
+- Spawn locks and stamps are now `.lore/spawn-<role>.lock`, `.lore/spawn-<role>.stamp` and `.lore/spawn-<role>.runaway.stamp`. The old `curator-<role>.*` files stay on disk unused; delete them freely.
+- The event spine drops the `curator` source and moves to schema version 3. Older spine files that hold such records still read.
+- A capture hook fired from an unattached vault root now records a `no-scope` event like any other unattached directory.
+
+### Removed
+
+- Code with no caller left from the curators: `BlastRadius`, `sanitize_for_write`, `git_user_email`, `repos_touched_in_range` and `is_obsidian_holding`.
+
 ## [0.103.0] - 2026-11-11
 
 Issue #596 (retire the note lifecycle and the hygiene curator).
