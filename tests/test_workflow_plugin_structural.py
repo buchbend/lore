@@ -35,7 +35,6 @@ KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 EXPECTED_SKILL_NAMES = {
     "build",
     "context",
-    "curator",
     "debug",
     "document",
     "experiment",

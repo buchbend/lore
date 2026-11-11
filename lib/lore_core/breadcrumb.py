@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from lore_core.timefmt import relative_time
 from lore_core.types import Scope
 from lore_core.wiki_config import WikiConfig
 
@@ -139,15 +138,6 @@ def render_banner(ctx: BannerContext, *, errors: list[str] | None = None) -> str
         return banner
 
     state = query_capture_state(ctx.lore_root, now=ctx.now)
-
-    # Last-run error prefix — preempts everything else (banner's error mode).
-    if state.last_run_errors and state.last_run_ts and state.last_run_short_id:
-        banner = (
-            f"lore!: last run had {state.last_run_errors} errors "
-            f"({relative_time(state.last_run_ts, now=ctx.now)}) "
-            "· lore setup"
-        )
-        return _prepend(session_end_line, banner)
 
     if mode == "quiet":
         return session_end_line

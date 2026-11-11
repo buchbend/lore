@@ -1,7 +1,7 @@
 """`lore wiki ...` — manage individual wikis under $LORE_ROOT/wiki/.
 
 The canonical home for wiki-lifecycle verbs going forward. It hosts
-``new`` (scaffold), ``lint`` and ``curate``.
+``new`` (scaffold) and ``lint``.
 """
 
 from __future__ import annotations
@@ -130,11 +130,10 @@ def cmd_new(
     scaffold_wiki(name, mode=mode.value, remote=remote, force=force)
 
 
-# `lint` (was `lore lint`) and `curate` (was `lore curator`) live under `wiki`.
-from lore_cli import curator_cmd, lint_cmd  # noqa: E402
+# `lint` (was `lore lint`) lives under `wiki`.
+from lore_cli import lint_cmd  # noqa: E402
 
 app.add_typer(lint_cmd.app, name="lint", help="Health-check the vault, regenerate catalogs.")
-app.add_typer(curator_cmd.app, name="curate", help=curator_cmd.app.info.help)
 
 main = argv_main(app)
 

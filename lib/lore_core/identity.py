@@ -2,8 +2,7 @@
 
 `_users.yml` is optional — a wiki without it is in *solo mode*: any
 email resolves to its local-part handle, no aliasing, no session
-sharding. When ≥2 distinct authors appear in the wiki's git log and
-`_users.yml` is absent, the curator can propose team-mode activation.
+sharding.
 
 Schema (see concepts/lore/identity-aliasing):
 
@@ -21,10 +20,8 @@ Schema (see concepts/lore/identity-aliasing):
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
-_GIT_TIMEOUT = 10
 
 
 def _load_users_yml(wiki_path: Path) -> dict:
@@ -86,51 +83,3 @@ def resolve_display_name(wiki_path: Path, handle: str) -> str:
 
     lore_root = wiki_path.parent.parent
     return load_root_config(lore_root).user.display_name
-
-
-def aliased_emails(wiki_path: Path) -> set[str]:
-    """Union of every email in `_users.yml` aliases."""
-    data = _load_users_yml(wiki_path)
-    out: set[str] = set()
-    for user in data.get("users") or []:
-        for email in (user.get("aliases") or {}).get("emails") or []:
-            out.add(email)
-    return out
-
-
-def distinct_git_authors(wiki_path: Path) -> set[str]:
-    """Return the set of distinct author emails from the wiki's git log.
-
-    Returns set() on any git failure (no repo, no commits, git absent).
-    """
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(wiki_path), "log", "--format=%ae"],
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return set()
-    if result.returncode != 0:
-        return set()
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-
-
-def unaliased_authors(wiki_path: Path) -> set[str]:
-    """Distinct git authors whose emails are not yet in `_users.yml`."""
-    return distinct_git_authors(wiki_path) - aliased_emails(wiki_path)
-
-
-def team_mode_recommended(wiki_path: Path, threshold: int = 2) -> bool:
-    """True when enough distinct unaliased authors warrant team mode.
-
-    Solo wikis (one author) always return False.
-    Team wikis already in team mode (has `_users.yml`) also return False —
-    the recommendation is only for wikis still in solo mode that have
-    grown past the threshold.
-    """
-    if team_mode_active(wiki_path):
-        return False
-    return len(distinct_git_authors(wiki_path)) >= threshold

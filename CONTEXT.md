@@ -73,20 +73,6 @@ segmentation, no typed-fact extraction, no note render, and no LLM call at
 a session boundary. Retired in `#361`; decisions in `docs/adr/0007`–`0009`,
 spec in `docs/prd/0011`.
 
-## Hygiene — the retained frontmatter-only curator
-
-`lore wiki curate [--wiki] [--apply]` takes no subcommand — `run`, `flush`,
-`reap` and `sweep` retired with the compose pipeline. The bare
-form runs deterministic, frontmatter-only passes over every wiki
-(`lore_curator/hygiene.py`). The passes are supersession propagation
-(`supersedes [[B]]` → `superseded_by: [[A]]` on B), `implements:`
-back-link processing, and git-log date backfill. Another pass hints at
-team mode once a solo wiki's git log shows multiple authors.
-Findings land in
-`wiki/<name>/_review.md`; writes are mtime-guarded so a note open in
-Obsidian is skipped rather than clobbered. `--apply` is required to
-write; the default is a dry-run.
-
 ## Ambient banner vs. MCP pull
 
 SessionStart injects a deliberately small, deterministic banner
@@ -147,7 +133,6 @@ above:
 |---|---|
 | Transcript capture, ledger registration, linkage stamp | `lore_curator/capture_routing.py` |
 | Note reading (used by trace and seed-lift) | `lore_core/note_document.py` |
-| Frontmatter-only hygiene passes | `lore_curator/hygiene.py` |
 | Repo ADR/PRD pull (filesystem side) | `lore_core/repo_docs.py` |
 | MCP server (tool dispatch) | `lore_mcp/server.py` |
 | Hook dispatch (the seven `lore hook ...` entry points) | `lore_cli/hooks.py` |

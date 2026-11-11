@@ -29,12 +29,6 @@ class CaptureState:
     scope_attached: bool
     scope_name: str | None                        # e.g. "private/lore"
     scope_root: Path | None                       # parent of the CLAUDE.md
-    # Newest curator run on the spine. Hygiene is the only producer, so
-    # the fields carry no role: they answer "did the last run fail?", the
-    # one question the banner asks of them.
-    last_run_ts: datetime | None = None
-    last_run_errors: int | None = None
-    last_run_short_id: str | None = None          # gates the last-run-errors banner line
     hook_errors_24h: int = 0
     spine_write_failed_marker_age_s: int | None = None
     simple_tier_fallback_active: bool = False
@@ -59,35 +53,6 @@ def _resolve_scope(cwd: Path | None) -> tuple[bool, str | None, Path | None]:
         return (False, None, None)
     name = f"{route.wiki}/{route.scope}" if route.scope else route.wiki
     return (True, name, route.claude_md_path.parent)
-
-
-@dataclass(frozen=True)
-class _RunSummary:
-    ts: datetime | None
-    errors: int | None
-    short_id: str | None
-
-
-def _last_run_summary(lore_root: Path) -> _RunSummary:
-    """Return the newest curator run's end record, or an empty summary."""
-    from lore_core.run_reader import read_curator_runs
-
-    grouped = read_curator_runs(lore_root)
-    if not grouped:
-        return _RunSummary(None, None, None)
-
-    # run_id is timestamp-prefixed, so the max key is the newest run.
-    run_id = max(grouped)
-    run_end = next(
-        (rec for rec in reversed(grouped[run_id]) if rec.get("type") == "run-end"), None
-    )
-    if run_end is None:
-        return _RunSummary(None, None, None)
-    return _RunSummary(
-        ts=parse_ts(run_end.get("ts")),
-        errors=run_end.get("errors"),
-        short_id=run_id.split("-")[-1],
-    )
 
 
 def _count_hook_errors_24h(lore_root: Path, now: datetime) -> int:
@@ -165,7 +130,6 @@ def query_capture_state(
 
     attached, scope_name, scope_root = _resolve_scope(cwd)
 
-    summary = _last_run_summary(lore_root)
     last_hook_ts, last_hook_outcome, last_hook_kind = _newest_hook_event(lore_root)
 
     return CaptureState(
@@ -173,9 +137,6 @@ def query_capture_state(
         scope_attached=attached,
         scope_name=scope_name,
         scope_root=scope_root,
-        last_run_ts=summary.ts,
-        last_run_errors=summary.errors,
-        last_run_short_id=summary.short_id,
         hook_errors_24h=_count_hook_errors_24h(lore_root, now),
         spine_write_failed_marker_age_s=_marker_age_s(lore_root, now),
         simple_tier_fallback_active=_simple_tier_fallback_active(lore_root),

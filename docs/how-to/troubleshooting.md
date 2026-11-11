@@ -105,7 +105,8 @@ in that table — both were removed outright, with nothing to move to. See
 
 `lore journal`, `lore session`, `lore project`, `lore migrate flag-blocks`,
 `lore drill`, `lore curator` and `lore lint` are gone. `lore read` replaces
-`drill`; `lore wiki curate` and `lore wiki lint` replace `curator` and `lint`.
+`drill`; `lore wiki lint` replaces `lint`. `lore wiki curate` is gone too, with
+nothing to move to.
 
 ## "No such command: completions" — shell completion
 

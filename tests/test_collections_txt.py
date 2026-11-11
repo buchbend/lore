@@ -24,20 +24,15 @@ from lore_core.lint import (
 # ---------------------------------------------------------------------------
 
 
-def _note(filename: str, note_type: str, *, description: str = "", lifecycle: str = "active",
-          superseded_by=None, tags=None) -> NoteInfo:
+def _note(filename: str, note_type: str, *, description: str = "", tags=None) -> NoteInfo:
     return NoteInfo(
         path=f"{note_type}s/{filename}.md",
         filename=filename,
         wiki="mywiki",
         note_type=note_type,
-        status=None,
-        lifecycle=lifecycle,
-        superseded_by=superseded_by,
         description=description or None,
         tags=tags or [],
         created="2026-04-01",
-        last_reviewed="2026-04-01",
         lines=10,
         links_out=[],
     )
@@ -81,35 +76,6 @@ def test_generate_concepts_txt_sorts_by_filename():
     assert lines[0].startswith("- [[alpha]]")
     assert lines[1].startswith("- [[mike]]")
     assert lines[2].startswith("- [[zulu]]")
-
-
-def test_generate_decisions_txt_marks_drafts():
-    notes = [
-        _note("ready", "decision", lifecycle="active"),
-        _note("wip", "decision", lifecycle="draft"),
-    ]
-    result = generate_type_collection_txt(
-        "mywiki", notes, note_type="decision", title="Decisions",
-    )
-    assert result is not None
-    # The DRAFT badge appears next to the draft, not the ready note.
-    draft_line = [l for l in result.splitlines() if "[[wip]]" in l][0]
-    ready_line = [l for l in result.splitlines() if "[[ready]]" in l][0]
-    assert "DRAFT" in draft_line
-    assert "DRAFT" not in ready_line
-
-
-def test_generate_concepts_txt_marks_superseded():
-    notes = [
-        _note("old", "concept", lifecycle="superseded", superseded_by="new"),
-    ]
-    result = generate_type_collection_txt(
-        "mywiki", notes, note_type="concept", title="Concepts",
-    )
-    assert result is not None
-    line = [l for l in result.splitlines() if "[[old]]" in l][0]
-    assert "SUPERSEDED" in line
-    assert "[[new]]" in line
 
 
 def test_generate_concepts_txt_includes_descriptions():
