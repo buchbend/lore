@@ -1,7 +1,6 @@
 """SessionStart context assembly — what Lore injects when a session opens.
 
-Gathers the facts (project note, last-active-day recap, pending freshness
-verdicts) and renders the banner. Deliberately cheap: reads cached files the
+Gathers the facts (project note, last-active-day recap) and renders the banner. Deliberately cheap: reads cached files the
 linter regenerates (``_index.txt``, ``_catalog.json``) and the transcript
 ledger, no LLM, no network. The banner is ambient-minimal — status line,
 optional Focus block, one directive. Depth is a pull (MCP), not
@@ -168,31 +167,6 @@ def wiki_catalog(wiki_path: Path) -> dict | None:
         return None
 
 
-def pending_verdict_chip(wiki: Path) -> str:
-    """`· N pending verdict` chip text, or empty.
-
-    Reads the pending count from
-    :func:`lore_core.freshness.count_pending_verdicts` (catalog-based,
-    no fs walk per call). When the soft cap fires, renders ``"9+"``.
-    Zero-state suppressed entirely — most sessions should not see the
-    chip.
-
-    Cadence: refreshed at every SessionStart-like emit, which is also the
-    only time the status line changes. No live polling.
-    """
-    try:
-        from lore_core.freshness import count_pending_verdicts
-
-        count, capped = count_pending_verdicts(wiki)
-    except Exception:
-        return ""
-    if count <= 0:
-        return ""
-    label = "verdict" if count == 1 else "verdicts"
-    rendered = f"{count}+" if capped else str(count)
-    return f"{rendered} pending {label}"
-
-
 def last_active_day_recap(lore_root: Path) -> tuple[str, ...]:
     """Recap the most recent day the transcript ledger saw work.
 
@@ -288,7 +262,6 @@ class SessionFacts:
     repo: str | None
     scope: str = ""
     project_entry: dict | None = None
-    pending_chip: str | None = None
     #: Last-active-day recap off the transcript ledger (one line).
     recap: tuple[str, ...] = ()
 
@@ -305,7 +278,6 @@ def collect_session_facts(
     banner (agents fetch via gh, or a future MCP pull tool, on demand).
     """
     project_entry = project_note_for_repo(wiki, repo) if repo else None
-    pending_chip = pending_verdict_chip(wiki) or None
     # ``<lore_root>/wiki/<name>`` is the fixed vault layout, so the ledger
     # is reachable without threading lore_root through every caller.
     recap = last_active_day_recap(wiki.parent.parent)
@@ -314,7 +286,6 @@ def collect_session_facts(
         repo=repo,
         scope=scope,
         project_entry=project_entry,
-        pending_chip=pending_chip,
         recap=recap,
     )
 
@@ -323,7 +294,7 @@ def render_session_banner(facts: SessionFacts) -> str:
     """Format a SessionStart banner from collected facts.
 
     Ambient-minimum shape: status line (no gh fetch), optional Focus
-    block, freshness lines only on positive evidence, and the single
+    block, and the single
     collapsed directive as a postscript — so users see what Lore did
     *first* and the rule re-assertion second.
 
@@ -337,8 +308,6 @@ def render_session_banner(facts: SessionFacts) -> str:
     if facts.recap:
         # Chip form of the recap line: it only has to say "there is a last day".
         injected_bits.append(facts.recap[0].split(" — ")[0].lower())
-    if facts.pending_chip:
-        injected_bits.append(facts.pending_chip)
     status_line = f"lore {lore_version()}: active" + (
         " · " + " · ".join(injected_bits) if injected_bits else ""
     )

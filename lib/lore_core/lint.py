@@ -889,23 +889,6 @@ def _collect_issues(
     return all_issues
 
 
-def _orphan_paths(wiki_path: Path) -> list[str]:
-    """Wiki-relative paths of notes holding orphan links.
-
-    Cached into the catalog so the read-time freshness check is an O(1)
-    membership test instead of a whole-wiki walk on every retrieval.
-    """
-    try:
-        from lore_core.wikilinks import find_orphan_links
-
-        return sorted(
-            {str(p.relative_to(wiki_path)) for p, _slug, _off in find_orphan_links(wiki_path)}
-        )
-    except Exception:
-        # An orphan-scan failure must not break lint.
-        return []
-
-
 def _drop_legacy_artifacts(wiki_path: Path) -> None:
     """Remove generated files older lore versions wrote, so vaults self-heal.
 
@@ -928,7 +911,6 @@ def _regenerate_wiki(
     wiki_name = wiki_path.name
 
     catalog = build_catalog(wiki_name, notes, all_issues)
-    catalog["orphan_set"] = _orphan_paths(wiki_path)
     atomic_write_text(
         wiki_path / "_catalog.json", json.dumps(catalog, indent=2, default=str)
     )

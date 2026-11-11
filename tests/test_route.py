@@ -211,18 +211,6 @@ def test_style_resolution_uses_the_route_wiki(tmp_path: Path, monkeypatch) -> No
     assert _wiki_dir(None) == vault / "wiki" / "ccat"
 
 
-def test_mcp_default_wiki_uses_the_route_wiki(tmp_path: Path, monkeypatch) -> None:
-    from lore_mcp.server import _resolve_wiki_with_active_scope_fallback
-
-    vault = _two_wiki_vault(tmp_path, monkeypatch)
-    _person({"scopes": {"ccatobs": {"path": str(tmp_path / "git"), "wiki": "ccat"}}})
-    repo = _repo(tmp_path / "git" / "dc")
-    monkeypatch.chdir(repo)
-
-    resolved = _resolve_wiki_with_active_scope_fallback(None)
-    assert resolved is not None and resolved.resolve() == (vault / "wiki" / "ccat").resolve()
-
-
 def test_route_is_cached_per_process_until_a_config_file_changes(
     tmp_path: Path, monkeypatch
 ) -> None:

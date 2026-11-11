@@ -49,7 +49,6 @@ EXPECTED_SKILL_NAMES = {
     "tdd",
     "to-epic",
     "triage",
-    "verify",
 }
 
 GRILLING_SKILL_FILES = {

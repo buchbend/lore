@@ -56,7 +56,6 @@ def test_collect_session_facts_on_empty_wiki(tmp_path: Path) -> None:
     wiki.mkdir(parents=True)
     facts = collect_session_facts(wiki, None)
     assert facts.project_entry is None
-    assert facts.pending_chip is None
 
 
 # ---------------------------------------------------------------------------
