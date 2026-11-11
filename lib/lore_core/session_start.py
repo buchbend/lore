@@ -182,8 +182,15 @@ def pending_verdict_chip(wiki: Path) -> str:
     """
     try:
         from lore_core.freshness import count_pending_verdicts
+        from lore_core.git import git_user_email
+        from lore_core.identity import resolve_handle
 
-        count, capped = count_pending_verdicts(wiki)
+        def handle() -> str | None:
+            # Lets the chip count a disagreement, as the picker does.
+            email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
+            return resolve_handle(wiki, email) if email else None
+
+        count, capped = count_pending_verdicts(wiki, handle)
     except Exception:
         return ""
     if count <= 0:
@@ -607,7 +614,7 @@ def render_capture_state_block(
     *,
     probe: bool = False,
 ) -> str:
-    """Render the capture-state breadcrumb plus the drain and cross-scope lines.
+    """Render the capture-state breadcrumb plus the cross-scope lines.
 
     Returns the block to append to the banner, or "" when nothing is worth
     saying. Presentation only — no cursor advances, no writes.

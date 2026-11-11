@@ -194,13 +194,19 @@ def test_command_source_gets_its_secret_in_env_and_leaks_nowhere(cfg_home, tmp_p
     script = tmp_path / "src.py"
     script.write_text(
         "import os, json\n"
-        f"open({str(seen)!r}, 'w').write(os.environ.get('LORE_SECRET', ''))\n"
+        f"with open({str(seen)!r}, 'w') as f:\n"
+        "    f.write(os.environ.get('LORE_SECRET', ''))\n"
         "print(json.dumps([{'ref': 'x:1', 'title': 'T'}]))\n"
     )
     cfg_home(
         {
             "sources": {
-                "mine": {"kind": "command", "run": f"{sys.executable} {script}", "secret": "k"}
+                "mine": {
+                    "kind": "command",
+                    "run": f"{sys.executable} {script}",
+                    "secret": "k",
+                    "timeout": 30,  # the default of 5 s is too short in a loaded full run (#524)
+                }
             }
         },
         {"k": "hunter2"},
@@ -209,6 +215,7 @@ def test_command_source_gets_its_secret_in_env_and_leaks_nowhere(cfg_home, tmp_p
     result = sources.search_sources("q", k=3, cwd=Path.cwd(), github_repos=[])
 
     mine = next(s for s in result if s["name"] == "mine")
+    assert mine.get("note") is None, mine  # a failed run shows its note, not a missing file
     assert seen.read_text() == "hunter2"
     assert "hunter2" not in json.dumps(mine)
 

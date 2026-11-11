@@ -696,10 +696,10 @@ def handle_verdict(
         mark_stale,
     )
 
-    if verdict not in {"stale", "confirm", "clear-stale"}:
+    if verdict not in {"stale", "confirm", "clear-stale", "withdraw"}:
         return _mcp_error(
             "invalid_verdict",
-            f"verdict must be one of stale|confirm|clear-stale, got {verdict!r}",
+            f"verdict must be one of stale|confirm|clear-stale|withdraw, got {verdict!r}",
         )
 
     wiki_path = _resolve_wiki(wiki)
@@ -759,6 +759,27 @@ def handle_verdict(
             "verdict": "confirm",
             "confirmed_at": written.isoformat(),
             "freshness": freshness,
+        }
+
+    if verdict == "withdraw":
+        # Takes back the caller's own personal confirm (#412). The note and
+        # another user's stale verdict stay untouched.
+        from lore_core.verdicts_sidecar import clear_confirmed
+
+        handle = _resolve_current_handle(wiki_path)
+        try:
+            withdrawn = bool(handle) and clear_confirmed(wiki_path, handle, rel_path)
+        except (OSError, ValueError) as e:
+            return _mcp_error("withdraw_failed", str(e))
+        return {
+            "schema": "lore.verdict/1",
+            "wiki": wiki_path.name,
+            "path": rel_path,
+            "verdict": "withdraw",
+            "withdrawn": withdrawn,
+            "freshness": _freshness_block_for(
+                wiki_path, rel_path, orphan_set=load_orphan_set(wiki_path)
+            ),
         }
 
     if verdict == "stale":

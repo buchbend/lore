@@ -29,7 +29,7 @@ def add_cmd(
     text = text.removeprefix("\ufeff")
     rule = logbook.broken_rule(text)
     if rule:
-        print(f"log add: the entry breaks the rule: {rule}", file=sys.stderr)
+        print(f"log add: entry refused: {rule}", file=sys.stderr)
         raise typer.Exit(code=2)
     try:
         entry, status = logbook.add(text, ref, Path.cwd())

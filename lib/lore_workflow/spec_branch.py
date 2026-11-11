@@ -43,6 +43,22 @@ def _holds(repo: Path, branch: str, path: str) -> str | None:
     return None
 
 
+def differs_from_origin(repo: Path, branch: str) -> bool:
+    """True when `branch` and `origin/<branch>` both exist and name different commits."""
+    shas = []
+    for ref in (branch, f"origin/{branch}"):
+        r = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode != 0:
+            return False
+        shas.append(r.stdout.strip())
+    return shas[0] != shas[1]
+
+
 def resolve_spec_branch(body: str, repo: Path, target_branch: str) -> SpecBranch:
     prd_m = _PRD_RE.search(body)
     if not prd_m:

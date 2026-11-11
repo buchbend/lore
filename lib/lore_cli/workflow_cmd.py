@@ -63,7 +63,11 @@ def spec_branch_cmd(
     """Print {branch, prd, needs_merge, ref}: whether the spec branch must be merged into
     `epic/<n>` because the target branch lacks the PRD. Exit 1 if the PRD is nowhere."""
     from lore_workflow.epic_policy import resolve_epic_policy
-    from lore_workflow.spec_branch import SpecBranchError, resolve_spec_branch
+    from lore_workflow.spec_branch import (
+        SpecBranchError,
+        differs_from_origin,
+        resolve_spec_branch,
+    )
 
     text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
     policy = resolve_epic_policy(repo_root)
@@ -74,6 +78,11 @@ def spec_branch_cmd(
     except SpecBranchError as exc:
         typer.echo(f"spec-branch: {exc}", err=True)
         raise typer.Exit(code=1) from None
+    if r.branch and differs_from_origin(repo_root, r.branch):
+        typer.echo(
+            f"spec-branch: {r.branch} and origin/{r.branch} differ; push or pull before the merge",
+            err=True,
+        )
     print(
         json.dumps({"branch": r.branch, "prd": r.prd, "needs_merge": r.needs_merge, "ref": r.ref})
     )

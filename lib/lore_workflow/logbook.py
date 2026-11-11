@@ -48,19 +48,19 @@ SINK_TIMEOUT_S = 30
 #: The labelled parts of an entry, in order (issue #500, entries explain the reasoning).
 LABELS = ("Why", "What we did", "Consequences", "Not done yet")
 
-#: (rule name, test). A test returns True when the text breaks the rule.
+#: (finding, test). A test returns True when the finding holds for the text.
 _RULES: tuple[tuple[str, object], ...] = (
-    ("at most 300 words", lambda t: len(t.split()) > 300),
-    ("at least one Markdown link", lambda t: re.search(r"\[[^\]]+\]\([^)\s]+\)", t) is None),
+    ("more than 300 words", lambda t: len(t.split()) > 300),
+    ("no Markdown link", lambda t: re.search(r"\[[^\]]+\]\([^)\s]+\)", t) is None),
     (
-        "no line starts with todo: or decided:",
+        "a line starts with todo: or decided:",
         lambda t: any(
             ln.strip().lower().startswith(("todo:", "decided:")) for ln in t.splitlines()
         ),
     ),
     *(
         (
-            f"a line starts with {label}:",
+            f"no line starts with {label}:",
             # `**Why:**`, `**Why**:` and a plain `Why:` all count.
             lambda t, label=label: (
                 re.search(rf"^\s*(?:\*\*)?{re.escape(label)}(?:\*\*)?:", t, re.M | re.I) is None
@@ -72,7 +72,7 @@ _RULES: tuple[tuple[str, object], ...] = (
 
 
 def broken_rule(text: str) -> str | None:
-    """The name of the first content rule *text* breaks, or None."""
+    """What is wrong with *text*, by the first content rule it breaks, or None."""
     return next((name for name, breaks in _RULES if breaks(text)), None)  # type: ignore[operator]
 
 

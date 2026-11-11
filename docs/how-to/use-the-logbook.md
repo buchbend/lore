@@ -78,7 +78,8 @@ The entry has four labelled parts, each on its own line:
 ```
 
 `Why:` without the bold markers counts too. If the entry breaks a rule, the
-command exits 2 and names the rule:
+command exits 2 and says what is wrong, as in `entry refused: no line starts with Why:`.
+The rules:
 
 - at most 300 words
 - at least one Markdown link

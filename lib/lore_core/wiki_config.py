@@ -19,7 +19,6 @@ from lore_core.config_schema import walk_fields as _cs_walk_fields
 
 @dataclass
 class GitConfig:
-    auto_commit: bool = False
     auto_push: bool = False
     auto_pull: bool = True
 
@@ -50,7 +49,7 @@ def load_wiki_config(wiki_dir: Path) -> WikiConfig:
     config loads. Malformed YAML → defaults + warning (no crash).
 
     ``git.auto_push`` is the one field whose default reads the wiki
-    itself: see :func:`_default_auto_push`.
+    itself: see :func:`_with_auto_push_default`.
     """
     path = wiki_dir / ".lore-wiki.yml"
     if not path.exists():

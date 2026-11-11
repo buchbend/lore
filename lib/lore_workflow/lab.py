@@ -37,11 +37,11 @@ def _label_re(label: str) -> re.Pattern[str]:
 
 
 def broken_rule(text: str) -> str | None:
-    """The name of the first rule *text* breaks, or None."""
+    """What is wrong with *text*, by the first rule it breaks, or None."""
     if len(text.split()) > MAX_WORDS:
-        return f"at most {MAX_WORDS} words"
+        return f"more than {MAX_WORDS} words"
     missing = next((label for label in LABELS if not _label_re(label).search(text)), None)
-    return f"a line starts with {missing}:" if missing else None
+    return f"no line starts with {missing}:" if missing else None
 
 
 def _git(root: Path, *args: str, strip: bool = True) -> str:

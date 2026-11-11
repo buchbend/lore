@@ -45,7 +45,7 @@ def cmd_pending(
 def cmd_set(
     wiki: str = typer.Argument(..., help="Wiki name."),
     note: str = typer.Argument(..., help="Note path, [[wikilink]] or bare slug."),
-    verdict: str = typer.Argument(..., help="confirm | stale | clear-stale."),
+    verdict: str = typer.Argument(..., help="confirm | stale | clear-stale | withdraw."),
     reason: str = typer.Option(None, "--reason", help="Required when verdict=stale."),
 ) -> None:
     """Record a freshness verdict for a note (JSON)."""

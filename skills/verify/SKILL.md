@@ -30,7 +30,9 @@ backlog on their own schedule.
 3. **Loop one picker per entry.** Entries arrive pre-sorted:
    disagreements first, then `authored_marker`, then `orphan_broken`.
    For each, show one `AskUserQuestion` with three options:
-   `stale` / `confirm` / `skip`.
+   `stale` / `confirm` / `skip`. A disagreement entry gets other
+   options: `withdraw` / `confirm` / `skip`. `stale` cannot answer a
+   disagreement, because the note already holds a stale verdict.
 
    **Header wording.**
 
@@ -54,10 +56,15 @@ backlog on their own schedule.
    `lore verdict set <response.wiki> <entry.path> confirm`.
    Echo the returned freshness block.
 
-6. **On `skip`.** No command. Move to the next entry.
+6. **On `withdraw`.** Run
+   `lore verdict set <response.wiki> <entry.path> withdraw`. It removes
+   the user's own personal confirm and leaves the note as it is. The
+   stale verdict then stands, and the entry leaves the list.
 
-7. **Summarize.** End-of-loop: how many confirmed, how many stale,
-   how many skipped. Mention that the SessionStart status-line chip
+7. **On `skip`.** No command. Move to the next entry.
+
+8. **Summarize.** End-of-loop: how many confirmed, how many stale,
+   how many withdrawn, how many skipped. Mention that the SessionStart status-line chip
    will reflect the new count on the next refresh.
 
 ## Hard rules
