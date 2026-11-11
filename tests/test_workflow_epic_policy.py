@@ -116,3 +116,24 @@ def test_epic_policy_cmd_emits_json(tmp_path: Path, capsys) -> None:
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload == {"target_branch": "develop", "deploy_gate": True}
+
+
+def test_epic_policy_cmd_warns_when_origin_cannot_be_read(tmp_path: Path, capsys) -> None:
+    """Issue #549: a failed `git ls-remote` is not "develop is absent"."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(tmp_path / "missing.git")], cwd=repo, check=True
+    )
+    assert workflow_cmd.main(["epic-policy", str(repo)]) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["target_branch"] == "main"
+    assert "origin" in captured.err
+
+
+def test_epic_policy_cmd_is_silent_when_origin_answers(tmp_path: Path, capsys) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _add_bare_origin(repo, tmp_path / "origin.git")
+    assert workflow_cmd.main(["epic-policy", str(repo)]) == 0
+    assert capsys.readouterr().err == ""
