@@ -301,15 +301,31 @@ def _refresh_plugin_cache() -> bool:
 
     run("marketplace", "update", "lore")
     ok = integrations._refresh_claude_plugin_cache(quiet=True)
-    # lore-workflow versions on its own axis; without its own refresh its
-    # skills silently stay on the old version (#311).
+    return ok
+
+
+def _uninstall_old_plugin() -> list[Event]:
+    """Uninstall the merged-away plugin ``lore-workflow@lore`` (PRD 0021)."""
     try:
         index = json.loads(checks._plugin_index().read_text())
     except (OSError, ValueError):
-        index = {}
-    if index.get("plugins", {}).get("lore-workflow@lore"):
-        run("update", "lore-workflow@lore")
-    return ok
+        return []
+    if not index.get("plugins", {}).get("lore-workflow@lore"):
+        return []
+    manual = "claude plugin uninstall lore-workflow@lore"
+    claude = shutil.which("claude")
+    done = False
+    if claude:
+        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+            argv = [claude, "plugin", "uninstall", "lore-workflow@lore"]
+            done = (
+                subprocess.run(argv, check=False, capture_output=True, timeout=60).returncode == 0
+            )
+    if done:
+        return [
+            (True, "uninstalled the old plugin lore-workflow@lore; its skills are now lore:<name>")
+        ]
+    return [(None, f"could not uninstall the old plugin lore-workflow@lore; run: {manual}")]
 
 
 def step_agents(cwd: Path) -> tuple[str, list[Event]]:
@@ -318,6 +334,7 @@ def step_agents(cwd: Path) -> tuple[str, list[Event]]:
     present = [n for n in ("claude", "cursor") if _present(n)]
 
     if "claude" in present:
+        events.extend(_uninstall_old_plugin())
         try:
             cached = checks.claude_cache_version()
         except (OSError, ValueError) as exc:
