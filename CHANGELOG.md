@@ -8,6 +8,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.100.2] - 2026-11-11
+
+- The wiki push aborts its merge when an exception interrupts it, and the next SessionStart names a push error (#386).
+- `lore workflow spec-branch` warns when the local and the remote spec branch differ (#572).
+- `lore log add` and `lore lab add` say what an entry lacks, as in `entry refused: no line starts with Why:` (#505).
+- `lore index` keeps a number that is part of a word in a title; `lore lab show` names a lab file without a month folder (#573).
+- Removed without a reader or a caller: the config key `git.auto_commit`, `spine.new_trace_id`, `_load_wiki_cfg_from_scope` (#387).
+- The command source secret test no longer depends on a 5 s timeout (#524).
+
 ## [0.100.1] - 2026-11-11
 
 PR #550 (rewrite the README around the current architecture, fix stale docs).
