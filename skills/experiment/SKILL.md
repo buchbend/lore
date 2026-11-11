@@ -1,5 +1,5 @@
 ---
-name: lore-workflow:experiment
+name: lore:experiment
 description: Run one experiment and record it as one lab entry — write the question and the expected result before the run, run it, then write the entry with `lore lab add` and commit its file on the current branch. Use when the user wants to try, measure, calibrate, benchmark or test a hypothesis, says "run an experiment" or "lab entry", or a result needs a record that a later run can repeat or build on.
 ---
 

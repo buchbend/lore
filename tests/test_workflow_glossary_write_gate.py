@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-GRILLING_SKILL = REPO_ROOT / "lore-workflow" / "skills" / "grilling" / "SKILL.md"
+GRILLING_SKILL = REPO_ROOT / "skills" / "grilling" / "SKILL.md"
 
 
 def _frontmatter_description(text: str) -> str:
@@ -46,9 +46,7 @@ def test_grilling_recap_covers_the_empty_case() -> None:
 
 
 def test_build_routes_adr_candidates_through_grillings_criteria() -> None:
-    text = (REPO_ROOT / "lore-workflow" / "skills" / "build" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
+    text = (REPO_ROOT / "skills" / "build" / "SKILL.md").read_text(encoding="utf-8")
     assert "../grilling/ADR-FORMAT.md" in text
 
 
@@ -61,8 +59,6 @@ GLOSSARY_GATE = (
 
 def test_no_drafting_skill_routes_a_new_term_anywhere_but_grilling() -> None:
     for skill in ("orient", "file-issue"):
-        text = (REPO_ROOT / "lore-workflow" / "skills" / skill / "SKILL.md").read_text(
-            encoding="utf-8"
-        )
+        text = (REPO_ROOT / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
         # Joined on whitespace: the sentence wraps across lines in some skills.
         assert GLOSSARY_GATE in " ".join(text.split()).lower(), skill

@@ -9,7 +9,7 @@ from the last one.
 
 ## Resume an epic
 
-1. **Run `/lore-workflow:build` in `epic` mode on the same epic issue.** Use a
+1. **Run `/lore:build` in `epic` mode on the same epic issue.** Use a
    fresh session.
 2. **The skill reads the board.** It finds the status comment on the epic
    issue and pipes it to `lore workflow parse-board`. The parser reads the
@@ -37,7 +37,7 @@ The `loop` and `issue` modes keep the ledger in the worktree:
 
 1. **Open a session in the worktree.** `lore hook session-start` finds the
    ledger and offers to resume from its last resume line.
-2. **Accept the offer**, or run `/lore-workflow:build` in the same mode. The
+2. **Accept the offer**, or run `/lore:build` in the same mode. The
    skill reads the last resume line and continues from its next ask.
 
 The hook makes no offer for a finished run. `build` archives the ledger at

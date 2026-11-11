@@ -1,5 +1,5 @@
 ---
-name: lore-workflow:build
+name: lore:build
 description: Build code in one of three modes — `loop` for fast rounds with the human watching,
   `issue` for one clear issue, `epic` for an epic tracker with a build order. Use when the user
   asks to build, implement, fix, or run an epic, an issue, or quick feedback rounds.
@@ -7,7 +7,7 @@ description: Build code in one of three modes — `loop` for fast rounds with th
 
 # Build
 
-The user names the mode (`/lore-workflow:build epic owner/repo#n`), or you pick it from the table.
+The user names the mode (`/lore:build epic owner/repo#n`), or you pick it from the table.
 Follow the mode's file and the rules below. Read another sibling file only when the run reaches it.
 
 | Mode | Use when | Finish point |
@@ -25,7 +25,7 @@ epic starts after its upstream epic merged.
 - **Never merge on red.** CI status and ruff come from `gh pr checks <n>`, never from a model. No ruff job in CI: run `ruff check` and `ruff format --check`, read the exit codes. Exception: an `epic` feature branch has no PR and merges on a green local run (`epic.md` § Merge).
 - **Decision gate.** An ADR, a PRD or a wiki topic-note edit outside a grilling session is a PR. A human approves its merge. Draft an ADR only after the user approved its ledger line.
 - **Merge approval.** A PR that ends a `loop` or `issue` run, or an epic PR, merges only after the user approves it in the conversation. Post one message: the PR link, `gh pr diff <n> --name-only`, the review verdict, `gh pr checks <n>`, the ledger outcomes. Ask whether to merge. On a clear yes, merge with the repo's usual method and report the merge SHA. Silence or a reply about something else is not a yes. The user can merge on GitHub instead; then go on from the merged state.
-- **Tiers.** A spawn's model is `lore tier resolve <tier>`; its description opens with its stage tag (`../../TIER-DELEGATION.md`). Spawn only the subagents a mode names, or for parallel or isolated work. For one lookup, grep or read directly.
+- **Tiers.** A spawn's model is `lore tier resolve <tier>`; its description opens with its stage tag (`../TIER-DELEGATION.md`). Spawn only the subagents a mode names, or for parallel or isolated work. For one lookup, grep or read directly.
 - **Writing rules.** Run `lore style show writing-rules` before you write a PR body, an ADR, a glossary term or the handover section. Write PR bodies and follow-up issues through [`file-issue`](../file-issue/SKILL.md). The board and the verdict block are machine-read and exempt.
 - **Ledger.** Log each ADR candidate, term candidate and left-on-the-table item as one `open` line: `lore workflow ledger-add --kind adr|term|left --text "…"`. An ADR candidate meets all three criteria in `../grilling/ADR-FORMAT.md`. A term candidate is a domain word `CONTEXT.md` lacks or uses loosely. `loop`, `issue`: the file is `<git-dir>/lore-ledger.md` of the worktree. `epic`: add `--path -` and paste the printed line into the board's `## Ledger` section.
 - **Breakpoint.** After each merged round or feature, add a resume line: `lore workflow ledger-add --kind resume --text "<state>" --next "<next ask>"` (epic: with `--path -`). Then tell the user that `/clear` is safe. After `/clear`, resume from the last resume line.

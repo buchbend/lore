@@ -1,11 +1,11 @@
 ---
-name: lore-workflow:debug
+name: lore:debug
 description: Systematic root-cause debugging with a hard circuit breaker. Use when a bug resists fixing, a test keeps failing, a teammate is stuck after repeated fix attempts, or you catch yourself guessing at fixes instead of finding the cause.
 ---
 
 # Debug
 
-The building discipline is `/lore-workflow:tdd`. This is its diagnostic counterpart: a phased
+The building discipline is `/lore:tdd`. This is its diagnostic counterpart: a phased
 process for finding the **root cause** of a bug instead of guessing at fixes,
 plus a hard circuit breaker that stops a doomed fix loop before it wastes a
 whole session.
@@ -59,7 +59,7 @@ the whole class of bug impossible over the one that silences this instance.
 ### 6. Verify
 
 Confirm the symptom is gone against the reproduction from phase 1, then add a
-regression test that fails without the fix (hand this to `/lore-workflow:tdd`). Finally check
+regression test that fails without the fix (hand this to `/lore:tdd`). Finally check
 you did not just move the bug: re-run the surrounding suite and reason about what
 else touched the fault.
 

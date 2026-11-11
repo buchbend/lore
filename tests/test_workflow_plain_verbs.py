@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILLS = sorted((REPO_ROOT / "lore-workflow" / "skills").glob("*/SKILL.md"))
+SKILLS = sorted((REPO_ROOT / "skills").glob("*/SKILL.md"))
 HOW_TOS = sorted((REPO_ROOT / "docs" / "how-to").glob("*.md"))
 CONVENTIONS = REPO_ROOT / "docs" / "conventions.md"
 
@@ -71,7 +71,7 @@ def test_conventions_glossary_does_not_define_cut_or_land():
 
 def test_wiring_test_and_readme_describe_file_issue_plainly():
     """The skill table and the wiring test carry the same plain wording."""
-    for rel in ("lore-workflow/README.md", "tests/test_workflow_writing_rules_wiring.py"):
+    for rel in ("README.md", "tests/test_workflow_writing_rules_wiring.py"):
         text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         found = FUNNEL.findall(text)
         assert not found, (
@@ -86,9 +86,7 @@ def test_file_issue_draft_path_is_per_run():
     The path stays literal in every step — a shell variable set in one step is
     gone by the next — so the per-run part is a slug the writer already knows.
     """
-    text = (REPO_ROOT / "lore-workflow" / "skills" / "file-issue" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
+    text = (REPO_ROOT / "skills" / "file-issue" / "SKILL.md").read_text(encoding="utf-8")
     assert "lore-file-issue.md" not in text, (
         "the draft path is a fixed filename; two concurrent sessions under one "
         "TMPDIR overwrite each other's draft (#322)"

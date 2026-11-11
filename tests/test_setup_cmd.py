@@ -28,10 +28,12 @@ def _person() -> dict:
     return (yaml.safe_load(p.read_text()) or {}) if p.exists() else {}
 
 
-def _plugin_index(ver: str | None) -> None:
+def _plugin_index(ver: str | None, old: bool = False) -> None:
     idx = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
     idx.parent.mkdir(parents=True, exist_ok=True)
     plugins = {"lore@lore": [{"scope": "user", "version": ver}]} if ver else {}
+    if old:
+        plugins["lore-workflow@lore"] = [{"scope": "user", "version": "1.0.0"}]
     idx.write_text(json.dumps({"plugins": plugins}))
 
 
@@ -412,7 +414,7 @@ def test_check_names_failed_advisory_checks(tmp_path, agents, no_prompt, monkeyp
     assert "1 of 2" in summary and "vale" in summary
 
 
-def test_refresh_survives_a_hung_claude_and_refreshes_lore_workflow(monkeypatch):
+def test_refresh_survives_a_hung_claude_and_never_updates_lore_workflow(monkeypatch):
     calls: list[list[str]] = []
 
     def fake_run(argv, **kw):
@@ -421,22 +423,75 @@ def test_refresh_survives_a_hung_claude_and_refreshes_lore_workflow(monkeypatch)
             raise subprocess.TimeoutExpired(argv, 60)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    _plugin_index(PIP)
-    idx = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-    data = json.loads(idx.read_text())
-    data["plugins"]["lore-workflow@lore"] = [{"scope": "user", "version": "1.0.0"}]
-    idx.write_text(json.dumps(data))
+    _plugin_index(PIP, old=True)
     monkeypatch.setattr(setup_cmd.shutil, "which", lambda name: "/fake/claude")
     monkeypatch.setattr(setup_cmd.subprocess, "run", fake_run)
     monkeypatch.setattr(setup_cmd.integrations, "_refresh_claude_plugin_cache", lambda quiet: True)
     assert setup_cmd._refresh_plugin_cache() is True
-    assert ["/fake/claude", "plugin", "update", "lore-workflow@lore"] in calls
+    assert ["/fake/claude", "plugin", "update", "lore-workflow@lore"] not in calls
+
+
+UNINSTALL = ["/fake/claude", "plugin", "uninstall", "lore-workflow@lore"]
+
+
+def _uninstall(monkeypatch, *, old=True, which="/fake/claude", rc=0):
+    calls: list[list[str]] = []
+    _plugin_index(PIP, old=old)
+    monkeypatch.setattr(setup_cmd.shutil, "which", lambda name: which)
+    monkeypatch.setattr(
+        setup_cmd.subprocess,
+        "run",
+        lambda argv, **kw: calls.append(argv) or subprocess.CompletedProcess(argv, rc, "", ""),
+    )
+    return calls, setup_cmd._uninstall_old_plugin()
+
+
+def test_uninstalls_old_plugin_and_names_the_new_prefix(monkeypatch):
+    calls, events = _uninstall(monkeypatch)
+    assert calls == [UNINSTALL]
+    assert [(ok, "lore-workflow@lore" in m and "lore:" in m) for ok, m in events] == [(True, True)]
+
+
+def test_no_uninstall_without_old_plugin(monkeypatch):
+    calls, events = _uninstall(monkeypatch, old=False)
+    assert calls == [] and events == []
+
+
+@pytest.mark.parametrize(
+    "cached, refresh_ok, expected",
+    [
+        ("0.0.1", True, ["refresh", "uninstall"]),
+        ("0.0.1", False, ["refresh"]),
+        (None, True, ["install claude", "uninstall"]),
+        (PIP, True, ["uninstall"]),
+        ("unknown", True, []),
+    ],
+)
+def test_uninstall_runs_only_after_the_lore_plugin_is_current(
+    tmp_path, agents, monkeypatch, cached, refresh_ok, expected
+):
+    _plugin_index(cached, old=True)
+    monkeypatch.setattr(
+        setup_cmd, "_refresh_plugin_cache", lambda: agents.append("refresh") or refresh_ok
+    )
+    monkeypatch.setattr(
+        setup_cmd, "_uninstall_old_plugin", lambda: agents.append("uninstall") or []
+    )
+    setup_cmd.step_agents(tmp_path)
+    assert agents == expected
+
+
+@pytest.mark.parametrize("kw", [{"rc": 1}, {"which": None}])
+def test_uninstall_failure_prints_manual_command(monkeypatch, kw):
+    _, events = _uninstall(monkeypatch, **kw)
+    assert len(events) == 1 and events[0][0] is not True
+    assert "claude plugin uninstall lore-workflow@lore" in events[0][1]
 
 
 def test_no_retired_phrase_in_skill_text():
     hits = [
         f"{p.relative_to(REPO)}:{n}"
-        for root in ("skills", "lore-workflow/skills")
+        for root in ("skills",)
         for p in sorted((REPO / root).rglob("*.md"))
         for n, line in enumerate(p.read_text().splitlines(), 1)
         if _RETIRED.search(line)

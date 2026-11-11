@@ -168,12 +168,13 @@ Terms used in the workflow layer and orchestration:
 
 - **Workflow** — a skill-bundled planning chain: `orient → grilling →
   to-epic → build → document`, with `handover` at any stop. Each step is a
-  callable skill. The human checkpoint sits between shaping and the build.
+  callable skill of the one `lore` plugin. The human checkpoint sits between shaping and the build.
   See `docs/conventions.md` for the stage vocabulary and tier assignments.
 - **Skill** — a callable, namespaced Claude Code automation block (e.g.,
-  `lore-workflow:build`, `lore:verify`). Skills are registered in
+  `lore:build`, `lore:verify`). Skills are registered in
   `plugin.json` and dispatched by CLI invocation or intra-skill routing.
-  Workflow skills are bundled in the `lore-workflow` plugin.
+  Lore ships one plugin, `lore`; every skill lives in `skills/` and has the
+  name `lore:<name>`, the workflow skills too.
 - **Lore context pack** — synonym for `lore_context_pack` (see above).
 - **Codemap excerpt** — a bounded, ranked slice of the `lore codemap`
   output, token-budgeted (~1k tokens) and curated for a specific feature
@@ -252,7 +253,7 @@ and 0013, spec in PRD 0014.
 - **Stage tag** — the bracketed workflow step that opens a spawn's
   description, such as `[build:review]`. The epic or issue the spawn works for
   may follow it. Token statistics group by it. The list lives in
-  `lore-workflow/TIER-DELEGATION.md` and `lib/lore_core/stages.py`.
+  `skills/TIER-DELEGATION.md` and `lib/lore_core/stages.py`.
 - **Linkage block** — the transcript index entry's `repo`, `branch`,
   `prs`, `issues`, `commits` and `files` keys, written by capture with no
   LLM call. It is what `lore_drill` reads to answer "which sessions
@@ -309,11 +310,17 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
 - **Risk level** — `low` or `high`, from `lore workflow risk <pr>`. The
   level sets the review depth. An agent raises the level and never
   lowers it.
+- **Handover note** — the note that part one of the `handover` skill writes
+  so the next session continues this one after `/clear` or compaction.
+  `lore handover write` stores it in the local cache, one note per working
+  directory; a new note replaces the old one. SessionStart names its path.
+  The note stays local; team-facing text goes in a handover section or a
+  seed issue. _Avoid_: handoff, session note.
 - **Handover section** — the `## Handover` section of an epic issue or of
   a build PR body. It names what
   shipped, the decisions, the deviations from the PRD, the follow-ups and
-  the known limits. `build` writes it at the finish point. The `handover`
-  skill writes it for work that stops early.
+  the known limits. `build` writes it at the finish point. Part two of the
+  `handover` skill writes it for work that stops early.
 - **Spec branch** — the branch that holds the PRD of an epic before the
   build. `to-epic` names it in the epic body. `build` merges it into the
   epic branch when the target branch lacks the PRD. _Avoid_: docs branch,

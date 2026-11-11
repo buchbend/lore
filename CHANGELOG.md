@@ -8,6 +8,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.101.0] - 2026-11-11
+
+Epic #588 (merge lore-workflow into the lore plugin). PRD 0021 (one plugin), ADR 0021 (Lore ships as one plugin).
+
+### Changed
+
+- **Breaking: one plugin.** The workflow skills now ship in the `lore` plugin. Each `/lore-workflow:<name>` command is now `/lore:<name>`, for example `/lore-workflow:build` is now `/lore:build`. No alias skills exist under the old names. The marketplace lists `lore` only.
+- **One handover skill.** The two handover skills are one skill, `/lore:handover`. Part one writes the handover note for the next session. Part two writes the handover section and the seed issue. At a `build` finish point, only part two runs.
+- **`lore setup` and `install.sh upgrade` uninstall the old plugin `lore-workflow@lore`.** The uninstall runs only after the `lore` plugin is current. On a failure, setup prints the manual command `claude plugin uninstall lore-workflow@lore`.
+
+### Added
+
+- **`lore doctor` check `old plugin`.** The check fails while the plugin index holds `lore-workflow@lore` and names the uninstall command.
+- **Glossary term Handover note** in `CONTEXT.md`.
+
+### Removed
+
+- **The `lore-workflow` plugin**, its manifest and its separate version.
+
 ## [0.100.2] - 2026-11-11
 
 - The wiki push aborts its merge when an exception interrupts it, and the next SessionStart names a push error (#386).

@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-FILE_ISSUE_SKILL = REPO_ROOT / "lore-workflow" / "skills" / "file-issue" / "SKILL.md"
+FILE_ISSUE_SKILL = REPO_ROOT / "skills" / "file-issue" / "SKILL.md"
 DIRECTIVE_TEMPLATE = (
     REPO_ROOT / "lib" / "lore_core" / "templates" / "integration-rules" / "default.md"
 )

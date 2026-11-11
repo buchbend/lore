@@ -39,17 +39,17 @@ token records always give the same page.
 
 ## How Lore finds the stage and the epic
 
-- **Stage.** Every spawn in the lore-workflow skills opens its description with
+- **Stage.** Every spawn in the workflow skills opens its description with
   a stage tag, such as `[build:review]` or `[build:epic-review]`.
-  `lore-workflow/TIER-DELEGATION.md` lists the tags. A subagent without a tag
+  `skills/TIER-DELEGATION.md` lists the tags. A subagent without a tag
   counts under "untagged subagents". Work in the main session counts under its
-  skill, such as `skill:lore-workflow:build`.
+  skill, such as `skill:lore:build`.
 - **Teammate session.** A teammate that runs as its own session gets a brief
   whose first line is the tag and the epic: `[build:implement]
   owner/repo#510`. The whole session counts for that stage and epic.
 - **Epic or issue.** A reference after the tag counts the spawn for that epic
   or issue. Without one, the spawn counts for the reference in the arguments of
-  the skill that runs, such as `/lore-workflow:build epic owner/repo#510`. The
+  the skill that runs, such as `/lore:build epic owner/repo#510`. The
   reference stays in effect until another one appears in the session.
 - After `/clear`, the session starts without a reference. Work there counts
   under "no epic or issue" until a skill names the epic again.

@@ -96,7 +96,7 @@ def test_a_slash_command_starts_a_skill_phase_with_its_target(tmp_path: Path) ->
             _user("hello"),
             _assistant("m1"),
             _command("model", "sonnet"),  # built-in: no phase
-            _command("lore-workflow:build", "epic buchbend/lore#510"),
+            _command("lore:build", "epic buchbend/lore#510"),
             _assistant("m2", [_spawn("t1", "[build:review] PR 12")]),
             _assistant("m3", [_spawn("t2", "[build:implement] #511 feature")]),
             _assistant("m4", [_spawn("t3", "look around")]),
@@ -105,13 +105,13 @@ def test_a_slash_command_starts_a_skill_phase_with_its_target(tmp_path: Path) ->
     rows = {p.name: p for p in trace_tokens(path)}
     assert list(rows) == [
         "main",
-        "skill:lore-workflow:build",
+        "skill:lore:build",
         "agent:[build:review] PR 12",
         "agent:[build:implement] #511 feature",
         "agent:look around",
     ]
     assert rows["main"].target is None
-    assert rows["skill:lore-workflow:build"].target == "buchbend/lore#510"
+    assert rows["skill:lore:build"].target == "buchbend/lore#510"
     review = rows["agent:[build:review] PR 12"]
     assert (review.stage, review.target) == ("build:review", "buchbend/lore#510")
     implement = rows["agent:[build:implement] #511 feature"]
@@ -139,7 +139,7 @@ def test_a_teammate_session_takes_the_tag_of_its_first_prompt(tmp_path: Path) ->
                         "type": "tool_use",
                         "id": "s",
                         "name": "Skill",
-                        "input": {"skill": "lore-workflow:tdd"},
+                        "input": {"skill": "lore:tdd"},
                     }
                 ],
             ),
@@ -169,7 +169,7 @@ def test_a_nested_spawn_inherits_its_parents_target(tmp_path: Path) -> None:
     path = _write(
         tmp_path / "s.jsonl",
         [
-            _command("lore-workflow:build", "epic buchbend/lore#510"),
+            _command("lore:build", "epic buchbend/lore#510"),
             _assistant("m1", [_spawn("t1", "[build:review] PR")]),
         ],
     )
@@ -195,7 +195,7 @@ def epic_session(tmp_path: Path) -> Path:
     return _write(
         tmp_path / "s.jsonl",
         [
-            _command("lore-workflow:build", "epic #510"),
+            _command("lore:build", "epic #510"),
             _assistant("m1", [_spawn("t1", "[build:review] PR 12")]),
             _assistant("m2", [_spawn("t2", "untagged helper")], model="claude-sonnet-5-5"),
             _assistant("m3"),
@@ -206,8 +206,8 @@ def epic_session(tmp_path: Path) -> Path:
 def test_records_carry_stage_and_a_repo_target(epic_session: Path) -> None:
     record = build_record("s1", epic_session, cwd="/home/me/git/lore", now=_NOW)
     by_phase = {r["phase"]: r for r in record["rows"]}
-    assert by_phase["skill:lore-workflow:build"]["target"] == "lore#510"
-    assert by_phase["skill:lore-workflow:build"]["stage"] is None
+    assert by_phase["skill:lore:build"]["target"] == "lore#510"
+    assert by_phase["skill:lore:build"]["stage"] is None
 
 
 def test_summary_groups_by_stage_target_day_and_session(epic_session: Path) -> None:
@@ -222,7 +222,7 @@ def test_summary_groups_by_stage_target_day_and_session(epic_session: Path) -> N
     # No subagent files: the messages after a spawn count in that agent's row.
     assert set(summary.by_stage) == {
         "main",
-        "skill:lore-workflow:build",
+        "skill:lore:build",
         "build:review",
         "untagged subagents",
     }

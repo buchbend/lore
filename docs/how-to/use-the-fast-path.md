@@ -3,7 +3,7 @@
 **Goal:** implement one clear GitHub issue, or a series of small asks, with
 the workflow's discipline and without the epic chain.
 
-The fast path is `/lore-workflow:build` in `issue` mode or in `loop` mode. It
+The fast path is `/lore:build` in `issue` mode or in `loop` mode. It
 avoids two traps. The first is the whole chain for a change that does not
 need it. The second is no workflow at all, which drops the tests, the
 decisions and the docs.
@@ -15,7 +15,7 @@ decisions and the docs.
 | `issue` | You hold one written, clear issue. |
 | `loop` | You react to a running feature in fast rounds: screenshots, "make this red", a hotkey. |
 
-When the change is clear only in your head, run `/lore-workflow:orient` and
+When the change is clear only in your head, run `/lore:orient` and
 say "brief me". Its light mode files the issue and hands it to `issue` mode.
 When the work is several features, or its shape is unsettled, use the
 [epic chain](run-an-epic.md).
@@ -28,7 +28,7 @@ When the work is several features, or its shape is unsettled, use the
 
 ## Issue mode
 
-1. **Run `/lore-workflow:build` in `issue` mode** with the issue.
+1. **Run `/lore:build` in `issue` mode** with the issue.
 2. **The skill reads the issue and the code map.** It spawns no explorers.
 3. **The skill clarifies only when needed.** An ambiguous issue gets at most
    three questions. A clear issue gets none.
@@ -44,7 +44,7 @@ When the work is several features, or its shape is unsettled, use the
 
 ## Loop mode
 
-1. **Run `/lore-workflow:build` in `loop` mode.** The skill creates
+1. **Run `/lore:build` in `loop` mode.** The skill creates
    `loop/<slug>` off the branch your dev stack runs.
 2. **Give an ask per round.** Each round is test-first and merges locally
    into the dev-stack branch. A background check runs the full suite.

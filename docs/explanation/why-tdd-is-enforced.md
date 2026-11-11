@@ -1,9 +1,9 @@
 # Why test-first development is enforced
 
-`lore-workflow` makes **test-driven development** (TDD) a hard rule, not a
-suggestion: every implementation teammate writes a failing test first, makes
-it pass, then refactors — the red → green → refactor loop (`lore-workflow:tdd`)
-— and no pull request merges on red. This page explains why the discipline
+The `lore` workflow makes **test-driven development** (TDD) a hard rule, not a
+suggestion. Every implementation teammate writes a failing test first, makes
+it pass, then refactors: the red → green → refactor loop (`lore:tdd`). No
+pull request merges on red. This page explains why the discipline
 is mandatory rather than left to judgement.
 
 ## The problem it solves
@@ -42,7 +42,7 @@ mapping to its acceptance criteria is not accepted.
 ## How it shows up in the chain
 
 - On the [epic chain](../how-to/run-an-epic.md), every teammate follows
-  `lore-workflow:tdd`, and each feature's review checks that the tests map
+  `lore:tdd`, and each feature's review checks that the tests map
   to the acceptance criteria before the pull request merges.
 - On the [fast path](../how-to/use-the-fast-path.md), `build` keeps the same
   strict loop in `issue` and `loop` mode, without the teammates and the

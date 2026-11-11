@@ -39,7 +39,7 @@ no file and prints one check mark per step.
    | Step | What it does |
    |---|---|
    | wiki | Picks the vault (`$LORE_ROOT`, the configured `lore_root`, or `~/lore`), then creates a personal wiki, clones a team wiki or links a folder. |
-   | agents | Installs the Claude Code plugin, or refreshes a stale plugin cache, and repairs Cursor's wiring where Cursor is present. |
+   | agents | Installs the Claude Code plugin, or refreshes a stale plugin cache, and repairs Cursor's wiring where Cursor is present. Once the `lore` plugin is current, the step uninstalls the old plugin `lore-workflow@lore`. |
    | scope | In a repo no scope covers, offers the folder above the repo as a scope: every repo below it routes to the scope's wiki. |
    | check | Runs the install checks; a failing advisory check does not fail setup. |
 

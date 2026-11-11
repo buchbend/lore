@@ -16,15 +16,15 @@ needs work before any code. For one small, clear change, use the
 ## Steps
 
 1. **Shape the work.** Point a session at the idea or the seed issue. Run
-   `/lore-workflow:orient` and confirm what it reflects back. Then run
-   `/lore-workflow:grilling` and say "grill with docs". The interview
+   `/lore:orient` and confirm what it reflects back. Then run
+   `/lore:grilling` and say "grill with docs". The interview
    stress-tests the plan and records terms and ADRs as decisions land.
-2. **Pass the checkpoint.** Run `/lore-workflow:to-epic`. It writes the PRD
+2. **Pass the checkpoint.** Run `/lore:to-epic`. It writes the PRD
    under `docs/prd/`, opens the epic issue and one sub-issue per feature, and
    writes the build-order table. Review the PRD and the build order. This review is
    the last human gate before the build.
 3. **Build the epic.** Point a session at the epic issue and run
-   `/lore-workflow:build` in `epic` mode. The skill:
+   `/lore:build` in `epic` mode. The skill:
    - validates the build order with `lore workflow validate-build-order`;
    - creates `epic/<issue>` from the target branch, and merges the spec branch into it
      when the target branch lacks the PRD (starting the build approves the spec on that
@@ -36,7 +36,7 @@ needs work before any code. For one small, clear change, use the
    - merges the features in dependency order and opens the epic PR. CI is
      checked there: the epic PR merges only on green CI.
 4. **Docs ship with the epic.** Before the epic PR merges, `build` runs
-   `/lore-workflow:document` in pre-merge mode. The docs commit lands on the
+   `/lore:document` in pre-merge mode. The docs commit lands on the
    epic branch, and the PRD status becomes `shipped`.
 5. **Read the handover.** After the merge, `build` writes a `## Handover`
    section into the epic issue body: what shipped with the merge SHA, the

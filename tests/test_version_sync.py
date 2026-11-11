@@ -8,16 +8,15 @@ drift between sources means installed clients keep running cached code.
 This test fails fast if the three sources disagree, and is the canonical
 "CI guard" referenced by the release process in `CONTRIBUTING.md`.
 
-The repo also ships a second plugin, `lore-workflow` (its own manifest at
-`lore-workflow/.claude-plugin/plugin.json`), on an independent version
-axis — it has no pyproject/CHANGELOG counterpart yet, so it's checked
-only for internal validity and marketplace wiring, not cross-file sync.
+The repo ships one plugin, `lore`, with one manifest (ADR 0021, Lore
+ships as one plugin).
 """
 
 from __future__ import annotations
 
 import json
 import re
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -26,9 +25,7 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 PLUGIN_MANIFEST = REPO_ROOT / ".claude-plugin" / "plugin.json"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 MARKETPLACE = REPO_ROOT / ".claude-plugin" / "marketplace.json"
-WORKFLOW_MANIFEST = REPO_ROOT / "lore-workflow" / ".claude-plugin" / "plugin.json"
 
-SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 CHANGELOG_HEADING_RE = re.compile(r"^##\s+\[(?P<version>\d+\.\d+\.\d+)\]")
 
 
@@ -74,12 +71,20 @@ def _marketplace_plugins() -> dict:
     return {entry["name"]: entry for entry in data["plugins"]}
 
 
-def test_marketplace_lists_both_plugins():
+def test_marketplace_lists_one_plugin():
     plugins = _marketplace_plugins()
-    assert set(plugins) == {"lore", "lore-workflow"}, (
-        f"marketplace.json plugins are {sorted(plugins)!r}; expected both "
-        f"'lore' and 'lore-workflow' entries (PRD 0003 two-plugin monorepo)."
+    assert set(plugins) == {"lore"}, (
+        f"marketplace.json plugins are {sorted(plugins)!r}; expected only 'lore' (ADR 0021)."
     )
+
+
+def test_repo_holds_one_plugin_manifest_and_no_workflow_folder():
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+    ).stdout.split()
+    manifests = [p for p in tracked if p.endswith("plugin.json")]
+    assert manifests == [".claude-plugin/plugin.json"], manifests
+    assert not (REPO_ROOT / "lore-workflow").exists()
 
 
 def test_marketplace_sources_resolve_to_a_plugin_manifest():
@@ -90,16 +95,3 @@ def test_marketplace_sources_resolve_to_a_plugin_manifest():
             f"marketplace entry {name!r} has source={entry['source']!r}, "
             f"but no manifest at {manifest} — plugin isn't installable."
         )
-
-
-def test_lore_workflow_manifest_has_independent_version():
-    assert WORKFLOW_MANIFEST.is_file(), (
-        f"expected a lore-workflow plugin manifest at {WORKFLOW_MANIFEST}"
-    )
-    manifest = json.loads(WORKFLOW_MANIFEST.read_text())
-    assert manifest["name"] == "lore-workflow"
-    version = manifest.get("version")
-    assert version and SEMVER_RE.match(version), (
-        f"lore-workflow plugin.json version={version!r} must be a "
-        f"standalone X.Y.Z, independent of the lore plugin's version."
-    )

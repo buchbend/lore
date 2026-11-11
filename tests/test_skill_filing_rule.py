@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILLS = REPO_ROOT / "lore-workflow" / "skills"
+SKILLS = REPO_ROOT / "skills"
 
 
 def _text(skill: str) -> str:

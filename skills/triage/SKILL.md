@@ -1,5 +1,5 @@
 ---
-name: lore-workflow:triage
+name: lore:triage
 description: Review every open issue and open PR of one repo against the code at HEAD. Find what
   is outdated, already done, not worth doing, duplicated or dangling, and present it as one
   filterable page for discussion. Review only — nothing is commented, labelled, closed or pushed
@@ -69,7 +69,7 @@ a lens. Default lenses:
 | Ops/SRE reviewer | runtime, backups, monitoring, docs | `mid` | `[triage:ops]` |
 
 Pass `lore tier resolve <tier>` as each spawn's model and open its description with the tag;
-another theme takes `[triage:other]` ([TIER-DELEGATION.md](../../TIER-DELEGATION.md)). Split a theme above about 40 issues into two
+another theme takes `[triage:other]` ([TIER-DELEGATION.md](../TIER-DELEGATION.md)). Split a theme above about 40 issues into two
 spawns. Each brief carries the repo state from § 1, the issue numbers and the checklist in
 § 2. It also carries the verdicts below, the review-only rule and this return shape, one JSON
 object per issue:
