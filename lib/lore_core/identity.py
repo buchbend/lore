@@ -21,10 +21,8 @@ Schema (see concepts/lore/identity-aliasing):
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
-_GIT_TIMEOUT = 10
 
 
 def _load_users_yml(wiki_path: Path) -> dict:
@@ -86,38 +84,3 @@ def resolve_display_name(wiki_path: Path, handle: str) -> str:
 
     lore_root = wiki_path.parent.parent
     return load_root_config(lore_root).user.display_name
-
-
-def aliased_emails(wiki_path: Path) -> set[str]:
-    """Union of every email in `_users.yml` aliases."""
-    data = _load_users_yml(wiki_path)
-    out: set[str] = set()
-    for user in data.get("users") or []:
-        for email in (user.get("aliases") or {}).get("emails") or []:
-            out.add(email)
-    return out
-
-
-def distinct_git_authors(wiki_path: Path) -> set[str]:
-    """Return the set of distinct author emails from the wiki's git log.
-
-    Returns set() on any git failure (no repo, no commits, git absent).
-    """
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(wiki_path), "log", "--format=%ae"],
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return set()
-    if result.returncode != 0:
-        return set()
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-
-
-def unaliased_authors(wiki_path: Path) -> set[str]:
-    """Distinct git authors whose emails are not yet in `_users.yml`."""
-    return distinct_git_authors(wiki_path) - aliased_emails(wiki_path)

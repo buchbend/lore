@@ -73,52 +73,6 @@ def test_team_mode_active_team(team_wiki):
     assert identity.team_mode_active(team_wiki) is True
 
 
-# ---------- aliased / unaliased ----------
-
-
-def test_aliased_emails_collects_all(team_wiki):
-    aliased = identity.aliased_emails(team_wiki)
-    assert aliased == {
-        "christof@example.com",
-        "buchbend@mail.de",
-        "alice@example.com",
-    }
-
-
-def test_aliased_emails_empty_for_solo(solo_wiki):
-    assert identity.aliased_emails(solo_wiki) == set()
-
-
-# ---------- git author discovery (mocked) ----------
-
-
-def test_distinct_git_authors_mocked(solo_wiki, monkeypatch):
-    import subprocess
-
-    class FakeResult:
-        returncode = 0
-        stdout = "alice@example.com\nbob@example.com\nalice@example.com\n"
-
-    def fake_run(*a, **kw):
-        return FakeResult()
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    assert identity.distinct_git_authors(solo_wiki) == {
-        "alice@example.com",
-        "bob@example.com",
-    }
-
-
-def test_distinct_git_authors_no_git_returns_empty(solo_wiki, monkeypatch):
-    import subprocess
-
-    def fake_run(*a, **kw):
-        raise OSError("gh? git? not here")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    assert identity.distinct_git_authors(solo_wiki) == set()
-
-
 # ---------- resolve_display_name ----------
 
 

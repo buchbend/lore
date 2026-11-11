@@ -63,7 +63,7 @@ type: project | concept | decision | session | paper
 created: YYYY-MM-DD
 description: "One-sentence summary for scanning."
 tags: [topic/xxx, domain/xxx, scope/xxx]
-repos: [org/name, ...]      # optional; auto-populated by /lore:session
+repos: [org/name, ...]      # optional
 ---
 ```
 
@@ -110,6 +110,3 @@ repos:
   - org/repo-b
 ```
 
-The `/lore:session` skill also auto-tags notes with `repos:` based on
-commits touched during the session; over time the graph becomes
-repo-aware with no manual tagging.
