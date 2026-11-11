@@ -1,14 +1,14 @@
 ---
 title: "One plugin"
 status: draft
-epic: https://github.com/buchbend/lore/issues/TBD
+epic: https://github.com/buchbend/lore/issues/588
 repos:
   - buchbend/lore
 ---
 
 # PRD 0021: One plugin
 
-> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/TBD).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/588).
 > The epic links here; this file is not embedded in the issue body.
 
 Decision record: ADR [0021](../adr/0021-lore-ships-as-one-plugin.md) (Lore

@@ -3,7 +3,8 @@
 - **Status:** Proposed
 - **Date:** 2026-11-11
 - **Deciders:** Christof Buchbender
-- **Relates to:** PRD [0021](../prd/0021-one-plugin.md) (one plugin); PRD
+- **Relates to:** epic [#588](https://github.com/buchbend/lore/issues/588) (merge lore-workflow into
+  the lore plugin); PRD [0021](../prd/0021-one-plugin.md) (one plugin); PRD
   [0003](../prd/0003-lore-workflow-plugin-and-deterministic-substrate.md)
   (lore-workflow plugin and deterministic substrate), decision "Monorepo,
   two plugins"
