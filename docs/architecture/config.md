@@ -78,11 +78,11 @@ The rejection of an invalid value names the expected type or choices.
 an explicit `LORE_ROOT` calls `require_lore_root()` instead. That function
 errors when the env var is unset and does not fall back to `~/lore`.
 
-#### Curator
+#### Hook guards
 
 | Var | Type | Default | Read in | Wins over |
 |-----|------|---------|---------|-----------|
-| `LORE_CURATOR_MODE` | `1` \| unset | unset | `lore_cli/hooks.py:_in_curator_mode` | (internal — set by the curator's own detached-subprocess spawns, not a user knob) |
+| `LORE_CHILD_MODE` | `1` \| unset | unset | `lore_cli/hooks.py:_in_child_mode` | (internal — `lore_cli/spawn.py` sets it on every detached child it starts, so hooks never re-enter inside one. Not a user knob.) |
 | `LORE_SUPPRESS_CAPTURE` | `1` \| unset | unset | `lore_cli/hooks.py:_capture_suppressed`, checked first thing in `capture()` | (dispatch contract — an orchestrator sets it for a teammate session whose transcript must not become a standalone note. Unset leaves capture unchanged.) |
 
 #### Observability / runtime

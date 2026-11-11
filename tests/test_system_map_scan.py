@@ -194,7 +194,7 @@ def test_session_start_shows_the_hint_and_spawns_the_scan_without_waiting(
     cfg.parent.mkdir(parents=True)
     cfg.write_text(f"scopes:\n  ccat:\n    path: {scope}\n    wiki: ccat\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    monkeypatch.delenv("LORE_CURATOR_MODE", raising=False)
+    monkeypatch.delenv("LORE_CHILD_MODE", raising=False)
     system_map_scan.record_missing(vault, "ccat", 2)
     for name in dir(hooks):
         if name.startswith("_spawn_"):

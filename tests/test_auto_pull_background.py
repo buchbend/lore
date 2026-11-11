@@ -117,7 +117,7 @@ def test_session_start_shows_recorded_warning_and_pulls_in_background(
     project = tmp_path / "project"
     _attach(lore_root, project)
     monkeypatch.setenv("LORE_ROOT", str(lore_root))
-    monkeypatch.delenv("LORE_CURATOR_MODE", raising=False)
+    monkeypatch.delenv("LORE_CHILD_MODE", raising=False)
     inline_pulls: list[Path] = []
     monkeypatch.setattr(git_sync, "auto_pull", lambda d: inline_pulls.append(d))
     spawned: list[str] = []

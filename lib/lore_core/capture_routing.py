@@ -102,7 +102,7 @@ def _stamp_linkage(
     half is derived once. The deep half is per-transcript and reads the
     file, which is why it only runs at a session boundary.
     """
-    from lore_curator.ledger_linkage import build_linkage
+    from lore_core.ledger_linkage import build_linkage
 
     shallow = build_linkage(cwd)
     for entry in entries:
@@ -127,7 +127,7 @@ def _deep_linkage(
     """
     from lore_core.types import TranscriptHandle
 
-    from lore_curator.ledger_linkage import build_linkage
+    from lore_core.ledger_linkage import build_linkage
 
     try:
         handle = TranscriptHandle(

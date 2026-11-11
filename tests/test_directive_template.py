@@ -115,8 +115,8 @@ def test_session_start_shield_catches_unexpected_exception(monkeypatch, capsys):
         raise RuntimeError("simulated catastrophic failure deep in _session_start")
 
     monkeypatch.setattr(hooks, "_session_start", _boom)
-    # Skip the curator-mode and session-off short-circuits; use a real cwd.
-    monkeypatch.setattr(hooks, "_in_curator_mode", lambda: False)
+    # Skip the child-mode and session-off short-circuits; use a real cwd.
+    monkeypatch.setattr(hooks, "_in_child_mode", lambda: False)
     monkeypatch.setattr(hooks, "_session_off_all", lambda: False)
     monkeypatch.setattr(hooks, "_read_hook_payload", lambda: {})
     monkeypatch.setattr(hooks, "_resolve_cwd", lambda _explicit: "/tmp")

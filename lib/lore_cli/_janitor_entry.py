@@ -6,11 +6,11 @@ composer adds crash logs under the global ``$LORE_CACHE``
 (``lore_cli._crash_log``, the one family that lives outside that
 layering) and ``lore_core.janitor.prune_orphans`` (drain-orphan cleanup,
 composed alongside rather than inside ``run_janitor``'s critical
-section) — and is what hook fire / curator run end actually call.
+section) — and is what a hook fire actually calls.
 
 Best-effort like every other opportunistic hook-path call
 (``_gc_sessions_cache`` is the existing precedent): never raises, so a
-janitor bug can't take down a hook or a curator run.
+janitor bug can't take down a hook.
 """
 
 from __future__ import annotations

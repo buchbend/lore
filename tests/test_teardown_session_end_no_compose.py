@@ -52,7 +52,7 @@ def _handle(repo: Path):
 
 def _route(lore_root: Path, repo: Path, *, event: str):
     from lore_core.types import Scope
-    from lore_curator.capture_routing import route_capture
+    from lore_core.capture_routing import route_capture
 
     scope = Scope(
         wiki="demo",
@@ -75,7 +75,7 @@ def test_route_capture_takes_no_spawn_callable() -> None:
     """The injected spawn seam is gone, so no caller can reintroduce a spawn."""
     import inspect
 
-    from lore_curator.capture_routing import route_capture
+    from lore_core.capture_routing import route_capture
 
     params = inspect.signature(route_capture).parameters
     assert "spawn_curator_a" not in params, (

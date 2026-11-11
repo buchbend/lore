@@ -6,7 +6,7 @@ moving existing CLI plumbing.
 The `lore` CLI is a typer dispatcher (`lore_cli/__main__.py`) that
 mounts one subapp per verb. Every verb lives in its own file and
 follows the same shape, so the dispatcher stays a pure mounter and the
-subpackages (`lore_core`, `lore_curator`, `lore_mcp`, `lore_search`)
+subpackages (`lore_core`, `lore_mcp`, `lore_search`)
 stay free of CLI plumbing.
 
 ## The shape
@@ -72,7 +72,7 @@ These are enforced by `tests/test_layering.py` and
 break.
 
 **1. Lower layers don't import from `lore_cli`.**
-`lore_core`, `lore_curator`, `lore_mcp`, `lore_search`, and
+`lore_core`, `lore_mcp`, `lore_search`, and
 `lore_adapters` must not import anything from `lore_cli` —
 unconditionally, lazily, or under `TYPE_CHECKING`. They contain only
 business logic. Their public functions are what the CLI verbs call.
@@ -118,9 +118,7 @@ harness:
   `click.exceptions.*` back to integer exit codes.
 
 Import-time-cheap; it exists so individual verbs don't have to repeat
-plumbing. `lore_core.run_render` — the pure renderers `curator_cmd` used
-for a curator run's live trail — was deleted with the compose pipeline
-it rendered, leaving this the sole seam helper.
+plumbing. It is the sole seam helper.
 
 ## Deprecating a verb
 

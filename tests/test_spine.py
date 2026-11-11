@@ -108,7 +108,7 @@ def test_validate_rejects_missing_or_extra_fields() -> None:
 def test_freeform_strings_live_in_data(tmp_path: Path) -> None:
     """Free-form producer detail belongs in `data`, never as a new top-level key."""
     SpineWriter(tmp_path).emit(
-        source="curator",
+        source="drain",
         event="run-end",
         data={"notes_new": 3, "reason": "cap-tripped", "arbitrary": "text"},
     )
@@ -308,7 +308,7 @@ def test_write_failure_touches_marker(tmp_path: Path, monkeypatch) -> None:
 def test_read_spine_filters_by_source(tmp_path: Path) -> None:
     w = SpineWriter(tmp_path)
     w.emit(source="hook", event="a")
-    w.emit(source="curator", event="b")
+    w.emit(source="curator", event="b")  # a retired source still reads back
     w.emit(source="hook", event="c")
     assert [r["event"] for r in read_spine(tmp_path, source="hook")] == ["a", "c"]
     assert len(read_spine(tmp_path)) == 3

@@ -154,7 +154,7 @@ def _build_resolved_table(rows: list):
 def cmd_show(
     path_filter: str | None = typer.Argument(
         None,
-        help="Optional dotted prefix to filter (e.g. `curator`).",
+        help="Optional dotted prefix to filter (e.g. `capture`).",
     ),
     only_overridden: bool = typer.Option(
         False,

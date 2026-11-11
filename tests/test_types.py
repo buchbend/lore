@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 from lore_core.types import (
-    BlastRadius,
     Scope,
     ToolCall,
     ToolResult,
@@ -106,11 +105,3 @@ def test_types_are_frozen():
     )
     with pytest.raises(dataclasses.FrozenInstanceError):
         s.wiki = "modified"
-
-
-def test_blast_radius_enum_values():
-    """BlastRadius enum has all expected values."""
-    assert BlastRadius.CREATE.value == "create"
-    assert BlastRadius.EDIT_FRONTMATTER.value == "edit-fm"
-    assert BlastRadius.EDIT_BODY.value == "edit-body"
-    assert BlastRadius.SUPERSEDE.value == "supersede"

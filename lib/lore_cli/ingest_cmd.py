@@ -1,7 +1,7 @@
 """`lore ingest` — ingest a JSONL transcript via ManualSendAdapter.
 
 Reads a JSONL transcript from a file path or stdin (`-`) and upserts a
-ledger entry so Curator A can pick it up.
+ledger entry for it.
 """
 
 from __future__ import annotations

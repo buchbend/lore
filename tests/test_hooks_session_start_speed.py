@@ -88,7 +88,7 @@ def _build_vault(tmp_path: Path, ssh_body: str) -> tuple[Path, Path]:
 
 def _run_hook(lore_root: Path, project: Path, *, timeout: float) -> tuple[float, str]:
     env = dict(os.environ)
-    for var in ("LORE_CURATOR_MODE", "CLAUDE_SESSION_ID", "LORE_SUPPRESS_CAPTURE"):
+    for var in ("LORE_CHILD_MODE", "CLAUDE_SESSION_ID", "LORE_SUPPRESS_CAPTURE"):
         env.pop(var, None)
     env["LORE_ROOT"] = str(lore_root)
     env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(LIB_DIR), env.get("PYTHONPATH")]))

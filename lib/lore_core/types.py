@@ -1,4 +1,4 @@
-"""Core types for passive-capture: Turn, TranscriptHandle, Scope, BlastRadius.
+"""Core types for passive-capture: Turn, TranscriptHandle, Scope.
 
 These are the common vocabulary every downstream module speaks.
 """
@@ -9,7 +9,6 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
@@ -108,12 +107,3 @@ class Scope:
     wiki: str
     scope: str
     claude_md_path: Path
-
-
-class BlastRadius(Enum):
-    """Curator actions classified by how hard they are to undo."""
-
-    CREATE = "create"  # draft-true new note — safe
-    EDIT_FRONTMATTER = "edit-fm"  # frontmatter-only — safe
-    EDIT_BODY = "edit-body"  # body changes — medium
-    SUPERSEDE = "supersede"  # Curator C — highest blast radius

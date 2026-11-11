@@ -1,6 +1,6 @@
 """Thin wrapper for fire-and-forget subprocesses that captures exit metadata.
 
-Invoked by ``_spawn_detached`` instead of the curator command directly.
+``_spawn_detached`` runs this wrapper around the child command.
 Writes a JSON sidecar with pid, start/end timestamps, and exit code.
 
 Usage::

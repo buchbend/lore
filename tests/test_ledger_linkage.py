@@ -125,7 +125,7 @@ class _FakeAdapter:
 def test_capture_stamps_repo_branch_and_branch_issue_on_a_new_entry(tmp_path: Path) -> None:
     """AC1: the entry capture writes carries the linkage block."""
     from lore_core.types import TranscriptHandle
-    from lore_curator.capture_routing import register_pending_transcripts
+    from lore_core.capture_routing import register_pending_transcripts
 
     repo = tmp_path / "proj"
     _init_repo(
@@ -197,7 +197,7 @@ def test_deep_capture_reads_files_and_commits_out_of_the_transcript(tmp_path: Pa
     """AC1: at a session boundary the block also carries what the
     session produced — edited files (repo-relative) and commit SHAs."""
     from lore_core.types import TranscriptHandle
-    from lore_curator.capture_routing import register_pending_transcripts
+    from lore_core.capture_routing import register_pending_transcripts
 
     repo = tmp_path / "proj"
     _init_repo(
@@ -226,7 +226,7 @@ def test_a_later_shallow_capture_keeps_the_deep_results(tmp_path: Path) -> None:
     """Shallow passes run on every prompt; they must not wipe the
     files/commits a boundary pass already derived."""
     from lore_core.types import TranscriptHandle
-    from lore_curator.capture_routing import register_pending_transcripts
+    from lore_core.capture_routing import register_pending_transcripts
 
     repo = tmp_path / "proj"
     _init_repo(repo, branch="feat/358-x", remote_url="git@github.com:buchbend/lore.git")
@@ -255,7 +255,7 @@ def test_a_later_shallow_capture_keeps_the_deep_results(tmp_path: Path) -> None:
 
 def test_session_end_capture_takes_the_deep_pass(tmp_path: Path, monkeypatch) -> None:
     """AC1 routing: the boundary event is what promotes capture to deep."""
-    from lore_curator import capture_routing
+    from lore_core import capture_routing
 
     seen: list[bool] = []
     monkeypatch.setattr(

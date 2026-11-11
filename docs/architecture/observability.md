@@ -11,7 +11,7 @@ Before PRD 0005's epic, debugging one background flush meant walking
 seven uncorrelated surfaces — `lore log`, `lore proc`, `lore runs`,
 `lore status`, `lore news`, the checks of `lore setup`, and a crash-log directory —
 over three different ad-hoc file schemas, with no identifier tying a
-hook fire to the curator run it spawned to the note it published.
+hook fire to the background run it spawned to the note it published.
 Failure handling leaned on "availability over debuggability" past the
 point of usefulness: drain writes never raised, mid-session flush
 failures deferred silently, retention cleanup swallowed its own
@@ -41,9 +41,10 @@ appended to `$LORE_ROOT/.lore/spine.jsonl` through one writer,
 ```
 
 - **`source`** — the producer, one of the closed `SOURCES` set:
-  `hook`, `curator`, `drain`, `janitor`, `install`, `mcp`. A
+  `hook`, `drain`, `janitor`, `install`, `mcp`. A
   source outside this set is a bug, not data — `validate_envelope()`
-  rejects it.
+  rejects it. `read_spine()` does not validate, so an older spine file
+  that holds a source outside the set still reads.
 - **`level`** — `info` / `warn` / `error`.
 - **`error_code`** — `None`, or a value from the closed `ErrorCode`
   `StrEnum`. Free-form detail (exception type, message, offending path)
@@ -141,7 +142,7 @@ a flush in flight; see
 
 **Module:** `lore_core/janitor.py` (issue #190). One flock-guarded sweep
 (`janitor_lock`, non-blocking — a contended lock just skips this cycle)
-runs opportunistically from hook fire / curator run end
+runs opportunistically from hook fire
 (`lore_cli/_janitor_entry.py:run_opportunistic_janitor`) — no daemon.
 
 | Family | Tier / cap | Outcome when exceeded |
