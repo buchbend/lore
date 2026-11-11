@@ -182,15 +182,8 @@ def pending_verdict_chip(wiki: Path) -> str:
     """
     try:
         from lore_core.freshness import count_pending_verdicts
-        from lore_core.git import git_user_email
-        from lore_core.identity import resolve_handle
 
-        def handle() -> str | None:
-            # Lets the chip count a disagreement, as the picker does.
-            email = git_user_email(None, env_override="GIT_AUTHOR_EMAIL")
-            return resolve_handle(wiki, email) if email else None
-
-        count, capped = count_pending_verdicts(wiki, handle)
+        count, capped = count_pending_verdicts(wiki)
     except Exception:
         return ""
     if count <= 0:

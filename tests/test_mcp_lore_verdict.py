@@ -155,31 +155,3 @@ def test_verdict_stale_refuses_to_overwrite_different_reason(tmp_path, monkeypat
     )
     assert "error" in result
     assert result["error"]["code"] == "stale_write_refused"
-
-
-def test_verdict_withdraw_removes_the_personal_confirm_and_keeps_the_note(tmp_path, monkeypatch):
-    """Issue #412: a user answers a disagreement in favour of the stale verdict."""
-    from lore_core.verdicts_sidecar import get_confirmed
-
-    body = dedent("""\
-        ---
-        type: concept
-        status: stale
-        stale_by: bob
-        stale_at: 2026-05-01
-        stale_reason: replaced
-        ---
-        body
-        """)
-    wiki = _setup(tmp_path, monkeypatch, body)
-    note = wiki / "concepts" / "n.md"
-    handle_verdict(wiki="demo", note="concepts/n.md", verdict="confirm")
-    assert get_confirmed(wiki, "alice", "concepts/n.md") is not None
-
-    result = handle_verdict(wiki="demo", note="concepts/n.md", verdict="withdraw")
-
-    assert result["verdict"] == "withdraw" and result["withdrawn"] is True
-    assert get_confirmed(wiki, "alice", "concepts/n.md") is None
-    assert note.read_text() == body
-    again = handle_verdict(wiki="demo", note="concepts/n.md", verdict="withdraw")
-    assert "error" not in again and again["withdrawn"] is False

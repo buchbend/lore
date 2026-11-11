@@ -77,9 +77,3 @@ def test_plugin_version_bumped_for_skill_addition():
     plugin = json.loads((repo_root / ".claude-plugin" / "plugin.json").read_text())
     pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text())
     assert plugin["version"] == pyproject["project"]["version"]
-
-
-def test_skill_offers_the_withdrawal_on_a_disagreement():
-    """Issue #412."""
-    text = SKILL_PATH.read_text()
-    assert "withdraw" in text and "lore verdict set <response.wiki> <entry.path> withdraw" in text

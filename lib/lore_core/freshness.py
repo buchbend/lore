@@ -27,7 +27,6 @@ override hard team-wide markers (``status: stale``, ``superseded_by``).
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -210,23 +209,29 @@ def signal_to_dict(signal: FreshnessSignal) -> dict:
 def _is_pending_from_catalog_entry(
     entry: dict, orphan_paths: set[str]
 ) -> bool:
-    """Cheap first cut: can this catalog entry still wait for a verdict?
+    """Shared coarse predicate: does this catalog entry currently flag
+    as ``stale-candidate`` from catalog metadata alone?
 
-    Only ``status: stale`` and ``orphan_set`` membership pass. A lone
-    ``superseded_by`` is a recorded verdict (#411) and never waits.
-    :func:`list_pending_verdicts` reads the frontmatter of each entry that
-    passes and makes the final call; the chip counts that list, so the two
-    surfaces cannot drift.
+    Catalog-only signals (``status: stale``, ``superseded_by``,
+    ``orphan_set`` membership) are what both the status-line chip
+    (:func:`count_pending_verdicts`) and the picker
+    (:func:`list_pending_verdicts`) gate on. Centralising the rule
+    keeps the two surfaces from drifting — a key UX bug we want to
+    make unrepresentable.
 
-    Soft markers (``supersede_candidate``) are NOT considered here; the
-    per-note classification flows through :func:`compute_freshness` at
-    retrieval time.
+    Soft markers (``supersede_candidate``) and personal-confirm
+    suppression are NOT considered here — both the chip and the
+    picker are intentionally coarse "is there work to do?" signals;
+    the precise per-note classification still flows through
+    :func:`compute_freshness` at retrieval time.
     """
     if not isinstance(entry, dict):
         return False
     path = str(entry.get("path") or "")
     return bool(
-        str(entry.get("status") or "").lower() == "stale" or (path and path in orphan_paths)
+        str(entry.get("status") or "").lower() == "stale"
+        or entry.get("superseded_by")
+        or (path and path in orphan_paths)
     )
 
 
@@ -255,15 +260,16 @@ def _load_catalog(wiki_path: Path) -> dict | None:
 
 def count_pending_verdicts(
     wiki_path: Path,
-    handle: str | Callable[[], str | None] | None = None,
     *,
     soft_cap: int = 9,
 ) -> tuple[int, bool]:
-    """Count the rows of :func:`list_pending_verdicts` (the status-line chip).
+    """Count notes in ``wiki_path`` that currently compute to
+    ``stale-candidate`` (slice 8 of PRD #65 — status-line chip).
 
-    The chip counts the picker's own list, so the two always agree. The
-    cost is one catalog load plus a frontmatter read per stale or orphan
-    note, not a wiki walk.
+    Reads the cached ``_catalog.json`` so the per-call cost is one
+    JSON load, not a full wiki walk. Delegates to
+    :func:`_is_pending_from_catalog_entry` so the chip and the
+    picker can never drift on what counts as "pending."
 
     Returns ``(count, capped)`` where ``capped`` is True iff the soft
     cap fired. The status-line render uses ``"9+"`` instead of the
@@ -272,8 +278,19 @@ def count_pending_verdicts(
     Cache miss (no catalog) returns ``(0, False)`` — the chip
     suppresses entirely until the next ``lore wiki lint`` run.
     """
-    count = len(list_pending_verdicts(wiki_path, handle))
-    return (soft_cap, True) if count > soft_cap else (count, False)
+    data = _load_catalog(wiki_path)
+    if data is None:
+        return 0, False
+
+    orphan_paths = set(data.get("orphan_set") or [])
+    count = 0
+    for entry in _iter_catalog_entries(data):
+        if not _is_pending_from_catalog_entry(entry, orphan_paths):
+            continue
+        count += 1
+        if count > soft_cap:
+            return soft_cap, True
+    return count, False
 
 
 @dataclass(frozen=True)
@@ -317,7 +334,7 @@ def _sort_key(entry: "PendingEntry") -> tuple:
 
 def list_pending_verdicts(
     wiki_path: Path,
-    handle: str | Callable[[], str | None] | None = None,
+    handle: str | None = None,
 ) -> list[PendingEntry]:
     """Enumerate wiki-wide pending verdicts as picker-ready rows.
 
@@ -340,10 +357,7 @@ def list_pending_verdicts(
         handle: Current user's handle for personal-sidecar lookup.
             ``None`` or empty string means no sidecar read — every
             entry's ``confirmed_at`` will be ``None``. Solo vaults
-            without ``_users.yml`` typically pass ``""``. A callable is
-            called once, and only when a note needs the handle: the
-            chip passes one, so a SessionStart with nothing pending
-            spawns no git.
+            without ``_users.yml`` typically pass ``""``.
 
     Returns:
         List of :class:`PendingEntry`, possibly empty. Cache miss
@@ -395,8 +409,6 @@ def list_pending_verdicts(
             continue
 
         confirmed_at: date | None = None
-        if callable(handle):
-            handle = handle()
         if handle:
             try:
                 confirmed_at = get_confirmed(wiki_path, handle, rel_path)
@@ -404,15 +416,6 @@ def list_pending_verdicts(
                 confirmed_at = None
 
         disagreement = detect_disagreement(fm, confirmed_at)
-
-        # A recorded human verdict settles the note (#411). Only a
-        # disagreement brings it back.
-        is_stale = str(fm.get("status") or "").strip().lower() == "stale"
-        recorded = fm.get("superseded_by") or (
-            is_stale and str(fm.get("stale_reason") or "").strip()
-        )
-        if recorded and disagreement is None:
-            continue
 
         stale_at: date | None = None
         raw_stale_at = fm.get("stale_at")

@@ -16,12 +16,6 @@ def _write_catalog(wiki: Path, sections: dict, orphan_set: list[str] | None = No
         "orphan_set": orphan_set or [],
     }
     (wiki / "_catalog.json").write_text(json.dumps(payload))
-    # The chip counts the picker's list, and the picker reads each note (#411).
-    for entry in (e for entries in sections.values() for e in entries):
-        note = wiki / entry["path"]
-        note.parent.mkdir(parents=True, exist_ok=True)
-        marks = "".join(f"{k}: '{entry[k]}'\n" for k in ("status", "superseded_by") if k in entry)
-        note.write_text(f"---\n{marks}---\nbody\n")
 
 
 def test_count_zero_when_no_catalog(tmp_path):
@@ -48,7 +42,7 @@ def test_count_status_stale_is_pending(tmp_path):
     assert count_pending_verdicts(tmp_path) == (1, False)
 
 
-def test_count_superseded_by_is_a_recorded_verdict(tmp_path):
+def test_count_superseded_by_is_pending(tmp_path):
     _write_catalog(
         tmp_path,
         sections={
@@ -57,7 +51,7 @@ def test_count_superseded_by_is_a_recorded_verdict(tmp_path):
             ]
         },
     )
-    assert count_pending_verdicts(tmp_path) == (0, False)
+    assert count_pending_verdicts(tmp_path) == (1, False)
 
 
 def test_count_orphan_is_pending(tmp_path):
