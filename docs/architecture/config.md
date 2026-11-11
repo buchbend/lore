@@ -174,7 +174,7 @@ value. Mode 0600; Lore refuses it inside a git worktree. A `token` or
 Per-vault-mount policy. Schema lives in
 `lib/lore_core/wiki_config.py:WikiConfig`. Subsections:
 
-- `git.{auto_commit, auto_push, auto_pull}` — `auto_push` defaults to
+- `git.{auto_push, auto_pull}` — `auto_push` defaults to
   whether the wiki has a git remote; an explicit value in the file
   always wins over that default.
 - `breadcrumb.{mode, scope_filter}`

@@ -348,3 +348,28 @@ def test_git_sync_declares_no_symbol_named_surface() -> None:
     assert [n for n in dir(git_sync) if "surface" in n.lower()] == []
     assert [n for n in ConflictKind.__members__ if "SURFACE" in n] == []
     assert "note_dirs" in inspect.signature(git_sync.auto_push).parameters
+
+
+def test_auto_push_aborts_the_merge_when_an_exception_interrupts_it(
+    two_hosts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #386: a commit that outruns the timeout leaves no MERGE_HEAD."""
+    from lore_core import git_sync
+
+    _, host_a, host_b = two_hosts
+    _commit_file(host_a, "_catalog.json", '{"a": 1}\n', "a catalog")
+    _git(host_a, "push")
+    _commit_file(host_b, "_catalog.json", '{"b": 2}\n', "b catalog")
+    real = git_sync._git
+
+    def slow_commit(wiki_dir: Path, *args: str, **kw: object):
+        if args[:1] == ("commit",):
+            raise subprocess.TimeoutExpired(["git", "commit"], 30)
+        return real(wiki_dir, *args, **kw)
+
+    monkeypatch.setattr(git_sync, "_git", slow_commit)
+    with pytest.raises(subprocess.TimeoutExpired):
+        auto_push(host_b, note_dirs=["concepts"])
+
+    assert not (host_b / ".git" / "MERGE_HEAD").exists()
+    assert _git(host_b, "status", "--porcelain").stdout == ""

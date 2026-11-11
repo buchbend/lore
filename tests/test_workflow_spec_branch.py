@@ -112,3 +112,24 @@ def test_template_placeholder_is_not_a_branch(tmp_path: Path) -> None:
 def test_not_a_repo_is_a_clean_error(tmp_path: Path) -> None:
     r = _run(tmp_path, BODY)
     assert r.exit_code == 1 and r.exception is None or isinstance(r.exception, SystemExit)
+
+
+def test_warns_when_the_local_and_the_remote_spec_branch_differ(tmp_path: Path) -> None:
+    """Issue #572: unpushed PRD commits do not reach the epic branch in silence."""
+    repo = _repo(tmp_path / "r", prd_on="spec")
+    bare = tmp_path / "bare.git"
+    subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "origin", "spec/x")
+    _git(repo, "fetch", "origin")
+    assert "differ" not in _run(repo, BODY).stderr
+
+    _git(repo, "checkout", "spec/x")
+    (repo / PRD).write_text("prd, second draft\n")
+    _git(repo, "commit", "-am", "prd 2")
+    _git(repo, "checkout", "main")
+    r = _run(repo, BODY)
+
+    assert r.exit_code == 0
+    assert json.loads(r.stdout)["ref"] == "origin/spec/x"
+    assert "spec/x and origin/spec/x differ" in r.stderr

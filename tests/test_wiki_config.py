@@ -13,7 +13,6 @@ class TestWikiConfigDefaults:
         """No file → returns full default WikiConfig()."""
         cfg = load_wiki_config(tmp_path)
         assert isinstance(cfg, WikiConfig)
-        assert cfg.git.auto_commit is False
         assert cfg.git.auto_push is False
         assert cfg.git.auto_pull is True
         assert cfg.breadcrumb.mode == "normal"
@@ -27,7 +26,6 @@ class TestWikiConfigPartialMerge:
         config_file.write_text("git:\n  auto_push: true\n")
         cfg = load_wiki_config(tmp_path)
         assert cfg.git.auto_push is True
-        assert cfg.git.auto_commit is False  # default preserved
         assert cfg.git.auto_pull is True
         # All other sections fully default
         assert cfg.breadcrumb.mode == "normal"
@@ -50,7 +48,7 @@ class TestWikiConfigWarnings:
         config_file.write_text("nonsense: 42\n")
         with pytest.warns(UserWarning, match="unknown key 'nonsense'"):
             cfg = load_wiki_config(tmp_path)
-        assert cfg.git.auto_commit is False  # defaults returned
+        assert cfg.git.auto_pull is True  # defaults returned
 
     def test_load_unknown_nested_key_warns_and_continues(self, tmp_path: Path):
         """Unknown nested key → warns, other git defaults preserved."""
@@ -58,7 +56,6 @@ class TestWikiConfigWarnings:
         config_file.write_text("git:\n  fake_flag: true\n")
         with pytest.warns(UserWarning, match="unknown key 'fake_flag'"):
             cfg = load_wiki_config(tmp_path)
-        assert cfg.git.auto_commit is False  # other defaults preserved
         assert cfg.git.auto_push is False
 
 
@@ -98,8 +95,8 @@ class TestWikiConfigWriteBack:
         fields_by_path = {fi.path: fi for fi in walk_fields(wiki)}
         assert fields_by_path["git.auto_push"].source == "file"
         assert fields_by_path["git.auto_push"].value is True
-        assert fields_by_path["git.auto_commit"].source == "default"
-        assert fields_by_path["git.auto_commit"].value is False
+        assert fields_by_path["git.auto_pull"].source == "default"
+        assert fields_by_path["git.auto_pull"].value is True
 
     def test_get_field_returns_leaf_info(self, tmp_path: Path) -> None:
         from lore_core.wiki_config import get_field
@@ -167,7 +164,7 @@ class TestWikiConfigWriteBack:
         from lore_core.wiki_config import schema_tree
 
         paths = {p for p, _, _, _ in schema_tree()}
-        assert "git.auto_commit" in paths
+        assert "git.auto_pull" in paths
         assert "breadcrumb.scope_filter" in paths
         assert "breadcrumb.mode" in paths
         assert "git" not in paths  # groups excluded, leaves only

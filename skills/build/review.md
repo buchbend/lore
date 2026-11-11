@@ -41,6 +41,12 @@ that `lore roadmap add` filed under `## Not placed yet` is in scope. The reviewe
 `code-review` on the PR first, never with `--comment` or `--fix`. A confirmed correctness
 finding fails the line. Cleanup findings go in the note only.
 
+Give `code-review` the full PR URL (`https://github.com/<owner>/<repo>/pull/<n>`), never the
+bare number. The skill runs in a fork that takes the repo from its cwd, so a bare number can
+review a PR of another repo. An empty result is a failed run, not a pass. So is a result that
+names another PR. On a failed run the reviewer reads `gh pr diff <url>` itself and writes
+"manual review, `code-review` returned nothing" on the correctness line.
+
 The "failing test first" check does not apply to the lead's own slices in the human-present
 option of `epic` mode. There the mutation check on the board replaces it.
 

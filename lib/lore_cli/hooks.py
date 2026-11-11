@@ -598,7 +598,7 @@ def cmd_session_start(
         except Exception:  # noqa: BLE001 - janitor must never crash SessionStart
             pass
 
-    # Capture-state breadcrumb + drain + cross-scope lines.
+    # Capture-state breadcrumb + cross-scope lines.
     if scope is not None and lore_root is not None:
         try:
             out = out + _render_capture_state_block(
@@ -984,12 +984,6 @@ def _infer_lore_root(start: Path) -> Path:
     return get_lore_root()
 
 
-def _load_wiki_cfg_from_scope(scope, lore_root: Path):
-    from lore_core.wiki_config import load_wiki_config
-    wiki_dir = lore_root / "wiki" / scope.wiki
-    return load_wiki_config(wiki_dir)
-
-
 # ---------------------------------------------------------------------------
 # Capture subcommand
 # ---------------------------------------------------------------------------
@@ -1007,9 +1001,8 @@ def capture(
 ) -> None:
     """Hot-path capture hook — called by Claude Code on SessionEnd / PreCompact / SessionStart.
 
-    Must return in <100ms. Updates the sidecar ledger; spawns detached
-    curator when pending work exceeds threshold. No LLM, no network,
-    bounded FS walk (8 levels).
+    Must return in <100ms. Updates the sidecar ledger. No LLM, bounded FS
+    walk (8 levels). Only session-end touches the network: it pushes the wiki.
     """
     if _in_curator_mode() or _capture_suppressed():
         return
@@ -1131,8 +1124,9 @@ def capture(
             pushed = _maybe_auto_push_for_scope(scope, lore_root)
             if pushed is not None:
                 boundary["push"] = pushed.status.value
-        except Exception:  # noqa: BLE001 — an unreachable remote never fails the hook
+        except Exception as exc:  # noqa: BLE001 — an unreachable remote never fails the hook
             boundary["push"] = "error"
+            boundary["push_error"] = f"{type(exc).__name__}: {exc}"[:200]
 
     _emit_hook(
         event=event, integration=integration, scope=scope_payload,
@@ -1156,6 +1150,8 @@ def capture(
             )
 
             crumb = render_session_end_breadcrumb(outcome=routed.outcome)
+            if crumb is None and "push_error" in boundary:
+                crumb = f"lore!: wiki push error — {boundary['push_error']}"
             if crumb is not None:
                 write_pending_breadcrumb(lore_root, crumb)
         except Exception:

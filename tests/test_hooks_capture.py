@@ -936,3 +936,27 @@ def test_capture_without_suppress_flag_is_unchanged(tmp_path: Path, fake_adapter
     ledger = TranscriptLedger(project)
     entry = ledger.get("fake", "t1")
     assert entry is not None, "unsuppressed capture must register the transcript as before"
+
+
+def test_a_push_error_at_session_end_reaches_the_next_session_start(
+    tmp_path: Path, fake_adapter_factory, monkeypatch
+) -> None:
+    """Issue #386: the hook names a push error to the user."""
+    from lore_core.breadcrumb import consume_pending_breadcrumb
+
+    project = _make_attached_project(tmp_path)
+    fake_adapter_factory([_make_handle(project)])
+
+    def boom(scope, lore_root):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr("lore_cli.hooks._maybe_auto_push_for_scope", boom)
+    result = runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(project), "--integration", "fake"],
+        env={"LORE_ROOT": str(project)},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    crumb = consume_pending_breadcrumb(project)
+    assert crumb is not None and "push" in crumb and "disk on fire" in crumb

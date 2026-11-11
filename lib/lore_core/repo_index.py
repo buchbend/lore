@@ -42,10 +42,11 @@ def _number(path: str) -> str:
 def _title(entry: dict) -> str:
     """The title without a leading ``ADR 0012:`` or ``0012 —``: the line adds the number.
 
-    Another leading number, as in ``3-tier routing``, stays."""
+    A number that is part of a word, as in ``4-tier routing``, stays: the prefix
+    ends in a colon or in a dash with a space on each side."""
     num = _number(entry["path"])
     return re.sub(
-        r"^(?:(?:ADR|PRD)\s*)?(\d+)\s*[:—–-]\s*",
+        r"^(?:(?:ADR|PRD)\s*)?(\d+)(?::\s*|\s+[—–-]\s+)",
         lambda m: "" if num.isdigit() and int(m[1]) == int(num) else m[0],
         str(entry["title"]),
     )

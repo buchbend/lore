@@ -26,7 +26,7 @@ command (PRD 0005, "Dashboard grammar"):
       · none
 
 Every row here reflects a state some code writes. A row whose producer is
-gone is a defect, not a blank: issue #377 removed the four capture rows
+gone is a defect, not a blank: issue #377 removed five capture rows
 and the flushes panel the compose pipeline used to feed.
 
 Reads only — the event spine (#185), retention janitor status (#190),

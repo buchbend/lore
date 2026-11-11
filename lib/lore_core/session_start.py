@@ -607,7 +607,7 @@ def render_capture_state_block(
     *,
     probe: bool = False,
 ) -> str:
-    """Render the capture-state breadcrumb plus the drain and cross-scope lines.
+    """Render the capture-state breadcrumb plus the cross-scope lines.
 
     Returns the block to append to the banner, or "" when nothing is worth
     saying. Presentation only — no cursor advances, no writes.

@@ -9,6 +9,7 @@ See `docs/architecture/sync.md` for the conflict policy.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -285,6 +286,19 @@ def auto_push(
     if upstream is None:
         return SyncResult(status=SyncStatus.SKIPPED_NO_REMOTE)
 
+    try:
+        return _merge_and_push(wiki_dir, upstream, note_dirs)
+    except BaseException:
+        # An exception between the merge start and the merge commit, such as a
+        # git timeout, would leave MERGE_HEAD set (#386). After the commit the
+        # abort finds no merge and changes nothing.
+        with contextlib.suppress(Exception):
+            _git(wiki_dir, "merge", "--abort")
+        raise
+
+
+def _merge_and_push(wiki_dir: Path, upstream: str, note_dirs: list[str] | None) -> SyncResult:
+    """Merge *upstream*, take ours on regenerable conflicts, commit and push."""
     merge = _git(wiki_dir, "merge", "--no-commit", "--no-ff", upstream)
     if merge.returncode == 0:
         # Clean merge — no conflicts. Commit + push. If commit fails the

@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -103,17 +102,6 @@ _ERROR_CODE_VALUES: frozenset[str] = frozenset(c.value for c in ErrorCode)
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-def new_trace_id() -> str:
-    """Mint a correlation id for one flush.
-
-    Threaded hook decision point -> detached-flush spawn (env var) -> curator
-    run events -> drain event -> published note, so a whole flush is
-    correlatable and concurrent flushes stay separable. Opaque and short;
-    readers only ever compare it for equality.
-    """
-    return secrets.token_hex(8)
 
 
 def _oldest_record_age_days(path: Path) -> float | None:

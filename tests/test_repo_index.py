@@ -186,6 +186,14 @@ def test_a_title_keeps_a_leading_number_that_is_not_the_document_number(repo: Pa
     assert "- ADR 0003: Search is federated" in out
 
 
+def test_a_title_keeps_its_own_number_when_the_number_is_part_of_a_word(repo: Path) -> None:
+    """Issue #573: "4-tier" in ADR 0004 is a word, not the prefix "0004 —"."""
+    (repo / "docs" / "adr" / "0004-routing.md").write_text("# 4-tier model routing\n")
+    assert "- ADR 0004: 4-tier model routing" in _index(repo).output
+    (repo / "docs" / "adr" / "0004-routing.md").write_text("# 0004 — Model routing\n")
+    assert "- ADR 0004: Model routing" in _index(repo).output
+
+
 # --- the route and the scopes of the person (issue #576) -------------------
 
 

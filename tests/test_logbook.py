@@ -440,3 +440,10 @@ def test_flush_says_so_when_another_flush_holds_the_lock(repo, capsys) -> None:
     with flocked(repo / ".git" / "lore-ledger.md.lock"):
         assert main(["log", "flush"]) == 0
     assert "another flush" in capsys.readouterr().out
+
+
+def test_a_missing_label_reads_as_a_finding(repo, tmp_path, capsys) -> None:
+    """Issue #505: the message says what the entry lacks."""
+    assert _add(tmp_path, GOOD.replace("**Why:**", "")) == 2
+    err = capsys.readouterr().err
+    assert "no line starts with Why:" in err and "breaks the rule" not in err

@@ -91,8 +91,9 @@ writes are failing" without crashing the hot path. Full guarantee list:
 
 ## trace_id — a correlation field with no current minter
 
-**Defined by:** `lore_core/spine.py:new_trace_id()` (an opaque
-`secrets.token_hex(8)`). The compose pipeline was its only caller —
+**Was defined by:** `lore_core/spine.py:new_trace_id()` (an opaque
+`secrets.token_hex(8)`). Issue #387 removed the function, because it
+had no caller. The compose pipeline was its only caller —
 `lore_curator/chapter_flush.py:spawn_detached_flush` minted one per
 flush and threaded it through `LORE_TRACE_ID`, the curator's run
 events, the matching drain events, and a published note's

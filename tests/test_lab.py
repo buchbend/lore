@@ -445,3 +445,16 @@ def test_a_text_file_that_is_not_utf8_exits_1_and_names_the_path(repo, tmp_path,
     err = capsys.readouterr().err
     assert str(bad) in err
     assert "unexpected error" not in err
+
+
+def test_show_names_a_lab_file_without_a_month_folder(repo, tmp_path, capsys) -> None:
+    """Issue #573: the reader takes only `docs/lab/<month>/*.md`."""
+    (repo / "docs" / "lab").mkdir(parents=True)
+    (repo / "docs" / "lab" / "stray.md").write_text("x\n")
+    assert main(["lab", "show"]) == 0
+    assert "docs/lab/stray.md" in capsys.readouterr().err
+
+
+def test_a_missing_lab_label_reads_as_a_finding(repo, tmp_path, capsys) -> None:
+    assert _add(tmp_path, GOOD.replace("**Question:**", "")) == 2
+    assert "no line starts with Question:" in capsys.readouterr().err
