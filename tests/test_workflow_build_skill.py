@@ -188,8 +188,8 @@ def test_every_lore_workflow_verb_in_the_skills_exists() -> None:
 # --- who merges after a PASS ----------------------------------------------
 
 PASS_ACTIONS = (
-    "**PASS, `epic` feature PR:** merge it into `epic/<issue>` on a green local run ([epic.md](epic.md) § Merge).",
-    "**PASS and green checks, the epic PR:** go back to [epic-tail.md](epic-tail.md) § 4.",
+    "**PASS, `epic` feature branch:** merge it into `epic/<issue>` on a green local run ([epic.md](epic.md) § Merge).",
+    "**PASS, the whole-epic review:** go back to [epic-tail.md](epic-tail.md) § 4.",
     "**PASS and green checks, `issue` mode:** go on to the finish point. Merge after the merge approval.",
 )
 
@@ -199,6 +199,29 @@ def test_a_pass_names_its_mode_before_any_merge() -> None:
     for line in PASS_ACTIONS:
         assert line in review, line
     assert "PASS and green checks: merge" not in review
+
+
+def test_an_epic_reaches_the_remote_once() -> None:
+    """Features merge locally; the one push comes after every tail commit."""
+    epic = (BUILD / "epic.md").read_text(encoding="utf-8")
+    assert "git push" not in epic
+    assert "Push nothing before the epic tail" in _section("Mode `epic`")
+    brief = _text("build/teammate-brief.md")
+    assert "Do not push" in brief and "open no PR" in brief
+    assert "gh issue comment <n>" in _text("build/review.md")
+    tail = _text("build/epic-tail.md")
+    assert tail.count("git push") == 1
+    push = tail.index("git push")
+    steps = ("document`](../document/SKILL.md)", "lore log add", "version bump as the last commit")
+    for step in steps:
+        assert tail.index(step) < push, step
+    assert push < tail.index("gh pr checks <epic-pr>")
+
+
+def test_ci_runs_once_per_pr_push() -> None:
+    """`push` and `pull_request` together run CI twice for a branch with a PR."""
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "  push:\n    branches: [main]\n  pull_request:" in ci
 
 
 def test_issue_mode_merges_only_after_the_merge_approval() -> None:
@@ -213,7 +236,7 @@ def test_issue_mode_merges_only_after_the_merge_approval() -> None:
 def test_the_epic_pr_merges_only_after_the_merge_approval() -> None:
     """#518: SKILL.md and epic-tail.md § 4 state one rule for the epic PR.
 
-    Feature PRs into `epic/<issue>` stay AFK; only the epic PR into the
+    Feature merges into `epic/<issue>` stay AFK; only the epic PR into the
     target branch waits, and a deploy gate rides in the same message.
     """
     rules = _section("Rules for every mode")
