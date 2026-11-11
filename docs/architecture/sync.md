@@ -115,7 +115,7 @@ regresses to "post-pull, MCP search may be stale for up to 5s." This
 is what 0.10.x ships today, so the optional-dep fallback is not a
 regression.
 
-**Self-edit handling:** the hygiene curator's own frontmatter edits trip
+**Self-edit handling:** an edit that Lore itself makes in the wiki trips
 the watcher too. That's fine: the dirty flag
 just says "next query may need fresh data." The throttle prevents a
 reindex storm.

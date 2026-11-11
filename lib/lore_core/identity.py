@@ -121,16 +121,3 @@ def distinct_git_authors(wiki_path: Path) -> set[str]:
 def unaliased_authors(wiki_path: Path) -> set[str]:
     """Distinct git authors whose emails are not yet in `_users.yml`."""
     return distinct_git_authors(wiki_path) - aliased_emails(wiki_path)
-
-
-def team_mode_recommended(wiki_path: Path, threshold: int = 2) -> bool:
-    """True when enough distinct unaliased authors warrant team mode.
-
-    Solo wikis (one author) always return False.
-    Team wikis already in team mode (has `_users.yml`) also return False —
-    the recommendation is only for wikis still in solo mode that have
-    grown past the threshold.
-    """
-    if team_mode_active(wiki_path):
-        return False
-    return len(distinct_git_authors(wiki_path)) >= threshold

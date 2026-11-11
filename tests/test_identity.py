@@ -119,33 +119,6 @@ def test_distinct_git_authors_no_git_returns_empty(solo_wiki, monkeypatch):
     assert identity.distinct_git_authors(solo_wiki) == set()
 
 
-# ---------- team_mode_recommended ----------
-
-
-def test_team_mode_recommended_solo_with_two_authors(solo_wiki, monkeypatch):
-    monkeypatch.setattr(
-        identity,
-        "distinct_git_authors",
-        lambda _w: {"alice@example.com", "bob@example.com"},
-    )
-    assert identity.team_mode_recommended(solo_wiki) is True
-
-
-def test_team_mode_recommended_solo_with_one_author(solo_wiki, monkeypatch):
-    monkeypatch.setattr(identity, "distinct_git_authors", lambda _w: {"alice@example.com"})
-    assert identity.team_mode_recommended(solo_wiki) is False
-
-
-def test_team_mode_recommended_false_when_already_team(team_wiki, monkeypatch):
-    """Even with many authors, already-team wikis don't get the hint."""
-    monkeypatch.setattr(
-        identity,
-        "distinct_git_authors",
-        lambda _w: {"a@x", "b@x", "c@x"},
-    )
-    assert identity.team_mode_recommended(team_wiki) is False
-
-
 # ---------- resolve_display_name ----------
 
 

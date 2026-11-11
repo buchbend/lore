@@ -73,7 +73,6 @@ def _note_from(fm: dict, path: str = "sessions/example.md") -> NoteInfo:
         filename=Path(path).stem,
         wiki="test",
         note_type=fm.get("type"),
-        status=fm.get("status"),
         description=fm.get("description"),
         tags=fm.get("tags", []) or [],
     )

@@ -18,17 +18,14 @@ SCHEMA_VERSIONS_SUPPORTED: tuple[int, ...] = (1, 2)
 # on all new notes but the linter auto-fixes by writing the current
 # SCHEMA_VERSION when missing on an otherwise-valid note (see --fix).
 #
-# `status` was removed from REQUIRED_FIELDS by the status-vocabulary-
-# minimalism decision: notes are implicitly canonical unless they carry
-# `draft: true` or `superseded_by: [[...]]`. Legacy `status:` values are
-# still accepted by the parser; scheduled to be ignored entirely in
-# 1.0 once vaults have had time to converge to the new convention.
+# No field carries a note lifecycle (issue #596). A note in a wiki is in
+# force. The parser accepts `status`, `draft`, `superseded_by` and
+# `last_reviewed` where an old note holds them, and Lore ignores them.
 REQUIRED_FIELDS: dict[str, list[str]] = {
     "project": [
         "schema_version",
         "type",
         "created",
-        "last_reviewed",
         "description",
         "tags",
     ],
@@ -36,7 +33,6 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
         "schema_version",
         "type",
         "created",
-        "last_reviewed",
         "description",
         "tags",
     ],
@@ -44,7 +40,6 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
         "schema_version",
         "type",
         "created",
-        "last_reviewed",
         "description",
         "tags",
     ],
@@ -52,7 +47,6 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
         "schema_version",
         "type",
         "created",
-        "last_reviewed",
         "description",
     ],
     "paper": [
@@ -71,7 +65,6 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
         "type",
         "slug",
         "created",
-        "last_reviewed",
         "description",
         "source_adapter",
         "source_hash",
@@ -95,12 +88,12 @@ OPTIONAL_FIELDS: set[str] = {
     "user",  # str — canonical handle (identity-aliasing.md)
     "implements",  # list[str] — proposal slugs this session realizes
     "loose_ends",  # list[str] — short-form in-session observations
-    # v2 `implements:` target-note metadata (written by curator)
-    "implemented_at",  # str — YYYY-MM-DD when a proposal was realized
-    "implemented_by",  # str — wikilink to the session note that did it
-    # status-vocabulary-minimalism — lifecycle via opt-in signals
-    "draft",  # bool — note is not yet committed to (rare, opt-in)
-    "superseded_by",  # str | list[str] — wikilink(s) to successor note(s)
+    # Retired fields (issue #596): accepted where an old note holds them, ignored.
+    "implemented_at",
+    "implemented_by",
+    "draft",
+    "superseded_by",
+    "last_reviewed",
     # plan + project additions (v0.11.0)
     "repo",  # str — single-repo primary owner (project notes; optional plan tag)
     "step_status",  # dict[str, str] — plan step_id → "done"|"in_progress"|"blocked"
@@ -118,19 +111,6 @@ OPTIONAL_FIELDS: set[str] = {
     "plans",  # list[str] — plan slug refs this session advanced (e.g. "<slug>#step-2")
 }
 
-
-def compute_lifecycle(fm: dict) -> str:
-    """Return `canonical | draft | superseded` derived from frontmatter.
-
-    Per status-vocabulary-minimalism, lifecycle is a derived property,
-    not a user-maintained field. Precedence: superseded wins (the note
-    has been replaced, so the draft/canonical distinction is moot).
-    """
-    if fm.get("superseded_by"):
-        return "superseded"
-    if fm.get("draft") is True:
-        return "draft"
-    return "canonical"
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 

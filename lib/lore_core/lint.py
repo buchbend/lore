@@ -25,7 +25,6 @@ from lore_core.errors import NO_WIKIS, mcp_error
 from lore_core.io import atomic_write_text
 from lore_core.schema import (
     REQUIRED_FIELDS,
-    compute_lifecycle,
     extract_wikilinks,
     parse_frontmatter,
 )
@@ -34,8 +33,6 @@ from lore_core.schema import (
 # Tuning knobs
 # ---------------------------------------------------------------------------
 
-# status-vocabulary-minimalism: canonical notes are flagged stale at 180d.
-STALENESS_DAYS = 180
 OVERSIZED_LINES = 150
 INDEX_MAX_LINES = 80
 TODAY = date.today()
@@ -148,13 +145,9 @@ class NoteInfo:
     filename: str  # stem without .md
     wiki: str
     note_type: str | None = None
-    status: str | None = None  # legacy — superseded by `lifecycle`; scheduled for 1.0 removal
-    lifecycle: str = "canonical"  # canonical | draft | superseded
-    superseded_by: str | list[str] | None = None
     description: str | None = None
     tags: list[str] = field(default_factory=list)
     created: str | None = None
-    last_reviewed: str | None = None
     lines: int = 0
     links_out: list[str] = field(default_factory=list)
     links_in: list[str] = field(default_factory=list)
@@ -239,38 +232,6 @@ def check_frontmatter(note: NoteInfo, fm: dict, wiki_name: str) -> list[Issue]:
                     message=f"empty `{fld}`",
                 )
             )
-    return issues
-
-
-def check_staleness(note: NoteInfo, fm: dict, wiki_name: str) -> list[Issue]:
-    """Flag canonical notes whose `last_reviewed` is too old.
-
-    Drafts and superseded notes are skipped — staleness is only
-    meaningful for notes that claim to be in force.
-    """
-    issues: list[Issue] = []
-    if note.note_type == "session":
-        return issues  # sessions are historical snapshots
-    if compute_lifecycle(fm) != "canonical":
-        return issues
-    lr = fm.get("last_reviewed", "")
-    if not lr:
-        return issues
-    try:
-        lr_date = date.fromisoformat(str(lr))
-    except (ValueError, TypeError):
-        return issues
-    days_old = (TODAY - lr_date).days
-    if days_old > STALENESS_DAYS:
-        issues.append(
-            Issue(
-                severity="WARNING",
-                wiki=wiki_name,
-                file=note.path,
-                check="stale",
-                message=f"last_reviewed {lr}, {days_old} days ago",
-            )
-        )
     return issues
 
 
@@ -574,16 +535,12 @@ def build_catalog(wiki_name: str, notes: list[NoteInfo], issues: list[Issue]) ->
             "path": n.path,
             "name": n.filename,
             "type": n.note_type,
-            "status": n.status,  # legacy — retained until 1.0; new code reads `lifecycle`
-            "lifecycle": n.lifecycle,  # canonical | draft | superseded
             "description": n.description,
             "tags": n.tags,
             "lines": n.lines,
             "links_out": n.links_out,
             "links_in": n.links_in,
         }
-        if n.superseded_by:
-            entry["superseded_by"] = n.superseded_by
         if n.is_index:
             entry["is_index"] = True
             entry["children"] = n.children
@@ -669,25 +626,6 @@ def generate_index_txt(wiki_name: str, notes: list[NoteInfo]) -> str:
         top_dir = parts[0] if parts else "root"
         sections[top_dir][n.parent_folder].append(n)
 
-    def _badge(n: NoteInfo) -> str:
-        if n.lifecycle == "draft":
-            return " `DRAFT`"
-        if n.lifecycle == "superseded":
-            sb = n.superseded_by
-            if isinstance(sb, list) and sb:
-                targets = ", ".join(f"[[{s}]]" for s in sb)
-            elif isinstance(sb, str) and sb:
-                # Strip wrapping [[...]] if already present
-                inner = sb.strip()
-                if inner.startswith("[[") and inner.endswith("]]"):
-                    targets = inner
-                else:
-                    targets = f"[[{inner}]]"
-            else:
-                targets = ""
-            return f" `SUPERSEDED → {targets}`" if targets else " `SUPERSEDED`"
-        return ""
-
     for section_name in ["projects", "concepts", "decisions", "papers"]:
         if section_name not in sections:
             continue
@@ -699,7 +637,7 @@ def generate_index_txt(wiki_name: str, notes: list[NoteInfo]) -> str:
         for n in sorted(flat, key=lambda x: x.filename):
             desc = n.description or "(no description)"
             tags_str = f" `{', '.join(n.tags)}`" if n.tags else ""
-            lines.append(f"- **[[{n.filename}]]** — {desc}{_badge(n)}{tags_str}")
+            lines.append(f"- **[[{n.filename}]]** — {desc}{tags_str}")
 
         for folder_name, folder_notes in sorted(
             ((k, v) for k, v in folders.items() if k is not None),
@@ -711,10 +649,10 @@ def generate_index_txt(wiki_name: str, notes: list[NoteInfo]) -> str:
             sub_notes = [n for n in folder_notes if not n.is_index]
             for n in idx_notes:
                 desc = n.description or "(no description)"
-                lines.append(f"- **[[{n.filename}]]** (index) — {desc}{_badge(n)}")
+                lines.append(f"- **[[{n.filename}]]** (index) — {desc}")
             for n in sorted(sub_notes, key=lambda x: x.filename):
                 desc = n.description or "(no description)"
-                lines.append(f"  - [[{n.filename}]] — {desc}{_badge(n)}")
+                lines.append(f"  - [[{n.filename}]] — {desc}")
 
         lines.append("")
 
@@ -753,27 +691,9 @@ def generate_type_collection_txt(
         "",
     ]
 
-    def _badge(n: "NoteInfo") -> str:
-        if n.lifecycle == "draft":
-            return " `DRAFT`"
-        if n.lifecycle == "superseded":
-            sb = n.superseded_by
-            if isinstance(sb, list) and sb:
-                targets = ", ".join(f"[[{s}]]" for s in sb)
-            elif isinstance(sb, str) and sb:
-                inner = sb.strip()
-                if inner.startswith("[[") and inner.endswith("]]"):
-                    targets = inner
-                else:
-                    targets = f"[[{inner}]]"
-            else:
-                targets = ""
-            return f" `SUPERSEDED → {targets}`" if targets else " `SUPERSEDED`"
-        return ""
-
     for n in matching:
         desc = n.description or "(no description)"
-        lines.append(f"- [[{n.filename}]] — {desc}{_badge(n)}")
+        lines.append(f"- [[{n.filename}]] — {desc}")
     lines.append("")
     return "\n".join(lines)
 
@@ -798,13 +718,9 @@ def _parse_note(fpath: Path, wiki_path: Path, wiki_name: str) -> NoteInfo:
         filename=fpath.stem,
         wiki=wiki_name,
         note_type=fm.get("type"),
-        status=fm.get("status"),
-        lifecycle=compute_lifecycle(fm),
-        superseded_by=fm.get("superseded_by"),
         description=fm.get("description"),
         tags=fm.get("tags", []) or [],
         created=str(fm["created"]) if fm.get("created") else None,
-        last_reviewed=str(fm["last_reviewed"]) if fm.get("last_reviewed") else None,
         lines=count_lines(text),
         links_out=extract_wikilinks(text),
         parent_folder=parent_folder,
@@ -877,7 +793,6 @@ def _collect_issues(
             fm = parse_frontmatter((wiki_path / note.path).read_text(errors="replace"))
             note_issues = [
                 *check_frontmatter(note, fm, wiki_name),
-                *check_staleness(note, fm, wiki_name),
                 *check_description(note, fm, wiki_name),
             ]
             all_issues.extend(note_issues)

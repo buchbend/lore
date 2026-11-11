@@ -1,8 +1,7 @@
 """Legacy run-archival retention — one family the unified janitor (#190)
 enforces (see lore_core.janitor).
 
-RunLogger no longer writes ``.lore/runs/*.jsonl`` (curator runs live on the
-event spine, see run_log.py), so this only cleans up pre-migration archives
+Nothing writes ``.lore/runs/*.jsonl`` any more, so this only cleans up archives
 that may still be on disk. Deletions and delete failures are logged onto
 the spine (source="janitor") instead of the old silent-swallow — see
 :func:`_safe_unlink`. Still best-effort: never raises.

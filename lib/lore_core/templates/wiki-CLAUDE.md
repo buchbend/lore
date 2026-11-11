@@ -61,21 +61,13 @@ projects/
 schema_version: 2
 type: project | concept | decision | session | paper
 created: YYYY-MM-DD
-last_reviewed: YYYY-MM-DD
 description: "One-sentence summary for scanning."
 tags: [topic/xxx, domain/xxx, scope/xxx]
 repos: [org/name, ...]      # optional; auto-populated by /lore:session
-# Opt-in lifecycle signals (see status-vocabulary-minimalism):
-#   draft: true                    # not yet ready; rare
-#   superseded_by: [[successor]]   # retired in favour of another note
 ---
 ```
 
-- `last_reviewed` = date someone confirmed this note is still accurate.
-- Notes are canonical by default — do not set an explicit `status:` field.
-- Use `draft: true` while thinking through a note; drop it when ready.
-- Use `superseded_by: [[successor]]` when retiring a note; the graph
-  directs readers to the successor.
+- Do not set a `status:` field. A note in the wiki is in force.
 - `description` must be filled — enables fast vault scanning.
 
 ## Tag taxonomy (customize)
@@ -101,11 +93,9 @@ Notes can carry multiple scope tags when they span teams.
 
 ## Staleness
 
-- Canonical notes (no `draft:`, no `superseded_by:`) whose
-  `last_reviewed` age exceeds 180 days are flagged for review.
-- `/lore:curator` surfaces the list in `_review.md`; resolve each by
-  bumping `last_reviewed`, adding `superseded_by: [[...]]`, or deleting.
-- When updating a note, always update `last_reviewed`.
+- A note that is no longer true gets a rewrite, in a pull request.
+- Delete a note that a newer note replaces, and point its links to the newer note.
+- Lore flags no note by age.
 - Accept some drift — the vault captures intent; code is source of
   truth for implementation detail.
 

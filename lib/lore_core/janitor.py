@@ -121,8 +121,8 @@ def run_janitor(lore_root: Path, cfg: ObservabilityConfig) -> JanitorReport:
         if cold.exists():
             _maybe_delete_cold(cold, cfg, writer=writer, report=report)
 
-        # Legacy run-archival files (pre-migration; RunLogger no longer
-        # writes here — see run_log.py). Already emits its own events.
+        # Legacy run-archival files (nothing writes here any more).
+        # Already emits its own events.
         enforce_retention(
             lore_root,
             keep=cfg.runs.keep,

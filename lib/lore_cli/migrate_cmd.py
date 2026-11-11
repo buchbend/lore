@@ -18,7 +18,6 @@ from pathlib import Path
 import typer
 from lore_core.migrate import (
     add_schema_version,
-    migrate_minimal_status,
     migrate_strip_broken_wikilinks,
 )
 from lore_core.schema import SCHEMA_VERSION
@@ -50,12 +49,6 @@ def cmd_frontmatter(
         "--add-schema-version",
         help=f"Add `schema_version: {SCHEMA_VERSION}` to notes missing it.",
     ),
-    minimal_status: bool = typer.Option(
-        False,
-        "--minimal-status",
-        help="Drop `status:` field per status-vocabulary-minimalism "
-        "(proposed → draft: true, others dropped).",
-    ),
     strip_broken_wikilinks: bool = typer.Option(
         False,
         "--strip-broken-wikilinks",
@@ -71,9 +64,6 @@ def cmd_frontmatter(
     """Run a frontmatter migration. Pick exactly one with a flag."""
     if add_schema_version_:
         add_schema_version(wiki_filter=wiki, dry_run=not apply)
-        return
-    if minimal_status:
-        migrate_minimal_status(wiki_filter=wiki, dry_run=not apply)
         return
     if strip_broken_wikilinks:
         migrate_strip_broken_wikilinks(wiki_filter=wiki, dry_run=not apply)

@@ -101,9 +101,6 @@ def test_capture_state_empty_vault(tmp_path: Path) -> None:
     assert state.hook_errors_24h == 0
     assert state.spine_write_failed_marker_age_s is None
     assert state.simple_tier_fallback_active is False
-    assert state.last_run_ts is None
-    assert state.last_run_errors is None
-    assert state.last_run_short_id is None
 
 
 # ---------------------------------------------------------------------------
@@ -205,28 +202,6 @@ def test_capture_state_hook_liveness_skips_malformed_lines(tmp_path: Path) -> No
 def test_capture_state_populated_vault(tmp_path: Path) -> None:
     lore_root = _seed_lore_root(tmp_path)
 
-    # Seed 2 runs; the newest one ended 2h ago with 0 errors.
-    _write_runs(
-        lore_root,
-        [
-            [
-                {"type": "run-start", "ts": _iso(_NOW - timedelta(hours=3)), "schema_version": 1},
-                {"type": "run-end", "ts": _iso(_NOW - timedelta(hours=3)), "notes_new": 1, "notes_merged": 0, "errors": 0},
-            ],
-            [
-                {"type": "run-start", "ts": _iso(_NOW - timedelta(hours=2)), "schema_version": 1},
-                {
-                    "type": "session-note",
-                    "ts": _iso(_NOW - timedelta(hours=2)),
-                    "action": "filed",
-                    "wikilink": "[[2026-04-21-test-note]]",
-                },
-                {"type": "run-end", "ts": _iso(_NOW - timedelta(hours=2)), "notes_new": 2, "notes_merged": 0, "errors": 0},
-            ],
-        ],
-        ts_start=_NOW - timedelta(hours=3),
-    )
-
     # Seed 5 hook events, 1 error within 24h.
     _write_hook_events(
         lore_root,
@@ -241,9 +216,6 @@ def test_capture_state_populated_vault(tmp_path: Path) -> None:
 
     state = query_capture_state(lore_root, now=_NOW)
 
-    assert state.last_run_ts == _NOW - timedelta(hours=2)
-    assert state.last_run_errors == 0
-    assert state.last_run_short_id is not None
     assert state.hook_errors_24h == 1
 
 

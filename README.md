@@ -84,7 +84,6 @@ The context and upkeep skills:
 | `/lore:inbox` | Route inbox files into the right wiki. |
 | `/lore:map` | Keep the system map true across repos. |
 | `/lore:system` | Bring every checkout of a system to its target branch. |
-| `/lore:curator` | Frontmatter hygiene: supersession, back-links, dates. |
 
 ## Install
 

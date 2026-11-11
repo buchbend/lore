@@ -294,51 +294,6 @@ def test_banner_all_skips_is_silent(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 12. Last-run error prefix
-# ---------------------------------------------------------------------------
-
-
-def test_banner_last_run_error_prefix(tmp_path: Path) -> None:
-    """Most recent run ended with errors > 0 → lore!: prefix."""
-    import json
-
-    lore_dir = tmp_path / ".lore"
-    lore_dir.mkdir(parents=True)
-    run_id = "2026-04-20T14-32-05-errrun"
-
-    def _env(rec):
-        data = {k: v for k, v in rec.items() if k not in ("type", "ts")}
-        return {"ts": rec["ts"], "v": 1, "source": "curator", "event": rec["type"],
-                "level": "info", "trace_id": None, "session_id": None, "run_id": run_id,
-                "wiki": None, "scope": None, "error_code": None, "data": data}
-
-    (lore_dir / "spine.jsonl").write_text("\n".join(json.dumps(_env(r)) for r in [
-        {"type": "run-start", "ts": "2026-04-20T14:32:05Z", "trigger": "hook"},
-        {"type": "run-end", "ts": "2026-04-20T14:32:09Z", "duration_ms": 4000,
-         "notes_new": 0, "notes_merged": 0, "skipped": 0, "errors": 2},
-    ]) + "\n")
-    from lore_core.breadcrumb import render_banner
-    now = datetime(2026, 4, 20, 15, 0, 0, tzinfo=UTC)
-    scope = Scope(
-        wiki="private",
-        scope="private:root",
-        claude_md_path=tmp_path / "CLAUDE.md",
-    )
-    ctx = BannerContext(
-        lore_root=tmp_path,
-        scope=scope,
-        wiki_config=WikiConfig(breadcrumb=BreadcrumbConfig(mode="normal")),
-        now=now,
-        note_count=5,
-    )
-    banner = render_banner(ctx)
-    assert banner is not None
-    assert banner.startswith("lore!:")
-    assert "2 errors" in banner
-    assert "lore setup" in banner
-
-
-# ---------------------------------------------------------------------------
 # 13. Hook-error trailing segment
 # ---------------------------------------------------------------------------
 
