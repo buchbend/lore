@@ -334,7 +334,7 @@ def step_agents(cwd: Path) -> tuple[str, list[Event]]:
     present = [n for n in ("claude", "cursor") if _present(n)]
 
     if "claude" in present:
-        events.extend(_uninstall_old_plugin())
+        current = True
         try:
             cached = checks.claude_cache_version()
         except (OSError, ValueError) as exc:
@@ -342,11 +342,16 @@ def step_agents(cwd: Path) -> tuple[str, list[Event]]:
             events.append((None, f"Claude plugin index unreadable: {exc}"))
         pip = version("lore")
         if cached is None:
-            ok = _install_integration("claude") == 0
+            current = ok = _install_integration("claude") == 0
             events.append((ok, "installed the Claude Code plugin lore@lore"))
         elif cached and cached != "unknown" and _behind(cached, pip):
-            ok = _refresh_plugin_cache()
+            current = ok = _refresh_plugin_cache()
             events.append((ok, f"repaired the plugin cache: {cached} → {pip}"))
+        if current and cached not in (
+            "",
+            "unknown",
+        ):  # the old plugin holds the build skills until lore@lore is current
+            events.extend(_uninstall_old_plugin())
 
     if "cursor" in present:
         cursor_checks = (

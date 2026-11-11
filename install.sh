@@ -144,10 +144,14 @@ if [ "$HAS_PLUGIN" -eq 1 ]; then
         # `plugin update` resolves against the local marketplace catalog;
         # refresh it first or the update can report the old version as latest.
         claude plugin marketplace update lore || warn "claude plugin marketplace update lore failed"
-        claude plugin update lore@lore || warn "claude plugin update failed; run it manually"
-        # lore-workflow merged into lore (PRD 0021); drop the old plugin.
-        if grep -q '"lore-workflow@lore"' "$PLUGIN_INDEX"; then
-            claude plugin uninstall lore-workflow@lore || warn "claude plugin uninstall lore-workflow@lore failed; run it manually"
+        if claude plugin update lore@lore; then
+            # lore-workflow merged into lore (PRD 0021); drop the old plugin
+            # only once lore holds its skills.
+            if grep -q '"lore-workflow@lore"' "$PLUGIN_INDEX"; then
+                claude plugin uninstall lore-workflow@lore || warn "claude plugin uninstall lore-workflow@lore failed; run it manually"
+            fi
+        else
+            warn "claude plugin update failed; run it manually"
         fi
     else
         warn "claude CLI not found; run: claude plugin update lore@lore (and claude plugin uninstall lore-workflow@lore if installed)"

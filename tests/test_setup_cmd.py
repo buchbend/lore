@@ -457,6 +457,30 @@ def test_no_uninstall_without_old_plugin(monkeypatch):
     assert calls == [] and events == []
 
 
+@pytest.mark.parametrize(
+    "cached, refresh_ok, expected",
+    [
+        ("0.0.1", True, ["refresh", "uninstall"]),
+        ("0.0.1", False, ["refresh"]),
+        (None, True, ["install claude", "uninstall"]),
+        (PIP, True, ["uninstall"]),
+        ("unknown", True, []),
+    ],
+)
+def test_uninstall_runs_only_after_the_lore_plugin_is_current(
+    tmp_path, agents, monkeypatch, cached, refresh_ok, expected
+):
+    _plugin_index(cached, old=True)
+    monkeypatch.setattr(
+        setup_cmd, "_refresh_plugin_cache", lambda: agents.append("refresh") or refresh_ok
+    )
+    monkeypatch.setattr(
+        setup_cmd, "_uninstall_old_plugin", lambda: agents.append("uninstall") or []
+    )
+    setup_cmd.step_agents(tmp_path)
+    assert agents == expected
+
+
 @pytest.mark.parametrize("kw", [{"rc": 1}, {"which": None}])
 def test_uninstall_failure_prints_manual_command(monkeypatch, kw):
     _, events = _uninstall(monkeypatch, **kw)
