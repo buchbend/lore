@@ -1,7 +1,7 @@
 {
   "name": "lore",
   "description": "Workflow and knowledge layer for teams coding with Claude Code \u2014 small repo-scoped context at session start, facts filed where they have a reader (issues, PRs, ADRs, team wiki, logbook), the rest pulled on demand over MCP.",
-  "version": "0.100.0",
+  "version": "0.100.1",
   "author": {
     "name": "Christof Buchbender"
   },
