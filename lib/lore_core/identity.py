@@ -2,8 +2,7 @@
 
 `_users.yml` is optional — a wiki without it is in *solo mode*: any
 email resolves to its local-part handle, no aliasing, no session
-sharding. When ≥2 distinct authors appear in the wiki's git log and
-`_users.yml` is absent, the curator can propose team-mode activation.
+sharding.
 
 Schema (see concepts/lore/identity-aliasing):
 

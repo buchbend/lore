@@ -1,7 +1,7 @@
 """`lore wiki ...` — manage individual wikis under $LORE_ROOT/wiki/.
 
 The canonical home for wiki-lifecycle verbs going forward. It hosts
-``new`` (scaffold), ``lint`` and ``curate``.
+``new`` (scaffold) and ``lint``.
 """
 
 from __future__ import annotations

@@ -674,8 +674,7 @@ def generate_type_collection_txt(
     extension keeps it out of the wikilink graph (``wikilinks.py``
     globs ``.md`` only), so the collection doesn't become a god-node.
 
-    Notes are sorted by filename for stable output across runs. Draft
-    notes get a ``DRAFT`` badge; superseded notes get ``SUPERSEDED → [[target]]``.
+    Notes are sorted by filename for stable output across runs.
     """
     matching = [n for n in notes if n.note_type == note_type]
     if not matching:
