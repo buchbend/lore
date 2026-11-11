@@ -50,7 +50,7 @@ def add_cmd(
     text = text.removeprefix("﻿")
     rule = lab.broken_rule(text)
     if rule:
-        print(f"lab add: the entry breaks the rule: {rule}", file=sys.stderr)
+        print(f"lab add: entry refused: {rule}", file=sys.stderr)
         raise typer.Exit(code=2)
     try:
         entry, delivered = lab.add(
@@ -80,6 +80,9 @@ def show_cmd(
 
     root = resolve_route(Path.cwd()).repo_root
     found = lab.entries(root, thread) if root else []
+    # The reader takes `docs/lab/<month>/*.md` only (#573).
+    for stray in sorted((root / "docs" / "lab").glob("*.md")) if root else []:
+        print(f"lab show: not read, no month folder: {stray.relative_to(root)}", file=sys.stderr)
     if not found:
         print("no lab entries" + (f" in thread {thread}" if thread else ""))
         return
