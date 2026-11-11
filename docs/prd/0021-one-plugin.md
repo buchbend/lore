@@ -1,12 +1,14 @@
 ---
 title: "One plugin"
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/588
 repos:
   - buchbend/lore
 ---
 
 # PRD 0021: One plugin
+
+> Historical. Current decisions: ADR 0021.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/588).
 > The epic links here; this file is not embedded in the issue body.
