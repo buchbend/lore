@@ -9,7 +9,8 @@ user_invocable: true
 The skill has two parts. Run part one when this session stops and the next
 session in this directory continues it. Run part two when work stops before
 its finish point, when `build` reaches a finish point, or when follow-up work
-should go to a new session. When both fit, run both.
+should go to a new session. When both fit, run both. At a `build` finish
+point, run part two only: the handover note there is the user's to write.
 
 # Part one: the handover note
 
