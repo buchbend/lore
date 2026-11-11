@@ -58,9 +58,7 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     ],
     "plan": [
         # `status` is intentionally NOT required: absence means "active" for a
-        # plan. Setting it explicitly is encouraged but not enforced by the linter,
-        # matching
-        # how every other surface treats lifecycle.
+        # plan. Setting it explicitly is encouraged but not enforced by the linter.
         "schema_version",
         "type",
         "slug",
