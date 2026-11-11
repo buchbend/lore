@@ -8,6 +8,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.103.0] - 2026-11-11
+
+Issue #596 (retire the note lifecycle and the hygiene curator).
+
+### Removed
+
+- **Breaking: the note lifecycle.** `lore wiki lint` writes no `status`, `lifecycle` or `superseded_by` key into `_catalog.json`, prints no `DRAFT` or superseded badge, and reports no `stale` warning after 180 days. `last_reviewed` is no longer a required field. A note that holds `draft`, `superseded_by`, `last_reviewed`, `implements`, `implemented_at` or `implemented_by` keeps the field; Lore ignores it.
+- **Breaking: the hygiene curator.** `lore wiki curate` and the `/lore:curator` skill are gone. Lore writes no `_review.md`. Nothing fills a missing `created` field from git any more; `lore wiki lint` still requires the field.
+- **`examples/wiki-curator-on-push.yml`.** A wiki that copied the workflow must delete its copy: the job now fails with "No such command".
+- **`lore migrate frontmatter --minimal-status`.**
+- The session banner line "last run had N errors", with the run log (`run_log.py`) and its readers.
+- Helpers without a caller: `team_mode_recommended`, `unaliased_authors`, `distinct_git_authors`, `aliased_emails`, `iter_archival_runs`, `read_run`.
+
+### Changed
+
+- The wiki template `wiki-CLAUDE.md` tells an author to rewrite a note that is no longer true, in a pull request. The template no longer names `/lore:session`.
+
 ## [0.102.0] - 2026-11-11
 
 Issue #591 (retire the freshness layer and the verdict worklist).
