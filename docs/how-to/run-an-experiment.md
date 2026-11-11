@@ -102,5 +102,4 @@ line with the logbook lines. `lore log flush` retries it at once.
 - `lore lab show` prints every entry, newest first.
 - `lore lab show --thread lo-drift` prints only the entries of one thread.
 - `lore index` and the SessionStart banner list the three newest entries by
-  date and question. The `AGENTS.md` block of `lore index --write` leaves
-  them out, so a new entry does not make the block stale.
+  date and question.

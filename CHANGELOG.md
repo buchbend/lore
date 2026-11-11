@@ -8,6 +8,94 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.99.1] - 2026-11-10
+
+Issue #579 (let `lore handover show` find the note after `/clear`).
+
+### Fixed
+
+- **`lore handover show` finds the note after `/clear`.** Without a live note the command prints the newest archived note of the directory and names its path on stderr. The command exited 1 before.
+- **The banner says "handover pointed to"** after `/clear` or compaction. The banner said "handover loaded" before; SessionStart loads no note text.
+- **The handover pointer follows the status line.** The pointer sits inside the 2,000 characters that Claude Code shows of a text over 10,000 characters. The pointer stood near the end of the text before.
+
+## [0.99.0] - 2026-11-10
+
+Issue #576 (name the route and the person's scopes in the index).
+
+### Added
+
+- **The index names the route.** A "Route" group names the wiki, the tracker, each sink other than `file` and each source of the repo. Each line names the tool that queries the place. A repo that no scope routes gets no "Route" group.
+- **The index names your scopes.** A "Scopes" group lists each scope of `~/.config/lore/config.yml` with its folder and its wiki, and marks the scope of the working directory. The group prints for two or more scopes.
+- **A `command` sink takes a `hint` key**: the tool an agent queries the place with. `lore setup sink command --hint pm` writes the key. Without the key the index names the first word of the `run` line, and names no tool when the line opens with shell syntax.
+- **The directive tells the agent to ask Lore before the person**, with `lore glossary` and `lore_search`.
+
+### Changed
+
+- **The "Route" group and the "Scopes" group take no cut** when the index passes its budget of 2,000 characters.
+- **The directive block has a limit of 800 characters**, up from 700.
+
+## [0.98.0] - 2026-11-10
+
+Issue #575 (deliver the SessionStart text whole and point to the handover note).
+
+### Changed
+
+- **Lore cuts no SessionStart text.** The cut at 5,000 characters is gone. Over the 10,000 characters that Claude Code allows per hook string, the project orientation gives way to two lines.
+- **SessionStart points to the handover note.** After `/clear` or compaction the session receives the path of the note and reads the whole file. After `/clear` the path names the archived file. `lore handover write` accepts a note of any size.
+- **The directive block measures 695 characters**, down from 1,111. `lore style show filing` holds the detail the block lost. The reading rule of ADR 0015 (decision records state their strength) has a shorter wording.
+- **The text for the model holds no "Last active", "Branches" or "Refs" line.** The status line keeps the last active day.
+
+### Fixed
+
+- **The banner names a scope whose wiki the vault does not hold**, with the wiki and `lore setup scope --wiki <name>`. The banner said "no scope routes this repo" before.
+- **`lore setup scope --scaffold-workflow` appends the reading rule once**, also when `AGENTS.md` holds an older wording of the rule.
+
+## [0.97.0] - 2026-11-10
+
+Issue #574 (retire the generated index block of AGENTS.md). ADR 0020 (SessionStart delivers the index; AGENTS.md holds static pointers only).
+
+### Removed
+
+- **`lore index --write` and `lore index --check`.** Each exits 2 with a usage error. Lore keeps no generated copy of the index in `AGENTS.md` and holds no marker code. Remove an old block from `AGENTS.md` by hand.
+
+### Changed
+
+- **SessionStart injects the full index in every session.** The hook reads neither `AGENTS.md` nor `CLAUDE.md` for the index, so an old block changes nothing.
+- **`lore setup scope --scaffold-workflow` appends a static `## Where to look` paragraph** to `AGENTS.md`, once. The paragraph names the homes that exist in the repo: `docs/adr/`, `docs/prd/`, `CONTEXT.md`, `ROADMAP.md`.
+
+## [0.96.1] - 2026-11-10
+
+Issue #566 (loose ends of the index and the lab notebook).
+
+### Fixed
+
+- **The index shows the question of each lab entry**, also when the question starts on the line below its label. The lab group lists the newest entry first.
+- **SessionStart parses three lab files at most.** `lore lab add` reads only the files of the month of the entry when it checks for a repeat.
+- **A title keeps a leading number** that is not the number of the document: "3-tier model routing" stays whole.
+- **`lore index --write` ignores a marker that `AGENTS.md` quotes** in a code span or a code block. A marker counts when it opens a line outside a code fence.
+- **`lore lab add --text-file`** exits 1 and names the path when the file is missing or is not UTF-8.
+- **`lore lab add --data`** records a relative path inside the repo from the repo root.
+
+## [0.96.0] - 2026-11-10
+
+Ships `lore-workflow` 0.23.0.
+
+### Added
+
+- **`lore workflow spec-branch` prints `ref`**, the ref that holds the PRD: `origin/<name>` when the remote holds it, the local branch name otherwise. Issue #565 (spec-branch for cross-repo epics and unpushed branches).
+
+### Changed
+
+- **`build` in `epic` mode merges the printed `ref`** and runs `spec-branch` only in the repo of the `**PRD:**` link.
+
+## [0.95.1] - 2026-11-10
+
+Ships `lore-workflow` 0.22.1.
+
+### Changed
+
+- **The `build` skill is shorter.** `SKILL.md` plus `epic.md` hold 9,427 bytes, down from 9,999. Every rule, step and stop condition stays. The skill description names the three modes in one clause each. Issue #564 (trim the build skill).
+
 ## [0.95.0] - 2026-11-10
 
 Ships `lore-workflow` 0.22.0. Epic #555 (index-first context and the lab notebook), PRD 0020.

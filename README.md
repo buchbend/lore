@@ -15,10 +15,12 @@ Lore itself calls no model. The agent in the session does the judging.
 
 The figure is from the ADASS 2026 talk; the bullets below describe Lore today.
 
-- **Session.** At SessionStart, Lore injects at most 5,000 characters of
-  context: the repo's orientation note, system-map neighbours, the glossary
-  index, the repo index, a recap of the last active day, a handover note if
-  one is waiting, and pending freshness verdicts. Everything deeper is
+- **Session.** At SessionStart, Lore injects a small context: a status
+  line with the last active day, the repo's orientation note, system-map
+  neighbours, the index, a pointer to the handover note if one is waiting,
+  and pending freshness verdicts. The index names where an agent can ask
+  (the route of the repo and your scopes) and what the repo holds. Each
+  block keeps its own budget. Everything deeper is
   **pulled on demand over MCP** (`lore_search`, `lore_read`,
   `lore_context_pack`, …).
 - **This machine.** Hooks register every transcript in a ledger, stamped
@@ -58,8 +60,8 @@ orient → grilling → to-epic → build → document     (+ handover at any st
 
 `build` runs in three modes: `loop` for fast rounds with you watching,
 `issue` for one clear issue, `epic` for a build order of sub-issues. `tdd`
-is the discipline every mode follows; `debug`, `triage` and `file-issue`
-are helpers. See [`lore-workflow/README.md`](lore-workflow/README.md).
+is the discipline every mode follows; `debug`, `experiment`, `triage` and
+`file-issue` are helpers. See [`lore-workflow/README.md`](lore-workflow/README.md).
 
 The `lore` skills:
 
@@ -147,7 +149,7 @@ Guides: [onboarding](docs/how-to/onboarding.md),
 | `lore search` / `lore read` | Search the wiki index; composite retrieval. The same as the MCP tools. |
 | `lore log add\|flush\|show` | Write, retry or show logbook entries. |
 | `lore lab add\|show` | Record or review lab-notebook entries. |
-| `lore index` | Print the repo index: glossary terms, ADRs, PRDs, roadmap, neighbours and recent lab entries. |
+| `lore index` | Print the index: the route, your scopes, glossary terms, ADRs, PRDs, roadmap, neighbours and recent lab entries. |
 | `lore roadmap add` | Add an idea to the roadmap. |
 | `lore system status\|target` | Git state of every repo in a system; its target branch. |
 | `lore trace tokens <session>` | Token totals per skill or subagent phase. |

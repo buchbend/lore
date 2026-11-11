@@ -4,12 +4,17 @@ The agent writes one note per working directory with ``lore handover write``.
 SessionStart reads the hook payload's ``source`` and calls
 :func:`session_start_block`:
 
-- ``clear`` injects the full note, then archives it. A later clear in the
-  same directory does not replay a stale handover.
-- ``compact`` injects the full note and keeps it. One piece of work can
-  cross several compactions.
+- ``clear`` archives the note and injects a pointer to the archived file. A
+  later clear in the same directory does not replay a stale handover.
+- ``compact`` injects a pointer to the note and keeps it. One piece of work
+  can cross several compactions.
 - ``startup`` and ``resume`` offer the note in one line. An old note must not
   take over a fresh session.
+
+The pointer holds the path and no note text, so a note has no size limit
+(issue #575).
+The pointer follows the status line, inside the 2,000
+characters Claude Code shows of a text over the hook limit (issue #579).
 
 Home: ``$LORE_CACHE/handovers/<dirname>-<hash>.md``, keyed by the resolved
 working directory. The cache works outside git repos, and each worktree has
@@ -20,18 +25,11 @@ Standard library only.
 
 from __future__ import annotations
 
+import glob
 import hashlib
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-
-#: Upper bound on a note. The whole note lands in context after a clear, so
-#: it has to stay a handover, not a transcript.
-BUDGET_CHARS = 12_000
-
-
-class HandoverTooLong(ValueError):
-    """The note exceeds :data:`BUDGET_CHARS`."""
 
 
 def _cache_root() -> Path:
@@ -47,10 +45,6 @@ def handover_path(cwd: Path) -> Path:
 def write(cwd: Path, text: str) -> Path:
     if not text.strip():
         raise ValueError("handover note is empty")
-    if len(text) > BUDGET_CHARS:
-        raise HandoverTooLong(
-            f"handover note is {len(text)} chars; the limit is {BUDGET_CHARS}"
-        )
     path = handover_path(cwd)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -72,11 +66,20 @@ def _written_at(path: Path) -> str:
     return ts.strftime("%Y-%m-%d %H:%M UTC")
 
 
-def archive(cwd: Path) -> None:
+def archive(cwd: Path) -> Path:
+    """Move the note aside. Returns the new path, or the old one without a note."""
     path = handover_path(cwd)
-    if path.is_file():
-        stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
-        path.replace(path.with_name(f"{path.stem}.{stamp}.done.md"))
+    if not path.is_file():
+        return path
+    stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
+    return path.replace(path.with_name(f"{path.stem}.{stamp}.done.md"))
+
+
+def latest_archived(cwd: Path) -> Path | None:
+    """The newest archived note of *cwd*. The stamp in the name sorts by time."""
+    path = handover_path(cwd)
+    pattern = f"{glob.escape(path.stem)}.*.done.md"
+    return max(path.parent.glob(pattern), default=None)
 
 
 def session_start_block(cwd: Path, source: str | None, *, probe: bool = False) -> str | None:
@@ -85,20 +88,18 @@ def session_start_block(cwd: Path, source: str | None, *, probe: bool = False) -
     Archives the note after a ``clear`` unless *probe* is set.
     """
     path = handover_path(cwd)
-    text = read(cwd)
-    if text is None:
+    if not path.is_file():
         return None
     written = _written_at(path)
     if source in ("clear", "compact"):
-        block = (
-            f"## Handover (written {written})\n\n"
-            "The previous session left this note. Continue from it; "
-            "confirm the next ask with the user before acting.\n\n"
-            f"{text.rstrip()}"
-        )
         if source == "clear" and not probe:
-            archive(cwd)
-        return block
+            path = archive(cwd)
+        return (
+            f"## Handover (written {written})\n\n"
+            f"The previous session left a handover note at `{path}`. "
+            "Read the whole file before any other action. Then continue from it; "
+            "confirm the next ask with the user before acting."
+        )
     return f"lore: handover from {written} — run `lore handover show` to load it."
 
 
@@ -123,7 +124,7 @@ def status_line(cwd: Path, source: str | None) -> str | None:
         if source in ("clear", "compact"):
             return "lore: no handover note for this directory"
         return None
-    verb = "loaded" if source in ("clear", "compact") else "available"
+    verb = "pointed to" if source in ("clear", "compact") else "available"
     gist = _gist(text)
     tail = f" — {gist}" if gist else ""
     return f"lore: handover {verb} ({_written_at(handover_path(cwd))}){tail}"

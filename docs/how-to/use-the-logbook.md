@@ -25,6 +25,11 @@ check, without posting, that the command is on `PATH` and that the secret is
 set. A failed check exits 1 and keeps the definition. Store the secret with
 `lore config secret set PM_TOKEN`.
 
+The index names each sink of the route (`lore index`). For a `command` sink
+the index names the first word of the `run` line as the tool an agent can
+query. Add `--hint pm` when the `run` line opens with shell syntax, or when
+another tool reads the place. The `hint` key of the sink holds the value.
+
 A scope uses a sink once its `logbook` list names the sink:
 
 ```yaml

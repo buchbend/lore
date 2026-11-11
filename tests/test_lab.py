@@ -250,7 +250,7 @@ def test_the_index_lists_the_three_newest_lab_entries(repo, tmp_path) -> None:
     out = CliRunner().invoke(app, ["--cwd", str(repo)]).output
     assert "### Lab entries" in out
     assert "Q0:" not in out
-    assert out.index("Q1:") < out.index("Q2:") < out.index("Q3:")
+    assert out.index("Q3:") < out.index("Q2:") < out.index("Q1:")
     assert "Detail: `lore lab show`" in out
 
 
@@ -259,16 +259,6 @@ def test_session_start_shows_the_lab_group(repo, tmp_path, spawned) -> None:
     out = _hook("session-start", "--cwd", str(repo), "--plain", "--probe")
     assert "### Lab entries" in out
     assert "Does the LO drift stay under 0.1 K per hour?" in out
-
-
-def test_a_lab_entry_keeps_the_agents_md_block_current(repo, tmp_path) -> None:
-    from lore_core import repo_index
-
-    assert repo_index.write_agents_block(repo)
-    assert _add(tmp_path) == 0
-    assert repo_index.agents_block_is_current(repo)
-    assert "Lab entries" not in (repo / "AGENTS.md").read_text()
-    assert main(["index", "--check"]) == 0
 
 
 def test_filing_and_adr_0014_name_the_lab_entry_as_the_home_of_a_result() -> None:
@@ -359,3 +349,99 @@ def test_lore_status_counts_an_undelivered_lab_line(repo, capsys) -> None:
     _lab_line(repo)
     main(["status"])
     assert "lab" in capsys.readouterr().out
+
+
+def _index_out(repo: Path) -> str:
+    from lore_cli.index_cmd import app
+    from typer.testing import CliRunner
+
+    return CliRunner().invoke(app, ["--cwd", str(repo)]).output
+
+
+def test_the_index_shows_a_question_that_starts_on_the_next_line(repo, tmp_path) -> None:
+    text = GOOD.replace("**Question:** Does", "**Question:**\nDoes")
+    assert _add(tmp_path, text) == 0
+    assert "Does the LO drift stay under 0.1 K per hour?" in _index_out(repo)
+
+
+def test_session_start_parses_at_most_three_lab_files(repo, tmp_path, monkeypatch) -> None:
+    for n in range(5):
+        assert _add(tmp_path, GOOD.replace("Does the", f"Q{n}: does the")) == 0
+    reads: list[Path] = []
+    real = Path.read_text
+
+    def counting(self, *a, **k):
+        reads.append(self)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", counting)
+    out = _index_out(repo)
+    lab_reads = [p for p in reads if "lab" in p.parts and p.suffix == ".md"]
+    assert len(lab_reads) <= 3
+    assert "Q4:" in out and "Q2:" in out and "Q1:" not in out
+
+
+def test_the_file_sink_reads_only_the_files_of_the_month_of_the_entry(
+    repo, tmp_path, monkeypatch
+) -> None:
+    other = repo / "docs" / "lab" / "2020-01"
+    other.mkdir(parents=True)
+    (other / "old.md").write_text("old\n")
+    reads: list[Path] = []
+    real = Path.read_text
+
+    def counting(self, *a, **k):
+        reads.append(self)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", counting)
+    assert _add(tmp_path) == 0
+    assert other / "old.md" not in reads
+
+
+def test_a_missing_text_file_exits_1_and_names_the_path(repo, capsys) -> None:
+    assert main(["lab", "add", "--text-file", "nope/entry.md"]) == 1
+    err = capsys.readouterr().err
+    assert "nope/entry.md" in err
+    assert "unexpected error" not in err
+
+
+def test_a_relative_data_path_is_recorded_relative_to_the_repo_root(
+    repo, tmp_path, monkeypatch
+) -> None:
+    (repo / "data").mkdir()
+    (repo / "data" / "scan.csv").write_text("1,2\n")
+    monkeypatch.chdir(repo / "data")
+    assert _add(tmp_path, GOOD, "--data", "scan.csv") == 0
+    assert _stamp(_entries(repo)[0])["data"] == [
+        {"path": "data/scan.csv", "sha256": hashlib.sha256(b"1,2\n").hexdigest()}
+    ]
+
+
+# --- review round 1 of PR #571 ----------------------------------------------
+
+
+def test_a_symlinked_data_file_keeps_its_path_in_the_repo(repo, tmp_path, monkeypatch) -> None:
+    outside = tmp_path / "outside.csv"
+    outside.write_text("1,2\n")
+    (repo / "data").mkdir()
+    (repo / "data" / "link.csv").symlink_to(outside)
+    monkeypatch.chdir(repo / "data")
+    assert _add(tmp_path, GOOD, "--data", "link.csv") == 0
+    assert _stamp(_entries(repo)[0])["data"][0]["path"] == "data/link.csv"
+
+
+def test_an_empty_question_does_not_borrow_the_next_label() -> None:
+    from lore_workflow import lab
+
+    assert lab.question("**Question:**\n**Setup:** a") == ""
+    assert lab.question("**Question:**\n\nDoes it drift?\n\n**Setup:** a") == "Does it drift?"
+
+
+def test_a_text_file_that_is_not_utf8_exits_1_and_names_the_path(repo, tmp_path, capsys) -> None:
+    bad = tmp_path / "bad.md"
+    bad.write_bytes(b"\xff\xfe broken")
+    assert main(["lab", "add", "--text-file", str(bad)]) == 1
+    err = capsys.readouterr().err
+    assert str(bad) in err
+    assert "unexpected error" not in err

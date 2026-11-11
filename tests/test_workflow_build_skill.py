@@ -267,3 +267,9 @@ def test_an_epic_records_its_board_line_and_the_tail_archives_it() -> None:
 
 def test_build_names_when_to_grep_instead_of_spawning() -> None:
     assert "For one lookup, grep or read directly." in _section("Rules for every mode")
+
+
+def test_epic_spec_branch_runs_in_prd_repo_and_merges_ref() -> None:
+    text = " ".join((BUILD / "epic.md").read_text(encoding="utf-8").split())
+    assert "only in the repo of the `**PRD:**` link" in text
+    assert "merge the printed `ref` into the new `epic/<issue>`" in text

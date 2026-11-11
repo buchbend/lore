@@ -92,16 +92,10 @@ is a one-line shim that imports it:
 Claude Code then loads `AGENTS.md` through `CLAUDE.md`. `lore setup scope
 --scaffold-workflow` moves an existing `CLAUDE.md` into this shape.
 
-`AGENTS.md` also holds the index block, between two `lore index` markers.
-`lore index --write` regenerates the block. `lore index --check` exits 1
-when the block is stale. Edit the text outside the markers by hand; leave
-the text between them to the command.
-
-No command writes the block on its own. SessionStart compares the block with
-the repo at each start. A current block that `CLAUDE.md` imports is not
-repeated in the banner: the banner holds one pointer line and the lab
-entries. For a stale block, the banner holds the full index and the line
-"Run `lore index --write`".
+`AGENTS.md` holds no copy of the index (ADR 0020, SessionStart delivers the
+index). SessionStart injects the index in every session, and `lore index`
+prints it. The scaffold adds one static paragraph, `## Where to look`, which
+names the home of each kind of fact for a reader without Lore.
 
 ### The epic issue as tracker
 

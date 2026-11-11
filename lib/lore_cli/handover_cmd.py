@@ -1,9 +1,9 @@
 """``lore handover`` — write and read the handover note of a working directory.
 
   lore handover write < note.md     store the note (stdin), replacing the last one
-  lore handover show                print the note
+  lore handover show                print the note, or the newest archived note
 
-SessionStart injects the note after ``/clear`` or compaction; see
+SessionStart injects the path of the note after ``/clear`` or compaction; see
 :mod:`lore_core.handover`.
 """
 
@@ -41,9 +41,13 @@ def cmd_write(cwd: str = _CWD) -> None:
 
 @app.command("show")
 def cmd_show(cwd: str = _CWD) -> None:
-    """Print the note."""
+    """Print the note. After /clear, print the newest archived note."""
     text = handover.read(_cwd(cwd))
     if text is None:
-        typer.echo("lore handover: no note for this directory", err=True)
-        raise typer.Exit(code=1)
+        archived = handover.latest_archived(_cwd(cwd))
+        if archived is None:
+            typer.echo("lore handover: no note for this directory", err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"lore handover: archived note {archived}", err=True)
+        text = archived.read_text(encoding="utf-8")
     typer.echo(text, nl=False)

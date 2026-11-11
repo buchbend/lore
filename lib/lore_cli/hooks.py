@@ -37,7 +37,7 @@ from lore_core.scopes import (
     subtree_siblings,
     walk_scope_leaves,
 )
-from lore_core.session_start import MAX_CONTEXT_CHARS
+from lore_core.session_start import fit_hook_limit as _fit_hook_limit
 from lore_core.session_start import load_directive_lines as _load_directive_lines
 from lore_core.session_start import maybe_auto_push_for_scope as _maybe_auto_push_for_scope
 from lore_core.session_start import pre_compact_text as _pre_compact
@@ -183,17 +183,11 @@ def _emit(hook_event: str, text: str, *, plain: bool, notice: str | None = None)
             _gc_sessions_cache()
         except OSError:
             pass
-        context_text = text
-        if len(context_text) > MAX_CONTEXT_CHARS:
-            context_text = (
-                context_text[: MAX_CONTEXT_CHARS - 40]
-                + "\n... (truncated — /lore:context for full)"
-            )
         envelope = {
             "systemMessage": one_liner,
             "hookSpecificOutput": {
                 "hookEventName": "SessionStart",
-                "additionalContext": context_text,
+                "additionalContext": text,  # whole: Lore cuts nothing (issue #575)
             },
         }
     elif hook_event == "Stop":
@@ -633,6 +627,7 @@ def cmd_session_start(
     # to the LLM context block. Concepts/decisions/threads/plans/
     # sessions stay pull-on-demand — only the short orientation auto-
     # loads. User-facing status line is unchanged.
+    orientation_block: str | None = None
     if scope is not None and not probe:
         try:
             orientation_block = _render_project_orientation(
@@ -663,12 +658,14 @@ def cmd_session_start(
         handover_notice = status_line(cwd_resolved, payload.get("source"))
         block = session_start_block(cwd_resolved, payload.get("source"), probe=probe)
         if block:
-            out = out + "\n\n" + block
+            # Directly after the status line: inside the 2,000 characters
+            # Claude Code shows of a text over the hook limit (issue #579).
+            head, _, rest = out.partition("\n")
+            out = "\n\n".join(p for p in (head, block, rest.lstrip("\n")) if p)
     except Exception:  # noqa: BLE001 - handover must never crash SessionStart
         pass
 
-    # Neighbours before the glossary: both are short, and `lore map` and
-    # `lore glossary` recover what the cap cuts (PRD 0019, the system map).
+    # Neighbours just above the index (PRD 0019, the system map).
     try:
         from lore_core.system_map import session_start_block as neighbours
 
@@ -682,22 +679,22 @@ def cmd_session_start(
         if map_hint:
             out = out + "\n\n" + map_hint
 
-    # The index last: the cap cuts the end first, and `lore index` recovers
-    # it, unlike the resume and handover blocks above. The neighbours sit
-    # just above, so the index leaves its neighbours group out (PRD 0020).
+    # The index last. The neighbours sit just above, so the index leaves its
+    # neighbours group out (PRD 0020).
     try:
         from lore_core import repo_index
         from lore_core.glossary import find_repo_root
 
         repo_root = find_repo_root(cwd_resolved)
-        index = repo_index.banner_text(repo_root) if repo_root else None
+        gs = repo_index.groups(repo_root) if repo_root else []
+        index = repo_index.index_text(gs)
         if index:
             out = out + "\n\n" + index
     except Exception:  # noqa: BLE001 - the index must never crash SessionStart
         pass
 
     notice = "\n".join(n for n in (handover_notice, logbook_notice) if n) or None
-    _emit("SessionStart", out, plain=plain, notice=notice)
+    _emit("SessionStart", _fit_hook_limit(out, orientation_block), plain=plain, notice=notice)
 
 
 #: SessionStart spawns at most one background map scan per scope and hour.

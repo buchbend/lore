@@ -4,7 +4,7 @@ Gathers the facts (project note, last-active-day recap, pending freshness
 verdicts) and renders the banner. Deliberately cheap: reads cached files the
 linter regenerates (``_index.txt``, ``_catalog.json``) and the transcript
 ledger, no LLM, no network. The banner is ambient-minimal — status line,
-optional Focus block, the recap, one directive. Depth is a pull (MCP), not
+optional Focus block, one directive. Depth is a pull (MCP), not
 a push.
 
 Also holds the wiki auto-pull, a SessionStart-adjacent decision that reads
@@ -28,12 +28,24 @@ if TYPE_CHECKING:
     from lore_core.types import Scope
 
 
-# Keep auto-injected context bounded, with enough headroom for a short
-# project orientation (AGENTS.md-flavor) alongside the banner. Per-orientation
-# cap is ``ORIENTATION_BUDGET_CHARS``; the total context cap stays small
-# enough to not derail token-economy.
-MAX_CONTEXT_CHARS = 5000
+# Lore cuts no SessionStart text (issue #575): each block keeps its own
+# budget. Claude Code limits one hook string to ``HOOK_LIMIT_CHARS``; over the
+# limit it saves the text to a file and shows the first 2,000 characters.
+# :func:`fit_hook_limit` then drops the project orientation, the largest block.
+HOOK_LIMIT_CHARS = 10_000
 ORIENTATION_BUDGET_CHARS = 3000
+
+
+def fit_hook_limit(text: str, orientation: str | None) -> str:
+    """*text*, with the *orientation* block reduced to two lines over the limit."""
+    if not orientation or len(text) <= HOOK_LIMIT_CHARS:
+        return text
+    heading = orientation.split("\n", 1)[0]
+    pointer = (
+        f"{heading}\nLeft out: the SessionStart text passed {HOOK_LIMIT_CHARS:,} "
+        "characters. Pull the project note with `lore_search` (MCP)."
+    )
+    return text.replace(orientation, pointer, 1)
 
 
 def lore_version() -> str:
@@ -184,10 +196,10 @@ def pending_verdict_chip(wiki: Path) -> str:
 def last_active_day_recap(lore_root: Path) -> tuple[str, ...]:
     """Recap the most recent day the transcript ledger saw work.
 
-    Three lines at most — where (repo + session count), what branches,
-    which refs — rendered straight off the ledger's linkage blocks. No
-    LLM call, no gh call, no note read: this is what continuity looks
-    like once session notes are gone.
+    One line — the day, the session count and the repos — rendered straight
+    off the ledger's linkage blocks. No LLM call, no gh call, no note read.
+    The status line for the person shows the day; the text for the model
+    holds no recap line (issue #575).
 
     Empty when the ledger is empty or carries no dated entry. Orphaned
     entries are retired sessions and never define the last active day.
@@ -205,20 +217,10 @@ def last_active_day_recap(lore_root: Path) -> tuple[str, ...]:
     day = [e for e in entries if e.last_mtime.date() == last_day]
 
     repos = sorted({(e.linkage.get("repo") or "") for e in day} - {""})
-    branches = sorted({(e.linkage.get("branch") or "") for e in day} - {""})
-    refs = sorted(
-        {int(n) for e in day for n in (e.linkage.get("issues") or [])}
-        | {int(n) for e in day for n in (e.linkage.get("prs") or [])}
-    )
 
     noun = "session" if len(day) == 1 else "sessions"
     where = f" in {', '.join(repos)}" if repos else ""
-    lines = [f"Last active {last_day.isoformat()} — {len(day)} {noun}{where}"]
-    if branches:
-        lines.append(f"Branches: {', '.join(branches)}")
-    if refs:
-        lines.append("Refs: " + ", ".join(f"#{n}" for n in refs))
-    return tuple(lines)
+    return (f"Last active {last_day.isoformat()} — {len(day)} {noun}{where}",)
 
 
 def cross_scope_breadcrumbs(lore_root: Path, current_wiki: str) -> list[str]:
@@ -287,7 +289,7 @@ class SessionFacts:
     scope: str = ""
     project_entry: dict | None = None
     pending_chip: str | None = None
-    #: Last-active-day recap off the transcript ledger (≤3 lines).
+    #: Last-active-day recap off the transcript ledger (one line).
     recap: tuple[str, ...] = ()
 
 
@@ -321,13 +323,11 @@ def render_session_banner(facts: SessionFacts) -> str:
     """Format a SessionStart banner from collected facts.
 
     Ambient-minimum shape: status line (no gh fetch), optional Focus
-    block, the last-active-day recap read off the transcript ledger,
-    freshness lines only on positive evidence, and the single collapsed
-    directive as a postscript — so users see what Lore did *first* and
-    the rule re-assertion second.
+    block, freshness lines only on positive evidence, and the single
+    collapsed directive as a postscript — so users see what Lore did
+    *first* and the rule re-assertion second.
 
-    The recap replaced the last-session note hints. Continuity comes from
-    the transcript ledger, which costs no LLM call to write.
+    The last active day shows in the status line only (issue #575).
     """
     injected_bits: list[str] = []
     if facts.scope:
@@ -335,8 +335,7 @@ def render_session_banner(facts: SessionFacts) -> str:
     elif facts.project_entry is not None:
         injected_bits.append(f"[[{facts.project_entry['name']}]]")
     if facts.recap:
-        # Chip form of the recap's first line — the block below carries
-        # the detail; the chip only has to say "there is a last day".
+        # Chip form of the recap line: it only has to say "there is a last day".
         injected_bits.append(facts.recap[0].split(" — ")[0].lower())
     if facts.pending_chip:
         injected_bits.append(facts.pending_chip)
@@ -356,10 +355,6 @@ def render_session_banner(facts: SessionFacts) -> str:
         parts.append(
             f"_Repo `{facts.repo}` has no dedicated project note in {facts.wiki_name}._"
         )
-        parts.append("")
-
-    if facts.recap:
-        parts.extend(facts.recap)
         parts.append("")
 
     parts.extend(load_directive_lines())
@@ -426,6 +421,13 @@ def session_start_text(cwd: str | None) -> str:
             v2 = session_start_from_lore(cwd, cfg, wiki_root)
             if v2 is not None:
                 return v2
+            block = cfg[1]
+            if block.get("wiki"):
+                return (
+                    f"lore: scope `{block.get('scope') or '?'}` names the wiki "
+                    f"`{block['wiki']}`, which {wiki_root} does not hold. "
+                    "Run `lore setup scope --wiki <name>` with a wiki of the vault."
+                )
 
     return (
         "lore: no scope routes this repo to a wiki. "
@@ -495,7 +497,7 @@ def render_project_orientation(scope: Scope, wiki_root: Path) -> str | None:
             if not body:
                 return None
             if len(body) > ORIENTATION_BUDGET_CHARS:
-                suffix = "\n... (orientation truncated — /lore:context for full)"
+                suffix = "\n... (orientation truncated — pull the note with `lore_search`)"
                 body = body[: ORIENTATION_BUDGET_CHARS - len(suffix)] + suffix
             header = f"## Project: [[{path.stem}]]\n"
             return header + body

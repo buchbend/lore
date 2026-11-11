@@ -128,3 +128,13 @@ A Vale rule flags them and skips code spans.
   `Background` section replaces `Context`, `Decision` and `Consequences /
   Trade-offs`. The `Status` section goes; the header line holds the status. The
   lint still checks `Holds` and accepts the old nine-section shape.
+- 2026-11-10: the SessionStart directive carries a shorter wording of the
+  reading rule than the "Context" section quotes: "ADRs and PRDs explain
+  where the code comes from. Only `Invariant` lines bind. When a task
+  conflicts with a default, deviate and name the deviation in the PR." The
+  directive block has a limit of 700 characters (issue #575, deliver the
+  SessionStart text whole). `lore style show filing` holds the line on
+  amendments.
+- 2026-11-10: the directive block has a limit of 800 characters, up from 700.
+  The block gained the line that tells the agent to ask Lore before the
+  person (issue #576, name the route and the person's scopes in the index).
