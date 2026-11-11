@@ -27,6 +27,7 @@ stays self-contained and the scaffold script is never imported or modified.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -78,7 +79,7 @@ def _frontmatter(title: str, epic_url: str, repos: list[str]) -> str:
     repo_lines = "\n".join(f"  - {repo}" for repo in repos)
     return (
         "---\n"
-        f"title: {title}\n"
+        f"title: {json.dumps(title)}\n"
         "status: draft\n"
         f"epic: {epic_url}\n"
         "repos:\n"

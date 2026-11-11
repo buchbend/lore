@@ -138,3 +138,15 @@ def test_create_prd_creates_index_when_absent(tmp_path: Path) -> None:
     index = tmp_path / "docs" / "prd" / "index.md"
     assert index.exists(), "helper must create docs/prd/index.md when absent"
     assert "0001-foo" in index.read_text(encoding="utf-8")
+
+
+def test_create_prd_title_with_a_colon_reads_back(tmp_path: Path) -> None:
+    """Issue #546: an unquoted title with a colon broke the front-matter."""
+    import yaml
+
+    title = 'Index: name the "route" and the scopes'
+    path = mod.create_prd(
+        tmp_path, slug="foo", title=title, epic_url="https://github.com/o/r/issues/8", repos=["o/r"]
+    )
+    fm = _parse_frontmatter(Path(path).read_text(encoding="utf-8"))
+    assert yaml.safe_load(fm)["title"] == title

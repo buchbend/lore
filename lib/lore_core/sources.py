@@ -87,14 +87,27 @@ def _doku_call(cfg: dict, method: str, params: dict, timeout: float) -> Any:
         token = read_secrets().get(secret)
         if not token:
             raise SourceError(f"secret {secret!r} is not set")
-        headers["Authorization"] = f"Bearer {token}"
+        if not base.lower().startswith("https://"):
+            raise SourceError("a source with a secret needs an https:// url")
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     req = urllib.request.Request(
         f"{base}/lib/exe/jsonrpc.php", data=body, headers=headers, method="POST"
     )
+    if secret:
+        # urllib copies only the regular headers to the request that follows
+        # a redirect, so the token never reaches a redirect target.
+        req.add_unredirected_header("Authorization", f"Bearer {token}")
+    deadline = time.monotonic() + timeout
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            reply = json.loads(resp.read())
+            # ponytail: the deadline bounds the body, read by read. A server
+            # that drips the headers still holds one socket timeout per read.
+            chunks = []
+            while chunk := resp.read1(65536):
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"no full reply within the timeout of {timeout:g} s")
+                chunks.append(chunk)
+            reply = json.loads(b"".join(chunks))
     except (OSError, ValueError) as e:
         raise SourceError(f"request failed: {e}") from None
     if not isinstance(reply, dict) or reply.get("error"):
