@@ -2,7 +2,7 @@
 
 Pins the ambient-minimum shape: one status line (nothing fetched from
 gh), an optional Focus block, the last-active-day recap read off the
-transcript ledger, freshness lines only on positive evidence, and a
+transcript ledger, and a
 single collapsed directive. No other section is emitted.
 
 The recap replaced the last-session note hints when session notes were
@@ -36,7 +36,6 @@ V1_FACTS = SessionFacts(
     repo="ccatobs/data-transfer",
     scope="",
     project_entry=PROJECT_ENTRY,
-    pending_chip=None,
     recap=RECAP,
 )
 
@@ -56,7 +55,6 @@ V2_FACTS = SessionFacts(
     repo="ccatobs/data-transfer",
     scope="ccat:data-center:data-transfer",
     project_entry=PROJECT_ENTRY,
-    pending_chip=None,
     recap=RECAP,
 )
 
@@ -82,38 +80,36 @@ def test_render_session_banner_byte_stable(facts: SessionFacts, expected: str) -
     assert render_session_banner(facts) == expected
 
 
-def test_render_session_banner_includes_pending_chip_and_no_project_note() -> None:
+def test_render_session_banner_without_project_note() -> None:
     """No project_entry + a repo → renders the "no dedicated project note"
-    fallback line; pending_chip appears as the last status-line bit."""
+    fallback line."""
     facts = SessionFacts(
         wiki_name="ccat",
         repo="ccatobs/data-transfer",
         scope="",
         project_entry=None,
-        pending_chip="1 pending verdict",
     )
     out = render_session_banner(facts)
-    assert out.splitlines()[0] == "lore 9.9.9: active · 1 pending verdict"
+    assert out.splitlines()[0] == "lore 9.9.9: active"
     assert "_Repo `ccatobs/data-transfer` has no dedicated project note in ccat._" in out
 
 
 def test_render_session_banner_has_exactly_the_agreed_elements() -> None:
     """The ambient-minimum contract: status line, Focus block,
-    freshness lines, and a single directive — nothing else. Feed
+    and a single directive — nothing else. Feed
     every optional slot so a stray extra section would show up."""
     facts = SessionFacts(
         wiki_name="ccat",
         repo="ccatobs/data-transfer",
         scope="ccat:data-center:data-transfer",
         project_entry=PROJECT_ENTRY,
-        pending_chip="1 pending verdict",
         recap=RECAP,
     )
     out = render_session_banner(facts)
 
     expected = (
         "lore 9.9.9: active · ccat:data-center:data-transfer · "
-        "last active 2026-08-04 · 1 pending verdict\n"
+        "last active 2026-08-04\n"
         "\n"
         "## Focus: [[data-transfer]]\n"
         "Long-haul data pipeline\n"

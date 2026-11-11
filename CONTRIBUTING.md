@@ -32,7 +32,7 @@ what the self-install bootstrap behind `lore setup` uses internally too.
 
 Edit `~/git/lore/skills/<name>/SKILL.md` → Claude Code picks up the
 change next session. (Skill directories are bare names like
-`curator`, `inbox`, `verify`; the `/lore:` slash-command prefix
+`curator`, `inbox`, `build`; the `/lore:` slash-command prefix
 comes from the plugin namespace, not the directory name.) Edit `~/git/lore/lib/lore_core/...` → next CLI
 invocation runs the new code. No reinstall step.
 

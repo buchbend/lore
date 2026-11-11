@@ -8,6 +8,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.102.0] - 2026-11-11
+
+Issue #591 (retire the freshness layer and the verdict worklist).
+
+### Removed
+
+- **Breaking: the `freshness` block.** `lore_search` and `lore_read` return wiki notes without a `freshness` key. `lore_search` orders wiki hits by relevance alone and starts no `git` process.
+- **The verdict worklist.** The SessionStart status line holds no pending-verdict chip. The `/lore:verify` skill and the `lore verdict` command are gone. Lore writes no file under `_verdicts/` in a wiki.
+- **The `orphan_set` key of `_catalog.json`.** `lore wiki lint` still reports a broken wikilink.
+- The modules `freshness.py`, `freshness_filter.py`, `disagreement.py`, `verdicts_sidecar.py`, `stale_marker_writer.py` and `verdict_cmd.py`, and `find_orphan_links` in `wikilinks.py`.
+
 ## [0.101.0] - 2026-11-11
 
 Epic #588 (merge lore-workflow into the lore plugin). PRD 0021 (one plugin), ADR 0021 (Lore ships as one plugin).

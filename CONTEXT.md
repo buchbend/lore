@@ -81,8 +81,7 @@ form runs deterministic, frontmatter-only passes over every wiki
 (`lore_curator/hygiene.py`). The passes are supersession propagation
 (`supersedes [[B]]` → `superseded_by: [[A]]` on B), `implements:`
 back-link processing, and git-log date backfill. Another pass hints at
-team mode once a solo wiki's git log shows multiple authors. Staleness
-is a deliberate no-op here — see `lore_core/freshness.py` below.
+team mode once a solo wiki's git log shows multiple authors.
 Findings land in
 `wiki/<name>/_review.md`; writes are mtime-guarded so a note open in
 Obsidian is skipped rather than clobbered. `--apply` is required to
@@ -136,11 +135,6 @@ not from anything injected ambiently:
 Kept, general-purpose, and independent of the note-writing pipeline
 above:
 
-- **Freshness** (`lore_core/freshness.py`) — positive-evidence-only
-  staleness. A note is flagged `stale-candidate` only for a named
-  cause. The causes are an authored `status: stale` / `superseded_by` /
-  `supersede_candidate*` marker, or membership in the orphan-link set.
-  Age by itself never flags anything.
 - **Search** (`lore_search`) — hybrid ranked full-text search backing
   `lore_search` / `lore_drill`.
 - **Wikilinks** (`lore_core/wikilinks.py`, `schema.py`) — `[[slug]]`
@@ -159,7 +153,6 @@ above:
 | Hook dispatch (the seven `lore hook ...` entry points) | `lore_cli/hooks.py` |
 | SessionStart context assembly + banner | `lore_core/session_start.py` |
 | Capture routing (transcripts, flush, spawn gate) | `lore_curator/capture_routing.py` |
-| Freshness classification | `lore_core/freshness.py` |
 | Vault/wiki/scope resolution | `lore_core/route.py`, `lore_core/config.py` |
 
 ## Glossary
@@ -171,7 +164,7 @@ Terms used in the workflow layer and orchestration:
   callable skill of the one `lore` plugin. The human checkpoint sits between shaping and the build.
   See `docs/conventions.md` for the stage vocabulary and tier assignments.
 - **Skill** — a callable, namespaced Claude Code automation block (e.g.,
-  `lore:build`, `lore:verify`). Skills are registered in
+  `lore:build`, `lore:orient`). Skills are registered in
   `plugin.json` and dispatched by CLI invocation or intra-skill routing.
   Lore ships one plugin, `lore`; every skill lives in `skills/` and has the
   name `lore:<name>`, the workflow skills too.

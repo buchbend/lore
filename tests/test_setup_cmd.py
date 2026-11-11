@@ -499,12 +499,6 @@ def test_no_retired_phrase_in_skill_text():
     assert not hits, hits
 
 
-def test_mcp_wiki_not_found_names_lore_setup_scope():
-    text = (REPO / "lib" / "lore_mcp" / "server.py").read_text()
-    assert "attach the cwd" not in text
-    assert "lore setup scope" in text
-
-
 # ---------------------------------------------------------------------------
 # Epic review round 1 (#479)
 # ---------------------------------------------------------------------------

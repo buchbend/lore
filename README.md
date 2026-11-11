@@ -17,8 +17,8 @@ The figure is from the ADASS 2026 talk; the bullets below describe Lore today.
 
 - **Session.** At SessionStart, Lore injects a small context: a status
   line with the last active day, the repo's orientation note, system-map
-  neighbours, the index, a pointer to the handover note if one is waiting,
-  and pending freshness verdicts. The index names where an agent can ask
+  neighbours, the index and a pointer to the handover note if one is waiting.
+  The index names where an agent can ask
   (the route of the repo and your scopes) and what the repo holds. Each
   block keeps its own budget. Everything deeper is
   **pulled on demand over MCP** (`lore_search`, `lore_read`,
@@ -84,7 +84,6 @@ The context and upkeep skills:
 | `/lore:inbox` | Route inbox files into the right wiki. |
 | `/lore:map` | Keep the system map true across repos. |
 | `/lore:system` | Bring every checkout of a system to its target branch. |
-| `/lore:verify` | Resolve pending freshness verdicts. |
 | `/lore:curator` | Frontmatter hygiene: supersession, back-links, dates. |
 
 ## Install
