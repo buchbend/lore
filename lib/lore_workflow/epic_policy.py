@@ -38,11 +38,13 @@ class EpicPolicy:
 
     target_branch: str
     deploy_gate: bool
+    #: Set when ``git ls-remote`` failed, so ``main`` is a fallback and no fact.
+    warning: str | None = None
 
 
-def _remote_has_develop(repo_root: Path) -> bool:
-    """True iff ``develop`` exists on the ``origin`` remote. Any failure
-    (no origin, not a git repo, unreachable) is treated as absent."""
+def _remote_has_develop(repo_root: Path) -> bool | None:
+    """Whether ``develop`` exists on the ``origin`` remote. None when git
+    could not read the remote (no origin, not a git repo, unreachable)."""
     try:
         proc = subprocess.run(
             ["git", "ls-remote", "--heads", "origin", "develop"],
@@ -53,8 +55,10 @@ def _remote_has_develop(repo_root: Path) -> bool:
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return False
-    return proc.returncode == 0 and proc.stdout.strip() != ""
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() != ""
 
 
 def _section_has_marker(text: str) -> bool:
@@ -81,7 +85,13 @@ def _read_deploy_gate(repo_root: Path) -> bool:
 
 def resolve_epic_policy(repo_root: Path) -> EpicPolicy:
     """Resolve the epic-merge policy for the repo rooted at *repo_root*."""
+    has_develop = _remote_has_develop(repo_root)
     return EpicPolicy(
-        target_branch="develop" if _remote_has_develop(repo_root) else "main",
+        target_branch="develop" if has_develop else "main",
         deploy_gate=_read_deploy_gate(repo_root),
+        warning=(
+            "git could not read the `origin` remote; target branch `main` is a fallback"
+            if has_develop is None
+            else None
+        ),
     )

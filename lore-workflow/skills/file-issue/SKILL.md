@@ -40,21 +40,19 @@ skill.
 
 ## 2. Draft to a file whose name ends in `.md`
 
-Write the body to this path, with `<slug>` replaced by a short kebab-case slug of the
-title you are about to use:
+Resolve the draft path once. `<slug>` is a short kebab-case slug of the title:
 
+```bash
+realpath -m "${TMPDIR:-/tmp}/lore-file-issue-<slug>.md"
 ```
-${TMPDIR:-/tmp}/lore-file-issue-<slug>.md
-```
 
-**Repeat that path literally in steps 3 and 4. Never hold it in a shell variable** —
-each step may run as its own shell, and a variable set in step 2 is gone by step 3.
-Vale would then get an empty argument and lint nothing.
+Write the body to the printed absolute path: `<draft>` below. **Repeat that path
+literally in steps 3 and 4. Never resolve it again or hold it in a shell variable** —
+each step may run as its own shell, and `TMPDIR` differs between a sandboxed command
+and an unsandboxed one. Vale would then lint nothing.
 
-The slug keeps two sessions apart. A fixed filename means a second session filing at the
-same moment under the same `TMPDIR` overwrites the first session's draft, and the first
-session then lints and posts text it never wrote. You already know the title at this
-point, so the slug costs nothing and stays the same in every step.
+The slug keeps two sessions apart. With a fixed filename, a second session under the same
+`TMPDIR` overwrites the draft, and the first session posts text it never wrote.
 
 The `.md` extension is load-bearing. The Vale config scopes its rules to `[*.md]`, so a
 draft saved as `.txt`, or with no extension, lints zero files and exits 0 — step 3 would
@@ -96,8 +94,10 @@ whether Vale is on PATH.)
 With Vale present:
 
 ```bash
-vale --config "$(lore style vale-config)" "${TMPDIR:-/tmp}/lore-file-issue-<slug>.md"
+test -f "<draft>" && vale --config "$(lore style vale-config)" "<draft>"
 ```
+
+When `test -f` fails, the draft is not at the path. **Stop and report the path.**
 
 Read the result by exit code, not by whether anything printed:
 
@@ -110,8 +110,8 @@ Read the result by exit code, not by whether anything printed:
   path argument and on a `--config` path it cannot resolve. **Stop and report.** Editing
   prose here rewrites a draft that was never read.
 
-Vale reports "0 files" as success, so a lint that read nothing still looks clean. Confirm
-the output names your draft file before you trust a clean result.
+Vale reports "0 files" as success. When the output names `stdin` or "0 files", the lint
+did not run. Confirm the output names your draft file before you trust a clean result.
 
 The heuristics over-fire by design, and the writing rules say as much. The participle rule
 matches any capitalised `-ing` word opening a sentence, so a heading like
@@ -128,7 +128,7 @@ back.
 gh label create agent-filed --repo <owner>/<repo> --color ededed \
   --description "opened by an agent" 2>/dev/null || true
 gh issue create --repo <owner>/<repo> --title "<imperative title, max 12 words>" \
-  --body-file "${TMPDIR:-/tmp}/lore-file-issue-<slug>.md" --label agent-filed
+  --body-file "<draft>" --label agent-filed
 ```
 
 Every issue this skill opens carries the `agent-filed` label. `gh label create` above

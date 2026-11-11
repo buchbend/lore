@@ -31,6 +31,8 @@ def _isolate_user_config(tmp_path_factory, monkeypatch):
     fake_home = tmp_path_factory.mktemp("home")
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    # A build teammate runs the suite with capture suppressed (issue #481).
+    monkeypatch.delenv("LORE_SUPPRESS_CAPTURE", raising=False)
     yield
 
 

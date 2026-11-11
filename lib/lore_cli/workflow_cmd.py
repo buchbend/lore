@@ -176,6 +176,8 @@ def epic_policy_cmd(
     `epic-merge-policy: confirm` under its `## Epic merge policy` section.
     """
     policy = resolve_epic_policy(Path(repo_root))
+    if policy.warning:
+        print(f"lore workflow epic-policy: {policy.warning}", file=sys.stderr)
     # stdout, not rich console: keep it parse-clean for machine consumers.
     print(json.dumps({"target_branch": policy.target_branch, "deploy_gate": policy.deploy_gate}))
 

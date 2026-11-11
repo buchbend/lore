@@ -220,3 +220,51 @@ def test_command_source_with_unset_secret_gives_a_note(cfg_home):
 
     mine = next(s for s in result if s["name"] == "mine")
     assert mine["hits"] == [] and "nope" in mine["note"]
+
+
+# -- issue #489: the bearer token and a slow server -------------------------
+
+
+def test_dokuwiki_refuses_a_secret_on_an_http_url(cfg_home, monkeypatch):
+    doku = {**DOKU, "url": "http://wiki.example.org"}
+    cfg_home({"sources": {"team": doku}}, {"team-wiki": "s3cret"})
+    seen = _fake_urlopen(monkeypatch, {"core.searchPages": []})
+
+    result = sources.search_sources("receiver", k=5, cwd=Path.cwd(), github_repos=[])
+    team = next(s for s in result if s["name"] == "team")
+
+    assert seen == []
+    assert "https" in team["note"]
+
+
+def test_dokuwiki_keeps_the_token_out_of_a_redirect(cfg_home, monkeypatch):
+    cfg_home({"sources": {"team": DOKU}}, {"team-wiki": "s3cret"})
+    reqs = []
+
+    def urlopen(req, timeout=None):
+        reqs.append(req)
+        return _FakeResponse(b'{"result": []}')
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    sources.search_sources("receiver", k=5, cwd=Path.cwd(), github_repos=[])
+
+    # urllib copies only `headers` to the request that follows a redirect.
+    assert "Authorization" not in reqs[0].headers
+    assert reqs[0].get_header("Authorization") == "Bearer s3cret"
+
+
+def test_dokuwiki_ends_a_slow_reply_at_the_timeout(cfg_home, monkeypatch):
+    cfg_home({"sources": {"team": {**DOKU, "timeout": 0.2}}}, {"team-wiki": "s3cret"})
+
+    class _Drip(_FakeResponse):
+        def read1(self, n=-1):
+            time.sleep(0.05)
+            return b" "
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: _Drip())
+    start = time.monotonic()
+    result = sources.search_sources("receiver", k=5, cwd=Path.cwd(), github_repos=[])
+    team = next(s for s in result if s["name"] == "team")
+
+    assert time.monotonic() - start < 2
+    assert "timeout" in team["note"] or "timed out" in team["note"]
