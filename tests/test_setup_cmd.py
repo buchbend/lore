@@ -464,6 +464,7 @@ def test_no_uninstall_without_old_plugin(monkeypatch):
         ("0.0.1", False, ["refresh"]),
         (None, True, ["install claude", "uninstall"]),
         (PIP, True, ["uninstall"]),
+        ("unknown", True, []),
     ],
 )
 def test_uninstall_runs_only_after_the_lore_plugin_is_current(

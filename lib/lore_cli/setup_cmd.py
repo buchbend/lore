@@ -347,7 +347,10 @@ def step_agents(cwd: Path) -> tuple[str, list[Event]]:
         elif cached and cached != "unknown" and _behind(cached, pip):
             current = ok = _refresh_plugin_cache()
             events.append((ok, f"repaired the plugin cache: {cached} → {pip}"))
-        if current:  # the old plugin holds the build skills until lore@lore is current
+        if current and cached not in (
+            "",
+            "unknown",
+        ):  # the old plugin holds the build skills until lore@lore is current
             events.extend(_uninstall_old_plugin())
 
     if "cursor" in present:
