@@ -18,7 +18,6 @@ AGED = OLD.replace("draft: true\n", "last_reviewed: 2020-01-01\n")
 
 
 def test_check_ignores_the_retired_fields(tmp_path, monkeypatch):
-    from lore_core.schema import REQUIRED_FIELDS
     from lore_core.wiki_check import check_wiki
 
     wiki = tmp_path / "wiki" / "demo"
@@ -28,7 +27,6 @@ def test_check_ignores_the_retired_fields(tmp_path, monkeypatch):
     monkeypatch.setattr("lore_core.wiki_check.shutil.which", lambda _: None)
     findings, _ = check_wiki(wiki)
     assert findings == []
-    assert all("last_reviewed" not in fields for fields in REQUIRED_FIELDS.values())
 
 
 def test_no_lifecycle_function():

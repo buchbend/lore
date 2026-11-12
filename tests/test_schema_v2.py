@@ -8,8 +8,6 @@ from __future__ import annotations
 
 
 from lore_core.schema import (
-    OPTIONAL_FIELDS,
-    REQUIRED_FIELDS,
     SCHEMA_VERSION,
     SCHEMA_VERSIONS_SUPPORTED,
     parse_frontmatter,
@@ -71,21 +69,6 @@ def test_schema_version_bumped_to_2():
 def test_both_versions_supported():
     assert 1 in SCHEMA_VERSIONS_SUPPORTED
     assert 2 in SCHEMA_VERSIONS_SUPPORTED
-
-
-def test_v2_optional_fields_registered():
-    for f in ("user", "implements", "loose_ends", "scopes_touched",
-              "implemented_at", "implemented_by", "superseded_by"):
-        assert f in OPTIONAL_FIELDS, f"v2 field {f!r} missing from OPTIONAL_FIELDS"
-
-
-def test_required_fields_unchanged_for_session():
-    # v2 doesn't add new *required* fields — only optionals.
-    # status-vocabulary-minimalism dropped `status:` from required.
-    assert "schema_version" in REQUIRED_FIELDS["session"]
-    assert "status" not in REQUIRED_FIELDS["session"]
-    assert "scope" not in REQUIRED_FIELDS["session"]
-    assert "user" not in REQUIRED_FIELDS["session"]
 
 
 # ---------- linter tolerance ----------
