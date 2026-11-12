@@ -143,8 +143,8 @@ should:
 
 ## Known limitations
 
-* **Catalog ambiguity.** ``_resolve_slug`` falls back to ``rglob`` and
-  returns the first match if the catalog doesn't carry the slug. Two
+* **Filename ambiguity.** ``_resolve_slug`` is a file search and returns
+  the first path in sort order. ``lore wiki check`` reports the pair. Two
   notes with the same filename → drill silently picks one. Drill
   amplifies this versus ``lore_read`` because it walks the link graph.
   Inherited from the existing read path; not a drill-specific bug.

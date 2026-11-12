@@ -216,10 +216,13 @@ def project_note_for_repo(wiki: Path, repo: str) -> dict | None:
     {name, description, path, repos} or None.
     """
     from lore_core.schema import parse_frontmatter
+    from lore_core.wiki_check import SKIP_FILES
 
     tail = repo.rsplit("/", 1)[-1].lower()
     projects = []
     for path in sorted((wiki / "projects").rglob("*.md")):
+        if path.name in SKIP_FILES:
+            continue
         try:
             fm = parse_frontmatter(path.read_text(errors="replace"))
         except OSError:
@@ -234,8 +237,9 @@ def project_note_for_repo(wiki: Path, repo: str) -> dict | None:
         )
     # Prefer exact repo match in frontmatter
     for entry in projects:
-        repos = entry.get("repos") or []
-        if repo in repos:
+        repos = entry.get("repos")
+        # A scalar `repos: owner/name` is one repo, not a string to search in.
+        if repo in ([repos] if isinstance(repos, str) else repos or []):
             return entry
     # Fall back to filename match
     for entry in projects:

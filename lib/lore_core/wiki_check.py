@@ -97,17 +97,23 @@ def discover_notes(wiki_path: Path) -> list[Path]:
     return notes
 
 
-def wiki_notes(wiki_path: Path) -> list[Path]:
-    """Every `.md` note of a wiki, in every folder outside the skip list."""
-    notes: list[Path] = []
+def _wiki_files(wiki_path: Path) -> list[Path]:
+    """Every file of a wiki, in every folder outside the skip list."""
+    found: list[Path] = []
     for root, dirs, files in os.walk(wiki_path):
         dirs[:] = sorted(d for d in dirs if d not in _CHECK_SKIP_DIRS and not d.startswith("."))
-        notes += [
-            Path(root) / name
-            for name in sorted(files)
-            if name.endswith(".md") and name not in SKIP_FILES
-        ]
-    return notes
+        found += [Path(root) / name for name in sorted(files)]
+    return found
+
+
+def _is_note(path: Path) -> bool:
+    # `is_file` is false for a dangling symlink, which no check can read.
+    return path.suffix == ".md" and path.name not in SKIP_FILES and path.is_file()
+
+
+def wiki_notes(wiki_path: Path) -> list[Path]:
+    """Every `.md` note of a wiki, in every folder outside the skip list."""
+    return [path for path in _wiki_files(wiki_path) if _is_note(path)]
 
 
 def _aliases(fm: dict) -> list[str]:
@@ -117,10 +123,13 @@ def _aliases(fm: dict) -> list[str]:
     return [str(a).strip() for a in raw] if isinstance(raw, list) else []
 
 
-def _structure_findings(wiki_path: Path, notes: list[Path]) -> list[Finding]:
+def _structure_findings(wiki_path: Path) -> list[Finding]:
     wiki = wiki_path.name
+    files = _wiki_files(wiki_path)
+    notes = [path for path in files if _is_note(path)]
     by_name: dict[str, list[str]] = defaultdict(list)
-    targets: set[str] = set()
+    # A link names an attachment by its full filename: `![[arch.png]]`.
+    targets: set[str] = {path.name for path in files if path.suffix != ".md"}
     parsed: list[tuple[Path, str, dict, str]] = []
     for path in notes:
         text = path.read_text(errors="replace")
@@ -193,10 +202,9 @@ def check_wiki(wiki_path: Path, only: str | None = None) -> tuple[list[Finding],
     is still checked against the whole wiki: a link target and a filename
     twin sit in other notes.
     """
-    notes = wiki_notes(wiki_path)
-    findings = _structure_findings(wiki_path, notes)
+    findings = _structure_findings(wiki_path)
     if only is not None:
         findings = [f for f in findings if f.file == only]
-        notes = [wiki_path / only]
+    notes = wiki_notes(wiki_path) if only is None else [wiki_path / only]
     vale, note = _vale_findings(wiki_path, notes)
     return findings + vale, note

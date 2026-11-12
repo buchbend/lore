@@ -14,9 +14,8 @@ import yaml
 SCHEMA_VERSION = 2
 SCHEMA_VERSIONS_SUPPORTED: tuple[int, ...] = (1, 2)
 
-# Required frontmatter fields per note type. `schema_version` is required
-# on all new notes but the linter auto-fixes by writing the current
-# SCHEMA_VERSION when missing on an otherwise-valid note (see --fix).
+# Required frontmatter fields per note type. No check enforces the table:
+# `lore wiki check` asks for `description` only.
 #
 # No field carries a note lifecycle (issue #596). A note in a wiki is in
 # force. The parser accepts `status`, `draft`, `superseded_by` and
@@ -58,7 +57,7 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     ],
     "plan": [
         # `status` is intentionally NOT required: absence means "active" for a
-        # plan. Setting it explicitly is encouraged but not enforced by the linter.
+        # plan. Setting it explicitly is encouraged but not enforced.
         "schema_version",
         "type",
         "slug",
@@ -69,7 +68,7 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     ],
 }
 
-# Optional fields the linter understands across types. Listing them here
+# Optional fields across types. Listing them here
 # makes the schema self-documenting; absence is not an error.
 OPTIONAL_FIELDS: set[str] = {
     "repos",  # list[str] — ["org/name", ...] — enables repo-based scoping

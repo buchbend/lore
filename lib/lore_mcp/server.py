@@ -203,11 +203,17 @@ def handle_search(
 def _resolve_slug(wiki_path: Path, slug: str) -> str | None:
     """Resolve a note slug to a relative path within the wiki.
 
-    A file search over every folder, `inbox/` included, so a wikilink to a
-    note written a moment ago resolves. Hidden folders are skipped. Two notes
-    with one filename: the first path in sort order wins, and
-    `lore wiki check` reports the pair.
+    A file search, in two passes. The first pass covers the notes that
+    `lore wiki check` checks; with two notes of one filename the first path in
+    sort order wins, and the check reports the pair. The second pass covers
+    the folders the check skips, so an `inbox/` draft still resolves. Hidden
+    folders never resolve.
     """
+    from lore_core.wiki_check import wiki_notes
+
+    for note in sorted(wiki_notes(wiki_path)):
+        if note.stem == slug:
+            return note.relative_to(wiki_path).as_posix()
     for candidate in sorted(wiki_path.rglob(f"{slug}.md")):
         rel = candidate.relative_to(wiki_path)
         if not any(part.startswith(".") for part in rel.parts):

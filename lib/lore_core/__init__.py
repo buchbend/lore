@@ -1,6 +1,6 @@
 """lore_core — the deterministic core of Lore.
 
-Linter, schema validation, catalog generation, git helpers, atomic I/O.
+Wiki check, schema, git helpers, atomic I/O.
 Invoked by skills, CLI, and MCP server. No LLM dependencies.
 """
 

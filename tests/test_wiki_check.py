@@ -81,6 +81,16 @@ def test_project_note_matches_the_repos_field_first(wiki):
     assert project_note_for_repo(wiki, "buchbend/none") is None
 
 
+def test_project_note_ignores_a_substring_of_a_scalar_repos_field(wiki):
+    from lore_core.session_start import project_note_for_repo
+
+    _note(wiki, "projects/plugin.md", "---\ndescription: d\nrepos: buchbend/lore-plugin\n---\n")
+    _note(wiki, "projects/README.md")
+    assert project_note_for_repo(wiki, "buchbend/lore") is None
+    assert project_note_for_repo(wiki, "buchbend/lore-plugin")["name"] == "plugin"
+    assert project_note_for_repo(wiki, "buchbend/readme") is None
+
+
 def test_mcp_resolves_a_slug_without_a_catalog(wiki):
     from lore_mcp.server import _resolve_slug, handle_read
 
@@ -88,6 +98,18 @@ def test_mcp_resolves_a_slug_without_a_catalog(wiki):
     assert _resolve_slug(wiki, "telescope") == "observatory/telescope.md"
     assert _resolve_slug(wiki, "missing") is None
     assert "A short body." in handle_read("[[telescope]]", wiki="demo")["content"]
+
+
+def test_slug_lookup_prefers_a_checked_note_over_the_inbox(wiki):
+    from lore_mcp.server import _resolve_slug
+
+    _note(wiki, "inbox/foo.md")
+    _note(wiki, "inbox/draft.md")
+    _note(wiki, "projects/foo.md")
+    _note(wiki, ".obsidian/hidden.md")
+    assert _resolve_slug(wiki, "foo") == "projects/foo.md"
+    assert _resolve_slug(wiki, "draft") == "inbox/draft.md"
+    assert _resolve_slug(wiki, "hidden") is None
 
 
 # --- 2. One check command for wiki notes ------------------------------------
@@ -125,6 +147,23 @@ def test_broken_link_is_an_error_and_resolves_in_the_same_wiki_only(wiki):
     broken = [f["message"] for f in findings if f["check"] == "broken_link"]
     assert len(broken) == 2
     assert "[[ghost]]" in broken[0] and "[[elsewhere]]" in broken[1]
+
+
+def test_a_link_to_an_attachment_resolves(wiki, monkeypatch):
+    monkeypatch.setattr("lore_core.wiki_check.shutil.which", lambda _: None)
+    (wiki / "concepts").mkdir()
+    (wiki / "concepts" / "arch.png").write_bytes(b"png")
+    _note(wiki, "concepts/a.md", "---\ndescription: d\n---\n![[arch.png]] ![[gone.png]]\n")
+    code, findings = _check()
+    assert code == 1
+    assert [f["message"] for f in findings] == ["[[gone.png]] has no target in this wiki"]
+
+
+def test_a_dangling_symlink_does_not_stop_the_check(wiki, monkeypatch):
+    monkeypatch.setattr("lore_core.wiki_check.shutil.which", lambda _: None)
+    _note(wiki, "concepts/a.md")
+    (wiki / "concepts" / "dead.md").symlink_to(wiki / "nowhere.md")
+    assert _check() == (0, [])
 
 
 def test_empty_description_is_an_error(wiki):
