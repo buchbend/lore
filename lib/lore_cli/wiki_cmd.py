@@ -1,7 +1,7 @@
 """`lore wiki ...` — manage individual wikis under $LORE_ROOT/wiki/.
 
 The canonical home for wiki-lifecycle verbs going forward. It hosts
-``new`` (scaffold) and ``check``.
+``new`` (scaffold), ``check`` and ``commit`` (one wiki entry, issue #601).
 """
 
 from __future__ import annotations
@@ -126,6 +126,60 @@ def cmd_new(
     scaffold_wiki(name, mode=mode.value, remote=remote, force=force)
 
 
+def _wiki_of(path: Path) -> tuple[Path, str]:
+    """The wiki that holds the note file `path`, and the note's path relative to it."""
+    from lore_core.wiki_check import discover_wikis
+
+    target = path.resolve()
+    wikis = [w for w in discover_wikis() if target.is_relative_to(w.resolve())]
+    if not target.is_file() or not wikis:
+        typer.echo(f"error: {path} is not a note file inside a wiki", err=True)
+        raise typer.Exit(code=2)
+    return wikis[0], target.relative_to(wikis[0].resolve()).as_posix()
+
+
+@app.command("commit")
+def cmd_commit(
+    entry: Path = typer.Argument(..., help="The wiki entry file to commit."),
+) -> None:
+    """Check one wiki entry, commit it and push it at once.
+
+    Refuses on an error for the entry; errors in other notes do not block.
+    Runs `git init` in a wiki that is no repo. Commits the person's other
+    uncommitted edits first, in their own commit. With a remote, merges the
+    remote changes first and pushes after the commit. Exits 1 on a check
+    error or a merge conflict; a conflict keeps the local commit.
+    """
+    from lore_core.git_sync import commit_entry
+    from lore_core.wiki_check import check_wiki
+
+    wiki_path, rel = _wiki_of(entry)
+    findings, _ = check_wiki(wiki_path, rel)
+    errors = [f for f in findings if f.severity == "error"]
+    for f in errors:
+        typer.echo(f"{rel}" + (f":{f.line}" if f.line else "") + f": error: {f.check}: {f.message}")
+    if errors:
+        typer.echo("not committed: fix the errors of the entry first", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        result = commit_entry(wiki_path.resolve(), rel)
+    except subprocess.CalledProcessError as exc:
+        typer.echo(
+            f"error: git {' '.join(exc.cmd[1:3])} failed: {(exc.stderr or '').strip()}", err=True
+        )
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"entry: {wiki_path / rel}")
+    typer.echo(f"commit: {result.commit or 'none (no change)'}")
+    if result.pushed:
+        typer.echo("pushed")
+    if result.conflict:
+        typer.echo("merge conflict, local commit kept, not pushed: " + ", ".join(result.conflict))
+        raise typer.Exit(code=1)
+    if result.message:
+        typer.echo(f"not pushed: {result.message}")
+
+
 @app.command("check")
 def cmd_check(
     path: Path = typer.Argument(None, help="One note file. Default: every note."),
@@ -140,12 +194,8 @@ def cmd_check(
 
     only = None
     if path is not None:
-        target = path.resolve()
-        wikis = [w for w in discover_wikis() if target.is_relative_to(w.resolve())]
-        if not target.is_file() or not wikis:
-            typer.echo(f"error: {path} is not a note file inside a wiki", err=True)
-            raise typer.Exit(code=2)
-        only = target.relative_to(wikis[0].resolve()).as_posix()
+        wiki_path, only = _wiki_of(path)
+        wikis = [wiki_path]
     else:
         wikis = discover_wikis(wiki)
         if not wikis:

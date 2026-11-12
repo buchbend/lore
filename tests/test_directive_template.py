@@ -26,6 +26,11 @@ EXPECTED_DIRECTIVE_LINES = [
     "- Never merge an ADR, PRD or wiki topic-note PR yourself. Close only issues you opened.",
     "- At session end, list every artifact the session opened or commented on.",
     (
+        "- A wiki entry holds research, scoping, an explanation or draft paper material, "
+        "not a decision, defect, experiment result or the story of the work. "
+        "`/lore:wiki` says when to offer one."
+    ),
+    (
         "- ADRs and PRDs explain where the code comes from. Only `Invariant` lines "
         "bind. When a task conflicts with a default, deviate and name the deviation "
         "in the PR."
@@ -34,9 +39,10 @@ EXPECTED_DIRECTIVE_LINES = [
 ]
 
 
-def test_the_directive_block_measures_800_characters_or_less():
-    """Issue #575: the standing text stays short. Issue #576 raised the limit from 700."""
-    assert len("\n".join(_load_directive_lines()).rstrip("\n")) <= 800
+def test_the_directive_block_measures_1000_characters_or_less():
+    """Issue #575: the standing text stays short. Issue #576 raised the limit from 700,
+    issue #601 (wiki entry line) from 800."""
+    assert len("\n".join(_load_directive_lines()).rstrip("\n")) <= 1000
 
 
 def test_loader_matches_expected_snapshot():

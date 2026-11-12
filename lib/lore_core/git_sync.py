@@ -381,6 +381,95 @@ def _merge_and_push(wiki_dir: Path, upstream: str, note_dirs: list[str] | None) 
 
 
 # ---------------------------------------------------------------------------
+# commit_entry — one wiki entry, committed and pushed at once (issue #601)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EntryCommit:
+    """What `commit_entry` did. `commit` is None when the entry had no change."""
+
+    commit: str | None
+    pushed: bool = False
+    conflict: list[str] = field(default_factory=list)
+    message: str = ""  # why nothing was pushed, when a remote exists
+
+
+def _commit_paths(wiki_dir: Path, message: str, *pathspec: str) -> str | None:
+    """Stage and commit `pathspec` alone; return the short hash, or None if nothing changed."""
+    _git(wiki_dir, "add", "-A", "--", *pathspec, check=True)
+    if _git(wiki_dir, "diff", "--cached", "--quiet", "--", *pathspec).returncode == 0:
+        return None
+    _git(wiki_dir, "commit", "-m", message, "--", *pathspec, check=True)
+    return _git(wiki_dir, "rev-parse", "--short", "HEAD").stdout.strip()
+
+
+def _merge_upstream(wiki_dir: Path, upstream: str) -> list[str]:
+    """Merge `upstream`; on failure abort and return the paths in conflict."""
+    merge = _git(wiki_dir, "merge", "--no-edit", upstream)
+    if merge.returncode == 0:
+        return []
+    conflicts = _list_conflicts(wiki_dir)
+    if _git(wiki_dir, "rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0:
+        _git(wiki_dir, "merge", "--abort")
+    # A refused merge lists the files it would overwrite, one per tab-indented line.
+    refused = [line.strip() for line in merge.stderr.splitlines() if line.startswith("\t")]
+    return conflicts or refused or [merge.stderr.strip()[:200]]
+
+
+def commit_entry(wiki_dir: Path, entry: str) -> EntryCommit:
+    """Commit the wiki entry `entry` (relative to `wiki_dir`) and push it.
+
+    Runs `git init` in a wiki that is no repo. Commits the person's other
+    uncommitted edits first, in their own commit. With a remote, merges the
+    remote changes before the entry commit and pushes after it. A failed merge
+    is aborted; the local commits stay and the conflict paths come back.
+    """
+    if _git(wiki_dir, "rev-parse", "--is-inside-work-tree").returncode != 0:
+        _git(wiki_dir, "init", check=True)
+
+    # transcript_sync gitignores `.transcripts`; the exclude guards a lost ignore.
+    _commit_paths(
+        wiki_dir, "wiki: uncommitted edits", ".", f":(exclude){entry}", ":(exclude).transcripts"
+    )
+
+    conflict: list[str] = []
+    message = ""
+    branch = _current_branch(wiki_dir)
+    remote = _has_remote(wiki_dir)
+    if remote and branch is not None:
+        fetch = _git(wiki_dir, "fetch", "--quiet")
+        upstream = _upstream_for(wiki_dir, branch)
+        if fetch.returncode != 0:
+            message = fetch.stderr.strip()[:200]
+        elif upstream is not None and _ahead_behind(wiki_dir, branch, upstream)[1] > 0:
+            try:
+                conflict = _merge_upstream(wiki_dir, upstream)
+            except BaseException:
+                # A git timeout mid-merge would leave MERGE_HEAD set (#386).
+                with contextlib.suppress(Exception):
+                    _git(wiki_dir, "merge", "--abort")
+                raise
+
+    commit = _commit_paths(wiki_dir, f"wiki: {entry}", entry)
+
+    if not remote:
+        return EntryCommit(commit)
+    if branch is None:
+        return EntryCommit(commit, message="detached HEAD: not pushed")
+    if conflict or message:
+        return EntryCommit(commit, conflict=conflict, message=message)
+    if _upstream_for(wiki_dir, branch) is None:
+        name = _git(wiki_dir, "remote").stdout.split()[0]
+        push = _git(wiki_dir, "push", "-u", name, branch)
+    else:
+        push = _git(wiki_dir, "push")
+    if push.returncode != 0:
+        return EntryCommit(commit, message=push.stderr.strip()[:200])
+    return EntryCommit(commit, pushed=True)
+
+
+# ---------------------------------------------------------------------------
 # Conflict classification
 # ---------------------------------------------------------------------------
 

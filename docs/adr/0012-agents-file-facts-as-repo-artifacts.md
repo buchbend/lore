@@ -73,3 +73,18 @@ tracker. The wiki grows only through human edits and agent PRs.
 ## Status
 
 Accepted. Supersedes ADR 0007, 0008 and 0011.
+
+## Amendments
+
+- 2026-11-12: an agent may write a wiki entry after the person says yes in
+  the session (issue [#601](https://github.com/buchbend/lore/issues/601),
+  a wiki entry after a yes). The yes is the review: the person has the
+  context in mind at that moment. A wiki entry holds research, a scoping of
+  options, an explanation for a human reader or draft paper material. A
+  decision, a defect, an experiment result and the story of the work keep
+  the homes above. The agent offers an entry once, at a stop of the work.
+  The `wiki` skill writes it, and `lore wiki commit` commits and pushes it
+  at once, without a pull request: a pull request is too slow for the live
+  context of a team. A wiki is a git repo; a remote is optional. Lore
+  prescribes no folder layout and no entry kind. A fact for a wiki topic
+  note without a yes still becomes a pull request on the wiki repo.
