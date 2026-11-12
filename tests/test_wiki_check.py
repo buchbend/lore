@@ -86,6 +86,7 @@ def test_project_note_ignores_a_substring_of_a_scalar_repos_field(wiki):
 
     _note(wiki, "projects/plugin.md", "---\ndescription: d\nrepos: buchbend/lore-plugin\n---\n")
     _note(wiki, "projects/README.md")
+    _note(wiki, "projects/odd.md", "---\ndescription: d\nrepos: 42\n---\n")
     assert project_note_for_repo(wiki, "buchbend/lore") is None
     assert project_note_for_repo(wiki, "buchbend/lore-plugin")["name"] == "plugin"
     assert project_note_for_repo(wiki, "buchbend/readme") is None

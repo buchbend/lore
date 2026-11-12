@@ -239,7 +239,7 @@ def project_note_for_repo(wiki: Path, repo: str) -> dict | None:
     for entry in projects:
         repos = entry.get("repos")
         # A scalar `repos: owner/name` is one repo, not a string to search in.
-        if repo in ([repos] if isinstance(repos, str) else repos or []):
+        if repo in (repos if isinstance(repos, list) else [repos]):
             return entry
     # Fall back to filename match
     for entry in projects:
