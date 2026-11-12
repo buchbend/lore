@@ -1,13 +1,15 @@
 """`lore wiki ...` — manage individual wikis under $LORE_ROOT/wiki/.
 
 The canonical home for wiki-lifecycle verbs going forward. It hosts
-``new`` (scaffold) and ``lint``.
+``new`` (scaffold) and ``check``.
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
+from dataclasses import asdict
 from enum import Enum
 from pathlib import Path
 
@@ -90,11 +92,6 @@ def scaffold_wiki(
         if not scopes_yml.exists():
             scopes_yml.write_text(_SCOPES_YML_TEMPLATE)
 
-        (target / "_index.txt").write_text(
-            f"# {name.upper()} Knowledge Index\n\n"
-            f"(Newly created wiki — run `lore wiki lint --wiki {name}` to populate.)\n"
-        )
-
     if mode == "team":
         subprocess.run(["git", "init"], cwd=str(target), check=False)
         if remote:
@@ -111,7 +108,6 @@ def scaffold_wiki(
         )
 
     console.print(f"[green]Created {target}[/green]")
-    console.print(f"Next: run [cyan]lore wiki lint --wiki {name}[/cyan] to regenerate catalogs.")
     return target
 
 
@@ -130,10 +126,56 @@ def cmd_new(
     scaffold_wiki(name, mode=mode.value, remote=remote, force=force)
 
 
-# `lint` (was `lore lint`) lives under `wiki`.
-from lore_cli import lint_cmd  # noqa: E402
+@app.command("check")
+def cmd_check(
+    path: Path = typer.Argument(None, help="One note file. Default: every note."),
+    wiki: str = typer.Option(None, "--wiki", "-w", help="Check one wiki. Default: every wiki."),
+    json_out: bool = typer.Option(False, "--json", help="Output the findings as JSON."),
+) -> None:
+    """Check wiki notes: wikilinks, description, filename and the writing rules.
 
-app.add_typer(lint_cmd.app, name="lint", help="Health-check the vault, regenerate catalogs.")
+    Exits 1 when a check reports an error. Checks no wiki structure and writes no file.
+    """
+    from lore_core.wiki_check import check_wiki, discover_wikis
+
+    only = None
+    if path is not None:
+        target = path.resolve()
+        wikis = [w for w in discover_wikis() if target.is_relative_to(w.resolve())]
+        if not target.is_file() or not wikis:
+            typer.echo(f"error: {path} is not a note file inside a wiki", err=True)
+            raise typer.Exit(code=2)
+        only = target.relative_to(wikis[0].resolve()).as_posix()
+    else:
+        wikis = discover_wikis(wiki)
+        if not wikis:
+            typer.echo(f"error: no wiki found in {get_wiki_root()}", err=True)
+            raise typer.Exit(code=2)
+
+    findings = []
+    notes: list[str] = []
+    for wiki_path in wikis:
+        found, note = check_wiki(wiki_path, only)
+        findings += found
+        if note and note not in notes:
+            notes.append(note)
+
+    counts = dict.fromkeys(("error", "warning", "suggestion"), 0)
+    for f in findings:
+        counts[f.severity] = counts.get(f.severity, 0) + 1
+    if json_out:
+        # Plain stdout: Rich would eat the `[[...]]` of a wikilink.
+        print(json.dumps({"findings": [asdict(f) for f in findings], "notes": notes}))
+    else:
+        for f in findings:
+            where = f"{f.wiki}/{f.file}" + (f":{f.line}" if f.line else "")
+            typer.echo(f"{where}: {f.severity}: {f.check}: {f.message}")
+        for note in notes:
+            typer.echo(note)
+        typer.echo("wiki check: " + ", ".join(f"{n} {level}(s)" for level, n in counts.items()))
+    if counts["error"]:
+        raise typer.Exit(code=1)
+
 
 main = argv_main(app)
 

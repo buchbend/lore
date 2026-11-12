@@ -80,13 +80,12 @@ This is the conflict class two hosts editing the same topic note hit.
 5. On any unresolved path, `auto_push` runs `git merge --abort` and the
    working tree returns clean. The user resolves the conflict with git.
 
-### 3. Regenerable artifacts — pick either side, lint to truth
+### 3. Retired generated files — ours wins
 
-`_catalog.json`, `_index.txt`, `threads.md` are all
-regenerated from the corpus. On conflict, accept either side
-(`git checkout --ours <path>`), then run `lore wiki lint` after the merge
-to truth them up. They'll converge to the same byte-for-byte output
-on either host's next regen.
+Older Lore versions generated `_catalog.json`, `_index.txt` and
+`threads.md`. Lore writes none of them now and reads none, but a wiki may
+still hold committed copies. On conflict, `auto_push` takes ours
+(`git checkout --ours <path>`), so a dead file never blocks a push.
 
 ### 4. Unknown — bail to user
 
@@ -176,7 +175,7 @@ always wins over that default.
 | Clean tree, fast-forwardable | Fetch + ff | `lore status` (silent unless new commits pulled) |
 | Clean tree, diverged (we have local commits, remote has different commits) | Skip pull, surface to user | `lore status` `· wiki diverged — git pull manually` |
 | Push: remote ahead, FF possible | Fetch + ff + push | (silent) |
-| Push: regenerable-artifact conflict | ours wins, `lore wiki lint` reconciles | (silent) |
+| Push: conflict on a retired generated file | ours wins | (silent) |
 | Push: typed-note or session-note conflict | `MERGE_BLOCKED` — `git merge --abort` runs and the tree returns clean | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
 | Push: unknown-path conflict | abort merge, surface to user | `push=merge-blocked` on the SessionEnd hook's spine event; `lore status` computes no alert for it today |
 | `watchdog` not installed | Reindex throttle = 5s natural decay | (silent — same as 0.10.x) |
@@ -189,7 +188,7 @@ always wins over that default.
   shared `tmp_path/origin`)
 - `auto_pull`: clean tree → ff; dirty tree → skip + log; diverged → skip + status flag
 - `auto_push`: typed-note conflict → `git merge --abort` → tree clean, path blocked
-- `auto_push`: regenerable conflict (`_catalog.json`) → ours wins → lint reconciles
+- `auto_push`: conflict on a retired generated file (`_catalog.json`) → ours wins
 - `auto_push`: unknown-path conflict → `git merge --abort` → status flag
 - `reindex_watcher`: write a `.md`, assert dirty flag within 50ms, assert next
   `lore_search` reindexes

@@ -42,15 +42,15 @@ having been written to a wiki.
 
 ## "My wiki still holds session notes under `sessions/`"
 
-Those files are inert markdown. No Lore code reads them: `lore wiki lint`
-no longer walks the `sessions/` tree, `lore_context_pack` returns no
-`sessions` key, and nothing else reads the directory.
+Those files are inert markdown. No Lore code reads them for context:
+`lore_context_pack` returns no `sessions` key and the search index skips the
+`sessions/` tree. `lore wiki check` checks them like any other note.
 Keep the files, move them, or delete them — Lore behaves the same either
 way. Delete them with `git rm` if you want the tree quiet; the wiki's git
 history keeps a copy.
 
-A wiki that ran an older Lore also holds `sessions/_recent.txt`, the index
-`lore wiki lint` used to regenerate over those notes. Nothing writes or reads it
+A wiki that ran an older Lore also holds `sessions/_recent.txt`, an index
+that older Lore versions regenerated over those notes. Nothing writes or reads it
 now, and nothing removes it. Delete it with the notes.
 
 The three migration verbs that used to help here are gone:
@@ -105,8 +105,9 @@ in that table — both were removed outright, with nothing to move to. See
 
 `lore journal`, `lore session`, `lore project`, `lore migrate flag-blocks`,
 `lore drill`, `lore curator` and `lore lint` are gone. `lore read` replaces
-`drill`; `lore wiki lint` replaces `lint`. `lore wiki curate` is gone too, with
-nothing to move to.
+`drill`. `lore wiki check` replaces `lint` and `lore wiki lint`, and
+`lore adr check` replaces `lore wiki lint adr`. `lore wiki curate` is gone too,
+with nothing to move to.
 
 ## "No such command: completions" — shell completion
 

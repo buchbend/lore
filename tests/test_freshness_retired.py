@@ -68,12 +68,3 @@ def test_banner_has_no_pending_verdict_chip(tmp_path, monkeypatch):
     assert not hasattr(facts, "pending_chip")
     banner = render_session_banner(facts)
     assert "verdict" not in banner
-
-
-def test_lint_writes_no_orphan_set(tmp_path, monkeypatch):
-    from lore_core.lint import _regenerate_wiki
-
-    wiki = _wiki(tmp_path, monkeypatch)
-    _regenerate_wiki(wiki, [], [])
-    assert "orphan_set" not in json.loads((wiki / "_catalog.json").read_text())
-    assert not (wiki / "_verdicts").exists()

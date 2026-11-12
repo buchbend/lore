@@ -1,7 +1,7 @@
 """Atomic I/O helpers — never leave a partial file behind.
 
-Readers (SessionStart, PreCompact hooks) race with writers (linter,
-skill output). `.tmp + os.replace` ensures readers never see
+Readers (SessionStart, PreCompact hooks) race with writers (skill
+output). `.tmp + os.replace` ensures readers never see
 a half-written file. POSIX atomic on same filesystem.
 
 This module also hosts two small text helpers that turned out to need

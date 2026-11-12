@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from lore_core.lint import discover_notes
+from lore_core.wiki_check import discover_notes
 
 
 @pytest.fixture

@@ -220,7 +220,7 @@ still pass both locally before you push.
 
 CI also installs [Vale](https://vale.sh) and lints `docs/**/*.md`; it fails on
 error level only, against the baseline in `tools/vale-docs-baseline.json`.
-`lore wiki lint adr` is a blocking step too.
+`lore adr check` is a blocking step too.
 
 For end-to-end testing on a clean container, the canonical checklist
 lives in the PR description that lands a release. If you're cutting a release,
