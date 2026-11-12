@@ -8,6 +8,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.104.0] - 2026-11-12
+
+Issue #600 (replace `lore wiki lint` with one check command for wiki notes).
+
+### Added
+
+- **`lore wiki check`.** It checks every `.md` note of a wiki, in every folder outside the skip list, or one file. A broken wikilink, a missing `description` and a duplicate filename are errors and give exit code 1. Where Vale is on `PATH`, the command reports each writing-rule finding at its level. `--json` prints the findings.
+- **`lore adr check`.** It runs the checks of the former `lore wiki lint adr`.
+
+### Removed
+
+- **Breaking: `lore wiki lint` and `lore wiki lint adr`.** Both report "No such command". Use `lore wiki check` and `lore adr check`.
+- **Breaking: the generated wiki files.** Lore writes no `_catalog.json`, `_index.txt`, `_concepts.txt` or `_decisions.txt`, and reads none. `lore wiki new` writes no `_index.txt`. A wiki that holds the files can delete them.
+- The checks `frontmatter`, `orphan`, `oversized`, `missing_index`, `index_too_large`, `unlinked_subnote` and `agent_guidance_drift`. The check asks nothing about the size, the folder or the link count of a note.
+- `examples/wiki-lint.yml` and `examples/gitattributes-catalog-merge-ours`. A wiki repo that copied the workflow must delete its copy: the job now fails.
+
+### Changed
+
+- The SessionStart Focus block finds the project note by reading the notes under `projects/`. A match on the `repos` field of a note now works.
+- `lore_read` resolves a slug by file search. A note that the check covers wins over an `inbox/` draft.
+- The note count of the status line counts every folder of the wiki.
+
 ## [0.103.1] - 2026-11-11
 
 Issue #597 (remove the curator name from capture code and spawn code).
