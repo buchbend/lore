@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.106.0] - 2026-11-13
+
+- New skill `/lore:wiki`: after the person says yes, an agent writes one wiki entry (research, scoping, an explanation, draft paper material) and commits it (#601).
+- New command `lore wiki commit <entry>`: checks the entry, runs `git init` in a wiki that is no repo, commits other hand edits first, merges the remote first and pushes after; a conflict keeps the local commit and names the paths.
+- The SessionStart directive and `lore style show filing` name what a wiki entry is; ADR 0012 gets an amendment.
+
 ## [0.105.2] - 2026-11-13
 
 - The search index and `lore migrate frontmatter` walk every folder of a wiki, not four fixed ones (#605).
