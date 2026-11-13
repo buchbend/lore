@@ -149,3 +149,75 @@ def test_a_merge_conflict_keeps_the_local_commit_and_names_the_path(
     assert _files_of(wiki, "HEAD~1") == ["README.md"]
     assert not (wiki / ".git" / "MERGE_HEAD").exists()
     assert _git(remote, "rev-parse", "main") != _git(wiki, "rev-parse", "HEAD")
+
+
+def test_an_extended_entry_merges_with_a_remote_change_to_it(
+    wiki: Path, remote: Path, tmp_path: Path
+) -> None:
+    body = GOOD + "".join(f"Line {n}.\n" for n in range(20))
+    _write(wiki, "research/topic.md", body)
+    _git(wiki, "add", "-A")
+    _git(wiki, "commit", "-m", "entry")
+    _git(wiki, "push")
+    _push_from_other_clone(remote, tmp_path, "research/topic.md", body + "Their line.\n")
+    entry = _write(wiki, "research/topic.md", body.replace("Line 1.", "My line."))
+    result = _commit(entry)
+    assert result.exit_code == 0, result.output
+    text = entry.read_text()
+    assert "My line." in text and "Their line." in text
+    assert _git(remote, "rev-parse", "main") == _git(wiki, "rev-parse", "HEAD")
+
+
+def test_a_remote_branch_without_upstream_merges_before_the_push(
+    wiki: Path, tmp_path: Path
+) -> None:
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", "--initial-branch=main", str(origin))
+    _git(wiki, "init", "--initial-branch=main")
+    _write(wiki, "README.md", "# demo\n")
+    _git(wiki, "add", "-A")
+    _git(wiki, "commit", "-m", "seed")
+    _git(wiki, "remote", "add", "origin", str(origin))
+    _git(wiki, "push", "origin", "main")  # no upstream set
+    _push_from_other_clone(origin, tmp_path, "concepts/theirs.md", GOOD)
+    entry = _write(wiki, "research/topic.md")
+    result = _commit(entry)
+    assert result.exit_code == 0, result.output
+    assert (wiki / "concepts" / "theirs.md").exists()
+    assert _git(origin, "rev-parse", "main") == _git(wiki, "rev-parse", "HEAD")
+
+
+def test_a_glob_character_in_the_entry_name_is_literal(wiki: Path) -> None:
+    _git(wiki, "init")
+    _write(wiki, "research/q1.md")
+    entry = _write(wiki, "research/q[1-3].md")
+    result = _commit(entry)
+    assert result.exit_code == 0, result.output
+    assert _files_of(wiki, "HEAD") == ["research/q[1-3].md"]
+    assert _files_of(wiki, "HEAD~1") == ["research/q1.md"]
+
+
+def test_a_wiki_inside_another_repo_is_refused(wiki: Path, tmp_path: Path) -> None:
+    _git(tmp_path, "init")
+    entry = _write(wiki, "research/topic.md")
+    result = _commit(entry)
+    assert result.exit_code == 2
+    assert "inside the git repo" in result.output
+    assert subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path).returncode != 0
+
+
+def test_an_entry_the_check_does_not_read_is_refused(wiki: Path) -> None:
+    entry = _write(wiki, "inbox/topic.md", "no frontmatter\n")
+    assert _commit(entry).exit_code == 2
+    assert not (wiki / ".git").exists()
+
+
+def test_an_unreachable_remote_keeps_the_commit_and_exits_1(wiki: Path, remote: Path) -> None:
+    import shutil
+
+    shutil.rmtree(remote)
+    entry = _write(wiki, "research/topic.md")
+    result = _commit(entry)
+    assert result.exit_code == 1
+    assert "not pushed" in result.output
+    assert _files_of(wiki, "HEAD") == ["research/topic.md"]

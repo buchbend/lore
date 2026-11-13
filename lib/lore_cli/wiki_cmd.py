@@ -148,12 +148,19 @@ def cmd_commit(
     Runs `git init` in a wiki that is no repo. Commits the person's other
     uncommitted edits first, in their own commit. With a remote, merges the
     remote changes first and pushes after the commit. Exits 1 on a check
-    error or a merge conflict; a conflict keeps the local commit.
+    error or when the push did not run; the local commit stays.
     """
     from lore_core.git_sync import commit_entry
-    from lore_core.wiki_check import check_wiki
+    from lore_core.wiki_check import check_wiki, wiki_notes
 
     wiki_path, rel = _wiki_of(entry)
+    if wiki_path / rel not in wiki_notes(wiki_path):
+        typer.echo(
+            f"error: {rel} is no note that `lore wiki check` reads: a .md file outside "
+            "inbox/, templates/, style/ and dot folders",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     findings, _ = check_wiki(wiki_path, rel)
     errors = [f for f in findings if f.severity == "error"]
     for f in errors:
@@ -164,10 +171,11 @@ def cmd_commit(
 
     try:
         result = commit_entry(wiki_path.resolve(), rel)
-    except subprocess.CalledProcessError as exc:
-        typer.echo(
-            f"error: git {' '.join(exc.cmd[1:3])} failed: {(exc.stderr or '').strip()}", err=True
-        )
+    except ValueError as exc:
+        typer.echo(f"error: {exc}; a wiki is its own git repo", err=True)
+        raise typer.Exit(code=2) from exc
+    except subprocess.SubprocessError as exc:
+        typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"entry: {wiki_path / rel}")
     typer.echo(f"commit: {result.commit or 'none (no change)'}")
@@ -177,7 +185,8 @@ def cmd_commit(
         typer.echo("merge conflict, local commit kept, not pushed: " + ", ".join(result.conflict))
         raise typer.Exit(code=1)
     if result.message:
-        typer.echo(f"not pushed: {result.message}")
+        typer.echo(f"local commit kept, not pushed: {result.message}")
+        raise typer.Exit(code=1)
 
 
 @app.command("check")

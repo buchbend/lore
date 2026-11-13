@@ -70,7 +70,9 @@ Run `lore wiki commit <path>` with the path of the entry. The command:
 
 On an error for the entry, fix the entry and run the command again. On a
 merge conflict, the local commit stays and the command names the conflicting
-paths. Tell the person the paths. Do not resolve the conflict yourself.
+paths. Tell the person the paths. Do not resolve the conflict yourself. When
+the push fails, the local commit stays too, and the command names the reason.
+The next run of the command pushes the commit.
 
 ## 5. Report
 
