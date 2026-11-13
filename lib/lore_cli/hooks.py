@@ -326,6 +326,7 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _spawn_detached,
     _spawn_detached_transcript_sync,
     _spawn_detached_wiki_pull,
+    _spawn_in_repo,
     _spawn_logbook_flush,
     _spawn_map_scan,
     _spawn_token_usage_record,
@@ -690,7 +691,13 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - the index must never crash SessionStart
         pass
 
-    notice = "\n".join(n for n in (handover_notice, logbook_notice) if n) or None
+    update_notice: str | None = None
+    with contextlib.suppress(Exception):  # the update check must never crash SessionStart
+        update_notice = _update_hint(spawn=not probe)
+        if update_notice:
+            out = out + "\n\n" + update_notice
+
+    notice = "\n".join(n for n in (update_notice, handover_notice, logbook_notice) if n) or None
     _emit("SessionStart", _fit_hook_limit(out, orientation_block), plain=plain, notice=notice)
 
 
@@ -711,6 +718,53 @@ def _map_scan_hint(cwd: Path, *, spawn: bool) -> str | None:
         _write_stamp(stamp)
         _spawn_map_scan(cwd)
     return ms.hint(lore_root, name)
+
+
+#: SessionStart asks GitHub for the latest release at most once a day.
+UPDATE_CHECK_COOLDOWN_S = 86400
+
+
+def _latest_version_path() -> Path:
+    from lore_cli.context_cache import _cache_dir
+
+    return _cache_dir() / "latest-version"
+
+
+def _update_hint(*, spawn: bool) -> str | None:
+    """The banner nudge when a newer release is out; spawn the daily check when due.
+
+    The check runs in a detached child, so a slow network never holds up the
+    banner. This banner shows what the previous check recorded.
+    ``LORE_NO_UPDATE_CHECK=1`` turns the check off.
+    """
+    if os.environ.get("LORE_NO_UPDATE_CHECK"):
+        return None
+    from lore_core.session_start import lore_version
+    from lore_core.source_root import version_key
+
+    latest_file = _latest_version_path()
+    stamp = latest_file.with_name("update-check.stamp")
+    if spawn and not _stamp_within_cooldown(stamp, UPDATE_CHECK_COOLDOWN_S):
+        _write_stamp(stamp)
+        _spawn_in_repo(Path.home(), "hook", "update-check")
+    try:
+        latest = latest_file.read_text().strip()
+    except OSError:  # no check recorded yet
+        return None
+    installed = lore_version()  # the banner's own number; editable installs too
+    if not latest or version_key(latest) <= version_key(installed):
+        return None
+    return f"lore {latest} is out (installed: {installed}). Run `lore update`."
+
+
+@hook_app.command("update-check", hidden=True)
+def cmd_update_check() -> None:
+    """Background child: record the latest released version for the banner."""
+    from lore_cli.integrations import _fetch_remote_version
+
+    remote = _fetch_remote_version()
+    if remote:
+        atomic_write_text(_latest_version_path(), remote + "\n")
 
 
 @hook_app.command("map-scan", hidden=True)
