@@ -1,14 +1,14 @@
 ---
 title: "OpenCode as a host"
 status: draft
-epic: https://github.com/buchbend/lore/issues/TODO
+epic: https://github.com/buchbend/lore/issues/615
 repos:
   - buchbend/lore
 ---
 
 # PRD 0022: OpenCode as a host
 
-> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/TODO).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/615).
 > The epic links here; this file is not embedded in the issue body.
 
 ## Problem
