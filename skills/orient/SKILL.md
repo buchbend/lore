@@ -66,7 +66,7 @@ and open each description with `[orient:explore]`; see
 grep or read directly; spawn only for parallel or isolated work.
 
 **Named agents** run in both modes, after the pack, in the same message as any explorers. Spawn
-each one as its own `subagent_type` and keep its own model; set no tier. Open its description
+each one as its own named agent and keep its own model; set no tier. Open its description
 with `[orient:named]`. Give it the verbatim
 intent and the pack facts that bear on its lens. Ask for the constraints, risks and questions it
 sees, each with its evidence. A name that is not an available agent type: say so in the brief and

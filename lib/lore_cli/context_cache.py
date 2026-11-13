@@ -32,7 +32,7 @@ def _sessions_cache_dir() -> Path:
     return _cache_dir() / "sessions"
 
 
-def _cache_path_for_pid(pid: int) -> Path:
+def _cache_path_for_pid(pid: int | str) -> Path:
     return _sessions_cache_dir() / f"{pid}.md"
 
 
@@ -156,12 +156,12 @@ def _gc_sessions_cache(max_age_days: int = 14) -> None:
         try:
             pid = int(entry.stem)
         except ValueError:
-            continue
+            pid = None  # session-id keyed file (LORE_SESSION_ID): age-only GC
         try:
             stale_by_age = entry.stat().st_mtime < cutoff
         except OSError:
             continue
-        if _pid_alive(pid) and not stale_by_age:
+        if pid is not None and _pid_alive(pid) and not stale_by_age:
             continue
         with contextlib.suppress(OSError):
             entry.unlink()

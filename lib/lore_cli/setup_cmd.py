@@ -231,11 +231,14 @@ def step_wiki(
         if not (root / sub).is_dir():
             (root / sub).mkdir(parents=True)
             events.append((True, f"created {root / sub}"))
-    if not (root / "CLAUDE.md").exists():
+    if not (root / "AGENTS.md").exists():
         from lore_core.templates import templates_dir
 
-        (root / "CLAUDE.md").write_text((templates_dir() / "root-CLAUDE.md").read_text())
-        events.append((True, f"wrote {root / 'CLAUDE.md'}"))
+        (root / "AGENTS.md").write_text((templates_dir() / "root-CLAUDE.md").read_text())
+        events.append((True, f"wrote {root / 'AGENTS.md'}"))
+        if not (root / "CLAUDE.md").exists():
+            (root / "CLAUDE.md").write_text("@AGENTS.md\n")
+            events.append((True, f"wrote {root / 'CLAUDE.md'}"))
 
     existing = {p.name for p in list_wikis(root)}
     if not (wiki_new or wiki_clone or wiki_link) and not existing:

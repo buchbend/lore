@@ -34,6 +34,8 @@ def detect_host() -> str:
     known host announces itself — silent defaulting would resolve
     tiers to the wrong model without any signal that happened.
     """
+    if os.environ.get("LORE_HOST"):
+        return os.environ["LORE_HOST"]
     if any(
         os.environ.get(var)
         for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID", "CLAUDE_CODE_EXECPATH")
@@ -56,7 +58,10 @@ def resolve_tier(tier: str, host: str | None = None, lore_root: Path | None = No
     if tier not in TIER_ORDER:
         raise TierResolutionError(f"unknown tier {tier!r}; known tiers: {', '.join(TIER_ORDER)}")
     resolved_host = host or detect_host()
-    if resolved_host not in TABLE:
+    # ponytail: opencode has no column until #614; it reads the claude column
+    unlisted_opencode = resolved_host == "opencode" and resolved_host not in TABLE
+    column = "claude" if unlisted_opencode else resolved_host
+    if column not in TABLE:
         raise TierResolutionError(
             f"unknown host {resolved_host!r}; known hosts: {', '.join(sorted(TABLE))}"
         )
@@ -69,4 +74,4 @@ def resolve_tier(tier: str, host: str | None = None, lore_root: Path | None = No
     override = cfg.tiers.overrides.get(resolved_host, {}).get(tier)
     if override:
         return override
-    return TABLE[resolved_host][tier]
+    return TABLE[column][tier]

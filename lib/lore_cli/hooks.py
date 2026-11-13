@@ -81,7 +81,7 @@ _subtree_siblings = subtree_siblings
 
 def _context_log() -> str:
     """Read the PID-scoped context log. Pure file read — no live I/O."""
-    cc_pid = _claude_code_pid()
+    cc_pid = os.environ.get("LORE_SESSION_ID") or _claude_code_pid()
     if cc_pid is not None:
         path = _cache_path_for_pid(cc_pid)
         if path.exists():
@@ -174,7 +174,7 @@ def _emit(hook_event: str, text: str, *, plain: bool, notice: str | None = None)
         from datetime import datetime as _dt
         ts_hm = _dt.now(_UTC).strftime("%H:%M")
         log_text = f"── SessionStart {ts_hm} ──\n{text}"
-        cc_pid = _claude_code_pid() or os.getppid()
+        cc_pid = os.environ.get("LORE_SESSION_ID") or _claude_code_pid() or os.getppid()
         try:
             atomic_write_text(_cache_path_for_pid(cc_pid), log_text)
         except OSError:
@@ -943,7 +943,7 @@ def cmd_user_prompt_submit(
     # transcript file) and keeps `last_mtime` fresh across the session.
     # Without this, long sessions sit on accumulated turns until SessionEnd.
     try:
-        adapter = get_adapter("claude-code")
+        adapter = get_adapter(os.environ.get("LORE_HOST") or "claude-code")
         _register_pending_transcripts(lore_root, cwd_resolved, adapter=adapter)
     except Exception:
         pass  # never break the prompt path on a registration hiccup
@@ -1048,7 +1048,7 @@ def capture(
     ),
     transcript: Path | None = typer.Option(None, help="Explicit transcript path; else autodetect via adapter."),
     cwd_override: Path | None = typer.Option(None, "--cwd", help="Explicit cwd; else CLAUDE_PROJECT_DIR or os.getcwd()."),
-    integration: str = typer.Option("claude-code", help="Adapter integration name."),
+    integration: str | None = typer.Option(None, help="Adapter integration name; default $LORE_HOST, else claude-code."),
 ) -> None:
     """Hot-path capture hook — called by Claude Code on SessionEnd / PreCompact / SessionStart.
 
@@ -1063,6 +1063,8 @@ def capture(
         # ingestion, no child spawn, no ledger writes, no vault output
         # while the user has muted us.
         return
+    from_env = integration is None and bool(os.environ.get("LORE_HOST"))
+    integration = integration or os.environ.get("LORE_HOST") or "claude-code"
     if event == "session-end":  # PRD 0017: retry undelivered logbook entries
         _logbook_line(cwd_override or _resolve_cwd_capture(), spawn=True)
     import time as _time
@@ -1122,6 +1124,11 @@ def capture(
                 pid=_capture_pid,
                 ppid_cmd=_capture_ppid_cmd,
             )
+            if from_env:  # a host the registry lacks must not fail the host's hook
+                from lore_cli._crash_log import write_crash
+
+                write_crash(event, UnknownIntegrationError(f"LORE_HOST={integration!r} names no adapter"))
+                return
             raise typer.Exit(code=1)
 
         routed = _route_capture(
