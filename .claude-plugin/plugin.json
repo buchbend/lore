@@ -1,7 +1,7 @@
 {
   "name": "lore",
   "description": "Workflow and knowledge layer for teams coding with Claude Code \u2014 small repo-scoped context at session start, facts filed where they have a reader (issues, PRs, ADRs, team wiki, logbook), the rest pulled on demand over MCP. Ships the build skills too: orient, grilling, to-epic, build, tdd, debug, document, experiment, handover, file-issue, triage.",
-  "version": "0.104.0",
+  "version": "0.105.2",
   "author": {
     "name": "Christof Buchbender"
   },

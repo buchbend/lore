@@ -33,6 +33,8 @@ def _isolate_user_config(tmp_path_factory, monkeypatch):
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     # A build teammate runs the suite with capture suppressed (issue #481).
     monkeypatch.delenv("LORE_SUPPRESS_CAPTURE", raising=False)
+    # No SessionStart test asks GitHub for the latest release.
+    monkeypatch.setenv("LORE_NO_UPDATE_CHECK", "1")
     yield
 
 

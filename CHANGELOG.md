@@ -8,6 +8,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.105.2] - 2026-11-13
+
+- The search index and `lore migrate frontmatter` walk every folder of a wiki, not four fixed ones (#605).
+
+## [0.105.1] - 2026-11-13
+
+- Remove the unused frontmatter field tables (`REQUIRED_FIELDS`, `OPTIONAL_FIELDS`, `required_fields_for`) from `lore_core.schema` (#604)
+
+## [0.105.0] - 2026-11-13
+
+### Fixed
+
+- **The SessionStart banner showed an old version.** Lore picked the newest folder in the Claude plugin cache by sorting the names as text, so `0.99.1` won over `0.104.0`. Lore now sorts the version numbers as numbers. The fix also applies to every other reader of that folder, such as the skills tree.
+
+### Added
+
+- **An update nudge in the SessionStart banner.** Once a day, a background child reads the latest version from `main` on GitHub. When that version is newer than the installed one, the next banner says `lore X is out (installed: Y). Run \`lore update\`.` The check never holds up the banner. `LORE_NO_UPDATE_CHECK=1` turns it off.
+
 ## [0.104.0] - 2026-11-12
 
 Issue #600 (replace `lore wiki lint` with one check command for wiki notes).

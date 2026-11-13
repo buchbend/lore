@@ -175,3 +175,19 @@ def test_cache_dir_follows_home_at_call_time(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("LORE_CACHE", raising=False)
     assert fts._cache_dir() == tmp_path / ".cache" / "lore"
+
+
+def test_index_walks_every_folder_but_skipped_ones(vault):
+    """The index holds each note `wiki_notes` returns (issue #605)."""
+    from lore_search.fts import FtsBackend
+
+    wiki = vault / "wiki" / "demo"
+    for folder in ("observatory", "inbox", "templates", ".hidden"):
+        (wiki / folder).mkdir()
+        (wiki / folder / "n.md").write_text(f"---\ndescription: d\n---\nzebrafish {folder}\n")
+
+    backend = FtsBackend()
+    backend.reindex()
+
+    paths = [h.path for h in backend.search("zebrafish")]
+    assert len(paths) == 1 and "observatory" in paths[0]

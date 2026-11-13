@@ -10,8 +10,8 @@
 It checks no wiki structure: not the size of a note, not its folder, not its
 link count. Lore writes no derived file into a wiki.
 
-`discover_notes` is the walk of the search index: the four knowledge folders.
-`wiki_notes` is the walk of the check: every folder outside the skip list.
+`wiki_notes` is the one walk of a wiki, for the check, the search index and
+the migrations: every folder outside the skip list.
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ from lore_core.config import get_wiki_root
 from lore_core.schema import extract_wikilinks, parse_frontmatter
 from lore_core.style import resolve_vale_config_path
 
-KNOWLEDGE_DIRS = ["projects", "concepts", "decisions", "papers"]
 SKIP_DIRS = {"templates", "inbox", ".processed", ".obsidian"}
 SKIP_FILES = {
     "CLAUDE.md",
@@ -79,22 +78,6 @@ def discover_wikis(wiki_filter: str | None = None) -> list[Path]:
                 continue
             wikis.append(entry)
     return wikis
-
-
-def discover_notes(wiki_path: Path) -> list[Path]:
-    """Find all .md note files in knowledge directories."""
-    notes: list[Path] = []
-    for kdir in KNOWLEDGE_DIRS:
-        base = wiki_path / kdir
-        if not base.exists():
-            continue
-        for md in sorted(base.rglob("*.md")):
-            if md.name in SKIP_FILES:
-                continue
-            if any(part in SKIP_DIRS for part in md.parts):
-                continue
-            notes.append(md)
-    return notes
 
 
 def _wiki_files(wiki_path: Path) -> list[Path]:

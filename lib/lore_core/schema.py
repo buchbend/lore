@@ -1,4 +1,4 @@
-"""Frontmatter schema — required fields per note type, parsing helpers.
+"""Frontmatter schema — version constants and parsing helpers.
 
 Schema is versioned via `schema_version` frontmatter. v1 is the current
 version. Breaking changes bump this number and ship a migration.
@@ -7,107 +7,16 @@ version. Breaking changes bump this number and ship a migration.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import yaml
 
 SCHEMA_VERSION = 2
 SCHEMA_VERSIONS_SUPPORTED: tuple[int, ...] = (1, 2)
 
-# Required frontmatter fields per note type. No check enforces the table:
-# `lore wiki check` asks for `description` only.
-#
 # No field carries a note lifecycle (issue #596). A note in a wiki is in
 # force. The parser accepts `status`, `draft`, `superseded_by` and
 # `last_reviewed` where an old note holds them, and Lore ignores them.
-REQUIRED_FIELDS: dict[str, list[str]] = {
-    "project": [
-        "schema_version",
-        "type",
-        "created",
-        "description",
-        "tags",
-    ],
-    "concept": [
-        "schema_version",
-        "type",
-        "created",
-        "description",
-        "tags",
-    ],
-    "decision": [
-        "schema_version",
-        "type",
-        "created",
-        "description",
-        "tags",
-    ],
-    "session": [
-        "schema_version",
-        "type",
-        "created",
-        "description",
-    ],
-    "paper": [
-        "schema_version",
-        "type",
-        "citekey",
-        "description",
-        "tags",
-    ],
-    "plan": [
-        # `status` is intentionally NOT required: absence means "active" for a
-        # plan. Setting it explicitly is encouraged but not enforced.
-        "schema_version",
-        "type",
-        "slug",
-        "created",
-        "description",
-        "source_adapter",
-        "source_hash",
-    ],
-}
-
-# Optional fields across types. Listing them here
-# makes the schema self-documenting; absence is not an error.
-OPTIONAL_FIELDS: set[str] = {
-    "repos",  # list[str] — ["org/name", ...] — enables repo-based scoping
-    "scope",  # str — hierarchical, e.g. "ccat:data-center:data-transfer"
-    "scopes_touched",  # list[str] — additional scopes a session spanned
-    "contradicts",  # list[str] — wikilinks to notes this contradicts
-    "project",  # str — primary project for session notes
-    "provenance",  # str — "extracted" for inbox-processed notes
-    "source",  # str — original filename for extracted notes
-    "publish",  # bool — for Quartz / static-site filtering
-    "aliases",  # list[str] — alternative names (Obsidian convention)
-    "linkage",  # dict — deterministic capture-time linkage (linkage.py, schema_version=1)
-    # v2 session-note additions
-    "user",  # str — canonical handle (identity-aliasing.md)
-    "implements",  # list[str] — proposal slugs this session realizes
-    "loose_ends",  # list[str] — short-form in-session observations
-    # Retired fields (issue #596): accepted where an old note holds them, ignored.
-    "implemented_at",
-    "implemented_by",
-    "draft",
-    "superseded_by",
-    "last_reviewed",
-    # plan + project additions (v0.11.0)
-    "repo",  # str — single-repo primary owner (project notes; optional plan tag)
-    "step_status",  # dict[str, str] — plan step_id → "done"|"in_progress"|"blocked"
-    "step_status_updated",  # str — ISO timestamp; bumped on any step_status mutation
-    "slug",  # str — explicit slug override (used by plan notes; filename otherwise)
-    "status",  # str — plan lifecycle: active|paused|done|abandoned|superseded
-    "source_adapter",  # str — e.g. "claude-code-hook" for plans captured via PostToolUse
-    "source_hash",  # str — sha256 of canonical_text(source) for idempotent re-capture
-    "spec",  # str — wikilink to a spec note (plans, forward-compat)
-    "roadmap",  # str — wikilink to a roadmap note (plans, forward-compat)
-    "notes",  # str — free-form user notes (plan user-owned whitelist)
-    # cross-note linkage fields landed with the session-note revision
-    "title",  # str — content-named slug source for sessions; H1 of the body
-    "projects",  # list[str] — wikilinks to project notes this session touched
-    "plans",  # list[str] — plan slug refs this session advanced (e.g. "<slug>#step-2")
-}
-
+# `lore wiki check` asks for `description` only.
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 
@@ -160,24 +69,3 @@ def extract_wikilinks(text: str) -> list[str]:
             text = text[end + 4 :]
     return [link for link in dict.fromkeys(WIKILINK_RE.findall(text)) if link.strip()]
 
-
-def required_fields_for(type_name: str, *, wiki_dir: Path | None = None) -> list[str]:
-    """Return required frontmatter fields for `type_name`.
-
-    Resolves against the module-level REQUIRED_FIELDS dict.
-
-    Args:
-        type_name: The note type (e.g., "concept", "decision", "session").
-        wiki_dir: Accepted for call-site compatibility; ignored. Per-wiki
-                  SURFACES.md schema overrides were removed with surfaces.
-
-    Returns:
-        A list of required field names. Always returns a new list (not the
-        internal one), so callers can mutate freely.
-
-    Raises:
-        KeyError: If the type is not found in REQUIRED_FIELDS.
-    """
-    if type_name in REQUIRED_FIELDS:
-        return list(REQUIRED_FIELDS[type_name])
-    raise KeyError(type_name)
