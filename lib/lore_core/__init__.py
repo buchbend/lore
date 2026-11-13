@@ -6,7 +6,6 @@ Invoked by skills, CLI, and MCP server. No LLM dependencies.
 
 from lore_core.config import get_lore_root, get_wiki_root
 from lore_core.schema import (
-    REQUIRED_FIELDS,
     SCHEMA_VERSION,
     parse_frontmatter,
 )
@@ -14,7 +13,6 @@ from lore_core.schema import (
 __all__ = [
     "get_lore_root",
     "get_wiki_root",
-    "REQUIRED_FIELDS",
     "SCHEMA_VERSION",
     "parse_frontmatter",
 ]
