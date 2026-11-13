@@ -25,7 +25,7 @@ LLM reads files, composes notes, and archives originals.
 
 3. **Compose the note** — pick type
    (project / concept / decision / paper / reference), subfolder,
-   and slug. Call `mcp__lore__lore_search` once with the topic to
+   and slug. Call `lore_search` once with the topic to
    find related notes; `[[wikilink]]` the top hits.
 
 4. **Contradiction check** — if the new content contradicts a top
