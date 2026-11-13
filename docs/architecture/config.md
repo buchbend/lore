@@ -84,7 +84,7 @@ errors when the env var is unset and does not fall back to `~/lore`.
 |-----|------|---------|---------|-----------|
 | `LORE_CHILD_MODE` | `1` \| unset | unset | `lore_cli/hooks.py:_in_child_mode` | (internal — `lore_cli/spawn.py` sets it on every detached child it starts, so hooks never re-enter inside one. Not a user knob.) |
 | `LORE_SUPPRESS_CAPTURE` | `1` \| unset | unset | `lore_cli/hooks.py:_capture_suppressed`, checked first thing in `capture()` | (dispatch contract — an orchestrator sets it for a teammate session whose transcript must not become a standalone note. Unset leaves capture unchanged.) |
-| `LORE_NO_UPDATE_CHECK` | `1` \| unset | unset | `lore_cli/hooks.py:_update_hint` | (turns off the once-a-day SessionStart check for a newer release, and its `Run `lore update`` nudge. Set it offline or in tests.) |
+| `LORE_NO_UPDATE_CHECK` | `1` \| unset | unset | `lore_cli/hooks.py:_update_hint` | (turns off the once-a-day SessionStart check for a newer release, and its "Run lore update" nudge. Set it offline or in tests.) |
 
 #### Observability / runtime
 
