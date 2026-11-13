@@ -27,4 +27,5 @@ PRDs are the source of truth for decisions. Each PRD lives at
 0019-the-system-map
 0020-index-first-context-and-lab-notebook
 0021-one-plugin
+0022-opencode-host
 ```
