@@ -1,3 +1,4 @@
+# ruff: noqa: F811
 """Host-neutral hook commands and instruction files (#611, PRD 0022)."""
 
 from __future__ import annotations
