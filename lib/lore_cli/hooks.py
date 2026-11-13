@@ -1049,7 +1049,9 @@ def capture(
     ),
     transcript: Path | None = typer.Option(None, help="Explicit transcript path; else autodetect via adapter."),
     cwd_override: Path | None = typer.Option(None, "--cwd", help="Explicit cwd; else CLAUDE_PROJECT_DIR or os.getcwd()."),
-    integration: str | None = typer.Option(None, help="Adapter integration name; default $LORE_HOST, else claude-code."),
+    integration: str | None = typer.Option(
+        None, help="Adapter integration name; default $LORE_HOST, else claude-code."
+    ),
 ) -> None:
     """Hot-path capture hook — called by Claude Code on SessionEnd / PreCompact / SessionStart.
 
@@ -1128,7 +1130,9 @@ def capture(
             if from_env:  # a host the registry lacks must not fail the host's hook
                 from lore_cli._crash_log import write_crash
 
-                write_crash(event, UnknownIntegrationError(f"LORE_HOST={integration!r} names no adapter"))
+                write_crash(
+                    event, UnknownIntegrationError(f"LORE_HOST={integration!r} names no adapter")
+                )
                 return
             raise typer.Exit(code=1)
 
