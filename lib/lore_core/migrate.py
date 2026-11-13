@@ -10,7 +10,7 @@ from __future__ import annotations
 from rich.console import Console
 
 from lore_core.io import atomic_write_text
-from lore_core.wiki_check import SKIP_DIRS, SKIP_FILES, discover_notes, discover_wikis
+from lore_core.wiki_check import discover_wikis, wiki_notes
 from lore_core.schema import SCHEMA_VERSION, parse_frontmatter, split_frontmatter
 
 console = Console()
@@ -35,11 +35,7 @@ def add_schema_version(
 
     for wiki_path in wikis:
         wiki_name = wiki_path.name
-        for fpath in discover_notes(wiki_path):
-            if fpath.name in SKIP_FILES:
-                continue
-            if any(part in SKIP_DIRS for part in fpath.parts):
-                continue
+        for fpath in wiki_notes(wiki_path):
             text = fpath.read_text(errors="replace")
             fm = parse_frontmatter(text)
             if not fm:
@@ -109,11 +105,7 @@ def migrate_strip_broken_wikilinks(
         # Per-wiki scoping: wikis are portable units; cross-wiki
         # references break on extraction and are treated as dangles.
         slugs = existing_slugs(wiki_path)
-        for fpath in discover_notes(wiki_path):
-            if fpath.name in SKIP_FILES:
-                continue
-            if any(part in SKIP_DIRS for part in fpath.parts):
-                continue
+        for fpath in wiki_notes(wiki_path):
             try:
                 text = fpath.read_text(errors="replace")
             except OSError:
