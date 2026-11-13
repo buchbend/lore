@@ -226,18 +226,18 @@ def test_session_end_retries_an_undelivered_lab_line(repo, spawned, monkeypatch)
 def test_show_prints_entries_newest_first_and_filters_by_thread(repo, tmp_path, capsys) -> None:
     assert main(["lab", "show"]) == 0
     assert "no lab entries" in capsys.readouterr().out
-    assert _add(tmp_path, GOOD.replace("0.04", "0.01"), "--thread", "lo-drift") == 0
-    assert _add(tmp_path, GOOD.replace("0.04", "0.02"), "--thread", "bias") == 0
-    assert _add(tmp_path, GOOD.replace("0.04", "0.03"), "--thread", "lo-drift") == 0
+    assert _add(tmp_path, GOOD.replace("0.04", "run-A"), "--thread", "lo-drift") == 0
+    assert _add(tmp_path, GOOD.replace("0.04", "run-B"), "--thread", "bias") == 0
+    assert _add(tmp_path, GOOD.replace("0.04", "run-C"), "--thread", "lo-drift") == 0
     capsys.readouterr()
 
     assert main(["lab", "show"]) == 0
     out = capsys.readouterr().out
-    assert out.index("0.03") < out.index("0.02") < out.index("0.01")
+    assert out.index("run-C") < out.index("run-B") < out.index("run-A")
 
     assert main(["lab", "show", "--thread", "lo-drift"]) == 0
     out = capsys.readouterr().out
-    assert "0.03" in out and "0.01" in out and "0.02" not in out
+    assert "run-C" in out and "run-A" in out and "run-B" not in out
 
 
 def test_the_index_lists_the_three_newest_lab_entries(repo, tmp_path) -> None:
