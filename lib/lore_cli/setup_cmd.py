@@ -236,9 +236,9 @@ def step_wiki(
 
         (root / "AGENTS.md").write_text((templates_dir() / "root-CLAUDE.md").read_text())
         events.append((True, f"wrote {root / 'AGENTS.md'}"))
-        if not (root / "CLAUDE.md").exists():
-            (root / "CLAUDE.md").write_text("@AGENTS.md\n")
-            events.append((True, f"wrote {root / 'CLAUDE.md'}"))
+    if not (root / "CLAUDE.md").exists():
+        (root / "CLAUDE.md").write_text("@AGENTS.md\n")
+        events.append((True, f"wrote {root / 'CLAUDE.md'}"))
 
     existing = {p.name for p in list_wikis(root)}
     if not (wiki_new or wiki_clone or wiki_link) and not existing:

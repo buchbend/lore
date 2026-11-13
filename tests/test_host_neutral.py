@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -107,3 +108,29 @@ def test_skills_hold_no_claude_code_tool_forms():
         assert "mcp__lore__" not in f.read_text(), f
     assert "subagent_type" not in (REPO / "skills" / "orient" / "SKILL.md").read_text()
     assert "subagent_type" not in (REPO / "skills" / "TIER-DELEGATION.md").read_text()
+
+
+def test_session_start_cache_survives_gc(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("LORE_SESSION_ID", "ses_abc")
+    monkeypatch.setattr("lore_cli.hooks._claude_code_pid", lambda: None)
+    hooks._emit("SessionStart", "banner-body", plain=False)
+    assert "banner-body" in _context_log()
+
+
+def test_unsafe_session_id_falls_back_to_pid_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("LORE_SESSION_ID", "../x")
+    monkeypatch.setattr("lore_cli.hooks._claude_code_pid", lambda: os.getpid())
+    hooks._emit("SessionStart", "banner-body", plain=False)
+    assert not (tmp_path / "cache" / "x.md").exists()
+    assert (tmp_path / "cache" / "sessions" / f"{os.getpid()}.md").exists()
+
+
+def test_setup_writes_claude_md_beside_existing_agents_md(tmp_path, agents):
+    vault = tmp_path / "lore"
+    vault.mkdir()
+    (vault / "AGENTS.md").write_text("mine\n")
+    runner.invoke(app, ["setup", "--yes", "--vault", str(vault)])
+    assert (vault / "AGENTS.md").read_text() == "mine\n"
+    assert (vault / "CLAUDE.md").read_text().strip() == "@AGENTS.md"

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 from pathlib import Path
 
 
@@ -30,6 +31,12 @@ def _cache_dir() -> Path:
 
 def _sessions_cache_dir() -> Path:
     return _cache_dir() / "sessions"
+
+
+def _session_id() -> str | None:
+    """``$LORE_SESSION_ID`` when it is path-safe, else None (PID path applies)."""
+    sid = os.environ.get("LORE_SESSION_ID", "")
+    return sid if re.fullmatch(r"[A-Za-z0-9_-]+", sid) else None
 
 
 def _cache_path_for_pid(pid: int | str) -> Path:
@@ -161,7 +168,7 @@ def _gc_sessions_cache(max_age_days: int = 14) -> None:
             stale_by_age = entry.stat().st_mtime < cutoff
         except OSError:
             continue
-        if pid is not None and _pid_alive(pid) and not stale_by_age:
+        if (pid is None or _pid_alive(pid)) and not stale_by_age:
             continue
         with contextlib.suppress(OSError):
             entry.unlink()
