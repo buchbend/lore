@@ -34,7 +34,8 @@ Escalate through these steps, each one level deeper:
 That is the normal case. Lore writes nothing into a wiki on its own: a
 session leaves a transcript-ledger entry, and nothing else. A fact worth
 keeping leaves the session as a repo artifact — an issue, a comment, or a
-pull request on the wiki repo.
+pull request on the wiki repo. A wiki entry lands only after the person said
+yes to the offer of the agent (`/lore:wiki`).
 
 To confirm capture itself ran, `lore status` shows the last hook fire.
 `lore setup` checks the hook wiring. Neither depends on anything

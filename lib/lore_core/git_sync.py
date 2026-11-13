@@ -381,6 +381,122 @@ def _merge_and_push(wiki_dir: Path, upstream: str, note_dirs: list[str] | None) 
 
 
 # ---------------------------------------------------------------------------
+# commit_entry — one wiki entry, committed and pushed at once (issue #601)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EntryCommit:
+    """What `commit_entry` did. `commit` is None when the entry had no change."""
+
+    commit: str | None
+    pushed: bool = False
+    conflict: list[str] = field(default_factory=list)
+    message: str = ""  # why nothing was pushed, when a remote exists
+
+
+def _commit_paths(wiki_dir: Path, message: str, *pathspec: str) -> str | None:
+    """Stage and commit `pathspec` alone; return the short hash, or None if nothing changed."""
+    _git(wiki_dir, "add", "-A", "--", *pathspec, check=True)
+    if _git(wiki_dir, "diff", "--cached", "--quiet", "--", *pathspec).returncode == 0:
+        return None
+    _git(wiki_dir, "commit", "-m", message, "--", *pathspec, check=True)
+    return _git(wiki_dir, "rev-parse", "--short", "HEAD").stdout.strip()
+
+
+def _merge_upstream(wiki_dir: Path, upstream: str) -> tuple[list[str], bool]:
+    """Merge `upstream`; on failure abort it.
+
+    Returns the paths in conflict, and True when git refused to start the
+    merge over a local change: a retry after the commit of that change can merge.
+    """
+    try:
+        merge = _git(wiki_dir, "merge", "--no-edit", upstream)
+        if merge.returncode == 0:
+            return [], False
+        conflicts = _list_conflicts(wiki_dir)
+        started = _git(wiki_dir, "rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0
+        if started:
+            _git(wiki_dir, "merge", "--abort")
+    except BaseException:
+        # A git timeout mid-merge would leave MERGE_HEAD set (#386).
+        with contextlib.suppress(Exception):
+            _git(wiki_dir, "merge", "--abort")
+        raise
+    # A refused merge lists the files it would overwrite, one per tab-indented line.
+    refused = [line.strip() for line in merge.stderr.splitlines() if line.startswith("\t")]
+    return conflicts or refused or [merge.stderr.strip()[:200]], not started and bool(refused)
+
+
+def _push_remote(wiki_dir: Path) -> str | None:
+    """`origin` when the wiki has it, else its first remote, else None."""
+    remotes = _git(wiki_dir, "remote").stdout.split()
+    return "origin" if "origin" in remotes else (remotes[0] if remotes else None)
+
+
+def commit_entry(wiki_dir: Path, entry: str) -> EntryCommit:
+    """Commit the wiki entry `entry` (relative to `wiki_dir`) and push it.
+
+    Runs `git init` in a wiki that is no repo. Raises ValueError for a wiki
+    folder inside another git repo. Commits the person's other uncommitted
+    edits first, in their own commit. With a remote, merges the remote changes
+    before the entry commit and pushes after it. A failed merge is aborted;
+    the local commits stay and the conflict paths come back.
+    """
+    top = _git(wiki_dir, "rev-parse", "--show-toplevel")
+    if top.returncode != 0:
+        _git(wiki_dir, "init", check=True)
+    elif Path(top.stdout.strip()).resolve() != wiki_dir.resolve():
+        raise ValueError(f"{wiki_dir} sits inside the git repo {top.stdout.strip()}")
+
+    # transcript_sync gitignores `.transcripts`; the exclude guards a lost ignore.
+    hand_edits = (".", f":(exclude,literal){entry}", ":(exclude).transcripts")
+    _commit_paths(wiki_dir, "wiki: uncommitted edits", *hand_edits)
+
+    conflict: list[str] = []
+    refused = False
+    message = ""
+    upstream = None
+    branch = _current_branch(wiki_dir)
+    remote = _push_remote(wiki_dir)
+    if remote and branch is not None:
+        fetch = _git(wiki_dir, "fetch", "--quiet", remote)
+        if fetch.returncode != 0:
+            message = fetch.stderr.strip()[:200]
+        else:
+            upstream = _upstream_for(wiki_dir, branch)
+            if (
+                upstream is None
+                and _git(
+                    wiki_dir, "rev-parse", "-q", "--verify", f"refs/remotes/{remote}/{branch}"
+                ).returncode
+                == 0
+            ):
+                upstream = f"{remote}/{branch}"
+            if upstream and _ahead_behind(wiki_dir, branch, upstream)[1] > 0:
+                conflict, refused = _merge_upstream(wiki_dir, upstream)
+
+    commit = _commit_paths(wiki_dir, f"wiki: {entry}", f":(literal){entry}")
+    if refused and upstream:
+        # Git refused the merge over the uncommitted entry; the committed entry can merge.
+        conflict, _ = _merge_upstream(wiki_dir, upstream)
+
+    if not remote:
+        return EntryCommit(commit)
+    if branch is None:
+        return EntryCommit(commit, message="detached HEAD")
+    if conflict or message:
+        return EntryCommit(commit, conflict=conflict, message=message)
+    if _upstream_for(wiki_dir, branch) is None:
+        push = _git(wiki_dir, "push", "-u", remote, branch)
+    else:
+        push = _git(wiki_dir, "push")
+    if push.returncode != 0:
+        return EntryCommit(commit, message=push.stderr.strip()[:200])
+    return EntryCommit(commit, pushed=True)
+
+
+# ---------------------------------------------------------------------------
 # Conflict classification
 # ---------------------------------------------------------------------------
 

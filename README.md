@@ -34,8 +34,9 @@ The figure is from the ADASS 2026 talk; the bullets below describe Lore today.
   [file facts as artifacts](docs/how-to/file-facts-as-artifacts.md).
 - **Team wiki.** A markdown wiki in its own git repo: projects, concepts,
   the orientation note per repo, and system maps across repos. Notes
-  arrive by PR or `/lore:inbox`; Lore mirrors private transcripts there
-  but does not compose wiki notes.
+  arrive by hand edits, by PR, by `/lore:inbox`, or as a wiki entry that
+  `/lore:wiki` writes after the person says yes. Lore mirrors private
+  transcripts there.
 - **Logbook.** Every finish point writes a logbook entry to a configured
   sink: a file in the repo, or a command such as a project tracker. See
   [use the logbook](docs/how-to/use-the-logbook.md).
@@ -82,6 +83,7 @@ The context and upkeep skills:
 | `/lore:context` | Show what Lore injected this session. |
 | `/lore:handover` | Part one writes a handover note for the next session. Part two writes the handover section for work that stops early, and turns follow-up work into a seed issue. |
 | `/lore:inbox` | Route inbox files into the right wiki. |
+| `/lore:wiki` | Write one wiki entry after the person says yes, then commit and push it with `lore wiki commit`. |
 | `/lore:map` | Keep the system map true across repos. |
 | `/lore:system` | Bring every checkout of a system to its target branch. |
 

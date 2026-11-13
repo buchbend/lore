@@ -181,3 +181,26 @@ def test_next_run_offers_no_run_for_a_roadmap_item() -> None:
     assert "A roadmap item gets no next run; `orient` picks it up from the roadmap." in _text(
         "handover"
     )
+
+
+# --- wiki: a wiki entry after a yes (issue #601) ----------------------------
+
+
+def test_wiki_skill_offers_once_at_a_stop_and_writes_only_after_a_yes() -> None:
+    text = _text("wiki")
+    assert "at most once per piece of material" in text
+    assert "at a stop of the work, not during a task" in text
+    assert "Without a yes, write no file." in text
+
+
+def test_wiki_skill_searches_first_and_extends_a_fitting_entry() -> None:
+    text = _text("wiki")
+    assert "`lore_search`" in text
+    assert "extend that entry" in text
+    assert "Lore prescribes no folder and no entry kind." in text
+
+
+def test_wiki_skill_commits_through_the_lore_command() -> None:
+    text = _text("wiki")
+    assert "lore wiki commit <path>" in text
+    assert "git commit" not in text and "git push" not in text

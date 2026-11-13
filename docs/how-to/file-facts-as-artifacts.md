@@ -3,7 +3,7 @@
 **Goal:** record a team-relevant fact in the repo artifact that has a reader.
 Then nobody digs the fact out of a chat window later.
 
-Lore writes nothing into a wiki on its own. Agents and people file facts with
+Lore writes nothing into a wiki without a yes from the person. Agents and people file facts with
 `gh` and the `lore:file-issue` skill. `lore roadmap add` files a
 feature idea in the roadmap ([keep a roadmap](keep-a-roadmap.md)).
 The SessionStart directive tells the agent when to file. `lore style show filing`
@@ -27,7 +27,8 @@ prints the core of the filing rule below.
 | A dead end in software work, and its reason | An issue you open, closed as not planned, with the reason in the close comment |
 | A decision | A pull request holding the ADR draft. A human merges it. |
 | Across several repos | An edge in the system map, proposed with `/lore:map` |
-| For a wiki topic note | A pull request on the wiki repo with the edit |
+| Research, a scoping of options, an explanation for a human reader, or draft paper material | A wiki entry: the agent offers one at a stop of the work and writes it after a yes with `/lore:wiki`. `lore wiki commit <path>` commits and pushes it at once. |
+| For a wiki topic note, without a yes in the session | A pull request on the wiki repo with the edit |
 
 An ADR or PRD negotiated with the user in a `grilling` session is the one
 exception. That skill writes the file directly, because

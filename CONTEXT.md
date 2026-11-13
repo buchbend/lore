@@ -12,8 +12,14 @@ that no real symbol grounds does not belong here.
 - **Wiki** — a mounted knowledge store at `<vault>/wiki/<name>/`. Each
   wiki is its own git repo; a vault can host several. `lore wiki new`
   scaffolds `projects/`, `concepts/`, `decisions/` and `inbox/`. Lore writes nothing into a wiki automatically. A human,
-  `/lore:inbox`, or an agent's pull request writes it, when something is
-  worth keeping.
+  `/lore:inbox`, an agent's pull request, or `/lore:wiki` after a yes
+  writes it, when something is worth keeping. A remote is optional.
+- **Wiki entry** — one note of a wiki that a person or an agent wrote on
+  purpose. An agent writes one only after the person said yes in the
+  session, with `/lore:wiki`; `lore wiki commit` checks, commits and
+  pushes it at once. Research, a scoping of options, an explanation for a
+  human reader and draft paper material are wiki entries. A decision, a
+  defect, an experiment result and the story of the work are not.
 - **Scope** — a folder named in the person's lore config, such as
   `~/git/ccatobs`. A scope sets the wiki, sinks, sources and tracker for
   every repo below the folder. The longest matching folder wins. A scope
