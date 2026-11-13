@@ -6,9 +6,6 @@ workflow from idea to merged PR. It files every fact where someone will
 read it: issues, PRs, ADRs and PRDs, a git-backed team wiki, a logbook.
 Lore itself calls no model. The agent in the session does the judging.
 
-> ⚠️ **Pre-1.0.** APIs, hook contracts, skill surfaces, frontmatter
-> schema, and CLI flags can still change between minor versions.
-
 ## How it works
 
 ![Lore architecture](docs/img/architecture.svg)
