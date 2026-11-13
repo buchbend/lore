@@ -49,14 +49,20 @@ def _is_source_root(path: Path) -> bool:
     ).is_file()
 
 
+def version_key(version: str) -> tuple[int, ...]:
+    """Sort key for a dotted version; a part that is not a number counts as 0."""
+    return tuple(int(p) if p.isdigit() else 0 for p in version.strip().split("."))
+
+
 def _newest_cached_plugin() -> Path | None:
     """Newest usable version dir under Claude Code's marketplace plugin cache."""
     cache_root = Path.home() / ".claude" / "plugins" / "cache" / "lore" / "lore"
     if not cache_root.is_dir():
         return None
+    # Numeric sort: as text, "0.99.1" sorts after "0.104.0".
     version_dirs = sorted(
         (d for d in cache_root.iterdir() if d.is_dir()),
-        key=lambda d: d.name,
+        key=lambda d: version_key(d.name),
         reverse=True,
     )
     for version_dir in version_dirs:
