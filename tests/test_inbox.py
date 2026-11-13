@@ -117,3 +117,13 @@ def test_cli_archive(inbox_vault, capsys):
     assert envelope["schema"] == "lore.inbox.archive/1"
     assert "archived_to" in envelope["data"]
     assert not src.exists()
+
+
+def test_inbox_skill_commits_with_lore_wiki_commit_not_raw_git():
+    """Issue #616: the inbox skill commits each note with `lore wiki commit`."""
+    from pathlib import Path
+
+    text = (Path(__file__).parent.parent / "skills" / "inbox" / "SKILL.md").read_text()
+    assert "lore wiki commit" in text
+    for raw in ("git add", "git commit", "git push", "git -C"):
+        assert raw not in text, raw

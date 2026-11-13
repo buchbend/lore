@@ -70,7 +70,8 @@ class, for a wiki that still carries pre-retirement session notes.
 ### 2. Typed-subdirectory notes — bail to user
 
 Notes in a wiki's typed subdirectories (`concepts/`, `decisions/`,
-`projects/`, …) are written directly — by hand or via `/lore:inbox`.
+`projects/`, …) are written directly — by hand or via `/lore:inbox`, which commits each note
+with `lore wiki commit` (check, commit, push).
 This is the conflict class two hosts editing the same topic note hit.
 
 1. `git fetch origin`
