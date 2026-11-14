@@ -157,3 +157,19 @@ def test_two_subagent_calls_with_one_prompt_match_two_child_sessions(tmp_path: P
         )
     rows = {p.name: p.input for p in trace_tokens(main) if p.name.startswith("agent:")}
     assert rows == {"agent:d1": 1, "agent:d2": 2}
+
+
+def test_an_empty_child_session_file_does_not_break_the_trace(tmp_path: Path) -> None:
+    folder, cwd = tmp_path / "oc", tmp_path / "proj"
+    spawn = oc.tool("subagent", "call_1", {"agent": "lore-mid", "prompt": "Do it."})
+    main = oc.write_session(folder, "ses_main", cwd, [oc.user("go"), oc.assistant("m1", [spawn])])
+    oc.write_session(folder, "ses_empty", cwd, [], parent="ses_main")
+    oc.write_session(
+        folder,
+        "ses_ok",
+        cwd,
+        [oc.user("Do it."), oc.assistant("c1", [oc.text("x")], tokens=(3, 0, 0, 0, 0))],
+        parent="ses_main",
+    )
+    rows = [p for p in trace_tokens(main) if p.name.startswith("agent:")]
+    assert [r.input for r in rows if r.input] == [3]

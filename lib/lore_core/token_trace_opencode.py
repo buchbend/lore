@@ -59,6 +59,11 @@ def _first_user_text(messages: list[dict]) -> str:
     return next((m.get("text") or "" for m in messages if m.get("type") == "user"), "")
 
 
+def _created(msgs: list[dict]) -> float:
+    t = msgs[0].get("time") if msgs else None
+    return (t.get("created") or 0) if isinstance(t, dict) else 0
+
+
 def trace_opencode(path: Path) -> list[PhaseTokens]:
     from lore_adapters.opencode import read_header, read_session
 
@@ -70,7 +75,7 @@ def trace_opencode(path: Path) -> list[PhaseTokens]:
         if main_id and read_header(other).get("parentID") == main_id:
             children.append(read_session(other)[1])
     # Spawn order, not filename order: OpenCode 2.x session IDs sort newest-first.
-    children.sort(key=lambda msgs: min((m.get("time") or {}).get("created") or 0 for m in msgs[:1]))
+    children.sort(key=_created)
 
     phases = [PhaseTokens("main")]
     seen: set[str] = set()
