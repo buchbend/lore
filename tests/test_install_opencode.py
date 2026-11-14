@@ -229,3 +229,28 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path):
         f"opencode ses_main hook user-prompt-submit --plain --cwd {tmp_path}",
         f"opencode ses_main hook pre-compact --plain --cwd {tmp_path}",
     ]
+
+
+def test_no_source_root_writes_no_plugin_so_the_next_setup_retries(oc_home, monkeypatch):
+    monkeypatch.setattr(opencode, "resolve_lore_source_root", lambda *a, **kw: None)
+
+    actions = opencode.plan(InstallContext())
+    _apply(actions)
+
+    assert not opencode.plugin_path().exists()
+    assert opencode.installed_plugin_version() is None
+    assert any(a.payload.get("check") == "always_advisory" for a in actions)
+
+
+def test_a_plugin_file_without_the_marker_needs_a_confirmed_replace(oc_home):
+    plugin = opencode.plugin_path()
+    plugin.parent.mkdir(parents=True)
+    plugin.write_text("// the person's own plugin\n")
+
+    replace = [a for a in opencode.plan(InstallContext()) if a.target == str(plugin)]
+
+    assert [a.kind for a in replace] == ["replace"]
+    assert replace[0].payload["reason"] == "no lore-managed marker"
+    assert replace[0].payload["old_value"] == "// the person's own plugin\n"
+    assert execute_action(replace[0]).ok
+    assert opencode.installed_plugin_version() == importlib.metadata.version("lore")

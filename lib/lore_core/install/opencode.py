@@ -34,6 +34,7 @@ from lore_core.install.base import (
     KIND_DELETE,
     KIND_MERGE,
     KIND_NEW,
+    KIND_REPLACE,
     Action,
     InstallContext,
     LegacyArtifact,
@@ -78,8 +79,8 @@ def config_dir() -> Path:
 
 def config_path() -> Path:
     """The global config file: an existing ``opencode.jsonc``, else ``opencode.json``."""
-    jsonc = config_dir() / "opencode.jsonc"
-    return jsonc if jsonc.exists() else config_dir() / "opencode.json"
+    with_comments = config_dir() / "opencode.jsonc"
+    return with_comments if with_comments.exists() else config_dir() / "opencode.json"
 
 
 def plugin_path() -> Path:
@@ -261,21 +262,66 @@ def _merge(key_path: list[str], value: Any, what: str) -> Action:
     )
 
 
+def _plugin_action(content: str, summary: str) -> Action:
+    """Write the plugin; a ``lore.js`` that Lore did not write needs a confirmed replace."""
+    path = plugin_path()
+    try:
+        old = path.read_text()
+    except OSError:
+        old = None
+    if old is None or PLUGIN_MARKER in old[:200]:
+        return Action(
+            kind=KIND_NEW,
+            description="Write the Lore OpenCode plugin",
+            target=str(path),
+            summary=summary,
+            payload={"path": str(path), "content": content},
+        )
+    return Action(
+        kind=KIND_REPLACE,
+        description="Replace a lore.js that Lore did not write",
+        target=str(path),
+        summary="existing file has no lore-managed marker",
+        payload={
+            "path": str(path),
+            "content": content,
+            "key_path": [],  # whole file
+            "old_value": old,
+            "new_value": content,
+            "reason": "no lore-managed marker",
+        },
+        on_failure="continue",
+    )
+
+
 def plan(ctx: InstallContext) -> list[Action]:
     source_root = resolve_lore_source_root(ctx.lore_repo)
-    manifest = read_claude_manifest(source_root) if source_root else {}
-    skills = _skills(source_root) if source_root else []
+    if source_root is None:
+        # No plugin without the hook table and the skills: a version-stamped
+        # empty plugin would look current, and `lore setup` would never retry.
+        return [
+            Action(
+                kind=KIND_CHECK,
+                description="Skipping OpenCode — lore source not resolved",
+                target=str(plugin_path()),
+                summary="no skills/ + .claude-plugin/ found",
+                payload={
+                    "check": "always_advisory",
+                    "fail_message": (
+                        "OpenCode plugin not written. Pass --lore-repo or install "
+                        "the Claude plugin, then rerun lore setup."
+                    ),
+                },
+                on_failure="continue",
+            )
+        ]
+    manifest = read_claude_manifest(source_root)
+    skills = _skills(source_root)
     content = generate_plugin(
         manifest, skills, lore_bin=_lore_bin(), version=importlib.metadata.version("lore")
     )
     actions = [
-        Action(
-            kind=KIND_NEW,
-            description="Write the Lore OpenCode plugin",
-            target=str(plugin_path()),
-            summary=f"{len(event_commands(manifest))} events, {len(skills)} skills",
-            payload={"path": str(plugin_path()), "content": content},
-        ),
+        _plugin_action(content, f"{len(event_commands(manifest))} events, {len(skills)} skills"),
         _merge(["mcp", "servers", "lore"], _mcp_entry(), "the Lore MCP server"),
     ]
     for skill in skills:
@@ -284,20 +330,6 @@ def plan(ctx: InstallContext) -> list[Action]:
             "template": f"Use the skill {skill['name']} for this request.\n\n$ARGUMENTS",
         }
         actions.append(_merge(["commands", skill["name"]], command, f"/{skill['name']}"))
-    if source_root is None:
-        actions.append(
-            Action(
-                kind=KIND_CHECK,
-                description="Skipping Lore skills for OpenCode — lore source not resolved",
-                target=str(plugin_path()),
-                summary="no skills/ + .claude-plugin/ found",
-                payload={
-                    "check": "always_advisory",
-                    "fail_message": "Pass --lore-repo or install the Claude plugin to add skills.",
-                },
-                on_failure="continue",
-            )
-        )
     return actions
 
 

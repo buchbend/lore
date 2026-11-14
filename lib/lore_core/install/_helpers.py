@@ -546,8 +546,10 @@ def _exec_merge(action: Action, schema_version: str) -> ApplyResult:
 
 
 def _exec_replace(action: Action, schema_version: str) -> ApplyResult:
-    # Replace behaves exactly like merge on disk; the two kinds differ only
-    # in how the dispatcher prompts the user before getting here.
+    # Replace behaves exactly like merge (or, for a whole file, like new) on
+    # disk; the kinds differ only in how the dispatcher prompts first.
+    if not action.payload.get("key_path"):
+        return _exec_new(action, schema_version)
     return execute_action(
         Action(
             kind=KIND_MERGE,

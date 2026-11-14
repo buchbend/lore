@@ -80,3 +80,5 @@ def test_install_sh_upgrade_refreshes_the_agent_wiring():
     text = INSTALL_SH.read_text()
     upgrade = text.split('if [ "$HAS_PLUGIN" -eq 1 ]; then', 1)[1].split("\nelse\n", 1)[0]
     assert "lore setup agents" in upgrade
+    # Only an OpenCode that Lore set up gets the refresh.
+    assert '-f "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins/lore.js"' in upgrade

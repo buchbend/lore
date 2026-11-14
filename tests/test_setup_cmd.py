@@ -701,3 +701,14 @@ def test_setup_agents_runs_only_the_agents_step(tmp_path, agents, no_prompt, mon
     result = _setup("agents")
     assert result.exit_code == 0, result.output
     assert agents == ["install opencode"]
+
+
+def test_leaves_a_lore_js_without_the_marker_alone(tmp_path, agents, monkeypatch):
+    _plugin_index(PIP)
+    plugin = Path.home() / ".config" / "opencode" / "plugins" / "lore.js"
+    plugin.parent.mkdir(parents=True)
+    plugin.write_text("// the person's own plugin\n")
+    monkeypatch.setattr(setup_cmd, "_present", lambda name: name in ("claude", "opencode"))
+    _, events = setup_cmd.step_agents(tmp_path)
+    assert "install opencode" not in agents
+    assert any("lore-managed" in msg for _, msg in events)

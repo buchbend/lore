@@ -160,7 +160,9 @@ if [ "$HAS_PLUGIN" -eq 1 ]; then
     # ~/.config/lore/config.yml; the new lore reads only that file.
     lore setup wiki --yes </dev/null || warn "lore setup wiki failed; run: lore setup"
     # The new lore rewrites host wiring that carries its version (the OpenCode plugin).
-    lore setup agents </dev/null || warn "lore setup agents failed; run: lore setup"
+    if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins/lore.js" ]; then
+        lore setup agents </dev/null || warn "lore setup agents failed; run: lore setup"
+    fi
     say "Done. The lore CLI is live now."
     say "Running Claude Code sessions keep the old plugin (skills, hooks, MCP server) until restarted:"
     say "  /exit, then 'claude --continue' to resume the same conversation."
