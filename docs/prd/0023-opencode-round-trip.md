@@ -1,14 +1,14 @@
 ---
 title: "Claude Code and OpenCode round trip"
 status: draft
-epic: https://github.com/buchbend/lore/issues/TBD
+epic: https://github.com/buchbend/lore/issues/632
 repos:
   - buchbend/lore
 ---
 
 # PRD 0023: Claude Code and OpenCode round trip
 
-> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/TBD).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/632).
 > The epic links here; this file is not embedded in the issue body.
 
 ## Problem
