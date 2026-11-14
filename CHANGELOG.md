@@ -8,6 +8,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.107.1] - 2026-11-14
+
+- Claude Code and OpenCode round trip (epic #632). Run `lore update` after the upgrade: it rewrites the OpenCode plugin.
+- `lore off` in OpenCode also refuses the `lore.` MCP tool calls of the muted session (#626).
+- A Claude Code session started from an OpenCode shell detects Claude Code as its host and uses its own session id. The OpenCode plugin removes the Claude Code variables from the commands and agent shells it starts, so the reverse case keeps OpenCode (#627).
+- OpenCode capture removes a session file older than 7 days once the transcript index holds its session (#628).
+- Five small fixes (#629): `lore setup` writes `@AGENTS.md` into an empty vault `CLAUDE.md`; `has_tokens` counts reasoning tokens; the OpenCode token trace matches same-prompt subagent calls to their own child sessions; `uninstall_plan` skips an `mcp` or `commands` value that is no object; the plugin runs `lore hook session-start` once per session.
+
 ## [0.107.0] - 2026-11-14
 
 - Lore runs in OpenCode 2.x (epic #615, OpenCode as a host). `lore setup` finds the `opencode` binary and writes four things into `~/.config/opencode/`: a generated plugin, the `lore` MCP server, one `lore:<name>` command per skill and four tier subagents. ADR 0022 records the design; `docs/how-to/use-lore-in-opencode.md` is the how-to.
