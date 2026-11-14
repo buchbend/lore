@@ -161,6 +161,8 @@ def test_event_commands_follow_the_table():
 
 _DRIVER = r"""
 import plugin from "./lore.mjs";
+import { join } from "node:path";
+import { writeFileSync, unlinkSync } from "node:fs";
 const hooks = {}, shell = {}, transforms = [];
 const agents = [{ id: "build", mode: "primary" }, { id: "general", mode: "subagent" },
   { id: "lore-mid", mode: "subagent", model: { providerID: "anthropic", id: "claude-sonnet-5" } }];
@@ -198,6 +200,19 @@ out.gate = { pinned: await gate("subagent", { agent: "lore-mid" }),
   unpinned: await gate("subagent", { agent: "general" }),
   usage: await gate("subagent", { agent: "ghost" }) };
 out.gateOther = await gate("bash", {});
+// OpenCode names an MCP tool <server>_<tool>: lore_search of server lore.
+const mcp = () => gate("lore_lore_search", { query: "x" });
+out.mcp = { open: await mcp() };
+const off = join(process.env.TMPDIR, "lore-off-all-ses_main");
+writeFileSync(off, "");
+out.mcp.muted = await mcp();
+out.mcp.mutedOtherSession = await (async () => {
+  try { await toolHooks["execute.before"]({ tool: "lore_lore_search", sessionID: "ses_other" }); return "allowed"; }
+  catch (e) { return e.message; }
+})();
+out.mcp.mutedBash = await gate("bash", {});
+unlinkSync(off);
+out.mcp.unmuted = await mcp();
 console.log(JSON.stringify(out));
 """
 
@@ -238,7 +253,7 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path, bare_list
         text=True,
         timeout=60,
         check=True,
-        env={**os.environ, "BARE_LIST": "1" if bare_list else "0"},
+        env={**os.environ, "BARE_LIST": "1" if bare_list else "0", "TMPDIR": str(tmp_path)},
     )
     out = json.loads(proc.stdout)
 
@@ -265,6 +280,11 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path, bare_list
     ]
     assert out["gate"] == {"pinned": "allowed", "unpinned": "DENY-TEXT", "usage": "allowed"}
     assert out["gateOther"] == "allowed"
+    assert out["mcp"]["open"] == "allowed"
+    assert "muted" in out["mcp"]["muted"]
+    assert out["mcp"]["mutedOtherSession"] == "allowed"
+    assert out["mcp"]["mutedBash"] == "allowed"
+    assert out["mcp"]["unmuted"] == "allowed"
 
 
 def test_no_source_root_writes_no_plugin_so_the_next_setup_retries(oc_home, monkeypatch):

@@ -29,8 +29,13 @@ VALID_SCOPES = ("all", "citations")
 
 
 def session_id() -> str | None:
-    """The current session id: ``$LORE_SESSION_ID`` (any host), else ``$CLAUDE_SESSION_ID``."""
-    sid = os.environ.get("LORE_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID") or ""
+    """The current session id: ``$CLAUDE_SESSION_ID``, else ``$LORE_SESSION_ID``.
+
+    Claude first: a Claude Code run inside an OpenCode shell inherits the
+    OpenCode ``LORE_SESSION_ID``, and the hook payload publishes its own id
+    as ``CLAUDE_SESSION_ID``.
+    """
+    sid = os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("LORE_SESSION_ID") or ""
     return sid if _SAFE_SID.fullmatch(sid) else None
 
 
