@@ -70,6 +70,9 @@ class PhaseTokens:
     requested_effort: str | None = None
     stage: str | None = None
     target: str | None = None
+    # OpenCode reports these per message; Claude Code transcripts carry neither.
+    reasoning: int = 0
+    cost: float | None = None
 
     @property
     def total(self) -> int:
@@ -235,6 +238,10 @@ def _meta(agent_file: Path) -> dict:
 
 def trace_tokens(path: Path) -> list[PhaseTokens]:
     """Phases of the transcript at ``path``, in order of appearance."""
+    from lore_core.token_trace_opencode import is_opencode_session, trace_opencode
+
+    if is_opencode_session(path):
+        return trace_opencode(path)
     sub_files = _subagent_files(path)
     phases = [PhaseTokens("main")]
     current = phases[0]

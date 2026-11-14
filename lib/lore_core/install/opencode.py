@@ -27,6 +27,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from lore_adapters.opencode import sessions_dir
+
 from lore_core import jsonc
 from lore_core.install import _helpers
 from lore_core.install.base import (
@@ -60,16 +62,18 @@ EVENT_TABLE: dict[str, tuple[str | None, str]] = {
     ),
     "PreCompact": ("compaction", 'session.hook("compaction"), as a system part'),
     "Stop": (None, "not mapped: the Lore command writes nothing"),
-    "SessionEnd": (None, "not mapped (#613): OpenCode capture picks the trigger"),
+    "SessionEnd": (
+        "end",
+        "the cleanup function returned from setup (the probe saw no events on "
+        "ctx.event.subscribe); the session files are written earlier, debounced "
+        'after each "context" request',
+    ),
     "PreToolUse": (
         "gate",
         'tool.hook("execute.before") on the tool subagent; the plugin passes the '
         "model the named agent pins, and a thrown error denies the spawn",
     ),
 }
-
-# Commands inside mapped events that a later issue wires.
-_DEFERRED_COMMANDS = {"capture": "#613"}
 
 
 def config_dir() -> Path:
@@ -115,7 +119,11 @@ def event_commands(claude_manifest: dict[str, Any]) -> dict[str, list[list[str]]
         for group in groups or []:
             for hook in group.get("hooks") or []:
                 argv = shlex.split(hook.get("command") or "")
-                if len(argv) < 3 or argv[0] != "lore" or argv[2] in _DEFERRED_COMMANDS:
+                if len(argv) < 3 or argv[0] != "lore":
+                    continue
+                # Mid-session capture is the plugin's debounced file write plus
+                # user-prompt-submit's registration; only the end slot runs capture.
+                if argv[2] == "capture" and slot != "end":
                     continue
                 out.setdefault(slot, []).append(argv[1:])
     return out
@@ -147,11 +155,14 @@ _PLUGIN_TEMPLATE = """\
 // OpenCode 2.x plugin (@opencode/plugin). It holds no Lore logic: each hook
 // runs `lore hook <cmd> --plain --cwd <dir>` and hands its text to the model.
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const LORE = __LORE__;
 const EVENTS = __EVENTS__;
 const SKILLS = __SKILLS__;
+const SESSIONS = process.env.LORE_OPENCODE_DIR || __SESSIONS_DIR__;
+const DEBOUNCE_MS = Number(process.env.LORE_OPENCODE_DEBOUNCE_MS) || 15000;
 
 function lore(argv, cwd, sessionID) {
   return new Promise((resolve) => {
@@ -169,6 +180,18 @@ async function run(slot, cwd, sessionID) {
     if (text) out.push(text);
   }
   return out.join("\\n\\n");
+}
+
+// The end commands take a Claude Code style JSON payload on stdin, no --plain.
+function loreEnd(argv, cwd, sessionID, payload) {
+  return new Promise((resolve) => {
+    const env = { ...process.env, LORE_HOST: "opencode", LORE_SESSION_ID: sessionID };
+    // `lore hook capture` prefers CLAUDE_PROJECT_DIR over the process cwd.
+    const args = argv[1] === "capture" ? [...argv, "--cwd", cwd] : argv;
+    const child = execFile(LORE, args, { cwd, env, timeout: 60000 }, () => resolve());
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(JSON.stringify(payload));
+  });
 }
 
 const part = (text) => ({ type: "text", text });
@@ -205,8 +228,64 @@ export default {
 
     await ctx.session.hook("prompt", (p) => { prompted.add(p.sessionID); });
 
+    // Capture (#613): every session the plugin sees is written to SESSIONS
+    // as JSON lines (a header, then one 2.x session message per line), a
+    // while after its last model request. Main sessions are also handed to
+    // `lore hook capture` and `token-usage` from the cleanup function.
+    const sessions = new Map(); // sessionID -> { main, messages, timer, written }
+
+    async function flush(sessionID) {
+      const s = sessions.get(sessionID);
+      if (!s) return;
+      clearTimeout(s.timer);
+      try {
+        const file = join(SESSIONS, sessionID + ".jsonl");
+        if (!s.messages) {
+          s.messages = new Map();
+          try { // a resumed session: keep what an earlier run wrote
+            const old = readFileSync(file, "utf8").split("\\n").slice(1);
+            for (const l of old) {
+              if (l.trim()) { const m = JSON.parse(l); s.messages.set(m.id, m); }
+            }
+          } catch {}
+        }
+        const reply = await ctx.session.context({ sessionID });
+        const live = reply?.data ?? reply;
+        if (!Array.isArray(live)) return;
+        // ponytail: the call may return only the live context window; keeping
+        // every message seen by id keeps what a compaction dropped.
+        for (const m of live) s.messages.set(m.id, m);
+        if (s.parentID === undefined) {
+          try {
+            const g = await ctx.session.get({ sessionID });
+            s.parentID = (g?.data ?? g)?.parentID ?? null;
+          } catch { s.parentID = null; }
+        }
+        const header = {
+          type: "session", host: "opencode", sessionID, directory: cwd, parentID: s.parentID,
+        };
+        mkdirSync(SESSIONS, { recursive: true });
+        const tmp = file + ".tmp";
+        const lines = [header, ...s.messages.values()].map((m) => JSON.stringify(m));
+        writeFileSync(tmp, lines.join("\\n") + "\\n");
+        renameSync(tmp, file);
+        s.written = true;
+      } catch {}
+    }
+
+    function touch(sessionID, main) {
+      const s = sessions.get(sessionID) || { main, written: false };
+      sessions.set(sessionID, s);
+      s.main = main;
+      clearTimeout(s.timer);
+      s.timer = setTimeout(() => flush(sessionID), DEBOUNCE_MS);
+      s.timer.unref?.();
+    }
+
     await ctx.session.hook("context", async (c) => {
-      if (!(await isMain(c.agent))) { prompted.delete(c.sessionID); return; }
+      const main = await isMain(c.agent);
+      touch(c.sessionID, main);
+      if (!main) { prompted.delete(c.sessionID); return; }
       lastSession = c.sessionID;
       if (!banners.has(c.sessionID)) banners.set(c.sessionID, await run("start", cwd, c.sessionID));
       const banner = banners.get(c.sessionID);
@@ -254,6 +333,20 @@ export default {
       const denial = await spawnGate(payload, cwd, t.sessionID);
       if (denial) throw new Error(denial);
     });
+
+    return async () => {
+      for (const [id, s] of sessions) if (!s.main) await flush(id);
+      for (const [id, s] of sessions) {
+        if (!s.main) continue;
+        await flush(id);
+        if (!s.written) continue;
+        const payload = {
+          session_id: id, transcript_path: join(SESSIONS, id + ".jsonl"), cwd,
+          hook_event_name: "SessionEnd",
+        };
+        for (const argv of EVENTS.end || []) await loreEnd(argv, cwd, id, payload);
+      }
+    };
   },
 };
 """
@@ -269,6 +362,7 @@ def generate_plugin(
         .replace("__LORE__", json.dumps(lore_bin))
         .replace("__EVENTS__", json.dumps(event_commands(claude_manifest)))
         .replace("__SKILLS__", json.dumps(skills, indent=2))
+        .replace("__SESSIONS_DIR__", json.dumps(str(sessions_dir())))
     )
 
 
