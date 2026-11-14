@@ -8,6 +8,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.107.0] - 2026-11-14
+
+- Lore runs in OpenCode 2.x (epic #615, OpenCode as a host). `lore setup` finds the `opencode` binary and writes four things into `~/.config/opencode/`: a generated plugin, the `lore` MCP server, one `lore:<name>` command per skill and four tier subagents. ADR 0022 records the design; `docs/how-to/use-lore-in-opencode.md` is the how-to.
+- The plugin adds the session-start banner, the per-prompt text and the pre-compact text to main sessions (#612). The plugin sets `LORE_HOST` and `LORE_SESSION_ID` for the agent shell. The plugin runs the spawn gate on each `subagent` call (#614, #624).
+- Capture writes each OpenCode session as a session file (#613). The `opencode` adapter and the token record read it. The token record counts reasoning tokens and the reported cost (#625).
+- `lore tier resolve` prints `lore-<tier>` in OpenCode; `tiers.overrides.opencode` sets the tier models (#614).
+- Hook commands are host-neutral; agent instructions live in `AGENTS.md`, and `CLAUDE.md` holds `@AGENTS.md` (#611). `lore setup` migrates an old vault `CLAUDE.md` (#621).
+- `lore off` and the mute checks read `LORE_SESSION_ID`; session-ID cache files carry a `sid-` prefix (#622).
+- The OpenCode installer repairs missing config entries and keeps the keys a person added (#623).
+- The wheel ships `skills/` and the plugin manifest, so a pipx install without Claude Code can write the OpenCode plugin.
+
 ## [0.106.0] - 2026-11-13
 
 - New skill `/lore:wiki`: after the person says yes, an agent writes one wiki entry (research, scoping, an explanation, draft paper material) and commits it (#601).
