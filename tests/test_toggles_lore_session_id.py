@@ -52,3 +52,13 @@ def test_session_start_noop_when_off_in_opencode():
 
         cmd_session_start(cwd="/tmp", plain=True, probe=False)
     mock_session.assert_not_called()
+
+
+def test_session_id_rejects_a_path_unsafe_value(monkeypatch):
+    monkeypatch.setenv("LORE_SESSION_ID", "../../etc/x")
+    assert toggles.session_id() is None
+
+
+def test_set_off_rejects_a_path_unsafe_sid():
+    with pytest.raises(ValueError):
+        toggles.set_off("all", "a/../b")
