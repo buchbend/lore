@@ -436,3 +436,53 @@ def test_a_subagent_file_lore_did_not_write_is_left_alone_and_survives_uninstall
     _apply(opencode.uninstall_plan(InstallContext()))
     assert mine.read_text() == "my own agent\n"
     assert not (mine.parent / "lore-cheap.md").exists()
+
+
+def test_config_goes_stale_when_the_mcp_entry_or_a_command_is_deleted(oc_home):
+    _apply(opencode.plan(InstallContext()))
+    assert not opencode.config_stale()
+
+    cfg = opencode.config_path()
+    data = json.loads(cfg.read_text())
+    del data["mcp"]["servers"]["lore"]
+    cfg.write_text(json.dumps(data))
+    assert opencode.config_stale()
+    _apply(opencode.plan(InstallContext()))
+    assert not opencode.config_stale()
+
+    data = json.loads(cfg.read_text())
+    del data["commands"]["lore:tdd"]
+    cfg.write_text(json.dumps(data))
+    assert opencode.config_stale()
+    _apply(opencode.plan(InstallContext()))
+    assert _config(oc_home)["commands"]["lore:tdd"]
+
+
+def test_a_differing_mcp_entry_needs_a_confirmed_replace_that_keeps_jsonc(oc_home):
+    cfg = oc_home / ".config" / "opencode" / "opencode.jsonc"
+    cfg.write_text(
+        '{\n  // mine\n  "mcp": {"servers": {"lore": {"type": "local", "command": ["x"]}}}\n}\n'
+    )
+
+    acts = [
+        a
+        for a in opencode.plan(InstallContext())
+        if a.payload.get("key_path") == ["mcp", "servers", "lore"]
+    ]
+
+    assert [a.kind for a in acts] == ["replace"]
+    assert acts[0].payload["old_value"]["command"] == ["x"]
+    assert acts[0].payload["jsonc"] is True
+    assert execute_action(acts[0]).ok
+    assert "// mine" in cfg.read_text()
+    assert opencode.jsonc.loads(cfg.read_text())["mcp"]["servers"]["lore"]["command"][1] == "mcp"
+
+
+def test_an_unchanged_or_missing_entry_stays_a_silent_merge(oc_home):
+    assert {a.kind for a in opencode.plan(InstallContext()) if a.payload.get("key_path")} == {
+        "merge"
+    }
+    _apply(opencode.plan(InstallContext()))
+    assert {a.kind for a in opencode.plan(InstallContext()) if a.payload.get("key_path")} == {
+        "merge"
+    }

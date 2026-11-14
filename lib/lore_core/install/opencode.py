@@ -453,6 +453,44 @@ def _merge(key_path: list[str], value: Any, what: str) -> Action:
     )
 
 
+def _config_action(key_path: list[str], value: Any, what: str) -> Action:
+    """Merge a config entry; one that differs from ours needs a confirmed replace."""
+    node: Any = _read_config()
+    for key in key_path:
+        node = node.get(key) if isinstance(node, dict) else None
+    if node is None or node == value:
+        return _merge(key_path, value, what)
+    path = config_path()
+    return Action(
+        kind=KIND_REPLACE,
+        description=f"Replace {' / '.join(key_path)} in the OpenCode config",
+        target=str(path),
+        summary=f"existing {' / '.join(key_path)} differs from the entry Lore writes",
+        payload={
+            "path": str(path),
+            "key_path": key_path,
+            "old_value": node,
+            "new_value": value,
+            "reason": "entry differs from the one Lore writes",
+            "schema_version": SCHEMA_VERSION,
+            "jsonc": True,
+        },
+        on_failure="continue",
+    )
+
+
+def config_stale() -> bool:
+    """True when ``mcp.servers.lore`` or a ``lore:*`` command is missing from the config."""
+    source_root = resolve_lore_source_root(None)
+    if source_root is None:
+        return False
+    data = _read_config()
+    if "lore" not in ((data.get("mcp") or {}).get("servers") or {}):
+        return True
+    have = data.get("commands") or {}
+    return any(s["name"] not in have for s in _skills(source_root))
+
+
 def _plugin_action(content: str, summary: str) -> Action:
     """Write the plugin; a ``lore.js`` that Lore did not write needs a confirmed replace."""
     path = plugin_path()
@@ -513,7 +551,7 @@ def plan(ctx: InstallContext) -> list[Action]:
     )
     actions = [
         _plugin_action(content, f"{len(event_commands(manifest))} events, {len(skills)} skills"),
-        _merge(["mcp", "servers", "lore"], _mcp_entry(), "the Lore MCP server"),
+        _config_action(["mcp", "servers", "lore"], _mcp_entry(), "the Lore MCP server"),
         *_agent_actions(),
     ]
     for skill in skills:
@@ -521,7 +559,7 @@ def plan(ctx: InstallContext) -> list[Action]:
             "description": skill["description"],
             "template": f"Use the skill {skill['name']} for this request.\n\n$ARGUMENTS",
         }
-        actions.append(_merge(["commands", skill["name"]], command, f"/{skill['name']}"))
+        actions.append(_config_action(["commands", skill["name"]], command, f"/{skill['name']}"))
     return actions
 
 

@@ -561,6 +561,7 @@ def _exec_replace(action: Action, schema_version: str) -> ApplyResult:
                 "key_path": action.payload["key_path"],
                 "value": action.payload["new_value"],
                 "schema_version": schema_version,
+                "jsonc": action.payload.get("jsonc", False),
             },
         ),
         schema_version=schema_version,
