@@ -499,8 +499,8 @@ def plan(ctx: InstallContext) -> list[Action]:
                 payload={
                     "check": "always_advisory",
                     "fail_message": (
-                        "OpenCode plugin not written. Pass --lore-repo or install "
-                        "the Claude plugin, then rerun lore setup."
+                        "OpenCode plugin not written: this lore install ships no "
+                        "skills/. Reinstall lore (pipx reinstall lore), then rerun lore setup."
                     ),
                 },
                 on_failure="continue",
