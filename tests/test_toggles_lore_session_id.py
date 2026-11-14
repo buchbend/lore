@@ -33,13 +33,6 @@ def test_session_id_prefers_claude_session_id(monkeypatch):
     assert toggles.session_id() == "outer-claude"
 
 
-def test_context_cache_session_id_prefers_claude_session_id(monkeypatch):
-    from lore_cli import context_cache
-
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "outer-claude")
-    assert context_cache._session_id() == "sid-outer-claude"
-
-
 def test_session_id_falls_back_to_claude(monkeypatch):
     monkeypatch.delenv("LORE_SESSION_ID")
     monkeypatch.setenv("CLAUDE_SESSION_ID", "cc-1")

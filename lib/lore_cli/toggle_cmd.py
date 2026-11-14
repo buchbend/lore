@@ -5,8 +5,8 @@ hooks and MCP check before doing work, so they live in one module over
 a shared implementation rather than drifting apart in two.
 
 The sentinel is session-scoped — muting is a property of the session
-you're in, not of the vault — so a missing session id (``LORE_SESSION_ID`` or
-``CLAUDE_SESSION_ID``) is a hard error rather than a silent global mute.
+you're in, not of the vault — so a missing session id (``CLAUDE_SESSION_ID`` or
+``LORE_SESSION_ID``) is a hard error rather than a silent global mute.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ def _session_id_or_die(verb: str) -> str:
     sid = session_id()
     if not sid:
         typer.echo(
-            f"error: no session id (LORE_SESSION_ID or CLAUDE_SESSION_ID) — "
+            f"error: no session id (CLAUDE_SESSION_ID or LORE_SESSION_ID) — "
             f"`lore {verb}` is meaningful only inside a Claude Code or OpenCode session.",
             err=True,
         )

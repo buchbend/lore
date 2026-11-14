@@ -424,8 +424,8 @@ def _host_adapter() -> str:
 def _session_off_all() -> bool:
     """True iff `/lore:off` (scope=all) is active for the current session.
 
-    Resolves the session id via ``toggles.session_id`` (LORE_SESSION_ID, else
-    CLAUDE_SESSION_ID, which `_read_hook_payload`
+    Resolves the session id via ``toggles.session_id`` (CLAUDE_SESSION_ID, else
+    LORE_SESSION_ID; ``CLAUDE_SESSION_ID`` is what `_read_hook_payload`
     publishes from the Claude Code stdin payload, issue #29 / v0.13.1).
     Returns False when no sid is available — without a sid we can't scope a
     sentinel, so the safe default is "not muted."

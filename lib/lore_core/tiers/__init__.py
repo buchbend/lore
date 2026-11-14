@@ -35,10 +35,10 @@ def detect_host() -> str:
     tiers to the wrong model without any signal that happened.
     """
     # Claude Code markers first: a Claude Code started in an OpenCode shell
-    # inherits LORE_HOST=opencode.
+    # inherits LORE_HOST=opencode. CLAUDE_SESSION_ID is no marker: a hook payload
+    # publishes it for any host (OpenCode SessionEnd too).
     if any(
-        os.environ.get(var)
-        for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID", "CLAUDE_CODE_EXECPATH")
+        os.environ.get(var) for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_EXECPATH")
     ):
         return "claude"
     if os.environ.get("LORE_HOST"):
