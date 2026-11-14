@@ -165,7 +165,8 @@ const SESSIONS = process.env.LORE_OPENCODE_DIR || __SESSIONS_DIR__;
 const DEBOUNCE_MS = Number(process.env.LORE_OPENCODE_DEBOUNCE_MS) || 15000;
 
 // Claude Code markers must not reach a child: OpenCode may run inside a
-// Claude Code shell, and detect_host reads them before LORE_HOST.
+// Claude Code shell, and detect_host reads them before LORE_HOST. The list is
+// detect_host's markers plus CLAUDE_SESSION_ID and CLAUDE_CODE_SESSION_ID.
 const CLAUDE_MARKERS = ["CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID",
   "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SESSION_ID"];
 function childEnv(sessionID) {
