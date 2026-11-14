@@ -130,7 +130,11 @@ def test_a_reasoning_only_row_with_zero_reported_cost_keeps_the_estimate() -> No
 def test_two_subagent_calls_with_one_prompt_match_two_child_sessions(tmp_path: Path) -> None:
     folder, cwd = tmp_path / "oc", tmp_path / "proj"
     spawns = [
-        oc.tool("subagent", f"call_{i}", {"agent": "lore-mid", "prompt": "Same prompt."})
+        oc.tool(
+            "subagent",
+            f"call_{i}",
+            {"agent": "lore-mid", "description": f"d{i}", "prompt": "Same."},
+        )
         for i in (1, 2)
     ]
     main = oc.write_session(
@@ -139,15 +143,17 @@ def test_two_subagent_calls_with_one_prompt_match_two_child_sessions(tmp_path: P
         cwd,
         [oc.user("go"), oc.assistant("m1", [spawns[0]]), oc.assistant("m2", [spawns[1]])],
     )
-    for i in (1, 2):
+    # OpenCode 2.x IDs sort newest-first: the second spawn's child has the smaller ID.
+    for sid, i in (("ses_b", 1), ("ses_a", 2)):
         oc.write_session(
             folder,
-            f"ses_c{i}",
+            sid,
             cwd,
-            [oc.user("Same prompt.")]
-            + ([oc.assistant("c2", [oc.text("x")], tokens=(2, 0, 0, 0, 0))] if i == 2 else []),
+            [
+                oc.user("Same.", created=1_700_000_000_000 + i),
+                oc.assistant(f"c{i}", [oc.text("x")], tokens=(i, 0, 0, 0, 0)),
+            ],
             parent="ses_main",
         )
-    rows = [p for p in trace_tokens(main) if p.name.startswith("agent:")]
-    assert len(rows) == 2
-    assert [r.input for r in rows] == [0, 2]
+    rows = {p.name: p.input for p in trace_tokens(main) if p.name.startswith("agent:")}
+    assert rows == {"agent:d1": 1, "agent:d2": 2}

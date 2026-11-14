@@ -69,6 +69,8 @@ def trace_opencode(path: Path) -> list[PhaseTokens]:
     for other in sorted(Path(path).parent.glob("*.jsonl")):
         if main_id and read_header(other).get("parentID") == main_id:
             children.append(read_session(other)[1])
+    # Spawn order, not filename order: OpenCode 2.x session IDs sort newest-first.
+    children.sort(key=lambda msgs: min((m.get("time") or {}).get("created") or 0 for m in msgs[:1]))
 
     phases = [PhaseTokens("main")]
     seen: set[str] = set()
