@@ -18,6 +18,11 @@
 - **Default:** the session-start banner and the per-prompt text reach the model through
   `ctx.session.hook("context")`, as a system part. The plugin adds the text to main
   sessions only.
+- **Default:** the plugin tells a main session from a subagent session by the mode of the
+  session's agent in `ctx.agent.list()`. A session whose agent has the mode `subagent` gets
+  no Lore text and no `lore hook` call. The `context` hook names the agent; it does not
+  name the parent session. An agent with the mode `all` that runs as a subagent gets Lore
+  text.
 - **Default:** the pre-compact text reaches the model through
   `ctx.session.hook("compaction")`.
 - **Default:** the spawn gate hooks `ctx.tool.hook("execute.before")` on the tool
