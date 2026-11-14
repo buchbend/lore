@@ -458,7 +458,13 @@ def _config_action(key_path: list[str], value: Any, what: str) -> Action:
     node: Any = _read_config()
     for key in key_path:
         node = node.get(key) if isinstance(node, dict) else None
-    if node is None or node == value:
+    # A command whose template is Lore's is Lore's: update it silently.
+    ours = (
+        key_path[0] == "commands"
+        and isinstance(node, dict)
+        and node.get("template") == value["template"]
+    )
+    if node is None or node == value or ours:
         return _merge(key_path, value, what)
     path = config_path()
     return Action(

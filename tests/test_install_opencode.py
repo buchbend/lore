@@ -486,3 +486,35 @@ def test_an_unchanged_or_missing_entry_stays_a_silent_merge(oc_home):
     assert {a.kind for a in opencode.plan(InstallContext()) if a.payload.get("key_path")} == {
         "merge"
     }
+
+
+def test_a_command_with_lores_template_updates_silently_when_only_the_description_changed(oc_home):
+    _apply(opencode.plan(InstallContext()))
+    cfg = opencode.config_path()
+    data = json.loads(cfg.read_text())
+    data["commands"]["lore:tdd"]["description"] = "old words"
+    cfg.write_text(json.dumps(data))
+
+    acts = [
+        a
+        for a in opencode.plan(InstallContext())
+        if a.payload.get("key_path") == ["commands", "lore:tdd"]
+    ]
+
+    assert [a.kind for a in acts] == ["merge"]
+
+
+def test_a_command_with_a_different_template_needs_a_confirmed_replace(oc_home):
+    _apply(opencode.plan(InstallContext()))
+    cfg = opencode.config_path()
+    data = json.loads(cfg.read_text())
+    data["commands"]["lore:tdd"]["template"] = "my own prompt"
+    cfg.write_text(json.dumps(data))
+
+    acts = [
+        a
+        for a in opencode.plan(InstallContext())
+        if a.payload.get("key_path") == ["commands", "lore:tdd"]
+    ]
+
+    assert [a.kind for a in acts] == ["replace"]
