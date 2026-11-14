@@ -103,9 +103,12 @@ and the transcript index holds its session. Capture keeps every other file.
 
 You can run `claude` from the agent shell of an OpenCode session. The
 nested Claude Code session detects Claude Code as its host. It uses its own
-session id and the Claude Code tier models. The plugin also removes the
-Claude Code variables from the environment of OpenCode, so an OpenCode
-session that starts from a Claude Code shell keeps OpenCode as its host.
+session id and the Claude Code tier models.
+
+The reverse case works too. The plugin removes the Claude Code variables
+from the commands and agent shells that it starts. Lore in an OpenCode
+session keeps OpenCode as its host, even when OpenCode starts from a
+Claude Code shell.
 
 ## Uninstall
 
