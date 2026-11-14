@@ -553,3 +553,27 @@ def test_config_stale_treats_a_non_dict_mcp_or_commands_as_stale(oc_home):
     data["commands"] = []
     cfg.write_text(json.dumps(data))
     assert opencode.config_stale()
+
+
+def test_a_silent_update_keeps_the_keys_the_person_added(oc_home):
+    cfg = oc_home / ".config" / "opencode" / "opencode.json"
+    _apply(opencode.plan(InstallContext()))
+    data = json.loads(cfg.read_text())
+    data["mcp"]["servers"]["lore"] = {
+        "type": "local",
+        "command": ["/venv/bin/lore", "mcp"],
+        "enabled": False,
+        "environment": {"LORE_ROOT": "/mine"},
+    }
+    data["commands"]["lore:tdd"]["description"] = "old"
+    data["commands"]["lore:tdd"]["model"] = "mine"
+    cfg.write_text(json.dumps(data))
+
+    _apply(opencode.plan(InstallContext()))
+
+    after = _config(oc_home)
+    entry = after["mcp"]["servers"]["lore"]
+    assert entry["command"] == [FAKE_LORE, "mcp"]
+    assert entry["enabled"] is False and entry["environment"] == {"LORE_ROOT": "/mine"}
+    assert after["commands"]["lore:tdd"]["model"] == "mine"
+    assert after["commands"]["lore:tdd"]["description"] != "old"

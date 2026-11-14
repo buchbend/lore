@@ -474,7 +474,8 @@ def _config_action(key_path: list[str], value: Any, what: str) -> Action:
         and Path(str(command[0])).name == "lore"
     )
     if node is None or node == value or ours or lores_mcp:
-        return _merge(key_path, value, what)
+        # keep the keys the person added (enabled, environment, model, ...)
+        return _merge(key_path, {**node, **value} if isinstance(node, dict) else value, what)
     path = config_path()
     return Action(
         kind=KIND_REPLACE,
