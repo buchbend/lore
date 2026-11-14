@@ -414,10 +414,11 @@ def _host_adapter() -> str:
     from lore_core.tiers import TierResolutionError, detect_host
 
     try:
-        host = detect_host()
+        if detect_host() == "claude":
+            return "claude-code"
     except TierResolutionError:
-        return "claude-code"
-    return "claude-code" if host == "claude" else host
+        pass
+    return os.environ.get("LORE_HOST") or "claude-code"
 
 
 def _session_off_all() -> bool:

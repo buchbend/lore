@@ -52,6 +52,18 @@ def test_capture_default_adapter_is_claude_code(tmp_path, monkeypatch):
     assert seen == ["claude-code"]
 
 
+def test_capture_under_cursor_keeps_the_claude_code_adapter(tmp_path, monkeypatch):
+    project = _make_attached_project(tmp_path)
+    seen: list[str] = []
+    monkeypatch.setattr(
+        hooks, "get_adapter", lambda n: seen.append(n) or (_ for _ in ()).throw(RuntimeError)
+    )
+    monkeypatch.setenv("LORE_ROOT", str(project))
+    monkeypatch.setenv("CURSOR_PROJECT_DIR", str(project))
+    runner.invoke(hook_app, ["capture", "--event", "session-end", "--cwd", str(project)])
+    assert seen == ["claude-code"]
+
+
 def test_capture_uses_lore_host_adapter(tmp_path, monkeypatch):
     project = _make_attached_project(tmp_path)
     seen: list[str] = []
