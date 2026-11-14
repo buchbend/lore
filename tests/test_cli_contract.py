@@ -9,8 +9,7 @@ The shape (lifted in v0.13.0):
           lore_mcp / lore_search) — never the reverse
 
     A module owning sibling verbs that share one implementation exposes
-    one named app per verb instead (``toggle_cmd.on_app`` /
-    ``toggle_cmd.off_app`` back the inverse ``lore on`` / ``lore off``).
+    one named app per verb instead (``<verb>_app``).
     The rule being enforced is that the verb's wiring lives in a
     ``*_cmd.py`` — not that a file may only carry one verb.
 

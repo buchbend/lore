@@ -84,13 +84,6 @@ gate denies them. To allow one, set its `model` in the OpenCode config:
 Lore's skills spawn the tier subagents, which always pass the gate. See
 `docs/model-tiers.md` for the tier table.
 
-## Mute Lore in a session
-
-Run `lore off` in the agent shell. The plugin sets `LORE_SESSION_ID` for
-the agent shell, so the mute covers the hooks of the session. The plugin
-also refuses each `lore` MCP tool call of a muted session. Run
-`lore on` to end the mute. OpenCode has no slash command for the mute.
-
 ## Where capture writes
 
 The plugin writes one session file per OpenCode session to
@@ -122,11 +115,7 @@ Lore's names.
   toast.
 - The plugin captures a session when OpenCode stops or reloads the
   plugin. A 15-second timer keeps the session file current between turns.
-- `lore off` does not mute the `lore` MCP tool calls of an OpenCode
-  subagent. The mute file belongs to the parent session.
 - After `pipx upgrade lore` without `lore update`, the old plugin lets a
   denied spawn run. Run `lore update` or `lore setup` after an upgrade.
 - A comment inside `mcp.servers.lore` or inside a `lore:<name>` command is
   lost when the installer updates the entry.
-- `lore off` in the Bash tool of a nested Claude Code session mutes the
-  parent OpenCode session, not the nested session.

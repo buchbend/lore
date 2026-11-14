@@ -155,7 +155,7 @@ _PLUGIN_TEMPLATE = """\
 // OpenCode 2.x plugin (@opencode/plugin). It holds no Lore logic: each hook
 // runs `lore hook <cmd> --plain --cwd <dir>` and hands its text to the model.
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const LORE = __LORE__;
@@ -339,12 +339,6 @@ export default {
     });
 
     await ctx.tool.hook("execute.before", async (t) => {
-      // `lore off` mute (#626): the MCP process has no session ID, so the gate
-      // refuses here. OpenCode names an MCP tool <server>.<tool> (lore.lore_search).
-      if (t.tool?.startsWith("lore.") && /^[A-Za-z0-9_-]+$/.test(t.sessionID || "")
-          && existsSync(join(process.env.TMPDIR || "/tmp", "lore-off-all-" + t.sessionID))) {
-        throw new Error("Lore is muted for this session (lore off); run `lore on` to unmute.");
-      }
       if (t.tool !== "subagent") return;
       const name = t.input?.agent;
       let model = "";

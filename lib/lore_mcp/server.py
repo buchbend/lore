@@ -33,7 +33,6 @@ from lore_core.errors import (
     NOTE_NOT_FOUND,
     PATH_ESCAPE,
     PATH_NOT_FOUND,
-    SESSION_OFF,
     UNKNOWN_TOOL,
     WIKI_NOT_FOUND,
 )
@@ -887,18 +886,6 @@ def _tool_schema() -> list[dict]:
 
 
 def _dispatch(tool_name: str, args: dict) -> Any:
-    # `/lore:off` (scope=all) — refuse every tool for this session.
-    # See `docs/architecture/slash-toggles.md`.
-    from lore_core.toggles import is_off, session_id
-
-    sid = session_id()
-    if sid and is_off("all", sid):
-        return _mcp_error(
-            SESSION_OFF,
-            "Lore is muted for this session.",
-            next_="Run `lore on` from a shell in this session, or restart the session.",
-        )
-
     match tool_name:
         case "lore_search":
             return handle_search(**args)

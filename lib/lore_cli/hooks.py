@@ -421,45 +421,6 @@ def _host_adapter() -> str:
     return os.environ.get("LORE_HOST") or "claude-code"
 
 
-def _session_off_all() -> bool:
-    """True iff `/lore:off` (scope=all) is active for the current session.
-
-    Resolves the session id via ``toggles.session_id`` (CLAUDE_SESSION_ID, else
-    LORE_SESSION_ID; ``CLAUDE_SESSION_ID`` is what `_read_hook_payload`
-    publishes from the Claude Code stdin payload, issue #29 / v0.13.1).
-    Returns False when no sid is available — without a sid we can't scope a
-    sentinel, so the safe default is "not muted."
-    """
-    from lore_core.toggles import is_off, session_id
-
-    sid = session_id()
-    if not sid:
-        return False
-    return is_off("all", sid)
-
-
-def _citation_directive_lines() -> list[str]:
-    """Suppression directive for `/lore:off citations`.
-
-    Returns the lines appended to the SessionStart additionalContext
-    directive cluster when the citations sentinel is set for this
-    session, else an empty list. The line tells the agent to skip the
-    inline `› consulted [[X]]` affordance for the rest of the session.
-    """
-    from lore_core.toggles import is_off, session_id
-
-    sid = session_id()
-    if not sid:
-        return []
-    if not is_off("citations", sid):
-        return []
-    return [
-        "- Inline citations are silenced this session — do not emit "
-        "`› consulted [[X]]` lines after consulting the vault.",
-        "",
-    ]
-
-
 def _read_hook_payload() -> dict:
     """Consume the JSON payload Claude Code passes on stdin for every hook fire.
 
@@ -570,8 +531,6 @@ def cmd_session_start(
     if _in_child_mode():
         return
     payload = _read_hook_payload()
-    if _session_off_all():
-        return
     cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(str(cwd_resolved))
 
@@ -821,8 +780,6 @@ def cmd_pre_compact(
     if _in_child_mode():
         return
     _read_hook_payload()
-    if _session_off_all():
-        return
     cwd_resolved = _resolve_cwd(cwd)
     out = _pre_compact(cwd_resolved)
     try:  # PRD 0015 breakpoint: name the build ledger so it survives compaction
@@ -857,8 +814,6 @@ def cmd_stop(
     if _in_child_mode():
         return
     _read_hook_payload()
-    if _session_off_all():
-        return
     out = _stop()
     _emit("Stop", out, plain=plain)
 
@@ -894,12 +849,9 @@ def cmd_spawn_model_gate(
 def cmd_token_usage() -> None:
     """SessionEnd hook: append the session's token record to ``.lore/token-usage.jsonl``.
 
-    Hands the transcript to a detached child and returns at once. Writes
-    nothing while ``/lore:off all`` mutes the session. Never fails the hook.
+    Hands the transcript to a detached child and returns at once. Never fails the hook.
     """
     payload = _read_hook_payload()
-    if _session_off_all():
-        return
     session, transcript = payload.get("session_id"), payload.get("transcript_path")
     if not (isinstance(session, str) and session and isinstance(transcript, str) and transcript):
         return
@@ -952,8 +904,6 @@ def cmd_user_prompt_submit(
     if _in_child_mode():
         return
     _read_hook_payload()
-    if _session_off_all():
-        return
     cwd_resolved = Path(_resolve_cwd(cwd))
     route = resolve_route(cwd_resolved)
     if not route.wiki:
@@ -970,33 +920,6 @@ def cmd_user_prompt_submit(
         _register_pending_transcripts(lore_root, cwd_resolved, adapter=adapter)
     except Exception:
         pass  # never break the prompt path on a registration hiccup
-
-    # Citations toggle takes effect mid-session: re-assert the suppression
-    # directive on every prompt while `/lore:off citations` is active so the
-    # agent sees it on the very next turn after the user toggles it,
-    # rather than waiting for the next SessionStart.
-    cite_lines = _citation_directive_lines()
-    if not cite_lines:
-        return
-    ctx = "\n".join(line for line in cite_lines if line)
-    if not ctx:
-        return
-
-    if plain:
-        sys.stdout.write(ctx + "\n")
-        return
-
-    sys.stdout.write(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "UserPromptSubmit",
-                    "additionalContext": ctx,
-                }
-            }
-        )
-        + "\n"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1085,11 +1008,6 @@ def capture(
     if _in_child_mode() or _capture_suppressed():
         return
     _read_hook_payload()
-    if _session_off_all():
-        # `/lore:off all` is the security-first contract: no transcript
-        # ingestion, no child spawn, no ledger writes, no vault output
-        # while the user has muted us.
-        return
     from_env = integration is None and bool(os.environ.get("LORE_HOST"))
     integration = integration or _host_adapter()
     if event == "session-end":  # PRD 0017: retry undelivered logbook entries
