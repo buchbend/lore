@@ -24,4 +24,12 @@ TABLE: dict[str, dict[str, str]] = {
         "mid": "claude-sonnet-5",
         "cheap": "claude-haiku-4-5",
     },
+    # provisional. Each cell is the model of the `lore-<tier>` OpenCode
+    # subagent, as "<provider>/<model>" (the 2.x agent config `model` field).
+    "opencode": {
+        "frontier": "anthropic/claude-opus-5-5",
+        "strong": "anthropic/claude-opus-5-5",
+        "mid": "anthropic/claude-sonnet-5",
+        "cheap": "anthropic/claude-haiku-4-5",
+    },
 }
