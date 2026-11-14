@@ -24,6 +24,21 @@ def _env(monkeypatch):
     monkeypatch.delenv("LORE_SUPPRESS_CAPTURE", raising=False)
     monkeypatch.delenv("LORE_HOST", raising=False)
     monkeypatch.delenv("LORE_SESSION_ID", raising=False)
+    for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID", "CLAUDE_CODE_EXECPATH"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_capture_in_a_nested_claude_code_uses_the_claude_code_adapter(tmp_path, monkeypatch):
+    project = _make_attached_project(tmp_path)
+    seen: list[str] = []
+    monkeypatch.setattr(
+        hooks, "get_adapter", lambda n: seen.append(n) or (_ for _ in ()).throw(RuntimeError)
+    )
+    monkeypatch.setenv("LORE_ROOT", str(project))
+    monkeypatch.setenv("LORE_HOST", "opencode")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    runner.invoke(hook_app, ["capture", "--event", "session-end", "--cwd", str(project)])
+    assert seen == ["claude-code"]
 
 
 def test_capture_default_adapter_is_claude_code(tmp_path, monkeypatch):

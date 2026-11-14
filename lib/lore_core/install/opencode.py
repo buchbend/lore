@@ -164,9 +164,19 @@ const SKILLS = __SKILLS__;
 const SESSIONS = process.env.LORE_OPENCODE_DIR || __SESSIONS_DIR__;
 const DEBOUNCE_MS = Number(process.env.LORE_OPENCODE_DEBOUNCE_MS) || 15000;
 
+// Claude Code markers must not reach a child: OpenCode may run inside a
+// Claude Code shell, and detect_host reads them before LORE_HOST.
+const CLAUDE_MARKERS = ["CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID",
+  "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SESSION_ID"];
+function childEnv(sessionID) {
+  const env = { ...process.env, LORE_HOST: "opencode", LORE_SESSION_ID: sessionID };
+  for (const k of CLAUDE_MARKERS) delete env[k];
+  return env;
+}
+
 function lore(argv, cwd, sessionID) {
   return new Promise((resolve) => {
-    const env = { ...process.env, LORE_HOST: "opencode", LORE_SESSION_ID: sessionID };
+    const env = childEnv(sessionID);
     const child = execFile(LORE, [...argv, "--plain", "--cwd", cwd], { cwd, env, timeout: 60000 },
       (_err, stdout) => resolve(String(stdout || "").trim()));
     child.stdin?.end();
@@ -185,7 +195,7 @@ async function run(slot, cwd, sessionID) {
 // The end commands take a Claude Code style JSON payload on stdin, no --plain.
 function loreEnd(argv, cwd, sessionID, payload) {
   return new Promise((resolve) => {
-    const env = { ...process.env, LORE_HOST: "opencode", LORE_SESSION_ID: sessionID };
+    const env = childEnv(sessionID);
     // `lore hook capture` prefers CLAUDE_PROJECT_DIR over the process cwd.
     const args = argv[1] === "capture" ? [...argv, "--cwd", cwd] : argv;
     const child = execFile(LORE, args, { cwd, env, timeout: 60000 }, () => resolve());
@@ -200,7 +210,7 @@ const part = (text) => ({ type: "text", text });
 // A denial exits 3; Click's usage error also exits 2, and that lets the call run.
 function spawnGate(payload, cwd, sessionID) {
   return new Promise((resolve) => {
-    const env = { ...process.env, LORE_HOST: "opencode", LORE_SESSION_ID: sessionID };
+    const env = childEnv(sessionID);
     const [argv] = EVENTS.gate || [];
     if (!argv) return resolve("");
     const child = execFile(LORE, [...argv, "--plain", "--cwd", cwd], { cwd, env, timeout: 60000 },
@@ -312,6 +322,7 @@ export default {
     // ponytail: the shell hook carries no session ID, so it takes the last
     // main session seen; two main sessions in one server can swap IDs.
     await ctx.shell.hook("create.before", (s) => {
+      for (const k of CLAUDE_MARKERS) delete s.env[k];
       s.env.LORE_HOST = "opencode";
       if (lastSession) s.env.LORE_SESSION_ID = lastSession;
     });
@@ -328,8 +339,8 @@ export default {
 
     await ctx.tool.hook("execute.before", async (t) => {
       // `lore off` mute (#626): the MCP process has no session ID, so the gate
-      // refuses here. OpenCode names an MCP tool <server>_<tool> (lore_lore_search).
-      if (t.tool?.startsWith("lore_") && /^[A-Za-z0-9_-]+$/.test(t.sessionID || "")
+      // refuses here. OpenCode names an MCP tool <server>.<tool> (lore.lore_search).
+      if (t.tool?.startsWith("lore.") && /^[A-Za-z0-9_-]+$/.test(t.sessionID || "")
           && existsSync(join(process.env.TMPDIR || "/tmp", "lore-off-all-" + t.sessionID))) {
         throw new Error("Lore is muted for this session (lore off); run `lore on` to unmute.");
       }
