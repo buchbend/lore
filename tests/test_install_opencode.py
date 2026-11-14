@@ -207,7 +207,8 @@ const off = join(process.env.TMPDIR, "lore-off-all-ses_main");
 writeFileSync(off, "");
 out.mcp.muted = await mcp();
 out.mcp.mutedOtherSession = await (async () => {
-  try { await toolHooks["execute.before"]({ tool: "lore_lore_search", sessionID: "ses_other" }); return "allowed"; }
+  const ev = { tool: "lore_lore_search", sessionID: "ses_other" };
+  try { await toolHooks["execute.before"](ev); return "allowed"; }
   catch (e) { return e.message; }
 })();
 out.mcp.mutedBash = await gate("bash", {});
