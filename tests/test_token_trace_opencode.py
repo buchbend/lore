@@ -113,3 +113,10 @@ def test_a_zero_reported_cost_with_tokens_keeps_the_estimate() -> None:
 
 def test_claude_code_rows_keep_their_totals() -> None:
     assert summarize([_record()]).total.total == 1500
+
+
+def test_the_estimate_prices_reasoning_tokens_at_the_output_rate() -> None:
+    base = 1000 * 4.0 / 1e6 + 500 * 20.0 / 1e6
+    assert summarize([_record(cost=0)]).total.cost == pytest.approx(base)  # no reasoning: same
+    with_reasoning = summarize([_record(cost=0, reasoning=300)]).total.cost
+    assert with_reasoning == pytest.approx(base + 300 * 20.0 / 1e6)
