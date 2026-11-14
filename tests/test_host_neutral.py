@@ -24,6 +24,21 @@ def _env(monkeypatch):
     monkeypatch.delenv("LORE_SUPPRESS_CAPTURE", raising=False)
     monkeypatch.delenv("LORE_HOST", raising=False)
     monkeypatch.delenv("LORE_SESSION_ID", raising=False)
+    for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID", "CLAUDE_CODE_EXECPATH"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_capture_in_a_nested_claude_code_uses_the_claude_code_adapter(tmp_path, monkeypatch):
+    project = _make_attached_project(tmp_path)
+    seen: list[str] = []
+    monkeypatch.setattr(
+        hooks, "get_adapter", lambda n: seen.append(n) or (_ for _ in ()).throw(RuntimeError)
+    )
+    monkeypatch.setenv("LORE_ROOT", str(project))
+    monkeypatch.setenv("LORE_HOST", "opencode")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    runner.invoke(hook_app, ["capture", "--event", "session-end", "--cwd", str(project)])
+    assert seen == ["claude-code"]
 
 
 def test_capture_default_adapter_is_claude_code(tmp_path, monkeypatch):
@@ -33,6 +48,18 @@ def test_capture_default_adapter_is_claude_code(tmp_path, monkeypatch):
         hooks, "get_adapter", lambda n: seen.append(n) or (_ for _ in ()).throw(RuntimeError)
     )
     monkeypatch.setenv("LORE_ROOT", str(project))
+    runner.invoke(hook_app, ["capture", "--event", "session-end", "--cwd", str(project)])
+    assert seen == ["claude-code"]
+
+
+def test_capture_under_cursor_keeps_the_claude_code_adapter(tmp_path, monkeypatch):
+    project = _make_attached_project(tmp_path)
+    seen: list[str] = []
+    monkeypatch.setattr(
+        hooks, "get_adapter", lambda n: seen.append(n) or (_ for _ in ()).throw(RuntimeError)
+    )
+    monkeypatch.setenv("LORE_ROOT", str(project))
+    monkeypatch.setenv("CURSOR_PROJECT_DIR", str(project))
     runner.invoke(hook_app, ["capture", "--event", "session-end", "--cwd", str(project)])
     assert seen == ["claude-code"]
 
@@ -143,4 +170,31 @@ def test_session_id_cache_is_prefixed_and_digit_id_survives_gc(tmp_path, monkeyp
     monkeypatch.setattr("lore_cli.hooks._claude_code_pid", lambda: None)
     hooks._emit("SessionStart", "banner-body", plain=False)
     assert (tmp_path / "cache" / "sessions" / "sid-99999999.md").exists()
+    assert "banner-body" in _context_log()
+
+
+def test_opencode_session_end_payload_keeps_the_opencode_adapter(tmp_path, monkeypatch):
+    project = _make_attached_project(tmp_path)
+    seen: list[str] = []
+    monkeypatch.setattr(
+        hooks, "get_adapter", lambda n: seen.append(n) or (_ for _ in ()).throw(RuntimeError)
+    )
+    monkeypatch.setenv("LORE_ROOT", str(project))
+    monkeypatch.setenv("LORE_HOST", "opencode")
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "x")  # the payload read publishes it; undo restores
+    monkeypatch.delenv("CLAUDE_SESSION_ID")
+    runner.invoke(
+        hook_app,
+        ["capture", "--event", "session-end", "--cwd", str(project)],
+        input='{"session_id": "ses_abc"}',
+    )
+    assert seen == ["opencode"]
+
+
+def test_context_log_finds_the_session_start_log_without_claude_session_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "cc-uuid")  # SessionStart has it; the Bash tool not
+    monkeypatch.setattr("lore_cli.hooks._claude_code_pid", lambda: os.getpid())
+    hooks._emit("SessionStart", "banner-body", plain=False)
+    monkeypatch.delenv("CLAUDE_SESSION_ID")
     assert "banner-body" in _context_log()

@@ -409,11 +409,23 @@ def _capture_suppressed() -> bool:
     return os.environ.get("LORE_SUPPRESS_CAPTURE") == "1"
 
 
+def _host_adapter() -> str:
+    """Adapter name of the running host: Claude Code markers beat an inherited LORE_HOST."""
+    from lore_core.tiers import TierResolutionError, detect_host
+
+    try:
+        if detect_host() == "claude":
+            return "claude-code"
+    except TierResolutionError:
+        pass
+    return os.environ.get("LORE_HOST") or "claude-code"
+
+
 def _session_off_all() -> bool:
     """True iff `/lore:off` (scope=all) is active for the current session.
 
-    Resolves the session id via ``toggles.session_id`` (LORE_SESSION_ID, else
-    CLAUDE_SESSION_ID, which `_read_hook_payload`
+    Resolves the session id via ``toggles.session_id`` (CLAUDE_SESSION_ID, else
+    LORE_SESSION_ID; ``CLAUDE_SESSION_ID`` is what `_read_hook_payload`
     publishes from the Claude Code stdin payload, issue #29 / v0.13.1).
     Returns False when no sid is available — without a sid we can't scope a
     sentinel, so the safe default is "not muted."
@@ -954,7 +966,7 @@ def cmd_user_prompt_submit(
     # transcript file) and keeps `last_mtime` fresh across the session.
     # Without this, long sessions sit on accumulated turns until SessionEnd.
     try:
-        adapter = get_adapter(os.environ.get("LORE_HOST") or "claude-code")
+        adapter = get_adapter(_host_adapter())
         _register_pending_transcripts(lore_root, cwd_resolved, adapter=adapter)
     except Exception:
         pass  # never break the prompt path on a registration hiccup
@@ -1060,7 +1072,9 @@ def capture(
     transcript: Path | None = typer.Option(None, help="Explicit transcript path; else autodetect via adapter."),
     cwd_override: Path | None = typer.Option(None, "--cwd", help="Explicit cwd; else CLAUDE_PROJECT_DIR or os.getcwd()."),
     integration: str | None = typer.Option(
-        None, help="Adapter integration name; default $LORE_HOST, else claude-code."
+        None,
+        help="Adapter integration name; default claude-code inside Claude Code, "
+        "else $LORE_HOST, else claude-code.",
     ),
 ) -> None:
     """Hot-path capture hook — called by Claude Code on SessionEnd / PreCompact / SessionStart.
@@ -1077,7 +1091,7 @@ def capture(
         # while the user has muted us.
         return
     from_env = integration is None and bool(os.environ.get("LORE_HOST"))
-    integration = integration or os.environ.get("LORE_HOST") or "claude-code"
+    integration = integration or _host_adapter()
     if event == "session-end":  # PRD 0017: retry undelivered logbook entries
         _logbook_line(cwd_override or _resolve_cwd_capture(), spawn=True)
     import time as _time

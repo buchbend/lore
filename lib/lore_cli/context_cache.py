@@ -34,7 +34,11 @@ def _sessions_cache_dir() -> Path:
 
 
 def _session_id() -> str | None:
-    """``sid-$LORE_SESSION_ID`` when it is path-safe, else None (PID path applies)."""
+    """``sid-$LORE_SESSION_ID`` when it is path-safe, else None (PID path applies).
+
+    Not ``CLAUDE_SESSION_ID``: only the hook has it, the Bash tool that reads
+    the cache does not, so writer and reader would key differently.
+    """
     sid = os.environ.get("LORE_SESSION_ID", "")
     # "sid-" keeps a digits-only ID from reading as a PID in the cleanup.
     return f"sid-{sid}" if re.fullmatch(r"[A-Za-z0-9_-]+", sid) else None

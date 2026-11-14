@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -91,6 +92,9 @@ def _tool_text(state: dict) -> str:
     return ""
 
 
+SESSION_MAX_AGE_DAYS = 7
+
+
 class OpenCodeAdapter:
     """Filesystem adapter for the plugin's OpenCode session files."""
 
@@ -99,6 +103,23 @@ class OpenCodeAdapter:
     def transcript_path_for_id(self, session_id: str, cwd: Path) -> Path | None:
         path = sessions_dir() / f"{session_id}.jsonl"
         return path if path.is_file() else None
+
+    def prune_captured(self, ledger) -> int:
+        """Remove session files older than the age limit that the index holds.
+
+        Files the index lacks stay. Index entries are not touched.
+        """
+        cutoff = time.time() - SESSION_MAX_AGE_DAYS * 86400
+        removed = 0
+        for p in sessions_dir().glob("*.jsonl"):
+            try:
+                if p.stat().st_mtime >= cutoff or ledger.get(INTEGRATION, p.stem) is None:
+                    continue
+                p.unlink()
+                removed += 1
+            except OSError:
+                continue
+        return removed
 
     def list_transcripts(self, directory: Path) -> list[TranscriptHandle]:
         wanted = Path(directory).resolve()

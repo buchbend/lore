@@ -265,7 +265,9 @@ def summarize(
             model, phase = str(row.get("model") or "?"), str(row.get("phase") or "?")
             reported = row.get("cost")  # OpenCode's own figure beats our estimate
             # A reported 0 with tokens is a provider that reports no price: estimate.
-            has_tokens = any(row.get(k) for k in ("input", "output", "cache_read", "cache_write"))
+            has_tokens = any(
+                row.get(k) for k in ("input", "output", "reasoning", "cache_read", "cache_write")
+            )
             cost = (
                 float(reported)
                 if isinstance(reported, (int, float)) and (reported or not has_tokens)

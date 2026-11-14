@@ -87,7 +87,8 @@ Lore's skills spawn the tier subagents, which always pass the gate. See
 ## Mute Lore in a session
 
 Run `lore off` in the agent shell. The plugin sets `LORE_SESSION_ID` for
-the agent shell, so the mute covers the hooks of the session. Run
+the agent shell, so the mute covers the hooks of the session. The plugin
+also refuses each `lore` MCP tool call of a muted session. Run
 `lore on` to end the mute. OpenCode has no slash command for the mute.
 
 ## Where capture writes
@@ -95,6 +96,19 @@ the agent shell, so the mute covers the hooks of the session. Run
 The plugin writes one session file per OpenCode session to
 `$LORE_OPENCODE_DIR`, else `${XDG_STATE_HOME:-~/.local/state}/lore/opencode/`.
 `lore trace tokens` and the transcript index read the session files.
+OpenCode capture removes a session file when the file is older than 7 days
+and the transcript index holds its session. Capture keeps every other file.
+
+## Run Claude Code from an OpenCode shell
+
+You can run `claude` from the agent shell of an OpenCode session. The
+nested Claude Code session detects Claude Code as its host. It uses its own
+session id and the Claude Code tier models.
+
+The reverse case works too. The plugin removes the Claude Code variables
+from the commands and agent shells that it starts. Lore in an OpenCode
+session keeps OpenCode as its host, even when OpenCode starts from a
+Claude Code shell.
 
 ## Uninstall
 
@@ -108,11 +122,11 @@ Lore's names.
   toast.
 - The plugin captures a session when OpenCode stops or reloads the
   plugin. A 15-second timer keeps the session file current between turns.
-- `lore off` does not mute the `lore` MCP tools. OpenCode starts the MCP
-  server once per server process, without `LORE_SESSION_ID`.
+- `lore off` does not mute the `lore` MCP tool calls of an OpenCode
+  subagent. The mute file belongs to the parent session.
 - After `pipx upgrade lore` without `lore update`, the old plugin lets a
   denied spawn run. Run `lore update` or `lore setup` after an upgrade.
 - A comment inside `mcp.servers.lore` or inside a `lore:<name>` command is
   lost when the installer updates the entry.
-- See issues #626 (MCP mute in OpenCode), #627 (OpenCode environment in a
-  nested Claude Code) and #628 (old session files).
+- `lore off` in the Bash tool of a nested Claude Code session mutes the
+  parent OpenCode session, not the nested session.

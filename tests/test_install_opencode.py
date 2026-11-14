@@ -132,6 +132,14 @@ def test_uninstall_removes_plugin_and_lore_entries_and_keeps_the_rest(oc_home):
     assert set(data["commands"]) == {"mine"}
 
 
+@pytest.mark.parametrize("bad", ['"x"', "[1]", "null", "3"])
+def test_uninstall_plans_nothing_for_a_non_object_mcp_or_commands(oc_home, bad):
+    cfg = oc_home / ".config" / "opencode" / "opencode.json"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(f'{{"mcp": {bad}, "commands": {bad}}}')
+    assert opencode.uninstall_plan(InstallContext()) == []
+
+
 def test_uninstall_leaves_a_plugin_file_lore_did_not_write(oc_home):
     plugin = oc_home / ".config" / "opencode" / "plugins" / "lore.js"
     plugin.parent.mkdir(parents=True)
@@ -161,6 +169,8 @@ def test_event_commands_follow_the_table():
 
 _DRIVER = r"""
 import plugin from "./lore.mjs";
+import { join } from "node:path";
+import { writeFileSync, unlinkSync } from "node:fs";
 const hooks = {}, shell = {}, transforms = [];
 const agents = [{ id: "build", mode: "primary" }, { id: "general", mode: "subagent" },
   { id: "lore-mid", mode: "subagent", model: { providerID: "anthropic", id: "claude-sonnet-5" } }];
@@ -184,7 +194,8 @@ const second = req("ses_main", "build"); await hooks.context(second); out.second
 await hooks.prompt({ sessionID: "ses_sub", prompt: { text: "task" } });
 const sub = req("ses_sub", "general"); await hooks.context(sub); out.sub = sub.system;
 const comp = req("ses_main", "build"); await hooks.compaction(comp); out.compaction = comp.system;
-const s = { command: "ls", env: {} }; await shell["create.before"](s); out.shellEnv = s.env;
+const s = { command: "ls", env: { CLAUDECODE: "1", CLAUDE_SESSION_ID: "cc" } };
+await shell["create.before"](s); out.shellEnv = s.env;
 const added = [];
 for (const t of transforms) t({ get: () => undefined, add: (k) => added.push(k) });
 out.skills = added;
@@ -198,6 +209,20 @@ out.gate = { pinned: await gate("subagent", { agent: "lore-mid" }),
   unpinned: await gate("subagent", { agent: "general" }),
   usage: await gate("subagent", { agent: "ghost" }) };
 out.gateOther = await gate("bash", {});
+// OpenCode names an MCP tool <server>.<tool>: lore_search of server lore.
+const mcp = () => gate("lore.lore_search", { query: "x" });
+out.mcp = { open: await mcp() };
+const off = join(process.env.TMPDIR, "lore-off-all-ses_main");
+writeFileSync(off, "");
+out.mcp.muted = await mcp();
+out.mcp.mutedOtherSession = await (async () => {
+  const ev = { tool: "lore.lore_search", sessionID: "ses_other" };
+  try { await toolHooks["execute.before"](ev); return "allowed"; }
+  catch (e) { return e.message; }
+})();
+out.mcp.mutedBash = await gate("bash", {});
+unlinkSync(off);
+out.mcp.unmuted = await mcp();
 console.log(JSON.stringify(out));
 """
 
@@ -213,6 +238,7 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path, bare_list
     fake.write_text(
         "#!/bin/sh\n"
         "in=$(cat)\n"
+        f'[ -n "$CLAUDECODE$CLAUDE_SESSION_ID" ] && echo leak >> "{log}.leak"\n'
         f'echo "$LORE_HOST $LORE_SESSION_ID $*" >> "{log}"\n'
         'if [ "$2" = spawn-model-gate ]; then\n'
         f'  echo "stdin $in" >> "{log}"\n'
@@ -238,7 +264,12 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path, bare_list
         text=True,
         timeout=60,
         check=True,
-        env={**os.environ, "BARE_LIST": "1" if bare_list else "0"},
+        env={
+            **os.environ,
+            "BARE_LIST": "1" if bare_list else "0",
+            "TMPDIR": str(tmp_path),
+            "CLAUDECODE": "1",
+        },
     )
     out = json.loads(proc.stdout)
 
@@ -265,6 +296,12 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path, bare_list
     ]
     assert out["gate"] == {"pinned": "allowed", "unpinned": "DENY-TEXT", "usage": "allowed"}
     assert out["gateOther"] == "allowed"
+    assert not (tmp_path / "lore.log.leak").exists()  # Claude markers stay out of child env
+    assert out["mcp"]["open"] == "allowed"
+    assert "muted" in out["mcp"]["muted"]
+    assert out["mcp"]["mutedOtherSession"] == "allowed"
+    assert out["mcp"]["mutedBash"] == "allowed"
+    assert out["mcp"]["unmuted"] == "allowed"
 
 
 def test_no_source_root_writes_no_plugin_so_the_next_setup_retries(oc_home, monkeypatch):
@@ -587,3 +624,47 @@ def test_a_silent_update_keeps_the_keys_the_person_added(oc_home):
     assert entry["enabled"] is False and entry["environment"] == {"LORE_ROOT": "/mine"}
     assert after["commands"]["lore:tdd"]["model"] == "mine"
     assert after["commands"]["lore:tdd"]["description"] != "old"
+
+
+_RACE_DRIVER = r"""
+import plugin from "./lore.mjs";
+const hooks = {};
+const ctx = {
+  location: { directory: process.argv[2] },
+  agent: { list: async () => ({ data: [{ id: "build", mode: "primary" }] }) },
+  session: { hook: async (name, fn) => { hooks[name] = fn; } },
+  shell: { hook: async () => {} },
+  tool: { hook: async () => {} },
+  skill: { transform: async () => {} },
+};
+await plugin.setup(ctx);
+const req = () => ({ sessionID: "ses_main", agent: "build", system: [] });
+const a = req(), b = req();
+await Promise.all([hooks.context(a), hooks.context(b)]);
+console.log(JSON.stringify([a.system.length, b.system.length]));
+"""
+
+
+@pytest.mark.skipif(not __import__("shutil").which("node"), reason="node not installed")
+def test_two_concurrent_context_calls_run_session_start_once(tmp_path):
+    import subprocess
+
+    log = tmp_path / "lore.log"
+    fake = tmp_path / "lore"
+    fake.write_text(f'#!/bin/sh\necho "$*" >> "{log}"\nsleep 0.3\necho BANNER\n')
+    fake.chmod(0o755)
+    manifest = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
+    (tmp_path / "lore.mjs").write_text(
+        opencode.generate_plugin(manifest, [], lore_bin=str(fake), version="9.9.9")
+    )
+    (tmp_path / "driver.mjs").write_text(_RACE_DRIVER)
+    proc = subprocess.run(
+        ["node", "driver.mjs", str(tmp_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    assert json.loads(proc.stdout) == [1, 1]
+    assert len([ln for ln in log.read_text().splitlines() if "session-start" in ln]) == 1

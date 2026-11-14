@@ -86,7 +86,18 @@ def test_detect_host_unknown_fails_loudly(monkeypatch):
         detect_host()
 
 
+def test_a_claude_code_marker_beats_an_inherited_opencode_host(tmp_path, monkeypatch):
+    from lore_core.tiers import detect_host
+
+    monkeypatch.setenv("LORE_HOST", "opencode")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert detect_host() == "claude"
+    assert resolve_tier("mid", lore_root=_mk_root(tmp_path)) == TABLE["claude"]["mid"]
+
+
 def test_opencode_resolves_to_a_lore_subagent_name(tmp_path, monkeypatch):
+    for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID", "CLAUDE_CODE_EXECPATH"):
+        monkeypatch.delenv(var, raising=False)
     root = _mk_root(tmp_path)
     assert resolve_tier("mid", host="opencode", lore_root=root) == "lore-mid"
     monkeypatch.setenv("LORE_HOST", "opencode")

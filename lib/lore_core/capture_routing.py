@@ -25,9 +25,6 @@ if TYPE_CHECKING:
     from lore_core.types import Scope
 
 
-
-
-
 def register_pending_transcripts(
     lore_root: Path,
     cwd: Path,
@@ -54,6 +51,11 @@ def register_pending_transcripts(
     transcript read (edited files, commit SHAs). Only a session boundary
     passes it; a per-prompt heartbeat must not pay that parse.
     """
+    tledger = TranscriptLedger(lore_root)
+    prune = getattr(adapter, "prune_captured", None)
+    if prune is not None:
+        prune(tledger)
+
     if transcript is not None:
         handles = [h for h in adapter.list_transcripts(cwd) if h.path == transcript]
     else:
@@ -61,8 +63,6 @@ def register_pending_transcripts(
 
     if not handles:
         return 0
-
-    tledger = TranscriptLedger(lore_root)
 
     to_write: list[TranscriptLedgerEntry] = []
     for h in handles:

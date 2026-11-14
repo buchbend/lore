@@ -59,6 +59,11 @@ def _first_user_text(messages: list[dict]) -> str:
     return next((m.get("text") or "" for m in messages if m.get("type") == "user"), "")
 
 
+def _created(msgs: list[dict]) -> float:
+    t = msgs[0].get("time") if msgs else None
+    return (t.get("created") or 0) if isinstance(t, dict) else 0
+
+
 def trace_opencode(path: Path) -> list[PhaseTokens]:
     from lore_adapters.opencode import read_header, read_session
 
@@ -69,6 +74,8 @@ def trace_opencode(path: Path) -> list[PhaseTokens]:
     for other in sorted(Path(path).parent.glob("*.jsonl")):
         if main_id and read_header(other).get("parentID") == main_id:
             children.append(read_session(other)[1])
+    # Spawn order, not filename order: OpenCode 2.x session IDs sort newest-first.
+    children.sort(key=_created)
 
     phases = [PhaseTokens("main")]
     seen: set[str] = set()
@@ -97,9 +104,14 @@ def trace_opencode(path: Path) -> list[PhaseTokens]:
             phases.append(row)
             rows.append((row, str(inp.get("prompt") or "").strip()))
 
+    claimed: set[int] = set()  # one child session per call, even when it counts no tokens
     for child in children:
         text = _first_user_text(child)
-        row = next((r for r, prompt in rows if prompt and prompt in text and r.messages == 0), None)
+        row = next(
+            (r for r, prompt in rows if prompt and prompt in text and id(r) not in claimed), None
+        )
+        if row is not None:
+            claimed.add(id(row))
         if row is None:
             row = PhaseTokens("agent:subagent", target=phases[0].target)
             phases.append(row)

@@ -120,3 +120,56 @@ def test_the_estimate_prices_reasoning_tokens_at_the_output_rate() -> None:
     assert summarize([_record(cost=0)]).total.cost == pytest.approx(base)  # no reasoning: same
     with_reasoning = summarize([_record(cost=0, reasoning=300)]).total.cost
     assert with_reasoning == pytest.approx(base + 300 * 20.0 / 1e6)
+
+
+def test_a_reasoning_only_row_with_zero_reported_cost_keeps_the_estimate() -> None:
+    row = {"cost": 0, "input": 0, "output": 0, "reasoning": 1000}
+    assert summarize([_record(**row)]).total.cost == pytest.approx(1000 * 20.0 / 1e6)
+
+
+def test_two_subagent_calls_with_one_prompt_match_two_child_sessions(tmp_path: Path) -> None:
+    folder, cwd = tmp_path / "oc", tmp_path / "proj"
+    spawns = [
+        oc.tool(
+            "subagent",
+            f"call_{i}",
+            {"agent": "lore-mid", "description": f"d{i}", "prompt": "Same."},
+        )
+        for i in (1, 2)
+    ]
+    main = oc.write_session(
+        folder,
+        "ses_main",
+        cwd,
+        [oc.user("go"), oc.assistant("m1", [spawns[0]]), oc.assistant("m2", [spawns[1]])],
+    )
+    # OpenCode 2.x IDs sort newest-first: the second spawn's child has the smaller ID.
+    for sid, i in (("ses_b", 1), ("ses_a", 2)):
+        oc.write_session(
+            folder,
+            sid,
+            cwd,
+            [
+                oc.user("Same.", created=1_700_000_000_000 + i),
+                oc.assistant(f"c{i}", [oc.text("x")], tokens=(i, 0, 0, 0, 0)),
+            ],
+            parent="ses_main",
+        )
+    rows = {p.name: p.input for p in trace_tokens(main) if p.name.startswith("agent:")}
+    assert rows == {"agent:d1": 1, "agent:d2": 2}
+
+
+def test_an_empty_child_session_file_does_not_break_the_trace(tmp_path: Path) -> None:
+    folder, cwd = tmp_path / "oc", tmp_path / "proj"
+    spawn = oc.tool("subagent", "call_1", {"agent": "lore-mid", "prompt": "Do it."})
+    main = oc.write_session(folder, "ses_main", cwd, [oc.user("go"), oc.assistant("m1", [spawn])])
+    oc.write_session(folder, "ses_empty", cwd, [], parent="ses_main")
+    oc.write_session(
+        folder,
+        "ses_ok",
+        cwd,
+        [oc.user("Do it."), oc.assistant("c1", [oc.text("x")], tokens=(3, 0, 0, 0, 0))],
+        parent="ses_main",
+    )
+    rows = [p for p in trace_tokens(main) if p.name.startswith("agent:")]
+    assert [r.input for r in rows if r.input] == [3]

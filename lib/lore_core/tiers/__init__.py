@@ -34,15 +34,17 @@ def detect_host() -> str:
     known host announces itself — silent defaulting would resolve
     tiers to the wrong model without any signal that happened.
     """
+    # Claude Code markers first: a Claude Code started in an OpenCode shell
+    # inherits LORE_HOST=opencode. CLAUDE_SESSION_ID is no marker: a hook payload
+    # publishes it for any host (OpenCode SessionEnd too).
+    if any(
+        os.environ.get(var) for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_EXECPATH")
+    ):
+        return "claude"
     if os.environ.get("LORE_HOST"):
         host = os.environ["LORE_HOST"]
         # capture's adapter name for Claude Code; the tier table says "claude"
         return "claude" if host == "claude-code" else host
-    if any(
-        os.environ.get(var)
-        for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID", "CLAUDE_CODE_EXECPATH")
-    ):
-        return "claude"
     if os.environ.get("CURSOR_PROJECT_DIR"):
         return "cursor"
     raise TierResolutionError(
