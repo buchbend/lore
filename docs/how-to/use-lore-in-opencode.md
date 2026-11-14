@@ -27,6 +27,10 @@ design. PRD 0022 (OpenCode as a host) holds the event table.
 
 3. Start a new OpenCode session. The model context holds the Lore banner.
 
+OpenCode lists the MCP tools under the server name, such as
+`lore.lore_search`. Lore's skills name the tools without the server name,
+and the agent finds them.
+
 The installer asks before it replaces a `plugins/lore.js` without the
 lore-managed marker. The installer leaves a `lore-<tier>.md` without the
 marker as it is, and `lore setup` prints its path.
@@ -42,6 +46,26 @@ replaces any other entry under those names.
 Run `lore update`. The update rewrites `plugins/lore.js` and the tier
 subagents when the Lore version or the tier table changes. The update
 touches OpenCode only when `plugins/lore.js` exists.
+
+## Set the models of the tier subagents
+
+The tier subagents pin the models of the `opencode` column in the tier
+table, such as `anthropic/claude-sonnet-5`. A tier subagent fails when
+your OpenCode providers do not offer its model. To use your own models,
+set them in `~/.config/lore/config.yml`:
+
+```yaml
+tiers:
+  overrides:
+    opencode:
+      frontier: <provider>/<model>
+      strong: <provider>/<model>
+      mid: <provider>/<model>
+      cheap: <provider>/<model>
+```
+
+Then run `lore setup`. Setup rewrites each `lore-<tier>.md` whose model
+changed.
 
 ## Pin a model for the built-in subagents
 
