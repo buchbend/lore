@@ -332,7 +332,8 @@ export default {
           model = a.model ? `${a.model.providerID}/${a.model.id}` : "";
         }
       } catch { return; } // cannot tell what the agent pins: fail open
-      const payload = { tool_name: "subagent", tool_input: { agent: name, model, ...(known ? {} : { agent_known: false }) } };
+      const input = { agent: name, model, ...(known ? {} : { agent_known: false }) };
+      const payload = { tool_name: "subagent", tool_input: input };
       const denial = await spawnGate(payload, cwd, t.sessionID);
       if (denial) throw new Error(denial);
     });
