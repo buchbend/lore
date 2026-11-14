@@ -73,3 +73,10 @@ def test_install_sh_uninstalls_the_old_plugin_only_after_the_lore_update_succeed
     text = INSTALL_SH.read_text()
     update = text.index("if claude plugin update lore@lore")
     assert update < text.index("claude plugin uninstall lore-workflow@lore")
+
+
+def test_install_sh_upgrade_refreshes_the_agent_wiring():
+    """`lore update` runs `install.sh upgrade`; the new lore rewrites the OpenCode plugin."""
+    text = INSTALL_SH.read_text()
+    upgrade = text.split('if [ "$HAS_PLUGIN" -eq 1 ]; then', 1)[1].split("\nelse\n", 1)[0]
+    assert "lore setup agents" in upgrade

@@ -61,6 +61,7 @@ def test_install_writes_plugin_with_marker_and_version_and_mcp_server(oc_home):
     assert "lore-managed" in plugin
     assert importlib.metadata.version("lore") in plugin
     assert 'id: "lore"' in plugin
+    assert opencode.installed_plugin_version() == importlib.metadata.version("lore")
 
     assert _config(oc_home)["mcp"]["servers"]["lore"] == {
         "type": "local",
@@ -158,9 +159,10 @@ def test_event_commands_follow_the_table_and_leave_capture_to_613():
 _DRIVER = r"""
 import plugin from "./lore.mjs";
 const hooks = {}, shell = {}, transforms = [];
+const agents = [{ id: "build", mode: "primary" }, { id: "general", mode: "subagent" }];
 const ctx = {
   location: { directory: process.argv[2] },
-  agent: { list: async () => ({ data: [{ id: "build", mode: "primary" }, { id: "general", mode: "subagent" }] }) },
+  agent: { list: async () => ({ data: agents }) },
   session: { hook: async (name, fn) => { hooks[name] = fn; } },
   shell: { hook: async (name, fn) => { shell[name] = fn; } },
   skill: { transform: async (fn) => { transforms.push(fn); } },
@@ -206,7 +208,11 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path):
 
     proc = subprocess.run(
         ["node", "driver.mjs", str(tmp_path)],
-        cwd=tmp_path, capture_output=True, text=True, timeout=60, check=True,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
     )
     out = json.loads(proc.stdout)
 

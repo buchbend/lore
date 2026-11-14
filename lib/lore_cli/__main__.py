@@ -135,7 +135,7 @@ def _build_app() -> typer.Typer:
 
     app.command(
         "uninstall",
-        help="Remove Lore's Claude Code and Cursor wiring.",
+        help="Remove Lore's Claude Code, Cursor and OpenCode wiring.",
     )(integrations.uninstall_command)
 
     app.command(
