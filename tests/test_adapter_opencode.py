@@ -124,3 +124,42 @@ def test_writing_the_file_twice_leaves_one_index_entry_with_linkage(folder, tmp_
         ("opencode", "ses_main", path)
     ]
     assert {"repo", "branch", "commits", "files"} <= set(entries[0].linkage)
+
+
+def _age(path: Path, days: float) -> None:
+    import os
+    import time
+
+    t = time.time() - days * 86400
+    os.utime(path, (t, t))
+
+
+def test_capture_removes_old_registered_files_and_keeps_the_rest(folder, tmp_path):
+    cwd = tmp_path / "proj"
+    cwd.mkdir()
+    lore_root = tmp_path / "vault"
+    lore_root.mkdir()
+    adapter = get_adapter("opencode")
+    old = oc.write_session(folder, "ses_old", cwd, _messages())
+    young = oc.write_session(folder, "ses_young", cwd, _messages())
+    register_pending_transcripts(lore_root, cwd, adapter=adapter)
+    _age(old, 8)
+    register_pending_transcripts(lore_root, cwd, adapter=adapter)
+    assert not old.exists()
+    assert young.exists()
+    ids = {e.transcript_id for e in TranscriptLedger(lore_root).all_entries()}
+    assert "ses_old" in ids  # index entries stay
+
+
+def test_capture_keeps_an_old_file_the_index_lacks(folder, tmp_path):
+    cwd = tmp_path / "proj"
+    cwd.mkdir()
+    lore_root = tmp_path / "vault"
+    lore_root.mkdir()
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    oc.write_session(folder, "ses_young", cwd, _messages())
+    stale = oc.write_session(folder, "ses_stale", other, _messages())
+    _age(stale, 8)
+    register_pending_transcripts(lore_root, cwd, adapter=get_adapter("opencode"))
+    assert stale.exists()
