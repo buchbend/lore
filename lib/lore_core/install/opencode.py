@@ -464,7 +464,16 @@ def _config_action(key_path: list[str], value: Any, what: str) -> Action:
         and isinstance(node, dict)
         and node.get("template") == value["template"]
     )
-    if node is None or node == value or ours:
+    command = node.get("command") if isinstance(node, dict) else None
+    # Lore's own MCP entry may sit at another binary path (venv, pipx, bare "lore").
+    lores_mcp = (
+        key_path[0] == "mcp"
+        and isinstance(command, list)
+        and len(command) == 2
+        and command[-1] == "mcp"
+        and Path(str(command[0])).name == "lore"
+    )
+    if node is None or node == value or ours or lores_mcp:
         return _merge(key_path, value, what)
     path = config_path()
     return Action(
@@ -491,9 +500,10 @@ def config_stale() -> bool:
     if source_root is None:
         return False
     data = _read_config()
-    if "lore" not in ((data.get("mcp") or {}).get("servers") or {}):
+    servers = (data.get("mcp") or {}).get("servers") if isinstance(data.get("mcp"), dict) else None
+    have = data.get("commands")
+    if not isinstance(servers, dict) or "lore" not in servers or not isinstance(have, dict):
         return True
-    have = data.get("commands") or {}
     return any(s["name"] not in have for s in _skills(source_root))
 
 

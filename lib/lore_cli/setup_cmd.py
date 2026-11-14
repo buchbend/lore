@@ -385,9 +385,13 @@ def step_agents(cwd: Path) -> tuple[str, list[Event]]:
             events.append(
                 (None, f"{opencode.plugin_path()} has no lore-managed marker; left alone")
             )
-        elif have != pip or opencode.agents_stale() or opencode.config_stale():
+        elif (
+            have != pip
+            or (agents_old := opencode.agents_stale())
+            or opencode.config_stale()
+        ):
             ok = _install_integration("opencode") == 0
-            if have and have == pip and opencode.agents_stale():
+            if have and have == pip and agents_old:
                 events.append((ok, "rewrote the OpenCode tier subagents"))
             elif have and have == pip:
                 events.append((ok, "restored the OpenCode config entries"))

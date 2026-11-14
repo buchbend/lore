@@ -715,10 +715,23 @@ def test_repairs_a_deleted_opencode_config_entry(tmp_path, agents, monkeypatch):
     assert any("config" in msg for _, msg in events)
 
 
+from lore_core.install import opencode as opencode_mod  # noqa: E402
+
+
 def test_rewrites_the_opencode_subagents_when_the_tier_table_changed(tmp_path, agents, monkeypatch):
     _plugin_index(PIP)
     _opencode_plugin(PIP)
     monkeypatch.setattr(setup_cmd, "_present", lambda name: name in ("claude", "opencode"))
+    monkeypatch.setattr(opencode_mod, "config_stale", lambda: True)
+
+    def install(name):  # a real install writes the subagent files
+        for path, text in opencode_mod.agent_files().items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        agents.append(f"install {name}")
+        return 0
+
+    monkeypatch.setattr(setup_cmd, "_install_integration", install)
     _, events = setup_cmd.step_agents(tmp_path)  # subagent files missing
     assert "install opencode" in agents
     assert any("tier subagents" in msg for _, msg in events)
