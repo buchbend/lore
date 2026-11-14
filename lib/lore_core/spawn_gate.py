@@ -24,6 +24,12 @@ SPAWN_TOOL_NAMES = frozenset({"Task", "Agent"})
 # model (empty when none) as ``tool_input.model``.
 OPENCODE_SPAWN_TOOL = "subagent"
 
+_OPENCODE_UNKNOWN_AGENT_MESSAGE = (
+    "Spawn blocked: OpenCode does not know the agent {agent!r} named in this "
+    "subagent call. Retry with an agent OpenCode lists; for a tier use "
+    "`lore tier resolve <frontier|strong|mid|cheap>` (lore-<tier>).\n"
+)
+
 _OPENCODE_DENY_MESSAGE = (
     "Spawn blocked: the agent named in this subagent call pins no model, so it "
     "would implicitly inherit the session model — the tier contract forbids "
@@ -63,6 +69,8 @@ def check_spawn(payload: dict) -> str | None:
     if not isinstance(tool_input, dict):
         tool_input = {}
     deny = _OPENCODE_DENY_MESSAGE if tool == OPENCODE_SPAWN_TOOL else _DENY_MESSAGE
+    if tool == OPENCODE_SPAWN_TOOL and tool_input.get("agent_known") is False:
+        deny = _OPENCODE_UNKNOWN_AGENT_MESSAGE.format(agent=tool_input.get("agent"))
     if tool_input.get("subagent_type") == "fork":
         return None
     model = tool_input.get("model")

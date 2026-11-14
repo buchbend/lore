@@ -53,5 +53,10 @@ def test_opencode_plugin_flags_are_accepted_and_the_gate_denies() -> None:
     result = runner.invoke(
         hook_app, ["spawn-model-gate", "--plain", "--cwd", "/tmp"], input=json.dumps(payload)
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 3  # a denial; Click's usage error is 2
     assert "lore tier resolve" in result.stderr
+
+
+def test_opencode_usage_error_is_not_the_denial_code() -> None:
+    result = CliRunner().invoke(hook_app, ["spawn-model-gate", "--plain", "--bogus"])
+    assert result.exit_code == 2

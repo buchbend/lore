@@ -737,6 +737,18 @@ def test_rewrites_the_opencode_subagents_when_the_tier_table_changed(tmp_path, a
     assert any("tier subagents" in msg for _, msg in events)
 
 
+def test_reports_a_foreign_tier_subagent_file(tmp_path, agents, monkeypatch):
+    _plugin_index(PIP)
+    _opencode_plugin(PIP)
+    foreign = opencode_mod.agents_dir() / "lore-mid.md"
+    foreign.parent.mkdir(parents=True, exist_ok=True)
+    foreign.write_text("---\nmodel: x/y\n---\nmine\n")
+    monkeypatch.setattr(setup_cmd, "_present", lambda name: name in ("claude", "opencode"))
+    monkeypatch.setattr(opencode_mod, "config_stale", lambda: False)
+    _, events = setup_cmd.step_agents(tmp_path)
+    assert any(str(foreign) in msg for _, msg in events)
+
+
 def test_setup_agents_runs_only_the_agents_step(tmp_path, agents, no_prompt, monkeypatch):
     _plugin_index(PIP)
     monkeypatch.setattr(setup_cmd, "_present", lambda name: name == "opencode")

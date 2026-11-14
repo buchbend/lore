@@ -395,6 +395,10 @@ def step_agents(cwd: Path) -> tuple[str, list[Event]]:
                 events.append((ok, f"rewrote the OpenCode plugin: {have} → {pip}"))
             else:
                 events.append((ok, "installed Lore into OpenCode"))
+        events.extend(
+            (None, f"{path} has no lore-managed marker; left alone")
+            for path in opencode.foreign_agent_files()
+        )
 
     return ", ".join(present) or "no Claude Code, Cursor or OpenCode found", events
 
