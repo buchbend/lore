@@ -334,7 +334,7 @@ def _uninstall_old_plugin() -> list[Event]:
 def step_agents(cwd: Path) -> tuple[str, list[Event]]:
     """Install or refresh the Claude Code plugin, and Cursor's wiring where present."""
     events: list[Event] = []
-    present = [n for n in ("claude", "cursor") if _present(n)]
+    present = [n for n in ("claude", "cursor", "opencode") if _present(n)]
 
     if "claude" in present:
         current = True
@@ -367,7 +367,22 @@ def step_agents(cwd: Path) -> tuple[str, list[Event]]:
             ok = _install_integration("cursor") == 0
             events.append((ok, f"repaired the Cursor wiring ({'; '.join(stale)})"))
 
-    return ", ".join(present) or "no Claude Code or Cursor found", events
+    if "opencode" in present:
+        from lore_core.install import opencode
+
+        have, pip = opencode.installed_plugin_version(), version("lore")
+        if have is None and opencode.plugin_path().exists():
+            events.append(
+                (None, f"{opencode.plugin_path()} has no lore-managed marker; left alone")
+            )
+        elif have != pip:
+            ok = _install_integration("opencode") == 0
+            if have:
+                events.append((ok, f"rewrote the OpenCode plugin: {have} → {pip}"))
+            else:
+                events.append((ok, "installed Lore into OpenCode"))
+
+    return ", ".join(present) or "no Claude Code, Cursor or OpenCode found", events
 
 
 def _behind(cached: str, pip: str) -> bool:
@@ -595,6 +610,12 @@ def setup_wiki(
         ),
     )
     _finish(ok & _migrate_report())
+
+
+@app.command("agents")
+def setup_agents() -> None:
+    """Install or refresh the Claude Code, Cursor and OpenCode wiring (the Agents step alone)."""
+    _finish(_report("agents", *step_agents(Path.cwd())))
 
 
 @app.command("scope")
