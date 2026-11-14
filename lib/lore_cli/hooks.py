@@ -1072,7 +1072,9 @@ def capture(
     transcript: Path | None = typer.Option(None, help="Explicit transcript path; else autodetect via adapter."),
     cwd_override: Path | None = typer.Option(None, "--cwd", help="Explicit cwd; else CLAUDE_PROJECT_DIR or os.getcwd()."),
     integration: str | None = typer.Option(
-        None, help="Adapter integration name; default $LORE_HOST, else claude-code."
+        None,
+        help="Adapter integration name; default claude-code inside Claude Code, "
+        "else $LORE_HOST, else claude-code.",
     ),
 ) -> None:
     """Hot-path capture hook — called by Claude Code on SessionEnd / PreCompact / SessionStart.
