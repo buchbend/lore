@@ -245,7 +245,10 @@ def test_a_utf8_session_file_reads_under_a_non_utf8_locale(session: Path) -> Non
         "import sys; from lore_adapters.opencode import read_session; "
         "print(ascii(read_session(sys.argv[1])[1][0]['text']))"
     )
-    env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
+    import lore_adapters
+
+    lib = str(Path(lore_adapters.__file__).parents[1])
+    env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0", "PYTHONPATH": lib}
     env.pop("PYTHONIOENCODING", None)
     out = subprocess.run(
         [sys.executable, "-X", "utf8=0", "-c", code, str(session)],
