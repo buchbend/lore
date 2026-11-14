@@ -64,7 +64,7 @@ def test_capture_unknown_lore_host_exits_0_and_logs_crash(tmp_path, monkeypatch)
 def test_context_log_reads_lore_session_id_cache(tmp_path, monkeypatch):
     sessions = tmp_path / "cache" / "sessions"
     sessions.mkdir(parents=True)
-    (sessions / "ses_abc.md").write_text("opencode session log\n")
+    (sessions / "sid-ses_abc.md").write_text("opencode session log\n")
     monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
     monkeypatch.setenv("LORE_SESSION_ID", "ses_abc")
     monkeypatch.setattr("lore_cli.hooks._claude_code_pid", lambda: None)
@@ -134,3 +134,12 @@ def test_setup_writes_claude_md_beside_existing_agents_md(tmp_path, agents):
     runner.invoke(app, ["setup", "--yes", "--vault", str(vault)])
     assert (vault / "AGENTS.md").read_text() == "mine\n"
     assert (vault / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
+
+
+def test_session_id_cache_is_prefixed_and_digit_id_survives_gc(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("LORE_SESSION_ID", "99999999")  # digits-only: not a live PID
+    monkeypatch.setattr("lore_cli.hooks._claude_code_pid", lambda: None)
+    hooks._emit("SessionStart", "banner-body", plain=False)
+    assert (tmp_path / "cache" / "sessions" / "sid-99999999.md").exists()
+    assert "banner-body" in _context_log()

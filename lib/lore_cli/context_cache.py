@@ -34,9 +34,10 @@ def _sessions_cache_dir() -> Path:
 
 
 def _session_id() -> str | None:
-    """``$LORE_SESSION_ID`` when it is path-safe, else None (PID path applies)."""
+    """``sid-$LORE_SESSION_ID`` when it is path-safe, else None (PID path applies)."""
     sid = os.environ.get("LORE_SESSION_ID", "")
-    return sid if re.fullmatch(r"[A-Za-z0-9_-]+", sid) else None
+    # "sid-" keeps a digits-only ID from reading as a PID in the cleanup.
+    return f"sid-{sid}" if re.fullmatch(r"[A-Za-z0-9_-]+", sid) else None
 
 
 def _cache_path_for_pid(pid: int | str) -> Path:
