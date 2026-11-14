@@ -68,7 +68,11 @@ EVENT_TABLE: dict[str, tuple[str | None, str]] = {
         "ctx.event.subscribe); the session files are written earlier, debounced "
         'after each "context" request',
     ),
-    "PreToolUse": (None, 'not mapped (#614): spawn gate on tool.hook("execute.before")'),
+    "PreToolUse": (
+        "gate",
+        'tool.hook("execute.before") on the tool subagent; the plugin passes the '
+        "model the named agent pins, and a thrown error denies the spawn",
+    ),
 }
 
 
@@ -182,13 +186,27 @@ async function run(slot, cwd, sessionID) {
 function loreEnd(argv, cwd, sessionID, payload) {
   return new Promise((resolve) => {
     const env = { ...process.env, LORE_HOST: "opencode", LORE_SESSION_ID: sessionID };
-    const child = execFile(LORE, argv, { cwd, env, timeout: 60000 }, () => resolve());
+    // `lore hook capture` prefers CLAUDE_PROJECT_DIR over the process cwd.
+    const args = argv[1] === "capture" ? [...argv, "--cwd", cwd] : argv;
+    const child = execFile(LORE, args, { cwd, env, timeout: 60000 }, () => resolve());
     child.stdin?.on("error", () => {});
     child.stdin?.end(JSON.stringify(payload));
   });
 }
 
 const part = (text) => ({ type: "text", text });
+
+// Spawn gate: Lore decides, the plugin only reports which model the agent pins.
+function spawnGate(payload, cwd, sessionID) {
+  return new Promise((resolve) => {
+    const env = { ...process.env, LORE_HOST: "opencode", LORE_SESSION_ID: sessionID };
+    const [argv] = EVENTS.gate || [];
+    if (!argv) return resolve("");
+    const child = execFile(LORE, [...argv, "--plain", "--cwd", cwd], { cwd, env, timeout: 60000 },
+      (err, _out, stderr) => resolve(err && err.code === 2 ? String(stderr).trim() : ""));
+    child.stdin?.end(JSON.stringify(payload));
+  });
+}
 
 export default {
   id: "lore",
@@ -232,14 +250,16 @@ export default {
           } catch {}
         }
         const reply = await ctx.session.context({ sessionID });
-        const live = Array.isArray(reply) ? reply : reply?.data;
+        const live = reply?.data ?? reply;
         if (!Array.isArray(live)) return;
         // ponytail: the call may return only the live context window; keeping
         // every message seen by id keeps what a compaction dropped.
         for (const m of live) s.messages.set(m.id, m);
         if (s.parentID === undefined) {
-          try { s.parentID = (await ctx.session.get({ sessionID }))?.parentID ?? null; }
-          catch { s.parentID = null; }
+          try {
+            const g = await ctx.session.get({ sessionID });
+            s.parentID = (g?.data ?? g)?.parentID ?? null;
+          } catch { s.parentID = null; }
         }
         const header = {
           type: "session", host: "opencode", sessionID, directory: cwd, parentID: s.parentID,
@@ -299,6 +319,21 @@ export default {
       }
     });
 
+    await ctx.tool.hook("execute.before", async (t) => {
+      if (t.tool !== "subagent") return;
+      const name = t.input?.agent;
+      let model = "";
+      try {
+        for (const a of (await ctx.agent.list()).data || []) {
+          if (a.id !== name && a.name !== name) continue;
+          model = a.model ? `${a.model.providerID}/${a.model.id}` : "";
+        }
+      } catch { return; } // cannot tell what the agent pins: fail open
+      const payload = { tool_name: "subagent", tool_input: { agent: name, model } };
+      const denial = await spawnGate(payload, cwd, t.sessionID);
+      if (denial) throw new Error(denial);
+    });
+
     return async () => {
       for (const [id, s] of sessions) if (!s.main) await flush(id);
       for (const [id, s] of sessions) {
@@ -329,6 +364,72 @@ def generate_plugin(
         .replace("__SKILLS__", json.dumps(skills, indent=2))
         .replace("__SESSIONS_DIR__", json.dumps(str(sessions_dir())))
     )
+
+
+AGENT_MARKER = "lore-managed"
+
+
+def agents_dir() -> Path:
+    return config_dir() / "agents"
+
+
+def _tier_model(tier: str) -> str:
+    from lore_core.tiers import tier_model
+
+    return tier_model(tier, "opencode")
+
+
+def agent_files() -> dict[Path, str]:
+    """Path -> text of the four ``lore-<tier>`` subagents, each pinning its tier's model.
+
+    The ``model`` field is ``provider/model``, the 2.x agent config shape
+    (``@opencode/schema`` 2.0.32 ``ConfigAgent.Info.model``).
+    """
+    from lore_core.tiers import TIER_ORDER
+
+    return {
+        agents_dir() / f"lore-{tier}.md": (
+            f"---\n# {AGENT_MARKER}: written by `lore setup`; `lore update` rewrites it.\n"
+            f"description: Lore {tier} tier. Pass this agent to run a step on the {tier} model.\n"
+            f"mode: subagent\nmodel: {_tier_model(tier)}\n---\n"
+            f"You are the Lore {tier}-tier subagent. Do the task you are given.\n"
+        )
+        for tier in TIER_ORDER
+    }
+
+
+def _agent_actions() -> list[Action]:
+    """Write each subagent file; a same-named file Lore did not write is left alone."""
+    actions = []
+    for path, content in agent_files().items():
+        try:
+            old = path.read_text()
+        except OSError:
+            old = None
+        if old is not None and AGENT_MARKER not in old[:200]:
+            continue
+        actions.append(
+            Action(
+                kind=KIND_NEW,
+                description=f"Write the Lore subagent {path.stem}",
+                target=str(path),
+                summary="pins the tier model",
+                payload={"path": str(path), "content": content},
+            )
+        )
+    return actions
+
+
+def agents_stale() -> bool:
+    """True when a Lore subagent file is missing or differs from the tier table."""
+    for path, content in agent_files().items():
+        try:
+            old = path.read_text()
+        except OSError:
+            return True
+        if AGENT_MARKER in old[:200] and old != content:
+            return True
+    return False
 
 
 def _mcp_entry() -> dict[str, Any]:
@@ -413,6 +514,7 @@ def plan(ctx: InstallContext) -> list[Action]:
     actions = [
         _plugin_action(content, f"{len(event_commands(manifest))} events, {len(skills)} skills"),
         _merge(["mcp", "servers", "lore"], _mcp_entry(), "the Lore MCP server"),
+        *_agent_actions(),
     ]
     for skill in skills:
         command = {
@@ -456,6 +558,17 @@ def uninstall_plan(ctx: InstallContext) -> list[Action]:
                 payload={"path": str(plugin), "key_path": None},
             )
         )
+    for path in agent_files():
+        if path.exists() and AGENT_MARKER in path.read_text()[:200]:
+            actions.append(
+                Action(
+                    kind=KIND_DELETE,
+                    description=f"Remove the Lore subagent {path.stem}",
+                    target=str(path),
+                    summary=f"remove {path.name}",
+                    payload={"path": str(path), "key_path": None},
+                )
+            )
     data = _read_config()
     if "lore" in ((data.get("mcp") or {}).get("servers") or {}):
         actions.append(_delete(["mcp", "servers", "lore"]))

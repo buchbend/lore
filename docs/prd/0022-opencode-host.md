@@ -147,8 +147,12 @@ stays at the installed Lore version, with no second version to bump.
   runs on the session model. The gate keeps no allow list of agents.
 - The built-in subagents `general` and `explore` pin no model unless the
   person sets one in the OpenCode config. The gate denies them until then.
-- TODO: the field of the 2.x agent definition that holds the model. Issue 614
-  (OpenCode tiers) reads `Agent.Info` in `@opencode/schema` 2.x.
+- The model sits in the field `model` of the agent definition. An agent file
+  or config entry writes it as `provider/model`; `Agent.Info` holds it as
+  `{providerID, id, variant?}`, absent when the agent pins none (`@opencode/schema`
+  2.0.32).
+- The plugin reads `ctx.agent.list()` and passes the pinned model to
+  `lore hook spawn-model-gate`, which keeps the rule.
 
 ### Transcripts and token records
 

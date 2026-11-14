@@ -40,6 +40,16 @@ def sessions_dir() -> Path:
     return base / "lore" / "opencode"
 
 
+def read_header(path: Path) -> dict:
+    """The header line of one session file, or ``{}``. Reads one line only."""
+    try:
+        with Path(path).open(encoding="utf-8", errors="replace") as fp:
+            obj = json.loads(fp.readline())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return obj if isinstance(obj, dict) and obj.get("type") == "session" else {}
+
+
 def read_session(path: Path) -> tuple[dict, list[dict]]:
     """``(header, messages)`` of one session file; bad lines are skipped."""
     header: dict = {}
@@ -94,7 +104,7 @@ class OpenCodeAdapter:
         wanted = Path(directory).resolve()
         out: list[TranscriptHandle] = []
         for p in sorted(sessions_dir().glob("*.jsonl")):
-            header, _ = read_session(p)
+            header = read_header(p)
             if not header or header.get("parentID"):
                 continue
             where = header.get("directory")

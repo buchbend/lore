@@ -45,3 +45,13 @@ def test_fails_open_on_malformed_stdin() -> None:
     for garbage in ("", "not json", "[]"):
         result = _invoke(garbage)
         assert result.exit_code == 0, f"must fail open on {garbage!r}"
+
+
+def test_opencode_plugin_flags_are_accepted_and_the_gate_denies() -> None:
+    payload = {"tool_name": "subagent", "tool_input": {"agent": "explore"}}
+    runner = CliRunner()
+    result = runner.invoke(
+        hook_app, ["spawn-model-gate", "--plain", "--cwd", "/tmp"], input=json.dumps(payload)
+    )
+    assert result.exit_code == 2
+    assert "lore tier resolve" in result.stderr

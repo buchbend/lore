@@ -850,7 +850,12 @@ def cmd_stop(
 
 @hook_app.command("spawn-model-gate")
 @_shield_hook("PreToolUse")
-def cmd_spawn_model_gate() -> None:
+def cmd_spawn_model_gate(
+    plain: bool = typer.Option(
+        False, "--plain", help="Accepted for the OpenCode plugin; no effect."
+    ),
+    cwd: str = typer.Option(None, "--cwd", help="Accepted for the OpenCode plugin; no effect."),
+) -> None:
     """PreToolUse gate: deny Task/Agent spawns that omit an explicit model.
 
     Reads the PreToolUse payload from stdin. Denial protocol (Claude

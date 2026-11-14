@@ -60,16 +60,15 @@ def _first_user_text(messages: list[dict]) -> str:
 
 
 def trace_opencode(path: Path) -> list[PhaseTokens]:
-    from lore_adapters.opencode import read_session
+    from lore_adapters.opencode import read_header, read_session
 
     header, messages = read_session(path)
     main_id = header.get("sessionID")
     # ponytail: direct children only; a subagent's own subagents are not traced.
     children = []
     for other in sorted(Path(path).parent.glob("*.jsonl")):
-        child_header, child_messages = read_session(other)
-        if main_id and child_header.get("parentID") == main_id:
-            children.append(child_messages)
+        if main_id and read_header(other).get("parentID") == main_id:
+            children.append(read_session(other)[1])
 
     phases = [PhaseTokens("main")]
     seen: set[str] = set()
