@@ -165,9 +165,11 @@ const hooks = {}, shell = {}, transforms = [];
 const agents = [{ id: "build", mode: "primary" }, { id: "general", mode: "subagent" },
   { id: "lore-mid", mode: "subagent", model: { providerID: "anthropic", id: "claude-sonnet-5" } }];
 const toolHooks = {};
+// BARE_LIST=1: agent.list() returns the bare array, not { data }.
+const listReply = process.env.BARE_LIST === "1" ? agents : { data: agents };
 const ctx = {
   location: { directory: process.argv[2] },
-  agent: { list: async () => ({ data: agents }) },
+  agent: { list: async () => listReply },
   session: { hook: async (name, fn) => { hooks[name] = fn; } },
   shell: { hook: async (name, fn) => { shell[name] = fn; } },
   tool: { hook: async (name, fn) => { toolHooks[name] = fn; } },
@@ -201,7 +203,9 @@ console.log(JSON.stringify(out));
 
 
 @pytest.mark.skipif(not __import__("shutil").which("node"), reason="node not installed")
-def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path):
+@pytest.mark.parametrize("bare_list", [False, True])
+def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path, bare_list):
+    import os
     import subprocess
 
     log = tmp_path / "lore.log"
@@ -234,6 +238,7 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path):
         text=True,
         timeout=60,
         check=True,
+        env={**os.environ, "BARE_LIST": "1" if bare_list else "0"},
     )
     out = json.loads(proc.stdout)
 

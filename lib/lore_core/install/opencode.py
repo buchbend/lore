@@ -218,10 +218,16 @@ export default {
     const modes = new Map(); // agent id -> "primary" | "subagent"
     let lastSession = "";
 
+    // The 2.x client answers { data }; accept a bare array as well.
+    async function listAgents() {
+      const r = await ctx.agent.list();
+      return (r?.data ?? r) || [];
+    }
+
     async function isMain(agent) {
       if (!modes.has(agent)) {
         try {
-          for (const a of (await ctx.agent.list()).data || []) modes.set(a.id, a.mode);
+          for (const a of await listAgents()) modes.set(a.id, a.mode);
         } catch {}
       }
       return modes.get(agent) !== "subagent";
@@ -326,7 +332,7 @@ export default {
       let model = "";
       let known = false;
       try {
-        for (const a of (await ctx.agent.list()).data || []) {
+        for (const a of await listAgents()) {
           if (a.id !== name && a.name !== name) continue;
           known = true;
           model = a.model ? `${a.model.providerID}/${a.model.id}` : "";
