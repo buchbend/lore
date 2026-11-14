@@ -1,4 +1,4 @@
-"""Agent integrations: install, uninstall and update Lore's Claude Code and Cursor wiring.
+"""Agent integrations: install, uninstall and update Lore's Claude Code, Cursor and OpenCode wiring.
 
 The engine behind the Agents step of ``lore setup``, ``lore uninstall`` and
 ``lore update``. Each integration (``lore_core.install.REGISTRY``) returns a

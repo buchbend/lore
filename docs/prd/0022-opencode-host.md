@@ -1,12 +1,14 @@
 ---
 title: "OpenCode as a host"
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/615
 repos:
   - buchbend/lore
 ---
 
 # PRD 0022: OpenCode as a host
+
+> Historical. Current decisions: ADR 0022.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/615).
 > The epic links here; this file is not embedded in the issue body.
