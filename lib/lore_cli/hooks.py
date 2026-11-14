@@ -1,7 +1,7 @@
 """Claude Code hook dispatch — the eight `lore hook ...` entry points.
 
 Each command is a thin shell: resolve cwd, read the stdin payload, check the
-suppression toggles, delegate, emit. The work itself lives in the domain
+child-mode guard, delegate, emit. The work itself lives in the domain
 layer — :mod:`lore_core.session_start` (banner assembly) and
 :mod:`lore_core.capture_routing` (transcript registration).
 
@@ -900,7 +900,7 @@ def cmd_user_prompt_submit(
         help="Print raw text instead of Claude Code JSON envelope.",
     ),
 ) -> None:
-    """Mid-session transcript registration plus the citations directive."""
+    """Mid-session transcript registration."""
     if _in_child_mode():
         return
     _read_hook_payload()
