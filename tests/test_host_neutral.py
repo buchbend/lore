@@ -95,10 +95,11 @@ def test_setup_writes_agents_md_and_claude_md_import(tmp_path, agents):
     assert (vault / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
 
 
-def test_setup_leaves_foreign_claude_md_unchanged(tmp_path, agents):
+def test_setup_leaves_foreign_claude_md_unchanged_beside_agents_md(tmp_path, agents):
     vault = tmp_path / "lore"
     vault.mkdir()
     (vault / "CLAUDE.md").write_text("my own rules\n")
+    (vault / "AGENTS.md").write_text("agent rules\n")
     runner.invoke(app, ["setup", "--yes", "--vault", str(vault)])
     assert (vault / "CLAUDE.md").read_text() == "my own rules\n"
 
