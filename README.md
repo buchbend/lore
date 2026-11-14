@@ -97,7 +97,8 @@ curl -fsSL https://raw.githubusercontent.com/buchbend/lore/main/install.sh | sh
 
 The script installs the `lore` CLI with `pipx`, `uv tool` or `pip --user`,
 then runs `lore setup`. Setup creates or links a wiki and installs the
-Claude Code plugin, plus Cursor's MCP wiring where present. It offers a
+Claude Code plugin, plus Cursor's MCP wiring and the OpenCode plugin where
+present. It offers a
 scope for the current repo and runs the checks. Upgrade later with `lore update`.
 
 By hand:

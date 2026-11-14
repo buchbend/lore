@@ -159,6 +159,9 @@ Terms used in the workflow layer and orchestration:
   `plugin.json` and dispatched by CLI invocation or intra-skill routing.
   Lore ships one plugin, `lore`; every skill lives in `skills/` and has the
   name `lore:<name>`, the workflow skills too.
+- **Host** — the coding harness that runs a session and calls Lore's hooks:
+  Claude Code, Cursor or OpenCode. `lore tier resolve --host` and the
+  `LORE_HOST` variable name it. _Avoid_: harness, integration, client.
 - **Lore context pack** — synonym for `lore_context_pack` (see above).
 - **Codemap excerpt** — a bounded, ranked slice of the `lore codemap`
   output, token-budgeted (~1k tokens) and curated for a specific feature
@@ -348,6 +351,21 @@ ships, the term names the planned behavior.
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".
+
+### Hosts
+
+Decision in ADR 0022 (Lore runs in OpenCode through a generated plugin).
+
+- **Event table** — the map from each Claude Code hook event to the hook
+  of another host. A row can say "not mapped" and give the reason. Lore
+  generates the OpenCode plugin from the event table. _Avoid_: hook map,
+  event map.
+- **Tier subagent** — an OpenCode agent named `lore-<tier>` that pins the
+  model of its tier. In OpenCode, `lore tier resolve` prints the tier
+  subagent. _Avoid_: tier agent, model agent.
+- **Session file** — the JSON-lines copy of one OpenCode session. The
+  OpenCode plugin writes the session file. The `opencode` adapter and the
+  token record read it. _Avoid_: transcript file, dump.
 
 ### Roadmap
 

@@ -55,6 +55,7 @@ from lore_cli.context_cache import (
     _cache_dir,
     _cache_path_for_pid,
     _claude_code_pid,
+    _session_id,
     _gc_sessions_cache,
     _legacy_cache_path,
 )
@@ -81,7 +82,7 @@ _subtree_siblings = subtree_siblings
 
 def _context_log() -> str:
     """Read the PID-scoped context log. Pure file read — no live I/O."""
-    cc_pid = _claude_code_pid()
+    cc_pid = _session_id() or _claude_code_pid()
     if cc_pid is not None:
         path = _cache_path_for_pid(cc_pid)
         if path.exists():
@@ -174,7 +175,7 @@ def _emit(hook_event: str, text: str, *, plain: bool, notice: str | None = None)
         from datetime import datetime as _dt
         ts_hm = _dt.now(_UTC).strftime("%H:%M")
         log_text = f"── SessionStart {ts_hm} ──\n{text}"
-        cc_pid = _claude_code_pid() or os.getppid()
+        cc_pid = _session_id() or _claude_code_pid() or os.getppid()
         try:
             atomic_write_text(_cache_path_for_pid(cc_pid), log_text)
         except OSError:
@@ -411,15 +412,17 @@ def _capture_suppressed() -> bool:
 def _session_off_all() -> bool:
     """True iff `/lore:off` (scope=all) is active for the current session.
 
-    Resolves the session id from CLAUDE_SESSION_ID, which `_read_hook_payload`
-    publishes from the Claude Code stdin payload (issue #29 / v0.13.1).
+    Resolves the session id via ``toggles.session_id`` (LORE_SESSION_ID, else
+    CLAUDE_SESSION_ID, which `_read_hook_payload`
+    publishes from the Claude Code stdin payload, issue #29 / v0.13.1).
     Returns False when no sid is available — without a sid we can't scope a
     sentinel, so the safe default is "not muted."
     """
-    sid = os.environ.get("CLAUDE_SESSION_ID")
+    from lore_core.toggles import is_off, session_id
+
+    sid = session_id()
     if not sid:
         return False
-    from lore_core.toggles import is_off
     return is_off("all", sid)
 
 
@@ -431,10 +434,11 @@ def _citation_directive_lines() -> list[str]:
     session, else an empty list. The line tells the agent to skip the
     inline `› consulted [[X]]` affordance for the rest of the session.
     """
-    sid = os.environ.get("CLAUDE_SESSION_ID")
+    from lore_core.toggles import is_off, session_id
+
+    sid = session_id()
     if not sid:
         return []
-    from lore_core.toggles import is_off
     if not is_off("citations", sid):
         return []
     return [
@@ -849,7 +853,12 @@ def cmd_stop(
 
 @hook_app.command("spawn-model-gate")
 @_shield_hook("PreToolUse")
-def cmd_spawn_model_gate() -> None:
+def cmd_spawn_model_gate(
+    plain: bool = typer.Option(
+        False, "--plain", help="OpenCode plugin: a denial exits 3, as Click's usage error is 2."
+    ),
+    cwd: str = typer.Option(None, "--cwd", help="Accepted for the OpenCode plugin; no effect."),
+) -> None:
     """PreToolUse gate: deny Task/Agent spawns that omit an explicit model.
 
     Reads the PreToolUse payload from stdin. Denial protocol (Claude
@@ -857,14 +866,16 @@ def cmd_spawn_model_gate() -> None:
     the model as feedback; exit 0 allows it. See
     :mod:`lore_core.spawn_gate` for the deny/allow rule itself — this
     command is just the stdin/stdout/exit-code plumbing, matching the
-    other `lore hook ...` entry points.
+    other `lore hook ...` entry points. With ``--plain`` (the OpenCode
+    plugin) a denial exits 3, so the plugin can tell it from a Click usage
+    error, which also exits 2.
     """
     payload = _read_hook_payload()
     deny_message = check_spawn(payload)
     if deny_message is None:
         return
     sys.stderr.write(deny_message)
-    raise typer.Exit(code=2)
+    raise typer.Exit(code=3 if plain else 2)
 
 
 @hook_app.command("token-usage")
@@ -943,7 +954,7 @@ def cmd_user_prompt_submit(
     # transcript file) and keeps `last_mtime` fresh across the session.
     # Without this, long sessions sit on accumulated turns until SessionEnd.
     try:
-        adapter = get_adapter("claude-code")
+        adapter = get_adapter(os.environ.get("LORE_HOST") or "claude-code")
         _register_pending_transcripts(lore_root, cwd_resolved, adapter=adapter)
     except Exception:
         pass  # never break the prompt path on a registration hiccup
@@ -1048,7 +1059,9 @@ def capture(
     ),
     transcript: Path | None = typer.Option(None, help="Explicit transcript path; else autodetect via adapter."),
     cwd_override: Path | None = typer.Option(None, "--cwd", help="Explicit cwd; else CLAUDE_PROJECT_DIR or os.getcwd()."),
-    integration: str = typer.Option("claude-code", help="Adapter integration name."),
+    integration: str | None = typer.Option(
+        None, help="Adapter integration name; default $LORE_HOST, else claude-code."
+    ),
 ) -> None:
     """Hot-path capture hook — called by Claude Code on SessionEnd / PreCompact / SessionStart.
 
@@ -1063,6 +1076,8 @@ def capture(
         # ingestion, no child spawn, no ledger writes, no vault output
         # while the user has muted us.
         return
+    from_env = integration is None and bool(os.environ.get("LORE_HOST"))
+    integration = integration or os.environ.get("LORE_HOST") or "claude-code"
     if event == "session-end":  # PRD 0017: retry undelivered logbook entries
         _logbook_line(cwd_override or _resolve_cwd_capture(), spawn=True)
     import time as _time
@@ -1122,6 +1137,13 @@ def capture(
                 pid=_capture_pid,
                 ppid_cmd=_capture_ppid_cmd,
             )
+            if from_env:  # a host the registry lacks must not fail the host's hook
+                from lore_cli._crash_log import write_crash
+
+                write_crash(
+                    event, UnknownIntegrationError(f"LORE_HOST={integration!r} names no adapter")
+                )
+                return
             raise typer.Exit(code=1)
 
         routed = _route_capture(

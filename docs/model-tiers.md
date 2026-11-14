@@ -28,6 +28,16 @@ real mileage on that host. Treat it as a starting point, not ground
 truth; update `lib/lore_core/tiers/table.py` once the plugin actually
 runs there.
 
+**OpenCode.** An OpenCode `subagent` call has no model argument, so
+`lore tier resolve <tier> --host opencode` prints a subagent name,
+`lore-<tier>`. `lore setup` writes the four subagents into
+`~/.config/opencode/agents/`; each pins the `model` of its tier from the
+`opencode` column (`provider/model`). `lore update` rewrites them when the
+table changes. An override under `tiers.overrides.opencode` changes the
+subagent's model, not its name. The spawn gate denies a `subagent` call whose
+agent pins no model, built-in `general` and `explore` included, until your
+OpenCode config pins one.
+
 ## Rules (carried over from the source table)
 
 - **Ordinal / collapse.** `frontier` > `strong` > `mid` > `cheap`. A

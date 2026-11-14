@@ -9,7 +9,10 @@ lore tier resolve <tier>
 lore tier resolve <tier> --host cursor
 ```
 
-and pass the *result* as the spawn's model parameter. See
+and pass the *result* as the spawn's model parameter. On Claude Code and Cursor the result is a
+model, set as the spawn's model. On OpenCode the result is a subagent name (`lore-<tier>`):
+OpenCode's `subagent` call has no model argument, so set the call's agent to the result. The
+spawn gate denies a call whose agent pins no model. See
 `docs/model-tiers.md` in the `lore` package for the full table, the
 ordinal/collapse rule, the fallback behavior, and the cheap-tier
 reservation (bulk-mechanical only).

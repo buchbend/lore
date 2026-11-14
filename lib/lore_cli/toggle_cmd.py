@@ -5,27 +5,26 @@ hooks and MCP check before doing work, so they live in one module over
 a shared implementation rather than drifting apart in two.
 
 The sentinel is session-scoped — muting is a property of the session
-you're in, not of the vault — so a missing ``CLAUDE_SESSION_ID`` is a
-hard error rather than a silent global mute.
+you're in, not of the vault — so a missing session id (``LORE_SESSION_ID`` or
+``CLAUDE_SESSION_ID``) is a hard error rather than a silent global mute.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 
 import typer
-from lore_core.toggles import VALID_SCOPES, clear_off, set_off
+from lore_core.toggles import VALID_SCOPES, clear_off, session_id, set_off
 
 from lore_cli._argv_compat import argv_main
 
 
 def _session_id_or_die(verb: str) -> str:
-    sid = os.environ.get("CLAUDE_SESSION_ID")
+    sid = session_id()
     if not sid:
         typer.echo(
-            f"error: CLAUDE_SESSION_ID is not set — `lore {verb}` is meaningful "
-            "only inside a Claude Code session.",
+            f"error: no session id (LORE_SESSION_ID or CLAUDE_SESSION_ID) — "
+            f"`lore {verb}` is meaningful only inside a Claude Code or OpenCode session.",
             err=True,
         )
         raise typer.Exit(code=2)

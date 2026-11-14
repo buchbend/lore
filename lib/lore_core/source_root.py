@@ -27,6 +27,8 @@ def resolve_lore_source_root(lore_repo: Path | None = None) -> Path | None:
          ``skills/`` and ``.claude-plugin/plugin.json`` (editable pip install)
       3. ``~/.claude/plugins/cache/lore/lore/<version>/`` (Claude Code
          marketplace install — newest version dir wins)
+      4. ``lore_core/bundled`` (the copy a wheel ships, for a person
+         without Claude Code)
 
     Returns ``None`` if nothing resolves; callers decide whether that's
     fatal or a warning.
@@ -39,7 +41,11 @@ def resolve_lore_source_root(lore_repo: Path | None = None) -> Path | None:
     for parent in here.parents:
         if _is_source_root(parent):
             return parent
-    return _newest_cached_plugin()
+    cached = _newest_cached_plugin()
+    if cached:
+        return cached
+    bundled = here.parent / "bundled"
+    return bundled if _is_source_root(bundled) else None
 
 
 def _is_source_root(path: Path) -> bool:

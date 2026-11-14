@@ -22,9 +22,20 @@ See ``docs/architecture/slash-toggles.md`` for the full contract.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 VALID_SCOPES = ("all", "citations")
+
+
+def session_id() -> str | None:
+    """The current session id: ``$LORE_SESSION_ID`` (any host), else ``$CLAUDE_SESSION_ID``."""
+    sid = os.environ.get("LORE_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID") or ""
+    return sid if _SAFE_SID.fullmatch(sid) else None
+
+
+# A sid names a file under $TMPDIR, so it holds no path separator or dot.
+_SAFE_SID = re.compile(r"[A-Za-z0-9_-]+")
 
 
 def _check(scope: str, sid: str) -> None:
@@ -32,8 +43,8 @@ def _check(scope: str, sid: str) -> None:
         raise ValueError(
             f"toggle scope must be one of {VALID_SCOPES!r}, got {scope!r}"
         )
-    if not sid:
-        raise ValueError("toggle session id must be a non-empty string")
+    if not _SAFE_SID.fullmatch(sid or ""):
+        raise ValueError("toggle session id must be a non-empty, path-safe string")
 
 
 def _sentinel_path(scope: str, sid: str) -> Path:
