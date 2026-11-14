@@ -132,6 +132,14 @@ def test_uninstall_removes_plugin_and_lore_entries_and_keeps_the_rest(oc_home):
     assert set(data["commands"]) == {"mine"}
 
 
+@pytest.mark.parametrize("bad", ['"x"', "[1]", "null", "3"])
+def test_uninstall_plans_nothing_for_a_non_object_mcp_or_commands(oc_home, bad):
+    cfg = oc_home / ".config" / "opencode" / "opencode.json"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(f'{{"mcp": {bad}, "commands": {bad}}}')
+    assert opencode.uninstall_plan(InstallContext()) == []
+
+
 def test_uninstall_leaves_a_plugin_file_lore_did_not_write(oc_home):
     plugin = oc_home / ".config" / "opencode" / "plugins" / "lore.js"
     plugin.parent.mkdir(parents=True)
@@ -587,3 +595,47 @@ def test_a_silent_update_keeps_the_keys_the_person_added(oc_home):
     assert entry["enabled"] is False and entry["environment"] == {"LORE_ROOT": "/mine"}
     assert after["commands"]["lore:tdd"]["model"] == "mine"
     assert after["commands"]["lore:tdd"]["description"] != "old"
+
+
+_RACE_DRIVER = r"""
+import plugin from "./lore.mjs";
+const hooks = {};
+const ctx = {
+  location: { directory: process.argv[2] },
+  agent: { list: async () => ({ data: [{ id: "build", mode: "primary" }] }) },
+  session: { hook: async (name, fn) => { hooks[name] = fn; } },
+  shell: { hook: async () => {} },
+  tool: { hook: async () => {} },
+  skill: { transform: async () => {} },
+};
+await plugin.setup(ctx);
+const req = () => ({ sessionID: "ses_main", agent: "build", system: [] });
+const a = req(), b = req();
+await Promise.all([hooks.context(a), hooks.context(b)]);
+console.log(JSON.stringify([a.system.length, b.system.length]));
+"""
+
+
+@pytest.mark.skipif(not __import__("shutil").which("node"), reason="node not installed")
+def test_two_concurrent_context_calls_run_session_start_once(tmp_path):
+    import subprocess
+
+    log = tmp_path / "lore.log"
+    fake = tmp_path / "lore"
+    fake.write_text(f'#!/bin/sh\necho "$*" >> "{log}"\nsleep 0.3\necho BANNER\n')
+    fake.chmod(0o755)
+    manifest = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
+    (tmp_path / "lore.mjs").write_text(
+        opencode.generate_plugin(manifest, [], lore_bin=str(fake), version="9.9.9")
+    )
+    (tmp_path / "driver.mjs").write_text(_RACE_DRIVER)
+    proc = subprocess.run(
+        ["node", "driver.mjs", str(tmp_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    assert json.loads(proc.stdout) == [1, 1]
+    assert len([ln for ln in log.read_text().splitlines() if "session-start" in ln]) == 1

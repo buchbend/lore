@@ -120,3 +120,34 @@ def test_the_estimate_prices_reasoning_tokens_at_the_output_rate() -> None:
     assert summarize([_record(cost=0)]).total.cost == pytest.approx(base)  # no reasoning: same
     with_reasoning = summarize([_record(cost=0, reasoning=300)]).total.cost
     assert with_reasoning == pytest.approx(base + 300 * 20.0 / 1e6)
+
+
+def test_a_reasoning_only_row_with_zero_reported_cost_keeps_the_estimate() -> None:
+    row = {"cost": 0, "input": 0, "output": 0, "reasoning": 1000}
+    assert summarize([_record(**row)]).total.cost == pytest.approx(1000 * 20.0 / 1e6)
+
+
+def test_two_subagent_calls_with_one_prompt_match_two_child_sessions(tmp_path: Path) -> None:
+    folder, cwd = tmp_path / "oc", tmp_path / "proj"
+    spawns = [
+        oc.tool("subagent", f"call_{i}", {"agent": "lore-mid", "prompt": "Same prompt."})
+        for i in (1, 2)
+    ]
+    main = oc.write_session(
+        folder,
+        "ses_main",
+        cwd,
+        [oc.user("go"), oc.assistant("m1", [spawns[0]]), oc.assistant("m2", [spawns[1]])],
+    )
+    for i in (1, 2):
+        oc.write_session(
+            folder,
+            f"ses_c{i}",
+            cwd,
+            [oc.user("Same prompt.")]
+            + ([oc.assistant("c2", [oc.text("x")], tokens=(2, 0, 0, 0, 0))] if i == 2 else []),
+            parent="ses_main",
+        )
+    rows = [p for p in trace_tokens(main) if p.name.startswith("agent:")]
+    assert len(rows) == 2
+    assert [r.input for r in rows] == [0, 2]

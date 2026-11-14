@@ -294,8 +294,8 @@ export default {
       touch(c.sessionID, main);
       if (!main) { prompted.delete(c.sessionID); return; }
       lastSession = c.sessionID;
-      if (!banners.has(c.sessionID)) banners.set(c.sessionID, await run("start", cwd, c.sessionID));
-      const banner = banners.get(c.sessionID);
+      if (!banners.has(c.sessionID)) banners.set(c.sessionID, run("start", cwd, c.sessionID));
+      const banner = await banners.get(c.sessionID); // a promise: a second call waits for the first
       if (banner) c.system.push(part(banner));
       if (prompted.delete(c.sessionID)) {
         const text = await run("prompt", cwd, c.sessionID);
@@ -647,9 +647,11 @@ def uninstall_plan(ctx: InstallContext) -> list[Action]:
                 )
             )
     data = _read_config()
-    if "lore" in ((data.get("mcp") or {}).get("servers") or {}):
+    mcp, commands = data.get("mcp"), data.get("commands")
+    servers = mcp.get("servers") if isinstance(mcp, dict) else None
+    if isinstance(servers, dict) and "lore" in servers:
         actions.append(_delete(["mcp", "servers", "lore"]))
-    for name in data.get("commands") or {}:
+    for name in commands if isinstance(commands, dict) else {}:
         if name.startswith("lore:"):
             actions.append(_delete(["commands", name]))
     return actions

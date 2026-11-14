@@ -97,9 +97,14 @@ def trace_opencode(path: Path) -> list[PhaseTokens]:
             phases.append(row)
             rows.append((row, str(inp.get("prompt") or "").strip()))
 
+    claimed: set[int] = set()  # one child session per call, even when it counts no tokens
     for child in children:
         text = _first_user_text(child)
-        row = next((r for r, prompt in rows if prompt and prompt in text and r.messages == 0), None)
+        row = next(
+            (r for r, prompt in rows if prompt and prompt in text and id(r) not in claimed), None
+        )
+        if row is not None:
+            claimed.add(id(row))
         if row is None:
             row = PhaseTokens("agent:subagent", target=phases[0].target)
             phases.append(row)
