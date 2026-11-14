@@ -45,7 +45,7 @@ gate denies them. To allow one, set its `model` in the OpenCode config:
 
 ```jsonc
 {
-  "agent": {
+  "agents": {
     "general": { "model": "<provider>/<model>" }
   }
 }
@@ -56,10 +56,9 @@ Lore's skills spawn the tier subagents, which always pass the gate. See
 
 ## Mute Lore in a session
 
-Run `lore off` in the agent shell, or `/lore:off`. The plugin sets
-`LORE_SESSION_ID` for the agent shell, so the mute covers the session.
-TODO: does the `lore` MCP server see `LORE_SESSION_ID`? OpenCode starts
-the MCP server once per server process, not once per session.
+Run `lore off` in the agent shell. The plugin sets `LORE_SESSION_ID` for
+the agent shell, so the mute covers the hooks of the session. Run
+`lore on` to end the mute. OpenCode has no slash command for the mute.
 
 ## Where capture writes
 
@@ -79,5 +78,7 @@ Lore's names.
   toast.
 - The plugin captures a session when OpenCode stops or reloads the
   plugin. A 15-second timer keeps the session file current between turns.
+- `lore off` does not mute the `lore` MCP tools. OpenCode starts the MCP
+  server once per server process, without `LORE_SESSION_ID`.
 - See issues #623 (repair missing OpenCode config entries), #624 (spawn
   gate edge cases) and #625 (OpenCode token totals).

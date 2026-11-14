@@ -231,6 +231,16 @@ def step_wiki(
         if not (root / sub).is_dir():
             (root / sub).mkdir(parents=True)
             events.append((True, f"created {root / sub}"))
+    claude_md = root / "CLAUDE.md"
+    if (
+        not (root / "AGENTS.md").exists()
+        and claude_md.exists()
+        and claude_md.read_text().strip() not in ("", "@AGENTS.md")
+    ):
+        from lore_workflow.scaffold import _migrate_claude_md
+
+        _migrate_claude_md(root)
+        events.append((True, f"moved {claude_md} into {root / 'AGENTS.md'}"))
     if not (root / "AGENTS.md").exists():
         from lore_core.templates import templates_dir
 

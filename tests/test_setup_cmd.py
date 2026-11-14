@@ -742,3 +742,36 @@ def test_leaves_a_lore_js_without_the_marker_alone(tmp_path, agents, monkeypatch
     _, events = setup_cmd.step_agents(tmp_path)
     assert "install opencode" not in agents
     assert any("lore-managed" in msg for _, msg in events)
+
+
+# ---------------------------------------------------------------------------
+# Old vault root: CLAUDE.md holds the template (#621)
+# ---------------------------------------------------------------------------
+
+
+def _setup_vault(tmp_path, monkeypatch):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.chdir(tmp_path)
+    return vault
+
+
+def test_setup_migrates_old_vault_claude_md_into_agents_md(
+    tmp_path, agents, no_prompt, monkeypatch
+):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "CLAUDE.md").write_text("# Old vault rules\n")
+    result = runner.invoke(app, ["setup", "wiki", "--yes", "--vault", str(vault)])
+    assert result.exit_code == 0, result.output
+    assert (vault / "AGENTS.md").read_text() == "# Old vault rules\n"
+    assert (vault / "CLAUDE.md").read_text() == "@AGENTS.md\n"
+
+
+def test_setup_leaves_vault_with_both_files_unchanged(tmp_path, agents, no_prompt, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "CLAUDE.md").write_text("# claude\n")
+    (vault / "AGENTS.md").write_text("# agents\n")
+    result = runner.invoke(app, ["setup", "wiki", "--yes", "--vault", str(vault)])
+    assert result.exit_code == 0, result.output
+    assert (vault / "CLAUDE.md").read_text() == "# claude\n"
+    assert (vault / "AGENTS.md").read_text() == "# agents\n"
