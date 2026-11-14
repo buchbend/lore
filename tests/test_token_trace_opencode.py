@@ -84,3 +84,39 @@ def test_record_carries_reasoning_and_the_cost_opencode_reported(session: Path) 
 def test_a_claude_code_transcript_still_traces_as_before() -> None:
     fixture = Path(__file__).parent / "fixtures" / "token_trace_session.jsonl"
     assert trace_tokens(fixture)[0].reasoning == 0
+
+
+def _record(**row) -> dict:
+    base = {
+        "phase": "main",
+        "model": "claude-opus-5-5",
+        "messages": 1,
+        "input": 1000,
+        "output": 500,
+    }
+    return {"session": "s", "recorded_at": "2026-01-01T00:00:00Z", "rows": [{**base, **row}]}
+
+
+def test_reasoning_tokens_count_in_the_phase_and_bucket_totals(session: Path) -> None:
+    main = trace_tokens(session)[0]
+    assert main.total == 17 + 8 + 150 + 20 + 2
+    assert main.counts()["total"] == main.total
+    assert summarize([_record(reasoning=300)]).total.total == 1800
+
+
+def test_a_zero_reported_cost_with_tokens_keeps_the_estimate() -> None:
+    estimate = 1000 * 4.0 / 1e6 + 500 * 20.0 / 1e6
+    assert summarize([_record(cost=0)]).total.cost == pytest.approx(estimate)
+    assert summarize([_record(cost=0.5)]).total.cost == 0.5
+    assert summarize([_record(cost=0, input=0, output=0)]).total.cost == 0
+
+
+def test_claude_code_rows_keep_their_totals() -> None:
+    assert summarize([_record()]).total.total == 1500
+
+
+def test_the_estimate_prices_reasoning_tokens_at_the_output_rate() -> None:
+    base = 1000 * 4.0 / 1e6 + 500 * 20.0 / 1e6
+    assert summarize([_record(cost=0)]).total.cost == pytest.approx(base)  # no reasoning: same
+    with_reasoning = summarize([_record(cost=0, reasoning=300)]).total.cost
+    assert with_reasoning == pytest.approx(base + 300 * 20.0 / 1e6)
