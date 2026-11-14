@@ -197,6 +197,17 @@ def test_setup_wiki_runs_only_the_wiki_step(tmp_path, agents, no_prompt, monkeyp
     assert agents == []
 
 
+def test_setup_wiki_fills_an_empty_vault_claude_md(tmp_path, agents, no_prompt, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    vault = tmp_path / "lore"
+    vault.mkdir()
+    (vault / "CLAUDE.md").write_text("")
+    result = _setup("wiki", "--yes", "--vault", str(vault), "--wiki-new", "team")
+    assert result.exit_code == 0, result.output
+    assert (vault / "AGENTS.md").exists()
+    assert (vault / "CLAUDE.md").read_text() == "@AGENTS.md\n"
+
+
 def test_setup_scope_takes_flags(tmp_path, agents, no_prompt, monkeypatch):
     (tmp_path / "lore" / "wiki" / "team").mkdir(parents=True)
     user_config_path().parent.mkdir(parents=True)
