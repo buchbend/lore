@@ -352,6 +352,21 @@ ships, the term names the planned behavior.
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".
 
+### Hosts
+
+Decision in ADR 0022 (Lore runs in OpenCode through a generated plugin).
+
+- **Event table** — the map from each Claude Code hook event to the hook
+  of another host. A row can say "not mapped" and give the reason. Lore
+  generates the OpenCode plugin from the event table. _Avoid_: hook map,
+  event map.
+- **Tier subagent** — an OpenCode agent named `lore-<tier>` that pins the
+  model of its tier. In OpenCode, `lore tier resolve` prints the tier
+  subagent. _Avoid_: tier agent, model agent.
+- **Session file** — the JSON-lines copy of one OpenCode session. The
+  OpenCode plugin writes the session file. The `opencode` adapter and the
+  token record read it. _Avoid_: transcript file, dump.
+
 ### Roadmap
 
 Planned; until it ships, each term names the planned behavior.
