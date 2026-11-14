@@ -409,6 +409,18 @@ def _capture_suppressed() -> bool:
     return os.environ.get("LORE_SUPPRESS_CAPTURE") == "1"
 
 
+def _host_adapter() -> str:
+    """Adapter name of the running host: Claude Code markers beat an inherited LORE_HOST."""
+    from lore_core.tiers import TierResolutionError, detect_host
+
+    try:
+        if detect_host() == "claude":
+            return "claude-code"
+    except TierResolutionError:
+        pass
+    return os.environ.get("LORE_HOST") or "claude-code"
+
+
 def _session_off_all() -> bool:
     """True iff `/lore:off` (scope=all) is active for the current session.
 
@@ -954,7 +966,7 @@ def cmd_user_prompt_submit(
     # transcript file) and keeps `last_mtime` fresh across the session.
     # Without this, long sessions sit on accumulated turns until SessionEnd.
     try:
-        adapter = get_adapter(os.environ.get("LORE_HOST") or "claude-code")
+        adapter = get_adapter(_host_adapter())
         _register_pending_transcripts(lore_root, cwd_resolved, adapter=adapter)
     except Exception:
         pass  # never break the prompt path on a registration hiccup
@@ -1077,7 +1089,7 @@ def capture(
         # while the user has muted us.
         return
     from_env = integration is None and bool(os.environ.get("LORE_HOST"))
-    integration = integration or os.environ.get("LORE_HOST") or "claude-code"
+    integration = integration or _host_adapter()
     if event == "session-end":  # PRD 0017: retry undelivered logbook entries
         _logbook_line(cwd_override or _resolve_cwd_capture(), spawn=True)
     import time as _time

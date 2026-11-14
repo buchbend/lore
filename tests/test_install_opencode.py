@@ -169,6 +169,8 @@ def test_event_commands_follow_the_table():
 
 _DRIVER = r"""
 import plugin from "./lore.mjs";
+import { join } from "node:path";
+import { writeFileSync, unlinkSync } from "node:fs";
 const hooks = {}, shell = {}, transforms = [];
 const agents = [{ id: "build", mode: "primary" }, { id: "general", mode: "subagent" },
   { id: "lore-mid", mode: "subagent", model: { providerID: "anthropic", id: "claude-sonnet-5" } }];
@@ -192,7 +194,8 @@ const second = req("ses_main", "build"); await hooks.context(second); out.second
 await hooks.prompt({ sessionID: "ses_sub", prompt: { text: "task" } });
 const sub = req("ses_sub", "general"); await hooks.context(sub); out.sub = sub.system;
 const comp = req("ses_main", "build"); await hooks.compaction(comp); out.compaction = comp.system;
-const s = { command: "ls", env: {} }; await shell["create.before"](s); out.shellEnv = s.env;
+const s = { command: "ls", env: { CLAUDECODE: "1", CLAUDE_SESSION_ID: "cc" } };
+await shell["create.before"](s); out.shellEnv = s.env;
 const added = [];
 for (const t of transforms) t({ get: () => undefined, add: (k) => added.push(k) });
 out.skills = added;
@@ -206,6 +209,20 @@ out.gate = { pinned: await gate("subagent", { agent: "lore-mid" }),
   unpinned: await gate("subagent", { agent: "general" }),
   usage: await gate("subagent", { agent: "ghost" }) };
 out.gateOther = await gate("bash", {});
+// OpenCode names an MCP tool <server>.<tool>: lore_search of server lore.
+const mcp = () => gate("lore.lore_search", { query: "x" });
+out.mcp = { open: await mcp() };
+const off = join(process.env.TMPDIR, "lore-off-all-ses_main");
+writeFileSync(off, "");
+out.mcp.muted = await mcp();
+out.mcp.mutedOtherSession = await (async () => {
+  const ev = { tool: "lore.lore_search", sessionID: "ses_other" };
+  try { await toolHooks["execute.before"](ev); return "allowed"; }
+  catch (e) { return e.message; }
+})();
+out.mcp.mutedBash = await gate("bash", {});
+unlinkSync(off);
+out.mcp.unmuted = await mcp();
 console.log(JSON.stringify(out));
 """
 
@@ -221,6 +238,7 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path, bare_list
     fake.write_text(
         "#!/bin/sh\n"
         "in=$(cat)\n"
+        f'[ -n "$CLAUDECODE$CLAUDE_SESSION_ID" ] && echo leak >> "{log}.leak"\n'
         f'echo "$LORE_HOST $LORE_SESSION_ID $*" >> "{log}"\n'
         'if [ "$2" = spawn-model-gate ]; then\n'
         f'  echo "stdin $in" >> "{log}"\n'
@@ -246,7 +264,12 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path, bare_list
         text=True,
         timeout=60,
         check=True,
-        env={**os.environ, "BARE_LIST": "1" if bare_list else "0"},
+        env={
+            **os.environ,
+            "BARE_LIST": "1" if bare_list else "0",
+            "TMPDIR": str(tmp_path),
+            "CLAUDECODE": "1",
+        },
     )
     out = json.loads(proc.stdout)
 
@@ -273,6 +296,12 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path, bare_list
     ]
     assert out["gate"] == {"pinned": "allowed", "unpinned": "DENY-TEXT", "usage": "allowed"}
     assert out["gateOther"] == "allowed"
+    assert not (tmp_path / "lore.log.leak").exists()  # Claude markers stay out of child env
+    assert out["mcp"]["open"] == "allowed"
+    assert "muted" in out["mcp"]["muted"]
+    assert out["mcp"]["mutedOtherSession"] == "allowed"
+    assert out["mcp"]["mutedBash"] == "allowed"
+    assert out["mcp"]["unmuted"] == "allowed"
 
 
 def test_no_source_root_writes_no_plugin_so_the_next_setup_retries(oc_home, monkeypatch):

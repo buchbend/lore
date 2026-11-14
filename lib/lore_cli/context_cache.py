@@ -34,8 +34,12 @@ def _sessions_cache_dir() -> Path:
 
 
 def _session_id() -> str | None:
-    """``sid-$LORE_SESSION_ID`` when it is path-safe, else None (PID path applies)."""
-    sid = os.environ.get("LORE_SESSION_ID", "")
+    """``sid-<session id>`` when it is path-safe, else None (PID path applies).
+
+    ``CLAUDE_SESSION_ID`` wins over ``LORE_SESSION_ID``: a nested Claude Code
+    inherits the OpenCode id.
+    """
+    sid = os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("LORE_SESSION_ID") or ""
     # "sid-" keeps a digits-only ID from reading as a PID in the cleanup.
     return f"sid-{sid}" if re.fullmatch(r"[A-Za-z0-9_-]+", sid) else None
 
