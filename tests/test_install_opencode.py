@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -147,12 +148,13 @@ def test_every_manifest_hook_event_has_an_opencode_table_row():
     assert not missing, f"add an OpenCode event table row for {sorted(missing)}"
 
 
-def test_event_commands_follow_the_table_and_leave_capture_to_613():
+def test_event_commands_follow_the_table():
     manifest = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
     assert opencode.event_commands(manifest) == {
         "start": [["hook", "session-start"]],
         "prompt": [["hook", "user-prompt-submit"]],
         "compaction": [["hook", "pre-compact"]],
+        "end": [["hook", "capture", "--event", "session-end"], ["hook", "token-usage"]],
     }
 
 
@@ -254,3 +256,115 @@ def test_a_plugin_file_without_the_marker_needs_a_confirmed_replace(oc_home):
     assert replace[0].payload["old_value"] == "// the person's own plugin\n"
     assert execute_action(replace[0]).ok
     assert opencode.installed_plugin_version() == importlib.metadata.version("lore")
+
+
+_CAPTURE_DRIVER = r"""
+import plugin from "./lore.mjs";
+import { existsSync, readFileSync } from "node:fs";
+const hooks = {};
+const agents = [{ id: "build", mode: "primary" }, { id: "general", mode: "subagent" }];
+const user = (id, text) => ({ type: "user", id, text });
+const msgs = { ses_main: [user("m1", "hi")], ses_sub: [user("s1", "t")] };
+let failContext = false;
+const ctx = {
+  location: { directory: process.argv[2] },
+  agent: { list: async () => ({ data: agents }) },
+  session: {
+    hook: async (name, fn) => { hooks[name] = fn; },
+    context: async ({ sessionID }) => {
+      if (failContext) throw new Error("boom");
+      return msgs[sessionID];
+    },
+    get: async ({ sessionID }) => ({
+      id: sessionID, parentID: sessionID === "ses_sub" ? "ses_main" : undefined,
+    }),
+  },
+  shell: { hook: async () => {} },
+  skill: { transform: async () => {} },
+};
+const cleanup = await plugin.setup(ctx);
+const req = (sessionID, agent) => ({ sessionID, agent, system: [] });
+const dir = process.env.LORE_OPENCODE_DIR;
+const file = (id) => `${dir}/${id}.jsonl`;
+const lines = (id) => readFileSync(file(id), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const out = {};
+await hooks.context(req("ses_main", "build"));
+await hooks.context(req("ses_sub", "general"));
+out.beforeIdle = existsSync(file("ses_main"));
+await new Promise((r) => setTimeout(r, 300)); // the debounce fires
+out.afterIdle = lines("ses_main");
+out.sub = lines("ses_sub")[0];
+msgs.ses_main.push({ type: "assistant", id: "m2", content: [] }); // next turn
+await hooks.context(req("ses_main", "build"));
+await cleanup();
+await cleanup(); // a second flush writes the same file
+out.final = lines("ses_main");
+failContext = true;
+msgs.ses_main.push({ type: "user", id: "m3", text: "later" });
+await cleanup(); // the call fails: nothing changes, nothing throws
+out.afterFailure = lines("ses_main").length;
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(not __import__("shutil").which("node"), reason="node not installed")
+def test_plugin_writes_session_files_and_captures_on_cleanup(tmp_path):
+    import subprocess
+
+    log = tmp_path / "lore.log"
+    fake = tmp_path / "lore"
+    fake.write_text(
+        "#!/bin/sh\n"
+        f'echo "$LORE_HOST $LORE_SESSION_ID $*" >> "{log}"\n'
+        f'cat >> "{log}"; echo >> "{log}"\n'
+    )
+    fake.chmod(0o755)
+    manifest = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
+    (tmp_path / "lore.mjs").write_text(
+        opencode.generate_plugin(manifest, [], lore_bin=str(fake), version="9.9.9")
+    )
+    (tmp_path / "driver.mjs").write_text(_CAPTURE_DRIVER)
+    sessions = tmp_path / "sessions"
+    env = {**os.environ, "LORE_OPENCODE_DIR": str(sessions), "LORE_OPENCODE_DEBOUNCE_MS": "50"}
+
+    proc = subprocess.run(
+        ["node", "driver.mjs", str(tmp_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+        env=env,
+    )
+    out = json.loads(proc.stdout)
+
+    assert out["beforeIdle"] is False
+    header, first = out["afterIdle"]
+    assert header == {
+        "type": "session",
+        "host": "opencode",
+        "sessionID": "ses_main",
+        "directory": str(tmp_path),
+        "parentID": None,
+    }
+    assert first["text"] == "hi"
+    assert out["sub"]["parentID"] == "ses_main"
+    assert [m["id"] for m in out["final"][1:]] == ["m1", "m2"]
+    assert out["afterFailure"] == 3  # header + m1 + m2: the failed read wrote nothing
+    # capture and the token record run once per cleanup, for the main session only
+    calls = [
+        ln
+        for ln in log.read_text().splitlines()
+        if ln.startswith("opencode ") and ("hook capture" in ln or "token-usage" in ln)
+    ]
+    assert (
+        calls
+        == [
+            "opencode ses_main hook capture --event session-end",
+            "opencode ses_main hook token-usage",
+        ]
+        * 3
+    )
+    payload = json.loads(next(ln for ln in log.read_text().splitlines() if ln.startswith("{")))
+    assert payload["session_id"] == "ses_main"
+    assert payload["transcript_path"] == str(sessions / "ses_main.jsonl")

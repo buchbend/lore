@@ -85,7 +85,7 @@ stays at the installed Lore version, with no second version to bump.
 | UserPromptSubmit | `user-prompt-submit` | `ctx.session.hook("prompt")` runs the command; `context` adds the text | A system part on the next request, not text in the person's message |
 | PreCompact | `pre-compact`, `capture` | `ctx.session.hook("compaction")` | Pushed as a system part of the compaction request |
 | Stop | `stop` | none | Not mapped: the Lore command writes nothing |
-| SessionEnd | `capture`, `token-usage` | TODO: the probe saw no event through `ctx.event.subscribe`. Issue 613 (OpenCode capture) picks the trigger: an idle event, or the plugin cleanup function | No text |
+| SessionEnd | `capture`, `token-usage` | The probe saw no event through `ctx.event.subscribe`, so the trigger is the plugin cleanup function returned from `setup`. The session files are written earlier, 15 seconds after the last `context` request of each session | No text |
 | PreToolUse on `Task` or `Agent` | `spawn-model-gate` | `ctx.tool.hook("execute.before")` on the tool `subagent` | A thrown error denies the spawn; the model reads the error text |
 
 - The plugin adds Lore text to main sessions only. The `context` hook names
@@ -155,8 +155,10 @@ stays at the installed Lore version, with no second version to bump.
 - OpenCode stores sessions in SQLite. The plugin reads each session through
   the public 2.x plugin API and writes it as JSON lines to a Lore-owned
   folder. Lore then depends on the public OpenCode API, not on the database
-  schema. TODO: the 2.x call that returns the messages of a session. Issue
-  613 reads `SessionApi` in `@opencode/sdk` 2.x.
+  schema. The call is `ctx.session.context({ sessionID })`
+  (`SessionApi.context` in `@opencode/client` 2.0.32). It returns the
+  `SessionMessageInfo` list. The plugin keeps every message it saw by id, so
+  a compaction does not drop earlier turns from the file.
 - A new `opencode` transcript adapter reads those files and implements the
   existing adapter protocol.
 - The token record reads the token counts and the cost that OpenCode stores

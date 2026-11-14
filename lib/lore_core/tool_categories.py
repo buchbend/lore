@@ -68,6 +68,23 @@ _COPILOT_MAP: dict[str, ToolCategory] = {
 }
 
 
+_OPENCODE_MAP: dict[str, ToolCategory] = {
+    "edit": "file_edit",
+    "write": "file_edit",
+    "multiedit": "file_edit",
+    "patch": "file_edit",
+    "apply_patch": "file_edit",
+    "read": "file_read",
+    "grep": "search",
+    "glob": "search",
+    "list": "search",
+    "bash": "shell_exec",
+    "shell": "shell_exec",
+    "subagent": "agent_spawn",
+    "plan_exit": "plan_exit",
+}
+
+
 def classify_tool_name(integration: str, name: str) -> ToolCategory:
     """Map an integration-specific tool name to its canonical category.
 
@@ -81,6 +98,8 @@ def classify_tool_name(integration: str, name: str) -> ToolCategory:
         return _CLAUDE_CODE_MAP.get(name, "other")
     if integration == "cursor":
         return _CURSOR_MAP.get(name, "other")
+    if integration == "opencode":
+        return _OPENCODE_MAP.get(name, "other")
     if integration == "copilot":
         return _COPILOT_MAP.get(name, "other")
     return "other"

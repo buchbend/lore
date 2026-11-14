@@ -76,6 +76,11 @@ def build_record(
             counts = usage.counts()
             for k in _COUNT_KEYS:
                 row[k] += counts[k]
+            # OpenCode reports reasoning tokens and the cost per message.
+            if usage.reasoning:
+                row["reasoning"] = row.get("reasoning", 0) + usage.reasoning
+            if usage.cost is not None:
+                row["cost"] = round(row.get("cost", 0.0) + usage.cost, 6)
     stamp = (now or datetime.now(UTC)).astimezone(UTC).isoformat().replace("+00:00", "Z")
     return {
         "v": SCHEMA_VERSION,
@@ -255,7 +260,12 @@ def summarize(
             if not isinstance(row, dict):
                 continue
             model, phase = str(row.get("model") or "?"), str(row.get("phase") or "?")
-            cost = estimate_cost(model, row, prices)
+            reported = row.get("cost")  # OpenCode's own figure beats our estimate
+            cost = (
+                float(reported)
+                if isinstance(reported, (int, float))
+                else estimate_cost(model, row, prices)
+            )
             if cost is None:
                 out.unpriced_models.add(model)
             target = row.get("target") or NO_TARGET
