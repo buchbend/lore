@@ -29,7 +29,13 @@ design. PRD 0022 (OpenCode as a host) holds the event table.
 
 The installer asks before it replaces a `plugins/lore.js` without the
 lore-managed marker. The installer leaves a `lore-<tier>.md` without the
-marker as it is.
+marker as it is, and `lore setup` prints its path.
+
+The installer treats `mcp.servers.lore` as Lore's entry when its command
+runs a `lore` binary with `mcp`. A `lore:<name>` command is Lore's when
+its template matches the one Lore writes. The installer updates Lore's
+entries and keeps the keys you added. The installer asks before it
+replaces any other entry under those names.
 
 ## Update
 
@@ -80,5 +86,9 @@ Lore's names.
   plugin. A 15-second timer keeps the session file current between turns.
 - `lore off` does not mute the `lore` MCP tools. OpenCode starts the MCP
   server once per server process, without `LORE_SESSION_ID`.
-- See issues #623 (repair missing OpenCode config entries), #624 (spawn
-  gate edge cases) and #625 (OpenCode token totals).
+- After `pipx upgrade lore` without `lore update`, the old plugin lets a
+  denied spawn run. Run `lore update` or `lore setup` after an upgrade.
+- A comment inside `mcp.servers.lore` or inside a `lore:<name>` command is
+  lost when the installer updates the entry.
+- See issues #626 (MCP mute in OpenCode), #627 (OpenCode environment in a
+  nested Claude Code) and #628 (old session files).
