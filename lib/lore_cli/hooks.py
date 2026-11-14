@@ -855,7 +855,7 @@ def cmd_stop(
 @_shield_hook("PreToolUse")
 def cmd_spawn_model_gate(
     plain: bool = typer.Option(
-        False, "--plain", help="Accepted for the OpenCode plugin; no effect."
+        False, "--plain", help="OpenCode plugin: a denial exits 3, as Click's usage error is 2."
     ),
     cwd: str = typer.Option(None, "--cwd", help="Accepted for the OpenCode plugin; no effect."),
 ) -> None:
@@ -866,14 +866,16 @@ def cmd_spawn_model_gate(
     the model as feedback; exit 0 allows it. See
     :mod:`lore_core.spawn_gate` for the deny/allow rule itself — this
     command is just the stdin/stdout/exit-code plumbing, matching the
-    other `lore hook ...` entry points.
+    other `lore hook ...` entry points. With ``--plain`` (the OpenCode
+    plugin) a denial exits 3, so the plugin can tell it from a Click usage
+    error, which also exits 2.
     """
     payload = _read_hook_payload()
     deny_message = check_spawn(payload)
     if deny_message is None:
         return
     sys.stderr.write(deny_message)
-    raise typer.Exit(code=2)
+    raise typer.Exit(code=3 if plain else 2)
 
 
 @hook_app.command("token-usage")

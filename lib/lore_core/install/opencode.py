@@ -197,13 +197,14 @@ function loreEnd(argv, cwd, sessionID, payload) {
 const part = (text) => ({ type: "text", text });
 
 // Spawn gate: Lore decides, the plugin only reports which model the agent pins.
+// A denial exits 3; Click's usage error also exits 2, and that lets the call run.
 function spawnGate(payload, cwd, sessionID) {
   return new Promise((resolve) => {
     const env = { ...process.env, LORE_HOST: "opencode", LORE_SESSION_ID: sessionID };
     const [argv] = EVENTS.gate || [];
     if (!argv) return resolve("");
     const child = execFile(LORE, [...argv, "--plain", "--cwd", cwd], { cwd, env, timeout: 60000 },
-      (err, _out, stderr) => resolve(err && err.code === 2 ? String(stderr).trim() : ""));
+      (err, _out, stderr) => resolve(err && err.code === 3 ? String(stderr).trim() : ""));
     child.stdin?.end(JSON.stringify(payload));
   });
 }
@@ -323,13 +324,15 @@ export default {
       if (t.tool !== "subagent") return;
       const name = t.input?.agent;
       let model = "";
+      let known = false;
       try {
         for (const a of (await ctx.agent.list()).data || []) {
           if (a.id !== name && a.name !== name) continue;
+          known = true;
           model = a.model ? `${a.model.providerID}/${a.model.id}` : "";
         }
       } catch { return; } // cannot tell what the agent pins: fail open
-      const payload = { tool_name: "subagent", tool_input: { agent: name, model } };
+      const payload = { tool_name: "subagent", tool_input: { agent: name, model, ...(known ? {} : { agent_known: false }) } };
       const denial = await spawnGate(payload, cwd, t.sessionID);
       if (denial) throw new Error(denial);
     });
@@ -396,6 +399,18 @@ def agent_files() -> dict[Path, str]:
         )
         for tier in TIER_ORDER
     }
+
+
+def foreign_agent_files() -> list[Path]:
+    """The tier subagent files that exist without the lore-managed marker; setup skips them."""
+    found = []
+    for path in agent_files():
+        try:
+            if AGENT_MARKER not in path.read_text()[:200]:
+                found.append(path)
+        except OSError:
+            pass
+    return found
 
 
 def _agent_actions() -> list[Action]:

@@ -193,7 +193,8 @@ const gate = async (tool, input) => {
   catch (e) { return e.message; }
 };
 out.gate = { pinned: await gate("subagent", { agent: "lore-mid" }),
-  unpinned: await gate("subagent", { agent: "general" }) };
+  unpinned: await gate("subagent", { agent: "general" }),
+  usage: await gate("subagent", { agent: "ghost" }) };
 out.gateOther = await gate("bash", {});
 console.log(JSON.stringify(out));
 """
@@ -211,7 +212,8 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path):
         f'echo "$LORE_HOST $LORE_SESSION_ID $*" >> "{log}"\n'
         'if [ "$2" = spawn-model-gate ]; then\n'
         f'  echo "stdin $in" >> "{log}"\n'
-        '  case "$in" in *\'"model":""\'*) echo DENY-TEXT >&2; exit 2;; esac\n'
+        '  case "$in" in *ghost*) echo USAGE-TEXT >&2; exit 2;; esac\n'
+        '  case "$in" in *\'"model":""\'*) echo DENY-TEXT >&2; exit 3;; esac\n'
         "  exit 0\nfi\n"
         'echo "OUT-$2"\n'
     )
@@ -252,8 +254,11 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path):
         '"model":"anthropic/claude-sonnet-5"}}',
         f"opencode ses_main hook spawn-model-gate --plain --cwd {tmp_path}",
         'stdin {"tool_name":"subagent","tool_input":{"agent":"general","model":""}}',
+        f"opencode ses_main hook spawn-model-gate --plain --cwd {tmp_path}",
+        'stdin {"tool_name":"subagent","tool_input":{"agent":"ghost","model":"",'
+        '"agent_known":false}}',
     ]
-    assert out["gate"] == {"pinned": "allowed", "unpinned": "DENY-TEXT"}
+    assert out["gate"] == {"pinned": "allowed", "unpinned": "DENY-TEXT", "usage": "allowed"}
     assert out["gateOther"] == "allowed"
 
 
