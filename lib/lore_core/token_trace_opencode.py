@@ -93,7 +93,7 @@ def trace_opencode(path: Path) -> list[PhaseTokens]:
         for index, part in enumerate(msg.get("content") or []):
             if not (isinstance(part, dict) and part.get("type") == "tool"):
                 continue
-            key = part.get("id") or (msg.get("id"), index)
+            key = part.get("id") or (msg.get("id") or id(msg), index)
             if part.get("name") != "subagent" or key in called:
                 continue
             called.add(key)
@@ -110,12 +110,11 @@ def trace_opencode(path: Path) -> list[PhaseTokens]:
             rows.append((row, str(inp.get("prompt") or "").strip(), meta.get("sessionID")))
 
     claimed: set[int] = set()  # one child session per call, even when it counts no tokens
-    linked = {sid for _, _, sid in rows if sid}
     for child_id, child in children:
         text = _first_user_text(child).strip()
-        texts = (text, text.split("\n", 1)[-1])
+        texts = (text, text.split("\n", 1)[-1].strip())
         row = next((r for r, _, sid in rows if child_id and sid == child_id), None)
-        if row is None and child_id not in linked:
+        if row is None:
             row = next(
                 (
                     r

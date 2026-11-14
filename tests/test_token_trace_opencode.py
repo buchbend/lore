@@ -234,16 +234,27 @@ def test_two_calls_with_no_id_match_two_children(tmp_path: Path) -> None:
     assert _agents(main) == {"agent:d1": 1, "agent:d2": 2}
 
 
-def test_a_utf8_session_file_reads_under_a_non_utf8_locale(
-    session: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import locale
+def test_a_utf8_session_file_reads_under_a_non_utf8_locale(session: Path) -> None:
+    import os
+    import subprocess
+    import sys
 
     text = session.read_text(encoding="utf-8").replace('"go"', '"gö ✓"')
     session.write_text(text, encoding="utf-8")
-    monkeypatch.setattr(locale, "getpreferredencoding", lambda *a, **k: "ascii")
-    monkeypatch.setattr(locale, "getencoding", lambda: "ascii", raising=False)
-    assert trace_tokens(session)[0].messages == 2
+    code = (
+        "import sys; from lore_adapters.opencode import read_session; "
+        "print(ascii(read_session(sys.argv[1])[1][0]['text']))"
+    )
+    env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
+    env.pop("PYTHONIOENCODING", None)
+    out = subprocess.run(
+        [sys.executable, "-X", "utf8=0", "-c", code, str(session)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert out == ascii("gö ✓")
 
 
 def test_a_row_with_only_1h_cache_writes_keeps_the_estimate() -> None:
