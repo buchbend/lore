@@ -453,6 +453,61 @@ def _merge(key_path: list[str], value: Any, what: str) -> Action:
     )
 
 
+def _config_action(key_path: list[str], value: Any, what: str) -> Action:
+    """Merge a config entry; one that differs from ours needs a confirmed replace."""
+    node: Any = _read_config()
+    for key in key_path:
+        node = node.get(key) if isinstance(node, dict) else None
+    # A command whose template is Lore's is Lore's: update it silently.
+    ours = (
+        key_path[0] == "commands"
+        and isinstance(node, dict)
+        and node.get("template") == value["template"]
+    )
+    command = node.get("command") if isinstance(node, dict) else None
+    # Lore's own MCP entry may sit at another binary path (venv, pipx, bare "lore").
+    lores_mcp = (
+        key_path[0] == "mcp"
+        and isinstance(command, list)
+        and len(command) == 2
+        and command[-1] == "mcp"
+        and Path(str(command[0])).name == "lore"
+    )
+    if node is None or node == value or ours or lores_mcp:
+        # keep the keys the person added (enabled, environment, model, ...)
+        return _merge(key_path, {**node, **value} if isinstance(node, dict) else value, what)
+    path = config_path()
+    return Action(
+        kind=KIND_REPLACE,
+        description=f"Replace {' / '.join(key_path)} in the OpenCode config",
+        target=str(path),
+        summary=f"existing {' / '.join(key_path)} differs from the entry Lore writes",
+        payload={
+            "path": str(path),
+            "key_path": key_path,
+            "old_value": node,
+            "new_value": value,
+            "reason": "entry differs from the one Lore writes",
+            "schema_version": SCHEMA_VERSION,
+            "jsonc": True,
+        },
+        on_failure="continue",
+    )
+
+
+def config_stale() -> bool:
+    """True when ``mcp.servers.lore`` or a ``lore:*`` command is missing from the config."""
+    source_root = resolve_lore_source_root(None)
+    if source_root is None:
+        return False
+    data = _read_config()
+    servers = (data.get("mcp") or {}).get("servers") if isinstance(data.get("mcp"), dict) else None
+    have = data.get("commands")
+    if not isinstance(servers, dict) or "lore" not in servers or not isinstance(have, dict):
+        return True
+    return any(s["name"] not in have for s in _skills(source_root))
+
+
 def _plugin_action(content: str, summary: str) -> Action:
     """Write the plugin; a ``lore.js`` that Lore did not write needs a confirmed replace."""
     path = plugin_path()
@@ -513,7 +568,7 @@ def plan(ctx: InstallContext) -> list[Action]:
     )
     actions = [
         _plugin_action(content, f"{len(event_commands(manifest))} events, {len(skills)} skills"),
-        _merge(["mcp", "servers", "lore"], _mcp_entry(), "the Lore MCP server"),
+        _config_action(["mcp", "servers", "lore"], _mcp_entry(), "the Lore MCP server"),
         *_agent_actions(),
     ]
     for skill in skills:
@@ -521,7 +576,7 @@ def plan(ctx: InstallContext) -> list[Action]:
             "description": skill["description"],
             "template": f"Use the skill {skill['name']} for this request.\n\n$ARGUMENTS",
         }
-        actions.append(_merge(["commands", skill["name"]], command, f"/{skill['name']}"))
+        actions.append(_config_action(["commands", skill["name"]], command, f"/{skill['name']}"))
     return actions
 
 

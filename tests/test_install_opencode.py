@@ -436,3 +436,144 @@ def test_a_subagent_file_lore_did_not_write_is_left_alone_and_survives_uninstall
     _apply(opencode.uninstall_plan(InstallContext()))
     assert mine.read_text() == "my own agent\n"
     assert not (mine.parent / "lore-cheap.md").exists()
+
+
+def test_config_goes_stale_when_the_mcp_entry_or_a_command_is_deleted(oc_home):
+    _apply(opencode.plan(InstallContext()))
+    assert not opencode.config_stale()
+
+    cfg = opencode.config_path()
+    data = json.loads(cfg.read_text())
+    del data["mcp"]["servers"]["lore"]
+    cfg.write_text(json.dumps(data))
+    assert opencode.config_stale()
+    _apply(opencode.plan(InstallContext()))
+    assert not opencode.config_stale()
+
+    data = json.loads(cfg.read_text())
+    del data["commands"]["lore:tdd"]
+    cfg.write_text(json.dumps(data))
+    assert opencode.config_stale()
+    _apply(opencode.plan(InstallContext()))
+    assert _config(oc_home)["commands"]["lore:tdd"]
+
+
+def test_a_differing_mcp_entry_needs_a_confirmed_replace_that_keeps_jsonc(oc_home):
+    cfg = oc_home / ".config" / "opencode" / "opencode.jsonc"
+    cfg.write_text(
+        '{\n  // mine\n  "mcp": {"servers": {"lore": {"type": "local", "command": ["x"]}}}\n}\n'
+    )
+
+    acts = [
+        a
+        for a in opencode.plan(InstallContext())
+        if a.payload.get("key_path") == ["mcp", "servers", "lore"]
+    ]
+
+    assert [a.kind for a in acts] == ["replace"]
+    assert acts[0].payload["old_value"]["command"] == ["x"]
+    assert acts[0].payload["jsonc"] is True
+    assert execute_action(acts[0]).ok
+    assert "// mine" in cfg.read_text()
+    assert opencode.jsonc.loads(cfg.read_text())["mcp"]["servers"]["lore"]["command"][1] == "mcp"
+
+
+def test_an_unchanged_or_missing_entry_stays_a_silent_merge(oc_home):
+    assert {a.kind for a in opencode.plan(InstallContext()) if a.payload.get("key_path")} == {
+        "merge"
+    }
+    _apply(opencode.plan(InstallContext()))
+    assert {a.kind for a in opencode.plan(InstallContext()) if a.payload.get("key_path")} == {
+        "merge"
+    }
+
+
+def test_a_command_with_lores_template_updates_silently_when_only_the_description_changed(oc_home):
+    _apply(opencode.plan(InstallContext()))
+    cfg = opencode.config_path()
+    data = json.loads(cfg.read_text())
+    data["commands"]["lore:tdd"]["description"] = "old words"
+    cfg.write_text(json.dumps(data))
+
+    acts = [
+        a
+        for a in opencode.plan(InstallContext())
+        if a.payload.get("key_path") == ["commands", "lore:tdd"]
+    ]
+
+    assert [a.kind for a in acts] == ["merge"]
+
+
+def test_a_command_with_a_different_template_needs_a_confirmed_replace(oc_home):
+    _apply(opencode.plan(InstallContext()))
+    cfg = opencode.config_path()
+    data = json.loads(cfg.read_text())
+    data["commands"]["lore:tdd"]["template"] = "my own prompt"
+    cfg.write_text(json.dumps(data))
+
+    acts = [
+        a
+        for a in opencode.plan(InstallContext())
+        if a.payload.get("key_path") == ["commands", "lore:tdd"]
+    ]
+
+    assert [a.kind for a in acts] == ["replace"]
+
+
+def _mcp_actions():
+    return [
+        a
+        for a in opencode.plan(InstallContext())
+        if a.payload.get("key_path") == ["mcp", "servers", "lore"]
+    ]
+
+
+def test_lores_own_mcp_entry_at_another_path_updates_silently(oc_home):
+    for command in (["/venv/bin/lore", "mcp"], ["lore", "mcp"]):
+        (oc_home / ".config" / "opencode" / "opencode.json").write_text(
+            json.dumps({"mcp": {"servers": {"lore": {"type": "local", "command": command}}}})
+        )
+        assert [a.kind for a in _mcp_actions()] == ["merge"]
+
+
+def test_a_persons_mcp_entry_needs_a_confirmed_replace(oc_home):
+    (oc_home / ".config" / "opencode" / "opencode.json").write_text(
+        json.dumps({"mcp": {"servers": {"lore": {"type": "local", "command": ["wrapper", "mcp"]}}}})
+    )
+    assert [a.kind for a in _mcp_actions()] == ["replace"]
+
+
+def test_config_stale_treats_a_non_dict_mcp_or_commands_as_stale(oc_home):
+    cfg = oc_home / ".config" / "opencode" / "opencode.json"
+    for bad in ({"mcp": "x"}, {"mcp": {"servers": []}}):
+        cfg.write_text(json.dumps(bad))
+        assert opencode.config_stale()
+    _apply(opencode.plan(InstallContext()))
+    data = json.loads(cfg.read_text())
+    data["commands"] = []
+    cfg.write_text(json.dumps(data))
+    assert opencode.config_stale()
+
+
+def test_a_silent_update_keeps_the_keys_the_person_added(oc_home):
+    cfg = oc_home / ".config" / "opencode" / "opencode.json"
+    _apply(opencode.plan(InstallContext()))
+    data = json.loads(cfg.read_text())
+    data["mcp"]["servers"]["lore"] = {
+        "type": "local",
+        "command": ["/venv/bin/lore", "mcp"],
+        "enabled": False,
+        "environment": {"LORE_ROOT": "/mine"},
+    }
+    data["commands"]["lore:tdd"]["description"] = "old"
+    data["commands"]["lore:tdd"]["model"] = "mine"
+    cfg.write_text(json.dumps(data))
+
+    _apply(opencode.plan(InstallContext()))
+
+    after = _config(oc_home)
+    entry = after["mcp"]["servers"]["lore"]
+    assert entry["command"] == [FAKE_LORE, "mcp"]
+    assert entry["enabled"] is False and entry["environment"] == {"LORE_ROOT": "/mine"}
+    assert after["commands"]["lore:tdd"]["model"] == "mine"
+    assert after["commands"]["lore:tdd"]["description"] != "old"
