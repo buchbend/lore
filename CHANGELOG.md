@@ -8,10 +8,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
-## [0.107.2] - 2026-11-14
-
-- OpenCode token trace (#634): a subagent call matches its child session by the session ID OpenCode records on the call; the prompt fallback needs an exact match. Two calls with no id get two rows. `has_tokens` counts 1-hour cache writes.
-
 ## [0.107.1] - 2026-11-14
 
 - Claude Code and OpenCode round trip (epic #632). Run `lore update` after the upgrade: it rewrites the OpenCode plugin.
