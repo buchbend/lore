@@ -139,17 +139,20 @@ class Bucket:
 
     counts: dict[str, int] = field(default_factory=lambda: dict.fromkeys(_COUNT_KEYS, 0))
     cost: float = 0.0
+    reasoning: int = 0  # OpenCode only; counts toward ``total``
     unpriced: int = 0  # rows whose model has no price
 
     @property
     def total(self) -> int:
         c = self.counts
-        return c["input"] + c["output"] + c["cache_read"] + c["cache_write"]
+        return c["input"] + c["output"] + c["cache_read"] + c["cache_write"] + self.reasoning
 
     def add(self, row: dict, cost: float | None) -> None:
         for k in _COUNT_KEYS:
             value = row.get(k, 0)
             self.counts[k] += value if isinstance(value, int) else 0
+        reasoning = row.get("reasoning", 0)
+        self.reasoning += reasoning if isinstance(reasoning, int) else 0
         if cost is None:
             self.unpriced += 1
         else:
@@ -261,9 +264,11 @@ def summarize(
                 continue
             model, phase = str(row.get("model") or "?"), str(row.get("phase") or "?")
             reported = row.get("cost")  # OpenCode's own figure beats our estimate
+            # A reported 0 with tokens is a provider that reports no price: estimate.
+            has_tokens = any(row.get(k) for k in ("input", "output", "cache_read", "cache_write"))
             cost = (
                 float(reported)
-                if isinstance(reported, (int, float))
+                if isinstance(reported, (int, float)) and (reported or not has_tokens)
                 else estimate_cost(model, row, prices)
             )
             if cost is None:

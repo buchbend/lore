@@ -76,7 +76,7 @@ class PhaseTokens:
 
     @property
     def total(self) -> int:
-        return self.input + self.output + self.cache_read + self.cache_write
+        return self.input + self.output + self.cache_read + self.cache_write + self.reasoning
 
     def counts(self) -> dict:
         return {
