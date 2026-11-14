@@ -689,9 +689,23 @@ def test_rewrites_the_opencode_plugin_on_a_version_change(tmp_path, agents, monk
 def test_leaves_a_current_opencode_plugin_alone(tmp_path, agents, monkeypatch):
     _plugin_index(PIP)
     _opencode_plugin(PIP)
+    from lore_core.install import opencode
+
+    for path, text in opencode.agent_files().items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
     monkeypatch.setattr(setup_cmd, "_present", lambda name: name in ("claude", "opencode"))
     setup_cmd.step_agents(tmp_path)
     assert "install opencode" not in agents
+
+
+def test_rewrites_the_opencode_subagents_when_the_tier_table_changed(tmp_path, agents, monkeypatch):
+    _plugin_index(PIP)
+    _opencode_plugin(PIP)
+    monkeypatch.setattr(setup_cmd, "_present", lambda name: name in ("claude", "opencode"))
+    _, events = setup_cmd.step_agents(tmp_path)  # subagent files missing
+    assert "install opencode" in agents
+    assert any("tier subagents" in msg for _, msg in events)
 
 
 def test_setup_agents_runs_only_the_agents_step(tmp_path, agents, no_prompt, monkeypatch):

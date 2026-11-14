@@ -35,7 +35,9 @@ def detect_host() -> str:
     tiers to the wrong model without any signal that happened.
     """
     if os.environ.get("LORE_HOST"):
-        return os.environ["LORE_HOST"]
+        host = os.environ["LORE_HOST"]
+        # capture's adapter name for Claude Code; the tier table says "claude"
+        return "claude" if host == "claude-code" else host
     if any(
         os.environ.get(var)
         for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID", "CLAUDE_CODE_EXECPATH")
@@ -58,20 +60,21 @@ def resolve_tier(tier: str, host: str | None = None, lore_root: Path | None = No
     if tier not in TIER_ORDER:
         raise TierResolutionError(f"unknown tier {tier!r}; known tiers: {', '.join(TIER_ORDER)}")
     resolved_host = host or detect_host()
-    # ponytail: opencode has no column until #614; it reads the claude column
-    unlisted_opencode = resolved_host == "opencode" and resolved_host not in TABLE
-    column = "claude" if unlisted_opencode else resolved_host
-    if column not in TABLE:
-        raise TierResolutionError(
-            f"unknown host {resolved_host!r}; known hosts: {', '.join(sorted(TABLE))}"
-        )
+    if resolved_host == "opencode":
+        # OpenCode picks a model per agent, so a tier resolves to its subagent.
+        return f"lore-{tier}"
+    return tier_model(tier, resolved_host, lore_root)
+
+
+def tier_model(tier: str, host: str, lore_root: Path | None = None) -> str:
+    """The concrete model of a tier on a host: a config override, else the table cell."""
+    if host not in TABLE:
+        raise TierResolutionError(f"unknown host {host!r}; known hosts: {', '.join(sorted(TABLE))}")
 
     from lore_core.config import get_lore_root
     from lore_core.root_config import load_root_config
 
     root = lore_root if lore_root is not None else get_lore_root()
     cfg = load_root_config(root)
-    override = cfg.tiers.overrides.get(resolved_host, {}).get(tier)
-    if override:
-        return override
-    return TABLE[column][tier]
+    override = cfg.tiers.overrides.get(host, {}).get(tier)
+    return override or TABLE[host][tier]

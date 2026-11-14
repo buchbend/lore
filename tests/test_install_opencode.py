@@ -153,18 +153,22 @@ def test_event_commands_follow_the_table_and_leave_capture_to_613():
         "start": [["hook", "session-start"]],
         "prompt": [["hook", "user-prompt-submit"]],
         "compaction": [["hook", "pre-compact"]],
+        "gate": [["hook", "spawn-model-gate"]],
     }
 
 
 _DRIVER = r"""
 import plugin from "./lore.mjs";
 const hooks = {}, shell = {}, transforms = [];
-const agents = [{ id: "build", mode: "primary" }, { id: "general", mode: "subagent" }];
+const agents = [{ id: "build", mode: "primary" }, { id: "general", mode: "subagent" },
+  { id: "lore-mid", mode: "subagent", model: { providerID: "anthropic", id: "claude-sonnet-5" } }];
+const toolHooks = {};
 const ctx = {
   location: { directory: process.argv[2] },
   agent: { list: async () => ({ data: agents }) },
   session: { hook: async (name, fn) => { hooks[name] = fn; } },
   shell: { hook: async (name, fn) => { shell[name] = fn; } },
+  tool: { hook: async (name, fn) => { toolHooks[name] = fn; } },
   skill: { transform: async (fn) => { transforms.push(fn); } },
 };
 await plugin.setup(ctx);
@@ -181,6 +185,14 @@ const added = [];
 for (const t of transforms) t({ get: () => undefined, add: (k) => added.push(k) });
 out.skills = added;
 out.id = plugin.id;
+const gate = async (tool, input) => {
+  const ev = { tool, sessionID: "ses_main", input };
+  try { await toolHooks["execute.before"](ev); return "allowed"; }
+  catch (e) { return e.message; }
+};
+out.gate = { pinned: await gate("subagent", { agent: "lore-mid" }),
+  unpinned: await gate("subagent", { agent: "general" }) };
+out.gateOther = await gate("bash", {});
 console.log(JSON.stringify(out));
 """
 
@@ -192,8 +204,13 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path):
     log = tmp_path / "lore.log"
     fake = tmp_path / "lore"
     fake.write_text(
-        "#!/bin/sh\ncat >/dev/null\n"
+        "#!/bin/sh\n"
+        "in=$(cat)\n"
         f'echo "$LORE_HOST $LORE_SESSION_ID $*" >> "{log}"\n'
+        'if [ "$2" = spawn-model-gate ]; then\n'
+        f'  echo "stdin $in" >> "{log}"\n'
+        '  case "$in" in *\'"model":""\'*) echo DENY-TEXT >&2; exit 2;; esac\n'
+        "  exit 0\nfi\n"
         'echo "OUT-$2"\n'
     )
     fake.chmod(0o755)
@@ -228,7 +245,14 @@ def test_generated_plugin_runs_under_node_against_a_fake_ctx(tmp_path):
         f"opencode ses_main hook session-start --plain --cwd {tmp_path}",
         f"opencode ses_main hook user-prompt-submit --plain --cwd {tmp_path}",
         f"opencode ses_main hook pre-compact --plain --cwd {tmp_path}",
+        f"opencode ses_main hook spawn-model-gate --plain --cwd {tmp_path}",
+        'stdin {"tool_name":"subagent","tool_input":{"agent":"lore-mid",'
+        '"model":"anthropic/claude-sonnet-5"}}',
+        f"opencode ses_main hook spawn-model-gate --plain --cwd {tmp_path}",
+        'stdin {"tool_name":"subagent","tool_input":{"agent":"general","model":""}}',
     ]
+    assert out["gate"] == {"pinned": "allowed", "unpinned": "DENY-TEXT"}
+    assert out["gateOther"] == "allowed"
 
 
 def test_no_source_root_writes_no_plugin_so_the_next_setup_retries(oc_home, monkeypatch):
@@ -254,3 +278,45 @@ def test_a_plugin_file_without_the_marker_needs_a_confirmed_replace(oc_home):
     assert replace[0].payload["old_value"] == "// the person's own plugin\n"
     assert execute_action(replace[0]).ok
     assert opencode.installed_plugin_version() == importlib.metadata.version("lore")
+
+
+def test_install_writes_four_tier_subagents_that_pin_the_opencode_column(oc_home):
+    from lore_core.tiers import TABLE
+
+    _apply(opencode.plan(InstallContext()))
+
+    agents = oc_home / ".config" / "opencode" / "agents"
+    assert sorted(p.name for p in agents.iterdir()) == [
+        "lore-cheap.md",
+        "lore-frontier.md",
+        "lore-mid.md",
+        "lore-strong.md",
+    ]
+    mid = (agents / "lore-mid.md").read_text()
+    assert opencode.AGENT_MARKER in mid[:200]
+    assert f"\nmodel: {TABLE['opencode']['mid']}\n" in mid
+    assert "\nmode: subagent\n" in mid
+
+
+def test_agents_go_stale_when_the_tier_table_changes_and_a_rewrite_fixes_them(oc_home, monkeypatch):
+    _apply(opencode.plan(InstallContext()))
+    assert not opencode.agents_stale()
+
+    monkeypatch.setattr(opencode, "_tier_model", lambda tier: f"x/{tier}-v2")
+    assert opencode.agents_stale()
+    _apply(opencode.plan(InstallContext()))
+    assert not opencode.agents_stale()
+    assert "model: x/mid-v2" in (oc_home / ".config/opencode/agents/lore-mid.md").read_text()
+
+
+def test_a_subagent_file_lore_did_not_write_is_left_alone_and_survives_uninstall(oc_home):
+    mine = oc_home / ".config" / "opencode" / "agents" / "lore-mid.md"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("my own agent\n")
+
+    _apply(opencode.plan(InstallContext()))
+    assert mine.read_text() == "my own agent\n"
+
+    _apply(opencode.uninstall_plan(InstallContext()))
+    assert mine.read_text() == "my own agent\n"
+    assert not (mine.parent / "lore-cheap.md").exists()
