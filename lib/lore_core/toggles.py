@@ -27,6 +27,11 @@ from pathlib import Path
 VALID_SCOPES = ("all", "citations")
 
 
+def session_id() -> str | None:
+    """The current session id: ``$LORE_SESSION_ID`` (any host), else ``$CLAUDE_SESSION_ID``."""
+    return os.environ.get("LORE_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID") or None
+
+
 def _check(scope: str, sid: str) -> None:
     if scope not in VALID_SCOPES:
         raise ValueError(

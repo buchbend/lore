@@ -412,15 +412,17 @@ def _capture_suppressed() -> bool:
 def _session_off_all() -> bool:
     """True iff `/lore:off` (scope=all) is active for the current session.
 
-    Resolves the session id from CLAUDE_SESSION_ID, which `_read_hook_payload`
-    publishes from the Claude Code stdin payload (issue #29 / v0.13.1).
+    Resolves the session id via ``toggles.session_id`` (LORE_SESSION_ID, else
+    CLAUDE_SESSION_ID, which `_read_hook_payload`
+    publishes from the Claude Code stdin payload, issue #29 / v0.13.1).
     Returns False when no sid is available — without a sid we can't scope a
     sentinel, so the safe default is "not muted."
     """
-    sid = os.environ.get("CLAUDE_SESSION_ID")
+    from lore_core.toggles import is_off, session_id
+
+    sid = session_id()
     if not sid:
         return False
-    from lore_core.toggles import is_off
     return is_off("all", sid)
 
 
@@ -432,10 +434,11 @@ def _citation_directive_lines() -> list[str]:
     session, else an empty list. The line tells the agent to skip the
     inline `› consulted [[X]]` affordance for the rest of the session.
     """
-    sid = os.environ.get("CLAUDE_SESSION_ID")
+    from lore_core.toggles import is_off, session_id
+
+    sid = session_id()
     if not sid:
         return []
-    from lore_core.toggles import is_off
     if not is_off("citations", sid):
         return []
     return [
