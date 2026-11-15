@@ -1,13 +1,37 @@
 # Lore
 
-**A workflow and knowledge layer for teams that code with Claude Code.**
-Each session starts with a small, repo-scoped context. It follows one
+**A workflow and knowledge layer for teams that code with agents, in Claude
+Code and OpenCode.** Each session starts with a small, repo-scoped context. It follows one
 workflow from idea to merged PR. It files every fact where someone will
 read it: issues, PRs, ADRs and PRDs, a git-backed team wiki, a logbook.
 Lore itself calls no model. The agent in the session does the judging.
 
 > ⚠️ **Pre-1.0.** APIs, hook contracts, skill surfaces, frontmatter
 > schema, and CLI flags can still change between minor versions.
+
+## Why Lore
+
+Most teams code with agents alone. Each person works in a private chat.
+The decisions, the reasons and the open threads stay in that chat, and the
+chat ends. The pull request shows the diff. Nothing shows why.
+
+Lore turns agent work into team work:
+
+- **Context lives where your team already works.** The agent files each fact
+  as an issue, a comment, a pull request, an ADR or a wiki note. The next
+  session reads the same places, so does a colleague and so does their agent.
+- **People review what becomes team knowledge.** A fact enters the repo
+  through the review loop of issues and pull requests. No background process
+  writes shared memory on its own.
+- **The knowledge outlives the agents.** Everything Lore leaves behind is
+  markdown in git and artifacts on GitHub. A person can read it without Lore,
+  without a model and without an API key. When API prices rise or a tool goes
+  away, your team keeps its history.
+- **No server, no model calls, no new database.** Lore is a CLI, hooks and an
+  MCP server on your machine. Transcripts stay on your machine.
+- **Take the part that fits.** The core is small: the context at session
+  start, the filing rule and search. The build workflow (orient, grilling,
+  to-epic, build, review) is there when your team wants it.
 
 ## How it works
 
