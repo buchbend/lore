@@ -9,7 +9,9 @@ Phases: ``main``, then one ``agent:<description>`` row per ``subagent`` tool
 call. The row takes its stage and target from a tag at the start of the call's
 ``description`` or ``prompt``. The subagent's own tokens come from its session
 file in the same folder (header ``parentID`` = this session), matched to the
-call by the call's prompt, which the subagent's first user message contains.
+call by the child session ID in the call's ``state.metadata``. A call without
+that ID matches a child whose first user text, or that text after its first
+line (OpenCode's preamble), equals the call's prompt.
 A subagent file no call claims gets a row of its own.
 """
 
@@ -73,27 +75,30 @@ def trace_opencode(path: Path) -> list[PhaseTokens]:
     children = []
     for other in sorted(Path(path).parent.glob("*.jsonl")):
         if main_id and read_header(other).get("parentID") == main_id:
-            children.append(read_session(other)[1])
+            child_header, child_msgs = read_session(other)
+            children.append((child_header.get("sessionID"), child_msgs))
     # Spawn order, not filename order: OpenCode 2.x session IDs sort newest-first.
-    children.sort(key=_created)
+    children.sort(key=lambda c: _created(c[1]))
 
     phases = [PhaseTokens("main")]
     seen: set[str] = set()
     called: set[object] = set()  # a repeated message must not repeat its spawns
-    rows: list[tuple[PhaseTokens, str]] = []
+    rows: list[tuple[PhaseTokens, str, object]] = []
     for msg in messages:
         if msg.get("type") == "user" and phases[0].stage is None and not rows:
             phases[0].stage, phases[0].target = parse_tag(msg.get("text"))
         _add(phases[0], msg, seen)
         if msg.get("type") != "assistant":
             continue
-        for part in msg.get("content") or []:
+        for index, part in enumerate(msg.get("content") or []):
             if not (isinstance(part, dict) and part.get("type") == "tool"):
                 continue
-            if part.get("name") != "subagent" or part.get("id") in called:
+            key = part.get("id") or (msg.get("id") or id(msg), index)
+            if part.get("name") != "subagent" or key in called:
                 continue
-            called.add(part.get("id"))
+            called.add(key)
             state = part.get("state") if isinstance(part.get("state"), dict) else {}
+            meta = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
             inp = state.get("input") if isinstance(state.get("input"), dict) else {}
             name = inp.get("description") or inp.get("agent") or "?"
             row = PhaseTokens(f"agent:{name}")
@@ -102,14 +107,22 @@ def trace_opencode(path: Path) -> list[PhaseTokens]:
                 stage, ref = parse_tag(inp.get("prompt"))
             row.stage, row.target = stage, ref or phases[0].target
             phases.append(row)
-            rows.append((row, str(inp.get("prompt") or "").strip()))
+            rows.append((row, str(inp.get("prompt") or "").strip(), meta.get("sessionID")))
 
     claimed: set[int] = set()  # one child session per call, even when it counts no tokens
-    for child in children:
-        text = _first_user_text(child)
-        row = next(
-            (r for r, prompt in rows if prompt and prompt in text and id(r) not in claimed), None
-        )
+    for child_id, child in children:
+        text = _first_user_text(child).strip()
+        texts = (text, text.split("\n", 1)[-1].strip())
+        row = next((r for r, _, sid in rows if child_id and sid == child_id), None)
+        if row is None:
+            row = next(
+                (
+                    r
+                    for r, prompt, sid in rows
+                    if not sid and prompt in texts and prompt and id(r) not in claimed
+                ),
+                None,
+            )
         if row is not None:
             claimed.add(id(row))
         if row is None:

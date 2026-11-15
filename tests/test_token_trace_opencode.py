@@ -173,3 +173,93 @@ def test_an_empty_child_session_file_does_not_break_the_trace(tmp_path: Path) ->
     )
     rows = [p for p in trace_tokens(main) if p.name.startswith("agent:")]
     assert [r.input for r in rows if r.input] == [3]
+
+
+def _spawn(i: int, prompt: str, child: str | None = None, call_id: str | None = None) -> dict:
+    part = oc.tool("subagent", call_id or f"call_{i}", {"description": f"d{i}", "prompt": prompt})
+    if call_id is None and child is None:
+        part.pop("id")
+    if child:
+        part["state"]["metadata"] = {"sessionID": child}
+    return part
+
+
+def _child(folder: Path, cwd: Path, sid: str, text: str, tokens: int, at: int = 0) -> None:
+    oc.write_session(
+        folder,
+        sid,
+        cwd,
+        [
+            oc.user(text, created=1_700_000_000_000 + at),
+            oc.assistant(f"c_{sid}", [oc.text("x")], tokens=(tokens, 0, 0, 0, 0)),
+        ],
+        parent="ses_main",
+    )
+
+
+def _agents(main: Path) -> dict[str, int]:
+    return {p.name: p.input for p in trace_tokens(main) if p.name.startswith("agent:")}
+
+
+def test_a_prompt_that_is_only_part_of_the_child_text_does_not_match(tmp_path: Path) -> None:
+    folder, cwd = tmp_path / "oc", tmp_path / "proj"
+    main = oc.write_session(
+        folder, "ses_main", cwd, [oc.user("go"), oc.assistant("m1", [_spawn(1, "Fix it.")])]
+    )
+    preamble = "You are a subagent spawned by another session.\n"
+    _child(folder, cwd, "ses_x", preamble + "Fix it. Then write the docs.", 5)
+    assert _agents(main) == {"agent:d1": 0, "agent:subagent": 5}
+
+
+def test_a_call_matches_the_child_its_metadata_names(tmp_path: Path) -> None:
+    folder, cwd = tmp_path / "oc", tmp_path / "proj"
+    spawns = [_spawn(1, "Same.", child="ses_b"), _spawn(2, "Same.", child="ses_a")]
+    main = oc.write_session(folder, "ses_main", cwd, [oc.user("go"), oc.assistant("m1", spawns)])
+    # spawn order disagrees with the metadata: the metadata wins
+    _child(folder, cwd, "ses_a", "Same.", 2, at=1)
+    _child(folder, cwd, "ses_b", "Same.", 1, at=2)
+    assert _agents(main) == {"agent:d1": 1, "agent:d2": 2}
+
+
+def test_two_calls_with_no_id_match_two_children(tmp_path: Path) -> None:
+    folder, cwd = tmp_path / "oc", tmp_path / "proj"
+    main = oc.write_session(
+        folder,
+        "ses_main",
+        cwd,
+        [oc.user("go"), oc.assistant("m1", [_spawn(1, "One."), _spawn(2, "Two.")])],
+    )
+    _child(folder, cwd, "ses_a", "One.", 1, at=1)
+    _child(folder, cwd, "ses_b", "Two.", 2, at=2)
+    assert _agents(main) == {"agent:d1": 1, "agent:d2": 2}
+
+
+def test_a_utf8_session_file_reads_under_a_non_utf8_locale(session: Path) -> None:
+    import os
+    import subprocess
+    import sys
+
+    text = session.read_text(encoding="utf-8").replace('"go"', '"gö ✓"')
+    session.write_text(text, encoding="utf-8")
+    code = (
+        "import sys; from lore_adapters.opencode import read_session; "
+        "print(ascii(read_session(sys.argv[1])[1][0]['text']))"
+    )
+    import lore_adapters
+
+    lib = str(Path(lore_adapters.__file__).parents[1])
+    env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0", "PYTHONPATH": lib}
+    env.pop("PYTHONIOENCODING", None)
+    out = subprocess.run(
+        [sys.executable, "-X", "utf8=0", "-c", code, str(session)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert out == ascii("gö ✓")
+
+
+def test_a_row_with_only_1h_cache_writes_keeps_the_estimate() -> None:
+    row = {"cost": 0, "input": 0, "output": 0, "cache_write_1h": 1_000_000}
+    assert summarize([_record(**row)]).total.cost > 0
