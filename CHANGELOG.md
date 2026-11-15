@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.108.0] - 2026-11-15
+
+- `lore off` and `lore on` are removed, with the session mute behind them (#633). Lore reads no mute file in the hooks, the MCP server or the OpenCode plugin. OpenCode users: run `lore update`, or the old plugin keeps its mute check.
+
 ## [0.107.2] - 2026-11-14
 
 - OpenCode token trace (#634): a subagent call matches its child session by the session ID OpenCode records on the call; the prompt fallback needs an exact match. Two calls with no id get two rows. `has_tokens` counts 1-hour cache writes.

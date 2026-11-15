@@ -39,11 +39,11 @@ HIDDEN = {
     "ingest",
     "inbox",
     "handover",
-    "on",
-    "off",
     "migrate",
 }
 DELETED = [
+    "on",
+    "off",
     "drill",
     "curator",
     "lint",
