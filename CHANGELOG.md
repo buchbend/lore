@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.108.1] - 2026-11-15
+
+- Build runs add the release bump after the merge approval, immediately before the merge, on a branch with `main` merged in (#638). A review fix no longer forces a redone bump.
+
 ## [0.108.0] - 2026-11-15
 
 - `lore off` and `lore on` are removed, with the session mute behind them (#633). Lore reads no mute file in the hooks, the MCP server or the OpenCode plugin. OpenCode users: run `lore update`, or the old plugin keeps its mute check.

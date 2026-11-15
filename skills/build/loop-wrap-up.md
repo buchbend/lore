@@ -40,11 +40,10 @@ commit in the first resume line of the ledger.
    Open one PR `loop/<slug> → <target>`. Its body is the handover section, in the shape
    [`handover`](../handover/SKILL.md) gives, written through `file-issue` in PR-body mode.
    Run `lore log add --ref <owner/repo#pr> --text-file <file>` as [logbook.md](logbook.md) says,
-   and commit the change under `docs/logbook/`. Add the version bump as the last commit if the
-   repo's `AGENTS.md` or `CLAUDE.md` requires one. Push again.
+   and commit the change under `docs/logbook/`. Push again.
 9. **Archive the ledger:** `lore workflow ledger-archive`.
 10. **Report and ask.** Report the PR, the ADRs and terms written, and the filed issues, in the
-    merge approval message of [SKILL.md](SKILL.md). On a yes, merge the PR. After the merge, by
+    merge approval message of [SKILL.md](SKILL.md). On a yes, add the version bump as [SKILL.md](SKILL.md) gives it, then merge the PR. After the merge, by
     you or the user, sync the local target with the remote. A squash merge makes the local
     target diverge: ask before `git reset --hard origin/<target>`. Remove the worktree and the
     branch when the user confirms.

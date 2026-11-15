@@ -52,19 +52,17 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
    [logbook.md](logbook.md) says. The ref is the epic issue: the epic PR does not exist yet. The
    `[logbook]` line stays in the local ledger of that worktree, not on the board. Commit the
    change under `docs/logbook/` on `epic/<issue>`.
-2. Add the version bump as the last commit, if the repo's `AGENTS.md` or `CLAUDE.md` requires
-   one.
-3. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
+2. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
    .body | lore workflow ledger-check -`. Do not merge while it exits 1.
-4. Run the full suite and ruff on the last commit, and every other check the repo's CI runs
+3. Run the full suite and ruff on the last commit, and every other check the repo's CI runs
    that you can run locally. Red: fix before the push.
-5. `git push -u origin epic/<issue>`, then open one PR `epic/<issue> → <target_branch>` that
+4. `git push -u origin epic/<issue>`, then open one PR `epic/<issue> → <target_branch>` that
    links every sub-issue. Write the body through [`file-issue`](../file-issue/SKILL.md) in
    PR-body mode. Set the PR on the board.
-6. Check `gh pr checks <epic-pr>` on the last commit. Pending: post the approval message anyway
+5. Check `gh pr checks <epic-pr>` on the last commit. Pending: post the approval message anyway
    and merge once green. Red: fix on `epic/<issue>` and push again before you merge.
-7. Ask for the merge approval, as the rules in [SKILL.md](SKILL.md) give it. When `epic-policy` returned `deploy_gate: true`,
-   name the deploy gate in the same message and note the yes on the board. Merge on a yes.
+6. Ask for the merge approval, as the rules in [SKILL.md](SKILL.md) give it. When `epic-policy` returned `deploy_gate: true`,
+   name the deploy gate in the same message and note the yes on the board. On a yes, add the version bump as [SKILL.md](SKILL.md) gives it, then merge.
    An unreachable user leaves the epic PR open.
 
 ## 5. Handover section
