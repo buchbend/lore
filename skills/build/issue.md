@@ -16,4 +16,4 @@ Read this when `build` runs in `issue` mode. The rules in [SKILL.md](SKILL.md) a
    same PR. `lore workflow ledger-check` passes, or you go back to the user. Remove the shipped
    roadmap item from its `ROADMAP.md`, if the issue ships one: the item that links the issue or
    that the issue names. Commit the change. Add the handover section to the PR body. Run
-   `lore log add`. Run `lore workflow ledger-archive`. Ask for the merge approval and merge on a yes.
+   `lore log add`. Run `lore workflow ledger-archive`. Ask for the merge approval. On a yes, add the version bump as [SKILL.md](SKILL.md) gives it, then merge.
