@@ -811,3 +811,44 @@ def test_setup_leaves_vault_with_both_files_unchanged(tmp_path, agents, no_promp
     assert result.exit_code == 0, result.output
     assert (vault / "CLAUDE.md").read_text() == "# claude\n"
     assert (vault / "AGENTS.md").read_text() == "# agents\n"
+
+
+def _two_wikis_and_a_remote_repo(tmp_path, monkeypatch):
+    for w in ("personal", "team"):
+        (tmp_path / "lore" / "wiki" / w).mkdir(parents=True)
+    user_config_path().parent.mkdir(parents=True)
+    user_config_path().write_text(f"lore_root: {tmp_path / 'lore'}\n")
+    repo = _repo(tmp_path / "anywhere" / "proj")
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "remote",
+            "add",
+            "origin",
+            "git@gitlab.example.org:grp/sub/proj.git",
+        ],
+        check=True,
+    )
+    monkeypatch.chdir(repo)
+
+
+def test_setup_scope_remote_only_suggests_the_repos_owner(tmp_path, agents, no_prompt, monkeypatch):
+    _two_wikis_and_a_remote_repo(tmp_path, monkeypatch)
+    result = _setup("scope", "--yes", "--remote-only", "--wiki", "team")
+    assert result.exit_code == 0, result.output
+    assert _person()["scopes"]["grp"] == {
+        "wiki": "team",
+        "remote": ["gitlab.example.org/grp/sub/*"],
+    }
+
+
+def test_setup_scope_with_two_wikis_and_no_wiki_flag_asks_for_one(
+    tmp_path, agents, no_prompt, monkeypatch
+):
+    _two_wikis_and_a_remote_repo(tmp_path, monkeypatch)
+    result = _setup("scope", "--yes", "--remote-only")
+    assert result.exit_code == 1
+    assert "pass --wiki" in result.output
+    assert "scopes" not in _person()

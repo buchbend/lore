@@ -424,11 +424,13 @@ def step_scope(
     scaffold_workflow: bool,
     interactive: bool,
     folder: Path | None = None,
+    remote_only: bool = False,
 ) -> tuple[str, list[Event]]:
     """Offer ``folder`` as a scope, by default the repo's parent folder, when no
-    scope covers it."""
+    scope covers it. ``remote_only`` writes a scope without a folder: it routes
+    by git remote, wherever the person clones."""
     from lore_core.config_schema import _read_raw
-    from lore_core.route import resolve_route
+    from lore_core.route import _remote_id, resolve_route
 
     route = resolve_route(folder or cwd)
     events: list[Event] = []
@@ -439,6 +441,11 @@ def step_scope(
             events.append((True, "scaffolded docs/prd, docs/adr and the AGENTS.md shim"))
     if route.scope:
         return f"{route.scope} covers {route.cwd}", events
+    # `github.com/acme/proj` suggests `github.com/acme/*`; GitLab subgroups too.
+    rid = _remote_id(route.repo_root) if route.repo_root else None
+    suggested = f"{rid.rsplit('/', 1)[0]}/*" if rid else ""
+    if remote_only:
+        return _remote_only_scope(route, name, wiki, list(remote or []) or [suggested], events)
     if folder is None:
         if route.repo_root is None:
             return "not in a git repo; no scope to offer", events
@@ -457,37 +464,62 @@ def step_scope(
     # The repo's old `.lore.yml` wiki no longer routes, but it is the best default.
     yml_wiki = _read_raw(route.repo_root / ".lore.yml").get("wiki") if route.repo_root else None
     yml_wiki = yml_wiki if yml_wiki in wikis else None
-    wiki = wiki or yml_wiki or route.wiki or (wikis[0] if wikis else "")
+    wiki = wiki or yml_wiki or route.wiki or ""
     remotes = list(remote or [])
     if interactive:
         if not typer.confirm(f"Add a scope for {folder} (every repo below it)?", default=True):
             return "declined", events
         name = typer.prompt("Scope name", default=name)
-        wiki = typer.prompt(f"Wiki ({', '.join(wikis)})", default=wiki)
-        extra = typer.prompt("Git remote pattern (optional)", default="", show_default=False)
+        wiki = typer.prompt(f"Wiki ({', '.join(wikis)})", default=wiki or wikis[0])
+        extra = typer.prompt(
+            "Git remote pattern: repos with this remote route here wherever you clone them"
+            " (empty for none)",
+            default=suggested,
+        )
         remotes += [extra] if extra else []
+    return _write_scope(name, {"path": str(folder)}, wiki, remotes, events)
+
+
+def _remote_only_scope(
+    route, name: str | None, wiki: str | None, remotes: list[str], events: list[Event]
+) -> tuple[str, list[Event]]:
+    remotes = [r for r in remotes if r]
+    if not remotes:
+        return "no remote", [(False, "no git remote here to route by; pass --remote PATTERN")]
+    # `github.com/acme/*` names the scope `acme`.
+    name = name or (remotes[0].split("/")[1] if "/" in remotes[0] else remotes[0])
+    return _write_scope(name, {}, wiki or route.wiki or "", remotes, events)
+
+
+def _write_scope(
+    name: str, entry: dict, wiki: str, remotes: list[str], events: list[Event]
+) -> tuple[str, list[Event]]:
+    """Validate the wiki and the name, then write one scope to the person's config."""
+    wikis = [p.name for p in list_wikis(get_lore_root())]
+    if not wiki and len(wikis) == 1:
+        wiki = wikis[0]
     if wiki not in wikis:
         known = ", ".join(wikis) or "none"
+        why = f"no wiki {wiki!r}" if wiki else "more than one wiki; pass --wiki"
         return "unknown wiki", [
             (
                 False,
-                f"no wiki {wiki!r} under {get_lore_root() / 'wiki'}; known: {known}"
-                " — run `lore setup wiki`",
+                f"{why} under {get_lore_root() / 'wiki'}; known: {known} — run `lore setup wiki`",
             )
         ]
-
     person = _read_person()
     scopes = person.setdefault("scopes", {})
     taken = scopes.get(name)
-    if isinstance(taken, dict) and taken.get("path") != str(folder):
-        clash = f"scope {name!r} already names {taken.get('path')}; pass --name"
+    if isinstance(taken, dict) and taken.get("path") != entry.get("path"):
+        clash = f"scope {name!r} already names {taken.get('path') or 'remotes only'}; pass --name"
         return "name taken", [(False, clash)]
-    entry: dict = {"path": str(folder), "wiki": wiki}
+    entry = {**entry, "wiki": wiki}
     if remotes:
         entry["remote"] = remotes
     scopes[name] = entry
     _write_person(person)
-    events.append((True, f"added scope {name!r}: {folder} → wiki {wiki}"))
+    where = " + ".join([*([entry["path"]] if "path" in entry else []), *remotes])
+    events.append((True, f"added scope {name!r}: {where} → wiki {wiki}"))
     return name, events
 
 
@@ -537,6 +569,13 @@ def _migrate_report() -> bool:
     return _report("migrate", "", events) if events else True
 
 
+def _wiring_state() -> tuple:
+    """What the wiring view shows: the person's config and the mounted wikis."""
+    cfg = user_config_path()
+    text = cfg.read_text() if cfg.is_file() else ""
+    return text, tuple(p.name for p in list_wikis(get_lore_root()))
+
+
 def _finish(ok: bool) -> None:
     if not ok:
         raise typer.Exit(code=1)
@@ -560,6 +599,11 @@ _REMOTE = typer.Option(None, "--remote", help="Git remote pattern, e.g. github.c
 _SCAFFOLD = typer.Option(
     False, "--scaffold-workflow", help="Also scaffold docs/prd, docs/adr and the AGENTS.md shim."
 )
+_REMOTE_ONLY = typer.Option(
+    False,
+    "--remote-only",
+    help="Route by git remote alone, wherever you clone (default: this repo's owner/*).",
+)
 
 
 @app.callback(invoke_without_command=True)
@@ -580,6 +624,7 @@ def setup(
         return
     interactive = _interactive(yes)
     cwd = Path.cwd()
+    before = _wiring_state()
     ok = _report(
         "wiki",
         *step_wiki(
@@ -604,6 +649,19 @@ def setup(
         ),
     )
     ok &= _report("check", *step_check(cwd))
+    # A run that changed something, or failed, ends on the whole wiring and
+    # the one next step. A second run on a healthy setup stays one mark per step.
+    if ok and _wiring_state() == before:
+        _finish(ok)
+        return
+    from lore_cli.config_cmd import wiring_lines
+
+    typer.echo("")
+    for line in wiring_lines(cwd):
+        typer.echo(line)
+    typer.echo(
+        "\nNext: restart your agent (Claude Code, Cursor, OpenCode). `lore config` shows this."
+    )
     _finish(ok)
 
 
@@ -644,8 +702,10 @@ def setup_scope(
     wiki: str = _WIKI,
     remote: list[str] = _REMOTE,
     scaffold_workflow: bool = _SCAFFOLD,
+    remote_only: bool = _REMOTE_ONLY,
 ) -> None:
-    """Add a scope for a folder and every repo below it (the Scope step alone)."""
+    """Add a scope for a folder and every repo below it, or for a git remote
+    (the Scope step alone)."""
     from lore_core.route import resolve_route
 
     cwd = Path.cwd()
@@ -664,6 +724,7 @@ def setup_scope(
             scaffold_workflow=scaffold_workflow,
             interactive=_interactive(yes),
             folder=path,
+            remote_only=remote_only,
         ),
     )
     _finish(ok)
