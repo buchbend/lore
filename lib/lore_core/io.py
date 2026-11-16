@@ -25,8 +25,11 @@ def atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> N
     If content ends without a newline, one is appended.
 
     Fsyncs the tmp file before rename so concurrent readers on the same
-    host see a committed state even if we crash.
+    host see a committed state even if we crash. A symlink at `path` stays:
+    the write lands on its target, so a config linked from a dotfiles repo
+    keeps its link.
     """
+    path = Path(os.path.realpath(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     if not content.endswith("\n"):
