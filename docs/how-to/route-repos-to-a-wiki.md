@@ -36,6 +36,41 @@ defaults:
 `defaults` holds the values a repo gets when no scope sets them. Keys are
 documented in [config](../architecture/config.md).
 
+## Route by git remote, wherever you clone
+
+A scope can match a repo by its git remote alone. A remote-only scope does
+not depend on your folder layout:
+
+```
+lore setup scope --remote-only --wiki ccat
+```
+
+In a repo with the remote `github.com/ccatobs/data-center`, setup suggests
+`github.com/ccatobs/*` and names the scope `ccatobs`. Pass `--remote` and
+`--name` to choose other values. GitLab remotes work the same way, and `*`
+matches nested groups too: `gitlab.example.org/group/*` matches
+`gitlab.example.org/group/sub/repo`.
+
+A folder match wins over a remote match (ADR 0016). A broad folder scope,
+such as `~/git`, therefore hides every remote scope for repos below it.
+`lore config` names a remote scope that lost to a folder match.
+
+## Let the wiki declare its repos
+
+A team wiki can name the remotes it serves in its `.lore-wiki.yml`:
+
+```yaml
+routing:
+  scope: ccat
+  remote: ['github.com/ccatobs/*']
+```
+
+Every person who mounts the wiki then routes those repos to it, with no
+scope of their own. A change reaches them with the next wiki pull. Your own
+scopes win over a wiki's patterns. A wiki never names a sink. When your
+config has a scope with the same name, such as `ccat` with
+`logbook: [file, pm]`, its sinks apply.
+
 ## Give one repo an exception
 
 Commit a `.lore.yml` at the repo root, or in a subfolder for that subtree. It
@@ -55,11 +90,15 @@ and `lore status` names the key. The wiki comes from your scopes
 ## See where a value came from
 
 ```
-lore status
+lore config
 ```
 
-prints each route value for the current folder with its origin: environment,
-`.lore.yml`, scope, `defaults` or code default.
+prints the whole wiring: each wiki with its git remote, each scope with its
+folder and remote patterns, the defaults, the sinks and the sources. Then
+it prints the route of the current folder, with the origin of each value:
+environment, `.lore.yml`, scope, `defaults` or code default. A `!` marks a
+line that needs a look, such as a missing scope folder or a wiki without
+git. `lore config --cwd <folder>` explains another folder.
 
 ## Store a secret
 

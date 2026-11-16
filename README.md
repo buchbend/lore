@@ -159,18 +159,33 @@ lore wiki new research                              # or scaffold a new one
 lore wiki check --wiki research                     # check links, descriptions, filenames, writing rules
 ```
 
-**Scopes.** A scope maps a folder of repos to a wiki, in
-`~/.config/lore/config.yml`. Every repo below that folder uses the wiki.
-A committed `.lore.yml` in a repo holds exceptions only.
+**Scopes.** A scope maps repos to a wiki, in `~/.config/lore/config.yml`.
+It matches every repo below a folder, every repo with a git remote that
+fits a pattern (GitHub or GitLab), or both. A folder match wins. A committed
+`.lore.yml` in a repo holds exceptions only.
 
 ```bash
-lore setup scope ~/git/myorg     # or: --name myorg --wiki team --remote 'github.com/myorg/*'
+lore setup scope ~/git/myorg                    # every repo below the folder
+lore setup scope --remote-only --wiki team      # every repo with this repo's owner/*, wherever cloned
 ```
+
+**Join a team.** A colleague's folders differ from yours, so route by remote:
+
+```bash
+lore setup --wiki-clone git@github.com:myorg/team-wiki.git
+lore setup scope --remote-only --wiki team-wiki --remote 'github.com/myorg/*'
+```
+
+A wiki can declare its remotes in its `.lore-wiki.yml` (`routing.remote`).
+Then the clone is the whole setup. Sinks stay personal.
+
+**See the wiring.** `lore config` shows every wiki with its git remote,
+every scope with its folders and remote patterns, the defaults, sinks and
+sources, and why the current repo routes where it does.
 
 **Sources and sinks.** `lore setup source` adds search sources beyond the
 wiki and GitHub (DokuWiki, any command). `lore setup sink` sets where
-logbook entries go. `lore config` shows the resolved configuration and
-where each value comes from; `lore config secret` stores tokens.
+logbook entries go. `lore config secret` stores tokens.
 
 Guides: [onboarding](docs/how-to/onboarding.md),
 [route repos to a wiki](docs/how-to/route-repos-to-a-wiki.md),

@@ -179,6 +179,11 @@ Per-vault-mount policy. Schema lives in
   whether the wiki has a git remote; an explicit value in the file
   always wins over that default.
 - `breadcrumb.{mode, scope_filter}`
+- `routing.{scope, remote}`: the repos this wiki serves, by git remote
+  (ADR 0016 amendment). `scope` names the scope and defaults to the wiki's
+  name. The person's own remote patterns win over a wiki's. A wiki never
+  names a sink: when the person also has a scope of that name, its sinks and
+  sources apply.
 
 A `curator:`, `briefing:`, `models:` or `heartbeat:` block is a retired
 key. `WikiConfig` carries none of these fields, and `load_wiki_config`
