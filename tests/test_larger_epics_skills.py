@@ -42,3 +42,15 @@ def test_to_epic_writes_review_plan_and_tail_runs_each_lens_once() -> None:
     assert "## Review plan" in _text("to-epic/SKILL.md")
     tail = _text("build/epic-tail.md")
     assert "Lenses" in tail and "once" in tail and "parallel" in tail
+
+
+def test_lens_review_range_is_the_rows_own_changes() -> None:
+    tail = _text("build/epic-tail.md")
+    assert "epic/<issue>..feat/<n>-<slug>" not in tail
+    assert "git merge-base <target_branch> feat/<n>-<slug>" in tail
+
+
+def test_review_plan_follows_the_checklist_in_the_epic_template() -> None:
+    text = _text("to-epic/SKILL.md")
+    assert text.index("- [ ] owner/other#7") < text.index("## Review plan")
+    assert "- **security:**" in text

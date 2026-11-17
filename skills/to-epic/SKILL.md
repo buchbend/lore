@@ -186,14 +186,16 @@ below keeps the literal token, which is what the build-order validator and `buil
 | 2 | <slice title> | owner/repo#13 | repo-a | AFK | #12 | — |
 | 3 | <slice title> | owner/other#7 | repo-b | HITL | #12 | security, ui |
 
-The `Lenses` column is optional; leave it and `## Review plan` out when the plan holds none.
+- [ ] owner/repo#12 — Feature 1
+- [ ] owner/repo#13 — Feature 2
+- [ ] owner/other#7 — Feature 3
+
+The `Lenses` column and the section below are optional; leave both out when the plan holds none.
 
 ## Review plan
 Each lens and the reason for it. Correctness runs per row and is not listed.
 
-- [ ] owner/repo#12 — Feature 1
-- [ ] owner/repo#13 — Feature 2
-- [ ] owner/other#7 — Feature 3
+- **security:** <reason> — rows 1, 3
 </epic-body-template>
 
 ## Sub-issue template
