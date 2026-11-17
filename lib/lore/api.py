@@ -1,7 +1,8 @@
 """Lore for scripts: the functions behind the MCP tools, as plain data.
 
-Each function returns dicts and lists and prints nothing. A failure comes
-back as an ``{"error": ...}`` envelope, never as an exception.
+Each function returns dicts and lists and prints nothing. An expected
+failure (no wiki, no repo, no such doc) comes back as an ``{"error": ...}``
+envelope.
 
     search(query, wiki=None, for_repo=None, k=5)   wiki hits plus one list per source
     read(path, wiki=None, section=None)            one note, or one `<source>:<id>` ref

@@ -59,8 +59,9 @@ script and print only what you keep. `help(lore.api)` lists the functions, one l
 
 ```bash
 "$(dirname "$(readlink -f "$(command -v lore)")")/python" - <<'PY'
-from lore.api import repo_docs_fetch, search
-print(repo_docs_fetch("adr", "0015")["content"][:1500])
+from lore.api import context_pack, repo_docs_fetch, search
+top = context_pack(intent="board ledger")["ranked"][0]  # e.g. docs/adr/0002-x.md
+print(repo_docs_fetch(top.split("/")[1], top)["content"][:1500])
 print([h["path"] for h in search("board ledger")["wiki"]])
 PY
 ```

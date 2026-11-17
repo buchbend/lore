@@ -52,3 +52,23 @@ def test_api_returns_plain_data_on_an_empty_repo(
         json.dumps(r)  # plain data: dicts, lists, strings, numbers
         assert isinstance(r, dict)
     assert capsys.readouterr().out == ""
+
+
+def test_orient_lore_api_snippet_runs_on_a_fixture_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import re
+
+    skill = Path(__file__).resolve().parent.parent / "skills/orient/SKILL.md"
+    snippet = re.search(r"<<'PY'\n(.*?)\nPY\n", skill.read_text(), re.S).group(1)
+
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    (repo / "docs/adr").mkdir(parents=True)
+    (repo / "docs/adr/0001-board-ledger.md").write_text("# Board ledger\n\nThe ledger body.\n")
+    monkeypatch.setenv("LORE_ROOT", str(tmp_path / "no-such-vault"))
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr("lore_core.sources.search_sources", lambda *a, **k: [])
+
+    exec(snippet, {})
+    assert "The ledger body." in capsys.readouterr().out
