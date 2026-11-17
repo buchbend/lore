@@ -203,6 +203,10 @@ this slice is implemented in; **Type** `AFK` (runs autonomously) or `HITL` (need
 decision); **Blocked by** the blocking issues, or `None`. No parser reads these off the
 sub-issue — `build` builds its DAG from the epic body's build-order table.
 
+A slice with ordered steps adds an optional `## Substeps` section after the acceptance
+criteria: a numbered checklist, one box per substep. A slice without substeps leaves it out.
+One teammate builds the substeps in order.
+
 <sub-issue-template>
 **Epic** owner/repo#<epic> · **Repo** owner/repo · **Type** AFK · **Blocked by** None
 
@@ -210,6 +214,7 @@ sub-issue — `build` builds its DAG from the epic body's build-order table.
 ## Current behaviour
 ## Required behaviour
 ## Acceptance criteria
+## Substeps
 ## Out of scope
 ## References
 
