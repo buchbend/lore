@@ -248,7 +248,9 @@ def parse_board_cmd(
 @app.command("after-merge")
 def after_merge_cmd(
     board: str = typer.Option(..., "--board", help="'-': the board comment on stdin."),
-    issue: int = typer.Option(..., "--issue", help="The merged sub-issue number."),
+    issue: str = typer.Option(
+        ..., "--issue", help="The merged sub-issue: owner/repo#n, or n for the epic repo."
+    ),
     sha: str = typer.Option(..., "--sha", help="The merge commit."),
     epic: str = typer.Option(..., "--epic", help="The epic as owner/repo#n."),
 ) -> None:
@@ -265,10 +267,10 @@ def after_merge_cmd(
         raise typer.Exit(code=1)
     repo, _, num = epic.rpartition("#")
     try:
-        updated = am.mark_merged(sys.stdin.read(), issue, sha)
+        updated, irepo, inum = am.mark_merged(sys.stdin.read(), issue, sha, repo)
         body = am.GH.epic_body(repo, int(num))
-        am.GH.set_epic_body(repo, int(num), am.tick(body, issue))
-        am.GH.close(repo, issue, f"Merged into epic/{num} at {sha}")
+        am.GH.set_epic_body(repo, int(num), am.tick(body, irepo, inum))
+        am.GH.close(irepo, inum, f"Merged into epic/{num} at {sha}")
     except (ValueError, RuntimeError) as exc:
         print(f"after-merge: {exc}", file=sys.stderr)
         raise typer.Exit(code=1) from exc

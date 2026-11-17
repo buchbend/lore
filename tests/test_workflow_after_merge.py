@@ -15,6 +15,7 @@ BOARD = """\
 |---|---|---|---|---|---|
 | One | buchbend/lore#645 | AFK | 1 | review | - |
 | Two | buchbend/lore#647 | AFK | 1 | review | - |
+| Far | other/repo#647 | AFK | 1 | review | - |
 
 ## Ledger
 
@@ -24,7 +25,7 @@ BOARD = """\
 
 - none
 """
-EPIC = "## Build order\n\n- [ ] buchbend/lore#645 — One\n- [ ] buchbend/lore#647 — Two\n"
+EPIC = "## Build order\n\n- [ ] buchbend/lore#645 — One\n- [ ] buchbend/lore#647 — Two\n- [ ] other/repo#647 — Far (blocked by #647)\n"
 
 
 class FakeGh:
@@ -83,3 +84,13 @@ def test_unknown_issue_exits_1_without_github(monkeypatch, capsys, gh):
     assert _run(monkeypatch, issue="999") == 1
     assert gh.calls == []
     assert capsys.readouterr().out == ""
+
+
+def test_cross_repo_row_closes_in_its_own_repo(monkeypatch, capsys, gh):
+    assert _run(monkeypatch, issue="other/repo#647") == 0
+    out = capsys.readouterr().out
+    assert "| Far | other/repo#647 | AFK | 1 | merged | - |" in out
+    assert "| Two | buchbend/lore#647 | AFK | 1 | review | - |" in out
+    (_, _, _, body) = next(c for c in gh.calls if c[0] == "set")
+    assert "- [x] other/repo#647" in body and "- [ ] buchbend/lore#647" in body
+    assert ("close", "other/repo", 647, "Merged into epic/644 at abc1234") in gh.calls

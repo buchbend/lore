@@ -14,32 +14,39 @@ from lore_workflow.build_order_validator import _split_cells
 from lore_workflow.ledger import BOARD_LEDGER_HEADING, LedgerEntry, format_entry, utc_now
 
 
-def _issue_no(ref: str) -> str:
-    return ref.rsplit("#", 1)[-1].strip()
+def split_ref(ref: str, default_repo: str) -> tuple[str, int]:
+    """`(repo, number)` of `owner/repo#n`, `#n` or `n`; a bare number takes *default_repo*."""
+    repo, _, num = ref.strip().rpartition("#") if "#" in ref else ("", "", ref.strip())
+    if not num.isdigit():
+        raise ValueError(f"not an issue reference: {ref!r}")
+    return repo or default_repo, int(num)
 
 
-def mark_merged(board: str, issue: int, sha: str) -> str:
+def mark_merged(board: str, issue: str, sha: str, default_repo: str) -> tuple[str, str, int]:
     """Board with the row of *issue* set to `merged` plus one resume line.
 
+    Rows match on the full ref. Returns (board, repo, number) of the row.
     Raises ValueError when the board has no row for *issue*.
     """
+    want = split_ref(issue, default_repo)
     try:
         rows = parse_board(board)
     except BoardParseError as exc:
         raise ValueError(str(exc)) from exc
-    if not any(_issue_no(r.issue) == str(issue) for r in rows):
-        raise ValueError(f"issue #{issue} has no row on the board")
     lines = board.splitlines()
     header = next(i for i, ln in enumerate(lines) if "state" in ln.casefold() and "|" in ln)
-    state = [c.casefold() for c in _split_cells(lines[header])].index("state")
-    issue_col = [c.casefold() for c in _split_cells(lines[header])].index("issue")
+    names = [c.casefold() for c in _split_cells(lines[header])]
+    state, issue_col = names.index("state"), names.index("issue")
+    if not any(split_ref(r.issue, default_repo) == want for r in rows):
+        raise ValueError(f"issue {want[0]}#{want[1]} has no row on the board")
     for i in range(header + 2, len(lines)):
         cells = _split_cells(lines[i]) if "|" in lines[i] else []
-        if len(cells) > max(state, issue_col) and _issue_no(cells[issue_col]) == str(issue):
+        if len(cells) > max(state, issue_col) and split_ref(cells[issue_col], default_repo) == want:
             cells[state] = "merged"
             lines[i] = "| " + " | ".join(cells) + " |"
             break
-    return _add_resume("\n".join(lines) + "\n", f"#{issue} merged at {sha[:7]}")
+    out = _add_resume("\n".join(lines) + "\n", f"#{want[1]} merged at {sha[:7]}")
+    return out, want[0], want[1]
 
 
 def _add_resume(board: str, state: str) -> str:
@@ -62,9 +69,14 @@ def _add_resume(board: str, state: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def tick(body: str, issue: int) -> str:
-    """Epic body with the open box of `#<issue>` ticked."""
-    return re.sub(rf"^(\s*[-*] )\[ \](.*#{issue}\b)", r"\1[x]\2", body, flags=re.MULTILINE)
+def tick(body: str, repo: str, issue: int) -> str:
+    """Epic body with the open checklist box whose ref is `repo#issue` ticked."""
+    return re.sub(
+        rf"^(\s*[-*] )\[ \](\s+(?:{re.escape(repo)})?#{issue}\b)",
+        r"\1[x]\2",
+        body,
+        flags=re.MULTILINE,
+    )
 
 
 def _gh(*args: str, stdin: str | None = None) -> str:
@@ -76,7 +88,9 @@ def _gh(*args: str, stdin: str | None = None) -> str:
 
 class _Gh:
     def epic_body(self, repo: str, epic: int) -> str:
-        return _gh("issue", "view", str(epic), "-R", repo, "--json", "body", "--jq", ".body")
+        return _gh(
+            "issue", "view", str(epic), "-R", repo, "--json", "body", "--jq", ".body"
+        ).rstrip("\n")
 
     def set_epic_body(self, repo: str, epic: int, body: str) -> None:
         _gh("issue", "edit", str(epic), "-R", repo, "--body-file", "-", stdin=body)

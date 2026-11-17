@@ -77,6 +77,7 @@ def test_loop_and_issue_archive_the_ledger_after_the_check() -> None:
 def test_each_merged_round_or_feature_writes_a_resume_line() -> None:
     skill = _text("build/SKILL.md")
     assert "--kind resume" in skill
+    assert "lore workflow after-merge" in _section("Mode `epic`")
     assert "`/clear` is safe" in skill
     assert "resume line (breakpoint)" in _section("Mode `loop`")
     assert "resume line (breakpoint)" in _section("Mode `epic`")
