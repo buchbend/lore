@@ -314,8 +314,8 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
   PRD branch.
 - **Substep** — one ordered step inside a slice, written as a numbered
   checklist item in the sub-issue. One teammate builds the substeps of a
-  slice in order on one branch, with one commit per substep, and ticks the
-  box as each commit lands. One review covers the slice.
+  slice in order on one branch, one commit per substep. The teammate ticks
+  the box as each commit lands. One review covers the slice.
 - **Review plan** — the review lenses that `to-epic` proposes for an epic,
   with each row tagged by the lenses it needs. The user approves the plan at
   the `to-epic` checkpoint. The correctness review runs per row, before the
