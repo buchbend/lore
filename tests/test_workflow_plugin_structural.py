@@ -60,7 +60,13 @@ DOCUMENT_SKILL = SKILLS_ROOT / "document" / "SKILL.md"
 # `build` keeps its core loop in SKILL.md and loads these when a run reaches
 # them (PRD 0015 § Build, "Skill size").
 BUILD_MODE_FILES = ("loop.md", "issue.md", "epic.md")
-BUILD_SIBLING_FILES = ("review.md", "teammate-brief.md", "epic-tail.md", "loop-wrap-up.md")
+BUILD_SIBLING_FILES = (
+    "review.md",
+    "teammate-brief.md",
+    "epic-tail.md",
+    "loop-wrap-up.md",
+    "follow-ups.md",
+)
 # The old orchestrate-epic/SKILL.md alone was 17,350 bytes and loaded on every run.
 # A run loads SKILL.md and its mode file; the other modes stay unread.
 BUILD_SKILL_BYTE_BUDGET = 6_000

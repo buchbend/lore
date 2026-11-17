@@ -60,7 +60,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-KINDS: tuple[str, ...] = ("adr", "term", "left", "resume", "logbook", "lab", "board")
+KINDS: tuple[str, ...] = (
+    "adr",
+    "term",
+    "left",
+    "question",
+    "resume",
+    "logbook",
+    "lab",
+    "board",
+)
 
 #: Kinds whose line holds an entry as JSON and its delivery per sink.
 DELIVERY_KINDS: tuple[str, ...] = ("logbook", "lab")
