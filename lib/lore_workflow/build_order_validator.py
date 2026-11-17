@@ -14,11 +14,12 @@ epic body text it already has (``gh issue view <epic> --json body``).
 
 The build-order table's columns are exactly, in order::
 
-    | # | Feature | Issue | Repo | Type | Blocked by |
+    | # | Feature | Issue | Repo | Type | Blocked by | [Lenses] |
 
 and the validator checks the four dimensions that make the table a usable DAG:
 
-  1. **columns** — the header is exactly the required columns, in order;
+  1. **columns** — the header is exactly the required columns, in order, plus an
+     optional trailing ``Lenses`` column (comma-separated review lenses);
   2. **fully-qualified Issue refs** — every ``Issue`` cell is ``owner/repo#n``
      (a bare ``#n`` or ``repo#n`` is rejected), so cross-repo refs are
      unambiguous;
@@ -53,6 +54,9 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     "Blocked by",
 )
 
+# Optional 7th column: the review lenses a row is tagged with (PRD 0024).
+LENSES_COLUMN = "Lenses"
+
 # A fully-qualified issue ref: owner/repo#number. owner and repo use the
 # GitHub-name character set (letters, digits, dot, underscore, hyphen). A ref
 # without the owner/repo prefix (bare "#12" or "repo#12") is deliberately not
@@ -84,6 +88,7 @@ class BuildOrderRow:
     type: str
     blocked_by: tuple[str, ...]
     lineno: int
+    lenses: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -192,11 +197,12 @@ def _check_columns(header: list[str]) -> Problem | None:
     """Return a columns Problem if *header* is not the required column set."""
     got = [cell.lower() for cell in header]
     want = [cell.lower() for cell in REQUIRED_COLUMNS]
-    if got != want:
+    if got != want and got != [*want, LENSES_COLUMN.lower()]:
         return Problem(
             "columns",
             "build-order columns must be exactly "
-            f"'{' | '.join(REQUIRED_COLUMNS)}'; got '{' | '.join(header)}'",
+            f"'{' | '.join(REQUIRED_COLUMNS)}' plus an optional '{LENSES_COLUMN}'; "
+            f"got '{' | '.join(header)}'",
         )
     return None
 
@@ -311,7 +317,7 @@ def validate_build_order(markdown: str) -> ValidationResult:
 
     problems: list[Problem] = []
     rows: list[BuildOrderRow] = []
-    width = len(REQUIRED_COLUMNS)
+    width = len(header)
     for lineno, raw in data_lines:
         cells = _split_cells(raw)
         if len(cells) != width:
@@ -330,6 +336,7 @@ def validate_build_order(markdown: str) -> ValidationResult:
                 repo=cells[3],
                 type=cells[4],
                 blocked_by=_parse_blockers(cells[5]),
+                lenses=_parse_blockers(cells[6]) if width > 6 else (),
                 lineno=lineno,
             )
         )

@@ -36,3 +36,9 @@ def test_teammate_brief_asks_one_commit_per_substep() -> None:
     assert "one commit per substep" in text
     assert "substep number in the commit subject" in text
     assert "one ticked box per landed commit" in text
+
+
+def test_to_epic_writes_review_plan_and_tail_runs_each_lens_once() -> None:
+    assert "## Review plan" in _text("to-epic/SKILL.md")
+    tail = _text("build/epic-tail.md")
+    assert "Lenses" in tail and "once" in tail and "parallel" in tail

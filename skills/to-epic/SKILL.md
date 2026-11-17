@@ -82,7 +82,9 @@ what you can into AFK during planning.
 Present the breakdown as a numbered list (Title · Repo · Type · Blocked by · criteria) **and
 the parallel batches it implies** (topological grouping of the DAG). Ask: right granularity?
 dependencies correct? repos correct? AFK/HITL correct? merge or split any slice? — when in
-doubt, merge. Iterate to approval — `build` in `epic` mode will not ask again.
+doubt, merge. Also propose the **review plan**: the lenses the epic needs beyond correctness (one lowercase
+word each, for example `security`, `ui`), the reason for each, and the rows each lens tags. The
+user approves or changes it here. Iterate to approval — `build` in `epic` mode will not ask again.
 
 ### 6. Publish
 Order matters so every cross-reference resolves:
@@ -112,7 +114,7 @@ Order matters so every cross-reference resolves:
 deterministic, dependency-free `lore workflow validate-build-order` on the composed epic body —
 e.g. `gh issue view <epic> --json body -q .body | lore workflow validate-build-order -`, or point
 it at the drafted body file (`lore workflow validate-build-order <path>`). It checks the required
-columns (`# | Feature | Issue | Repo | Type | Blocked by`), fully-qualified `owner/repo#n`
+columns (`# | Feature | Issue | Repo | Type | Blocked by`, plus the optional `Lenses`), fully-qualified `owner/repo#n`
 Issue refs, blocked-by edges that resolve to rows in the table, and an acyclic DAG.
 **Publish only a build order it accepts** — fix what it reports and re-run until it passes.
 
@@ -178,11 +180,16 @@ Canonical DAG for `build` in `epic` mode — one row per feature/sub-issue. Type
 autonomously, no human input) or HITL (human-in-the-loop: needs a human decision); the table
 below keeps the literal token, which is what the build-order validator and `build` in `epic` mode read.
 
-| # | Feature | Issue | Repo | Type | Blocked by |
-|---|---------|-------|------|------|------------|
-| 1 | <slice title> | owner/repo#12 | repo-a | AFK | — |
-| 2 | <slice title> | owner/repo#13 | repo-a | AFK | #12 |
-| 3 | <slice title> | owner/other#7 | repo-b | HITL | #12 |
+| # | Feature | Issue | Repo | Type | Blocked by | Lenses |
+|---|---------|-------|------|------|------------|--------|
+| 1 | <slice title> | owner/repo#12 | repo-a | AFK | — | security |
+| 2 | <slice title> | owner/repo#13 | repo-a | AFK | #12 | — |
+| 3 | <slice title> | owner/other#7 | repo-b | HITL | #12 | security, ui |
+
+The `Lenses` column is optional; leave it and `## Review plan` out when the plan holds none.
+
+## Review plan
+Each lens and the reason for it. Correctness runs per row and is not listed.
 
 - [ ] owner/repo#12 — Feature 1
 - [ ] owner/repo#13 — Feature 2
