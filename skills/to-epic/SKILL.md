@@ -70,7 +70,10 @@ serializes it anyway, so extra rows buy only overhead. Conceptual separation and
 boundaries never justify a split. **Blocked by** records a real dependency only: the slice
 needs code, a schema or an interface that another slice adds. Two slices that only edit the
 same files carry no edge — they run in parallel and the later merge rebases. Target 2–4
-slices (1 is fine; more than 6 smells like two epics). For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
+slices (1 is fine). The soft limit is about 12 rows. Split into two epics only for one of the three
+reasons of ADR 0023: one part has to wait until another part is deployed or published, a
+decision by the user gates most of the rows, or the repos share no release. A change of topic is no
+reason: one epic with several topics holds one PRD with one `##` section per topic. For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
 blocked-by, and acceptance criteria as checkboxes. A row that crosses repos names the edge's `pin` in its acceptance criteria (`lore map <owner/repo> --json`); no edge: write the row as before. HITL slices need a human decision;
 `build` in `epic` mode escalates rather than auto-implements them, so resolve
 what you can into AFK during planning.
@@ -79,7 +82,9 @@ what you can into AFK during planning.
 Present the breakdown as a numbered list (Title · Repo · Type · Blocked by · criteria) **and
 the parallel batches it implies** (topological grouping of the DAG). Ask: right granularity?
 dependencies correct? repos correct? AFK/HITL correct? merge or split any slice? — when in
-doubt, merge. Iterate to approval — `build` in `epic` mode will not ask again.
+doubt, merge. Also propose the **review plan**: the lenses the epic needs beyond correctness (one lowercase
+word each, for example `security`, `ui`), the reason for each, and the rows each lens tags. The
+user approves or changes it here. Iterate to approval — `build` in `epic` mode will not ask again.
 
 ### 6. Publish
 Order matters so every cross-reference resolves:
@@ -109,7 +114,7 @@ Order matters so every cross-reference resolves:
 deterministic, dependency-free `lore workflow validate-build-order` on the composed epic body —
 e.g. `gh issue view <epic> --json body -q .body | lore workflow validate-build-order -`, or point
 it at the drafted body file (`lore workflow validate-build-order <path>`). It checks the required
-columns (`# | Feature | Issue | Repo | Type | Blocked by`), fully-qualified `owner/repo#n`
+columns (`# | Feature | Issue | Repo | Type | Blocked by`, plus the optional `Lenses`), fully-qualified `owner/repo#n`
 Issue refs, blocked-by edges that resolve to rows in the table, and an acyclic DAG.
 **Publish only a build order it accepts** — fix what it reports and re-run until it passes.
 
@@ -175,15 +180,22 @@ Canonical DAG for `build` in `epic` mode — one row per feature/sub-issue. Type
 autonomously, no human input) or HITL (human-in-the-loop: needs a human decision); the table
 below keeps the literal token, which is what the build-order validator and `build` in `epic` mode read.
 
-| # | Feature | Issue | Repo | Type | Blocked by |
-|---|---------|-------|------|------|------------|
-| 1 | <slice title> | owner/repo#12 | repo-a | AFK | — |
-| 2 | <slice title> | owner/repo#13 | repo-a | AFK | #12 |
-| 3 | <slice title> | owner/other#7 | repo-b | HITL | #12 |
+| # | Feature | Issue | Repo | Type | Blocked by | Lenses |
+|---|---------|-------|------|------|------------|--------|
+| 1 | <slice title> | owner/repo#12 | repo-a | AFK | — | security |
+| 2 | <slice title> | owner/repo#13 | repo-a | AFK | #12 | — |
+| 3 | <slice title> | owner/other#7 | repo-b | HITL | #12 | security, ui |
 
 - [ ] owner/repo#12 — Feature 1
 - [ ] owner/repo#13 — Feature 2
 - [ ] owner/other#7 — Feature 3
+
+The `Lenses` column and the section below are optional; leave both out when the plan holds none.
+
+## Review plan
+Each lens and the reason for it. Correctness runs per row and is not listed.
+
+- **security:** <reason> — rows 1, 3
 </epic-body-template>
 
 ## Sub-issue template
@@ -200,6 +212,10 @@ this slice is implemented in; **Type** `AFK` (runs autonomously) or `HITL` (need
 decision); **Blocked by** the blocking issues, or `None`. No parser reads these off the
 sub-issue — `build` builds its DAG from the epic body's build-order table.
 
+A slice with ordered steps adds an optional `## Substeps` section after the acceptance
+criteria: a numbered checklist, one box per substep. A slice without substeps leaves it out.
+One teammate builds the substeps in order.
+
 <sub-issue-template>
 **Epic** owner/repo#<epic> · **Repo** owner/repo · **Type** AFK · **Blocked by** None
 
@@ -207,6 +223,7 @@ sub-issue — `build` builds its DAG from the epic body's build-order table.
 ## Current behaviour
 ## Required behaviour
 ## Acceptance criteria
+## Substeps
 ## Out of scope
 ## References
 

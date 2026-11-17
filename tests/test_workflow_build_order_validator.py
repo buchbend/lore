@@ -143,3 +143,40 @@ def test_legacy_roadmap_heading_still_accepted() -> None:
     body = _fixture("well-formed.md").replace("## Build order", "## Roadmap")
     assert "## Build order" not in body
     assert mod.validate_build_order(body).ok
+
+
+# ---------------------------------------------------------------------------
+# Optional Lenses column (PRD 0024)
+# ---------------------------------------------------------------------------
+
+_HEAD = "| # | Feature | Issue | Repo | Type | Blocked by |"
+
+
+def _table(header: str, *rows: str) -> str:
+    sep = "|" + "---|" * (header.count("|") - 1)
+    return "\n".join([header, sep, *rows]) + "\n"
+
+
+def test_lenses_column_passes_and_parses() -> None:
+    md = _table(
+        _HEAD + " Lenses |",
+        "| 1 | A | o/r#1 | r | AFK | — | security, ui |",
+        "| 2 | B | o/r#2 | r | AFK | #1 | — |",
+    )
+    result = mod.validate_build_order(md)
+    assert result.ok, result.problems
+    assert result.rows[0].lenses == ("security", "ui")
+    assert result.rows[1].lenses == ()
+
+
+def test_no_lenses_column_still_passes() -> None:
+    result = mod.validate_build_order(_table(_HEAD, "| 1 | A | o/r#1 | r | AFK | — |"))
+    assert result.ok, result.problems
+    assert result.rows[0].lenses == ()
+
+
+def test_unknown_eighth_column_is_a_columns_problem() -> None:
+    md = _table(_HEAD + " Lenses | Extra |", "| 1 | A | o/r#1 | r | AFK | — | ui | x |")
+    result = mod.validate_build_order(md)
+    assert not result.ok
+    assert "columns" in _kinds(result)
