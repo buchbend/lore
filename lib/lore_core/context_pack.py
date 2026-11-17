@@ -13,13 +13,14 @@ eagerly inlined here.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 from lore_core.gh import gh_issue_view
 from lore_core.git import git_repo_root
 from lore_core.linkage import Linkage, classify_refs, extract_linkage
-from lore_core.repo_docs import list_docs, rank_docs
+from lore_core.repo_docs import is_shipped, list_docs, rank_docs
 from lore_core.route import resolve_route
 
 
@@ -59,6 +60,97 @@ def _matching_docs(repo_root: Path | None, kind: str, focus: set[int]) -> list[d
     return out
 
 
+#: Cap on the ranked docs an intent returns (PRD 0024).
+INTENT_TOP = 8
+
+_WORD = re.compile(r"[a-z0-9]{3,}")
+_SUPERSEDED = re.compile(r"^\W*status\W*\s*(superseded|deprecated)", re.I | re.M)
+
+
+# ponytail: a fixed English stop list; swap for a tf-idf weight if it ranks badly.
+_STOP = frozenset(
+    [
+        "the",
+        "and",
+        "for",
+        "with",
+        "that",
+        "this",
+        "from",
+        "into",
+        "onto",
+        "over",
+        "when",
+        "then",
+        "than",
+        "what",
+        "which",
+        "who",
+        "how",
+        "why",
+        "are",
+        "was",
+        "were",
+        "has",
+        "have",
+        "had",
+        "not",
+        "but",
+        "all",
+        "any",
+        "can",
+        "its",
+        "our",
+        "out",
+        "add",
+        "fix",
+        "make",
+        "use",
+        "new",
+        "one",
+        "two",
+        "get",
+        "set",
+        "let",
+        "should",
+        "would",
+        "could",
+        "also",
+    ]
+)
+
+
+def intent_words(intent: str) -> set[str]:
+    """Lowercase words of three or more letters or digits, stop words dropped."""
+    return set(_WORD.findall(intent.lower())) - _STOP
+
+
+def _rank_by_intent(
+    repo_root: Path, docs: list[dict[str, Any]], intent: str
+) -> list[dict[str, Any]]:
+    """Top `INTENT_TOP` docs that name an intent word, title hits weighted 3x.
+
+    Ties break on shipped-last, then path, so the order is stable.
+    """
+    words = intent_words(intent)
+    scored = []
+    for doc in docs:
+        if doc["is_index"]:  # an index names every title; it would always win
+            continue
+        title = _WORD.findall(str(doc["title"]).lower())
+        body = _WORD.findall((repo_root / doc["path"]).read_text(errors="replace").lower())
+        score = sum(3 * title.count(w) + body.count(w) for w in words)
+        if score:
+            scored.append((-score, is_shipped(doc), doc["path"], doc))
+    return [d for *_k, d in sorted(scored, key=lambda t: t[:3])][:INTENT_TOP]
+
+
+def _is_current(repo_root: Path, doc: dict[str, Any]) -> bool:
+    """False for an ADR whose status line says superseded or deprecated."""
+    text = (repo_root / doc["path"]).read_text(errors="replace")
+    return not _SUPERSEDED.search(f"status: {doc.get('status') or ''}\n{text}")
+
+
 def _issue_state(repo: str, numbers: set[int]) -> list[dict[str, Any]]:
     """Fetch each focus issue's number, title, state and body.
 
@@ -81,8 +173,14 @@ def gather(
     branch: str | None = None,
     issue: int | None = None,
     repo_path: str | None = None,
+    intent: str | None = None,
 ) -> dict[str, Any]:
-    """Join git-derived linkage + repo_docs into a bounded pointer pack."""
+    """Join git-derived linkage + repo_docs into a bounded pointer pack.
+
+    With an `intent`, the docs are ranked by a lexical match against title
+    and body and capped at `INTENT_TOP`. With neither intent nor focus
+    issue, the pack holds the current ADRs only: no PRD, no superseded ADR.
+    """
     cwd_path = Path(cwd).expanduser().resolve() if cwd else Path.cwd()
     linkage = extract_linkage(cwd=cwd_path)
     repo_root = _repo_root(cwd_path, repo_path)
@@ -92,8 +190,23 @@ def gather(
     scope = route.scope or ""
     wiki = route.wiki or ""
 
-    adrs = _matching_docs(repo_root, "adr", focus)
-    prds = _matching_docs(repo_root, "prd", focus)
+    if repo_root is not None and intent and intent_words(intent):
+        # The intent ranks every doc: a focus branch must not hide a doc
+        # that names the work but not the issue number.
+        adrs, prds = list_docs(repo_root, "adr"), list_docs(repo_root, "prd")
+        top = _rank_by_intent(repo_root, adrs + prds, intent)
+        keep = {d["path"] for d in top}
+        adrs = [d for d in adrs if d["path"] in keep]
+        prds = [d for d in prds if d["path"] in keep]
+        ranked = [d["path"] for d in top]
+    else:
+        adrs = _matching_docs(repo_root, "adr", focus)
+        prds = _matching_docs(repo_root, "prd", focus)
+        if repo_root is not None and not focus:
+            adrs = [d for d in adrs if not d["is_index"] and _is_current(repo_root, d)]
+            prds = []
+        # Paths only: ADRs, then current PRDs, then shipped PRDs (ADR 0015).
+        ranked = rank_docs(adrs, prds)
     return {
         "schema": "lore.context_pack/1",
         "repo": linkage.repo,
@@ -103,7 +216,7 @@ def gather(
         "focus_issues": sorted(focus),
         "adr": adrs,
         "prd": prds,
-        # Paths only: ADRs, then current PRDs, then shipped PRDs (ADR 0015).
-        "ranked": rank_docs(adrs, prds),
+        "intent": intent or "",
+        "ranked": ranked,
         "epic_state": _issue_state(linkage.repo, focus),
     }

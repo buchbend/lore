@@ -41,18 +41,30 @@ solutions. When the user passes an issue reference, such as a seed issue from
 [`handover`](../handover/SKILL.md), read it (`gh issue view <n> --json title,body`). Its Intent
 and Findings are the seed.
 
-## 2. Pull the context pack
+## 2. Pull the brief
 
-Pull `lore_context_pack` once, up front. It is cold-start-safe: an empty repo returns an empty
-pack. Add `lore_repo_docs_list` and `lore_repo_docs_fetch` for the full ADR and PRD listing. Read
-ADRs and PRDs as context; only `Invariant` lines bind.
+Run `lore brief --json "<intent>"` first, before any other homework call. Pass the seed in a few
+words. The brief holds four parts:
 
-- **Docs and decisions** come from the pack's `adr` and `prd` entries. Domain words come from
-  `lore glossary <term> [<term> …]`, which prints their `CONTEXT.md` definitions.
-- **Prior art** comes from the pack's `epic_state`, plus one targeted `lore_search` or
-  `lore_drill` call for what the pack lacks.
-- **Code** comes from `lore codemap` (or the `lore_codemap` tool): a ranked index, not a
-  directory walk.
+- `pack`: the context pack. Its ADRs and PRDs are ranked against the intent, top 8, and
+  `epic_state` holds the focus issues.
+- `sections`: the first section of each ranked doc.
+- `codemap`: about 1000 tokens of the code map. Symbols that name an intent word come first.
+- `glossary`: the `CONTEXT.md` definitions of the domain words in the intent.
+
+Read ADRs and PRDs as context; only `Invariant` lines bind.
+
+Where the brief is thin, explore freely. To chain several lookups, write a short `lore.api`
+script and print only what you keep. `help(lore.api)` lists the functions, one line each:
+
+```bash
+"$(dirname "$(readlink -f "$(command -v lore)")")/python" - <<'PY'
+from lore.api import context_pack, repo_docs_fetch, search
+top = context_pack(intent="board ledger")["ranked"][0]  # e.g. docs/adr/0002-x.md
+print(repo_docs_fetch(top.split("/")[1], top)["content"][:1500])
+print([h["path"] for h in search("board ledger")["wiki"]])
+PY
+```
 
 **Light mode stops here.** Spawn no explorer. Where the pack is thin for a facet, say so in the
 brief.
