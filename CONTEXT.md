@@ -312,6 +312,16 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
   build. `to-epic` names it in the epic body. `build` merges it into the
   epic branch when the target branch lacks the PRD. _Avoid_: docs branch,
   PRD branch.
+- **Substep** — one ordered step inside a slice, written as a numbered
+  checklist item in the sub-issue. One teammate builds the substeps of a
+  slice in order on one branch, with one commit per substep, and ticks the
+  box as each commit lands. One review covers the slice.
+- **Review plan** — the review lenses that `to-epic` proposes for an epic,
+  with each row tagged by the lenses it needs. The user approves the plan at
+  the `to-epic` checkpoint. The correctness review runs per row, before the
+  row merges into the epic branch. Each other lens runs once, at the end of
+  the epic, over all rows tagged with it. ADR 0023 (epics split on release
+  order, not topic) records the decision.
 - **Seed issue** — a tracker issue labeled `epic-seed` that the `handover`
   skill writes. It carries intent and findings for a cold session to
   orient on. It is no spec.

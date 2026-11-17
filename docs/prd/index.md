@@ -29,4 +29,5 @@ PRDs are the source of truth for decisions. Each PRD lives at
 0021-one-plugin
 0022-opencode-host
 0023-opencode-round-trip
+0024-ambitious-epics-and-code-mode
 ```
