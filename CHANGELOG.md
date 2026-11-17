@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.109.0] - 2026-11-17
+
+- Build runs fix small follow-ups in the PR that found them and list them under `## Found and fixed` (#643). A decision for the user becomes a `question` ledger line: the run builds a cheap-to-undo guess or parks only the dependent work, and asks in one batched message with context. Epics no longer stop on a HITL row or an unclear spec.
+
 ## [0.108.1] - 2026-11-15
 
 - Build runs add the release bump after the merge approval, immediately before the merge, on a branch with `main` merged in (#638). A review fix no longer forces a redone bump.
