@@ -372,6 +372,15 @@ def test_orient_reads_a_milestone_ref_with_lore_read() -> None:
     assert "Without a source, the ref stays plain text" in text
 
 
+def test_orient_calls_lore_brief_before_any_other_homework_call() -> None:
+    text = _joined("orient/SKILL.md")
+    homework = text[text.index("## 2.") : text.index("## 3.")]
+    first = homework.index("lore brief --json")
+    for call in ("lore_context_pack", "lore_repo_docs", "lore glossary", "lore_search", "codemap"):
+        assert call not in homework[:first], call
+    assert "from lore.api import" in homework
+
+
 def test_grilling_asks_which_roadmap_item_the_plan_serves() -> None:
     text = _joined("grilling/SKILL.md")
     assert "which roadmap item the plan serves" in text
