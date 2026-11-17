@@ -58,6 +58,7 @@ def _build_app() -> typer.Typer:
     # unified `lore --help` listing.
     from lore_cli import (
         adr_cmd,
+        brief_cmd,
         codemap_cmd,
         config_cmd,
         drill_cmd,
@@ -117,6 +118,7 @@ def _build_app() -> typer.Typer:
     app.add_typer(tier_cmd.app, name="tier", hidden=True)
     app.add_typer(style_cmd.app, name="style", hidden=True)
     app.add_typer(adr_cmd.app, name="adr", hidden=True)
+    app.add_typer(brief_cmd.app, name="brief", hidden=True)
     app.add_typer(codemap_cmd.app, name="codemap", hidden=True)
     app.add_typer(glossary_cmd.app, name="glossary", hidden=True)
     app.add_typer(index_cmd.app, name="index", hidden=True)
