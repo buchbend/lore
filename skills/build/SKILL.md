@@ -16,7 +16,7 @@ Follow the mode's file and the rules below. Read another sibling file only when 
 | [`issue`](issue.md) | One written, clear issue. | One PR, merged after the user approves |
 | [`epic`](epic.md) | An epic tracker with a build-order table from [`to-epic`](../to-epic/SKILL.md). | Epic PR, then the handover section |
 
-Several features, or unshaped work: back to [`orient`](../orient/SKILL.md). One `build` run per epic; a downstream
+Unshaped work: back to [`orient`](../orient/SKILL.md). One `build` run per epic; a downstream
 epic starts after its upstream epic merged.
 
 ## Rules for every mode

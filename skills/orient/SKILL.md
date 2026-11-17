@@ -17,7 +17,7 @@ Pick the weight:
 
 | Mode | Use when | Hands off to |
 |---|---|---|
-| **Full** | Several features, or the shape is unsettled. | [`grilling`](../grilling/SKILL.md) |
+| **Full** | The shape is unsettled, or the work spans an epic. | [`grilling`](../grilling/SKILL.md) |
 | **Light** ("brief me") | One change, clear-ish in the user's head, not written down. | [`build`](../build/SKILL.md) |
 
 A written, clear issue skips this skill: run `build` in `issue` mode.
@@ -99,7 +99,7 @@ same page after each correction.
 ## 4. Loop
 
 Ask whether this matches. On a correction, explore again only the facets that moved. Repeat until
-the user confirms. When light mode finds the work is several features or unsettled, say so and
+the user confirms. When light mode finds the work is unsettled or spans an epic, say so and
 switch to full mode; the brief so far seeds step 1.
 
 ## 5. Hand off

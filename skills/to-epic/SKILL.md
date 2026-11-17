@@ -70,7 +70,10 @@ serializes it anyway, so extra rows buy only overhead. Conceptual separation and
 boundaries never justify a split. **Blocked by** records a real dependency only: the slice
 needs code, a schema or an interface that another slice adds. Two slices that only edit the
 same files carry no edge — they run in parallel and the later merge rebases. Target 2–4
-slices (1 is fine; more than 6 smells like two epics). For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
+slices (1 is fine). The soft limit is about 12 rows. Split into two epics only for one of the three
+reasons of ADR 0023: one part has to wait until another part is deployed or published, a
+decision by the user gates most of the rows, or the repos share no release. A change of topic is no
+reason: one epic with several topics holds one PRD with one `##` section per topic. For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
 blocked-by, and acceptance criteria as checkboxes. A row that crosses repos names the edge's `pin` in its acceptance criteria (`lore map <owner/repo> --json`); no edge: write the row as before. HITL slices need a human decision;
 `build` in `epic` mode escalates rather than auto-implements them, so resolve
 what you can into AFK during planning.
