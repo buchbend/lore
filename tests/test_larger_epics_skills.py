@@ -47,7 +47,8 @@ def test_to_epic_writes_review_plan_and_tail_runs_each_lens_once() -> None:
 def test_lens_review_range_is_the_rows_own_changes() -> None:
     tail = _text("build/epic-tail.md")
     assert "epic/<issue>..feat/<n>-<slug>" not in tail
-    assert "git merge-base <target_branch> feat/<n>-<slug>" in tail
+    assert "git merge-base" not in tail
+    assert "$M^1..$M^2" in tail
 
 
 def test_review_plan_follows_the_checklist_in_the_epic_template() -> None:

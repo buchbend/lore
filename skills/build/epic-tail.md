@@ -38,8 +38,8 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
   epic or its PRD. Commit the change on `epic/<issue>`.
 - **Lens reviews**, when the epic body holds `## Review plan`. Run each lens once, in parallel,
   over the rows the `Lenses` column tags with it, with the tag `[build:epic-review]` and the
-  range `$(git merge-base <target_branch> feat/<n>-<slug>)..feat/<n>-<slug>` of each (the row's own
-  changes), per [review.md](review.md); tell the reviewer its lens. A finding is
+  merge commit of each: `M=$(git log --merges -1 --format=%H --grep 'feat/<n>-<slug>' epic/<issue>)`,
+  range `$M^1..$M^2` (the row's own changes), per [review.md](review.md); tell the reviewer its lens. A finding is
   a fix round on `epic/<issue>`.
 - **Whole-epic review**, only for an epic with three or more features. Follow
   [review.md](review.md) on `<target_branch>..epic/<issue>`, after the docs commit, with the tag
