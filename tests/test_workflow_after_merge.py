@@ -25,7 +25,10 @@ BOARD = """\
 
 - none
 """
-EPIC = "## Build order\n\n- [ ] buchbend/lore#645 — One\n- [ ] buchbend/lore#647 — Two\n- [ ] other/repo#647 — Far (blocked by #647)\n"
+EPIC = (
+    "## Build order\n\n- [ ] buchbend/lore#645 — One\n- [ ] buchbend/lore#647 — Two\n"
+    "- [ ] other/repo#647 — Far (blocked by #647)\n"
+)
 
 
 class FakeGh:

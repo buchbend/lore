@@ -61,7 +61,7 @@ blocks the feature.
 **Merge.** No CI here; the local run gates. In a worktree of `epic/<issue>`: `git
 merge --no-ff feat/<n>-<slug>`, run the full suite and ruff, read the exit codes. Green: the
 merge stands. Red or conflict: `git reset --hard ORIG_HEAD`, back to the teammate.
-Cross-repo: read the `pin` of the producer-consumer edge
+Cross-repo: read the `pin` of the edge between producer and consumer
 (`lore map <consumer> --json`). Merge the producer, record the pin (SHA, tag, image or
 package version) before dispatching the consumer. Without an edge, record the producer's SHA.
 The consumer reads the producer from its local checkout. A pin only the remote resolves
