@@ -245,6 +245,36 @@ def parse_board_cmd(
     )
 
 
+@app.command("after-merge")
+def after_merge_cmd(
+    board: str = typer.Option(..., "--board", help="'-': the board comment on stdin."),
+    issue: int = typer.Option(..., "--issue", help="The merged sub-issue number."),
+    sha: str = typer.Option(..., "--sha", help="The merge commit."),
+    epic: str = typer.Option(..., "--epic", help="The epic as owner/repo#n."),
+) -> None:
+    """Routine steps after a feature merge; print the updated board.
+
+    Sets the row of --issue to `merged`, adds a resume line to the ledger,
+    ticks the box in the epic body, closes the sub-issue. An issue without a
+    board row exits 1 before any GitHub call.
+    """
+    from lore_workflow import after_merge as am
+
+    if board != "-" or "#" not in epic or "/" not in epic:
+        print("after-merge: use --board - and --epic owner/repo#n", file=sys.stderr)
+        raise typer.Exit(code=1)
+    repo, _, num = epic.rpartition("#")
+    try:
+        updated = am.mark_merged(sys.stdin.read(), issue, sha)
+        body = am.GH.epic_body(repo, int(num))
+        am.GH.set_epic_body(repo, int(num), am.tick(body, issue))
+        am.GH.close(repo, issue, f"Merged into epic/{num} at {sha}")
+    except (ValueError, RuntimeError) as exc:
+        print(f"after-merge: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+    sys.stdout.write(updated)
+
+
 def _ledger_path(path: str | None) -> Path:
     """Resolve `--path`, or the git-dir ledger of the cwd."""
     if path:
