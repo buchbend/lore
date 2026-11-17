@@ -1,14 +1,14 @@
 ---
 title: "Larger epics and code mode"
 status: draft
-epic: https://github.com/buchbend/lore/issues/TBD
+epic: https://github.com/buchbend/lore/issues/644
 repos:
   - buchbend/lore
 ---
 
 # PRD 0024: Larger epics and code mode
 
-> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/TBD).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/644).
 > The epic links here; this file is not embedded in the issue body.
 > Decision: ADR [0023](../adr/0023-epics-split-on-release-order-not-topic.md) (epics split on
 > release order, not topic).

@@ -3,7 +3,9 @@
 - **Status:** Proposed
 - **Date:** 2026-11-17
 - **Deciders:** Christof Buchbender
-- **Relates to:** PR [#643](https://github.com/buchbend/lore/pull/643) (fix small follow-ups in
+- **Relates to:** epic [#644](https://github.com/buchbend/lore/issues/644) (larger epics and
+  code mode); PRD [0024](../prd/0024-ambitious-epics-and-code-mode.md) (larger epics and code
+  mode); PR [#643](https://github.com/buchbend/lore/pull/643) (fix small follow-ups in
   the PR, ask questions without stopping); the `to-epic` and `build` skills
 - **See also:** ADR [0014](0014-one-home-per-fact.md) (one home per fact)
 
