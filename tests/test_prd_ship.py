@@ -112,11 +112,11 @@ def test_prd_ship_fails_on_a_prd_without_a_title(tmp_path: Path) -> None:
 def _repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
-    _prd(repo, "0001-old.md", _PRD.replace("status: accepted", "status: shipped"))
-    _prd(repo, "0002-current.md")
+    _prd(repo, "0001-old.md", _PRD.replace("status: accepted", "status: shipped") + "Epic #444.\n")
+    _prd(repo, "0002-current.md", _PRD + "Epic #444.\n")
     adr = repo / "docs" / "adr" / "0014-home.md"
     adr.parent.mkdir(parents=True)
-    adr.write_text("---\nstatus: accepted\n---\n# ADR 0014\n", encoding="utf-8")
+    adr.write_text("---\nstatus: accepted\n---\n# ADR 0014\n\nEpic #444.\n", encoding="utf-8")
     return repo
 
 
@@ -131,7 +131,8 @@ def test_context_pack_ranks_a_shipped_prd_below_adrs(
 ) -> None:
     repo = _repo(tmp_path)
     monkeypatch.setenv("LORE_ROOT", str(tmp_path / "no-such-vault"))
-    pack = gather(cwd=repo, repo_path=str(repo))
+    # A focus issue keeps the PRDs; without one the pack holds current ADRs only.
+    pack = gather(cwd=repo, repo_path=str(repo), issue=444)
     # Paths only: the entries themselves already sit under `adr` and `prd`,
     # and repeating them doubles the pack's token cost.
     assert pack["ranked"] == [

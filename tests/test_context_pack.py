@@ -218,3 +218,93 @@ def test_gather_returns_no_sessions_key(tmp_path: Path, monkeypatch: pytest.Monk
 
     result = gather(cwd=repo, repo_path=str(repo))
     assert "sessions" not in result
+
+
+# ---------------------------------------------------------------------------
+# intent — lexical rank over title + body, capped (PRD 0024 code mode)
+# ---------------------------------------------------------------------------
+
+
+def test_gather_intent_ranks_doc_naming_the_words_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _write(repo / "docs/adr/0001-a.md", "# Session notes\n\nAbout notes.\n")
+    _write(repo / "docs/adr/0002-b.md", "# Board ledger\n\nThe board ledger tracks merges.\n")
+    _write(repo / "docs/prd/0001-p.md", "# Search\n\nFederated search.\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="board ledger merges")
+    assert result["ranked"][0] == "docs/adr/0002-b.md"
+
+
+def test_gather_intent_caps_ranked_at_eight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    for n in range(12):
+        _write(repo / f"docs/adr/{n:04d}-x.md", f"# Widget {n}\n\nwidget body\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="widget")
+    assert len(result["ranked"]) == 8
+    assert len(result["adr"]) + len(result["prd"]) == 8
+
+
+def test_gather_without_intent_or_focus_returns_current_adrs_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _write(repo / "docs/adr/0001-old.md", "# Old\n\n- Status: Superseded by ADR 0002\n")
+    _write(repo / "docs/adr/0002-new.md", "# New\n\n- **Status:** Accepted\n")
+    _write(repo / "docs/prd/0001-p.md", "---\nstatus: shipped\n---\n# P\n")
+    _write(repo / "docs/prd/0002-q.md", "# Q\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo))
+    assert result["ranked"] == ["docs/adr/0002-new.md"]
+    assert result["prd"] == []
+
+
+def test_context_pack_tool_takes_intent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lore_mcp.server import _dispatch, _tool_schema
+
+    schema = next(t for t in _tool_schema() if t["name"] == "lore_context_pack")
+    assert "intent" in schema["inputSchema"]["properties"]
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _write(repo / "docs/adr/0001-a.md", "# Alpha\n")
+    _write(repo / "docs/adr/0002-b.md", "# Beta gamma\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = _dispatch(
+        "lore_context_pack", {"cwd": str(repo), "repo_path": str(repo), "intent": "gamma"}
+    )
+    assert result["ranked"] == ["docs/adr/0002-b.md"]
+
+
+def test_gather_intent_ranks_over_all_docs_on_a_focus_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo, branch="feat/646-x")
+    _write(repo / "docs/adr/0001-a.md", "# Board ledger\n\nNo issue reference.\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="ledger")
+    assert result["ranked"] == ["docs/adr/0001-a.md"]
+
+
+def test_gather_intent_ignores_stop_words(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _write(repo / "docs/adr/0001-a.md", "# A\n\n" + "the and for with " * 20 + "\n")
+    _write(repo / "docs/adr/0002-b.md", "# B\n\nThe board.\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="fix the board for the team")
+    assert result["ranked"] == ["docs/adr/0002-b.md"]
