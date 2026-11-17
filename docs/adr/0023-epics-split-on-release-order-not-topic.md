@@ -21,8 +21,10 @@
   one commit per substep, and one review covers the slice.
 - **Default:** `to-epic` proposes a review plan for each epic, and the user approves or changes
   the plan at the `to-epic` checkpoint. The plan names the review lenses, for example
-  correctness, security or user interface. Correctness is in every plan. The lenses of one
-  review run in parallel.
+  correctness, security or user interface, and tags each row with the lenses it needs.
+- **Default:** the correctness review runs per row, before the row merges into the epic branch.
+  Each other lens runs once, at the end of the epic, over all rows tagged with it. The lens
+  reviews run in parallel. A finding goes back as a fix round on the epic branch.
 - **Default:** one epic PR per epic, so CI runs once. The whole-epic review goes through the
   epic one topic at a time.
 - **Incidental:** the soft limit is about 12 rows per epic. It was 6.
