@@ -87,10 +87,12 @@ present; every row is AFK; one repo without a deploy gate holds all rows.
 
 **Epic tail.** All rows merged: [epic-tail.md](epic-tail.md), at once.
 
+**Questions.** A HITL row or an unclear spec parks only its rows (`blocked`); the run goes on:
+[follow-ups.md](follow-ups.md) § Questions.
+
 **Stop conditions:**
-- a HITL row;
+- every remaining row waits on an answer;
 - a feature still failing after two fix rounds;
-- an ambiguous spec that needs a scientific or architectural call;
 - a merge conflict no teammate resolves;
 - a CI infrastructure failure.
 

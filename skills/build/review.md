@@ -37,7 +37,10 @@ reads the diff and the linked sub-issue. In `epic` mode, keep one reviewer per b
 Send each later feature of that batch to it with `SendMessage`, so it sees siblings side by side.
 
 The reviewer judges three things only: correctness, acceptance criteria, scope. A roadmap item
-that `lore roadmap add` filed under `## Not placed yet` is in scope. The reviewer runs
+that `lore roadmap add` filed under `## Not placed yet` is in scope. So is a fix listed under
+`## Found and fixed` (in `epic` mode: in the sub-issue comment) that stays in the size limit of
+[follow-ups.md](follow-ups.md). An unlisted change outside the feature fails the
+line. The reviewer runs
 `code-review` on the PR first, never with `--comment` or `--fix`. A confirmed correctness
 finding fails the line. Cleanup findings go in the note only.
 
@@ -61,7 +64,7 @@ reviewer tier: <tier>
 verdict: PASS | FAIL
 - correctness (`code-review <n> <low|medium>`): pass | fail — <confirmed findings>
 - tests map to acceptance criteria, failing test first: pass | fail — <note>
-- scope (only the files this feature needs): pass | fail — <note>
+- scope (this feature, plus the listed found-and-fixed items): pass | fail — <note>
 fixes (only on FAIL): 1. <precise fix>  2. <precise fix>
 ```
 

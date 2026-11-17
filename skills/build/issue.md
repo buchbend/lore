@@ -4,8 +4,8 @@ Read this when `build` runs in `issue` mode. The rules in [SKILL.md](SKILL.md) a
 
 1. **Intake.** Read the issue (`gh issue view <n> --json title,body`). Run `lore codemap` to find
    the files. No explorer fan-out.
-2. **Clarify only if needed.** Ambiguous intent or criteria: ask at most three questions. Clear
-   issue: ask none.
+2. **Clarify only if needed.** Ambiguous intent or criteria: follow [follow-ups.md](follow-ups.md)
+   § Questions. Build your guess while the user is away. Clear issue: ask none.
 3. **Branch.** `lore workflow epic-policy <repo_root>` gives `target_branch`. Create
    `feat/<issue>-<slug>` off it in a worktree. Implement with [`tdd`](../tdd/SKILL.md), one PR.
 4. **Docs.** Run the pre-merge mode of [`document`](../document/SKILL.md) on the branch diff.

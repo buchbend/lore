@@ -21,10 +21,16 @@ stage and the epic.
 > it locally before each merge. When stuck, use the `/lore:debug` circuit breaker, not a
 > fourth blind fix.
 >
-> Scope: change only what this feature needs. A feature idea outside your scope goes to the
+> Scope: change only what this feature needs, plus small defects you find on the way: fix
+> those test first, about 50 lines each, at most three, and list each under "Found and fixed"
+> in your sub-issue comment. Report anything larger in your final report. A feature idea outside your scope goes to the
 > roadmap: run `cd <path> && lore roadmap add "Title" ["paragraph"]` in one shell call, and
 > commit the change on your branch. Siblings may edit the same files at the same time; keep your
 > edits there small. A rebase conflict comes back to you.
+>
+> Questions: a choice that needs the user does not stop you. Build your best guess when it is
+> cheap to undo, otherwise skip only the part that depends on it. Report each question with its
+> context, the options and what you built.
 >
 > Decisions: do not write an ADR or a `CONTEXT.md` term. Report each ADR candidate and each term
 > candidate in your final report, one line each, with the reason.
@@ -36,5 +42,5 @@ stage and the epic.
 > Deliver: commit on your branch. Write what a PR body would hold through
 > `/lore:file-issue` in PR-body mode and post it as a comment on the sub-issue
 > (`gh issue comment <n> --body-file …`). Report the branch, its head SHA, the red→green
-> evidence, a one-paragraph summary, and the candidates above, in 15 lines or fewer. The
+> evidence, a one-paragraph summary, the found-and-fixed items, the questions, and the candidates above, in 15 lines or fewer. The
 > sub-issue comment holds the detail.
