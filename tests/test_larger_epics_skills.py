@@ -55,3 +55,9 @@ def test_review_plan_follows_the_checklist_in_the_epic_template() -> None:
     text = _text("to-epic/SKILL.md")
     assert text.index("- [ ] owner/other#7") < text.index("## Review plan")
     assert "- **security:**" in text
+
+
+def test_to_epic_passes_an_intent_to_the_context_pack() -> None:
+    # Without an intent or a focus issue the pack holds no PRD (#646).
+    text = _text("to-epic/SKILL.md")
+    assert "`lore_context_pack` with `intent`" in text

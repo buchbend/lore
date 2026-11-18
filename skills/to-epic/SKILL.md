@@ -42,7 +42,7 @@ an epic-seed issue produced by `/lore:handover` (labeled `epic-seed`) — fetch 
 
 ### 2. Explore the repo(s)
 Understand the current state. Identify **every target repo** — an epic may be cross-repo. For
-each, pull `lore_context_pack` (+ `lore_repo_docs_list` / `lore_repo_docs_fetch`) up front,
+each, pull `lore_context_pack` with `intent` set to the epic's topic (+ `lore_repo_docs_list` / `lore_repo_docs_fetch`) up front,
 before any deeper exploration — cold-start-safe, so it costs nothing even on a repo with no
 ADRs/PRDs yet. Its `adr` / `prd` entries are the fast path into each project's domain language
 (`lore glossary <term> --cwd <checkout>` prints a `CONTEXT.md` term) and ratified decisions (`docs/adr`); go beyond the pack only
