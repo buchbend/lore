@@ -294,6 +294,10 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
 - **Build order** — the feature table in an epic tracker issue. It has
   one row per feature, with its issue, repo, type and blockers.
   _Avoid_: roadmap.
+- **Brief** — the one object that `lore brief` returns for an intent. It
+  holds the ranked context pack, the first section of each top doc, a
+  code-map excerpt and the matching glossary entries. `orient` reads the
+  brief before any other homework call. _Avoid_: context dump.
 - **Risk level** — `low` or `high`, from `lore workflow risk <pr>`. The
   level sets the review depth. An agent raises the level and never
   lowers it.
