@@ -101,10 +101,18 @@ def _file(rel: str) -> str:
 
 
 def test_build_sends_a_defect_to_an_issue_and_a_feature_idea_to_the_roadmap() -> None:
-    text = _text("build")
+    text = " ".join(_file("build/follow-ups.md").split())
     assert "A defect or a concrete change becomes an issue" in text
     assert "A feature idea outside the run's scope goes to the roadmap" in text
     assert "`lore roadmap add` on the build branch. Set its `left` line `approved`." in text
+
+
+def test_build_fixes_small_follow_ups_in_the_pr_and_asks_with_context() -> None:
+    text = " ".join(_file("build/follow-ups.md").split())
+    assert "Fix it test first on this branch. List it under `## Found and fixed`" in text
+    assert "build your best guess and keep going" in text
+    assert "park only the work that depends on the answer" in text
+    assert "Give each question its context" in text
 
 
 def test_a_teammate_files_a_feature_idea_through_its_pr() -> None:

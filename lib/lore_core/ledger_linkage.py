@@ -50,6 +50,7 @@ __all__ = ["build_linkage"]
 
 # Each host names the file argument differently:
 # - Claude Code:  Edit/Read/Write -> ``file_path``
+# - OpenCode:     edit/read/write -> ``filePath``
 # - Cursor:       edit_file       -> ``target_file``;  read_file -> ``target_file``
 # - VSCode/MCP:   applyEdit       -> ``uri``;  many use generic ``path``
 # - Older shapes: ``filename`` is occasionally seen in MCP server tools.
@@ -57,6 +58,7 @@ __all__ = ["build_linkage"]
 # specific names first.
 _FILE_PATH_INPUT_KEYS: tuple[str, ...] = (
     "file_path",
+    "filePath",
     "target_file",
     "path",
     "uri",

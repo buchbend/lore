@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 from pathlib import Path
 
 
@@ -32,7 +33,18 @@ def _sessions_cache_dir() -> Path:
     return _cache_dir() / "sessions"
 
 
-def _cache_path_for_pid(pid: int) -> Path:
+def _session_id() -> str | None:
+    """``sid-$LORE_SESSION_ID`` when it is path-safe, else None (PID path applies).
+
+    Not ``CLAUDE_SESSION_ID``: only the hook has it, the Bash tool that reads
+    the cache does not, so writer and reader would key differently.
+    """
+    sid = os.environ.get("LORE_SESSION_ID", "")
+    # "sid-" keeps a digits-only ID from reading as a PID in the cleanup.
+    return f"sid-{sid}" if re.fullmatch(r"[A-Za-z0-9_-]+", sid) else None
+
+
+def _cache_path_for_pid(pid: int | str) -> Path:
     return _sessions_cache_dir() / f"{pid}.md"
 
 
@@ -156,12 +168,12 @@ def _gc_sessions_cache(max_age_days: int = 14) -> None:
         try:
             pid = int(entry.stem)
         except ValueError:
-            continue
+            pid = None  # session-id keyed file (LORE_SESSION_ID): age-only GC
         try:
             stale_by_age = entry.stat().st_mtime < cutoff
         except OSError:
             continue
-        if _pid_alive(pid) and not stale_by_age:
+        if (pid is None or _pid_alive(pid)) and not stale_by_age:
             continue
         with contextlib.suppress(OSError):
             entry.unlink()

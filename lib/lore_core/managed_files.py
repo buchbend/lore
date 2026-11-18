@@ -144,6 +144,29 @@ def json_merge_atomic(
         )
 
 
+def jsonc_edit_atomic(path: Path, edit: callable) -> None:  # type: ignore[type-arg]
+    """Read-modify-write a JSON-with-comments file under flock.
+
+    ``edit(text) -> text`` changes only the span it touches (see
+    ``lore_core.jsonc``), so the person's comments survive. Refuses a
+    file that does not parse before or after the edit.
+    """
+    from lore_core import jsonc
+
+    real_path = Path(os.path.realpath(path))
+    real_path.parent.mkdir(parents=True, exist_ok=True)
+    with _flocked(real_path):
+        text = real_path.read_text() if real_path.exists() else ""
+        try:
+            if text.strip():
+                jsonc.loads(text)
+            new = edit(text)
+            jsonc.loads(new)
+        except ValueError as e:
+            raise MalformedConfigError(f"{real_path} is not valid JSONC: {e}") from e
+        atomic_write_text(real_path, new)
+
+
 # ---------------------------------------------------------------------------
 # Managed markdown blocks
 # ---------------------------------------------------------------------------

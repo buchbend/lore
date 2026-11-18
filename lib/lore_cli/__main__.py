@@ -58,6 +58,7 @@ def _build_app() -> typer.Typer:
     # unified `lore --help` listing.
     from lore_cli import (
         adr_cmd,
+        brief_cmd,
         codemap_cmd,
         config_cmd,
         drill_cmd,
@@ -81,7 +82,6 @@ def _build_app() -> typer.Typer:
         system_cmd,
         style_cmd,
         tier_cmd,
-        toggle_cmd,
         trace_cmd,
         transcripts_cmd,
         wiki_cmd,
@@ -114,12 +114,11 @@ def _build_app() -> typer.Typer:
     app.add_typer(lab_cmd.app, name="lab", rich_help_panel=_KN)
     app.add_typer(roadmap_cmd.app, name="roadmap", rich_help_panel=_KN)
     app.add_typer(system_cmd.app, name="system", rich_help_panel=_KN)
-    app.add_typer(toggle_cmd.on_app, name="on", hidden=True)
-    app.add_typer(toggle_cmd.off_app, name="off", hidden=True)
 
     app.add_typer(tier_cmd.app, name="tier", hidden=True)
     app.add_typer(style_cmd.app, name="style", hidden=True)
     app.add_typer(adr_cmd.app, name="adr", hidden=True)
+    app.add_typer(brief_cmd.app, name="brief", hidden=True)
     app.add_typer(codemap_cmd.app, name="codemap", hidden=True)
     app.add_typer(glossary_cmd.app, name="glossary", hidden=True)
     app.add_typer(index_cmd.app, name="index", hidden=True)
@@ -135,7 +134,7 @@ def _build_app() -> typer.Typer:
 
     app.command(
         "uninstall",
-        help="Remove Lore's Claude Code and Cursor wiring.",
+        help="Remove Lore's Claude Code, Cursor and OpenCode wiring.",
     )(integrations.uninstall_command)
 
     app.command(

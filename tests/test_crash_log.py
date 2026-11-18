@@ -255,7 +255,6 @@ def test_shield_writes_crash_log_and_includes_path_in_banner(tmp_path, monkeypat
 
     monkeypatch.setattr(hooks, "_session_start", _boom)
     monkeypatch.setattr(hooks, "_in_child_mode", lambda: False)
-    monkeypatch.setattr(hooks, "_session_off_all", lambda: False)
     monkeypatch.setattr(hooks, "_read_hook_payload", lambda: {})
     monkeypatch.setattr(hooks, "_resolve_cwd", lambda _explicit: str(tmp_path))
 

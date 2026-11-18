@@ -20,11 +20,12 @@ day a third integration needs them.
 
 from __future__ import annotations
 
-from lore_core.install import claude, cursor
+from lore_core.install import claude, cursor, opencode
 
 REGISTRY: dict[str, object] = {
     "claude": claude,
     "cursor": cursor,
+    "opencode": opencode,
 }
 
 

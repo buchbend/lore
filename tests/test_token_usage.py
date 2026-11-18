@@ -273,13 +273,6 @@ def test_hook_records_nothing_without_a_transcript(monkeypatch, tmp_path: Path) 
     assert _hook({"session_id": "s1"}, monkeypatch, tmp_path) == []
 
 
-def test_hook_records_nothing_while_muted(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
-    monkeypatch.setattr("lore_cli.hooks._session_off_all", lambda: True)
-    payload = {"session_id": "s1", "transcript_path": "/t/s1.jsonl"}
-    assert _hook(payload, monkeypatch, tmp_path) == []
-
-
 def test_child_appends_the_session_record(session: Path, monkeypatch, tmp_path: Path) -> None:
     root = tmp_path / "vault"
     monkeypatch.setenv("LORE_ROOT", str(root))

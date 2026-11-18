@@ -1,7 +1,7 @@
 # Review a PR
 
 Read this when a PR opens in `issue` mode, for each `epic` feature branch, and for the
-whole-epic review.
+whole-epic review and for each lens review.
 
 ## 1. Deterministic checks first
 
@@ -30,14 +30,17 @@ in the PR body in `issue` mode.
 
 ## 3. Spawn the reviewer
 
-Resolve the tier with `lore tier resolve <tier>` and pass the result as the model. Open the
+Resolve the tier with `lore tier resolve <tier>` and pass the result as the model (on OpenCode, as the agent). Open the
 description with `[build:review] <owner/repo#issue>`, the epic or issue under review. For the
-whole-epic review, open it with `[build:epic-review] <owner/repo#epic>`. The reviewer
+whole-epic review, open it with `[build:epic-review] <owner/repo#epic>`; for a lens review, `[build:lens-review] <owner/repo#epic>`. The reviewer
 reads the diff and the linked sub-issue. In `epic` mode, keep one reviewer per batch and level.
 Send each later feature of that batch to it with `SendMessage`, so it sees siblings side by side.
 
 The reviewer judges three things only: correctness, acceptance criteria, scope. A roadmap item
-that `lore roadmap add` filed under `## Not placed yet` is in scope. The reviewer runs
+that `lore roadmap add` filed under `## Not placed yet` is in scope. So is a fix listed under
+`## Found and fixed` (in `epic` mode: in the sub-issue comment) that stays in the size limit of
+[follow-ups.md](follow-ups.md). An unlisted change outside the feature fails the
+line. The reviewer runs
 `code-review` on the PR first, never with `--comment` or `--fix`. A confirmed correctness
 finding fails the line. Cleanup findings go in the note only.
 
@@ -61,8 +64,25 @@ reviewer tier: <tier>
 verdict: PASS | FAIL
 - correctness (`code-review <n> <low|medium>`): pass | fail — <confirmed findings>
 - tests map to acceptance criteria, failing test first: pass | fail — <note>
-- scope (only the files this feature needs): pass | fail — <note>
+- scope (this feature, plus the listed found-and-fixed items): pass | fail — <note>
 fixes (only on FAIL): 1. <precise fix>  2. <precise fix>
+```
+
+Any `fail` line makes the verdict FAIL.
+
+## Lens review
+
+Use this for a lens review ([epic-tail.md](epic-tail.md) § 3), not for a PR or a feature branch.
+Resolve the tier `strong`. Run no `risk` and no `code-review` pass. The reviewer judges only its
+lens, over the diffs of the rows the lens covers. It posts this block on the epic issue and
+returns it:
+
+```
+<branch> @ <head SHA> (lens: <lens>; rows <n>, <n>)
+reviewer tier: <tier>
+verdict: PASS | FAIL
+- <check of the lens>: pass | fail — <note>
+fixes (only on FAIL): 1. <precise fix>
 ```
 
 Any `fail` line makes the verdict FAIL.

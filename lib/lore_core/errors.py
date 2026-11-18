@@ -33,7 +33,6 @@ SOURCE_NOT_A_FILE = "source_not_a_file"
 NOTE_NOT_FOUND = "note_not_found"
 PATH_NOT_FOUND = "path_not_found"
 PATH_ESCAPE = "path_escape"
-SESSION_OFF = "session_off"
 UNKNOWN_TOOL = "unknown_tool"
 INVALID_KIND = "invalid_kind"
 

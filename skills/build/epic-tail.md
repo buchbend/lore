@@ -36,13 +36,17 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
   its commit, merge without it, and run `document` in catch-up mode afterwards.
 - **Roadmap.** Remove the shipped roadmap item from its `ROADMAP.md`: the item that links this
   epic or its PRD. Commit the change on `epic/<issue>`.
+- **Lens reviews**, when the epic body holds `## Review plan`. Run each lens once, in parallel.
+  A lens covers the rows its `Lenses` cell names. Find the merge commit of each row:
+  `M=$(git log --merges -1 --format=%H --grep 'feat/<n>-<slug>' epic/<issue>)`.
+  The row's own changes are `git diff $M^1 $M`. Follow [review.md](review.md) § Lens review, with
+  the tag `[build:lens-review]`. A finding starts a fix round on `epic/<issue>`.
 - **Whole-epic review**, only for an epic with three or more features. Follow
   [review.md](review.md) on `<target_branch>..epic/<issue>`, after the docs commit, with the tag
-  `[build:epic-review]`. The reviewer checks
-  cross-feature consistency: naming, duplicate helpers, conflicting edits to shared files. It
-  also checks the docs commit against the behaviour. No separate docs round. For one or two
-  features, the per-PR reviews already read every diff; skip this review. Exception: the
-  human-present option in [epic.md](epic.md) runs this review for any number of features.
+  `[build:epic-review]`. It checks cross-feature consistency (naming, duplicate helpers, conflicting
+  edits to shared files) and the docs commit against the behaviour. No separate docs round. For one or two features,
+  skip it: the per-PR reviews read every diff. The human-present option in [epic.md](epic.md)
+  runs it for any number of features.
 - A FAIL goes to the teammates that own the files. Two fix rounds at most, then block and
   escalate.
 
@@ -52,19 +56,17 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
    [logbook.md](logbook.md) says. The ref is the epic issue: the epic PR does not exist yet. The
    `[logbook]` line stays in the local ledger of that worktree, not on the board. Commit the
    change under `docs/logbook/` on `epic/<issue>`.
-2. Add the version bump as the last commit, if the repo's `AGENTS.md` or `CLAUDE.md` requires
-   one.
-3. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
+2. Run the ledger check on the board: `gh api repos/<owner>/<repo>/issues/comments/<id> --jq
    .body | lore workflow ledger-check -`. Do not merge while it exits 1.
-4. Run the full suite and ruff on the last commit, and every other check the repo's CI runs
+3. Run the full suite and ruff on the last commit, and every other check the repo's CI runs
    that you can run locally. Red: fix before the push.
-5. `git push -u origin epic/<issue>`, then open one PR `epic/<issue> → <target_branch>` that
+4. `git push -u origin epic/<issue>`, then open one PR `epic/<issue> → <target_branch>` that
    links every sub-issue. Write the body through [`file-issue`](../file-issue/SKILL.md) in
    PR-body mode. Set the PR on the board.
-6. Check `gh pr checks <epic-pr>` on the last commit. Pending: post the approval message anyway
+5. Check `gh pr checks <epic-pr>` on the last commit. Pending: post the approval message anyway
    and merge once green. Red: fix on `epic/<issue>` and push again before you merge.
-7. Ask for the merge approval, as the rules in [SKILL.md](SKILL.md) give it. When `epic-policy` returned `deploy_gate: true`,
-   name the deploy gate in the same message and note the yes on the board. Merge on a yes.
+6. Ask for the merge approval, as the rules in [SKILL.md](SKILL.md) give it. When `epic-policy` returned `deploy_gate: true`,
+   name the deploy gate in the same message and note the yes on the board. On a yes, add the version bump as [SKILL.md](SKILL.md) gives it, then merge.
    An unreachable user leaves the epic PR open.
 
 ## 5. Handover section

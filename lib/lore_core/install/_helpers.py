@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from lore_core import managed_files
+from lore_core import jsonc, managed_files
 from lore_core.install.base import (
     KIND_CHECK,
     KIND_DELETE,
@@ -510,6 +510,14 @@ def _has_key(key_path: list) -> callable:  # type: ignore[type-arg]
     return _validator
 
 
+def _remove_key(path: Path, key_path: list, *, jsonc_file: bool) -> None:
+    """Delete ``key_path`` from a JSON file; a JSONC file keeps its comments."""
+    if jsonc_file:
+        managed_files.jsonc_edit_atomic(path, lambda t: jsonc.delete_path(t, key_path))
+    else:
+        managed_files.json_merge_atomic(path, _del_key(key_path))
+
+
 def _exec_new(action: Action, schema_version: str) -> ApplyResult:
     path = Path(action.payload["path"]).expanduser()
     copy_from = action.payload.get("copy_from")
@@ -525,6 +533,10 @@ def _exec_new(action: Action, schema_version: str) -> ApplyResult:
 def _exec_merge(action: Action, schema_version: str) -> ApplyResult:
     path = Path(action.payload["path"]).expanduser()
     key_path = list(action.payload["key_path"])
+    if action.payload.get("jsonc"):
+        value = action.payload["value"]
+        managed_files.jsonc_edit_atomic(path, lambda t: jsonc.set_path(t, key_path, value))
+        return ApplyResult(ok=True)
     managed_files.json_merge_atomic(
         path,
         _set_key(key_path, action.payload["value"]),
@@ -534,8 +546,10 @@ def _exec_merge(action: Action, schema_version: str) -> ApplyResult:
 
 
 def _exec_replace(action: Action, schema_version: str) -> ApplyResult:
-    # Replace behaves exactly like merge on disk; the two kinds differ only
-    # in how the dispatcher prompts the user before getting here.
+    # Replace behaves exactly like merge (or, for a whole file, like new) on
+    # disk; the kinds differ only in how the dispatcher prompts first.
+    if not action.payload.get("key_path"):
+        return _exec_new(action, schema_version)
     return execute_action(
         Action(
             kind=KIND_MERGE,
@@ -547,6 +561,7 @@ def _exec_replace(action: Action, schema_version: str) -> ApplyResult:
                 "key_path": action.payload["key_path"],
                 "value": action.payload["new_value"],
                 "schema_version": schema_version,
+                "jsonc": action.payload.get("jsonc", False),
             },
         ),
         schema_version=schema_version,
@@ -608,7 +623,7 @@ def _exec_delete(action: Action, schema_version: str) -> ApplyResult:
     kp = action.payload.get("key_path")
     if kp:
         if real.exists():
-            managed_files.json_merge_atomic(real, _del_key(list(kp)))
+            _remove_key(real, list(kp), jsonc_file=bool(action.payload.get("jsonc")))
         return ApplyResult(ok=True)
     if action.payload.get("recursive"):
         # Only lore-managed plugin trees (sentinel present) may be removed.
@@ -668,8 +683,8 @@ def _undo_new(action: Action) -> ApplyResult:
 def _undo_merge(action: Action) -> ApplyResult:
     real = _real_path(Path(action.payload["path"]).expanduser())
     if real.exists():
-        managed_files.json_merge_atomic(
-            real, _del_key(list(action.payload["key_path"]))
+        _remove_key(
+            real, list(action.payload["key_path"]), jsonc_file=bool(action.payload.get("jsonc"))
         )
     return ApplyResult(ok=True)
 
