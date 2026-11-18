@@ -330,3 +330,58 @@ def test_adr_status_section_decides_currency(tmp_path):
         "# B\n\n## Status\n\nAccepted.\n\n## Context\n\nstatus: deprecated\n"
     )
     assert _is_current(tmp_path, {"path": "b.md"})
+
+
+def test_gather_intent_keeps_focus_prd_without_intent_word(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo, branch="epic/162")
+    _write(repo / "docs/prd/0001-p.md", "# Plan\n\nepic #162 tracked here.\n")
+    _write(repo / "docs/adr/0001-a.md", "# Board ledger\n\nNo ref.\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="ledger")
+    assert result["ranked"] == ["docs/prd/0001-p.md", "docs/adr/0001-a.md"]
+
+
+def test_gather_intent_with_focus_caps_ranked_at_eight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo, branch="epic/162")
+    _write(repo / "docs/prd/0001-p.md", "# Plan\n\nepic #162 tracked here.\n")
+    for n in range(12):
+        _write(repo / f"docs/adr/{n:04d}-x.md", f"# Widget {n}\n\nwidget body\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="widget")
+    assert len(result["ranked"]) == 8
+    assert result["ranked"][0] == "docs/prd/0001-p.md"
+    assert len(result["adr"]) + len(result["prd"]) == 8
+
+
+def test_gather_intent_ranks_current_adr_above_superseded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _write(repo / "docs/adr/0001-old.md", "# Ledger\n\n- Status: Superseded by ADR 0002\n")
+    _write(repo / "docs/adr/0002-new.md", "# Ledger\n\n- Status: Accepted\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="ledger")
+    assert result["ranked"][0] == "docs/adr/0002-new.md"
+
+
+def test_gather_intent_ranks_current_prd_above_shipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _write(repo / "docs/prd/0001-a.md", "---\nstatus: shipped\n---\n# Ledger\n")
+    _write(repo / "docs/prd/0002-b.md", "# Ledger\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="ledger")
+    assert result["ranked"][0] == "docs/prd/0002-b.md"

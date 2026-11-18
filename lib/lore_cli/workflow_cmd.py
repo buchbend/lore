@@ -96,7 +96,7 @@ def validate_build_order_cmd(
     as_json: bool = typer.Option(
         False,
         "--json",
-        help="Emit machine output: {ok, rows, repos, edges, problems}. "
+        help="Emit machine output: {ok, rows, repos, edges, lenses, problems}. "
         "Exit code is unchanged (0 valid, 1 invalid).",
     ),
 ) -> None:
@@ -118,6 +118,7 @@ def validate_build_order_cmd(
                     "rows": counts.rows,
                     "repos": counts.repos,
                     "edges": counts.edges,
+                    "lenses": {row.issue: list(row.lenses) for row in result.rows},
                     "problems": [{"kind": p.kind, "message": p.message} for p in result.problems],
                 }
             )

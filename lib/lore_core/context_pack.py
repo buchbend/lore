@@ -126,11 +126,12 @@ def intent_words(intent: str) -> set[str]:
 
 
 def _rank_by_intent(
-    repo_root: Path, docs: list[dict[str, Any]], intent: str
+    repo_root: Path, docs: list[dict[str, Any]], intent: str, limit: int = INTENT_TOP
 ) -> list[dict[str, Any]]:
     """Top `INTENT_TOP` docs that name an intent word, title hits weighted 3x.
 
-    Ties break on shipped-last, then path, so the order is stable.
+    A superseded, deprecated or shipped doc ranks below every current doc;
+    ties break on path, so the order is stable.
     """
     words = intent_words(intent)
     scored = []
@@ -141,8 +142,9 @@ def _rank_by_intent(
         body = _WORD.findall((repo_root / doc["path"]).read_text(errors="replace").lower())
         score = sum(3 * title.count(w) + body.count(w) for w in words)
         if score:
-            scored.append((-score, is_shipped(doc), doc["path"], doc))
-    return [d for *_k, d in sorted(scored, key=lambda t: t[:3])][:INTENT_TOP]
+            old = is_shipped(doc) or not _is_current(repo_root, doc)
+            scored.append((old, -score, doc["path"], doc))
+    return [d for *_k, d in sorted(scored, key=lambda t: t[:3])][:limit]
 
 
 def _is_current(repo_root: Path, doc: dict[str, Any]) -> bool:
@@ -197,7 +199,18 @@ def gather(
         # The intent ranks every doc: a focus branch must not hide a doc
         # that names the work but not the issue number.
         adrs, prds = list_docs(repo_root, "adr"), list_docs(repo_root, "prd")
-        top = _rank_by_intent(repo_root, adrs + prds, intent)
+        # Focus docs come first and count toward the cap.
+        head = [
+            d
+            for d in _matching_docs(repo_root, "adr", focus)
+            + _matching_docs(repo_root, "prd", focus)
+            if focus and not d["is_index"]
+        ]
+        seen = {d["path"] for d in head}
+        rest = [d for d in adrs + prds if d["path"] not in seen]
+        top = (head + _rank_by_intent(repo_root, rest, intent, max(0, INTENT_TOP - len(head))))[
+            :INTENT_TOP
+        ]
         keep = {d["path"] for d in top}
         adrs = [d for d in adrs if d["path"] in keep]
         prds = [d for d in prds if d["path"] in keep]
