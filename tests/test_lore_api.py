@@ -72,3 +72,28 @@ def test_orient_lore_api_snippet_runs_on_a_fixture_repo(
 
     exec(snippet, {})
     assert "The ledger body." in capsys.readouterr().out
+
+
+def test_api_docstring_signatures_match_the_functions() -> None:
+    import inspect
+    import re
+
+    import lore.api as api
+
+    lines = re.findall(r"^    (\w+)\(([^)]*)\)\s{2,}", api.__doc__, re.M)
+    assert {name for name, _ in lines} == set(NAMES)
+    for name, params in lines:
+        documented = [p.split("=")[0].strip() for p in params.split(",") if p.strip()]
+        assert documented == list(inspect.signature(getattr(api, name)).parameters), name
+
+
+INSTALLED_PYTHON = '"$(dirname "$(readlink -f "$(command -v lore)")")/python" -'
+
+
+@pytest.mark.parametrize(
+    "rel", ["lib/lore/api.py", "docs/how-to/search-notes-and-issues.md", "skills/orient/SKILL.md"]
+)
+def test_lore_api_scripts_run_on_the_installed_interpreter(rel: str) -> None:
+    text = (Path(__file__).resolve().parent.parent / rel).read_text()
+    assert INSTALLED_PYTHON in text
+    assert "uv run python -" not in text
