@@ -1,12 +1,14 @@
 ---
 title: "Larger epics and code mode"
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/644
 repos:
   - buchbend/lore
 ---
 
 # PRD 0024: Larger epics and code mode
+
+> Historical. Current decisions: ADR 0023.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/644).
 > The epic links here; this file is not embedded in the issue body.

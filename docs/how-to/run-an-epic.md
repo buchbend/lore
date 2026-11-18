@@ -21,8 +21,13 @@ needs work before any code. For one small, clear change, use the
    stress-tests the plan and records terms and ADRs as decisions land.
 2. **Pass the checkpoint.** Run `/lore:to-epic`. It writes the PRD
    under `docs/prd/`, opens the epic issue and one sub-issue per feature, and
-   writes the build-order table. Review the PRD and the build order. This review is
-   the last human gate before the build.
+   writes the build-order table. One epic can hold several topics, with one PRD
+   section per topic. `to-epic` splits the work into two epics only for a release
+   order: one part waits for another part's deploy, a user decision gates most rows,
+   or the repos share no release. A row can hold numbered substeps; one teammate
+   builds them on one branch, one commit each. `to-epic` also proposes a review
+   plan: the review lenses and the rows each lens covers. Review the PRD, the build
+   order and the review plan. This review is the last human gate before the build.
 3. **Build the epic.** Point a session at the epic issue and run
    `/lore:build` in `epic` mode. The skill:
    - validates the build order with `lore workflow validate-build-order`;
@@ -33,6 +38,10 @@ needs work before any code. For one small, clear change, use the
    - reviews each PR at the depth `lore workflow risk` sets;
    - merges each feature into the epic branch once the full local suite and
      ruff pass, without waiting for CI;
+   - after each merge, runs `lore workflow after-merge`: the command ticks the
+     build-order box, closes the sub-issue, sets the board row to `merged` and
+     adds the resume line;
+   - at the end, runs each lens of the review plan once, over the rows it tags;
    - merges the features in dependency order and opens the epic PR. CI is
      checked there: the epic PR merges only on green CI.
 4. **Docs ship with the epic.** Before the epic PR merges, `build` runs
