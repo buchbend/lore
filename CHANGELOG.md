@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.111.0] - 2026-11-18
+
+- Follow-ups of epic #644 (epic #652). The context pack with an intent keeps the focus docs first. Old ADRs and shipped PRDs rank below current docs (#648).
+- The build-order validator checks each lens, and `validate-build-order --json` prints the lenses of each row (#649).
+- `lore workflow after-merge` prints the board before the GitHub calls. Lens reviews get the stage tag `build:lens-review`, and the ADR check reads only the status (#650).
+
 ## [0.110.0] - 2026-11-18
 
 - Larger epics and code mode (epic #644). `to-epic` splits epics only on release order (ADR 0023), so one epic holds several topics, slices with substeps and a review plan; lenses run once at the epic end.
