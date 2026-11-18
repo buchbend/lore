@@ -99,8 +99,10 @@ already carries the number, title, state and body. The common case needs no
 search.
 
 Give the context pack an `intent` to rank the ADRs and PRDs by your words. The
-pack returns the 8 docs that best match the title and body. Without an intent
-or a focus issue, the pack holds the current ADRs only.
+pack returns at most 8 docs. The docs of the focus issue come first, then the
+docs that best match the title and body. A superseded ADR or a shipped PRD
+ranks below every current doc. Without an intent or a focus issue, the pack
+holds the current ADRs only.
 
 To read several tools in one step, start with `lore brief --json "<intent>"`.
 The brief holds the ranked pack, the first section of each top doc, a code-map

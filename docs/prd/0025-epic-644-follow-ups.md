@@ -1,12 +1,14 @@
 ---
 title: "Follow-ups of epic 644"
-status: draft
+status: shipped
 epic: https://github.com/buchbend/lore/issues/652
 repos:
   - buchbend/lore
 ---
 
 # PRD 0025: Follow-ups of epic 644
+
+> Historical. Current decisions: ADR 0015, ADR 0023.
 
 > Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/652).
 > The epic links here; this file is not embedded in the issue body.
