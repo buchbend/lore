@@ -2,7 +2,7 @@
 name: lore:orient
 description: The first step of a piece of work — the session does its own homework, then
   reflects its understanding back for confirmation before any planning or grilling. A light
-  mode ("brief me") pulls only the roadmap, the context pack and the code map, and hands one
+  mode ("brief me") pulls only the roadmap and `lore brief`, and hands one
   change straight to build. Use at the start of a task, when the user says "orient", "get oriented", "brief me",
   "what's your understanding", or wants the session to reflect back before planning.
 ---

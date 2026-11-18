@@ -4,17 +4,17 @@ Each function returns dicts and lists and prints nothing. An expected
 failure (no wiki, no repo, no such doc) comes back as an ``{"error": ...}``
 envelope.
 
-    search(query, wiki=None, for_repo=None, k=5)   wiki hits plus one list per source
-    read(path, wiki=None, section=None)            one note, or one `<source>:<id>` ref
-    drill(query, wiki=None, k=5)                   search, read and expand in one envelope
-    repo_docs_list(kind, repo_path=None)           the repo's ADRs ("adr") or PRDs ("prd")
-    repo_docs_fetch(kind, path, repo_path=None)    one ADR or PRD with its body
-    context_pack(intent=None, issue=None, ...)     ranked ADR/PRD paths and epic state
-    codemap(mode, pattern=None, directory=None)    code-map slice: symbols, directory or top
+    search(query, wiki=None, for_repo=None, k=5)  wiki hits, one list per source
+    read(path, wiki=None, section=None, include_human=False)  one note or `<source>:<id>`
+    drill(query, wiki=None, k=5, expand_limit=5, expand_only=None)  search+read+expand
+    repo_docs_list(kind, repo_path=None)  the repo's ADRs ("adr") or PRDs ("prd")
+    repo_docs_fetch(kind, path, repo_path=None)  one ADR or PRD with its body
+    context_pack(cwd=None, branch=None, issue=None, repo_path=None, intent=None)  ranked docs
+    codemap(mode, repo_path=None, pattern=None, directory=None, limit=30)  code-map slice
 
 Example::
 
-    uv run python - <<'PY'
+    "$(dirname "$(readlink -f "$(command -v lore)")")/python" - <<'PY'
     from lore.api import context_pack, repo_docs_fetch
     for path in context_pack(intent="board ledger")["ranked"][:3]:
         print(repo_docs_fetch(path.split("/")[1], path)["title"])
