@@ -97,3 +97,20 @@ def test_cross_repo_row_closes_in_its_own_repo(monkeypatch, capsys, gh):
     (_, _, _, body) = next(c for c in gh.calls if c[0] == "set")
     assert "- [x] other/repo#647" in body and "- [ ] buchbend/lore#647" in body
     assert ("close", "other/repo", 647, "Merged into epic/644 at abc1234") in gh.calls
+
+
+def test_state_line_above_marker_does_not_hide_the_board(monkeypatch, capsys, gh):
+    board = "State | of the run\n\n" + BOARD
+    assert _run(monkeypatch, board=board) == 0
+    assert "| Two | buchbend/lore#647 | AFK | 1 | merged | - |" in capsys.readouterr().out
+
+
+def test_close_failure_still_prints_the_board(monkeypatch, capsys, gh):
+    def boom(repo, issue, comment):
+        raise RuntimeError("gh issue close failed: nope")
+
+    gh.close = boom
+    assert _run(monkeypatch) == 1
+    cap = capsys.readouterr()
+    assert "| Two | buchbend/lore#647 | AFK | 1 | merged | - |" in cap.out
+    assert "nope" in cap.err

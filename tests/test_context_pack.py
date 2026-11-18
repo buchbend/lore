@@ -308,3 +308,14 @@ def test_gather_intent_ignores_stop_words(tmp_path: Path, monkeypatch: pytest.Mo
 
     result = gather(cwd=repo, repo_path=str(repo), intent="fix the board for the team")
     assert result["ranked"] == ["docs/adr/0002-b.md"]
+
+
+def test_adr_body_line_starting_status_deprecated_stays_current(tmp_path):
+    from lore_core.context_pack import _is_current
+
+    (tmp_path / "a.md").write_text(
+        "---\nstatus: accepted\n---\n# A\n\n- Date: x\n\n## Context\n\nstatus: deprecated in prose\n"
+    )
+    assert _is_current(tmp_path, {"path": "a.md", "status": "accepted"})
+    (tmp_path / "b.md").write_text("---\nstatus: superseded\n---\n# B\n")
+    assert not _is_current(tmp_path, {"path": "b.md", "status": "superseded"})

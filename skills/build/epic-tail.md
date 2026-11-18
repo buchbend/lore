@@ -40,7 +40,7 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
   A lens covers the rows its `Lenses` cell names. Find the merge commit of each row:
   `M=$(git log --merges -1 --format=%H --grep 'feat/<n>-<slug>' epic/<issue>)`.
   The row's own changes are `git diff $M^1 $M`. Follow [review.md](review.md) § Lens review, with
-  the tag `[build:epic-review]`. A finding starts a fix round on `epic/<issue>`.
+  the tag `[build:lens-review]`. A finding starts a fix round on `epic/<issue>`.
 - **Whole-epic review**, only for an epic with three or more features. Follow
   [review.md](review.md) on `<target_branch>..epic/<issue>`, after the docs commit, with the tag
   `[build:epic-review]`. It checks cross-feature consistency (naming, duplicate helpers, conflicting

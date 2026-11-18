@@ -32,7 +32,7 @@ in the PR body in `issue` mode.
 
 Resolve the tier with `lore tier resolve <tier>` and pass the result as the model (on OpenCode, as the agent). Open the
 description with `[build:review] <owner/repo#issue>`, the epic or issue under review. For the
-whole-epic review, open it with `[build:epic-review] <owner/repo#epic>`. The reviewer
+whole-epic review, open it with `[build:epic-review] <owner/repo#epic>`; for a lens review, `[build:lens-review] <owner/repo#epic>`. The reviewer
 reads the diff and the linked sub-issue. In `epic` mode, keep one reviewer per batch and level.
 Send each later feature of that batch to it with `SendMessage`, so it sees siblings side by side.
 
