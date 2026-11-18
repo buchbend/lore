@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.110.0] - 2026-11-18
+
+- Larger epics and code mode (epic #644). `to-epic` splits epics only on release order (ADR 0023), so one epic holds several topics, slices with substeps and a review plan; lenses run once at the epic end.
+- `lore brief --json` returns the filtered orient brief in one call, the context pack takes an `intent`, and `lore.api` lets a script chain the lore tools.
+- `lore workflow after-merge` runs the routine steps after each feature merge of an epic.
+
 ## [0.109.0] - 2026-11-17
 
 - Build runs fix small follow-ups in the PR that found them and list them under `## Found and fixed` (#643). A decision for the user becomes a `question` ledger line: the run builds a cheap-to-undo guess or parks only the dependent work, and asks in one batched message with context. Epics no longer stop on a HITL row or an unclear spec.

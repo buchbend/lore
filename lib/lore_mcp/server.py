@@ -605,6 +605,7 @@ def handle_context_pack(
     branch: str | None = None,
     issue: int | None = None,
     repo_path: str | None = None,
+    intent: str | None = None,
 ) -> dict[str, Any]:
     """Bounded pointer pack for cwd/branch/issue, joined on git-derived linkage.
 
@@ -614,7 +615,7 @@ def handle_context_pack(
     """
     from lore_core.context_pack import gather
 
-    return gather(cwd=cwd, branch=branch, issue=issue, repo_path=repo_path)
+    return gather(cwd=cwd, branch=branch, issue=issue, repo_path=repo_path, intent=intent)
 
 
 def handle_codemap(
@@ -853,7 +854,9 @@ def _tool_schema() -> list[dict]:
             "description": (
                 "Bounded pointer pack (ADR/PRD entries, epic state) for a cwd, branch "
                 "or issue, joined on git-derived linkage only: no LLM, no FTS. A cold "
-                "start returns an empty pack, not an error. Pull bodies afterwards via "
+                "start returns an empty pack, not an error. `intent` ranks the ADRs and "
+                "PRDs by a word match and keeps the top 8; with neither intent nor focus "
+                "issue the pack holds the current ADRs only. Pull bodies afterwards via "
                 "`lore_read` or `lore_repo_docs_fetch`."
             ),
             "inputSchema": {
@@ -873,6 +876,10 @@ def _tool_schema() -> list[dict]:
                     "issue": {
                         "type": "integer",
                         "description": "Explicit issue/epic number to widen the focus set.",
+                    },
+                    "intent": {
+                        "type": "string",
+                        "description": "What the work is about; ranks the docs, top 8.",
                     },
                     "repo_path": {
                         "type": "string",

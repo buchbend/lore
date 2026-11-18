@@ -36,13 +36,17 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
   its commit, merge without it, and run `document` in catch-up mode afterwards.
 - **Roadmap.** Remove the shipped roadmap item from its `ROADMAP.md`: the item that links this
   epic or its PRD. Commit the change on `epic/<issue>`.
+- **Lens reviews**, when the epic body holds `## Review plan`. Run each lens once, in parallel.
+  A lens covers the rows its `Lenses` cell names. Find the merge commit of each row:
+  `M=$(git log --merges -1 --format=%H --grep 'feat/<n>-<slug>' epic/<issue>)`.
+  The row's own changes are `git diff $M^1 $M`. Follow [review.md](review.md) § Lens review, with
+  the tag `[build:epic-review]`. A finding starts a fix round on `epic/<issue>`.
 - **Whole-epic review**, only for an epic with three or more features. Follow
   [review.md](review.md) on `<target_branch>..epic/<issue>`, after the docs commit, with the tag
-  `[build:epic-review]`. The reviewer checks
-  cross-feature consistency: naming, duplicate helpers, conflicting edits to shared files. It
-  also checks the docs commit against the behaviour. No separate docs round. For one or two
-  features, the per-PR reviews already read every diff; skip this review. Exception: the
-  human-present option in [epic.md](epic.md) runs this review for any number of features.
+  `[build:epic-review]`. It checks cross-feature consistency (naming, duplicate helpers, conflicting
+  edits to shared files) and the docs commit against the behaviour. No separate docs round. For one or two features,
+  skip it: the per-PR reviews read every diff. The human-present option in [epic.md](epic.md)
+  runs it for any number of features.
 - A FAIL goes to the teammates that own the files. Two fix rounds at most, then block and
   escalate.
 
