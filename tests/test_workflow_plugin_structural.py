@@ -417,8 +417,8 @@ _STAGE_TAG = re.compile(r"\[([a-z][a-z0-9-]*:[a-z][a-z0-9-]*)\]")
 
 # The file of each delegation point, and the tags it must name.
 STAGE_TAG_SITES = {
-    "build/review.md": {"build:review", "build:epic-review"},
-    "build/epic-tail.md": {"build:epic-review"},
+    "build/review.md": {"build:review", "build:epic-review", "build:lens-review"},
+    "build/epic-tail.md": {"build:epic-review", "build:lens-review"},
     "build/teammate-brief.md": {"build:implement"},
     "build/loop-wrap-up.md": {"build:advisory"},
     "orient/SKILL.md": {"orient:explore", "orient:named"},

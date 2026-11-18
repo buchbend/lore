@@ -348,6 +348,18 @@ def default_ledger_path(cwd: Path) -> Path | None:
     return None if git_dir is None else git_dir / LEDGER_FILENAME
 
 
+def board_ledger_span(lines: list[str]) -> tuple[int, int] | None:
+    """`(heading index, end index)` of the `## Ledger` section, or None without one."""
+    start = next((i for i, ln in enumerate(lines) if ln.strip() == BOARD_LEDGER_HEADING), None)
+    if start is None:
+        return None
+    end = next(
+        (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("#")),
+        len(lines),
+    )
+    return start, end
+
+
 def parse_board_ledger(text: str) -> list[LedgerEntry]:
     """Parse the ``## Ledger`` section of an epic board comment.
 
@@ -356,13 +368,10 @@ def parse_board_ledger(text: str) -> list[LedgerEntry]:
     Line numbers count from the start of *text*.
     """
     lines = text.splitlines()
-    start = next((i for i, ln in enumerate(lines) if ln.strip() == BOARD_LEDGER_HEADING), None)
-    if start is None:
+    span = board_ledger_span(lines)
+    if span is None:
         return []
-    end = next(
-        (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("#")),
-        len(lines),
-    )
+    start, end = span
     return parse_ledger("\n".join(lines[start + 1 : end]), first_line=start + 2)
 
 
