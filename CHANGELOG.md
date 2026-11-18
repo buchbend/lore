@@ -8,6 +8,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.112.0] - 2026-11-18
+
+- `lore config` shows the whole wiring: each wiki with its git remote and each scope with its folder and remotes. It also shows the route of the current folder (#642).
+- A wiki can declare the repos it serves in `.lore-wiki.yml`. `lore setup scope --remote-only` writes a scope without a folder (#642).
+- `atomic_write_text` writes through a symlink, so a config linked from a dotfiles repo stays a link (#642).
+- `/lore:inbox` commits each note with `lore wiki commit` (#619).
+
 ## [0.111.0] - 2026-11-18
 
 - Follow-ups of epic #644 (epic #652). The context pack with an intent keeps the focus docs first. Old ADRs and shipped PRDs rank below current docs (#648).
