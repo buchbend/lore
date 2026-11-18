@@ -20,12 +20,13 @@ that no real symbol grounds does not belong here.
   pushes it at once. Research, a scoping of options, an explanation for a
   human reader and draft paper material are wiki entries. A decision, a
   defect, an experiment result and the story of the work are not.
-- **Scope** — a folder named in the person's lore config, such as
-  `~/git/ccatobs`. A scope sets the wiki, sinks, sources and tracker for
-  every repo below the folder. The longest matching folder wins. A scope
-  can also list git remotes. Lore then matches a repo by its remote as
-  well, and a path match wins over a remote match. _Avoid_: attachment,
-  namespace. Decision in ADR 0016.
+- **Scope** — a named entry in the person's lore config. It matches repos
+  by a folder, such as `~/git/ccatobs`, by git remote patterns, such as
+  `github.com/ccatobs/*`, or by both. A scope sets the wiki, sinks, sources
+  and tracker for every repo it matches. The longest matching folder wins,
+  and a path match wins over a remote match. A wiki can declare remote
+  patterns for a scope in its `.lore-wiki.yml`; the person's own patterns
+  win over the wiki's. _Avoid_: attachment, namespace. Decision in ADR 0016.
 - **Route** — the values that apply in one working directory: repo, wiki,
   scope, tracker, sinks and sources, each with its origin.
   `resolve_route` computes it and `lore status` shows it. _Avoid_:

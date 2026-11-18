@@ -314,3 +314,55 @@ def test_scope_list_keys_accept_a_plain_string(tmp_path: Path) -> None:
     _person(raw)
     route = resolve_route(_repo(tmp_path / "git" / "dc"))
     assert (route.sinks, route.sources) == (("file",), ("ccatwiki",))
+
+
+def test_a_gitlab_remote_with_nested_groups_matches_a_scope(tmp_path: Path) -> None:
+    _person({"scopes": {"uni": {"remote": ["gitlab.example.org/grp/*"], "wiki": "uni"}}})
+    repo = _repo(tmp_path / "x", remote="git@gitlab.example.org:grp/sub/tool.git")
+
+    route = resolve_route(repo)
+
+    assert route.scope == "uni"
+    assert route.origins["scope"] == "remote gitlab.example.org/grp/sub/tool"
+
+
+def _wiki_routing(name: str, routing: dict) -> None:
+    from lore_core.config import get_lore_root
+
+    wiki = get_lore_root() / "wiki" / name
+    wiki.mkdir(parents=True, exist_ok=True)
+    (wiki / ".lore-wiki.yml").write_text(yaml.safe_dump({"routing": routing}))
+
+
+def test_a_wiki_declared_remote_routes_a_repo_to_that_wiki(tmp_path: Path) -> None:
+    _person({})
+    _wiki_routing("ccat", {"remote": ["github.com/ccatobs/*"]})
+    repo = _repo(tmp_path / "anywhere" / "dc", remote="git@github.com:ccatobs/dc.git")
+
+    route = resolve_route(repo)
+
+    assert (route.scope, route.wiki) == ("ccat", "ccat")
+    assert route.origins["scope"] == "remote github.com/ccatobs/dc (declared by wiki ccat)"
+
+
+def test_a_declared_scope_the_person_names_keeps_the_persons_sinks(tmp_path: Path) -> None:
+    _person(
+        {
+            "scopes": {"ccat": {"logbook": ["pm"]}},
+            "sinks": {"pm": {"kind": "command", "run": "cat"}},
+        }
+    )
+    _wiki_routing("ccat-knowledge", {"scope": "ccat", "remote": ["github.com/ccatobs/*"]})
+    repo = _repo(tmp_path / "dc", remote="git@github.com:ccatobs/dc.git")
+
+    route = resolve_route(repo)
+
+    assert (route.scope, route.wiki, route.sinks) == ("ccat", "ccat-knowledge", ("pm",))
+
+
+def test_the_persons_remote_pattern_wins_over_a_wiki_declared_one(tmp_path: Path) -> None:
+    _person({"scopes": {"mine": {"remote": ["github.com/ccatobs/dc"], "wiki": "personal"}}})
+    _wiki_routing("ccat", {"remote": ["github.com/ccatobs/*"]})
+    repo = _repo(tmp_path / "dc", remote="git@github.com:ccatobs/dc.git")
+
+    assert resolve_route(repo).scope == "mine"

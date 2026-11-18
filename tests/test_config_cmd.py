@@ -235,3 +235,50 @@ def test_wiki_option_help_names_the_person_config():
     result = runner.invoke(app, ["get", "--help"], env={"COLUMNS": "200"})
     assert "root config" not in result.output
     assert "person config" in result.output
+
+
+def test_bare_config_shows_the_wiring_and_flags_what_needs_a_look(tmp_path, monkeypatch):
+    """`lore config` lists scopes with their match rules, flags a missing
+    folder, shows a wiki-declared scope and names a remote scope the folder
+    match beats (ADR 0016)."""
+    import subprocess
+
+    import yaml
+    from lore_cli.__main__ import app
+    from lore_core.config import user_config_path
+    from typer.testing import CliRunner
+
+    lore = tmp_path / "lore"
+    (lore / "wiki" / "personal").mkdir(parents=True)
+    (lore / "wiki" / "team").mkdir()
+    (lore / "wiki" / "team" / ".lore-wiki.yml").write_text(
+        yaml.safe_dump({"routing": {"remote": ["github.com/acme/*"]}})
+    )
+    repo = tmp_path / "git" / "proj"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "remote", "add", "origin", "git@github.com:acme/proj.git"],
+        check=True,
+    )
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text(
+        yaml.safe_dump(
+            {
+                "lore_root": str(lore),
+                "scopes": {
+                    "mine": {"path": str(tmp_path / "git"), "wiki": "personal"},
+                    "gone": {"path": str(tmp_path / "nope"), "wiki": "personal"},
+                },
+            }
+        )
+    )
+    monkeypatch.setenv("COLUMNS", "200")
+
+    out = CliRunner().invoke(app, ["config", "--cwd", str(repo)]).output
+
+    assert "! gone → wiki personal" in out
+    assert "! folder missing" in out
+    assert "· team → wiki team  (declared by wiki team)" in out
+    assert "remote also matches scope team; the folder match wins" in out
+    assert "local, no git: not synced" in out
