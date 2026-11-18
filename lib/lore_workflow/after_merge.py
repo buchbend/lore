@@ -9,9 +9,15 @@ from __future__ import annotations
 import re
 import subprocess
 
-from lore_workflow.board_parser import BOARD_MARKER, BoardParseError, parse_board
+from lore_workflow.board_parser import BOARD_MARKER, BoardParseError, find_board_table, parse_board
 from lore_workflow.build_order_validator import _split_cells
-from lore_workflow.ledger import BOARD_LEDGER_HEADING, LedgerEntry, format_entry, utc_now
+from lore_workflow.ledger import (
+    BOARD_LEDGER_HEADING,
+    LedgerEntry,
+    board_ledger_span,
+    format_entry,
+    utc_now,
+)
 
 
 def split_ref(ref: str, default_repo: str) -> tuple[str, int]:
@@ -30,21 +36,21 @@ def mark_merged(board: str, issue: str, sha: str, default_repo: str) -> tuple[st
     """
     want = split_ref(issue, default_repo)
     try:
-        rows = parse_board(board)
+        parse_board(board)  # rejects a ragged row before any edit
+        header, data = find_board_table(board)
     except BoardParseError as exc:
         raise ValueError(str(exc)) from exc
-    lines = board.splitlines()
-    header = next(i for i, ln in enumerate(lines) if "state" in ln.casefold() and "|" in ln)
-    names = [c.casefold() for c in _split_cells(lines[header])]
+    names = [c.casefold() for c in header]
     state, issue_col = names.index("state"), names.index("issue")
-    if not any(split_ref(r.issue, default_repo) == want for r in rows):
-        raise ValueError(f"issue {want[0]}#{want[1]} has no row on the board")
-    for i in range(header + 2, len(lines)):
-        cells = _split_cells(lines[i]) if "|" in lines[i] else []
-        if len(cells) > max(state, issue_col) and split_ref(cells[issue_col], default_repo) == want:
+    lines = board.splitlines()
+    for lineno, raw in data:
+        cells = _split_cells(raw)
+        if split_ref(cells[issue_col], default_repo) == want:
             cells[state] = "merged"
-            lines[i] = "| " + " | ".join(cells) + " |"
+            lines[lineno - 1] = "| " + " | ".join(cells) + " |"
             break
+    else:
+        raise ValueError(f"issue {want[0]}#{want[1]} has no row on the board")
     out = _add_resume("\n".join(lines) + "\n", f"#{want[1]} merged at {sha[:7]}")
     return out, want[0], want[1]
 
@@ -56,13 +62,10 @@ def _add_resume(board: str, state: str) -> str:
         )
     )
     lines = board.splitlines()
-    start = next((i for i, ln in enumerate(lines) if ln.strip() == BOARD_LEDGER_HEADING), None)
-    if start is None:
+    span = board_ledger_span(lines)
+    if span is None:
         return board.rstrip("\n") + f"\n\n{BOARD_LEDGER_HEADING}\n\n{line}\n"
-    end = next(
-        (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("#")), len(lines)
-    )
-    at = end
+    start, at = span
     while at > start + 1 and not lines[at - 1].strip():
         at -= 1
     lines.insert(at, line)

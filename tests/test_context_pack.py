@@ -310,6 +310,28 @@ def test_gather_intent_ignores_stop_words(tmp_path: Path, monkeypatch: pytest.Mo
     assert result["ranked"] == ["docs/adr/0002-b.md"]
 
 
+def test_adr_body_line_starting_status_deprecated_stays_current(tmp_path):
+    from lore_core.context_pack import _is_current
+
+    (tmp_path / "a.md").write_text(
+        "---\nstatus: accepted\n---\n# A\n\n- Date: x\n\n## Context\n\nstatus: deprecated here\n"
+    )
+    assert _is_current(tmp_path, {"path": "a.md", "status": "accepted"})
+    (tmp_path / "b.md").write_text("---\nstatus: superseded\n---\n# B\n")
+    assert not _is_current(tmp_path, {"path": "b.md", "status": "superseded"})
+
+
+def test_adr_status_section_decides_currency(tmp_path):
+    from lore_core.context_pack import _is_current
+
+    (tmp_path / "a.md").write_text("# A\n\n## Status\n\nSuperseded by ADR 0012.\n\n## Context\n")
+    assert not _is_current(tmp_path, {"path": "a.md"})
+    (tmp_path / "b.md").write_text(
+        "# B\n\n## Status\n\nAccepted.\n\n## Context\n\nstatus: deprecated\n"
+    )
+    assert _is_current(tmp_path, {"path": "b.md"})
+
+
 def test_gather_intent_keeps_focus_prd_without_intent_word(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

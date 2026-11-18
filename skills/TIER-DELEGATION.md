@@ -42,6 +42,7 @@ A spawn without a tag still counts, under "untagged subagents".
 | `[build:implement]` | `build` teammate, `epic` mode; also the first line of its brief |
 | `[build:review]` | `build` per-PR review |
 | `[build:epic-review]` | `build` whole-epic review in the epic tail |
+| `[build:lens-review]` | `build` one lens of the epic tail review plan |
 | `[build:suite]` | `build` background suite after a `loop` round |
 | `[build:advisory]` | `build` advisory pass of the `loop` wrap-up |
 | `[orient:explore]` | `orient` explorer, full mode |

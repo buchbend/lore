@@ -263,19 +263,24 @@ def after_merge_cmd(
     """
     from lore_workflow import after_merge as am
 
-    if board != "-" or "#" not in epic or "/" not in epic:
+    repo, _, num = epic.rpartition("#")
+    if board != "-" or "#" not in epic or "/" not in epic or not num.isdigit():
         print("after-merge: use --board - and --epic owner/repo#n", file=sys.stderr)
         raise typer.Exit(code=1)
-    repo, _, num = epic.rpartition("#")
     try:
         updated, irepo, inum = am.mark_merged(sys.stdin.read(), issue, sha, repo)
+    except ValueError as exc:
+        print(f"after-merge: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+    sys.stdout.write(updated)  # first: a failed GitHub call below must not lose the board
+    sys.stdout.flush()
+    try:
         body = am.GH.epic_body(repo, int(num))
         am.GH.set_epic_body(repo, int(num), am.tick(body, irepo, inum))
         am.GH.close(irepo, inum, f"Merged into epic/{num} at {sha}")
-    except (ValueError, RuntimeError) as exc:
+    except RuntimeError as exc:
         print(f"after-merge: {exc}", file=sys.stderr)
         raise typer.Exit(code=1) from exc
-    sys.stdout.write(updated)
 
 
 def _ledger_path(path: str | None) -> Path:

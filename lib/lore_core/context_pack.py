@@ -150,7 +150,10 @@ def _rank_by_intent(
 def _is_current(repo_root: Path, doc: dict[str, Any]) -> bool:
     """False for an ADR whose status line says superseded or deprecated."""
     text = (repo_root / doc["path"]).read_text(errors="replace")
-    return not _SUPERSEDED.search(f"status: {doc.get('status') or ''}\n{text}")
+    header = re.split(r"^## ", text, maxsplit=1, flags=re.M)[0]  # the status line sits above it
+    section = re.search(r"^## Status\s*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    status = f"status: {section.group(1).strip()}" if section else ""
+    return not _SUPERSEDED.search(f"status: {doc.get('status') or ''}\n{header}\n{status}")
 
 
 def _issue_state(repo: str, numbers: set[int]) -> list[dict[str, Any]]:
