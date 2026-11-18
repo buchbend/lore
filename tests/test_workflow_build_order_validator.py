@@ -180,3 +180,28 @@ def test_unknown_eighth_column_is_a_columns_problem() -> None:
     result = mod.validate_build_order(md)
     assert not result.ok
     assert "columns" in _kinds(result)
+
+
+@pytest.mark.parametrize("cell", ["Security", "two words", "ui, UI", "sec urity"])
+def test_bad_lens_is_a_lenses_problem(cell: str) -> None:
+    md = _table(_HEAD + " Lenses |", f"| 1 | A | o/r#1 | r | AFK | — | {cell} |")
+    result = mod.validate_build_order(md)
+    assert not result.ok
+    assert "lenses" in _kinds(result)
+
+
+def test_json_prints_lenses_per_row(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import json
+
+    from lore_cli import workflow_cmd
+
+    md = _table(
+        _HEAD + " Lenses |",
+        "| 1 | A | o/r#1 | r | AFK | — | security, ui |",
+        "| 2 | B | o/r#2 | r | AFK | #1 | — |",
+    )
+    f = tmp_path / "b.md"
+    f.write_text(md, encoding="utf-8")
+    assert workflow_cmd.main(["validate-build-order", "--json", str(f)]) == 0
+    lenses = json.loads(capsys.readouterr().out)["lenses"]
+    assert lenses == {"o/r#1": ["security", "ui"], "o/r#2": []}
