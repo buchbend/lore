@@ -24,7 +24,7 @@ A written, clear issue skips this skill: run `build` in `issue` mode.
 
 Two options combine with either mode:
 
-- **Page** ("as an artifact", "as a page"): the brief also goes out as a page. See step 3.
+- **Page** ("as an artifact", "as a page"): the restatement also goes out as a page. See step 3.
 - **Named agents** ("orient with `science-pm-counselor`"): each named subagent reviews the intent
   through its own lens. See step 2.
 
@@ -66,10 +66,10 @@ print([h["path"] for h in search("board ledger")["wiki"]])
 PY
 ```
 
-**Light mode stops here.** Spawn no explorer. Where the pack is thin for a facet, say so in the
-brief.
+**Light mode stops here.** Spawn no explorer. Where the brief is thin for a facet, say so in the
+restatement.
 
-**Full mode** fans out only what the pack left thin: one `Explore` subagent for docs the pack
+**Full mode** fans out only what the brief left thin: one `Explore` subagent for docs the brief
 missed, one for the code map, one for cross-repo consumers when the intent spans repos. The
 cross-repo explorer starts from `lore map <owner/repo> --json` for the current repo and widens
 from there. A repo in no map gets an empty list: it scans as before. Spawn them in one message at the `mid` tier (required): pass `lore tier resolve mid` as each model (on OpenCode, as each agent),
@@ -77,12 +77,12 @@ and open each description with `[orient:explore]`; see
 [TIER-DELEGATION.md](../TIER-DELEGATION.md). Scale the fan-out to the ask. For one lookup,
 grep or read directly; spawn only for parallel or isolated work.
 
-**Named agents** run in both modes, after the pack, in the same message as any explorers. Spawn
+**Named agents** run in both modes, after the brief, in the same message as any explorers. Spawn
 each one as its own named agent and keep its own model; set no tier. Open its description
 with `[orient:named]`. Give it the verbatim
-intent and the pack facts that bear on its lens. Ask for the constraints, risks and questions it
-sees, each with its evidence. A name that is not an available agent type: say so in the brief and
-go on without it. Fold each return into the brief and credit the agent by name.
+intent and the brief facts that bear on its lens. Ask for the constraints, risks and questions it
+sees, each with its evidence. A name that is not an available agent type: say so in the restatement and
+go on without it. Fold each return into the restatement and credit the agent by name.
 
 ## 3. Reflect back
 
@@ -95,24 +95,24 @@ go on without it. Fold each return into the brief and credit the agent by name.
   with "ask for the long version".
 - **Tentative scope** — in and out, marked provisional.
 
-**Light mode.** One message: what you understand, the constraints from the pack, a provisional
+**Light mode.** One message: what you understand, the constraints from the brief, a provisional
 scope, and three to five questions, each with your recommended answer filled in. The user replies
 once ("yes to your recs except #3"). Ask a second round only when an answer forks the design.
 
-The cap governs the printed brief, never the homework behind it.
+The cap governs the printed restatement, never the homework behind it.
 
 **Page.** Read `lore config get workflow.pages`. On `artifact`, publish the page as an artifact.
 On `html`, or when the session has no Artifact tool, write `<skill>-<slug>.html` in the scratchpad.
-The page holds the brief's sections in the same order, then the long version under them: every
+The page holds the restatement's sections in the same order, then the long version under them: every
 relevant-context fact with its source, the named agents' returns, and the code map excerpt. The
-chat still carries the printed brief and the page link. The loop stays in the chat; republish the
+chat still carries the printed restatement and the page link. The loop stays in the chat; republish the
 same page after each correction.
 
 ## 4. Loop
 
 Ask whether this matches. On a correction, explore again only the facets that moved. Repeat until
 the user confirms. When light mode finds the work is unsettled or spans an epic, say so and
-switch to full mode; the brief so far seeds step 1.
+switch to full mode; the restatement so far seeds step 1.
 
 ## 5. Hand off
 
@@ -122,7 +122,7 @@ switch to full mode; the brief so far seeds step 1.
 - **Light mode:** file the agreed intent and acceptance criteria through
   [`file-issue`](../file-issue/SKILL.md). When the seed is a roadmap item, name the item in the
   issue body. Then run `build` in `issue` mode. When even an issue is
-  ceremony, run `build` in `loop` mode. Write no brief file: the issue holds what survives.
+  ceremony, run `build` in `loop` mode. Write no restatement file: the issue holds what survives.
   **Never write to `CONTEXT.md`** — a term worth adding belongs to `grilling`, not this skill.
   An ADR candidate goes on the build ledger.
 

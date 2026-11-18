@@ -1,7 +1,7 @@
 # Review a PR
 
 Read this when a PR opens in `issue` mode, for each `epic` feature branch, and for the
-whole-epic review.
+whole-epic review and for each lens review.
 
 ## 1. Deterministic checks first
 
@@ -66,6 +66,23 @@ verdict: PASS | FAIL
 - tests map to acceptance criteria, failing test first: pass | fail — <note>
 - scope (this feature, plus the listed found-and-fixed items): pass | fail — <note>
 fixes (only on FAIL): 1. <precise fix>  2. <precise fix>
+```
+
+Any `fail` line makes the verdict FAIL.
+
+## Lens review
+
+Use this for a lens review ([epic-tail.md](epic-tail.md) § 3), not for a PR or a feature branch.
+Resolve the tier `strong`. Run no `risk` and no `code-review` pass. The reviewer judges only its
+lens, over the diffs of the rows the lens covers. It posts this block on the epic issue and
+returns it:
+
+```
+<branch> @ <head SHA> (lens: <lens>; rows <n>, <n>)
+reviewer tier: <tier>
+verdict: PASS | FAIL
+- <check of the lens>: pass | fail — <note>
+fixes (only on FAIL): 1. <precise fix>
 ```
 
 Any `fail` line makes the verdict FAIL.

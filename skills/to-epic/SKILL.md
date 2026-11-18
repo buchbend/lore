@@ -70,10 +70,11 @@ serializes it anyway, so extra rows buy only overhead. Conceptual separation and
 boundaries never justify a split. **Blocked by** records a real dependency only: the slice
 needs code, a schema or an interface that another slice adds. Two slices that only edit the
 same files carry no edge — they run in parallel and the later merge rebases. Target 2–4
-slices (1 is fine). The soft limit is about 12 rows. Split into two epics only for one of the three
-reasons of ADR 0023: one part has to wait until another part is deployed or published, a
-decision by the user gates most of the rows, or the repos share no release. A change of topic is no
-reason: one epic with several topics holds one PRD with one `##` section per topic. For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
+slices (1 is fine). The soft limit is about 12 rows. Split into two epics only for a reason of
+ADR 0023 (epics split on release order, not topic). One part has to wait until another part is
+deployed or published. Or a decision by the user gates most of the rows. Or the repos share no
+release. A change of topic is no reason: one epic with several topics holds one PRD with one `##`
+section per topic. For each feature capture: title, target repo, type (AFK / HITL — prefer AFK),
 blocked-by, and acceptance criteria as checkboxes. A row that crosses repos names the edge's `pin` in its acceptance criteria (`lore map <owner/repo> --json`); no edge: write the row as before. HITL slices need a human decision;
 `build` in `epic` mode escalates rather than auto-implements them, so resolve
 what you can into AFK during planning.
@@ -82,9 +83,9 @@ what you can into AFK during planning.
 Present the breakdown as a numbered list (Title · Repo · Type · Blocked by · criteria) **and
 the parallel batches it implies** (topological grouping of the DAG). Ask: right granularity?
 dependencies correct? repos correct? AFK/HITL correct? merge or split any slice? — when in
-doubt, merge. Also propose the **review plan**: the lenses the epic needs beyond correctness (one lowercase
-word each, for example `security`, `ui`), the reason for each, and the rows each lens tags. The
-user approves or changes it here. Iterate to approval — `build` in `epic` mode will not ask again.
+doubt, merge. Also propose the **review plan**: the lenses the epic needs beyond correctness. A lens is one
+lowercase word, for example `security` or `ui`. Give the reason for each and the rows it tags.
+The user approves or changes the plan here. Iterate to approval — `build` in `epic` mode will not ask again.
 
 ### 6. Publish
 Order matters so every cross-reference resolves:
@@ -223,7 +224,7 @@ One teammate builds the substeps in order.
 ## Current behaviour
 ## Required behaviour
 ## Acceptance criteria
-## Substeps
+## Substeps (only for a slice with ordered steps)
 ## Out of scope
 ## References
 

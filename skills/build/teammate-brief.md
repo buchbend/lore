@@ -21,9 +21,9 @@ stage and the epic.
 > it locally before each merge. When stuck, use the `/lore:debug` circuit breaker, not a
 > fourth blind fix.
 >
-> Substeps: when the sub-issue holds `## Substeps`, build them in order, make one commit per
-> substep with the substep number in the commit subject (`feat(x): substep 2 — ...`), and
-> leave one ticked box per landed commit in the sub-issue.
+> Substeps: when the sub-issue holds `## Substeps`, build them in order. Make one commit per
+> substep, with the substep number in the commit subject (`feat(x): substep 2 — ...`). Leave
+> one ticked box per landed commit in the sub-issue.
 >
 > Scope: change only what this feature needs, plus small defects you find on the way: fix
 > those test first, about 50 lines each, at most three, and list each under "Found and fixed"
