@@ -1,14 +1,14 @@
 ---
 title: "Follow-ups of epic 644"
 status: draft
-epic: https://github.com/buchbend/lore/issues/TODO
+epic: https://github.com/buchbend/lore/issues/652
 repos:
   - buchbend/lore
 ---
 
 # PRD 0025: Follow-ups of epic 644
 
-> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/TODO).
+> Source of truth for this epic. Tracker: [epic issue](https://github.com/buchbend/lore/issues/652).
 > The epic links here; this file is not embedded in the issue body.
 
 ## Problem
