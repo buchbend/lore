@@ -114,3 +114,10 @@ def test_close_failure_still_prints_the_board(monkeypatch, capsys, gh):
     cap = capsys.readouterr()
     assert "| Two | buchbend/lore#647 | AFK | 1 | merged | - |" in cap.out
     assert "nope" in cap.err
+
+
+def test_non_numeric_epic_exits_1_before_printing(monkeypatch, capsys, gh):
+    monkeypatch.setattr("sys.stdin", io.StringIO(BOARD))
+    argv = ["after-merge", "--board", "-", "--issue", "647", "--sha", "abc1234"]
+    assert workflow_cmd.main([*argv, "--epic", "o/r#abc"]) == 1
+    assert capsys.readouterr().out == "" and gh.calls == []

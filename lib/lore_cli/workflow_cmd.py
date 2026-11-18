@@ -262,10 +262,10 @@ def after_merge_cmd(
     """
     from lore_workflow import after_merge as am
 
-    if board != "-" or "#" not in epic or "/" not in epic:
+    repo, _, num = epic.rpartition("#")
+    if board != "-" or "#" not in epic or "/" not in epic or not num.isdigit():
         print("after-merge: use --board - and --epic owner/repo#n", file=sys.stderr)
         raise typer.Exit(code=1)
-    repo, _, num = epic.rpartition("#")
     try:
         updated, irepo, inum = am.mark_merged(sys.stdin.read(), issue, sha, repo)
     except ValueError as exc:
