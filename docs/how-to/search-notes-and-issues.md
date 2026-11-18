@@ -100,7 +100,8 @@ search.
 
 Give the context pack an `intent` to rank the ADRs and PRDs by your words. The
 pack returns at most 8 docs. The docs of the focus issue come first, then the
-docs that best match the title and body. A superseded ADR or a shipped PRD
+docs that best match the title and body. The focus docs keep their place
+whatever their status. Among the other docs, a superseded ADR or a shipped PRD
 ranks below every current doc. Without an intent or a focus issue, the pack
 holds the current ADRs only.
 

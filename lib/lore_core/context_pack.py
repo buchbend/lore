@@ -128,7 +128,7 @@ def intent_words(intent: str) -> set[str]:
 def _rank_by_intent(
     repo_root: Path, docs: list[dict[str, Any]], intent: str, limit: int = INTENT_TOP
 ) -> list[dict[str, Any]]:
-    """Top `INTENT_TOP` docs that name an intent word, title hits weighted 3x.
+    """Top `limit` docs that name an intent word, title hits weighted 3x.
 
     A superseded, deprecated or shipped doc ranks below every current doc;
     ties break on path, so the order is stable.
