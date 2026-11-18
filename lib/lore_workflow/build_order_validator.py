@@ -56,6 +56,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
 
 # Optional 7th column: the review lenses a row is tagged with (PRD 0024).
 LENSES_COLUMN = "Lenses"
+_LENS = re.compile(r"[a-z]+")
 
 # A fully-qualified issue ref: owner/repo#number. owner and repo use the
 # GitHub-name character set (letters, digits, dot, underscore, hyphen). A ref
@@ -360,6 +361,16 @@ def validate_build_order(markdown: str) -> ValidationResult:
                         "dangling_edge",
                         f"row {row.number}: blocked-by '{token}' does not "
                         "resolve to any build-order row",
+                    )
+                )
+
+    for row in rows:
+        for lens in row.lenses:
+            if not _LENS.fullmatch(lens):
+                problems.append(
+                    Problem(
+                        "lenses",
+                        f"row {row.number}: lens '{lens}' is not one lowercase word",
                     )
                 )
 
