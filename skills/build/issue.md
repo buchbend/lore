@@ -4,8 +4,8 @@ Read this when `build` runs in `issue` mode. The rules in [SKILL.md](SKILL.md) a
 
 1. **Intake.** Read the issue (`gh issue view <n> --json title,body`). Run `lore codemap` to find
    the files. No explorer fan-out.
-2. **Clarify only if needed.** Ambiguous intent or criteria: ask at most three questions. Clear
-   issue: ask none.
+2. **Clarify only if needed.** Ambiguous intent or criteria: follow [follow-ups.md](follow-ups.md)
+   § Questions. Build your guess while the user is away. Clear issue: ask none.
 3. **Branch.** `lore workflow epic-policy <repo_root>` gives `target_branch`. Create
    `feat/<issue>-<slug>` off it in a worktree. Implement with [`tdd`](../tdd/SKILL.md), one PR.
 4. **Docs.** Run the pre-merge mode of [`document`](../document/SKILL.md) on the branch diff.
@@ -16,4 +16,4 @@ Read this when `build` runs in `issue` mode. The rules in [SKILL.md](SKILL.md) a
    same PR. `lore workflow ledger-check` passes, or you go back to the user. Remove the shipped
    roadmap item from its `ROADMAP.md`, if the issue ships one: the item that links the issue or
    that the issue names. Commit the change. Add the handover section to the PR body. Run
-   `lore log add`. Run `lore workflow ledger-archive`. Ask for the merge approval and merge on a yes.
+   `lore log add`. Run `lore workflow ledger-archive`. Ask for the merge approval. On a yes, add the version bump as [SKILL.md](SKILL.md) gives it, then merge.

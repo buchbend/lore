@@ -84,3 +84,44 @@ def test_detect_host_unknown_fails_loudly(monkeypatch):
     monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
     with pytest.raises(TierResolutionError, match="unable to detect"):
         detect_host()
+
+
+def test_a_claude_code_marker_beats_an_inherited_opencode_host(tmp_path, monkeypatch):
+    from lore_core.tiers import detect_host
+
+    monkeypatch.setenv("LORE_HOST", "opencode")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert detect_host() == "claude"
+    assert resolve_tier("mid", lore_root=_mk_root(tmp_path)) == TABLE["claude"]["mid"]
+
+
+def test_opencode_resolves_to_a_lore_subagent_name(tmp_path, monkeypatch):
+    for var in ("CLAUDECODE", "CLAUDE_PROJECT_DIR", "CLAUDE_SESSION_ID", "CLAUDE_CODE_EXECPATH"):
+        monkeypatch.delenv(var, raising=False)
+    root = _mk_root(tmp_path)
+    assert resolve_tier("mid", host="opencode", lore_root=root) == "lore-mid"
+    monkeypatch.setenv("LORE_HOST", "opencode")
+    assert resolve_tier("cheap", lore_root=root) == "lore-cheap"
+
+
+def test_opencode_column_holds_a_provider_model_per_tier():
+    for tier in TIER_ORDER:
+        assert "/" in TABLE["opencode"][tier]
+
+
+def test_opencode_override_changes_the_subagent_model_not_its_name(tmp_path):
+    from lore_core.config import user_config_path
+    from lore_core.tiers import tier_model
+
+    root = _mk_root(tmp_path)
+    user_config_path().parent.mkdir(parents=True, exist_ok=True)
+    user_config_path().write_text("tiers:\n  overrides:\n    opencode:\n      mid: openai/gpt-5\n")
+    assert tier_model("mid", "opencode", lore_root=root) == "openai/gpt-5"
+    assert resolve_tier("mid", host="opencode", lore_root=root) == "lore-mid"
+
+
+def test_detect_host_accepts_the_capture_adapter_name_for_claude(monkeypatch):
+    from lore_core.tiers import detect_host
+
+    monkeypatch.setenv("LORE_HOST", "claude-code")
+    assert detect_host() == "claude"

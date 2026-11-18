@@ -41,6 +41,8 @@ def register(adapter: Adapter) -> None:
 # register here.
 from lore_adapters.claude_code import ClaudeCodeAdapter  # noqa: E402
 from lore_adapters.manual_send import ManualSendAdapter  # noqa: E402
+from lore_adapters.opencode import OpenCodeAdapter  # noqa: E402
 
 register(ClaudeCodeAdapter())
 register(ManualSendAdapter())
+register(OpenCodeAdapter())

@@ -146,3 +146,14 @@ def test_manual_send_preserves_explicit_category(tmp_path):
 
     turns = list(ManualSendAdapter().read_from(jsonl, tmp_path, declared_integration="future"))
     assert turns[0].tool_call.category == "agent_spawn"
+
+
+def test_opencode_tool_names_map_to_categories():
+    from lore_core.tool_categories import classify_tool_name
+
+    names = ("edit", "write", "read", "grep", "bash", "subagent", "zzz")
+    got = {n: classify_tool_name("opencode", n) for n in names}
+    assert got == {
+        "edit": "file_edit", "write": "file_edit", "read": "file_read", "grep": "search",
+        "bash": "shell_exec", "subagent": "agent_spawn", "zzz": "other",
+    }

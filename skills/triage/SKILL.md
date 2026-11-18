@@ -68,7 +68,7 @@ a lens. Default lenses:
 | Architect | CI/CD, build, deploy, design | `strong` | `[triage:architect]` |
 | Ops/SRE reviewer | runtime, backups, monitoring, docs | `mid` | `[triage:ops]` |
 
-Pass `lore tier resolve <tier>` as each spawn's model and open its description with the tag;
+Pass `lore tier resolve <tier>` as each spawn's model (on OpenCode, its agent) and open its description with the tag;
 another theme takes `[triage:other]` ([TIER-DELEGATION.md](../TIER-DELEGATION.md)). Split a theme above about 40 issues into two
 spawns. Each brief carries the repo state from § 1, the issue numbers and the checklist in
 § 2. It also carries the verdicts below, the review-only rule and this return shape, one JSON

@@ -8,7 +8,7 @@ independent git repo.
 
 - `inbox/` — triage inbox — `/lore:inbox` routes items to the right wiki
 - `wiki/` — mounted wikis (symlinks or inline dirs)
-- `CLAUDE.md` — this file
+- `AGENTS.md` — this file
 
 ## Wiki mounts
 

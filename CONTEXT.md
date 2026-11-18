@@ -159,6 +159,9 @@ Terms used in the workflow layer and orchestration:
   `plugin.json` and dispatched by CLI invocation or intra-skill routing.
   Lore ships one plugin, `lore`; every skill lives in `skills/` and has the
   name `lore:<name>`, the workflow skills too.
+- **Host** — the coding harness that runs a session and calls Lore's hooks:
+  Claude Code, Cursor or OpenCode. `lore tier resolve --host` and the
+  `LORE_HOST` variable name it. _Avoid_: harness, integration, client.
 - **Lore context pack** — synonym for `lore_context_pack` (see above).
 - **Codemap excerpt** — a bounded, ranked slice of the `lore codemap`
   output, token-budgeted (~1k tokens) and curated for a specific feature
@@ -291,6 +294,10 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
 - **Build order** — the feature table in an epic tracker issue. It has
   one row per feature, with its issue, repo, type and blockers.
   _Avoid_: roadmap.
+- **Brief** — the one object that `lore brief` returns for an intent. It
+  holds the ranked context pack, the first section of each top doc, a
+  code-map excerpt and the matching glossary entries. `orient` reads the
+  brief before any other homework call. _Avoid_: context dump.
 - **Risk level** — `low` or `high`, from `lore workflow risk <pr>`. The
   level sets the review depth. An agent raises the level and never
   lowers it.
@@ -309,6 +316,16 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
   build. `to-epic` names it in the epic body. `build` merges it into the
   epic branch when the target branch lacks the PRD. _Avoid_: docs branch,
   PRD branch.
+- **Substep** — one ordered step inside a slice, written as a numbered
+  checklist item in the sub-issue. One teammate builds the substeps of a
+  slice in order on one branch, one commit per substep. The teammate ticks
+  the box as each commit lands. One review covers the slice.
+- **Review plan** — the review lenses that `to-epic` proposes for an epic,
+  with each row tagged by the lenses it needs. The user approves the plan at
+  the `to-epic` checkpoint. The correctness review runs per row, before the
+  row merges into the epic branch. Each other lens runs once, at the end of
+  the epic, over all rows tagged with it. ADR 0023 (epics split on release
+  order, not topic) records the decision.
 - **Seed issue** — a tracker issue labeled `epic-seed` that the `handover`
   skill writes. It carries intent and findings for a cold session to
   orient on. It is no spec.
@@ -348,6 +365,21 @@ ships, the term names the planned behavior.
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".
+
+### Hosts
+
+Decision in ADR 0022 (Lore runs in OpenCode through a generated plugin).
+
+- **Event table** — the map from each Claude Code hook event to the hook
+  of another host. A row can say "not mapped" and give the reason. Lore
+  generates the OpenCode plugin from the event table. _Avoid_: hook map,
+  event map.
+- **Tier subagent** — an OpenCode agent named `lore-<tier>` that pins the
+  model of its tier. In OpenCode, `lore tier resolve` prints the tier
+  subagent. _Avoid_: tier agent, model agent.
+- **Session file** — the JSON-lines copy of one OpenCode session. The
+  OpenCode plugin writes the session file. The `opencode` adapter and the
+  token record read it. _Avoid_: transcript file, dump.
 
 ### Roadmap
 

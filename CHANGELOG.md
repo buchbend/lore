@@ -8,6 +8,53 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.111.0] - 2026-11-18
+
+- Follow-ups of epic #644 (epic #652). The context pack with an intent keeps the focus docs first. Old ADRs and shipped PRDs rank below current docs (#648).
+- The build-order validator checks each lens, and `validate-build-order --json` prints the lenses of each row (#649).
+- `lore workflow after-merge` prints the board before the GitHub calls. Lens reviews get the stage tag `build:lens-review`, and the ADR check reads only the status (#650).
+
+## [0.110.0] - 2026-11-18
+
+- Larger epics and code mode (epic #644). `to-epic` splits epics only on release order (ADR 0023), so one epic holds several topics, slices with substeps and a review plan; lenses run once at the epic end.
+- `lore brief --json` returns the filtered orient brief in one call, the context pack takes an `intent`, and `lore.api` lets a script chain the lore tools.
+- `lore workflow after-merge` runs the routine steps after each feature merge of an epic.
+
+## [0.109.0] - 2026-11-17
+
+- Build runs fix small follow-ups in the PR that found them and list them under `## Found and fixed` (#643). A decision for the user becomes a `question` ledger line: the run builds a cheap-to-undo guess or parks only the dependent work, and asks in one batched message with context. Epics no longer stop on a HITL row or an unclear spec.
+
+## [0.108.1] - 2026-11-15
+
+- Build runs add the release bump after the merge approval, immediately before the merge, on a branch with `main` merged in (#638). A review fix no longer forces a redone bump.
+
+## [0.108.0] - 2026-11-15
+
+- `lore off` and `lore on` are removed, with the session mute behind them (#633). Lore reads no mute file in the hooks, the MCP server or the OpenCode plugin. OpenCode users: run `lore update`, or the old plugin keeps its mute check.
+
+## [0.107.2] - 2026-11-14
+
+- OpenCode token trace (#634): a subagent call matches its child session by the session ID OpenCode records on the call; the prompt fallback needs an exact match. Two calls with no id get two rows. `has_tokens` counts 1-hour cache writes.
+
+## [0.107.1] - 2026-11-14
+
+- Claude Code and OpenCode round trip (epic #632). Run `lore update` after the upgrade: it rewrites the OpenCode plugin.
+- `lore off` in OpenCode also refuses the `lore.` MCP tool calls of the muted session (#626).
+- A Claude Code session started from an OpenCode shell detects Claude Code as its host and uses its own session id. The OpenCode plugin removes the Claude Code variables from the commands and agent shells it starts, so the reverse case keeps OpenCode (#627).
+- OpenCode capture removes a session file older than 7 days once the transcript index holds its session (#628).
+- Five small fixes (#629): `lore setup` writes `@AGENTS.md` into an empty vault `CLAUDE.md`; `has_tokens` counts reasoning tokens; the OpenCode token trace matches same-prompt subagent calls to their own child sessions; `uninstall_plan` skips an `mcp` or `commands` value that is no object; the plugin runs `lore hook session-start` once per session.
+
+## [0.107.0] - 2026-11-14
+
+- Lore runs in OpenCode 2.x (epic #615, OpenCode as a host). `lore setup` finds the `opencode` binary and writes four things into `~/.config/opencode/`: a generated plugin, the `lore` MCP server, one `lore:<name>` command per skill and four tier subagents. ADR 0022 records the design; `docs/how-to/use-lore-in-opencode.md` is the how-to.
+- The plugin adds the session-start banner, the per-prompt text and the pre-compact text to main sessions (#612). The plugin sets `LORE_HOST` and `LORE_SESSION_ID` for the agent shell. The plugin runs the spawn gate on each `subagent` call (#614, #624).
+- Capture writes each OpenCode session as a session file (#613). The `opencode` adapter and the token record read it. The token record counts reasoning tokens and the reported cost (#625).
+- `lore tier resolve` prints `lore-<tier>` in OpenCode; `tiers.overrides.opencode` sets the tier models (#614).
+- Hook commands are host-neutral; agent instructions live in `AGENTS.md`, and `CLAUDE.md` holds `@AGENTS.md` (#611). `lore setup` migrates an old vault `CLAUDE.md` (#621).
+- `lore off` and the mute checks read `LORE_SESSION_ID`; session-ID cache files carry a `sid-` prefix (#622).
+- The OpenCode installer repairs missing config entries and keeps the keys a person added (#623).
+- The wheel ships `skills/` and the plugin manifest, so a pipx install without Claude Code can write the OpenCode plugin.
+
 ## [0.106.0] - 2026-11-13
 
 - New skill `/lore:wiki`: after the person says yes, an agent writes one wiki entry (research, scoping, an explanation, draft paper material) and commits it (#601).

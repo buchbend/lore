@@ -29,4 +29,3 @@ Mention `lore setup` only if the user asks why.
 ## Related
 
 - `lore_context_pack` — fresh, scoped gather (different from showing the cache)
-- `lore off` — mute hooks for the session

@@ -24,7 +24,6 @@ Start:
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +33,6 @@ from lore_core.errors import (
     NOTE_NOT_FOUND,
     PATH_ESCAPE,
     PATH_NOT_FOUND,
-    SESSION_OFF,
     UNKNOWN_TOOL,
     WIKI_NOT_FOUND,
 )
@@ -607,6 +605,7 @@ def handle_context_pack(
     branch: str | None = None,
     issue: int | None = None,
     repo_path: str | None = None,
+    intent: str | None = None,
 ) -> dict[str, Any]:
     """Bounded pointer pack for cwd/branch/issue, joined on git-derived linkage.
 
@@ -616,7 +615,7 @@ def handle_context_pack(
     """
     from lore_core.context_pack import gather
 
-    return gather(cwd=cwd, branch=branch, issue=issue, repo_path=repo_path)
+    return gather(cwd=cwd, branch=branch, issue=issue, repo_path=repo_path, intent=intent)
 
 
 def handle_codemap(
@@ -855,7 +854,9 @@ def _tool_schema() -> list[dict]:
             "description": (
                 "Bounded pointer pack (ADR/PRD entries, epic state) for a cwd, branch "
                 "or issue, joined on git-derived linkage only: no LLM, no FTS. A cold "
-                "start returns an empty pack, not an error. Pull bodies afterwards via "
+                "start returns an empty pack, not an error. `intent` ranks the ADRs and "
+                "PRDs by a word match and keeps the top 8; with neither intent nor focus "
+                "issue the pack holds the current ADRs only. Pull bodies afterwards via "
                 "`lore_read` or `lore_repo_docs_fetch`."
             ),
             "inputSchema": {
@@ -876,6 +877,10 @@ def _tool_schema() -> list[dict]:
                         "type": "integer",
                         "description": "Explicit issue/epic number to widen the focus set.",
                     },
+                    "intent": {
+                        "type": "string",
+                        "description": "What the work is about; ranks the docs, top 8.",
+                    },
                     "repo_path": {
                         "type": "string",
                         "description": ("Repo root override."),
@@ -888,19 +893,6 @@ def _tool_schema() -> list[dict]:
 
 
 def _dispatch(tool_name: str, args: dict) -> Any:
-    # `/lore:off` (scope=all) — refuse every tool for this session.
-    # See `docs/architecture/slash-toggles.md`.
-    sid = os.environ.get("CLAUDE_SESSION_ID")
-    if sid:
-        from lore_core.toggles import is_off
-
-        if is_off("all", sid):
-            return _mcp_error(
-                SESSION_OFF,
-                "Lore is muted for this session.",
-                next_="Run `lore on` from a shell in this session, or restart the session.",
-            )
-
     match tool_name:
         case "lore_search":
             return handle_search(**args)

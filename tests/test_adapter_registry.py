@@ -80,9 +80,9 @@ def test_registered_integrations_lists_v1_set() -> None:
 
 
 def test_registry_contains_exactly_live_adapters() -> None:
-    """Registry registers exactly the two live adapters: claude-code, manual-send."""
+    """Registry registers exactly the live adapters."""
     integrations = registered_integrations()
-    assert integrations == ["claude-code", "manual-send"]
+    assert integrations == ["claude-code", "manual-send", "opencode"]
 
 
 def test_register_adds_new_adapter() -> None:

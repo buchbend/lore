@@ -55,3 +55,22 @@ def test_fails_open_on_malformed_payload() -> None:
     """A broken/unexpected payload shape must never brick delegation."""
     for garbage in (None, [], 42, "not a dict", {"tool_name": 42}):
         assert check_spawn(garbage) is None
+
+
+def test_opencode_subagent_without_a_pinned_model_is_denied():
+    msg = check_spawn({"tool_name": "subagent", "tool_input": {"agent": "general", "model": ""}})
+    assert msg and "lore tier resolve" in msg and "agent" in msg
+
+
+def test_opencode_subagent_with_a_pinned_model_is_allowed():
+    payload = {"tool_name": "subagent", "tool_input": {"agent": "lore-mid", "model": "a/b"}}
+    assert check_spawn(payload) is None
+
+
+def test_opencode_unknown_agent_is_named_not_called_pinless():
+    payload = {
+        "tool_name": "subagent",
+        "tool_input": {"agent": "ghost", "model": "", "agent_known": False},
+    }
+    msg = check_spawn(payload)
+    assert msg and "ghost" in msg and "does not know" in msg and "pins no model" not in msg

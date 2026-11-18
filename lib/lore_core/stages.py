@@ -19,6 +19,7 @@ STAGES: dict[str, str] = {
     "build:implement": "teammate that writes an epic feature",
     "build:review": "per-PR review",
     "build:epic-review": "whole-epic review in the epic tail",
+    "build:lens-review": "one lens of the epic tail review plan",
     "build:suite": "background suite after a loop round",
     "build:advisory": "advisory pass of the loop wrap-up",
     "orient:explore": "explorer of the orient fan-out",

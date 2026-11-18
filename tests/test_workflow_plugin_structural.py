@@ -60,7 +60,13 @@ DOCUMENT_SKILL = SKILLS_ROOT / "document" / "SKILL.md"
 # `build` keeps its core loop in SKILL.md and loads these when a run reaches
 # them (PRD 0015 § Build, "Skill size").
 BUILD_MODE_FILES = ("loop.md", "issue.md", "epic.md")
-BUILD_SIBLING_FILES = ("review.md", "teammate-brief.md", "epic-tail.md", "loop-wrap-up.md")
+BUILD_SIBLING_FILES = (
+    "review.md",
+    "teammate-brief.md",
+    "epic-tail.md",
+    "loop-wrap-up.md",
+    "follow-ups.md",
+)
 # The old orchestrate-epic/SKILL.md alone was 17,350 bytes and loaded on every run.
 # A run loads SKILL.md and its mode file; the other modes stay unread.
 BUILD_SKILL_BYTE_BUDGET = 6_000
@@ -93,7 +99,7 @@ BANNED_SCRIPT_REFERENCES = (
 
 SKILL_LINE_BUDGET = 150
 SKILL_LINE_BUDGET_WAIVERS: dict[str, int] = {
-    "to-epic": 220,
+    "to-epic": 240,
     "file-issue": 160,
     # Two parts: the note for the next session, and the handover section + seed issue.
     "handover": 230,
@@ -366,6 +372,15 @@ def test_orient_reads_a_milestone_ref_with_lore_read() -> None:
     assert "Without a source, the ref stays plain text" in text
 
 
+def test_orient_calls_lore_brief_before_any_other_homework_call() -> None:
+    text = _joined("orient/SKILL.md")
+    homework = text[text.index("## 2.") : text.index("## 3.")]
+    first = homework.index("lore brief --json")
+    for call in ("lore_context_pack", "lore_repo_docs", "lore glossary", "lore_search", "codemap"):
+        assert call not in homework[:first], call
+    assert "from lore.api import" in homework
+
+
 def test_grilling_asks_which_roadmap_item_the_plan_serves() -> None:
     text = _joined("grilling/SKILL.md")
     assert "which roadmap item the plan serves" in text
@@ -402,8 +417,8 @@ _STAGE_TAG = re.compile(r"\[([a-z][a-z0-9-]*:[a-z][a-z0-9-]*)\]")
 
 # The file of each delegation point, and the tags it must name.
 STAGE_TAG_SITES = {
-    "build/review.md": {"build:review", "build:epic-review"},
-    "build/epic-tail.md": {"build:epic-review"},
+    "build/review.md": {"build:review", "build:epic-review", "build:lens-review"},
+    "build/epic-tail.md": {"build:epic-review", "build:lens-review"},
     "build/teammate-brief.md": {"build:implement"},
     "build/loop-wrap-up.md": {"build:advisory"},
     "orient/SKILL.md": {"orient:explore", "orient:named"},

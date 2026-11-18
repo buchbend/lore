@@ -29,6 +29,7 @@ HIDDEN = {
     "mcp",
     "workflow",
     "tier",
+    "brief",
     "codemap",
     "glossary",
     "map",
@@ -39,11 +40,11 @@ HIDDEN = {
     "ingest",
     "inbox",
     "handover",
-    "on",
-    "off",
     "migrate",
 }
 DELETED = [
+    "on",
+    "off",
     "drill",
     "curator",
     "lint",
