@@ -36,11 +36,11 @@ gh api repos/<owner>/<repo>/issues/comments/<id> --jq .body \
   its commit, merge without it, and run `document` in catch-up mode afterwards.
 - **Roadmap.** Remove the shipped roadmap item from its `ROADMAP.md`: the item that links this
   epic or its PRD. Commit the change on `epic/<issue>`.
-- **Lens reviews**, when the epic body holds `## Review plan`. Run each lens once, in parallel,
-  over the rows the `Lenses` column tags with it, with the tag `[build:epic-review]` and the
-  merge commit of each: `M=$(git log --merges -1 --format=%H --grep 'feat/<n>-<slug>' epic/<issue>)`,
-  range `$M^1..$M^2` (the row's own changes), per [review.md](review.md); tell the reviewer its lens. A finding is
-  a fix round on `epic/<issue>`.
+- **Lens reviews**, when the epic body holds `## Review plan`. Run each lens once, in parallel.
+  A lens covers the rows its `Lenses` cell names. Find the merge commit of each row:
+  `M=$(git log --merges -1 --format=%H --grep 'feat/<n>-<slug>' epic/<issue>)`.
+  The row's own changes are `git diff $M^1 $M`. Follow [review.md](review.md) § Lens review, with
+  the tag `[build:epic-review]`. A finding starts a fix round on `epic/<issue>`.
 - **Whole-epic review**, only for an epic with three or more features. Follow
   [review.md](review.md) on `<target_branch>..epic/<issue>`, after the docs commit, with the tag
   `[build:epic-review]`. It checks cross-feature consistency (naming, duplicate helpers, conflicting

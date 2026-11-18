@@ -48,7 +48,9 @@ def test_lens_review_range_is_the_rows_own_changes() -> None:
     tail = _text("build/epic-tail.md")
     assert "epic/<issue>..feat/<n>-<slug>" not in tail
     assert "git merge-base" not in tail
-    assert "$M^1..$M^2" in tail
+    assert "git diff $M^1 $M" in tail
+    assert "$M^1..$M^2" not in tail
+    assert "§ Lens review" in tail
 
 
 def test_review_plan_follows_the_checklist_in_the_epic_template() -> None:
@@ -61,3 +63,19 @@ def test_to_epic_passes_an_intent_to_the_context_pack() -> None:
     # Without an intent or a focus issue the pack holds no PRD (#646).
     text = _text("to-epic/SKILL.md")
     assert "`lore_context_pack` with `intent`" in text
+
+
+def test_review_md_has_a_lens_review_section() -> None:
+    text = _text("build/review.md")
+    assert "and for each lens review" in text
+    section = text[text.index("## Lens review") :]
+    assert "`strong`" in section and "verdict: PASS | FAIL" in section
+    assert "no `risk`" in section and "reviewer tier" in section
+
+
+def test_polish_to_epic_brief_orient() -> None:
+    assert "ADR 0023 (epics split on release order, not topic)" in _text("to-epic/SKILL.md")
+    assert "(only for a slice with ordered steps)" in _text("to-epic/SKILL.md")
+    orient = _text("orient/SKILL.md")
+    assert "the pack is thin" not in orient
+    assert "restatement" in orient
