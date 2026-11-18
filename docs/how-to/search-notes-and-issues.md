@@ -97,3 +97,24 @@ or poll its state. Search is for finding.
 For the issues the session works on, the context pack (`lore_context_pack`)
 already carries the number, title, state and body. The common case needs no
 search.
+
+Give the context pack an `intent` to rank the ADRs and PRDs by your words. The
+pack returns at most 8 docs. The docs of the focus issue come first, then the
+docs that best match the title and body. The focus docs keep their place
+whatever their status. Among the other docs, a superseded ADR or a shipped PRD
+ranks below every current doc. Without an intent or a focus issue, the pack
+holds the current ADRs only.
+
+To read several tools in one step, start with `lore brief --json "<intent>"`.
+The brief holds the ranked pack, the first section of each top doc, a code-map
+excerpt and the matching glossary entries. For more, chain the tools in one
+script with `lore.api`. Each function returns plain data. Run the script on
+the Python of the installed `lore`:
+
+```bash
+"$(dirname "$(readlink -f "$(command -v lore)")")/python" - <<'PY'
+from lore.api import context_pack, repo_docs_fetch
+for path in context_pack(intent="board ledger")["ranked"][:3]:
+    print(repo_docs_fetch(path.split("/")[1], path)["title"])
+PY
+```

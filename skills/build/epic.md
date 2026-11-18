@@ -58,24 +58,21 @@ blocks the feature.
 
 **Review.** Feature branch: [review.md](review.md). PASS: merge as below.
 
-**Merge.** No CI runs here; the local run is the gate. In a worktree of `epic/<issue>`: `git
+**Merge.** No CI here; the local run gates. In a worktree of `epic/<issue>`: `git
 merge --no-ff feat/<n>-<slug>`, run the full suite and ruff, read the exit codes. Green: the
-merge stands. Red or a conflict: `git reset --hard ORIG_HEAD`, back to the teammate.
+merge stands. Red or conflict: `git reset --hard ORIG_HEAD`, back to the teammate.
 Cross-repo: read the `pin` of the edge between producer and consumer
-(`lore map <consumer> --json`). Merge the producer and record what the pin names (SHA, tag, image
-or package version) before dispatching the consumer. Without an edge, record the producer's SHA.
-The consumer reads the producer from its local checkout. A pin that resolves only from the
-remote (image, package) is the one early push: push the producer's `epic/<issue>` and note it
-on the board.
-After each merge:
-- tick its build-order box;
-- close the sub-issue (`gh issue close <n> --comment "Merged into epic/<issue> at <sha>"`);
-- set the row to `merged`;
-- add the teammate's ADR and term candidates to the ledger;
-- add the resume line (breakpoint);
+(`lore map <consumer> --json`). Merge the producer, record the pin (SHA, tag, image or
+package version) before dispatching the consumer. Without an edge, record the producer's SHA.
+The consumer reads the producer from its local checkout. A pin only the remote resolves
+(image, package) is the one early push: push `epic/<issue>` and note it on the board.
+After each merge, pipe the board into `lore workflow after-merge --board - --issue <n|owner/repo#n>
+--sha <sha> --epic <owner/repo>#<issue>`: it ticks the box, closes the sub-issue, sets the row
+`merged`, adds the resume line (breakpoint), prints the board to post. Then:
+- add the ADR and term candidates to the ledger;
 - where the repo has migrations, check that one migration head remains.
 
-Then dispatch what the merge made ready.
+Then dispatch what is ready.
 
 **Human present, on request.** Needs all three: the user asks for a quick run and stays
 present; every row is AFK; one repo without a deploy gate holds all rows.
@@ -87,10 +84,12 @@ present; every row is AFK; one repo without a deploy gate holds all rows.
 
 **Epic tail.** All rows merged: [epic-tail.md](epic-tail.md), at once.
 
+**Questions.** A HITL row or an unclear spec parks only its rows (`blocked`); the run goes on:
+[follow-ups.md](follow-ups.md) § Questions.
+
 **Stop conditions:**
-- a HITL row;
+- every remaining row waits on an answer;
 - a feature still failing after two fix rounds;
-- an ambiguous spec that needs a scientific or architectural call;
 - a merge conflict no teammate resolves;
 - a CI infrastructure failure.
 

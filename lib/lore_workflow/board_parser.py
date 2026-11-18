@@ -96,6 +96,15 @@ def _column_index(header: list[str]) -> dict[str, int]:
     return {col: lower[col.casefold()] for col in REQUIRED_COLUMNS}
 
 
+def find_board_table(text: str) -> tuple[list[str], list[tuple[int, str]]]:
+    """`(header cells, [(1-based line number, row)])` of the table after the marker."""
+    marker_at = text.find(BOARD_MARKER)
+    if marker_at < 0:
+        raise BoardParseError(f"status marker {BOARD_MARKER!r} not found — not a board comment")
+    # First line strictly after the marker line.
+    return _find_table_after(text.splitlines(), text.count("\n", 0, marker_at) + 1)
+
+
 def parse_board(text: str) -> list[BoardRow]:
     """Parse a supervision-board comment into structured per-feature rows.
 
@@ -103,16 +112,7 @@ def parse_board(text: str) -> list[BoardRow]:
     missing required columns, or any row whose cell count does not match the
     header — never a silent misread.
     """
-    marker_at = text.find(BOARD_MARKER)
-    if marker_at < 0:
-        raise BoardParseError(
-            f"status marker {BOARD_MARKER!r} not found — not a board comment"
-        )
-
-    lines = text.splitlines()
-    # First line strictly after the marker line.
-    marker_line = text.count("\n", 0, marker_at)
-    header, data_lines = _find_table_after(lines, marker_line + 1)
+    header, data_lines = find_board_table(text)
     idx = _column_index(header)
     width = len(header)
 

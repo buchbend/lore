@@ -29,6 +29,7 @@ HIDDEN = {
     "mcp",
     "workflow",
     "tier",
+    "brief",
     "codemap",
     "glossary",
     "map",

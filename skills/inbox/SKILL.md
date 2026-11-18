@@ -34,10 +34,20 @@ LLM reads files, composes notes, and archives originals.
 
 5. **Write + commit** — write the note via the Write tool following
    the wiki's CLAUDE.md conventions (`schema_version: 2`,
-   `provenance: extracted` + `source:` for non-text). Commit with
-   `git -C <wiki-dir> add <path> && git -C <wiki-dir> commit -m "lore: <slug>" -- <path>`.
+   `provenance: extracted` + `source:` for non-text). Then run
+   `lore wiki commit <absolute-path-of-note>`. It checks the note,
+   commits it and pushes. Act on the exit code:
+   - `0` — committed (and pushed when the wiki has a remote). Go to step 6.
+   - `1` with `error:` lines — a check error in the note. Fix the note
+     and run `lore wiki commit` again.
+   - `1` with `merge conflict` or `not pushed` — name the conflict or the
+     failed push to the person. The local commit stays. Keep the original
+     in the inbox: skip step 6 for this file.
+   - `2` — the path is no note the check reads, or the wiki sits inside
+     another repo. Name it to the person, keep the original in the inbox.
 
-6. **Archive** — `lore inbox archive <path>` moves the source to
+6. **Archive** — only after `lore wiki commit` exited 0:
+   `lore inbox archive <path>` moves the source to
    `.processed/<YYYY-MM-DD>_<filename>`. Never delete.
 
 7. **Report** — by type and inbox: filed paths, links created, items
