@@ -370,8 +370,9 @@ def _checkouts(cwd: Path) -> list[tuple[Path, Path]]:
     """(git dir, worktree root) of every checkout of the repo of *cwd* (issue #658).
 
     The checkout of *cwd* comes first, then the main checkout, then each linked
-    worktree. A bare repo has no main checkout. A worktree whose folder is gone
-    falls back to the root of *cwd*, so its entries still deliver.
+    worktree. A checkout whose folder Lore cannot find (a bare repo, a
+    ``--separate-git-dir`` repo, a submodule, a deleted worktree) falls back to
+    the root of *cwd*, so its entries still deliver.
     """
     from lore_core.route import resolve_route
 
@@ -383,8 +384,8 @@ def _checkouts(cwd: Path) -> list[tuple[Path, Path]]:
     common_file = git_dir / "commondir"
     if common_file.is_file():
         common = (git_dir / common_file.read_text(encoding="utf-8").strip()).resolve()
-        if common.name == ".git":
-            found.setdefault(common, common.parent)
+        # A `--separate-git-dir` or submodule common dir does not name its checkout.
+        found.setdefault(common, common.parent if common.name == ".git" else root)
     else:
         common = git_dir.resolve()
     for wt in sorted((common / "worktrees").glob("*/")):

@@ -543,3 +543,22 @@ def test_a_line_in_the_live_and_an_archived_ledger_is_delivered_once(repo, tmp_p
     assert main(["log", "flush"]) == 0
     assert main(["log", "flush"]) == 0
     assert count.read_text() == "x\n"
+
+
+def test_a_worktree_of_a_separate_git_dir_repo_sees_the_main_ledger(tmp_path) -> None:
+    """Review of PR #663: the common git dir need not be named `.git`."""
+    from lore_workflow.logbook import add, flush, undelivered_count
+
+    main_repo = tmp_path / "proj"
+    git = ["git", "-c", "user.name=Ada", "-c", "user.email=a@b"]
+    sep = ["git", "init", "-q", "--separate-git-dir", str(tmp_path / "proj.git"), str(main_repo)]
+    subprocess.run(sep, check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "x"], cwd=main_repo, check=True)
+    wt = tmp_path / "proj-wt"
+    subprocess.run(["git", "worktree", "add", "-q", str(wt)], cwd=main_repo, check=True)
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    add(GOOD, "#7", main_repo)
+    assert undelivered_count(wt) == 1
+    _sinks(["pm"], pm={"kind": "command", "run": "true"})
+    flush(wt)
+    assert undelivered_count(wt) == 0
