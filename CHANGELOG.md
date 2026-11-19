@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.114.0] - 2026-11-20
+
+- `lore log flush` retries the undelivered entries in the ledger of every checkout of the repo: the main checkout and each linked worktree. The SessionStart banner, the session-end hook and `lore status` count the same ledgers (#658).
+- `lore log flush` also retries a line that exists only in an archived ledger, and delivers an entry to one sink once when two ledger files hold the line (#659).
+- `archive_ledger` holds the ledger lock, so an archive never races a background flush (#663).
+
 ## [0.113.0] - 2026-11-20
 
 - The context pack with an intent ranks the focus docs inside the cap: current docs first, the PRD first in each group, so a cap the focus docs fill keeps the epic's PRD (#654).
