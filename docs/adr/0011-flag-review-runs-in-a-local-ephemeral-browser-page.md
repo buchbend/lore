@@ -76,4 +76,4 @@ network service, no sync and no remote reader, so ADR 0009 stands.
 
 ## Status
 
-Accepted.
+Superseded by ADR 0012.
