@@ -34,9 +34,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from lore_workflow.ledger import (
+    LEDGER_FILENAME,
     LedgerEntry,
     LedgerParseError,
     default_ledger_path,
+    find_git_dir,
     format_entry,
     parse_line,
     utc_now,
@@ -119,11 +121,27 @@ def _read_line(raw: str, kind: str = "logbook") -> tuple[Entry, dict[str, bool]]
 
 
 def pending(ledger: Path, kind: str = "logbook") -> list[tuple[Entry, dict[str, bool]]]:
-    """Every ``[<kind>]`` line of *ledger* with at least one undelivered sink."""
-    if not ledger.is_file():
-        return []
-    lines = (_read_line(raw, kind) for raw in ledger.read_text(encoding="utf-8").splitlines())
-    return [line for line in lines if line is not None and not all(line[1].values())]
+    """Every ``[<kind>]`` entry of *ledger* and its archives with an undelivered sink.
+
+    The archives are the ``lore-ledger.*.done.md`` files beside *ledger* (issue #659).
+    Lines with one key merge into one entry: a sink counts as delivered when any
+    line records it so, so no flush sends one entry to one sink twice.
+    """
+    merged: dict[str, tuple[Entry, dict[str, bool]]] = {}
+    for f in (ledger, *sorted(ledger.parent.glob("lore-ledger.*.done.md"))):
+        if not f.is_file():
+            continue
+        for raw in f.read_text(encoding="utf-8").splitlines():
+            line = _read_line(raw, kind)
+            if line is None:
+                continue
+            entry, status = line
+            first, seen = merged.get(entry.key, (entry, {}))
+            merged[entry.key] = (
+                first,
+                {n: seen.get(n, False) or status.get(n, False) for n in {**seen, **status}},
+            )
+    return [line for line in merged.values() if not all(line[1].values())]
 
 
 def _write_status(
@@ -348,35 +366,66 @@ def add(text: str, ref: str, cwd: Path) -> tuple[Entry, dict[str, bool]]:
     return entry, status
 
 
-def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]] | None:
-    """Retry every undelivered sink in the ledger of *cwd*; return the new states.
+def _checkouts(cwd: Path) -> list[tuple[Path, Path]]:
+    """(git dir, worktree root) of every checkout of the repo of *cwd* (issue #658).
 
-    Retries the ``[logbook]`` lines, then the ``[lab]`` lines.
-
-    Returns None when another flush or `log add` holds the ledger's lock.
+    The checkout of *cwd* comes first, then the main checkout, then each linked
+    worktree. A bare repo has no main checkout. A worktree whose folder is gone
+    falls back to the root of *cwd*, so its entries still deliver.
     """
     from lore_core.route import resolve_route
 
+    git_dir = find_git_dir(cwd)
+    root = resolve_route(cwd).repo_root
+    if git_dir is None or root is None:
+        return []
+    found = {git_dir.resolve(): root}
+    common_file = git_dir / "commondir"
+    if common_file.is_file():
+        common = (git_dir / common_file.read_text(encoding="utf-8").strip()).resolve()
+        if common.name == ".git":
+            found.setdefault(common, common.parent)
+    else:
+        common = git_dir.resolve()
+    for wt in sorted((common / "worktrees").glob("*/")):
+        try:
+            # `gitdir` names `<worktree>/.git`, relative to its own folder or absolute.
+            dotgit = wt / (wt / "gitdir").read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        found.setdefault(wt.resolve(), dotgit.parent if dotgit.parent.is_dir() else root)
+    return list(found.items())
+
+
+def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]] | None:
+    """Retry every undelivered sink in the ledgers of every checkout of the repo of *cwd*.
+
+    Retries the ``[logbook]`` lines, then the ``[lab]`` lines, of each checkout,
+    in the ledger and its archives; a ``file`` sink writes into that checkout.
+    Skips a ledger whose lock another flush or `log add` holds.
+
+    Returns the new states, or None when every ledger was locked.
+    """
     from lore_workflow import lab
 
-    ledger = default_ledger_path(cwd)
-    repo_root = resolve_route(cwd).repo_root
-    if ledger is None or repo_root is None:
-        return []
+    checkouts = _checkouts(cwd)
     results = []
-    with _lock(ledger, blocking=False) as held:
-        if not held:
-            return None
-        for kind, file_sink in (("logbook", _file_sink), ("lab", lab.file_sink)):
-            for entry, status in pending(ledger, kind):
-                retry = [name for name, ok in status.items() if not ok]
-                status = {**status, **deliver(entry, retry, repo_root, file_sink)}
-                _write_status(ledger, entry, status, kind)
-                results.append((entry, status))
-    return results
+    locked = 0
+    for git_dir, repo_root in checkouts:
+        ledger = git_dir / LEDGER_FILENAME
+        with _lock(ledger, blocking=False) as held:
+            if not held:
+                locked += 1
+                continue
+            for kind, file_sink in (("logbook", _file_sink), ("lab", lab.file_sink)):
+                for entry, status in pending(ledger, kind):
+                    retry = [name for name, ok in status.items() if not ok]
+                    status = {**status, **deliver(entry, retry, repo_root, file_sink)}
+                    _write_status(ledger, entry, status, kind)
+                    results.append((entry, status))
+    return None if checkouts and locked == len(checkouts) else results
 
 
 def undelivered_count(cwd: Path, kind: str = "logbook") -> int:
-    """How many ``[<kind>]`` lines in the ledger of *cwd* wait for a sink."""
-    ledger = default_ledger_path(cwd)
-    return 0 if ledger is None else len(pending(ledger, kind))
+    """How many ``[<kind>]`` entries in the ledgers of every checkout wait for a sink."""
+    return sum(len(pending(g / LEDGER_FILENAME, kind)) for g, _ in _checkouts(cwd))
