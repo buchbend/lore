@@ -31,6 +31,8 @@ def split_ref(ref: str, default_repo: str) -> tuple[str, int]:
 def mark_merged(board: str, issue: str, sha: str, default_repo: str) -> tuple[str, str, int]:
     """Board with the row of *issue* set to `merged` plus one resume line.
 
+    A board that already holds the resume line for this merge gets no second one.
+
     Rows match on the full ref. Returns (board, repo, number) of the row.
     Raises ValueError when the board has no row for *issue*.
     """
@@ -51,7 +53,10 @@ def mark_merged(board: str, issue: str, sha: str, default_repo: str) -> tuple[st
             break
     else:
         raise ValueError(f"issue {want[0]}#{want[1]} has no row on the board")
-    out = _add_resume("\n".join(lines) + "\n", f"#{want[1]} merged at {sha[:7]}")
+    out = "\n".join(lines) + "\n"
+    done = f"#{want[1]} merged at {sha[:7]}"
+    if f" {done};" not in out:  # a rerun on a printed board adds no second line
+        out = _add_resume(out, done)
     return out, want[0], want[1]
 
 
