@@ -418,3 +418,12 @@ def test_gather_intent_ranks_current_focus_docs_above_superseded(
 
     result = gather(cwd=repo, repo_path=str(repo), intent="widget")
     assert result["ranked"][:5] == [f"docs/adr/{n:04d}-new.md" for n in range(5, 10)]
+
+
+@pytest.mark.parametrize("number", ["0007", "0008", "0011"])
+def test_adrs_that_adr_0012_supersedes_are_not_current(number: str) -> None:
+    from lore_core.context_pack import _is_current
+
+    repo = Path(__file__).resolve().parent.parent
+    path = next((repo / "docs/adr").glob(f"{number}-*.md")).relative_to(repo)
+    assert not _is_current(repo, {"path": str(path)})
