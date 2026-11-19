@@ -447,3 +447,138 @@ def test_a_missing_label_reads_as_a_finding(repo, tmp_path, capsys) -> None:
     assert _add(tmp_path, GOOD.replace("**Why:**", "")) == 2
     err = capsys.readouterr().err
     assert "no line starts with Why:" in err and "breaks the rule" not in err
+
+
+# Issue #658 (all worktrees) and #659 (archived ledgers)
+
+
+@pytest.fixture
+def linked(repo: Path, tmp_path: Path) -> Path:
+    """A linked worktree of ``repo``, with one undelivered entry in its own ledger."""
+    git = ["git", "-c", "user.name=Ada", "-c", "user.email=a@b"]
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "x"], cwd=repo, check=True)
+    wt = tmp_path / "widget-wt"
+    subprocess.run(["git", "worktree", "add", "-q", str(wt)], cwd=repo, check=True)
+    from lore_workflow.logbook import add
+
+    _sinks(["file", "pm"], pm={"kind": "command", "run": "exit 3"})
+    add(GOOD, "#9", wt)
+    return wt
+
+
+def test_flush_in_the_main_checkout_retries_a_linked_worktree_ledger(repo, linked, tmp_path):
+    out = tmp_path / "stdin"
+    _sinks(["file", "pm"], pm={"kind": "command", "run": f"cat > {out}"})
+    assert main(["log", "flush"]) == 0
+    assert out.read_text() == GOOD
+    wt_ledger = next((repo / ".git" / "worktrees").iterdir()) / "lore-ledger.md"
+    assert "pm=delivered" in wt_ledger.read_text()
+
+
+def test_the_counts_include_a_linked_worktree_ledger(repo, linked) -> None:
+    from lore_workflow.logbook import undelivered_count
+
+    assert undelivered_count(repo) == 1
+    assert undelivered_count(linked) == 1
+
+
+def test_a_retried_file_sink_writes_into_the_checkout_of_the_ledger(repo, linked, tmp_path):
+    from lore_workflow.logbook import flush
+
+    # The file sink delivered at `add`; drop the file and mark it undelivered again.
+    for f in (linked / "docs" / "logbook").rglob("*.md"):
+        f.unlink()
+    wt_ledger = next((repo / ".git" / "worktrees").iterdir()) / "lore-ledger.md"
+    wt_ledger.write_text(wt_ledger.read_text().replace("file=delivered", "file=undelivered"))
+    flush(repo)
+    assert len(list((linked / "docs" / "logbook").rglob("*.md"))) == 1
+    assert not (repo / "docs" / "logbook").exists()
+
+
+def test_flush_skips_a_locked_ledger_and_retries_the_others(repo, linked, tmp_path) -> None:
+    from lore_core.lockfile import flocked
+    from lore_workflow.logbook import add, flush
+
+    add(GOOD, "#10", repo)
+    out = tmp_path / "keys"
+    _sinks(["pm"], pm={"kind": "command", "run": f'echo "$LORE_ENTRY_KEY" >> {out}'})
+    wt_ledger = next((repo / ".git" / "worktrees").iterdir()) / "lore-ledger.md"
+    with flocked(wt_ledger.with_name("lore-ledger.md.lock")):
+        assert flush(repo) is not None
+    assert out.read_text() == "lore:acme/widget:#10\n"
+
+
+def _archive_only(repo: Path) -> Path:
+    """Move the live ledger aside as an archive and leave a live one without the line."""
+    live = repo / ".git" / "lore-ledger.md"
+    archived = live.with_name("lore-ledger.2026-11-12-3.done.md")
+    live.rename(archived)
+    live.write_text("# Lore ledger\n\n- [board] https://example.org/board\n")
+    return archived
+
+
+def test_flush_retries_a_line_only_in_an_archived_ledger(repo, tmp_path) -> None:
+    from lore_workflow.logbook import undelivered_count
+
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    _archive_only(repo)
+    assert undelivered_count(repo) == 1
+    out = tmp_path / "stdin"
+    _sinks(["pm"], pm={"kind": "command", "run": f"cat > {out}"})
+    assert main(["log", "flush"]) == 0
+    assert out.read_text() == GOOD
+    assert "pm=delivered" in _ledger(repo)
+    assert undelivered_count(repo) == 0
+
+
+def test_a_line_in_the_live_and_an_archived_ledger_is_delivered_once(repo, tmp_path) -> None:
+    from lore_workflow.ledger import archive_ledger
+
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    archive_ledger(repo / ".git" / "lore-ledger.md")  # carries the line into a new live ledger
+    count = tmp_path / "count"
+    _sinks(["pm"], pm={"kind": "command", "run": f"echo x >> {count}"})
+    assert main(["log", "flush"]) == 0
+    assert main(["log", "flush"]) == 0
+    assert count.read_text() == "x\n"
+
+
+def test_a_worktree_of_a_separate_git_dir_repo_sees_the_main_ledger(tmp_path) -> None:
+    """Review of PR #663: the common git dir need not be named `.git`."""
+    from lore_workflow.logbook import add, flush, undelivered_count
+
+    main_repo = tmp_path / "proj"
+    git = ["git", "-c", "user.name=Ada", "-c", "user.email=a@b"]
+    sep = ["git", "init", "-q", "--separate-git-dir", str(tmp_path / "proj.git"), str(main_repo)]
+    subprocess.run(sep, check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "x"], cwd=main_repo, check=True)
+    wt = tmp_path / "proj-wt"
+    subprocess.run(["git", "worktree", "add", "-q", str(wt)], cwd=main_repo, check=True)
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    add(GOOD, "#7", main_repo)
+    assert undelivered_count(wt) == 1
+    _sinks(["pm"], pm={"kind": "command", "run": "true"})
+    flush(wt)
+    assert undelivered_count(wt) == 0
+
+
+def test_archive_ledger_waits_for_a_flush_that_holds_the_lock(repo, tmp_path) -> None:
+    """Review of PR #663: an archive never races a background flush."""
+    import threading
+    import time
+
+    from lore_core.lockfile import flocked
+    from lore_workflow.ledger import archive_ledger
+
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    live = repo / ".git" / "lore-ledger.md"
+    with flocked(live.with_name("lore-ledger.md.lock")):
+        worker = threading.Thread(target=archive_ledger, args=(live,))
+        worker.start()
+        time.sleep(0.3)
+        assert not list(live.parent.glob("lore-ledger.*.done.md"))
+    worker.join(5)
+    assert list(live.parent.glob("lore-ledger.*.done.md"))

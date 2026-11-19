@@ -103,6 +103,8 @@ lore log show
 ```
 
 - `flush` retries each undelivered sink. It reads the sink definitions again, so a fixed definition works on the next flush.
+- `flush` reads the ledger of every checkout of the repo: the main checkout and each linked worktree. A `file` sink writes into the checkout whose ledger holds the entry. `flush` skips a ledger that another flush holds.
+- `flush` also reads the archived ledgers (`lore-ledger.<date>.done.md`) beside each ledger. It sends one entry to one sink once, also when two ledger files hold the line.
 - `show` prints the entries of this month from the `file` sink, newest first. A monthly file from before Lore 0.88 follows them.
 - The SessionStart hook and the session-end hook start `lore log flush` in the background when an undelivered line exists.
-- The SessionStart banner and the `route` block of `lore status` show the count of undelivered entries.
+- The SessionStart banner and the `route` block of `lore status` show the count of undelivered entries, over the same ledgers.

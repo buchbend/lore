@@ -41,7 +41,7 @@ def add_cmd(
 
 @app.command("flush")
 def flush_cmd() -> None:
-    """Retry every undelivered sink in this repo's ledger. Always exits 0."""
+    """Retry every undelivered sink in the ledger of each checkout of this repo. Always exits 0."""
     results = logbook.flush(Path.cwd())
     if results is None:
         print("another flush or `lore log add` is running; try again later")
