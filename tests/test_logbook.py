@@ -562,3 +562,23 @@ def test_a_worktree_of_a_separate_git_dir_repo_sees_the_main_ledger(tmp_path) ->
     _sinks(["pm"], pm={"kind": "command", "run": "true"})
     flush(wt)
     assert undelivered_count(wt) == 0
+
+
+def test_archive_ledger_waits_for_a_flush_that_holds_the_lock(repo, tmp_path) -> None:
+    """Review of PR #663: an archive never races a background flush."""
+    import threading
+    import time
+
+    from lore_core.lockfile import flocked
+    from lore_workflow.ledger import archive_ledger
+
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    live = repo / ".git" / "lore-ledger.md"
+    with flocked(live.with_name("lore-ledger.md.lock")):
+        worker = threading.Thread(target=archive_ledger, args=(live,))
+        worker.start()
+        time.sleep(0.3)
+        assert not list(live.parent.glob("lore-ledger.*.done.md"))
+    worker.join(5)
+    assert list(live.parent.glob("lore-ledger.*.done.md"))

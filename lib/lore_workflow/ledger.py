@@ -283,9 +283,17 @@ def archive_ledger(path: Path) -> Path:
     ValueError while a line is still open. A second archive on the same day
     gets a ``-2``, ``-3`` … suffix and leaves the earlier one in place.
     Each ``[logbook]`` line with an undelivered sink is carried into a new
-    ledger at *path*, so ``lore log flush`` still finds it. Returns the
+    ledger at *path*, so ``lore log flush`` still finds it. Holds the lock
+    of the ledger, so no ``lore log flush`` runs meanwhile. Returns the
     archive path.
     """
+    from lore_core.lockfile import flocked
+
+    with flocked(path.with_name(path.name + ".lock")):
+        return _archive(path)
+
+
+def _archive(path: Path) -> Path:
     entries = parse_ledger(path.read_text(encoding="utf-8"))
     still_open = open_entries(entries)
     if still_open:
