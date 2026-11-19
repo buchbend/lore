@@ -30,9 +30,21 @@ class BreadcrumbConfig:
 
 
 @dataclass
+class RoutingConfig:
+    """Repos this wiki serves, by git remote (ADR 0016 amendment).
+
+    The person's own scopes win; a wiki never names a sink.
+    """
+
+    scope: str = ""  # scope name; empty means the wiki's name
+    remote: list[str] = field(default_factory=list)
+
+
+@dataclass
 class WikiConfig:
     git: GitConfig = field(default_factory=GitConfig)
     breadcrumb: BreadcrumbConfig = field(default_factory=BreadcrumbConfig)
+    routing: RoutingConfig = field(default_factory=RoutingConfig)
 
 
 #: Config blocks lore used to honour and no longer does. Named explicitly so

@@ -1,10 +1,34 @@
 # Lore
 
-**A workflow and knowledge layer for teams that code with Claude Code.**
-Each session starts with a small, repo-scoped context. It follows one
+**A workflow and knowledge layer for teams that code with agents, in Claude
+Code and OpenCode.** Each session starts with a small, repo-scoped context. It follows one
 workflow from idea to merged PR. It files every fact where someone will
 read it: issues, PRs, ADRs and PRDs, a git-backed team wiki, a logbook.
 Lore itself calls no model. The agent in the session does the judging.
+
+## Why Lore
+
+Most teams code with agents alone. Each person works in a private chat.
+The decisions, the reasons and the open threads stay in that chat, and the
+chat ends. The pull request shows the diff. Nothing shows why.
+
+Lore turns agent work into team work:
+
+- **Context lives where your team already works.** The agent files each fact
+  as an issue, a comment, a pull request, an ADR or a wiki note. The next
+  session reads the same places, so does a colleague and so does their agent.
+- **People review what becomes team knowledge.** A fact enters the repo
+  through the review loop of issues and pull requests. No background process
+  writes shared memory on its own.
+- **The knowledge outlives the agents.** Everything Lore leaves behind is
+  markdown in git and artifacts on GitHub. A person can read it without Lore,
+  without a model and without an API key. When API prices rise or a tool goes
+  away, your team keeps its history.
+- **No server, no model calls, no new database.** Lore is a CLI, hooks and an
+  MCP server on your machine. Transcripts stay on your machine.
+- **Take the part that fits.** The core is small: the context at session
+  start, the filing rule and search. The build workflow (orient, grilling,
+  to-epic, build, review) is there when your team wants it.
 
 ## How it works
 
@@ -31,8 +55,9 @@ The figure is from the ADASS 2026 talk; the bullets below describe Lore today.
   [file facts as artifacts](docs/how-to/file-facts-as-artifacts.md).
 - **Team wiki.** A markdown wiki in its own git repo: projects, concepts,
   the orientation note per repo, and system maps across repos. Notes
-  arrive by PR or `/lore:inbox`; Lore mirrors private transcripts there
-  but does not compose wiki notes.
+  arrive by hand edits, by PR, by `/lore:inbox`, or as a wiki entry that
+  `/lore:wiki` writes after the person says yes. Lore mirrors private
+  transcripts there.
 - **Logbook.** Every finish point writes a logbook entry to a configured
   sink: a file in the repo, or a command such as a project tracker. See
   [use the logbook](docs/how-to/use-the-logbook.md).
@@ -79,6 +104,7 @@ The context and upkeep skills:
 | `/lore:context` | Show what Lore injected this session. |
 | `/lore:handover` | Part one writes a handover note for the next session. Part two writes the handover section for work that stops early, and turns follow-up work into a seed issue. |
 | `/lore:inbox` | Route inbox files into the right wiki. |
+| `/lore:wiki` | Write one wiki entry after the person says yes, then commit and push it with `lore wiki commit`. |
 | `/lore:map` | Keep the system map true across repos. |
 | `/lore:system` | Bring every checkout of a system to its target branch. |
 
@@ -92,7 +118,8 @@ curl -fsSL https://raw.githubusercontent.com/buchbend/lore/main/install.sh | sh
 
 The script installs the `lore` CLI with `pipx`, `uv tool` or `pip --user`,
 then runs `lore setup`. Setup creates or links a wiki and installs the
-Claude Code plugin, plus Cursor's MCP wiring where present. It offers a
+Claude Code plugin, plus Cursor's MCP wiring and the OpenCode plugin where
+present. It offers a
 scope for the current repo and runs the checks. Upgrade later with `lore update`.
 
 By hand:
@@ -126,20 +153,36 @@ its own git repo, mounted as a symlink or an inline directory:
 ```bash
 ln -s ~/git/myorg/team-knowledge ~/lore/wiki/team   # mount an existing wiki
 lore wiki new research                              # or scaffold a new one
+lore wiki check --wiki research                     # check links, descriptions, filenames, writing rules
 ```
 
-**Scopes.** A scope maps a folder of repos to a wiki, in
-`~/.config/lore/config.yml`. Every repo below that folder uses the wiki.
-A committed `.lore.yml` in a repo holds exceptions only.
+**Scopes.** A scope maps repos to a wiki, in `~/.config/lore/config.yml`.
+It matches every repo below a folder, every repo with a git remote that
+fits a pattern (GitHub or GitLab), or both. A folder match wins. A committed
+`.lore.yml` in a repo holds exceptions only.
 
 ```bash
-lore setup scope ~/git/myorg     # or: --name myorg --wiki team --remote 'github.com/myorg/*'
+lore setup scope ~/git/myorg                    # every repo below the folder
+lore setup scope --remote-only --wiki team      # every repo with this repo's owner/*, wherever cloned
 ```
+
+**Join a team.** A colleague's folders differ from yours, so route by remote:
+
+```bash
+lore setup --wiki-clone git@github.com:myorg/team-wiki.git
+lore setup scope --remote-only --wiki team-wiki --remote 'github.com/myorg/*'
+```
+
+A wiki can declare its remotes in its `.lore-wiki.yml` (`routing.remote`).
+Then the clone is the whole setup. Sinks stay personal.
+
+**See the wiring.** `lore config` shows every wiki with its git remote,
+every scope with its folders and remote patterns, the defaults, sinks and
+sources, and why the current repo routes where it does.
 
 **Sources and sinks.** `lore setup source` adds search sources beyond the
 wiki and GitHub (DokuWiki, any command). `lore setup sink` sets where
-logbook entries go. `lore config` shows the resolved configuration and
-where each value comes from; `lore config secret` stores tokens.
+logbook entries go. `lore config secret` stores tokens.
 
 Guides: [onboarding](docs/how-to/onboarding.md),
 [route repos to a wiki](docs/how-to/route-repos-to-a-wiki.md),

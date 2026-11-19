@@ -29,20 +29,22 @@ HIDDEN = {
     "mcp",
     "workflow",
     "tier",
+    "brief",
     "codemap",
     "glossary",
     "map",
     "trace",
     "transcripts",
     "style",
+    "adr",
     "ingest",
     "inbox",
     "handover",
-    "on",
-    "off",
     "migrate",
 }
 DELETED = [
+    "on",
+    "off",
     "drill",
     "curator",
     "lint",
@@ -78,9 +80,9 @@ def test_deleted_command_is_usage_error(name: str) -> None:
     assert runner.invoke(app, [name]).exit_code != 0
 
 
-def test_wiki_holds_new_lint() -> None:
+def test_wiki_holds_new_check_commit() -> None:
     wiki = _root().commands["wiki"]
-    assert {"new", "lint"} <= set(wiki.commands)
+    assert set(wiki.commands) == {"new", "check", "commit"}
 
 
 def test_migrate_has_no_flag_blocks() -> None:

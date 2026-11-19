@@ -5,7 +5,7 @@ produces high-quality rankings. Model2Vec 256-dim embeddings layer on
 via Reciprocal Rank Fusion when installed; absent, we return BM25-only.
 
 Index stored at $LORE_CACHE/search.db (default ~/.cache/lore/).
-Incremental via mtime + SHA256 from the catalog.
+Incremental via SHA256 per note.
 """
 
 from __future__ import annotations
@@ -19,10 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from lore_core.config import get_wiki_root
-from lore_core.lint import (
-    SKIP_DIRS,
-    SKIP_FILES,
-    discover_notes,
+from lore_core.wiki_check import (
+    wiki_notes,
     discover_wikis,
 )
 from lore_core.schema import parse_frontmatter
@@ -232,11 +230,7 @@ class FtsBackend:
                         )
                     }
                     seen: set[str] = set()
-                    for fpath in discover_notes(wiki_path):
-                        if fpath.name in SKIP_FILES:
-                            continue
-                        if any(part in SKIP_DIRS for part in fpath.parts):
-                            continue
+                    for fpath in wiki_notes(wiki_path):
                         rec = _note_record(wiki_name, wiki_path, fpath)
                         if rec is None:
                             continue

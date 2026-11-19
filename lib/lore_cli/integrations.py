@@ -1,4 +1,4 @@
-"""Agent integrations: install, uninstall and update Lore's Claude Code and Cursor wiring.
+"""Agent integrations: install, uninstall and update Lore's Claude Code, Cursor and OpenCode wiring.
 
 The engine behind the Agents step of ``lore setup``, ``lore uninstall`` and
 ``lore update``. Each integration (``lore_core.install.REGISTRY``) returns a
@@ -330,6 +330,9 @@ _SUCCESS_INTEGRATION_SENTENCE = {
     "cursor": (
         "Done. Restart Cursor and open the MCP tools panel; you should "
         "see lore_search and 8 others."
+    ),
+    "opencode": (
+        "Done. Start a new OpenCode session; the banner and the lore MCP server load with it."
     ),
 }
 
@@ -695,7 +698,7 @@ def _exit_with(rc: int) -> None:
 _INTEGRATION = typer.Option(
     None,
     "--integration",
-    help="Integration to install for (claude|cursor|all). Default: all detected.",
+    help="Integration to install for (claude|cursor|opencode|all). Default: all detected.",
 )
 _YES = typer.Option(
     False, "--yes", "-y", help="Non-interactive; assume Y to all non-replace prompts."
@@ -760,7 +763,10 @@ def uninstall_command(
     force: bool = _FORCE,
     lore_repo: str = _LORE_REPO,
 ) -> None:
-    """Remove Lore's Claude Code and Cursor wiring (the inverse of `lore setup`'s Agents step)."""
+    """Remove Lore's Claude Code, Cursor and OpenCode wiring.
+
+    The inverse of `lore setup`'s Agents step.
+    """
     args = _make_args(
         integration=integration,
         yes=yes,

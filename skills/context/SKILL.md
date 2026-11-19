@@ -24,9 +24,8 @@ Mention `lore setup` only if the user asks why.
 - Re-narrate the output.
 - Invoke `lore hook session-start` to re-generate — use `lore_search` or
   `lore_context_pack` for a fresh gather.
-- Read wiki notes, grep the catalog, or call MCP tools.
+- Read wiki notes, grep the wiki, or call MCP tools.
 
 ## Related
 
 - `lore_context_pack` — fresh, scoped gather (different from showing the cache)
-- `lore off` — mute hooks for the session

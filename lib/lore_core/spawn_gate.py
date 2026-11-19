@@ -19,6 +19,27 @@ from __future__ import annotations
 # Tool names under which Claude Code exposes the subagent spawn.
 SPAWN_TOOL_NAMES = frozenset({"Task", "Agent"})
 
+# OpenCode 2.x spawn tool. It has no model argument: the model belongs to the
+# agent named in ``input.agent``, so the plugin passes that agent's pinned
+# model (empty when none) as ``tool_input.model``.
+OPENCODE_SPAWN_TOOL = "subagent"
+
+_OPENCODE_UNKNOWN_AGENT_MESSAGE = (
+    "Spawn blocked: OpenCode does not know the agent {agent!r} named in this "
+    "subagent call. Retry with an agent OpenCode lists; for a tier use "
+    "`lore tier resolve <frontier|strong|mid|cheap>` (lore-<tier>).\n"
+)
+
+_OPENCODE_DENY_MESSAGE = (
+    "Spawn blocked: the agent named in this subagent call pins no model, so it "
+    "would implicitly inherit the session model — the tier contract forbids "
+    "that (docs/model-tiers.md). Resolve the step's semantic tier with "
+    "`lore tier resolve <frontier|strong|mid|cheap>` and retry the call with "
+    "the agent set to that command's output (lore-<tier>). A built-in agent "
+    "such as general or explore passes once your OpenCode config pins a model "
+    "for it.\n"
+)
+
 _DENY_MESSAGE = (
     "Spawn blocked: this subagent call carries no explicit model, so it "
     "would implicitly inherit the session model — the tier contract "
@@ -41,14 +62,18 @@ def check_spawn(payload: dict) -> str | None:
     """
     if not isinstance(payload, dict):
         return None
-    if payload.get("tool_name") not in SPAWN_TOOL_NAMES:
+    tool = payload.get("tool_name")
+    if tool != OPENCODE_SPAWN_TOOL and tool not in SPAWN_TOOL_NAMES:
         return None
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         tool_input = {}
+    deny = _OPENCODE_DENY_MESSAGE if tool == OPENCODE_SPAWN_TOOL else _DENY_MESSAGE
+    if tool == OPENCODE_SPAWN_TOOL and tool_input.get("agent_known") is False:
+        deny = _OPENCODE_UNKNOWN_AGENT_MESSAGE.format(agent=tool_input.get("agent"))
     if tool_input.get("subagent_type") == "fork":
         return None
     model = tool_input.get("model")
     if isinstance(model, str) and model.strip():
         return None
-    return _DENY_MESSAGE
+    return deny

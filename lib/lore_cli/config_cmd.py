@@ -13,7 +13,7 @@ from rich.console import Console
 
 app = typer.Typer(
     add_completion=False,
-    help="Show resolved Lore configuration.",
+    help="How Lore is wired: wikis, scopes, sinks, sources; edit the typed config.",
     no_args_is_help=False,
     rich_markup_mode="rich",
 )
@@ -31,70 +31,132 @@ def _format_path(p: Path) -> str:
     return str(p)
 
 
+_CWD = typer.Option(None, "--cwd", help="Explain the route of this folder (default: here).")
+
+
 @app.callback(invoke_without_command=True)
-def config(ctx: typer.Context) -> None:
-    """Show vault layout (no subcommand) or dispatch to show / get / set / schema."""
+def config(
+    ctx: typer.Context,
+    cwd: Path = _CWD,
+) -> None:
+    """How everything is wired: wikis, scopes, sinks, sources, and this folder's route.
+
+    Subcommands show, get, set, unset, edit and schema read and write the typed config.
+    """
     if ctx.invoked_subcommand is not None:
         return
-    try:
-        lore_root = get_lore_root()
-    except Exception:
-        console.print("[red]LORE_ROOT not set.[/red] Run `lore setup` or export $LORE_ROOT.")
-        raise typer.Exit(1) from None
-
-    console.print(f"  Vault: {_format_path(lore_root)}")
-
-    try:
-        wiki_root = get_wiki_root()
-        wikis = (
-            sorted(d.name for d in wiki_root.iterdir() if d.is_dir()) if wiki_root.exists() else []
-        )
-    except Exception:
-        wikis = []
-
-    if wikis:
-        console.print(f"  Wikis: {', '.join(wikis)}")
-    else:
-        console.print("  Wikis: [dim]none[/dim]")
-
+    for line in wiring_lines(cwd or Path.cwd()):
+        console.print(line, markup=False, highlight=False, soft_wrap=True)
     console.print()
+    console.print("Change it: lore setup scope | wiki | sink, or lore config edit", markup=False)
 
-    from lore_core.config import user_config_path
-    from lore_core.root_config import load_root_config
 
-    scopes = load_root_config(lore_root).scopes
-    if scopes:
-        console.print(f"  Scopes ({len(scopes)}):")
-        for name, sc in scopes.items():
-            sc = sc if isinstance(sc, dict) else {}
-            console.print(f"    {name:20s} {sc.get('path')} -> {sc.get('wiki') or 'default wiki'}")
-    else:
-        console.print("  Scopes: [dim]none[/dim] (add one with [cyan]lore setup scope[/cyan])")
+def _git_remote(path: Path) -> str | None:
+    import subprocess
 
-    console.print()
-    console.print("  [dim]Files you edit:[/dim]")
-    console.print(f"    {_format_path(user_config_path()):50s} your config")
-    for wiki in wikis:
-        wiki_cfg = lore_root / "wiki" / wiki / ".lore-wiki.yml"
-        if wiki_cfg.exists():
-            console.print(f"    {_format_path(wiki_cfg):50s} wiki config")
-
-    console.print()
-    console.print("  [dim]Files Lore manages (do not edit):[/dim]")
-    for name, desc in [
-        ("transcript-ledger.json", "transcript tracking"),
-    ]:
-        p = lore_root / ".lore" / name
-        if p.exists():
-            console.print(f"    {_format_path(p):50s} {desc}")
-
-    console.print()
-    console.print("  For health checks: [cyan]lore setup[/cyan]")
-    console.print("  For live activity: [cyan]lore status[/cyan]")
-    console.print(
-        "  For typed config: [cyan]lore config show[/cyan] · [cyan]get[/cyan] · "
-        "[cyan]set[/cyan] · [cyan]unset[/cyan] · [cyan]edit[/cyan] · [cyan]schema[/cyan]"
+    out = subprocess.run(
+        ["git", "-C", str(path), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def wiring_lines(cwd: Path) -> list[str]:
+    """The wiring view (ADR 0016): every wiki, scope, sink and source, then the
+    route of ``cwd`` and why. ``!`` marks a line that needs a look."""
+    from lore_core.config import list_wikis, user_config_path
+    from lore_core.config_schema import _read_raw
+    from lore_core.route import _as_list, _remote_hits, _remote_id, wiki_declared_scopes
+
+    from lore_cli.status_cmd import _route_lines
+
+    lore_root = get_lore_root()
+    person = _read_raw(user_config_path())
+    out = [
+        f"Config  {_format_path(user_config_path())}",
+        f"Vault   {_format_path(lore_root)}  (the folder that holds your wikis)",
+        "",
+    ]
+
+    out.append("Wikis")
+    wikis = list_wikis(lore_root)
+    for w in wikis:
+        is_git = (w / ".git").exists()
+        where = (_git_remote(w) or "git, no remote") if is_git else "local, no git: not synced"
+        out.append(f"  {'·' if is_git else '!'} {w.name:14s} {where}")
+    if not wikis:
+        out.append("  ! none: run `lore setup wiki`")
+
+    scopes = person.get("scopes") if isinstance(person.get("scopes"), dict) else {}
+    declared, declared_notes = wiki_declared_scopes()
+    out += ["", "Scopes  (a repo matches by folder first, then by git remote)"]
+    names = {w.name for w in wikis}
+    for name, sc in scopes.items():
+        sc = sc if isinstance(sc, dict) else {}
+        how, bad = [], []
+        if isinstance(sc.get("path"), str):
+            how.append(f"folder  {_format_path(Path(sc['path']).expanduser())}")
+            if not Path(sc["path"]).expanduser().is_dir():
+                bad.append("folder missing")
+        how += [f"remote  {r}" for r in _as_list(sc.get("remote"))]
+        if name in declared:
+            src = f"(declared by wiki {declared[name]['wiki']})"
+            how += [f"remote  {r}  {src}" for r in declared[name]["remote"]]
+        if not how:
+            bad.append("no folder and no remote: matches nothing")
+        wiki = sc.get("wiki") or (declared.get(name) or {}).get("wiki") or "default wiki"
+        if wiki != "default wiki" and wiki not in names:
+            bad.append(f"no wiki {wiki!r}")
+        extra = f" · logbook {', '.join(_as_list(sc['logbook']))}" if sc.get("logbook") else ""
+        out.append(f"  {'!' if bad else '·'} {name} → wiki {wiki}{extra}")
+        out += [f"      {h}" for h in how]
+        out += [f"      ! {b}" for b in bad]
+    for name, d in declared.items():
+        if name not in scopes:
+            out.append(f"  · {name} → wiki {d['wiki']}  (declared by wiki {d['wiki']})")
+            out += [f"      remote  {r}" for r in d["remote"]]
+    if not scopes and not declared:
+        out.append("  ! none: run `lore setup scope`")
+    out += [f"  ! {n}" for n in declared_notes]
+
+    defaults = person.get("defaults") if isinstance(person.get("defaults"), dict) else {}
+    out += ["", "Defaults  (for a repo no scope matches)"]
+    out.append(
+        "  · "
+        + (" · ".join(f"{k} {', '.join(_as_list(v))}" for k, v in defaults.items()) or "none")
+    )
+
+    for title, key in (
+        ("Sinks  (where logbook entries go; file is built in)", "sinks"),
+        ("Sources  (extra search sources)", "sources"),
+    ):
+        block = person.get(key) if isinstance(person.get(key), dict) else {}
+        out += ["", title]
+        for n, d in block.items():
+            d = d if isinstance(d, dict) else {}
+            detail = d.get("run") or d.get("url") or d.get("host") or ""
+            first = str(detail).splitlines()[0][:70] if detail else ""
+            out.append(f"  · {n:14s} {d.get('kind', '?')}  {first}".rstrip())
+        if not block:
+            out.append("  · none")
+
+    out += ["", f"This folder  {_format_path(cwd.resolve())}"]
+    rid = _remote_id(cwd)
+    if rid:
+        out.append(f"  · remote   {rid}")
+    route_lines = _route_lines(cwd)[1:]
+    out += route_lines
+    # Path beats remote (ADR 0016): say so when a remote scope loses.
+    from lore_core.route import resolve_route
+
+    route = resolve_route(cwd)
+    if rid and route.origins.get("scope", "").startswith("path"):
+        lost = [n for n in _remote_hits(rid, {**declared, **scopes}) if n != route.scope]
+        if lost:
+            out.append(f"  ! remote also matches scope {', '.join(lost)}; the folder match wins")
+    return out
 
 
 def _format_value(v: object) -> str:

@@ -6,6 +6,7 @@ import pytest
 from lore_workflow.ledger import (
     LedgerEntry,
     LedgerParseError,
+    append_entry,
     archive_ledger,
     board_api_path,
     format_entry,
@@ -172,3 +173,13 @@ def test_board_line_carries_no_outcome_and_leaves_with_the_archive(tmp_path) -> 
 def test_board_api_path_reads_a_github_comment_url() -> None:
     assert board_api_path(BOARD_URL) == "repos/acme/widget/issues/comments/42"
     assert board_api_path("https://example.org/x") is None
+
+
+def test_open_question_blocks_the_finish_point(tmp_path) -> None:
+    path = tmp_path / "lore-ledger.md"
+    append_entry(path, LedgerEntry(kind="question", outcome="open", text="Keep the old flag?"))
+    with pytest.raises(ValueError, match="open line"):
+        archive_ledger(path)
+    set_outcome(path, "old flag", "approved")
+    assert parse_ledger(path.read_text())[0].outcome == "approved"
+    archive_ledger(path)

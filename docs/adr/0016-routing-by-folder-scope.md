@@ -16,6 +16,9 @@
 - **Default:** a scope may list git remotes. Lore then matches a repo by its
   remote too. When a path match and a remote match name different scopes,
   the path match wins.
+- **Default:** a wiki may declare the remote patterns it serves, in the
+  `routing:` block of its `.lore-wiki.yml`. Lore matches them only when no
+  remote pattern in the person's config matches. A wiki names no sink.
 - **Default:** a repo's committed `.lore.yml` holds exceptions only. It names
   sinks, sources or a tracker by name, or it opts out of a sink.
 - **Invariant** (test: `tests/test_route.py::test_invariant_reporting_boundary_undefined_sink_in_lore_yml_gives_file_sink`):
@@ -99,3 +102,10 @@ does not reach a team logbook.
 - 2026-10-11: epic #466 shipped (PR #479). The reporting boundary and the
   secrets rule become invariants. The boundary covers a sink name from any
   origin.
+- 2026-11-16: a wiki may declare remote patterns (`routing.remote` in
+  `.lore-wiki.yml`). A colleague who clones a team wiki then needs no scope
+  of their own, and a change to the patterns reaches every member with the
+  next wiki pull. The rejected alternative "declare the team sink in the
+  wiki" stays rejected: a wiki declares remotes, never a sink, so the
+  reporting boundary holds. A scope may also have remotes and no folder
+  (`lore setup scope --remote-only`).

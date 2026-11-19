@@ -84,6 +84,7 @@ errors when the env var is unset and does not fall back to `~/lore`.
 |-----|------|---------|---------|-----------|
 | `LORE_CHILD_MODE` | `1` \| unset | unset | `lore_cli/hooks.py:_in_child_mode` | (internal — `lore_cli/spawn.py` sets it on every detached child it starts, so hooks never re-enter inside one. Not a user knob.) |
 | `LORE_SUPPRESS_CAPTURE` | `1` \| unset | unset | `lore_cli/hooks.py:_capture_suppressed`, checked first thing in `capture()` | (dispatch contract — an orchestrator sets it for a teammate session whose transcript must not become a standalone note. Unset leaves capture unchanged.) |
+| `LORE_NO_UPDATE_CHECK` | `1` \| unset | unset | `lore_cli/hooks.py:_update_hint` | (turns off the once-a-day SessionStart check for a newer release, and its "Run lore update" nudge. Set it offline or in tests.) |
 
 #### Observability / runtime
 
@@ -178,6 +179,11 @@ Per-vault-mount policy. Schema lives in
   whether the wiki has a git remote; an explicit value in the file
   always wins over that default.
 - `breadcrumb.{mode, scope_filter}`
+- `routing.{scope, remote}`: the repos this wiki serves, by git remote
+  (ADR 0016 amendment). `scope` names the scope and defaults to the wiki's
+  name. The person's own remote patterns win over a wiki's. A wiki never
+  names a sink: when the person also has a scope of that name, its sinks and
+  sources apply.
 
 A `curator:`, `briefing:`, `models:` or `heartbeat:` block is a retired
 key. `WikiConfig` carries none of these fields, and `load_wiki_config`

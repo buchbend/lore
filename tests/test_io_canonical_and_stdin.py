@@ -184,3 +184,19 @@ def test_hook_stdin_result_truthiness() -> None:
     assert bool(HookStdinResult(b"x", "ok")) is True
     assert bool(HookStdinResult(b"", "empty-payload")) is False
     assert bool(HookStdinResult(None, "tty")) is False
+
+
+def test_atomic_write_through_a_symlink_keeps_the_link(tmp_path) -> None:
+    """A config linked from a dotfiles repo stays linked after Lore writes it."""
+    from lore_core.io import atomic_write_text
+
+    target = tmp_path / "dotfiles" / "config.yml"
+    target.parent.mkdir()
+    target.write_text("old\n")
+    link = tmp_path / "config.yml"
+    link.symlink_to(target)
+
+    atomic_write_text(link, "new")
+
+    assert link.is_symlink()
+    assert target.read_text() == "new\n"

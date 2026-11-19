@@ -12,14 +12,21 @@ that no real symbol grounds does not belong here.
 - **Wiki** — a mounted knowledge store at `<vault>/wiki/<name>/`. Each
   wiki is its own git repo; a vault can host several. `lore wiki new`
   scaffolds `projects/`, `concepts/`, `decisions/` and `inbox/`. Lore writes nothing into a wiki automatically. A human,
-  `/lore:inbox`, or an agent's pull request writes it, when something is
-  worth keeping.
-- **Scope** — a folder named in the person's lore config, such as
-  `~/git/ccatobs`. A scope sets the wiki, sinks, sources and tracker for
-  every repo below the folder. The longest matching folder wins. A scope
-  can also list git remotes. Lore then matches a repo by its remote as
-  well, and a path match wins over a remote match. _Avoid_: attachment,
-  namespace. Decision in ADR 0016.
+  `/lore:inbox`, an agent's pull request, or `/lore:wiki` after a yes
+  writes it, when something is worth keeping. A remote is optional.
+- **Wiki entry** — one note of a wiki that a person or an agent wrote on
+  purpose. An agent writes one only after the person said yes in the
+  session, with `/lore:wiki`; `lore wiki commit` checks, commits and
+  pushes it at once. Research, a scoping of options, an explanation for a
+  human reader and draft paper material are wiki entries. A decision, a
+  defect, an experiment result and the story of the work are not.
+- **Scope** — a named entry in the person's lore config. It matches repos
+  by a folder, such as `~/git/ccatobs`, by git remote patterns, such as
+  `github.com/ccatobs/*`, or by both. A scope sets the wiki, sinks, sources
+  and tracker for every repo it matches. The longest matching folder wins,
+  and a path match wins over a remote match. A wiki can declare remote
+  patterns for a scope in its `.lore-wiki.yml`; the person's own patterns
+  win over the wiki's. _Avoid_: attachment, namespace. Decision in ADR 0016.
 - **Route** — the values that apply in one working directory: repo, wiki,
   scope, tracker, sinks and sources, each with its origin.
   `resolve_route` computes it and `lore status` shows it. _Avoid_:
@@ -153,6 +160,9 @@ Terms used in the workflow layer and orchestration:
   `plugin.json` and dispatched by CLI invocation or intra-skill routing.
   Lore ships one plugin, `lore`; every skill lives in `skills/` and has the
   name `lore:<name>`, the workflow skills too.
+- **Host** — the coding harness that runs a session and calls Lore's hooks:
+  Claude Code, Cursor or OpenCode. `lore tier resolve --host` and the
+  `LORE_HOST` variable name it. _Avoid_: harness, integration, client.
 - **Lore context pack** — synonym for `lore_context_pack` (see above).
 - **Codemap excerpt** — a bounded, ranked slice of the `lore codemap`
   output, token-budgeted (~1k tokens) and curated for a specific feature
@@ -285,6 +295,10 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
 - **Build order** — the feature table in an epic tracker issue. It has
   one row per feature, with its issue, repo, type and blockers.
   _Avoid_: roadmap.
+- **Brief** — the one object that `lore brief` returns for an intent. It
+  holds the ranked context pack, the first section of each top doc, a
+  code-map excerpt and the matching glossary entries. `orient` reads the
+  brief before any other homework call. _Avoid_: context dump.
 - **Risk level** — `low` or `high`, from `lore workflow risk <pr>`. The
   level sets the review depth. An agent raises the level and never
   lowers it.
@@ -303,6 +317,16 @@ Decisions in ADR 0014 and 0015, spec in PRD 0015.
   build. `to-epic` names it in the epic body. `build` merges it into the
   epic branch when the target branch lacks the PRD. _Avoid_: docs branch,
   PRD branch.
+- **Substep** — one ordered step inside a slice, written as a numbered
+  checklist item in the sub-issue. One teammate builds the substeps of a
+  slice in order on one branch, one commit per substep. The teammate ticks
+  the box as each commit lands. One review covers the slice.
+- **Review plan** — the review lenses that `to-epic` proposes for an epic,
+  with each row tagged by the lenses it needs. The user approves the plan at
+  the `to-epic` checkpoint. The correctness review runs per row, before the
+  row merges into the epic branch. Each other lens runs once, at the end of
+  the epic, over all rows tagged with it. ADR 0023 (epics split on release
+  order, not topic) records the decision.
 - **Seed issue** — a tracker issue labeled `epic-seed` that the `handover`
   skill writes. It carries intent and findings for a cold session to
   orient on. It is no spec.
@@ -342,6 +366,21 @@ ships, the term names the planned behavior.
 - **Context finder** — Lore's retrieval role: the tools that find where
   context lives and pull it in (`lore_search`, `lore_drill`, context
   pack, codemap, repo docs). Say "context finder", not "funnel".
+
+### Hosts
+
+Decision in ADR 0022 (Lore runs in OpenCode through a generated plugin).
+
+- **Event table** — the map from each Claude Code hook event to the hook
+  of another host. A row can say "not mapped" and give the reason. Lore
+  generates the OpenCode plugin from the event table. _Avoid_: hook map,
+  event map.
+- **Tier subagent** — an OpenCode agent named `lore-<tier>` that pins the
+  model of its tier. In OpenCode, `lore tier resolve` prints the tier
+  subagent. _Avoid_: tier agent, model agent.
+- **Session file** — the JSON-lines copy of one OpenCode session. The
+  OpenCode plugin writes the session file. The `opencode` adapter and the
+  token record read it. _Avoid_: transcript file, dump.
 
 ### Roadmap
 

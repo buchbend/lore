@@ -8,6 +8,106 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.112.0] - 2026-11-18
+
+- `lore config` shows the whole wiring: each wiki with its git remote and each scope with its folder and remotes. It also shows the route of the current folder (#642).
+- A wiki can declare the repos it serves in `.lore-wiki.yml`. `lore setup scope --remote-only` writes a scope without a folder (#642).
+- `atomic_write_text` writes through a symlink, so a config linked from a dotfiles repo stays a link (#642).
+- `/lore:inbox` commits each note with `lore wiki commit` (#619).
+
+## [0.111.0] - 2026-11-18
+
+- Follow-ups of epic #644 (epic #652). The context pack with an intent keeps the focus docs first. Old ADRs and shipped PRDs rank below current docs (#648).
+- The build-order validator checks each lens, and `validate-build-order --json` prints the lenses of each row (#649).
+- `lore workflow after-merge` prints the board before the GitHub calls. Lens reviews get the stage tag `build:lens-review`, and the ADR check reads only the status (#650).
+
+## [0.110.0] - 2026-11-18
+
+- Larger epics and code mode (epic #644). `to-epic` splits epics only on release order (ADR 0023), so one epic holds several topics, slices with substeps and a review plan; lenses run once at the epic end.
+- `lore brief --json` returns the filtered orient brief in one call, the context pack takes an `intent`, and `lore.api` lets a script chain the lore tools.
+- `lore workflow after-merge` runs the routine steps after each feature merge of an epic.
+
+## [0.109.0] - 2026-11-17
+
+- Build runs fix small follow-ups in the PR that found them and list them under `## Found and fixed` (#643). A decision for the user becomes a `question` ledger line: the run builds a cheap-to-undo guess or parks only the dependent work, and asks in one batched message with context. Epics no longer stop on a HITL row or an unclear spec.
+
+## [0.108.1] - 2026-11-15
+
+- Build runs add the release bump after the merge approval, immediately before the merge, on a branch with `main` merged in (#638). A review fix no longer forces a redone bump.
+
+## [0.108.0] - 2026-11-15
+
+- `lore off` and `lore on` are removed, with the session mute behind them (#633). Lore reads no mute file in the hooks, the MCP server or the OpenCode plugin. OpenCode users: run `lore update`, or the old plugin keeps its mute check.
+
+## [0.107.2] - 2026-11-14
+
+- OpenCode token trace (#634): a subagent call matches its child session by the session ID OpenCode records on the call; the prompt fallback needs an exact match. Two calls with no id get two rows. `has_tokens` counts 1-hour cache writes.
+
+## [0.107.1] - 2026-11-14
+
+- Claude Code and OpenCode round trip (epic #632). Run `lore update` after the upgrade: it rewrites the OpenCode plugin.
+- `lore off` in OpenCode also refuses the `lore.` MCP tool calls of the muted session (#626).
+- A Claude Code session started from an OpenCode shell detects Claude Code as its host and uses its own session id. The OpenCode plugin removes the Claude Code variables from the commands and agent shells it starts, so the reverse case keeps OpenCode (#627).
+- OpenCode capture removes a session file older than 7 days once the transcript index holds its session (#628).
+- Five small fixes (#629): `lore setup` writes `@AGENTS.md` into an empty vault `CLAUDE.md`; `has_tokens` counts reasoning tokens; the OpenCode token trace matches same-prompt subagent calls to their own child sessions; `uninstall_plan` skips an `mcp` or `commands` value that is no object; the plugin runs `lore hook session-start` once per session.
+
+## [0.107.0] - 2026-11-14
+
+- Lore runs in OpenCode 2.x (epic #615, OpenCode as a host). `lore setup` finds the `opencode` binary and writes four things into `~/.config/opencode/`: a generated plugin, the `lore` MCP server, one `lore:<name>` command per skill and four tier subagents. ADR 0022 records the design; `docs/how-to/use-lore-in-opencode.md` is the how-to.
+- The plugin adds the session-start banner, the per-prompt text and the pre-compact text to main sessions (#612). The plugin sets `LORE_HOST` and `LORE_SESSION_ID` for the agent shell. The plugin runs the spawn gate on each `subagent` call (#614, #624).
+- Capture writes each OpenCode session as a session file (#613). The `opencode` adapter and the token record read it. The token record counts reasoning tokens and the reported cost (#625).
+- `lore tier resolve` prints `lore-<tier>` in OpenCode; `tiers.overrides.opencode` sets the tier models (#614).
+- Hook commands are host-neutral; agent instructions live in `AGENTS.md`, and `CLAUDE.md` holds `@AGENTS.md` (#611). `lore setup` migrates an old vault `CLAUDE.md` (#621).
+- `lore off` and the mute checks read `LORE_SESSION_ID`; session-ID cache files carry a `sid-` prefix (#622).
+- The OpenCode installer repairs missing config entries and keeps the keys a person added (#623).
+- The wheel ships `skills/` and the plugin manifest, so a pipx install without Claude Code can write the OpenCode plugin.
+
+## [0.106.0] - 2026-11-13
+
+- New skill `/lore:wiki`: after the person says yes, an agent writes one wiki entry (research, scoping, an explanation, draft paper material) and commits it (#601).
+- New command `lore wiki commit <entry>`: checks the entry, runs `git init` in a wiki that is no repo, commits other hand edits first, merges the remote first and pushes after; a conflict keeps the local commit and names the paths.
+- The SessionStart directive and `lore style show filing` name what a wiki entry is; ADR 0012 gets an amendment.
+
+## [0.105.2] - 2026-11-13
+
+- The search index and `lore migrate frontmatter` walk every folder of a wiki, not four fixed ones (#605).
+
+## [0.105.1] - 2026-11-13
+
+- Remove the unused frontmatter field tables (`REQUIRED_FIELDS`, `OPTIONAL_FIELDS`, `required_fields_for`) from `lore_core.schema` (#604)
+
+## [0.105.0] - 2026-11-13
+
+### Fixed
+
+- **The SessionStart banner showed an old version.** Lore picked the newest folder in the Claude plugin cache by sorting the names as text, so `0.99.1` won over `0.104.0`. Lore now sorts the version numbers as numbers. The fix also applies to every other reader of that folder, such as the skills tree.
+
+### Added
+
+- **An update nudge in the SessionStart banner.** Once a day, a background child reads the latest version from `main` on GitHub. When that version is newer than the installed one, the next banner says `lore X is out (installed: Y). Run \`lore update\`.` The check never holds up the banner. `LORE_NO_UPDATE_CHECK=1` turns it off.
+
+## [0.104.0] - 2026-11-12
+
+Issue #600 (replace `lore wiki lint` with one check command for wiki notes).
+
+### Added
+
+- **`lore wiki check`.** It checks every `.md` note of a wiki, in every folder outside the skip list, or one file. A broken wikilink, a missing `description` and a duplicate filename are errors and give exit code 1. Where Vale is on `PATH`, the command reports each writing-rule finding at its level. `--json` prints the findings.
+- **`lore adr check`.** It runs the checks of the former `lore wiki lint adr`.
+
+### Removed
+
+- **Breaking: `lore wiki lint` and `lore wiki lint adr`.** Both report "No such command". Use `lore wiki check` and `lore adr check`.
+- **Breaking: the generated wiki files.** Lore writes no `_catalog.json`, `_index.txt`, `_concepts.txt` or `_decisions.txt`, and reads none. `lore wiki new` writes no `_index.txt`. A wiki that holds the files can delete them.
+- The checks `frontmatter`, `orphan`, `oversized`, `missing_index`, `index_too_large`, `unlinked_subnote` and `agent_guidance_drift`. The check asks nothing about the size, the folder or the link count of a note.
+- `examples/wiki-lint.yml` and `examples/gitattributes-catalog-merge-ours`. A wiki repo that copied the workflow must delete its copy: the job now fails.
+
+### Changed
+
+- The SessionStart Focus block finds the project note by reading the notes under `projects/`. A match on the `repos` field of a note now works.
+- `lore_read` resolves a slug by file search. A note that the check covers wins over an `inbox/` draft.
+- The note count of the status line counts every folder of the wiki.
+
 ## [0.103.1] - 2026-11-11
 
 Issue #597 (remove the curator name from capture code and spawn code).

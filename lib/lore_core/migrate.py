@@ -10,7 +10,7 @@ from __future__ import annotations
 from rich.console import Console
 
 from lore_core.io import atomic_write_text
-from lore_core.lint import SKIP_DIRS, SKIP_FILES, discover_notes, discover_wikis
+from lore_core.wiki_check import discover_wikis, wiki_notes
 from lore_core.schema import SCHEMA_VERSION, parse_frontmatter, split_frontmatter
 
 console = Console()
@@ -26,8 +26,8 @@ def add_schema_version(
     """Prepend `schema_version: N` to the frontmatter of every note missing it.
 
     Returns the count of notes patched (or that would be patched if dry-run).
-    Notes without any frontmatter block are skipped (they're malformed; lint
-    reports them separately).
+    Notes without any frontmatter block are skipped (they're malformed;
+    `lore wiki check` reports them).
     """
     wikis = discover_wikis(wiki_filter)
     patched = 0
@@ -35,11 +35,7 @@ def add_schema_version(
 
     for wiki_path in wikis:
         wiki_name = wiki_path.name
-        for fpath in discover_notes(wiki_path):
-            if fpath.name in SKIP_FILES:
-                continue
-            if any(part in SKIP_DIRS for part in fpath.parts):
-                continue
+        for fpath in wiki_notes(wiki_path):
             text = fpath.read_text(errors="replace")
             fm = parse_frontmatter(text)
             if not fm:
@@ -67,7 +63,7 @@ def add_schema_version(
     if skipped_no_fm:
         console.print(
             f"[yellow]Skipped {skipped_no_fm} files with no frontmatter[/yellow] "
-            "(lint reports these separately)."
+            "(`lore wiki check` reports these)."
         )
     if dry_run and patched:
         console.print("[dim]Re-run with --apply to write changes.[/dim]")
@@ -109,11 +105,7 @@ def migrate_strip_broken_wikilinks(
         # Per-wiki scoping: wikis are portable units; cross-wiki
         # references break on extraction and are treated as dangles.
         slugs = existing_slugs(wiki_path)
-        for fpath in discover_notes(wiki_path):
-            if fpath.name in SKIP_FILES:
-                continue
-            if any(part in SKIP_DIRS for part in fpath.parts):
-                continue
+        for fpath in wiki_notes(wiki_path):
             try:
                 text = fpath.read_text(errors="replace")
             except OSError:

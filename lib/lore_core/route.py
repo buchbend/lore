@@ -1,7 +1,8 @@
 """Route: which wiki, scope, tracker, sinks and sources apply to a repo.
 
 ADR 0016. ``resolve_route(cwd)`` reads the person's config
-(``~/.config/lore/config.yml``) and the nearest ``.lore.yml``.
+(``~/.config/lore/config.yml``), the nearest ``.lore.yml`` and the
+``routing:`` block of each wiki's ``.lore-wiki.yml``.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from pathlib import Path
 
-from lore_core.config import user_config_path
+from lore_core.config import get_lore_root, list_wikis, user_config_path
 from lore_core.config_schema import _read_raw
 
 #: Route field -> key in a scope, ``defaults`` or ``.lore.yml``.
@@ -83,10 +84,53 @@ def _as_list(v: object) -> list[str]:
     return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
 
 
+def _wiki_yml_paths() -> list[Path]:
+    return [w / ".lore-wiki.yml" for w in list_wikis(get_lore_root())]
+
+
+def wiki_declared_scopes() -> tuple[dict[str, dict], list[str]]:
+    """Scopes that wikis declare in their ``.lore-wiki.yml`` (ADR 0016 amendment).
+
+    ``routing: {scope: <name>, remote: [<pattern>, ...]}``; the scope name
+    defaults to the wiki's name. A wiki declares only remotes, never a sink,
+    so the reporting boundary holds.
+    """
+    declared: dict[str, dict] = {}
+    notes: list[str] = []
+    for path in _wiki_yml_paths():
+        routing = _read_raw(path).get("routing") if path.is_file() else None
+        if not isinstance(routing, dict) or not routing.get("remote"):
+            continue
+        wiki = path.parent.name
+        name = str(routing.get("scope") or wiki)
+        if name in declared:
+            notes.append(
+                f"wikis {declared[name]['wiki']!r} and {wiki!r} both declare scope "
+                f"{name!r}; using {declared[name]['wiki']!r}"
+            )
+            continue
+        declared[name] = {"wiki": wiki, "remote": _as_list(routing["remote"])}
+    return declared, notes
+
+
+def _remote_hits(rid: str, scopes: dict) -> list[str]:
+    # GitHub owners and names are case-insensitive.
+    return [
+        n
+        for n, s in scopes.items()
+        if any(fnmatch(rid.lower(), p.lower()) for p in _as_list(s.get("remote")))
+    ]
+
+
 def _match_scope(
-    cwd: Path, repo_root: Path | None, scopes: dict
+    cwd: Path, repo_root: Path | None, scopes: dict, declared: dict | None = None
 ) -> tuple[str | None, str, list[str]]:
-    """Longest scope folder containing ``cwd``, else a unique remote match."""
+    """Longest scope folder containing ``cwd``, else a unique remote match.
+
+    The person's own remote patterns come first; a wiki's declared patterns
+    (``declared``) apply only when none of them match.
+    """
+    declared = declared or {}
     by_path = [
         (len(_expand(s["path"]).parts), name, s["path"])
         for name, s in scopes.items()
@@ -95,18 +139,19 @@ def _match_scope(
     if by_path:
         _, name, path = max(by_path)
         return name, f"path {path}", []
-    with_remote = {n: _as_list(s.get("remote")) for n, s in scopes.items() if s.get("remote")}
-    rid = _remote_id(cwd) if with_remote and repo_root is not None else None
+    has_remote = any(s.get("remote") for s in (*scopes.values(), *declared.values()))
+    rid = _remote_id(cwd) if has_remote and repo_root is not None else None
     if rid is None:
         return None, "", []
-    # GitHub owners and names are case-insensitive.
-    hits = [
-        n for n, pats in with_remote.items() if any(fnmatch(rid.lower(), p.lower()) for p in pats)
-    ]
+    hits, origin = _remote_hits(rid, scopes), f"remote {rid}"
+    if not hits:
+        hits = _remote_hits(rid, declared)
+        if hits:
+            origin += f" (declared by wiki {declared[hits[0]]['wiki']})"
     if len(hits) > 1:
         names = ", ".join(repr(h) for h in sorted(hits))
         return None, "", [f"scopes {names} all match remote {rid}; no scope applies"]
-    return (hits[0] if hits else None), f"remote {rid}", []
+    return (hits[0] if hits else None), origin, []
 
 
 def _repo_root(cwd: Path) -> Path | None:
@@ -155,6 +200,7 @@ def resolve_route(cwd: Path | str) -> Route:
         tuple(os.environ.get(v) for v in _ENV.values()),
         _stamp(cfg_path),
         _stamp(lore_yml_path),
+        tuple(_stamp(p) for p in _wiki_yml_paths()),
     )
     if key not in _CACHE:
         _CACHE[key] = _resolve(cwd, repo_root, lore_yml_path, cfg_path)
@@ -189,10 +235,16 @@ def _resolve(
     if os.environ.get(_ENV["scope"]):
         scope, origins["scope"] = os.environ[_ENV["scope"]], f"env {_ENV['scope']}"
     else:
-        scope, origin, match_notes = _match_scope(cwd, repo_root, scopes)
+        declared, declared_notes = wiki_declared_scopes()
+        notes.extend(declared_notes)
+        scope, origin, match_notes = _match_scope(cwd, repo_root, scopes, declared)
         notes.extend(match_notes)
         if scope:
             origins["scope"] = origin
+        # A declared scope the person also names keeps the person's settings
+        # (sinks, sources); the declaring wiki fills in only a missing wiki.
+        if scope in declared:
+            scopes[scope] = {"wiki": declared[scope]["wiki"], **scopes.get(scope, {})}
     scope_cfg = scopes.get(scope or "", {})
 
     values: dict[str, object] = {}

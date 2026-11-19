@@ -1,7 +1,7 @@
 """Claude Code hook dispatch — the eight `lore hook ...` entry points.
 
 Each command is a thin shell: resolve cwd, read the stdin payload, check the
-suppression toggles, delegate, emit. The work itself lives in the domain
+child-mode guard, delegate, emit. The work itself lives in the domain
 layer — :mod:`lore_core.session_start` (banner assembly) and
 :mod:`lore_core.capture_routing` (transcript registration).
 
@@ -55,6 +55,7 @@ from lore_cli.context_cache import (
     _cache_dir,
     _cache_path_for_pid,
     _claude_code_pid,
+    _session_id,
     _gc_sessions_cache,
     _legacy_cache_path,
 )
@@ -81,7 +82,7 @@ _subtree_siblings = subtree_siblings
 
 def _context_log() -> str:
     """Read the PID-scoped context log. Pure file read — no live I/O."""
-    cc_pid = _claude_code_pid()
+    cc_pid = _session_id() or _claude_code_pid()
     if cc_pid is not None:
         path = _cache_path_for_pid(cc_pid)
         if path.exists():
@@ -174,7 +175,7 @@ def _emit(hook_event: str, text: str, *, plain: bool, notice: str | None = None)
         from datetime import datetime as _dt
         ts_hm = _dt.now(_UTC).strftime("%H:%M")
         log_text = f"── SessionStart {ts_hm} ──\n{text}"
-        cc_pid = _claude_code_pid() or os.getppid()
+        cc_pid = _session_id() or _claude_code_pid() or os.getppid()
         try:
             atomic_write_text(_cache_path_for_pid(cc_pid), log_text)
         except OSError:
@@ -326,6 +327,7 @@ from lore_cli.spawn import (  # noqa: E402, F401
     _spawn_detached,
     _spawn_detached_transcript_sync,
     _spawn_detached_wiki_pull,
+    _spawn_in_repo,
     _spawn_logbook_flush,
     _spawn_map_scan,
     _spawn_token_usage_record,
@@ -407,40 +409,16 @@ def _capture_suppressed() -> bool:
     return os.environ.get("LORE_SUPPRESS_CAPTURE") == "1"
 
 
-def _session_off_all() -> bool:
-    """True iff `/lore:off` (scope=all) is active for the current session.
+def _host_adapter() -> str:
+    """Adapter name of the running host: Claude Code markers beat an inherited LORE_HOST."""
+    from lore_core.tiers import TierResolutionError, detect_host
 
-    Resolves the session id from CLAUDE_SESSION_ID, which `_read_hook_payload`
-    publishes from the Claude Code stdin payload (issue #29 / v0.13.1).
-    Returns False when no sid is available — without a sid we can't scope a
-    sentinel, so the safe default is "not muted."
-    """
-    sid = os.environ.get("CLAUDE_SESSION_ID")
-    if not sid:
-        return False
-    from lore_core.toggles import is_off
-    return is_off("all", sid)
-
-
-def _citation_directive_lines() -> list[str]:
-    """Suppression directive for `/lore:off citations`.
-
-    Returns the lines appended to the SessionStart additionalContext
-    directive cluster when the citations sentinel is set for this
-    session, else an empty list. The line tells the agent to skip the
-    inline `› consulted [[X]]` affordance for the rest of the session.
-    """
-    sid = os.environ.get("CLAUDE_SESSION_ID")
-    if not sid:
-        return []
-    from lore_core.toggles import is_off
-    if not is_off("citations", sid):
-        return []
-    return [
-        "- Inline citations are silenced this session — do not emit "
-        "`› consulted [[X]]` lines after consulting the vault.",
-        "",
-    ]
+    try:
+        if detect_host() == "claude":
+            return "claude-code"
+    except TierResolutionError:
+        pass
+    return os.environ.get("LORE_HOST") or "claude-code"
 
 
 def _read_hook_payload() -> dict:
@@ -553,8 +531,6 @@ def cmd_session_start(
     if _in_child_mode():
         return
     payload = _read_hook_payload()
-    if _session_off_all():
-        return
     cwd_resolved = Path(_resolve_cwd(cwd))
     out = _session_start(str(cwd_resolved))
 
@@ -690,7 +666,13 @@ def cmd_session_start(
     except Exception:  # noqa: BLE001 - the index must never crash SessionStart
         pass
 
-    notice = "\n".join(n for n in (handover_notice, logbook_notice) if n) or None
+    update_notice: str | None = None
+    with contextlib.suppress(Exception):  # the update check must never crash SessionStart
+        update_notice = _update_hint(spawn=not probe)
+        if update_notice:
+            out = out + "\n\n" + update_notice
+
+    notice = "\n".join(n for n in (update_notice, handover_notice, logbook_notice) if n) or None
     _emit("SessionStart", _fit_hook_limit(out, orientation_block), plain=plain, notice=notice)
 
 
@@ -711,6 +693,53 @@ def _map_scan_hint(cwd: Path, *, spawn: bool) -> str | None:
         _write_stamp(stamp)
         _spawn_map_scan(cwd)
     return ms.hint(lore_root, name)
+
+
+#: SessionStart asks GitHub for the latest release at most once a day.
+UPDATE_CHECK_COOLDOWN_S = 86400
+
+
+def _latest_version_path() -> Path:
+    from lore_cli.context_cache import _cache_dir
+
+    return _cache_dir() / "latest-version"
+
+
+def _update_hint(*, spawn: bool) -> str | None:
+    """The banner nudge when a newer release is out; spawn the daily check when due.
+
+    The check runs in a detached child, so a slow network never holds up the
+    banner. This banner shows what the previous check recorded.
+    ``LORE_NO_UPDATE_CHECK=1`` turns the check off.
+    """
+    if os.environ.get("LORE_NO_UPDATE_CHECK"):
+        return None
+    from lore_core.session_start import lore_version
+    from lore_core.source_root import version_key
+
+    latest_file = _latest_version_path()
+    stamp = latest_file.with_name("update-check.stamp")
+    if spawn and not _stamp_within_cooldown(stamp, UPDATE_CHECK_COOLDOWN_S):
+        _write_stamp(stamp)
+        _spawn_in_repo(Path.home(), "hook", "update-check")
+    try:
+        latest = latest_file.read_text().strip()
+    except OSError:  # no check recorded yet
+        return None
+    installed = lore_version()  # the banner's own number; editable installs too
+    if not latest or version_key(latest) <= version_key(installed):
+        return None
+    return f"lore {latest} is out (installed: {installed}). Run `lore update`."
+
+
+@hook_app.command("update-check", hidden=True)
+def cmd_update_check() -> None:
+    """Background child: record the latest released version for the banner."""
+    from lore_cli.integrations import _fetch_remote_version
+
+    remote = _fetch_remote_version()
+    if remote:
+        atomic_write_text(_latest_version_path(), remote + "\n")
 
 
 @hook_app.command("map-scan", hidden=True)
@@ -751,8 +780,6 @@ def cmd_pre_compact(
     if _in_child_mode():
         return
     _read_hook_payload()
-    if _session_off_all():
-        return
     cwd_resolved = _resolve_cwd(cwd)
     out = _pre_compact(cwd_resolved)
     try:  # PRD 0015 breakpoint: name the build ledger so it survives compaction
@@ -787,15 +814,18 @@ def cmd_stop(
     if _in_child_mode():
         return
     _read_hook_payload()
-    if _session_off_all():
-        return
     out = _stop()
     _emit("Stop", out, plain=plain)
 
 
 @hook_app.command("spawn-model-gate")
 @_shield_hook("PreToolUse")
-def cmd_spawn_model_gate() -> None:
+def cmd_spawn_model_gate(
+    plain: bool = typer.Option(
+        False, "--plain", help="OpenCode plugin: a denial exits 3, as Click's usage error is 2."
+    ),
+    cwd: str = typer.Option(None, "--cwd", help="Accepted for the OpenCode plugin; no effect."),
+) -> None:
     """PreToolUse gate: deny Task/Agent spawns that omit an explicit model.
 
     Reads the PreToolUse payload from stdin. Denial protocol (Claude
@@ -803,26 +833,25 @@ def cmd_spawn_model_gate() -> None:
     the model as feedback; exit 0 allows it. See
     :mod:`lore_core.spawn_gate` for the deny/allow rule itself — this
     command is just the stdin/stdout/exit-code plumbing, matching the
-    other `lore hook ...` entry points.
+    other `lore hook ...` entry points. With ``--plain`` (the OpenCode
+    plugin) a denial exits 3, so the plugin can tell it from a Click usage
+    error, which also exits 2.
     """
     payload = _read_hook_payload()
     deny_message = check_spawn(payload)
     if deny_message is None:
         return
     sys.stderr.write(deny_message)
-    raise typer.Exit(code=2)
+    raise typer.Exit(code=3 if plain else 2)
 
 
 @hook_app.command("token-usage")
 def cmd_token_usage() -> None:
     """SessionEnd hook: append the session's token record to ``.lore/token-usage.jsonl``.
 
-    Hands the transcript to a detached child and returns at once. Writes
-    nothing while ``/lore:off all`` mutes the session. Never fails the hook.
+    Hands the transcript to a detached child and returns at once. Never fails the hook.
     """
     payload = _read_hook_payload()
-    if _session_off_all():
-        return
     session, transcript = payload.get("session_id"), payload.get("transcript_path")
     if not (isinstance(session, str) and session and isinstance(transcript, str) and transcript):
         return
@@ -871,12 +900,10 @@ def cmd_user_prompt_submit(
         help="Print raw text instead of Claude Code JSON envelope.",
     ),
 ) -> None:
-    """Mid-session transcript registration plus the citations directive."""
+    """Mid-session transcript registration."""
     if _in_child_mode():
         return
     _read_hook_payload()
-    if _session_off_all():
-        return
     cwd_resolved = Path(_resolve_cwd(cwd))
     route = resolve_route(cwd_resolved)
     if not route.wiki:
@@ -889,37 +916,10 @@ def cmd_user_prompt_submit(
     # transcript file) and keeps `last_mtime` fresh across the session.
     # Without this, long sessions sit on accumulated turns until SessionEnd.
     try:
-        adapter = get_adapter("claude-code")
+        adapter = get_adapter(_host_adapter())
         _register_pending_transcripts(lore_root, cwd_resolved, adapter=adapter)
     except Exception:
         pass  # never break the prompt path on a registration hiccup
-
-    # Citations toggle takes effect mid-session: re-assert the suppression
-    # directive on every prompt while `/lore:off citations` is active so the
-    # agent sees it on the very next turn after the user toggles it,
-    # rather than waiting for the next SessionStart.
-    cite_lines = _citation_directive_lines()
-    if not cite_lines:
-        return
-    ctx = "\n".join(line for line in cite_lines if line)
-    if not ctx:
-        return
-
-    if plain:
-        sys.stdout.write(ctx + "\n")
-        return
-
-    sys.stdout.write(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "UserPromptSubmit",
-                    "additionalContext": ctx,
-                }
-            }
-        )
-        + "\n"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -994,7 +994,11 @@ def capture(
     ),
     transcript: Path | None = typer.Option(None, help="Explicit transcript path; else autodetect via adapter."),
     cwd_override: Path | None = typer.Option(None, "--cwd", help="Explicit cwd; else CLAUDE_PROJECT_DIR or os.getcwd()."),
-    integration: str = typer.Option("claude-code", help="Adapter integration name."),
+    integration: str | None = typer.Option(
+        None,
+        help="Adapter integration name; default claude-code inside Claude Code, "
+        "else $LORE_HOST, else claude-code.",
+    ),
 ) -> None:
     """Hot-path capture hook — called by Claude Code on SessionEnd / PreCompact / SessionStart.
 
@@ -1004,11 +1008,8 @@ def capture(
     if _in_child_mode() or _capture_suppressed():
         return
     _read_hook_payload()
-    if _session_off_all():
-        # `/lore:off all` is the security-first contract: no transcript
-        # ingestion, no child spawn, no ledger writes, no vault output
-        # while the user has muted us.
-        return
+    from_env = integration is None and bool(os.environ.get("LORE_HOST"))
+    integration = integration or _host_adapter()
     if event == "session-end":  # PRD 0017: retry undelivered logbook entries
         _logbook_line(cwd_override or _resolve_cwd_capture(), spawn=True)
     import time as _time
@@ -1068,6 +1069,13 @@ def capture(
                 pid=_capture_pid,
                 ppid_cmd=_capture_ppid_cmd,
             )
+            if from_env:  # a host the registry lacks must not fail the host's hook
+                from lore_cli._crash_log import write_crash
+
+                write_crash(
+                    event, UnknownIntegrationError(f"LORE_HOST={integration!r} names no adapter")
+                )
+                return
             raise typer.Exit(code=1)
 
         routed = _route_capture(

@@ -85,7 +85,7 @@ def estimate_cost(
     write_5m = counts.get("cache_write", 0) - write_1h
     dollars = (
         counts.get("input", 0) * row["input"]
-        + counts.get("output", 0) * row["output"]
+        + (counts.get("output", 0) + counts.get("reasoning", 0)) * row["output"]
         + counts.get("cache_read", 0) * row["cache_read"]
         + write_5m * row["input"] * CACHE_WRITE_5M
         + write_1h * row["input"] * CACHE_WRITE_1H

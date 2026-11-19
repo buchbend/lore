@@ -77,6 +77,7 @@ def test_loop_and_issue_archive_the_ledger_after_the_check() -> None:
 def test_each_merged_round_or_feature_writes_a_resume_line() -> None:
     skill = _text("build/SKILL.md")
     assert "--kind resume" in skill
+    assert "lore workflow after-merge" in _section("Mode `epic`")
     assert "`/clear` is safe" in skill
     assert "resume line (breakpoint)" in _section("Mode `loop`")
     assert "resume line (breakpoint)" in _section("Mode `epic`")
@@ -114,9 +115,13 @@ def test_the_logbook_step_names_every_label_lore_log_add_checks() -> None:
 
 
 def test_the_shipping_pr_carries_the_version_bump_last() -> None:
-    assert "tools/release.py --in-branch" in _text("build/SKILL.md")
-    for rel in ("build/loop-wrap-up.md", "build/epic-tail.md"):
-        assert "version bump as the last commit" in _text(rel), rel
+    rules = _text("build/SKILL.md")
+    assert "tools/release.py --in-branch" in rules
+    assert "Add the bump after the merge approval, immediately before the merge." in rules
+    for rel in ("build/loop-wrap-up.md", "build/epic-tail.md", "build/issue.md"):
+        text = _text(rel)
+        assert "On a yes, add the version bump as [SKILL.md](SKILL.md) gives it" in text, rel
+        assert "version bump as the last commit" not in text, rel
 
 
 def test_loop_reaches_the_remote_through_one_wrap_up_pr() -> None:
@@ -212,7 +217,7 @@ def test_an_epic_reaches_the_remote_once() -> None:
     tail = _text("build/epic-tail.md")
     assert tail.count("git push") == 1
     push = tail.index("git push")
-    steps = ("document`](../document/SKILL.md)", "lore log add", "version bump as the last commit")
+    steps = ("document`](../document/SKILL.md)", "lore log add")
     for step in steps:
         assert tail.index(step) < push, step
     assert push < tail.index("gh pr checks <epic-pr>")
@@ -230,7 +235,7 @@ def test_issue_mode_merges_only_after_the_merge_approval() -> None:
     # "pre-merge" names a mode of `document`, not a merge.
     merges = re.findall(r"(?<!pre-)\bmerg\w*", issue, re.I)
     assert merges == ["merge", "merge"], merges
-    assert "Ask for the merge approval and merge on a yes." in issue
+    assert "Ask for the merge approval. On a yes, add the version bump" in issue
 
 
 def test_the_epic_pr_merges_only_after_the_merge_approval() -> None:

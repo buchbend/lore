@@ -39,7 +39,7 @@ no file and prints one check mark per step.
    | Step | What it does |
    |---|---|
    | wiki | Picks the vault (`$LORE_ROOT`, the configured `lore_root`, or `~/lore`), then creates a personal wiki, clones a team wiki or links a folder. |
-   | agents | Installs the Claude Code plugin, or refreshes a stale plugin cache, and repairs Cursor's wiring where Cursor is present. Once the `lore` plugin is current, the step uninstalls the old plugin `lore-workflow@lore`. |
+   | agents | Installs the Claude Code plugin, or refreshes a stale plugin cache, repairs Cursor's wiring where Cursor is present, and installs the OpenCode plugin where OpenCode is present ([use Lore in OpenCode](use-lore-in-opencode.md)). Once the `lore` plugin is current, the step uninstalls the old plugin `lore-workflow@lore`. |
    | scope | In a repo no scope covers, offers the folder above the repo as a scope: every repo below it routes to the scope's wiki. |
    | check | Runs the install checks; a failing advisory check does not fail setup. |
 
@@ -59,20 +59,50 @@ no file and prints one check mark per step.
 
    `lore setup wiki` and `lore setup scope` run one step.
 
+   A run that changes something ends with the output of `lore config`.
+
 3. **Restart Claude Code.** Hooks and skills are picked up at session
    start.
 
-4. **Verify.** From a repo inside a scope folder:
+4. **Verify.** From a repo inside a scope:
 
    ```
-   lore setup
+   lore config
    lore status
    ```
 
-   `setup` re-runs the checks (nonzero exit on any failure); `status`
-   shows what applies in this repo and whether a session has captured
-   anything yet. A fresh install with no session activity yet shows
-   "no activity" lines, not errors.
+   `config` shows how everything is wired: wikis, scopes, defaults, sinks,
+   sources, and the route of this repo with the origin of each value. A
+   `!` marks a line that needs a look. `status` shows whether a session has
+   captured anything yet. A fresh install with no session activity yet
+   shows "no activity" lines, not errors.
+
+## Join a team wiki
+
+A colleague's folder layout differs from yours, so a team routes by git
+remote. Clone the team wiki, then add a scope for the team's remotes:
+
+```
+lore setup --wiki-clone git@github.com:ccatobs/ccat-knowledge.git
+lore setup scope --remote-only --wiki ccat-knowledge --remote 'github.com/ccatobs/*'
+```
+
+Skip the second command when the wiki declares its remotes in its
+`.lore-wiki.yml` (`routing.remote`): then cloning the wiki is the whole
+setup. Run `lore config` to see the result. Add a logbook sink with
+`lore setup sink` only if the team uses one: sinks are personal and never
+come from the wiki (ADR 0016).
+
+## Keep your setup on more than one machine
+
+- **The config.** `~/.config/lore/config.yml` holds no secrets, so it can
+  live in a dotfiles repo. A symlink to the dotfiles copy is safe: Lore
+  writes through the link. Remote-only scopes need no folder paths, so the
+  file fits every machine. Do not link `secrets.yml`: Lore refuses a
+  secrets file inside a git worktree.
+- **A personal wiki.** Give the wiki a private git remote, then clone it on
+  the next machine with `lore setup --wiki-clone <url>`. `lore config`
+  marks a wiki without git with `!`.
 
 ## If something's wrong
 

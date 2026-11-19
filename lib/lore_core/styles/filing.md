@@ -10,7 +10,8 @@ file; these lines say where.
 - An experiment result becomes a lab entry: run the `experiment` skill or `lore lab add`.
 - A dead end in an experiment becomes a lab entry with status `dead-end`, not a closed issue.
 - A dead end in software work becomes an issue you opened, closed as not planned, with the reason in the close comment.
-- A fact for a wiki topic note becomes a pull request on the wiki repo.
+- Research, a scoping of options, an explanation for a human reader or draft paper material becomes a wiki entry. Offer it once, at a stop of the work. Write it after the person says yes: run the `wiki` skill. The skill commits and pushes the entry at once.
+- A fact for a wiki topic note without a yes in the session becomes a pull request on the wiki repo.
 - An ADR, a PRD or a wiki topic-note edit outside a grilling session is a pull request. A human merges it.
 - A rule that looks out of date becomes a proposed amendment of its ADR.
 - Close only issues you opened. Do not change the state of a human's issue or PR.
