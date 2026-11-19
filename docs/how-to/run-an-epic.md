@@ -43,7 +43,8 @@ needs work before any code. For one small, clear change, use the
    - after each merge, runs `lore workflow after-merge`: the command ticks the
      build-order box, closes the sub-issue, sets the board row to `merged` and
      adds the resume line. It prints the updated board before the GitHub calls,
-     so a failed call still leaves the board to paste;
+     so a failed call still leaves the board to paste. A second run on that
+     board adds no second resume line;
    - at the end, runs each lens of the review plan once, over the rows it tags;
    - merges the features in dependency order and opens the epic PR. CI is
      checked there: the epic PR merges only on green CI.

@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.113.0] - 2026-11-20
+
+- The context pack with an intent ranks the focus docs inside the cap: current docs first, the PRD first in each group, so a cap the focus docs fill keeps the epic's PRD (#654).
+- `lore workflow after-merge` adds no second resume line when it reruns on the board it printed (#654).
+- ADRs 0007, 0008 and 0011 are marked superseded by ADR 0012, so the default context pack leaves them out (#653).
+
 ## [0.112.0] - 2026-11-18
 
 - `lore config` shows the whole wiring: each wiki with its git remote and each scope with its folder and remotes. It also shows the route of the current folder (#642).
