@@ -199,13 +199,18 @@ def gather(
         # The intent ranks every doc: a focus branch must not hide a doc
         # that names the work but not the issue number.
         adrs, prds = list_docs(repo_root, "adr"), list_docs(repo_root, "prd")
-        # Focus docs come first and count toward the cap.
-        head = [
-            d
-            for d in _matching_docs(repo_root, "adr", focus)
-            + _matching_docs(repo_root, "prd", focus)
-            if focus and not d["is_index"]
-        ]
+        # Focus docs come first and count toward the cap: current before
+        # superseded or shipped, the PRD first within each, so a cap the
+        # focus docs fill still keeps the epic's PRD.
+        head = sorted(
+            (
+                d
+                for d in _matching_docs(repo_root, "prd", focus)
+                + _matching_docs(repo_root, "adr", focus)
+                if focus and not d["is_index"]
+            ),
+            key=lambda d: is_shipped(d) or not _is_current(repo_root, d),
+        )
         seen = {d["path"] for d in head}
         rest = [d for d in adrs + prds if d["path"] not in seen]
         top = (head + _rank_by_intent(repo_root, rest, intent, max(0, INTENT_TOP - len(head))))[

@@ -385,3 +385,45 @@ def test_gather_intent_ranks_current_prd_above_shipped(
 
     result = gather(cwd=repo, repo_path=str(repo), intent="ledger")
     assert result["ranked"][0] == "docs/prd/0002-b.md"
+
+
+def test_gather_intent_keeps_focus_prd_when_focus_docs_fill_the_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo, branch="epic/162")
+    for n in range(10):
+        _write(repo / f"docs/adr/{n:04d}-x.md", f"# X {n}\n\nepic #162 widget.\n")
+    _write(repo / "docs/prd/0001-p.md", "# Plan\n\nepic #162 tracked here.\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="widget")
+    assert "docs/prd/0001-p.md" in result["ranked"]
+    assert len(result["ranked"]) == 8
+
+
+def test_gather_intent_ranks_current_focus_docs_above_superseded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo, branch="epic/162")
+    for n in range(5):
+        _write(
+            repo / f"docs/adr/{n:04d}-old.md",
+            f"# Old {n}\n\n## Status\n\nSuperseded by ADR 0009.\n\nepic #162.\n",
+        )
+    for n in range(5, 10):
+        _write(repo / f"docs/adr/{n:04d}-new.md", f"# New {n}\n\nepic #162.\n")
+    _no_vault(monkeypatch, tmp_path)
+
+    result = gather(cwd=repo, repo_path=str(repo), intent="widget")
+    assert result["ranked"][:5] == [f"docs/adr/{n:04d}-new.md" for n in range(5, 10)]
+
+
+@pytest.mark.parametrize("number", ["0007", "0008", "0011"])
+def test_adrs_that_adr_0012_supersedes_are_not_current(number: str) -> None:
+    from lore_core.context_pack import _is_current
+
+    repo = Path(__file__).resolve().parent.parent
+    path = next((repo / "docs/adr").glob(f"{number}-*.md")).relative_to(repo)
+    assert not _is_current(repo, {"path": str(path)})

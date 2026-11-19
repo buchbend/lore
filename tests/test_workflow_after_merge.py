@@ -121,3 +121,12 @@ def test_non_numeric_epic_exits_1_before_printing(monkeypatch, capsys, gh):
     argv = ["after-merge", "--board", "-", "--issue", "647", "--sha", "abc1234"]
     assert workflow_cmd.main([*argv, "--epic", "buchbend/lore#abc"]) == 1
     assert capsys.readouterr().out == "" and gh.calls == []
+
+
+def test_after_merge_rerun_on_its_own_board_adds_no_resume_line(monkeypatch, capsys, gh):
+    assert _run(monkeypatch) == 0
+    first = capsys.readouterr().out
+    board = first[first.index("<!-- lore-orchestrate-epic") :]
+    assert _run(monkeypatch, board=board) == 0
+    again = capsys.readouterr().out
+    assert sum(ln.startswith("- [resume]") for ln in again.splitlines()) == 1
