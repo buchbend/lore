@@ -64,5 +64,5 @@ teardown.
 
 ## Status
 
-Accepted. Supersedes ADR 0001 (reopen semantics) and ADR 0003 (derived
+Superseded by ADR 0012. It superseded ADR 0001 (reopen semantics) and ADR 0003 (derived
 note body); both describe retired machinery.
