@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (0.x means anything can change between minor versions until 1.0).
 
+## [0.115.0] - 2026-11-20
+
+- `lore log drop <key> [--sink <name>]` gives up an undelivered sink of a logbook or lab entry. It writes `<sink>=dropped` to the ledger, so `lore log flush` stops retrying it and the banner stops counting it (#665).
+
 ## [0.114.0] - 2026-11-20
 
 - `lore log flush` retries the undelivered entries in the ledger of every checkout of the repo: the main checkout and each linked worktree. The SessionStart banner, the session-end hook and `lore status` count the same ledgers (#658).

@@ -6,7 +6,8 @@ stamps it, keeps it as a ``[logbook]`` line in the local ledger and delivers
 it to every sink of the route in parallel. ``lore log flush`` retries the
 sinks that did not confirm.
 
-The ledger line records each sink's delivery, then the entry as JSON::
+The ledger line records each sink's delivery, then the entry as JSON. A sink
+a person gave up with ``lore log drop`` reads ``dropped`` (issue #665)::
 
     - [logbook] file=delivered pm-ccat=undelivered — {"key":"lore:acme/widget:#471",...}
 
@@ -89,6 +90,11 @@ class Entry:
     text: str
 
 
+#: The state of one sink: True delivered, False undelivered, None dropped (issue #665).
+State = bool | None
+
+_WORDS = {True: "delivered", False: "undelivered", None: "dropped"}
+
 #: Writes *entry* to the ``file`` sink of a repo; True when delivered.
 FileSink = Callable[[Entry, Path], bool]
 
@@ -98,16 +104,16 @@ FileSink = Callable[[Entry, Path], bool]
 # ---------------------------------------------------------------------------
 
 
-def _ledger_entry(entry: Entry, status: dict[str, bool], kind: str) -> LedgerEntry:
+def _ledger_entry(entry: Entry, status: dict[str, State], kind: str) -> LedgerEntry:
     return LedgerEntry(
         kind=kind,
         # ASCII JSON: a raw U+2028 would split the line under `splitlines()`.
         text=json.dumps(asdict(entry), ensure_ascii=True, separators=(",", ":")),
-        outcome=" ".join(f"{n}={'delivered' if ok else 'undelivered'}" for n, ok in status.items()),
+        outcome=" ".join(f"{n}={_WORDS[ok]}" for n, ok in status.items()),
     )
 
 
-def _read_line(raw: str, kind: str = "logbook") -> tuple[Entry, dict[str, bool]] | None:
+def _read_line(raw: str, kind: str = "logbook") -> tuple[Entry, dict[str, State]] | None:
     """The entry and per-sink delivery of a ``[<kind>]`` line, else None."""
     try:
         parsed = parse_line(raw)
@@ -117,17 +123,18 @@ def _read_line(raw: str, kind: str = "logbook") -> tuple[Entry, dict[str, bool]]
     except (LedgerParseError, ValueError, TypeError):
         return None
     pairs = (token.partition("=") for token in (parsed.outcome or "").split())
-    return entry, {name: state == "delivered" for name, _, state in pairs}
+    states = {w: ok for ok, w in _WORDS.items()}
+    return entry, {name: states.get(state, False) for name, _, state in pairs}
 
 
-def pending(ledger: Path, kind: str = "logbook") -> list[tuple[Entry, dict[str, bool]]]:
+def pending(ledger: Path, kind: str = "logbook") -> list[tuple[Entry, dict[str, State]]]:
     """Every ``[<kind>]`` entry of *ledger* and its archives with an undelivered sink.
 
     The archives are the ``lore-ledger.*.done.md`` files beside *ledger* (issue #659).
-    Lines with one key merge into one entry: a sink counts as delivered when any
-    line records it so, so no flush sends one entry to one sink twice.
+    Lines with one key merge into one entry. Per sink, delivered beats dropped
+    and dropped beats undelivered, so no flush sends one entry to one sink twice.
     """
-    merged: dict[str, tuple[Entry, dict[str, bool]]] = {}
+    merged: dict[str, tuple[Entry, dict[str, State]]] = {}
     for f in (ledger, *sorted(ledger.parent.glob("lore-ledger.*.done.md"))):
         if not f.is_file():
             continue
@@ -137,15 +144,18 @@ def pending(ledger: Path, kind: str = "logbook") -> list[tuple[Entry, dict[str, 
                 continue
             entry, status = line
             first, seen = merged.get(entry.key, (entry, {}))
-            merged[entry.key] = (
-                first,
-                {n: seen.get(n, False) or status.get(n, False) for n in {**seen, **status}},
-            )
-    return [line for line in merged.values() if not all(line[1].values())]
+            merged[entry.key] = (first, {n: _best(seen, status, n) for n in {**seen, **status}})
+    return [line for line in merged.values() if False in line[1].values()]
+
+
+def _best(a: dict[str, State], b: dict[str, State], name: str) -> State:
+    """Delivered beats dropped, dropped beats undelivered."""
+    both = (a.get(name, False), b.get(name, False))
+    return True if True in both else None if None in both else False
 
 
 def _write_status(
-    ledger: Path, entry: Entry, status: dict[str, bool], kind: str = "logbook"
+    ledger: Path, entry: Entry, status: dict[str, State], kind: str = "logbook"
 ) -> None:
     """Replace the ``[<kind>]`` line with *entry*'s key, or append one."""
     new = format_entry(_ledger_entry(entry, status, kind))
@@ -398,7 +408,7 @@ def _checkouts(cwd: Path) -> list[tuple[Path, Path]]:
     return list(found.items())
 
 
-def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]] | None:
+def flush(cwd: Path) -> list[tuple[Entry, dict[str, State]]] | None:
     """Retry every undelivered sink in the ledgers of every checkout of the repo of *cwd*.
 
     Retries the ``[logbook]`` lines, then the ``[lab]`` lines, of each checkout,
@@ -420,7 +430,7 @@ def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]] | None:
                 continue
             for kind, file_sink in (("logbook", _file_sink), ("lab", lab.file_sink)):
                 for entry, status in pending(ledger, kind):
-                    retry = [name for name, ok in status.items() if not ok]
+                    retry = [name for name, ok in status.items() if ok is False]
                     status = {**status, **deliver(entry, retry, repo_root, file_sink)}
                     _write_status(ledger, entry, status, kind)
                     results.append((entry, status))
@@ -430,3 +440,30 @@ def flush(cwd: Path) -> list[tuple[Entry, dict[str, bool]]] | None:
 def undelivered_count(cwd: Path, kind: str = "logbook") -> int:
     """How many ``[<kind>]`` entries in the ledgers of every checkout wait for a sink."""
     return sum(len(pending(g / LEDGER_FILENAME, kind)) for g, _ in _checkouts(cwd))
+
+
+def drop(key: str, cwd: Path, sink: str | None = None) -> list[tuple[Entry, dict[str, State]]]:
+    """Give up *sink* of the entry *key*, or each undelivered sink; return the new states.
+
+    Writes ``<sink>=dropped`` to the ledger of each checkout that holds the
+    entry (issue #665). Raises ValueError when no ledger holds an undelivered
+    *sink* of *key*.
+    """
+    from lore_workflow.ledger import DELIVERY_KINDS
+
+    results = []
+    for git_dir, _ in _checkouts(cwd):
+        ledger = git_dir / LEDGER_FILENAME
+        with _lock(ledger):
+            for kind in DELIVERY_KINDS:
+                for entry, status in pending(ledger, kind):
+                    names = [n for n, ok in status.items() if ok is False and sink in (None, n)]
+                    if entry.key != key or not names:
+                        continue
+                    status = {**status, **dict.fromkeys(names, None)}
+                    _write_status(ledger, entry, status, kind)
+                    results.append((entry, status))
+    if not results:
+        where = f" sink {sink!r} of" if sink else ""
+        raise ValueError(f"no undelivered entry with{where} key {key!r}")
+    return results

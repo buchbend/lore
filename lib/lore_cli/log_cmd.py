@@ -52,6 +52,23 @@ def flush_cmd() -> None:
         print("no undelivered logbook entries")
 
 
+@app.command("drop")
+def drop_cmd(
+    key: str = typer.Argument(..., help="The entry key, as `lore log flush` prints it."),
+    sink: str | None = typer.Option(
+        None, "--sink", help="The sink to give up. Default: each undelivered one."
+    ),
+) -> None:
+    """Give up an undelivered sink of one entry, so `flush` stops retrying it."""
+    try:
+        results = logbook.drop(key, Path.cwd(), sink)
+    except ValueError as exc:
+        print(f"log drop: {exc}", file=sys.stderr)
+        raise typer.Exit(code=1) from exc
+    for entry, status in results:
+        _print_status(entry, status)
+
+
 @app.command("show")
 def show_cmd() -> None:
     """Print this month's entries from the repo's `file` sink."""
@@ -67,6 +84,6 @@ def show_cmd() -> None:
     sys.stdout.write(text)
 
 
-def _print_status(entry: logbook.Entry, status: dict[str, bool]) -> None:
-    sinks = ", ".join(f"{n} {'delivered' if ok else 'undelivered'}" for n, ok in status.items())
+def _print_status(entry: logbook.Entry, status: dict[str, logbook.State]) -> None:
+    sinks = ", ".join(f"{n} {logbook._WORDS[ok]}" for n, ok in status.items())
     print(f"{entry.key}: {sinks or 'no sink'}")

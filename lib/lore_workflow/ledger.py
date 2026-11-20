@@ -25,7 +25,7 @@ ledger file may carry a heading or prose::
   ``approved``, ``dropped`` or ``filed <owner/repo#n>``.
 - A resume line carries an ISO 8601 UTC timestamp instead of an outcome.
   Its text is the state, then ``; next:`` and the next ask.
-- A logbook line (PRD 0017) carries ``<sink>=delivered|undelivered`` per sink
+- A logbook line (PRD 0017) carries ``<sink>=delivered|undelivered|dropped`` per sink
   and the entry as JSON (:mod:`lore_workflow.logbook`). It is never open, so
   it never blocks the check. :func:`archive_ledger` carries an undelivered
   one into the new ledger. A lab line (PRD 0020) has the same shape.
@@ -85,7 +85,8 @@ SEP = " — "
 _OUTCOME_RE = re.compile(r"^(open|approved|dropped|filed [\w.-]+/[\w.-]+#\d+)$")
 _TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?$")
 _URL_RE = re.compile(r"^https?://\S+$")
-_DELIVERY_RE = re.compile(r"^[\w.-]+=(un)?delivered( [\w.-]+=(un)?delivered)*$")
+_STATE = r"[\w.-]+=(undelivered|delivered|dropped)"
+_DELIVERY_RE = re.compile(rf"^{_STATE}( {_STATE})*$")
 _LINE_RE = re.compile(r"^- \[(?P<kind>[a-z]+)\] (?P<status>.+?) — (?P<text>.*)$")
 
 
@@ -152,7 +153,8 @@ def format_entry(entry: LedgerEntry) -> str:
         status = entry.outcome or ""
         if not _DELIVERY_RE.match(status):
             raise ValueError(
-                f"invalid {entry.kind} delivery {status!r}: use '<sink>=delivered|undelivered'"
+                f"invalid {entry.kind} delivery {status!r}: "
+                "use '<sink>=delivered|undelivered|dropped'"
             )
     elif entry.kind == "board":
         status = entry.outcome or ""
