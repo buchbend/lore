@@ -582,3 +582,43 @@ def test_archive_ledger_waits_for_a_flush_that_holds_the_lock(repo, tmp_path) ->
         assert not list(live.parent.glob("lore-ledger.*.done.md"))
     worker.join(5)
     assert list(live.parent.glob("lore-ledger.*.done.md"))
+
+
+# Issue #665: give up an undelivered sink
+
+
+def test_log_drop_records_the_sink_and_flush_skips_it(repo, tmp_path) -> None:
+    from lore_workflow.logbook import undelivered_count
+
+    _sinks(["file", "pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    assert main(["log", "drop", "lore:acme/widget:#471", "--sink", "pm"]) == 0
+    assert "file=delivered pm=dropped" in _ledger(repo)
+    assert undelivered_count(repo) == 0
+    count = tmp_path / "count"
+    _sinks(["file", "pm"], pm={"kind": "command", "run": f"echo x >> {count}"})
+    assert main(["log", "flush"]) == 0
+    assert not count.exists()
+
+
+def test_log_drop_without_a_sink_drops_every_undelivered_sink(repo, tmp_path) -> None:
+    _sinks(["a", "b"], a={"kind": "command", "run": "exit 3"}, b={"kind": "command", "run": "true"})
+    assert _add(tmp_path, GOOD) == 0
+    assert main(["log", "drop", "lore:acme/widget:#471"]) == 0
+    assert "a=dropped b=delivered" in _ledger(repo)
+
+
+def test_a_dropped_sink_stays_dropped_when_its_archive_says_undelivered(repo, tmp_path) -> None:
+    from lore_workflow.ledger import archive_ledger
+    from lore_workflow.logbook import undelivered_count
+
+    _sinks(["pm"], pm={"kind": "command", "run": "exit 3"})
+    assert _add(tmp_path, GOOD) == 0
+    archive_ledger(repo / ".git" / "lore-ledger.md")
+    assert main(["log", "drop", "lore:acme/widget:#471"]) == 0
+    assert undelivered_count(repo) == 0
+
+
+def test_log_drop_of_an_unknown_key_exits_1(repo, capsys) -> None:
+    assert main(["log", "drop", "lore:acme/widget:#999"]) == 1
+    assert "no undelivered entry" in capsys.readouterr().err
